@@ -1,29 +1,29 @@
-# LifeMap – The Global Smart Finance & Split App 🌍
+# Fiinny 💰✨
 
-## Overview
-LifeMap helps users everywhere track expenses, split bills, set goals, analyze spending, and collaborate with friends/groups. Built with Flutter, Firebase, and love.
+Fiinny is a modern personal finance and life planning app built with Flutter.  
+It helps users track income, expenses, financial goals, insights, and much more.
 
----
+## 🌟 Key Features
 
-## Features
-- AI-powered expense/goal management
-- One-tap split with friends (Splitwise-style, but global)
-- OCR, SMS, email parsing for auto-import
-- Cloud backup, dark mode, emoji everywhere!
-- Group/trip finance, mood analytics, leaderboard, and more
+- 💸 Add & manage income and expenses
+- 📊 Animated financial rings (savings, spending, goal progress)
+- 🔔 Smart notifications and daily insights
+- 📆 Timeline view of financial goals
+- ☁️ Google Drive backup and JSON export
+- 🧠 "Fiinny Brain" – your AI financial assistant
+- 🤝 Partner & group financial sharing
+- 📷 OCR support for Splitwise screenshots
 
----
+## 📲 Built With
 
-## Project Structure
+- Flutter 3.22.6
+- Firebase Auth & Firestore
+- Local Notifications (`flutter_local_notifications`)
+- SQLite & SharedPreferences
+- Glassmorphism UI with animated charts
 
-```plaintext
-/lib
-  /models      # Data models (Expense, Income, Goal, etc.)
-  /providers   # State management (Provider/ChangeNotifier)
-  /services    # Business logic, Firebase, parsing, OCR
-  /screens     # App screens/views
-  /widgets     # Custom widgets (charts, cards, pickers)
-  /utils       # Constants, helpers, formatters, validators
-  main.dart
-  app_theme.dart
-  routes.dart
+## 🧪 Run the App
+
+```bash
+flutter pub get
+flutter run
