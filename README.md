@@ -1,16 +1,29 @@
-# lifemap
+# LifeMap – The Global Smart Finance & Split App 🌍
 
-A new Flutter project.
+## Overview
+LifeMap helps users everywhere track expenses, split bills, set goals, analyze spending, and collaborate with friends/groups. Built with Flutter, Firebase, and love.
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## Features
+- AI-powered expense/goal management
+- One-tap split with friends (Splitwise-style, but global)
+- OCR, SMS, email parsing for auto-import
+- Cloud backup, dark mode, emoji everywhere!
+- Group/trip finance, mood analytics, leaderboard, and more
 
-A few resources to get you started if this is your first Flutter project:
+---
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Project Structure
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```plaintext
+/lib
+  /models      # Data models (Expense, Income, Goal, etc.)
+  /providers   # State management (Provider/ChangeNotifier)
+  /services    # Business logic, Firebase, parsing, OCR
+  /screens     # App screens/views
+  /widgets     # Custom widgets (charts, cards, pickers)
+  /utils       # Constants, helpers, formatters, validators
+  main.dart
+  app_theme.dart
+  routes.dart

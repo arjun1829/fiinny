@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "1085936196639",
+    "project_id": "lifemap-72b21",
+    "storage_bucket": "lifemap-72b21.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1085936196639:android:b74ffa7e9ded49e616492a",
+        "android_client_info": {
+          "package_name": "com.KaranArjunTechnologies.lifemap"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1085936196639-sagddcveigtgl9vi466glb1b52hj8s06.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.KaranArjunTechnologies.lifemap",
+            "certificate_hash": "86c49a206cdac6cbc00d4921b05a3c31b05e2119"
+          }
+        },
+        {
+          "client_id": "1085936196639-ffl2rshle55b6ukgq22u5agku68mqpr1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyABuimmTbHwrxY-w7xhRrf-LWOu4gLVfnk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1085936196639-ffl2rshle55b6ukgq22u5agku68mqpr1.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1085936196639-vli6v1ug6gebelsqoauhjds13fc9dum5.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.KaranArjunTechnologies.lifemap"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

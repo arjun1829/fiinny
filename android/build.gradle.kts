@@ -5,6 +5,24 @@ allprojects {
     }
 }
 
+// Required for Google Services (Firebase)
+plugins {
+    id("com.android.application") apply false
+    id("com.android.library") apply false
+    id("org.jetbrains.kotlin.android") apply false
+}
+
+// Add the Google Services classpath for Firebase
+buildscript {
+    dependencies {
+        classpath("com.google.gms:google-services:4.4.1")
+    }
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
 val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
 rootProject.layout.buildDirectory.value(newBuildDir)
 
