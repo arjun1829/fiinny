@@ -2,28 +2,28 @@
 
 platform :ios, '15.5'
 
-ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+# Load the Flutter engine and plugins
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), __dir__)
 
-use_frameworks! :linkage => :static
+use_frameworks!
 use_modular_headers!
 
 target 'Runner' do
   flutter_install_all_ios_pods(File.dirname(File.realpath(__FILE__)))
 
-  # Enables Swift code compatibility for all pods
-  installer.pods_project.targets.each do |target|
-    target.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
-      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
-    end
-  end
+  # Add more iOS-specific pods here if needed
 end
 
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
 
-    # Fix for transitive dependencies with Swift/Objective-C
+    # ✅ Fix deployment target warning for iOS 15+
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
+    end
+
+    # ✅ Fix for missing Swift symbols (for some packages)
     target.build_configurations.each do |config|
       config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'YES'
     end
