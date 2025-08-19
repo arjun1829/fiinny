@@ -2,18 +2,30 @@
 
 platform :ios, '15.5'
 
-# Load the Flutter engine and plugins
-require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), __dir__)
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
-use_frameworks!
+use_frameworks! :linkage => :static
 use_modular_headers!
 
 target 'Runner' do
   flutter_install_all_ios_pods(File.dirname(File.realpath(__FILE__)))
+
+  # Enables Swift code compatibility for all pods
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
+    end
+  end
 end
 
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    # Fix for transitive dependencies with Swift/Objective-C
+    target.build_configurations.each do |config|
+      config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'YES'
+    end
   end
 end
