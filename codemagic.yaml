@@ -1,0 +1,21 @@
+workflows:
+  ios-workflow:
+    name: Build iOS App
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Clean and Get Packages
+        script: |
+          flutter clean
+          flutter pub get
+      - name: Install CocoaPods
+        script: |
+          cd ios
+          pod install
+      - name: Build IPA
+        script: |
+          flutter build ipa --release
+    artifacts:
+      - build/ios/ipa/*.ipa
