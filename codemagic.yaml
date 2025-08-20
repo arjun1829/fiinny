@@ -1,6 +1,6 @@
 workflows:
   ios-build:
-    name: iOS Release
+    name: iOS IPA Build
     environment:
       flutter: stable
       xcode: latest
@@ -8,12 +8,18 @@ workflows:
       - name: Install dependencies
         script: |
           flutter pub get
-      - name: Build iOS (.ipa)
+
+      - name: Build iOS app (no codesign)
         script: |
           flutter build ios --release --no-codesign
-          mkdir -p build/ios/ipa/Payload
-          cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload
-          cd build/ios/ipa
-          zip -r fiinny.ipa Payload
+
+      - name: Package IPA manually
+        script: |
+          mkdir -p build/ios/archive/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/archive/Payload/
+          cd build/ios/archive
+          zip -r Runner.ipa Payload
+          mkdir -p ../ipa
+          mv Runner.ipa ../ipa/
     artifacts:
-      - build/ios/ipa/fiinny.ipa
+      - build/ios/ipa/Runner.ipa
