@@ -8,21 +8,17 @@ workflows:
       - name: Install Flutter dependencies
         script: |
           flutter pub get
-      - name: Build iOS release
+
+      - name: Build iOS app (no code sign)
         script: |
           flutter build ios --release --no-codesign
-      - name: Export IPA
-        script: |
-          xcodebuild -workspace ios/Runner.xcworkspace \
-                     -scheme Runner \
-                     -sdk iphoneos \
-                     -configuration Release \
-                     -archivePath build/Runner.xcarchive \
-                     archive
 
-          xcodebuild -exportArchive \
-                     -archivePath build/Runner.xcarchive \
-                     -exportOptionsPlist ios/ExportOptions.plist \
-                     -exportPath build/ios/ipa
+      - name: Create IPA manually
+        script: |
+          mkdir -p build/ios/ipa/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          cd build/ios/ipa
+          zip -r Runner.ipa Payload
+
     artifacts:
-      - build/ios/ipa/*.ipa
+      - build/ios/ipa/Runner.ipa
