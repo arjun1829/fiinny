@@ -1,25 +1,28 @@
 workflows:
   ios-build:
-    name: iOS IPA Build
+    name: iOS Release
     environment:
       flutter: stable
       xcode: latest
     scripts:
-      - name: Install dependencies
+      - name: Install Flutter dependencies
         script: |
           flutter pub get
-
-      - name: Build iOS app (no codesign)
+      - name: Build iOS release
         script: |
           flutter build ios --release --no-codesign
-
-      - name: Package IPA manually
+      - name: Export IPA
         script: |
-          mkdir -p build/ios/archive/Payload
-          cp -r build/ios/iphoneos/Runner.app build/ios/archive/Payload/
-          cd build/ios/archive
-          zip -r Runner.ipa Payload
-          mkdir -p ../ipa
-          mv Runner.ipa ../ipa/
+          xcodebuild -workspace ios/Runner.xcworkspace \
+                     -scheme Runner \
+                     -sdk iphoneos \
+                     -configuration Release \
+                     -archivePath build/Runner.xcarchive \
+                     archive
+
+          xcodebuild -exportArchive \
+                     -archivePath build/Runner.xcarchive \
+                     -exportOptionsPlist ios/ExportOptions.plist \
+                     -exportPath build/ios/ipa
     artifacts:
-      - build/ios/ipa/Runner.ipa
+      - build/ios/ipa/*.ipa
