@@ -1,24 +1,40 @@
 workflows:
-  ios-build:
-    name: iOS Release
+  ios-release-upload:
+    name: iOS Release Upload
     environment:
       flutter: stable
       xcode: latest
+      vars:
+        APP_ID: 6751309482 # e.g. 1234567890
+        BUNDLE_ID: com.KaranArjunTechnologies.lifemap
+        APP_STORE_CONNECT_ISSUER_ID: Encrypted(...)
+        APP_STORE_CONNECT_KEY_IDENTIFIER: Encrypted(...)
+        APP_STORE_CONNECT_PRIVATE_KEY: Encrypted(...)
     scripts:
-      - name: Install Flutter dependencies
+      - name: Install dependencies
         script: |
           flutter pub get
 
-      - name: Build iOS app (no code sign)
+      - name: Build iOS app (no code signing)
         script: |
           flutter build ios --release --no-codesign
 
-      - name: Create IPA manually
+      - name: Create IPA
         script: |
           mkdir -p build/ios/ipa/Payload
           cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
           cd build/ios/ipa
-          zip -r Runner.ipa Payload
+          zip -r Fiinny.ipa Payload
+
+      - name: Publish to TestFlight
+        script: |
+          app_store_connect publish \
+            --path build/ios/ipa/Fiinny.ipa \
+            --bundle-id $BUNDLE_ID \
+            --app-id $APP_ID \
+            --issuer-id $APP_STORE_CONNECT_ISSUER_ID \
+            --key-id $APP_STORE_CONNECT_KEY_IDENTIFIER \
+            --private-key "$APP_STORE_CONNECT_PRIVATE_KEY"
 
     artifacts:
-      - build/ios/ipa/Runner.ipa
+      - build/ios/ipa/Fiinny.ipa
