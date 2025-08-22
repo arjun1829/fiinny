@@ -47,17 +47,14 @@ jobs:
       - name: Write ASC API key file
         shell: bash
         run: |
-          cat > asc_api_key.json <<'JSON'
+          cat > asc_api_key.json <<EOF
           {
-            "key_id": "${{ secrets.Y395N84F79 }}",
-            "issuer_id": "${{ secrets.db287088-f166-4cb3-9f0f-c33ad20117b8 }}",
-            "key": "${{ secrets.MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgdqSNoQB3yOqc8ynI
-MSrTesIJAZif3Zi4FWlXATpkj26gCgYIKoZIzj0DAQehRANCAASuJor9zmWaWgPa
-Xuh9lzf5OuAFyDyHTOsbOd1wX05oHjfEJR1gxXUTmWleNuUzvrdxrP9WEsvTTJxn
-OIYoJzkX }}",
+            "key_id": "${{ secrets.ASC_KEY_ID }}",
+            "issuer_id": "${{ secrets.ASC_ISSUER_ID }}",
+            "key": "${{ secrets.ASC_API_KEY_P8 }}",
             "in_house": false
           }
-          JSON
+          EOF
 
       - name: Install fastlane
         run: sudo gem install fastlane -N
@@ -68,8 +65,8 @@ OIYoJzkX }}",
       - name: Fetch/create App Store provisioning profile
         run: |
           fastlane sigh --api_key_path asc_api_key.json \
-                        --app_identifier "$com.KaranArjunTechnologies.fiinny" \
-                        --team_id "$6751309482" \
+                        --app_identifier "$BUNDLE_ID" \
+                        --team_id "$APPLE_TEAM_ID" \
                         --readonly false \
                         --adhoc false \
                         --skip_certificate_verification true
