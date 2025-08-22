@@ -4,18 +4,13 @@
 <dict>
   <key>method</key>
   <string>app-store</string>
-  <key>signingStyle</key>
-  <string>manual</string>
-  <key>provisioningProfiles</key>
-  <dict>
-    <key>com.fiinny.app</key>
-    <string>Fiinny_Provision_Profile_Name</string>
-  </dict>
-  <key>teamID</key>
-  <string>YOUR_TEAM_ID</string>
-  <key>compileBitcode</key>
+  <key>stripSwiftSymbols</key>
   <true/>
-  <key>destination</key>
-  <string>export</string>
+  <key>uploadSymbols</key>
+  <true/>
+  <key>compileBitcode</key>
+  <false/>
+  <!-- signingStyle can be omitted because we call `xcode-project use-profiles`
+       which injects the correct provisioning. -->
 </dict>
 </plist>
