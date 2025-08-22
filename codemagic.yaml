@@ -1,40 +1,40 @@
 workflows:
-  ios-release-upload:
-    name: iOS Release Upload
+  ios-build:
+    name: iOS Release
     environment:
       flutter: stable
       xcode: latest
-      vars:
-        APP_ID: 6751309482 # e.g. 1234567890
-        BUNDLE_ID: com.KaranArjunTechnologies.fiinny
-        APP_STORE_CONNECT_ISSUER_ID: Encrypted(...)
-        APP_STORE_CONNECT_KEY_IDENTIFIER: Encrypted(...)
-        APP_STORE_CONNECT_PRIVATE_KEY: Encrypted(...)
+    certificates:
+      - bundle_identifier: com.fiinny.app
+        certificate_url: Encrypted@SecureLinkToCert.p12
+        certificate_password: Encrypted@CertPassword
+        provisioning_profile_url: Encrypted@SecureLinkToMobileprovision
+    publishing:
+      app_store_connect:
+        api_key: Encrypted@AppStoreConnectAPIKey
     scripts:
-      - name: Install dependencies
+      - name: Install Flutter dependencies
         script: |
           flutter pub get
 
-      - name: Build iOS app (no code signing)
+      - name: Build iOS app
         script: |
-          flutter build ios --release --no-codesign
+          flutter build ios --release
 
-      - name: Create IPA
+      - name: Archive the app
         script: |
-          mkdir -p build/ios/ipa/Payload
-          cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
-          cd build/ios/ipa
-          zip -r Fiinny.ipa Payload
+          xcodebuild -workspace ios/Runner.xcworkspace \
+                     -scheme Runner \
+                     -sdk iphoneos \
+                     -configuration Release \
+                     -archivePath build/Runner.xcarchive \
+                     archive
 
-      - name: Publish to TestFlight
+      - name: Export IPA
         script: |
-          app_store_connect publish \
-            --path build/ios/ipa/Fiinny.ipa \
-            --bundle-id $BUNDLE_ID \
-            --app-id $APP_ID \
-            --issuer-id $APP_STORE_CONNECT_ISSUER_ID \
-            --key-id $APP_STORE_CONNECT_KEY_IDENTIFIER \
-            --private-key "$APP_STORE_CONNECT_PRIVATE_KEY"
-
+          xcodebuild -exportArchive \
+                     -archivePath build/Runner.xcarchive \
+                     -exportOptionsPlist ios/ExportOptions.plist \
+                     -exportPath build/ios/ipa
     artifacts:
-      - build/ios/ipa/Fiinny.ipa
+      - build/ios/ipa/*.ipa
