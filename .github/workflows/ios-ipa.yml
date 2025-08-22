@@ -1,0 +1,93 @@
+name: iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-ios:
+    runs-on: macos-14
+
+    env:
+      BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Ensure CocoaPods
+        run: |
+          sudo gem install cocoapods -N || true
+          cd ios && pod repo update && pod install --repo-update && cd ..
+
+      - name: Create Keychain & import .p12
+        shell: bash
+        run: |
+          KEYCHAIN=build.keychain
+          KEYCHAIN_PWD=$(uuidgen)
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+
+          echo "${{ secrets.IOS_CERT_P12_BASE64 }}" | base64 --decode > dist.p12
+          security import dist.p12 -k "$KEYCHAIN" -P "${{ secrets.IOS_CERT_P12_PASSWORD }}" -A
+          security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed 's/[""]//g')
+          security default-keychain -s "$KEYCHAIN"
+
+      - name: Write ASC API key file
+        shell: bash
+        run: |
+          cat > asc_api_key.json <<'JSON'
+          {
+            "key_id": "${{ secrets.Y395N84F79 }}",
+            "issuer_id": "${{ secrets.db287088-f166-4cb3-9f0f-c33ad20117b8 }}",
+            "key": "${{ secrets.MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgdqSNoQB3yOqc8ynI
+MSrTesIJAZif3Zi4FWlXATpkj26gCgYIKoZIzj0DAQehRANCAASuJor9zmWaWgPa
+Xuh9lzf5OuAFyDyHTOsbOd1wX05oHjfEJR1gxXUTmWleNuUzvrdxrP9WEsvTTJxn
+OIYoJzkX }}",
+            "in_house": false
+          }
+          JSON
+
+      - name: Install fastlane
+        run: sudo gem install fastlane -N
+
+      - name: Prebuild Flutter iOS (no codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Fetch/create App Store provisioning profile
+        run: |
+          fastlane sigh --api_key_path asc_api_key.json \
+                        --app_identifier "$com.KaranArjunTechnologies.fiinny" \
+                        --team_id "$6751309482" \
+                        --readonly false \
+                        --adhoc false \
+                        --skip_certificate_verification true
+
+      - name: Build signed IPA (gym)
+        run: |
+          fastlane gym \
+            --workspace ios/Runner.xcworkspace \
+            --scheme Runner \
+            --configuration Release \
+            --export_method app-store \
+            --include_bitcode false \
+            --output_directory build/ios/ipa \
+            --output_name fiinny.ipa \
+            --api_key_path asc_api_key.json
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fiinny-ipa
+          path: build/ios/ipa/fiinny.ipa
