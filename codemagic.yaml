@@ -1,48 +1,22 @@
-workflows:
-  ios-release:
+﻿workflows:
+  ios-build:
     name: iOS Release (IPA)
     environment:
       flutter: stable
       xcode: latest
       vars:
-        BUNDLE_ID: com.KaranArjunTechnologies.fiinny        # <-- put your bundle id here
-        APPLE_TEAM_ID: 6751309482              # <-- your Apple Team ID
+        BUNDLE_ID: com.KaranArjunTechnologies.fiinny 
+    ios_signing:
+      distribution_type: app_store
+      bundle_identifier: com.KaranArjunTechnologies.fiinny 
     scripts:
-      - name: Print tool versions
+      - name: Make sure Podfile targets iOS 15.5 (safety)
         script: |
-          flutter --version
-          xcodebuild -version
-
-      - name: Ensure iOS 15.5 min target (Podfile)
-        script: |
-          perl -i -pe "s/platform :ios, '([0-9\.]+)'/platform :ios, '15.5'/g" ios/Podfile
-          # Remove any hard overrides like IPHONEOS_DEPLOYMENT_TARGET='13.0'
-          perl -i -ne "print unless /IPHONEOS_DEPLOYMENT_TARGET/" ios/Podfile
-          echo "Using Podfile:"
-          cat ios/Podfile
-
-      - name: Flutter pub get
+          sed -i '' -e "s/platform :ios, '.*'/platform :ios, '15.5'/" ios/Podfile || true
+          sed -i '' -e "s/\['IPHONEOS_DEPLOYMENT_TARGET'\] = '13.0'/['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'/" ios/Podfile || true
+      - name: Flutter deps
         script: flutter pub get
-
-      # === Automatic code signing with App Store Connect API key (.p8) ===
-      # (Add these 3 secure env vars in Codemagic UI: APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER, APP_STORE_CONNECT_PRIVATE_KEY)
-      - name: Fetch signing files from App Store Connect
-        script: |
-          keychain initialize
-          app-store-connect fetch-signing-files \
-            --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
-            --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
-            --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
-            --type IOS_APP_STORE \
-            --bundle-id "$BUNDLE_ID" \
-            --create
-          xcode-project use-profiles
-
-      - name: Build IPA (proper export)
-        script: |
-          # Option A (Flutter-native export to IPA)
-          flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
-          # The IPA will be at: build/ios/ipa/*.ipa
-
+      - name: Build IPA with automatic signing
+        script: flutter build ipa --export-options-plist=ios/ExportOptions.plist
     artifacts:
       - build/ios/ipa/*.ipa
