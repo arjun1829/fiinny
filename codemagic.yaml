@@ -6,7 +6,7 @@ workflows:
       xcode: latest
       vars:
         APP_ID: 6751309482 # e.g. 1234567890
-        BUNDLE_ID: com.KaranArjunTechnologies.lifemap
+        BUNDLE_ID: com.KaranArjunTechnologies.fiinny
         APP_STORE_CONNECT_ISSUER_ID: Encrypted(...)
         APP_STORE_CONNECT_KEY_IDENTIFIER: Encrypted(...)
         APP_STORE_CONNECT_PRIVATE_KEY: Encrypted(...)
