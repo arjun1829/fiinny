@@ -1,6 +1,9 @@
 # ios/Podfile
-platform :ios, '15.5'
-$ios_deployment_target = '15.5'
+platform :ios, '15.0'
+$ios_deployment_target = '15.0'
+
+# 🔒 Pin Firebase SDK to a Swift 5-compatible release (works with Xcode 15.x)
+$FirebaseSDKVersion = '10.24.0'
 
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
@@ -13,9 +16,7 @@ project 'Runner', {
 def flutter_root
   generated_xcconfig = File.expand_path('../Flutter/Generated.xcconfig', __FILE__)
   raise "#{generated_xcconfig} missing — run flutter pub get" unless File.exist?(generated_xcconfig)
-  File.foreach(generated_xcconfig) do |line|
-    return line.split('=').last.strip if line.start_with?('FLUTTER_ROOT')
-  end
+  File.foreach(generated_xcconfig) { |line| return line.split('=').last.strip if line.start_with?('FLUTTER_ROOT') }
   raise "FLUTTER_ROOT not found in Generated.xcconfig"
 end
 
@@ -28,27 +29,17 @@ target 'Runner' do
 end
 
 post_install do |installer|
-  # Ensure project-level deployment target
+  # Force deployment target & Swift version for all pods
   installer.pods_project.build_configurations.each do |config|
     config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
+    config.build_settings['SWIFT_VERSION'] = '5.9'
   end
 
   installer.pods_project.targets.each do |t|
     flutter_additional_ios_build_settings(t)
-
     t.build_configurations.each do |config|
-      # Match deployment target across all pods
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
-
-      # 🚫 Force Swift toolchain for pods (avoid Swift 6 issues)
       config.build_settings['SWIFT_VERSION'] = '5.9'
-
-      # ✅ FirebaseCoreInternal requires this flag on Swift 5.9
-      flags = config.build_settings['OTHER_SWIFT_FLAGS'] || ['$(inherited)']
-      unless flags.include?('-enable-experimental-feature') && flags.include?('AccessLevelOnImport')
-        flags += ['-enable-experimental-feature', 'AccessLevelOnImport']
-      end
-      config.build_settings['OTHER_SWIFT_FLAGS'] = flags
     end
   end
 end
