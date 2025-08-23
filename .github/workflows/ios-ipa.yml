@@ -35,7 +35,7 @@ jobs:
           sudo gem install cocoapods -N || true
           cd ios && pod repo update && pod install --repo-update && cd ..
 
-      - name: Create keychain & import cert
+      - name: Create Keychain & import .p12
         shell: bash
         run: |
           set -euxo pipefail
@@ -44,10 +44,15 @@ jobs:
           security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
-          printf '%s' "${{ secrets.P12_BASE64 }}" | base64 --decode > dist.p12
+
+          # decode P12 correctly (single line with a pipe!)
+          printf '%s' "$P12_BASE64" | base64 -D > cert.p12     # <- use -D on macOS
+
+          ls -lh cert.p12   # sanity check
           security import cert.p12 -k "$KEYCHAIN" -P "$P12_PASSWORD" -A
-          security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed "s/[\"]//g")
+          security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed 's/[""]//g')
           security default-keychain -s "$KEYCHAIN"
+      
 
       - name: Install provisioning profile (from secret)
         if: env.PROVISIONING_PROFILE_BASE64 != ''
