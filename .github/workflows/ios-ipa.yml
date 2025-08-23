@@ -54,28 +54,43 @@ jobs:
           security default-keychain -s "$KEYCHAIN"
       
 
-      - name: Install provisioning profile
+      - name: Install provisioning profile (robust)
         shell: bash
         run: |
           set -euxo pipefail
 
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
 
-          # Decode correctly (single line; use -D on macOS)
+          # 1) Decode from Base64 (macOS uses -D)
           printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 -D > "$RUNNER_TEMP/profile.mobileprovision"
 
-          # Sanity check: file exists and non-empty
+          # Quick sanity
           ls -lh "$RUNNER_TEMP/profile.mobileprovision"
           file "$RUNNER_TEMP/profile.mobileprovision" || true
 
-          # Parse UUID from the profile
-          UUID=$(/usr/bin/security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" | \
-                 /usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin)
+          # 2) Try to extract plist using 'security cms'
+          DECODED_PLIST="$RUNNER_TEMP/profile.plist"
+          if ! /usr/bin/security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" -o "$DECODED_PLIST"; then
+            echo "security cms failed; trying OpenSSL smime fallback"
+            # 3) Fallback: OpenSSL (DER CMS → plist)
+            if ! openssl smime -inform der -verify -noverify \
+                -in "$RUNNER_TEMP/profile.mobileprovision" -out "$DECODED_PLIST"; then
+              echo "OpenSSL decode failed; assuming the file is already a plist"
+              cp "$RUNNER_TEMP/profile.mobileprovision" "$DECODED_PLIST"
+            fi
+          fi
 
-          # Install at the expected path
-          cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          # Make sure we now have a plist
+          plutil -p "$DECODED_PLIST" >/dev/null
 
-          # Expose for later steps if needed
+          # 4) Extract UUID
+          UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$DECODED_PLIST")
+
+          # 5) Install profile using the UUID filename
+          cp "$RUNNER_TEMP/profile.mobileprovision" \
+             "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+
+          # 6) Export for later steps if needed
           echo "PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
       
 
