@@ -1,4 +1,3 @@
-# ios/Podfile
 platform :ios, '16.0'
 $ios_deployment_target = '16.0'
 
@@ -26,7 +25,6 @@ target 'Runner' do
 end
 
 post_install do |installer|
-  # project-wide
   installer.generated_projects.each do |project|
     project.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
@@ -34,16 +32,11 @@ post_install do |installer|
     end
   end
 
-  # every pod target
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
       config.build_settings['SWIFT_VERSION'] = '5.9'
     end
-  end
-
-  # flutter extras
-  installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
   end
 end
