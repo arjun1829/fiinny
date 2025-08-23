@@ -57,6 +57,7 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
 
+          # Decode P12 on macOS (-D)
           printf '%s' "$P12_BASE64" | base64 -D > cert.p12
           security import cert.p12 -k "$KEYCHAIN" -P "$P12_PASSWORD" -A
           security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed 's/["]//g')
@@ -100,34 +101,34 @@ jobs:
         run: |
           set -euxo pipefail
 
-          # Tell Xcode the team/profile/identity during ARCHIVE (Runner signs at export)
+          # Provide signing hints for ARCHIVE; actual signing happens at EXPORT.
           XCARGS="DEVELOPMENT_TEAM=${TEAM_ID} \
                   PRODUCT_BUNDLE_IDENTIFIER=${BUNDLE_ID} \
-                  CODE_SIGNING_STYLE=Manual \
+                  CODE_SIGN_STYLE=Manual \
                   CODE_SIGN_IDENTITY=Apple\ Distribution \
                   PROVISIONING_PROFILE_SPECIFIER=${PROFILE_UUID:-}"
 
           if [ -n "${PROFILE_UUID:-}" ]; then
-            # Clean ExportOptions.plist (no stray keys)
+            # Generate clean ExportOptions.plist
             EXPORT_OPTS="$RUNNER_TEMP/ExportOptions.plist"
             cat > "$EXPORT_OPTS" <<'PLIST'
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-            <plist version="1.0">
-              <dict>
-                <key>method</key><string>app-store-connect</string>
-                <key>signingStyle</key><string>manual</string>
-                <key>teamID</key><string>__TEAM_ID__</string>
-                <key>provisioningProfiles</key>
-                <dict>
-                  <key>__BUNDLE_ID__</key><string>__PROFILE_UUID__</string>
-                </dict>
-                <key>manageAppVersionAndBuildNumber</key><false/>
-                <key>signingCertificate</key><string>Apple Distribution</string>
-                <key>stripSwiftSymbols</key><true/>
-              </dict>
-            </plist>
-            PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>method</key><string>app-store-connect</string>
+    <key>signingStyle</key><string>manual</string>
+    <key>teamID</key><string>__TEAM_ID__</string>
+    <key>provisioningProfiles</key>
+    <dict>
+      <key>__BUNDLE_ID__</key><string>__PROFILE_UUID__</string>
+    </dict>
+    <key>manageAppVersionAndBuildNumber</key><false/>
+    <key>signingCertificate</key><string>Apple Distribution</string>
+    <key>stripSwiftSymbols</key><true/>
+  </dict>
+</plist>
+PLIST
             /usr/bin/sed -i '' "s|__TEAM_ID__|${TEAM_ID}|g" "$EXPORT_OPTS"
             /usr/bin/sed -i '' "s|__BUNDLE_ID__|${BUNDLE_ID}|g" "$EXPORT_OPTS"
             /usr/bin/sed -i '' "s|__PROFILE_UUID__|${PROFILE_UUID}|g" "$EXPORT_OPTS"
