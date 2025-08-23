@@ -2,7 +2,6 @@
 platform :ios, '16.0'
 $ios_deployment_target = '16.0'
 
-$FirebaseSDKVersion = '10.24.0'  # keep the Swift 5-compatible pin
 
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
