@@ -13,7 +13,9 @@ project 'Runner', {
 def flutter_root
   generated_xcconfig = File.expand_path('../Flutter/Generated.xcconfig', __FILE__)
   raise "#{generated_xcconfig} missing — run flutter pub get" unless File.exist?(generated_xcconfig)
-  File.foreach(generated_xcconfig) { |line| return line.split('=').last.strip if line.start_with?('FLUTTER_ROOT') }
+  File.foreach(generated_xcconfig) do |line|
+    return line.split('=').last.strip if line.start_with?('FLUTTER_ROOT')
+  end
   raise "FLUTTER_ROOT not found in Generated.xcconfig"
 end
 
@@ -26,14 +28,27 @@ target 'Runner' do
 end
 
 post_install do |installer|
+  # Ensure project-level deployment target
   installer.pods_project.build_configurations.each do |config|
     config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
   end
 
-  installer.pods_project.targets.each do |target|
-    flutter_additional_ios_build_settings(target)
-    target.build_configurations.each do |config|
+  installer.pods_project.targets.each do |t|
+    flutter_additional_ios_build_settings(t)
+
+    t.build_configurations.each do |config|
+      # Match deployment target across all pods
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
+
+      # 🚫 Force Swift toolchain for pods (avoid Swift 6 issues)
+      config.build_settings['SWIFT_VERSION'] = '5.9'
+
+      # ✅ FirebaseCoreInternal requires this flag on Swift 5.9
+      flags = config.build_settings['OTHER_SWIFT_FLAGS'] || ['$(inherited)']
+      unless flags.include?('-enable-experimental-feature') && flags.include?('AccessLevelOnImport')
+        flags += ['-enable-experimental-feature', 'AccessLevelOnImport']
+      end
+      config.build_settings['OTHER_SWIFT_FLAGS'] = flags
     end
   end
 end
