@@ -62,7 +62,7 @@ jobs:
           ls -lh cert.p12
 
           security import cert.p12 -k "$KEYCHAIN" -P "$P12_PASSWORD" -A
-          security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed 's/[""]//g')
+          security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed 's/["]//g')
           security default-keychain -s "$KEYCHAIN"
 
       - name: Install provisioning profile (robust decode)
@@ -121,7 +121,7 @@ jobs:
         run: |
           set -euxo pipefail
 
-          # Common xcargs so Xcode knows the team/profile/identity during ARCHIVE
+          # Tell Xcode the team/profile/identity during ARCHIVE (Runner only signs at export)
           XCARGS="DEVELOPMENT_TEAM=${TEAM_ID} \
                   PRODUCT_BUNDLE_IDENTIFIER=${BUNDLE_ID} \
                   CODE_SIGN_STYLE=Manual \
