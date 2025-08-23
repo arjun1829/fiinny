@@ -25,22 +25,25 @@ require File.expand_path('packages/flutter_tools/bin/podhelper', flutter_root)
 target 'Runner' do
   use_frameworks!
   use_modular_headers!
-
   flutter_install_all_ios_pods(File.dirname(File.realpath(__FILE__)))
 end
 
 post_install do |installer|
+  #
   # Project-wide build settings (Xcode 15/16 friendly)
+  #
   installer.generated_projects.each do |project|
     project.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
       config.build_settings['SWIFT_VERSION'] = '5.9'
-      # Helps avoid brittle ABI issues in some pods on Xcode 15/16
+      # Helps some binary pods with Xcode 15/16 toolchains
       config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'YES'
     end
   end
 
-  # Per-pod build settings + apply Flutter's extra settings
+  #
+  # Apply Flutter’s additional settings and unify targets to iOS 16
+  #
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
@@ -49,20 +52,21 @@ post_install do |installer|
     flutter_additional_ios_build_settings(target)
   end
 
-  # 🚫 Disable code signing for ALL CocoaPods targets (including Pods-Runner)
-  # Only the main app target "Runner" should be signed; the rest must not
+  #
+  # 🚫 Disable code signing for ALL CocoaPods targets (incl. Pods-Runner)
+  # Only the main app target "Runner" should be signed; frameworks/resources must not.
+  #
   installer.pods_project.targets.each do |t|
-    next if t.name == 'Runner' # ensure only the app (not pods) keeps signing
-
     t.build_configurations.each do |config|
       bs = config.build_settings
       bs['CODE_SIGNING_ALLOWED']  = 'NO'
       bs['CODE_SIGNING_REQUIRED'] = 'NO'
-      bs['CODE_SIGN_STYLE']       = 'Automatic' # prevents "manual profile set" errors
+      bs['CODE_SIGNING_STYLE']    = 'Automatic' # prevents "manual profile set" bleed-over
       bs.delete('PROVISIONING_PROFILE_SPECIFIER')
       bs.delete('PROVISIONING_PROFILE')
       bs.delete('DEVELOPMENT_TEAM')
       bs.delete('CODE_SIGN_IDENTITY')
+      bs.delete('EXPANDED_CODE_SIGN_IDENTITY')
     end
   end
 end
