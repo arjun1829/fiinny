@@ -116,7 +116,7 @@ jobs:
       - name: Prebuild iOS (no codesign)
         run: flutter build ios --release --no-codesign
 
-            - name: Build signed IPA
+      - name: Build signed IPA
         shell: bash
         run: |
           set -euxo pipefail
