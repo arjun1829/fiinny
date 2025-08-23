@@ -54,16 +54,30 @@ jobs:
           security default-keychain -s "$KEYCHAIN"
       
 
-      - name: Install provisioning profile (from secret)
-        if: env.PROVISIONING_PROFILE_BASE64 != ''
+      - name: Install provisioning profile
         shell: bash
         run: |
           set -euxo pipefail
+
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
-          UUID=$(/usr/bin/security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" | /usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin)
+
+          # Decode correctly (single line; use -D on macOS)
+          printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 -D > "$RUNNER_TEMP/profile.mobileprovision"
+
+          # Sanity check: file exists and non-empty
+          ls -lh "$RUNNER_TEMP/profile.mobileprovision"
+          file "$RUNNER_TEMP/profile.mobileprovision" || true
+
+          # Parse UUID from the profile
+          UUID=$(/usr/bin/security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" | \
+                 /usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin)
+
+          # Install at the expected path
           cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
-          echo "PROFILE_UUID=$UUID" >> $GITHUB_ENV
+
+          # Expose for later steps if needed
+          echo "PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
+      
 
       - name: Create ASC API key JSON (for fallback)
         shell: bash
