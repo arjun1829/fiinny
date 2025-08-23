@@ -20,13 +20,16 @@ jobs:
       APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Select Xcode 16.2
         uses: maxim-lobanov/setup-xcode@v1
         with:
-            xcode-version: '16.2'
+          xcode-version: '16.2'
 
-      - uses: subosito/flutter-action@v2
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
@@ -34,10 +37,15 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Ensure CocoaPods
+      - name: Ensure CocoaPods & install pods
+        shell: bash
         run: |
+          set -euxo pipefail
           sudo gem install cocoapods -N || true
-          cd ios && pod repo update && pod install --repo-update && cd ..
+          cd ios
+          pod repo update
+          pod install --repo-update
+          cd ..
 
       - name: Create Keychain & import .p12
         shell: bash
@@ -49,56 +57,48 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
 
-          # decode P12 correctly (single line with a pipe!)
-          printf '%s' "$P12_BASE64" | base64 -D > cert.p12     # <- use -D on macOS
+          # Decode P12 correctly on macOS (-D)
+          printf '%s' "$P12_BASE64" | base64 -D > cert.p12
+          ls -lh cert.p12
 
-          ls -lh cert.p12   # sanity check
           security import cert.p12 -k "$KEYCHAIN" -P "$P12_PASSWORD" -A
           security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed 's/[""]//g')
           security default-keychain -s "$KEYCHAIN"
-      
 
-      - name: Install provisioning profile (robust)
+      - name: Install provisioning profile (robust decode)
         shell: bash
         run: |
           set -euxo pipefail
-
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
 
-          # 1) Decode from Base64 (macOS uses -D)
+          # Decode base64 -> .mobileprovision
           printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 -D > "$RUNNER_TEMP/profile.mobileprovision"
-
-          # Quick sanity
-          ls -lh "$RUNNER_TEMP/profile.mobileprovision"
+          ls -lh "$RUNNER_TEMP/profile.mobileprovision" || true
           file "$RUNNER_TEMP/profile.mobileprovision" || true
 
-          # 2) Try to extract plist using 'security cms'
+          # Extract embedded plist via security cms; fall back to openssl if needed
           DECODED_PLIST="$RUNNER_TEMP/profile.plist"
           if ! /usr/bin/security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" -o "$DECODED_PLIST"; then
             echo "security cms failed; trying OpenSSL smime fallback"
-            # 3) Fallback: OpenSSL (DER CMS → plist)
             if ! openssl smime -inform der -verify -noverify \
-                -in "$RUNNER_TEMP/profile.mobileprovision" -out "$DECODED_PLIST"; then
-              echo "OpenSSL decode failed; assuming the file is already a plist"
+                 -in "$RUNNER_TEMP/profile.mobileprovision" -out "$DECODED_PLIST"; then
+              echo "OpenSSL decode failed; assuming file is already a plist"
               cp "$RUNNER_TEMP/profile.mobileprovision" "$DECODED_PLIST"
             fi
           fi
 
-          # Make sure we now have a plist
+          # Validate plist and extract UUID
           plutil -p "$DECODED_PLIST" >/dev/null
-
-          # 4) Extract UUID
           UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$DECODED_PLIST")
 
-          # 5) Install profile using the UUID filename
+          # Install to expected location
           cp "$RUNNER_TEMP/profile.mobileprovision" \
              "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
 
-          # 6) Export for later steps if needed
+          # Export for later steps
           echo "PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
-      
 
-      - name: Create ASC API key JSON (for fallback)
+      - name: Create ASC API key JSON (fallback path)
         shell: bash
         run: |
           set -euxo pipefail
@@ -120,18 +120,19 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+
           if [ -n "${PROFILE_UUID:-}" ]; then
+            # Build ExportOptions.plist safely via PlistBuddy (no YAML quoting issues)
             EXPORT_OPTS="$RUNNER_TEMP/ExportOptions.plist"
-            cat > "$EXPORT_OPTS" <<PLIST
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-            <plist version="1.0"><dict>
-              <key>method</key><string>app-store</string>
-              <key>signingStyle</key><string>manual</string>
-              <key>teamID</key><string>${TEAM_ID}</string>
-              <key>provisioningProfiles</key><dict><key>${BUNDLE_ID}</key><string>${PROFILE_UUID}</string></dict>
-            </dict></plist>
-            PLIST
+            rm -f "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c 'Add : dict' "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c 'Add :method string app-store' "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c 'Add :signingStyle string manual' "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c "Add :teamID string ${TEAM_ID}" "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c 'Add :provisioningProfiles dict' "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:${BUNDLE_ID} string ${PROFILE_UUID}" "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c 'Print' "$EXPORT_OPTS" || true
+
             fastlane gym \
               --workspace ios/Runner.xcworkspace \
               --scheme Runner \
@@ -140,12 +141,14 @@ jobs:
               --output_directory build/ios/ipa \
               --output_name fiinny.ipa
           else
+            # Fallback: fetch profile via sigh (App Store Connect API key)
             fastlane sigh --api_key_path asc_api_key.json \
                           --app_identifier "$BUNDLE_ID" \
                           --team_id "$TEAM_ID" \
                           --readonly false \
                           --adhoc false \
                           --skip_certificate_verification true
+
             fastlane gym \
               --workspace ios/Runner.xcworkspace \
               --scheme Runner \
@@ -156,7 +159,8 @@ jobs:
               --output_name fiinny.ipa
           fi
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
         with:
           name: fiinny-ipa
           path: build/ios/ipa/fiinny.ipa
