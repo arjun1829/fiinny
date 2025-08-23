@@ -1,9 +1,8 @@
 # ios/Podfile
-platform :ios, '15.0'
-$ios_deployment_target = '15.0'
+platform :ios, '16.0'
+$ios_deployment_target = '16.0'
 
-# 🔒 Pin Firebase SDK to a Swift 5-compatible release (works with Xcode 15.x)
-$FirebaseSDKVersion = '10.24.0'
+$FirebaseSDKVersion = '10.24.0'  # keep the Swift 5-compatible pin
 
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
@@ -29,12 +28,10 @@ target 'Runner' do
 end
 
 post_install do |installer|
-  # Force deployment target & Swift version for all pods
   installer.pods_project.build_configurations.each do |config|
     config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
     config.build_settings['SWIFT_VERSION'] = '5.9'
   end
-
   installer.pods_project.targets.each do |t|
     flutter_additional_ios_build_settings(t)
     t.build_configurations.each do |config|
