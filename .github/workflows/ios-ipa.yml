@@ -100,37 +100,26 @@ jobs:
         run: |
           set -euxo pipefail
 
-          # Tell Xcode the team/profile/identity during ARCHIVE (Runner signs at export)
+          # Xcode args used at ARCHIVE time (Runner signs at export)
           XCARGS="DEVELOPMENT_TEAM=${TEAM_ID} \
                   PRODUCT_BUNDLE_IDENTIFIER=${BUNDLE_ID} \
-                  CODE_SIGNING_STYLE=Manual \
+                  CODE_SIGN_STYLE=Manual \
                   CODE_SIGN_IDENTITY=Apple\ Distribution \
                   PROVISIONING_PROFILE_SPECIFIER=${PROFILE_UUID:-}"
 
           if [ -n "${PROFILE_UUID:-}" ]; then
-            # Clean ExportOptions.plist (no stray keys)
+            # Build ExportOptions.plist with PlistBuddy (no heredocs)
             EXPORT_OPTS="$RUNNER_TEMP/ExportOptions.plist"
-            cat > "$EXPORT_OPTS" <<'PLIST'
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-            <plist version="1.0">
-              <dict>
-                <key>method</key><string>app-store-connect</string>
-                <key>signingStyle</key><string>manual</string>
-                <key>teamID</key><string>__TEAM_ID__</string>
-                <key>provisioningProfiles</key>
-                <dict>
-                  <key>__BUNDLE_ID__</key><string>__PROFILE_UUID__</string>
-                </dict>
-                <key>manageAppVersionAndBuildNumber</key><false/>
-                <key>signingCertificate</key><string>Apple Distribution</string>
-                <key>stripSwiftSymbols</key><true/>
-              </dict>
-            </plist>
-            PLIST
-            /usr/bin/sed -i '' "s|__TEAM_ID__|${TEAM_ID}|g" "$EXPORT_OPTS"
-            /usr/bin/sed -i '' "s|__BUNDLE_ID__|${BUNDLE_ID}|g" "$EXPORT_OPTS"
-            /usr/bin/sed -i '' "s|__PROFILE_UUID__|${PROFILE_UUID}|g" "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c 'Clear dict' "$EXPORT_OPTS" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c 'Add :method string app-store-connect' "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c 'Add :signingStyle string manual' "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c "Add :teamID string ${TEAM_ID}" "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c 'Add :provisioningProfiles dict' "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:${BUNDLE_ID} string ${PROFILE_UUID}" "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c 'Add :signingCertificate string Apple Distribution' "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c 'Add :manageAppVersionAndBuildNumber bool false' "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c 'Add :stripSwiftSymbols bool true' "$EXPORT_OPTS"
+            /usr/libexec/PlistBuddy -c 'Print' "$EXPORT_OPTS" || true
 
             fastlane gym \
               --workspace ios/Runner.xcworkspace \
