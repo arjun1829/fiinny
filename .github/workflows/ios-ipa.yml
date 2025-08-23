@@ -116,13 +116,20 @@ jobs:
       - name: Prebuild iOS (no codesign)
         run: flutter build ios --release --no-codesign
 
-      - name: Build signed IPA
+            - name: Build signed IPA
         shell: bash
         run: |
           set -euxo pipefail
 
+          # Common xcargs so Xcode knows the team/profile/identity during ARCHIVE
+          XCARGS="DEVELOPMENT_TEAM=${TEAM_ID} \
+                  PRODUCT_BUNDLE_IDENTIFIER=${BUNDLE_ID} \
+                  CODE_SIGN_STYLE=Manual \
+                  CODE_SIGN_IDENTITY=iPhone\ Distribution \
+                  PROVISIONING_PROFILE_SPECIFIER=${PROFILE_UUID:-}"
+
           if [ -n "${PROFILE_UUID:-}" ]; then
-            # Build ExportOptions.plist safely via PlistBuddy (no YAML quoting issues)
+            # Create ExportOptions.plist safely
             EXPORT_OPTS="$RUNNER_TEMP/ExportOptions.plist"
             rm -f "$EXPORT_OPTS"
             /usr/libexec/PlistBuddy -c 'Add : dict' "$EXPORT_OPTS"
@@ -138,10 +145,11 @@ jobs:
               --scheme Runner \
               --configuration Release \
               --export_options "$EXPORT_OPTS" \
+              --xcargs "$XCARGS" \
               --output_directory build/ios/ipa \
               --output_name fiinny.ipa
           else
-            # Fallback: fetch profile via sigh (App Store Connect API key)
+            # Fallback: fetch/install profile automatically using ASC API key
             fastlane sigh --api_key_path asc_api_key.json \
                           --app_identifier "$BUNDLE_ID" \
                           --team_id "$TEAM_ID" \
@@ -155,6 +163,7 @@ jobs:
               --configuration Release \
               --export_method app-store \
               --api_key_path asc_api_key.json \
+              --xcargs "$XCARGS" \
               --output_directory build/ios/ipa \
               --output_name fiinny.ipa
           fi
