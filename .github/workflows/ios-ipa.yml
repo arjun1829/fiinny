@@ -16,6 +16,8 @@ concurrency:
 jobs:
   precheck:
     runs-on: macos-14
+    outputs:
+      PROFILE_NAME: ${{ steps.decode.outputs.PROFILE_NAME }}
     env:
       BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
       TEAM_ID: ${{ secrets.TEAM_ID }}
@@ -24,11 +26,12 @@ jobs:
       PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
     steps:
       - name: Quick signing sanity checks
+        id: decode
         shell: bash
         run: |
           set -euxo pipefail
 
-          # create ephemeral keychain
+          # ephemeral keychain
           KEYCHAIN="$RUNNER_TEMP/build.keychain"
           KPWD=$(uuidgen)
           security create-keychain -p "$KPWD" "$KEYCHAIN"
@@ -57,8 +60,8 @@ jobs:
           test "$PF_TEAM" = "$TEAM_ID"
           test "$PF_BUNDLE_ID" = "$BUNDLE_ID"
 
-          # stash for next job
-          echo "PROFILE_NAME=$PF_NAME" >> "$GITHUB_ENV"
+          # export job output for next job
+          echo "PROFILE_NAME=$PF_NAME" >> "$GITHUB_OUTPUT"
 
   ios:
     runs-on: macos-14
@@ -73,7 +76,7 @@ jobs:
       APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
       APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
       APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
-      PROFILE_NAME: ${{ needs.precheck.outputs.PROFILE_NAME }}  # populated via $GITHUB_ENV in precheck
+      PROFILE_NAME: ${{ needs.precheck.outputs.PROFILE_NAME }}
 
     steps:
       - name: Checkout
@@ -166,8 +169,7 @@ jobs:
           set -euxo pipefail
           echo "$APPLE_API_KEY_BASE64" | base64 --decode > "AuthKey_${APPLE_KEY_ID}.p8"
 
-      # 🔥 Remove the duplicate Flutter build — xcodebuild will build everything.
-      # (this usually saves 5–10 minutes)
+      # No duplicate Flutter build — xcodebuild will build it.
       # - name: Prebuild iOS (no codesign)
       #   run: flutter build ios --release --no-codesign
 
@@ -182,9 +184,6 @@ jobs:
             -sdk iphoneos \
             -archivePath build/Runner.xcarchive \
             clean archive \
-            TEAM_ID="$TEAM_ID" \
-            BUNDLE_ID="$BUNDLE_ID" \
-            PROFILE_NAME="$PROFILE_NAME" \
             -parallelizeTargets \
             -allowProvisioningUpdates
 
