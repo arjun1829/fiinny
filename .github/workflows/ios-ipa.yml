@@ -4,20 +4,76 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
+    paths:
+      - "ios/**"
+      - "pubspec.*"
+      - ".github/workflows/**"
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  precheck:
+    runs-on: macos-14
+    env:
+      BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+      TEAM_ID: ${{ secrets.TEAM_ID }}
+      P12_BASE64: ${{ secrets.P12_BASE64 }}
+      P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+      PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+    steps:
+      - name: Quick signing sanity checks
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          # create ephemeral keychain
+          KEYCHAIN="$RUNNER_TEMP/build.keychain"
+          KPWD=$(uuidgen)
+          security create-keychain -p "$KPWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 1800 "$KEYCHAIN"
+          security unlock-keychain -p "$KPWD" "$KEYCHAIN"
+          security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed 's/["]//g')
+          security default-keychain -s "$KEYCHAIN"
+
+          # import distribution cert
+          printf '%s' "$P12_BASE64" | base64 -D > cert.p12
+          security import cert.p12 -k "$KEYCHAIN" -P "$P12_PASSWORD" -A
+
+          # decode profile -> plist
+          printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 -D > "$RUNNER_TEMP/profile.mobileprovision"
+          /usr/bin/security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" -o "$RUNNER_TEMP/profile.plist"
+
+          PF_TEAM=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$RUNNER_TEMP/profile.plist")
+          PF_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist")
+          APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$RUNNER_TEMP/profile.plist")
+          PF_BUNDLE_ID="${APP_ID#*.}"
+
+          echo "Profile name: $PF_NAME"
+          echo "Profile team: $PF_TEAM"
+          echo "Profile bundle: $PF_BUNDLE_ID"
+
+          test "$PF_TEAM" = "$TEAM_ID"
+          test "$PF_BUNDLE_ID" = "$BUNDLE_ID"
+
+          # stash for next job
+          echo "PROFILE_NAME=$PF_NAME" >> "$GITHUB_ENV"
+
   ios:
     runs-on: macos-14
+    needs: precheck
 
     env:
-      BUNDLE_ID: ${{ secrets.BUNDLE_ID }}               # e.g. com.fiinny.app
-      TEAM_ID: ${{ secrets.TEAM_ID }}                   # e.g. ABCDE12345
-      P12_BASE64: ${{ secrets.P12_BASE64 }}             # base64 of Apple Distribution .p12
-      P12_PASSWORD: ${{ secrets.P12_PASSWORD }}         # password for the .p12
-      PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }} # base64 of App Store .mobileprovision
-      APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}         # App Store Connect API Key ID
-      APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}   # App Store Connect Issuer ID
-      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }} # base64 of AuthKey_XXXXXX.p8
+      BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+      TEAM_ID: ${{ secrets.TEAM_ID }}
+      P12_BASE64: ${{ secrets.P12_BASE64 }}
+      P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+      PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+      APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+      APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
+      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+      PROFILE_NAME: ${{ needs.precheck.outputs.PROFILE_NAME }}  # populated via $GITHUB_ENV in precheck
 
     steps:
       - name: Checkout
@@ -28,7 +84,6 @@ jobs:
         with:
           xcode-version: '16.2'
 
-      # Caches
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:
@@ -56,7 +111,6 @@ jobs:
           restore-keys: |
             dd-${{ runner.os }}-xcode16_2-
 
-      # Tooling
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -77,24 +131,16 @@ jobs:
           fi
           pod install --repo-update --clean-install
           cd ..
-      - name: "Debug: show Pod signing flags"
-        shell: bash
-        run: |
-          set -euxo pipefail
-          xcodebuild -project ios/Pods/Pods.xcodeproj -target 'Pods-Runner' -showBuildSettings \
-            | egrep 'CODE_SIGN|PROVISION|DEVELOPMENT_TEAM' || true
-      
 
-      # Signing material
-      - name: Create keychain & import Distribution certificate (.p12)
+      - name: Create keychain & import Distribution cert (.p12)
         shell: bash
         run: |
           set -euxo pipefail
           KEYCHAIN="$RUNNER_TEMP/build.keychain"
-          KEYCHAIN_PWD=$(uuidgen)
-          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          KPWD=$(uuidgen)
+          security create-keychain -p "$KPWD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security unlock-keychain -p "$KPWD" "$KEYCHAIN"
           printf '%s' "$P12_BASE64" | base64 -D > cert.p12
           security import cert.p12 -k "$KEYCHAIN" -P "$P12_PASSWORD" -A
           security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed 's/["]//g')
@@ -110,7 +156,6 @@ jobs:
           /usr/bin/security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" -o "$DECODED_PLIST"
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$DECODED_PLIST")
           PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$DECODED_PLIST")
-          echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
           echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
           cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
           echo "Installed profile: $PROFILE_NAME ($PROFILE_UUID)"
@@ -121,11 +166,12 @@ jobs:
           set -euxo pipefail
           echo "$APPLE_API_KEY_BASE64" | base64 --decode > "AuthKey_${APPLE_KEY_ID}.p8"
 
-      # Build
-      - name: Prebuild iOS (no codesign)
-        run: flutter build ios --release --no-codesign
+      # 🔥 Remove the duplicate Flutter build — xcodebuild will build everything.
+      # (this usually saves 5–10 minutes)
+      # - name: Prebuild iOS (no codesign)
+      #   run: flutter build ios --release --no-codesign
 
-      - name: Xcode Archive (Pods unsigned, Runner automatic)
+      - name: Xcode Archive (Runner manual; Pods unsigned)
         shell: bash
         run: |
           set -euxo pipefail
@@ -136,10 +182,10 @@ jobs:
             -sdk iphoneos \
             -archivePath build/Runner.xcarchive \
             clean archive \
-            DEVELOPMENT_TEAM="$TEAM_ID" \
-            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGNING_REQUIRED=YES \
+            TEAM_ID="$TEAM_ID" \
+            BUNDLE_ID="$BUNDLE_ID" \
+            PROFILE_NAME="$PROFILE_NAME" \
+            -parallelizeTargets \
             -allowProvisioningUpdates
 
       - name: Create ExportOptions.plist (app-store, manual)
@@ -157,7 +203,6 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :stripSwiftSymbols bool true' "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :compileBitcode bool false' "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :destination string export' "$EXPORT_OPTS"
-          /usr/libexec/PlistBuddy -c 'Print' "$EXPORT_OPTS" || true
 
       - name: Xcode Export (IPA)
         shell: bash
@@ -190,13 +235,10 @@ jobs:
           ASC_ISSUER_ID: ${{ env.APPLE_ISSUER_ID }}
         run: |
           set -euxo pipefail
-          # Ensure the API key is where Transporter looks for it
           mkdir -p "$HOME/.appstoreconnect/private_keys"
           cp "AuthKey_${ASC_KEY_ID}.p8" "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
-
           xcrun iTMSTransporter -m upload \
             -assetFile build/fiinny.ipa \
             -apiKey "$ASC_KEY_ID" \
             -apiIssuer "$ASC_ISSUER_ID" \
             -v informational
-      
