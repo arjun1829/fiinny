@@ -1,5 +1,3 @@
-# ios/Podfile
-
 platform :ios, '16.0'
 $ios_deployment_target = '16.0'
 
@@ -29,7 +27,7 @@ target 'Runner' do
 end
 
 post_install do |installer|
-  # Xcode 15/16 friendly base
+  # Xcode 15/16 friendly base settings
   installer.generated_projects.each do |project|
     project.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
@@ -38,7 +36,7 @@ post_install do |installer|
     end
   end
 
-  # Apply Flutter extras + iOS 16 floor
+  # Apply Flutter settings + unify to iOS 16
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
@@ -47,20 +45,18 @@ post_install do |installer|
     flutter_additional_ios_build_settings(target)
   end
 
-  # 🚫 HARD DISABLE SIGNING on *all* Pods (including the "Pods-Runner" aggregate)
+  # Disable code signing for ALL CocoaPods targets (including Pods-Runner)
   installer.pods_project.targets.each do |t|
     t.build_configurations.each do |config|
       bs = config.build_settings
-      bs['CODE_SIGNING_ALLOWED']                     = 'NO'
-      bs['CODE_SIGNING_REQUIRED']                    = 'NO'
-      bs['CODE_SIGN_STYLE']                          = 'Automatic'    # avoid manual bleed
-      bs['DEVELOPMENT_TEAM']                         = ''             # empty (not deleted)
-      bs['CODE_SIGN_IDENTITY']                       = ''
-      bs['CODE_SIGN_IDENTITY[sdk=iphoneos*]']        = ''
-      bs['PROVISIONING_PROFILE_SPECIFIER']           = ''
-      bs['PROVISIONING_PROFILE']                     = ''
-      bs['EXPANDED_CODE_SIGN_IDENTITY']              = ''
-      bs['EXPANDED_CODE_SIGN_IDENTITY[sdk=iphoneos*]']= ''
+      bs['CODE_SIGNING_ALLOWED']  = 'NO'
+      bs['CODE_SIGNING_REQUIRED'] = 'NO'
+      bs['CODE_SIGNING_STYLE']    = 'Automatic'
+      bs.delete('PROVISIONING_PROFILE_SPECIFIER')
+      bs.delete('PROVISIONING_PROFILE')
+      bs.delete('DEVELOPMENT_TEAM')
+      bs.delete('CODE_SIGN_IDENTITY')
+      bs.delete('EXPANDED_CODE_SIGN_IDENTITY')
     end
   end
 end
