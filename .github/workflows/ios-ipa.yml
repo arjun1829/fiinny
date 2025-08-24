@@ -75,8 +75,15 @@ jobs:
           if [ ! -d "Pods" ]; then
             pod repo update
           fi
-          pod install --repo-update
+          pod install --repo-update --clean-install
           cd ..
+      - name: "Debug: show Pod signing flags"
+        shell: bash
+        run: |
+          set -euxo pipefail
+          xcodebuild -project ios/Pods/Pods.xcodeproj -target 'Pods-Runner' -showBuildSettings \
+            | egrep 'CODE_SIGN|PROVISION|DEVELOPMENT_TEAM' || true
+      
 
       # Signing material
       - name: Create keychain & import Distribution certificate (.p12)
@@ -134,6 +141,9 @@ jobs:
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGNING_REQUIRED=YES \
             CODE_SIGN_STYLE=Automatic \
+            PROVISIONING_PROFILE_SPECIFIER= \
+            PROVISIONING_PROFILE= \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             -allowProvisioningUpdates
 
       - name: Create ExportOptions.plist (app-store, manual)
