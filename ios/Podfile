@@ -1,10 +1,12 @@
+# ios/Podfile
+
 platform :ios, '16.0'
 $ios_deployment_target = '16.0'
 
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
 project 'Runner', {
-  'Debug' => :debug,
+  'Debug'   => :debug,
   'Profile' => :release,
   'Release' => :release,
 }
@@ -21,31 +23,33 @@ end
 require File.expand_path('packages/flutter_tools/bin/podhelper', flutter_root)
 
 target 'Runner' do
-  use_frameworks!
+  # Static frameworks reduce a lot of transitive-linker pain on CI
+  use_frameworks! :linkage => :static
   use_modular_headers!
+
   flutter_install_all_ios_pods(File.dirname(File.realpath(__FILE__)))
 end
 
 post_install do |installer|
-  # Xcode 15/16 friendly base settings
+  # Make Xcode 15/16 happy & unify deployment target across everything
   installer.generated_projects.each do |project|
     project.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
-      config.build_settings['SWIFT_VERSION'] = '5.9'
+      # Leave SWIFT_VERSION to Xcode default to avoid toolchain mismatches.
       config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'YES'
     end
   end
 
-  # Apply Flutter settings + unify to iOS 16
+  # Apply Flutter’s additional settings and enforce iOS 16 on all Pods
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
-      config.build_settings['SWIFT_VERSION'] = '5.9'
+      # Do NOT exclude arm64 for simulator here; it breaks Apple-silicon sims.
     end
     flutter_additional_ios_build_settings(target)
   end
 
-  # Disable code signing for ALL CocoaPods targets (including Pods-Runner)
+  # Disable code signing for Pods (Runner will be signed by CI / Xcode)
   installer.pods_project.targets.each do |t|
     t.build_configurations.each do |config|
       bs = config.build_settings

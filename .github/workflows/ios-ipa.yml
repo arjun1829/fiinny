@@ -6,6 +6,7 @@ on:
     branches: [ main ]
     paths:
       - "ios/**"
+      - "lib/**"
       - "pubspec.*"
       - ".github/workflows/**"
 
@@ -14,58 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  precheck:
-    runs-on: macos-14
-    env:
-      BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
-      TEAM_ID: ${{ secrets.TEAM_ID }}
-      P12_BASE64: ${{ secrets.P12_BASE64 }}
-      P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-      PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
-    outputs:
-      PROFILE_NAME: ${{ steps.profname.outputs.PROFILE_NAME }}
-    steps:
-      - name: Quick signing sanity checks
-        shell: bash
-        run: |
-          set -euxo pipefail
-          KEYCHAIN="$RUNNER_TEMP/build.keychain"
-          KPWD=$(uuidgen)
-          security create-keychain -p "$KPWD" "$KEYCHAIN"
-          security set-keychain-settings -lut 1800 "$KEYCHAIN"
-          security unlock-keychain -p "$KPWD" "$KEYCHAIN"
-          security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed 's/["]//g')
-          security default-keychain -s "$KEYCHAIN"
-
-          printf '%s' "$P12_BASE64" | base64 -D > cert.p12
-          security import cert.p12 -k "$KEYCHAIN" -P "$P12_PASSWORD" -A
-
-          printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 -D > "$RUNNER_TEMP/profile.mobileprovision"
-          /usr/bin/security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" -o "$RUNNER_TEMP/profile.plist"
-
-          PF_TEAM=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$RUNNER_TEMP/profile.plist")
-          APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$RUNNER_TEMP/profile.plist")
-          PF_BUNDLE_ID="${APP_ID#*.}"
-          PF_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist")
-
-          echo "Profile name: $PF_NAME"
-          echo "Profile team:  $PF_TEAM"
-          echo "Profile bundle:$PF_BUNDLE_ID"
-
-          test "$PF_TEAM" = "$TEAM_ID"
-          test "$PF_BUNDLE_ID" = "$BUNDLE_ID"
-
-      - id: profname
-        name: Output profile name
-        shell: bash
-        run: |
-          /usr/bin/security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" -o "$RUNNER_TEMP/profile.plist"
-          PF_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist")
-          echo "PROFILE_NAME=$PF_NAME" >> "$GITHUB_OUTPUT"
-
   ios:
     runs-on: macos-14
-    needs: precheck
     env:
       BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
       TEAM_ID: ${{ secrets.TEAM_ID }}
@@ -75,17 +26,17 @@ jobs:
       APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
       APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
       APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
-      PROFILE_NAME: ${{ needs.precheck.outputs.PROFILE_NAME }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode 16.2
+      - name: Select Xcode (latest 16.x)
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '16.2'
+          xcode-version: '16'
 
+      # ---- CACHES -----------------------------------------------------------
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:
@@ -93,9 +44,9 @@ jobs:
             ~/.cocoapods/repos
             ~/Library/Caches/CocoaPods
             ios/Pods
-          key: pods-${{ runner.os }}-xcode16_2-${{ hashFiles('ios/Podfile.lock') }}
+          key: pods-${{ runner.os }}-xcode16-${{ hashFiles('ios/Podfile.lock') }}
           restore-keys: |
-            pods-${{ runner.os }}-xcode16_2-
+            pods-${{ runner.os }}-xcode16-
 
       - name: Cache Flutter pub cache
         uses: actions/cache@v4
@@ -109,32 +60,46 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData
-          key: dd-${{ runner.os }}-xcode16_2-${{ hashFiles('ios/Podfile.lock', 'ios/Runner.xcodeproj/project.pbxproj') }}
+          key: dd-${{ runner.os }}-xcode16-${{ hashFiles('ios/Podfile.lock', 'ios/Runner.xcodeproj/project.pbxproj') }}
           restore-keys: |
-            dd-${{ runner.os }}-xcode16_2-
+            dd-${{ runner.os }}-xcode16-
 
+      # ---- TOOLING ----------------------------------------------------------
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: Flutter pub get
-        run: flutter pub get
-
-      - name: Ensure CocoaPods & install pods
+      - name: Install CocoaPods & xcbeautify
         shell: bash
         run: |
           set -euxo pipefail
           sudo gem install cocoapods -N || true
+          brew install xcbeautify || true
+
+      # ---- DEPENDENCIES -----------------------------------------------------
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Enforce iOS 16 floor & clean Pods (prevents linker mismatch)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          /usr/bin/sed -i '' "s/platform :ios, .*/platform :ios, '16.0'/" ios/Podfile || true
+          rm -rf ios/Pods ios/Podfile.lock
+
+      - name: Install Pods
+        shell: bash
+        run: |
+          set -euxo pipefail
           cd ios
-          if [ ! -d "Pods" ]; then
-            pod repo update
-          fi
+          pod repo update
           pod install --repo-update --clean-install
           cd ..
 
-      - name: Create keychain & import Distribution cert (.p12)
+      # ---- CODE SIGNING (manual, using your P12 + profile) ------------------
+      - name: Create keychain & import .p12
         shell: bash
         run: |
           set -euxo pipefail
@@ -158,17 +123,16 @@ jobs:
           /usr/bin/security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" -o "$DECODED_PLIST"
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$DECODED_PLIST")
           PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$DECODED_PLIST")
+          APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$DECODED_PLIST")
+          PF_BUNDLE_ID="${APP_ID#*.}"
           echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+          echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
+          echo "Resolved BundleId from profile: $PF_BUNDLE_ID"
+          test "$PF_BUNDLE_ID" = "$BUNDLE_ID"
           cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
-          echo "Installed profile: $PROFILE_NAME ($PROFILE_UUID)"
 
-      - name: Write App Store Connect API key (AuthKey)
-        shell: bash
-        run: |
-          set -euxo pipefail
-          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "AuthKey_${APPLE_KEY_ID}.p8"
-
-      - name: Show resolved build settings (sanity check)
+      # ---- BUILD (quiet, pretty logs) ---------------------------------------
+      - name: Show resolved build settings (sanity)
         shell: bash
         run: |
           set -euxo pipefail
@@ -184,7 +148,7 @@ jobs:
             CODE_SIGN_IDENTITY="Apple Distribution" \
           | egrep 'PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_STYLE|PROVISIONING_PROFILE_SPECIFIER|CODE_SIGN_IDENTITY'
 
-      - name: Xcode Archive (manual codesign)
+      - name: Archive (Xcode)
         shell: bash
         run: |
           set -euxo pipefail
@@ -195,12 +159,12 @@ jobs:
             -sdk iphoneos \
             -archivePath build/Runner.xcarchive \
             clean archive \
-            -allowProvisioningUpdates \
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM="$TEAM_ID" \
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
-            CODE_SIGN_IDENTITY="Apple Distribution"
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            | xcbeautify --quiet
 
       - name: Create ExportOptions.plist (app-store, manual)
         shell: bash
@@ -218,7 +182,7 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :compileBitcode bool false' "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :destination string export' "$EXPORT_OPTS"
 
-      - name: Xcode Export (IPA)
+      - name: Export IPA
         shell: bash
         run: |
           set -euxo pipefail
@@ -226,23 +190,24 @@ jobs:
             -archivePath build/Runner.xcarchive \
             -exportOptionsPlist ios/ExportOptions.plist \
             -exportPath build \
-            -allowProvisioningUpdates
+            | xcbeautify --quiet
+          ls -lah build || true
+          if [ -f build/Runner.ipa ]; then mv build/Runner.ipa build/Fiinny.ipa; fi
 
-      - name: Rename IPA for artifact
-        shell: bash
-        run: |
-          set -euxo pipefail
-          if [ -f build/Runner.ipa ]; then
-            mv build/Runner.ipa build/Fiinny.ipa
-          fi
-
+      # ---- ARTIFACTS & UPLOAD ----------------------------------------------
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: fiinny-ipa
           path: build/Fiinny.ipa
 
-      - name: Upload to App Store Connect (Transporter, API key)
+      - name: Write App Store Connect API key
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "AuthKey_${APPLE_KEY_ID}.p8"
+
+      - name: Upload to TestFlight (Transporter API key)
         shell: bash
         env:
           ASC_KEY_ID: ${{ env.APPLE_KEY_ID }}

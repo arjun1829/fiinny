@@ -1,40 +1,60 @@
 workflows:
-  ios-build:
-    name: iOS Release
+  fiinny_ios_release:
+    name: Fiinny iOS – TestFlight (ASC auto-sign)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
     environment:
       flutter: stable
       xcode: latest
-    certificates:
-      - bundle_identifier: com.fiinny.app
-        certificate_url: Encrypted@SecureLinkToCert.p12
-        certificate_password: Encrypted@CertPassword
-        provisioning_profile_url: Encrypted@SecureLinkToMobileprovision
-    publishing:
-      app_store_connect:
-        api_key: Encrypted@AppStoreConnectAPIKey
+      cocoapods: default
+      vars:
+        BUNDLE_ID: "com.fiinny.app"    # <-- set your bundle id here
+    cache:
+      cache_paths:
+        - ~/.pub-cache
+        - ~/Library/Caches/CocoaPods
+        - ios/Pods
     scripts:
-      - name: Install Flutter dependencies
-        script: |
-          flutter pub get
+      - name: Flutter pub get
+        script: flutter pub get
 
-      - name: Build iOS app
+      - name: Enforce iOS 16 & clean Pods (avoid linker mismatch)
         script: |
-          flutter build ios --release
+          sed -i '' "s/platform :ios, .*/platform :ios, '16.0'/" ios/Podfile || true
+          rm -rf ios/Pods ios/Podfile.lock
 
-      - name: Archive the app
+      - name: Install CocoaPods
         script: |
-          xcodebuild -workspace ios/Runner.xcworkspace \
-                     -scheme Runner \
-                     -sdk iphoneos \
-                     -configuration Release \
-                     -archivePath build/Runner.xcarchive \
-                     archive
+          cd ios
+          pod repo update
+          pod install --repo-update
 
-      - name: Export IPA
+      - name: Set up automatic code signing (App Store Connect API)
         script: |
-          xcodebuild -exportArchive \
-                     -archivePath build/Runner.xcarchive \
-                     -exportOptionsPlist ios/ExportOptions.plist \
-                     -exportPath build/ios/ipa
+          keychain initialize
+          # Create/fetch signing certs + provisioning profiles automatically
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: Build IPA (Flutter)
+        script: |
+          flutter build ipa --release
+
+      - name: Show IPA(s)
+        script: |
+          ls -lah build/ios/ipa || true
     artifacts:
       - build/ios/ipa/*.ipa
+      - build/ios/archive/*.xcarchive
+      - flutter_drive.log
+
+    publishing:
+      app_store_connect:
+        # Use API key vars you saved as secure env vars
+        key_id: $APP_STORE_CONNECT_KEY_ID
+        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
+        private_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        submit_to_testflight: true
+        beta_groups:
+          - Internal Testers
