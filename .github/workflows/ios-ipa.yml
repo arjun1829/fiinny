@@ -140,10 +140,6 @@ jobs:
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGN_STYLE=Automatic \
-            PROVISIONING_PROFILE_SPECIFIER= \
-            PROVISIONING_PROFILE= \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
             -allowProvisioningUpdates
 
       - name: Create ExportOptions.plist (app-store, manual)
