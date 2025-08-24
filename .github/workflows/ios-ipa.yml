@@ -214,10 +214,22 @@ jobs:
           ASC_ISSUER_ID: ${{ env.APPLE_ISSUER_ID }}
         run: |
           set -euxo pipefail
+
+          IPA_FILE="build/Fiinny.ipa"
+          if [ ! -f "$IPA_FILE" ]; then
+            echo "❌ IPA not found at $IPA_FILE"
+            exit 1
+          fi
+          ls -lh "$IPA_FILE"
+
+          # Transporter path (absolute, avoids -10814)
+          TRANSPORTER="/Applications/Xcode.app/Contents/SharedFrameworks/ContentDeliveryServices.framework/itms/bin/iTMSTransporter"
+
           mkdir -p "$HOME/.appstoreconnect/private_keys"
           cp "AuthKey_${ASC_KEY_ID}.p8" "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
-          xcrun iTMSTransporter -m upload \
-            -assetFile build/Fiinny.ipa \
+
+          "$TRANSPORTER" -m upload \
+            -assetFile "$IPA_FILE" \
             -apiKey "$ASC_KEY_ID" \
             -apiIssuer "$ASC_ISSUER_ID" \
             -v informational
