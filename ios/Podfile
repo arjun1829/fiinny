@@ -29,21 +29,16 @@ target 'Runner' do
 end
 
 post_install do |installer|
-  #
-  # Project-wide build settings (Xcode 15/16 friendly)
-  #
+  # Xcode 15/16 friendly base
   installer.generated_projects.each do |project|
     project.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
       config.build_settings['SWIFT_VERSION'] = '5.9'
-      # Helps some binary pods with Xcode 15/16 toolchains
       config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'YES'
     end
   end
 
-  #
-  # Apply Flutter’s additional settings and unify targets to iOS 16
-  #
+  # Apply Flutter extras + iOS 16 floor
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
@@ -52,21 +47,20 @@ post_install do |installer|
     flutter_additional_ios_build_settings(target)
   end
 
-  #
-  # 🚫 Disable code signing for ALL CocoaPods targets (incl. Pods-Runner)
-  # Only the main app target "Runner" should be signed; frameworks/resources must not.
-  #
+  # 🚫 HARD DISABLE SIGNING on *all* Pods (including the "Pods-Runner" aggregate)
   installer.pods_project.targets.each do |t|
     t.build_configurations.each do |config|
       bs = config.build_settings
-      bs['CODE_SIGNING_ALLOWED']  = 'NO'
-      bs['CODE_SIGNING_REQUIRED'] = 'NO'
-      bs['CODE_SIGNING_STYLE']    = 'Automatic' # prevents "manual profile set" bleed-over
-      bs.delete('PROVISIONING_PROFILE_SPECIFIER')
-      bs.delete('PROVISIONING_PROFILE')
-      bs.delete('DEVELOPMENT_TEAM')
-      bs.delete('CODE_SIGN_IDENTITY')
-      bs.delete('EXPANDED_CODE_SIGN_IDENTITY')
+      bs['CODE_SIGNING_ALLOWED']                     = 'NO'
+      bs['CODE_SIGNING_REQUIRED']                    = 'NO'
+      bs['CODE_SIGN_STYLE']                          = 'Automatic'    # avoid manual bleed
+      bs['DEVELOPMENT_TEAM']                         = ''             # empty (not deleted)
+      bs['CODE_SIGN_IDENTITY']                       = ''
+      bs['CODE_SIGN_IDENTITY[sdk=iphoneos*]']        = ''
+      bs['PROVISIONING_PROFILE_SPECIFIER']           = ''
+      bs['PROVISIONING_PROFILE']                     = ''
+      bs['EXPANDED_CODE_SIGN_IDENTITY']              = ''
+      bs['EXPANDED_CODE_SIGN_IDENTITY[sdk=iphoneos*]']= ''
     end
   end
 end
