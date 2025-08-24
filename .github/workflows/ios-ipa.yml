@@ -10,15 +10,14 @@ jobs:
     runs-on: macos-14
 
     env:
-      # Required secrets
-      BUNDLE_ID: ${{ secrets.BUNDLE_ID }}                # e.g. com.fiinny.app
-      TEAM_ID: ${{ secrets.TEAM_ID }}                    # e.g. ABCDE12345
-      P12_BASE64: ${{ secrets.P12_BASE64 }}              # base64 of your .p12 (Apple Distribution)
-      P12_PASSWORD: ${{ secrets.P12_PASSWORD }}          # password for the .p12
-      PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }} # base64 of the .mobileprovision (App Store)
-      APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}          # App Store Connect API Key ID
-      APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}    # App Store Connect Issuer ID
-      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}  # base64 of AuthKey_XXXXXX.p8
+      BUNDLE_ID: ${{ secrets.BUNDLE_ID }}               # e.g. com.fiinny.app
+      TEAM_ID: ${{ secrets.TEAM_ID }}                   # e.g. ABCDE12345
+      P12_BASE64: ${{ secrets.P12_BASE64 }}             # base64 of Apple Distribution .p12
+      P12_PASSWORD: ${{ secrets.P12_PASSWORD }}         # password for the .p12
+      PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }} # base64 of App Store .mobileprovision
+      APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}         # App Store Connect API Key ID
+      APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}   # App Store Connect Issuer ID
+      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }} # base64 of AuthKey_XXXXXX.p8
 
     steps:
       - name: Checkout
@@ -29,7 +28,7 @@ jobs:
         with:
           xcode-version: '16.2'
 
-      # ---------- CACHES ----------
+      # Caches
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:
@@ -57,7 +56,7 @@ jobs:
           restore-keys: |
             dd-${{ runner.os }}-xcode16_2-
 
-      # ---------- TOOLING ----------
+      # Tooling
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -79,7 +78,7 @@ jobs:
           pod install --repo-update
           cd ..
 
-      # ---------- SIGNING MATERIAL ----------
+      # Signing material
       - name: Create keychain & import Distribution certificate (.p12)
         shell: bash
         run: |
@@ -89,8 +88,6 @@ jobs:
           security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
-
-          # Import Distribution cert
           printf '%s' "$P12_BASE64" | base64 -D > cert.p12
           security import cert.p12 -k "$KEYCHAIN" -P "$P12_PASSWORD" -A
           security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed 's/["]//g')
@@ -102,17 +99,12 @@ jobs:
           set -euxo pipefail
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 -D > "$RUNNER_TEMP/profile.mobileprovision"
-
-          # Decode to read UUID & Name
           DECODED_PLIST="$RUNNER_TEMP/profile.plist"
           /usr/bin/security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" -o "$DECODED_PLIST"
-          plutil -p "$DECODED_PLIST" >/dev/null
-
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$DECODED_PLIST")
           PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$DECODED_PLIST")
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
           echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
-
           cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
           echo "Installed profile: $PROFILE_NAME ($PROFILE_UUID)"
 
@@ -122,15 +114,14 @@ jobs:
           set -euxo pipefail
           echo "$APPLE_API_KEY_BASE64" | base64 --decode > "AuthKey_${APPLE_KEY_ID}.p8"
 
-      # ---------- BUILD ----------
+      # Build
       - name: Prebuild iOS (no codesign)
         run: flutter build ios --release --no-codesign
 
-      - name: Xcode Archive (Manual signing)
+      - name: Xcode Archive (Pods unsigned, Runner automatic)
         shell: bash
         run: |
           set -euxo pipefail
-          # Hint Xcode for codesign; we’ll export with ExportOptions next
           xcodebuild \
             -workspace ios/Runner.xcworkspace \
             -scheme Runner \
@@ -142,9 +133,7 @@ jobs:
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            CODE_SIGN_STYLE=Automatic \
             -allowProvisioningUpdates
 
       - name: Create ExportOptions.plist (app-store, manual)
@@ -178,7 +167,6 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          # Xcode export usually produces Runner.ipa
           if [ -f build/Runner.ipa ]; then
             mv build/Runner.ipa build/fiinny.ipa
           fi
@@ -189,7 +177,6 @@ jobs:
           name: fiinny-ipa
           path: build/fiinny.ipa
 
-      # ---------- UPLOAD TO APP STORE CONNECT ----------
       - name: Upload to App Store Connect (Transporter, API key)
         shell: bash
         env:
@@ -197,10 +184,13 @@ jobs:
           ASC_ISSUER_ID: ${{ env.APPLE_ISSUER_ID }}
         run: |
           set -euxo pipefail
-          # Transporter will auto-pick up the AuthKey_${APPLE_KEY_ID}.p8 in cwd if we export the var:
-          export ASC_PROVIDER=
+          # Ensure the API key is where Transporter looks for it
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          cp "AuthKey_${ASC_KEY_ID}.p8" "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+
           xcrun iTMSTransporter -m upload \
             -assetFile build/fiinny.ipa \
             -apiKey "$ASC_KEY_ID" \
             -apiIssuer "$ASC_ISSUER_ID" \
             -v informational
+      
