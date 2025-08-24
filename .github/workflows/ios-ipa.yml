@@ -207,15 +207,10 @@ jobs:
           # decode .p8
           echo "$APPLE_API_KEY_BASE64" | base64 --decode > "AuthKey_${ASC_KEY_ID}.p8"
           chmod 600 "AuthKey_${ASC_KEY_ID}.p8"
-          # build api_key.json with Python (handles newlines safely)
-          python3 - <<'PY' > api_key.json
-          import json, os, sys
-          kid = os.environ["ASC_KEY_ID"]
-          iss = os.environ["ASC_ISSUER_ID"]
-          with open(f"AuthKey_{kid}.p8", "r") as f:
-          key = f.read()
-          json.dump({"key_id": kid, "issuer_id": iss, "key": key, "in_house": False}, sys.stdout)
-          PY
+
+          # build api_key.json via Python ONE-LINER (no indentation issues)
+          python3 -c 'import os,json,sys; kid=os.environ["ASC_KEY_ID"]; iss=os.environ["ASC_ISSUER_ID"]; key=open(f"AuthKey_{kid}.p8","r").read(); print(json.dumps({"key_id":kid,"issuer_id":iss,"key":key,"in_house":False}))' > api_key.json
+
           chmod 600 api_key.json
           echo "api_key.json created."
 
