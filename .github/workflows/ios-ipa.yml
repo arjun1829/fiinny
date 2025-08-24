@@ -99,6 +99,36 @@ jobs:
           pod install --repo-update --clean-install
           cd ..
 
+      # 🔧 Force correct bundle id & team inside the Xcode project (fixes mismatch)
+      - name: Set bundle identifier & team in project
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PBX="ios/Runner.xcodeproj/project.pbxproj"
+
+          # Replace any com.example.* leftovers with real BUNDLE_ID
+          /usr/bin/sed -i '' "s/com\.example\.[A-Za-z0-9_-]*/${BUNDLE_ID}/g" "$PBX" || true
+
+          # Force PRODUCT_BUNDLE_IDENTIFIER on all configurations
+          /usr/bin/sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" "$PBX"
+
+          # Ensure DEVELOPMENT_TEAM is set to your team
+          if grep -q "DEVELOPMENT_TEAM =" "$PBX"; then
+            /usr/bin/sed -i '' "s/DEVELOPMENT_TEAM = [A-Z0-9]*;/DEVELOPMENT_TEAM = ${TEAM_ID};/g" "$PBX"
+          else
+            # add it next to CODE_SIGN_STYLE lines if missing
+            /usr/bin/sed -i '' "s/CODE_SIGN_STYLE = [A-Za-z]*/&; DEVELOPMENT_TEAM = ${TEAM_ID}/g" "$PBX" || true
+          fi
+
+          # Keep Info.plist aligned (if CFBundleIdentifier is hardcoded)
+          if /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" ios/Runner/Info.plist >/dev/null 2>&1; then
+            /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${BUNDLE_ID}" ios/Runner/Info.plist || true
+          fi
+
+          # Optional: test targets (harmless if not present)
+          /usr/bin/sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = .*RunnerTests;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID}.RunnerTests;/g" "$PBX" || true
+          /usr/bin/sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = .*RunnerUITests;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID}.RunnerUITests;/g" "$PBX" || true
+
       # SIGNING (manual, using your cert/profile)
       - name: Create keychain & import Apple Distribution (.p12)
         shell: bash
@@ -147,7 +177,7 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :stripSwiftSymbols bool true' "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :compileBitcode bool false' "$EXPORT_OPTS"
 
-      # ✅ The key fix: generate configs, then let Flutter do the archive/export
+      # ✅ Generate configs, then let Flutter do archive/export
       - name: Prepare Flutter iOS Release configuration
         shell: bash
         run: |
@@ -158,7 +188,6 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          # Flutter drives xcodebuild internally with the Release configs we just generated
           flutter build ipa --release --export-options-plist ios/ExportOptions.plist
           ls -lah build/ios/ipa || true
           if [ -f build/ios/ipa/*.ipa ]; then
