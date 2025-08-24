@@ -222,8 +222,25 @@ jobs:
           fi
           ls -lh "$IPA_FILE"
 
-          # Transporter path (absolute, avoids -10814)
-          TRANSPORTER="/Applications/Xcode.app/Contents/SharedFrameworks/ContentDeliveryServices.framework/itms/bin/iTMSTransporter"
+          # Resolve iTMSTransporter path dynamically based on selected Xcode
+          DEV_DIR="$(xcode-select -p)"  # e.g. /Applications/Xcode_16.2.app/Contents/Developer
+          TRANSPORTER="${DEV_DIR}/../SharedFrameworks/ContentDeliveryServices.framework/itms/bin/iTMSTransporter"
+
+          # Fallbacks (runner images sometimes place Transporter here)
+          if [ ! -x "$TRANSPORTER" ]; then
+            if command -v xcrun >/dev/null 2>&1 && xcrun -f iTMSTransporter >/dev/null 2>&1; then
+              TRANSPORTER="$(xcrun -f iTMSTransporter)"
+            elif [ -x "/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter" ]; then
+              TRANSPORTER="/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"
+            else
+              echo "❌ Could not locate iTMSTransporter."
+              echo "DEV_DIR=$DEV_DIR"
+              find /Applications -name iTMSTransporter 2>/dev/null || true
+              exit 1
+            fi
+          fi
+
+          echo "Using Transporter at: $TRANSPORTER"
 
           mkdir -p "$HOME/.appstoreconnect/private_keys"
           cp "AuthKey_${ASC_KEY_ID}.p8" "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
