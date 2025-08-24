@@ -1,4 +1,4 @@
-﻿name: iOS IPA (archive, export, upload)
+﻿name: iOS IPA (Flutter export + ASC upload)
 
 on:
   workflow_dispatch:
@@ -26,6 +26,7 @@ jobs:
       APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
       APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
       APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+      CI: "true"
 
     steps:
       - name: Checkout
@@ -36,7 +37,7 @@ jobs:
         with:
           xcode-version: '16'
 
-      # ---- CACHES -----------------------------------------------------------
+      # CACHES
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:
@@ -64,7 +65,7 @@ jobs:
           restore-keys: |
             dd-${{ runner.os }}-xcode16-
 
-      # ---- TOOLING ----------------------------------------------------------
+      # TOOLING
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -78,11 +79,11 @@ jobs:
           sudo gem install cocoapods -N || true
           brew install xcbeautify || true
 
-      # ---- DEPENDENCIES -----------------------------------------------------
-      - name: Flutter pub get
+      # DEPS
+      - name: flutter pub get
         run: flutter pub get
 
-      - name: Enforce iOS 16 floor & clean Pods (prevents linker mismatch)
+      - name: Enforce iOS 16 & clean Pods
         shell: bash
         run: |
           set -euxo pipefail
@@ -98,8 +99,8 @@ jobs:
           pod install --repo-update --clean-install
           cd ..
 
-      # ---- CODE SIGNING (manual, using your P12 + profile) ------------------
-      - name: Create keychain & import .p12
+      # SIGNING (manual, using your cert/profile)
+      - name: Create keychain & import Apple Distribution (.p12)
         shell: bash
         run: |
           set -euxo pipefail
@@ -127,46 +128,11 @@ jobs:
           PF_BUNDLE_ID="${APP_ID#*.}"
           echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
-          echo "Resolved BundleId from profile: $PF_BUNDLE_ID"
           test "$PF_BUNDLE_ID" = "$BUNDLE_ID"
           cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
 
-      # ---- BUILD (quiet, pretty logs) ---------------------------------------
-      - name: Show resolved build settings (sanity)
-        shell: bash
-        run: |
-          set -euxo pipefail
-          xcodebuild \
-            -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -showBuildSettings \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="$TEAM_ID" \
-            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-          | egrep 'PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_STYLE|PROVISIONING_PROFILE_SPECIFIER|CODE_SIGN_IDENTITY'
-
-      - name: Archive (Xcode)
-        shell: bash
-        run: |
-          set -euxo pipefail
-          xcodebuild \
-            -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -archivePath build/Runner.xcarchive \
-            clean archive \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="$TEAM_ID" \
-            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            | xcbeautify --quiet
-
-      - name: Create ExportOptions.plist (app-store, manual)
+      # 🔑 Make ExportOptions for app-store (manual signing)
+      - name: Create ExportOptions.plist
         shell: bash
         run: |
           set -euxo pipefail
@@ -180,21 +146,26 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:${BUNDLE_ID} string ${PROFILE_NAME}" "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :stripSwiftSymbols bool true' "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :compileBitcode bool false' "$EXPORT_OPTS"
-          /usr/libexec/PlistBuddy -c 'Add :destination string export' "$EXPORT_OPTS"
 
-      - name: Export IPA
+      # ✅ The key fix: generate configs, then let Flutter do the archive/export
+      - name: Prepare Flutter iOS Release configuration
         shell: bash
         run: |
           set -euxo pipefail
-          xcodebuild -exportArchive \
-            -archivePath build/Runner.xcarchive \
-            -exportOptionsPlist ios/ExportOptions.plist \
-            -exportPath build \
-            | xcbeautify --quiet
-          ls -lah build || true
-          if [ -f build/Runner.ipa ]; then mv build/Runner.ipa build/Fiinny.ipa; fi
+          flutter build ios --config-only --release
 
-      # ---- ARTIFACTS & UPLOAD ----------------------------------------------
+      - name: Build & export IPA via Flutter
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # Flutter drives xcodebuild internally with the Release configs we just generated
+          flutter build ipa --release --export-options-plist ios/ExportOptions.plist
+          ls -lah build/ios/ipa || true
+          if [ -f build/ios/ipa/*.ipa ]; then
+            IPA_FILE=$(ls -1 build/ios/ipa/*.ipa | head -n1)
+            cp "$IPA_FILE" build/Fiinny.ipa
+          fi
+
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:

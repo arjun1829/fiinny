@@ -4,17 +4,16 @@
 <dict>
   <key>method</key>
   <string>app-store</string>
+
   <key>signingStyle</key>
-  <string>manual</string>
-  <key>provisioningProfiles</key>
-  <dict>
-    <key>com.fiinny.app</key>
-    <string>Fiinny_Provision_Profile_Name</string>
-  </dict>
-  <key>teamID</key>
-  <string>YOUR_TEAM_ID</string>
-  <key>compileBitcode</key>
+  <string>automatic</string>
+
+  <key>stripSwiftSymbols</key>
   <true/>
+
+  <key>compileBitcode</key>
+  <false/>
+
   <key>destination</key>
   <string>export</string>
 </dict>
