@@ -1,20 +1,30 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+
 import 'dashboard_screen.dart';
 import 'expenses_screen.dart';
 import 'friends_screen.dart';
 import 'package:lifemap/sharing/screens/sharing_screen.dart';
 
+import 'package:lifemap/services/user_service.dart';
+
 class MainNavScreen extends StatefulWidget {
-  final String userPhone;
+  final String userPhone; // may actually be a UID on first launch
   const MainNavScreen({required this.userPhone, Key? key}) : super(key: key);
 
   @override
   State<MainNavScreen> createState() => _MainNavScreenState();
 }
 
-class _MainNavScreenState extends State<MainNavScreen> with TickerProviderStateMixin {
+class _MainNavScreenState extends State<MainNavScreen>
+    with TickerProviderStateMixin {
   int _currentIndex = 0;
-  late final List<Widget> _screens;
+
+  // If we received a UID, we'll resolve to a phone number once.
+  String? _resolvedPhone;
+  bool _resolving = false;
+  StreamSubscription? _resolveSub;
+
   late final List<AnimationController> _shineControllers;
   late final List<Animation<double>> _shineAnimations;
   late final List<TickerFuture?> _shineTicker;
@@ -23,14 +33,8 @@ class _MainNavScreenState extends State<MainNavScreen> with TickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _screens = [
-      DashboardScreen(userPhone: widget.userPhone),
-      ExpensesScreen(userPhone: widget.userPhone),
-      FriendsScreen(userPhone: widget.userPhone),
-      SharingScreen(currentUserPhone: widget.userPhone),
-    ];
 
-    _iconData = [
+    _iconData = const [
       Icons.dashboard_rounded,
       Icons.list_alt_rounded,
       Icons.group_rounded,
@@ -44,15 +48,74 @@ class _MainNavScreenState extends State<MainNavScreen> with TickerProviderStateM
         duration: const Duration(milliseconds: 800),
       ),
     );
+
     _shineAnimations = List.generate(
       _iconData.length,
           (i) => Tween<double>(begin: -1.2, end: 1.2).animate(
         CurvedAnimation(parent: _shineControllers[i], curve: Curves.easeInOut),
       ),
     );
+
     _shineTicker = List.generate(_iconData.length, (_) => null);
     _startShine(0);
+
+    _resolvePhoneIfNeeded();
   }
+
+  @override
+  void didUpdateWidget(covariant MainNavScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userPhone != widget.userPhone) {
+      _resolvedPhone = null;
+      _resolvePhoneIfNeeded();
+    }
+  }
+
+  @override
+  void dispose() {
+    for (var ctrl in _shineControllers) {
+      ctrl.dispose();
+    }
+    _resolveSub?.cancel();
+    super.dispose();
+  }
+
+  // ----------------- Phone/UID resolution -----------------
+
+  bool _looksLikeUid(String v) {
+    // Quick heuristic: Firebase UIDs are usually 28+ mixed chars (not guaranteed, but good signal)
+    return v.length >= 20 && RegExp(r'^[A-Za-z0-9_\-]+$').hasMatch(v);
+  }
+
+  String get _effectivePhone => _resolvedPhone ?? widget.userPhone;
+
+  Future<void> _resolvePhoneIfNeeded() async {
+    if (!_looksLikeUid(widget.userPhone)) return; // already a phone
+    if (_resolvedPhone != null || _resolving) return;
+
+    setState(() => _resolving = true);
+    try {
+      final phone = await UserService()
+          .getPhoneForUid(widget.userPhone)
+          .timeout(const Duration(seconds: 6), onTimeout: () => null);
+
+      if (!mounted) return;
+      setState(() {
+        _resolvedPhone = (phone != null && phone.isNotEmpty)
+            ? phone
+            : widget.userPhone; // fail-soft: keep UID if no phone
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _resolvedPhone = widget.userPhone; // fail-soft
+      });
+    } finally {
+      if (mounted) setState(() => _resolving = false);
+    }
+  }
+
+  // ----------------- Shine animation -----------------
 
   void _startShine(int index) async {
     if (!mounted) return;
@@ -74,20 +137,35 @@ class _MainNavScreenState extends State<MainNavScreen> with TickerProviderStateM
     });
   }
 
-  @override
-  void dispose() {
-    for (var ctrl in _shineControllers) {
-      ctrl.dispose();
-    }
-    super.dispose();
-  }
+  // ----------------- UI -----------------
 
   @override
   Widget build(BuildContext context) {
+    final phone = _effectivePhone;
+
+    // Build screens each frame so they pick up the resolved phone automatically.
+    final screens = <Widget>[
+      DashboardScreen(userPhone: phone),
+      ExpensesScreen(userPhone: phone),
+      FriendsScreen(userPhone: phone),
+      SharingScreen(currentUserPhone: phone),
+    ];
+
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: _currentIndex,
+            children: screens,
+          ),
+          if (_resolving)
+            const Positioned.fill(
+              child: IgnorePointer(
+                ignoring: true,
+                child: SizedBox(), // keep it non-blocking; resolution is silent
+              ),
+            ),
+        ],
       ),
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.only(bottom: 0),
@@ -152,7 +230,7 @@ class _MainNavScreenState extends State<MainNavScreen> with TickerProviderStateM
                     ),
                   ],
                 ),
-                label: [
+                label: const [
                   "Dashboard",
                   "Expenses",
                   "Friends",
@@ -186,6 +264,7 @@ class ShinePainter extends CustomPainter {
         end: Alignment.bottomRight,
       ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
       ..blendMode = BlendMode.plus;
+
     final shineWidth = size.width * 0.44;
     final shineRect = Rect.fromLTWH(
       size.width * (position - 0.22),
@@ -193,6 +272,7 @@ class ShinePainter extends CustomPainter {
       shineWidth,
       size.height,
     );
+
     canvas.drawRRect(
       RRect.fromRectAndRadius(shineRect, Radius.circular(shineWidth / 1.6)),
       paint,
