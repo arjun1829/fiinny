@@ -1,7 +1,7 @@
 name: lifemap
 description: A premium personal finance & social app (2025)
 publish_to: "none"
-version: 1.0.0+12
+version: 1.0.0+13
 
 environment:
   sdk: ">=3.2.0 <4.0.0"
@@ -42,14 +42,12 @@ dependencies:
   rxdart: ^0.27.7
   crypto: ^3.0.3
   file_picker: ^8.0.0
-  flutter_launcher_icons: ^0.13.1
-
-
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_native_splash: ^2.4.0
+  flutter_native_splash: ^2.4.1
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
@@ -80,9 +78,10 @@ flutter:
         - asset: assets/fonts/Montserrat/Montserrat-Italic.ttf
           style: italic
 
+# splash config
 flutter_native_splash:
-  color: "#121212"                    # CRED style: black; change as per your brand
-  image: assets/icons/fiinny_logo.png     # <-- Your logo here!
+  color: "#121212"
+  image: assets/icons/fiinny_logo.png
   branding: assets/icons/fiinny_brand_small.png
   android: true
   ios: true
@@ -91,12 +90,9 @@ flutter_native_splash:
   android_gravity: center
   ios_content_mode: scaleAspectFit
 
-flutter_contacts:
-  git:
-    url: https://github.com/cachet/flutter_contacts.git
-    ref: main
-
-flutter_icons:
+# launcher icons config
+flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icons/fiinny_logo.png"
+  image_path: assets/icons/fiinny_logo.png
+  remove_alpha_ios: true
