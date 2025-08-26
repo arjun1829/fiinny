@@ -67,4 +67,5 @@ class DefaultFirebaseOptions {
     iosClientId: '1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00.apps.googleusercontent.com',
     iosBundleId: 'com.KaranArjunTechnologies.fiinny',
   );
+
 }
