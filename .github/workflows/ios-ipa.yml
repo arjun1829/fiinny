@@ -26,6 +26,7 @@ jobs:
       APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
       APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
       APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+      FIREBASE_IOS_PLIST_BASE64: ${{ secrets.FIREBASE_IOS_PLIST_BASE64 }}
       CI: "true"
 
     steps:
@@ -99,7 +100,7 @@ jobs:
           pod install --repo-update --clean-install
           cd ..
 
-      # 🔧 Force correct bundle id & team inside the Xcode project
+      # 🔧 Bundle id & team
       - name: Set bundle identifier & team in project
         shell: bash
         run: |
@@ -118,24 +119,30 @@ jobs:
           /usr/bin/sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = .*RunnerTests;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID}.RunnerTests;/g" "$PBX" || true
           /usr/bin/sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = .*RunnerUITests;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID}.RunnerUITests;/g" "$PBX" || true
 
-      # ✅ FIX App Store validation: make sure Google reversed client id is wired into Info.plist
+      # 🔐 Create iOS Firebase plist from secret (skip if you committed the file)
+      - name: Create GoogleService-Info.plist from secret
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -n "${FIREBASE_IOS_PLIST_BASE64:-}" ]; then
+            mkdir -p ios/Runner
+            echo "$FIREBASE_IOS_PLIST_BASE64" | base64 --decode > ios/Runner/GoogleService-Info.plist
+            echo "Wrote ios/Runner/GoogleService-Info.plist from secret."
+          else
+            echo "No FIREBASE_IOS_PLIST_BASE64 secret set. Assuming file is committed."
+          fi
+          test -f ios/Runner/GoogleService-Info.plist || { echo "::error::Missing ios/Runner/GoogleService-Info.plist – add the file or set FIREBASE_IOS_PLIST_BASE64"; exit 1; }
+
+      # ✅ Sync Google URL scheme to avoid ASC 409 error
       - name: Sync Google URL scheme into Info.plist
         shell: bash
         run: |
           set -euxo pipefail
           GSP="ios/Runner/GoogleService-Info.plist"
           IP="ios/Runner/Info.plist"
-          if [ ! -f "$GSP" ]; then
-            echo "::error::Missing $GSP – add your iOS Firebase plist to the repo"
-            exit 1
-          fi
           RID=$(/usr/libexec/PlistBuddy -c 'Print :REVERSED_CLIENT_ID' "$GSP")
           echo "REVERSED_CLIENT_ID=$RID"
-
-          # Replace placeholder if present
           /usr/bin/sed -i '' "s/REVERSED_CLIENT_ID_FROM_GOOGLESERVICE_INFO/$RID/g" "$IP" || true
-
-          # Ensure CFBundleURLTypes contains the RID (add minimal entry if missing)
           if ! /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes" "$IP" >/dev/null 2>&1 || \
              ! /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes" "$IP" | grep -q "$RID"; then
             /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$IP" 2>/dev/null || true
@@ -193,7 +200,7 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :stripSwiftSymbols bool true' "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :compileBitcode bool false' "$EXPORT_OPTS"
 
-      # Generate configs, then build & export via Flutter
+      # Build & export via Flutter (unique build number)
       - name: Prepare Flutter iOS Release configuration
         shell: bash
         run: |
@@ -204,12 +211,10 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          # Use unique build number to avoid "already used" errors
           flutter build ipa \
             --release \
             --build-number "${GITHUB_RUN_NUMBER}" \
             --export-options-plist ios/ExportOptions.plist
-
           ls -lah build/ios/ipa || true
           if ls build/ios/ipa/*.ipa >/dev/null 2>&1; then
             cp "$(ls -1 build/ios/ipa/*.ipa | head -n1)" build/Fiinny.ipa
@@ -221,7 +226,7 @@ jobs:
           name: fiinny-ipa
           path: build/Fiinny.ipa
 
-      # 🚚 Upload via Fastlane Pilot (reliable)
+      # 🚚 Upload via Fastlane Pilot
       - name: Install fastlane
         shell: bash
         run: |
@@ -240,7 +245,6 @@ jobs:
           chmod 600 "AuthKey_${ASC_KEY_ID}.p8"
           python3 -c 'import os,json; kid=os.environ["ASC_KEY_ID"]; iss=os.environ["ASC_ISSUER_ID"]; key=open(f"AuthKey_{kid}.p8","r").read(); print(json.dumps({"key_id":kid,"issuer_id":iss,"key":key,"in_house":False}))' > api_key.json
           chmod 600 api_key.json
-          echo "api_key.json created."
 
       - name: Upload to TestFlight via fastlane pilot
         shell: bash
@@ -248,8 +252,8 @@ jobs:
           set -euxo pipefail
           test -f build/Fiinny.ipa
           fastlane pilot upload \
-          --api_key_path api_key.json \
-          --ipa build/Fiinny.ipa \
-          --skip_submission \
-          --skip_waiting_for_build_processing \
-          --verbose
+            --api_key_path api_key.json \
+            --ipa build/Fiinny.ipa \
+            --skip_submission \
+            --skip_waiting_for_build_processing \
+            --verbose
