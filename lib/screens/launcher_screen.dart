@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:lifemap/screens/welcome_screen.dart';
 import 'package:lifemap/screens/onboarding_screen.dart';
 import 'package:lifemap/screens/main_nav_screen.dart';
-import 'package:lifemap/services/user_service.dart';
 
 class LauncherScreen extends StatefulWidget {
   const LauncherScreen({Key? key}) : super(key: key);
@@ -15,62 +15,98 @@ class LauncherScreen extends StatefulWidget {
 }
 
 class _LauncherScreenState extends State<LauncherScreen> {
-  /// We keep a small state so we can render something immediately while we wait.
-  bool _booted = false; // true after first frame callback runs
+  bool _booted = false;
+  bool _navigated = false;
   StreamSubscription<User?>? _authSub;
+  Timer? _watchdog;
 
   @override
   void initState() {
     super.initState();
 
-    // Ensure first frame paints (avoid doing heavy work in initState)
+    // Paint first frame quickly
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() => _booted = true);
 
-      // Listen to auth changes (handles first-launch + rehydrate)
-      _authSub = FirebaseAuth.instance.authStateChanges().listen((user) async {
-        // Tiny delay so splash transition feels smooth and Firebase warms up
-        await Future.delayed(const Duration(milliseconds: 200));
+      // Watchdog: if nothing happens in 3s, go to Welcome
+      _watchdog = Timer(const Duration(seconds: 3), () {
+        if (!_navigated && mounted) {
+          debugPrint('[Launcher] Watchdog fired → WelcomeScreen');
+          _go(const WelcomeScreen());
+        }
+      });
 
-        if (!mounted) return;
+      // Listen for auth state
+      _authSub = FirebaseAuth.instance.authStateChanges().listen((user) async {
+        if (!mounted || _navigated) return;
+
+        // tiny delay for smoothness + Firebase warmup
+        await Future.delayed(const Duration(milliseconds: 150));
 
         if (user == null) {
-          // Not logged in → go to welcome
+          debugPrint('[Launcher] No user → WelcomeScreen');
           _go(const WelcomeScreen());
           return;
         }
 
-        // Logged in → check onboarding/profile completion, but don't block forever
-        final bool profileComplete = await _safeIsProfileComplete(user.uid);
+        // try by phone first (most of your app uses phone as ID), then uid
+        final phone = (user.phoneNumber ?? '').trim();
+        final String docIdPrimary = phone.isNotEmpty ? phone : user.uid;
+        final String docIdFallback = phone.isNotEmpty ? user.uid : '';
 
-        if (!mounted) return;
+        final onboarded = await _isOnboardedSafe(docIdPrimary, fallbackId: docIdFallback);
 
-        if (profileComplete) {
-          // NOTE: if MainNavScreen expects a *phone*, pass phone; if UID is fine, keep as is.
-          _go(MainNavScreen(userPhone: user.uid));
+        if (!mounted || _navigated) return;
+
+        if (onboarded) {
+          final who = phone.isNotEmpty ? phone : user.uid; // MainNav needs a "phone-like" id
+          debugPrint('[Launcher] Onboarded → MainNavScreen($who)');
+          _go(MainNavScreen(userPhone: who));
         } else {
+          debugPrint('[Launcher] Not onboarded → OnboardingScreen');
           _go(const OnboardingScreen());
         }
       });
     });
   }
 
-  Future<bool> _safeIsProfileComplete(String uid) async {
+  Future<bool> _isOnboardedSafe(String primaryId, {String fallbackId = ''}) async {
     try {
-      // Timeout prevents "stuck on first launch" if network/rules misbehave
-      return await UserService().isProfileComplete(uid).timeout(
-        const Duration(seconds: 6),
-        onTimeout: () => false,
-      );
-    } catch (_) {
-      // Fail-soft → let user finish onboarding instead of blocking
-      return false;
+      // primary check with timeout
+      final ok = await _fetchOnboarded(primaryId)
+          .timeout(const Duration(seconds: 5), onTimeout: () => null);
+      if (ok != null) return ok;
+
+      // fallback (uid) if primary (phone) failed/timed out
+      if (fallbackId.isNotEmpty) {
+        final ok2 = await _fetchOnboarded(fallbackId)
+            .timeout(const Duration(seconds: 3), onTimeout: () => null);
+        if (ok2 != null) return ok2;
+      }
+    } catch (e) {
+      debugPrint('[Launcher] _isOnboardedSafe error: $e');
+    }
+    // If anything goes wrong, don’t block the user → treat as not onboarded
+    return false;
+  }
+
+  Future<bool?> _fetchOnboarded(String docId) async {
+    try {
+      final snap = await FirebaseFirestore.instance.collection('users').doc(docId).get();
+      if (!snap.exists) return false;
+      final data = (snap.data() ?? {});
+      return data['onboarded'] == true;
+    } catch (e) {
+      debugPrint('[Launcher] _fetchOnboarded("$docId") failed: $e');
+      return null; // signals "unknown" to the caller
     }
   }
 
   void _go(Widget page) {
-    if (!mounted) return;
+    if (!mounted || _navigated) return;
+    _navigated = true;
+    _watchdog?.cancel();
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => page,
@@ -83,20 +119,14 @@ class _LauncherScreenState extends State<LauncherScreen> {
 
   @override
   void dispose() {
+    _watchdog?.cancel();
     _authSub?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // First frame: show a neutral loader (keeps splash->app smooth)
-    if (!_booted) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    // While we wait for the first auth event, keep a simple loading UI.
+    // simple neutral loader (keeps splash → app smooth)
     return const Scaffold(
       body: Center(child: CircularProgressIndicator()),
     );

@@ -1,7 +1,7 @@
-﻿name: lifemap
+name: lifemap
 description: A premium personal finance & social app (2025)
 publish_to: "none"
-version: 1.0.0+20
+version: 1.0.0+14
 
 environment:
   sdk: ">=3.2.0 <4.0.0"
@@ -96,4 +96,5 @@ flutter_launcher_icons:
   ios: true
   image_path: assets/icons/fiinny_logo.png
   remove_alpha_ios: true
+
 
