@@ -1,7 +1,4 @@
-﻿# 👇 Last touched on 2025-08-27 by Arjun to force workflow trigger test
-
-name: iOS IPA (Flutter export + ASC upload)
-
+﻿name: iOS IPA (Flutter export + ASC upload)
 
 on:
   workflow_dispatch:
@@ -41,33 +38,6 @@ jobs:
         with:
           xcode-version: '16'
 
-      - name: Cache CocoaPods
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cocoapods/repos
-            ~/Library/Caches/CocoaPods
-            ios/Pods
-          key: pods-${{ runner.os }}-xcode16-${{ hashFiles('ios/Podfile.lock') }}
-          restore-keys: |
-            pods-${{ runner.os }}-xcode16-
-
-      - name: Cache Flutter pub cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
-          restore-keys: |
-            pub-${{ runner.os }}-
-
-      - name: Cache Xcode DerivedData
-        uses: actions/cache@v4
-        with:
-          path: ~/Library/Developer/Xcode/DerivedData
-          key: dd-${{ runner.os }}-xcode16-${{ hashFiles('ios/Podfile.lock', 'ios/Runner.xcodeproj/project.pbxproj') }}
-          restore-keys: |
-            dd-${{ runner.os }}-xcode16-
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -83,40 +53,30 @@ jobs:
       - name: flutter pub get
         run: flutter pub get
 
-      - name: Enforce iOS 16 & clean Pods
-        shell: bash
+      - name: Clean and Enforce iOS 16
         run: |
           /usr/bin/sed -i '' "s/platform :ios, .*/platform :ios, '16.0'/" ios/Podfile || true
           rm -rf ios/Pods ios/Podfile.lock
 
       - name: Install Pods
-        shell: bash
         run: |
           cd ios
-          pod repo update
-          pod install --repo-update --clean-install
+          pod install --repo-update
           cd ..
 
-      - name: Set bundle identifier & team in project
-        shell: bash
+      - name: Set Bundle ID & Team ID
         run: |
           PBX="ios/Runner.xcodeproj/project.pbxproj"
-          /usr/bin/sed -i '' "s/com\\.example\\.[A-Za-z0-9_-]*/${BUNDLE_ID}/g" "$PBX" || true
-          /usr/bin/sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" "$PBX"
-          if grep -q "DEVELOPMENT_TEAM =" "$PBX"; then
-            /usr/bin/sed -i '' "s/DEVELOPMENT_TEAM = [A-Z0-9]*;/DEVELOPMENT_TEAM = ${TEAM_ID};/g" "$PBX"
-          else
-            /usr/bin/sed -i '' "s/CODE_SIGN_STYLE = [A-Za-z]*/&; DEVELOPMENT_TEAM = ${TEAM_ID}/g" "$PBX" || true
-          fi
+          sed -i '' "s/com\\.example\\.[A-Za-z0-9_-]*/${BUNDLE_ID}/g" "$PBX" || true
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" "$PBX"
+          sed -i '' "s/DEVELOPMENT_TEAM = [A-Z0-9]*;/DEVELOPMENT_TEAM = ${TEAM_ID};/g" "$PBX" || true
 
-      - name: Create GoogleService-Info.plist from secret
-        shell: bash
+      - name: Create GoogleService-Info.plist
         run: |
           mkdir -p ios/Runner
           echo "$FIREBASE_IOS_PLIST_BASE64" | base64 --decode > ios/Runner/GoogleService-Info.plist
 
-      - name: Sync Google URL scheme into Info.plist
-        shell: bash
+      - name: Add Google URL Scheme to Info.plist
         run: |
           GSP="ios/Runner/GoogleService-Info.plist"
           IP="ios/Runner/Info.plist"
@@ -128,35 +88,31 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' "$IP"
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $RID" "$IP"
 
-      - name: Create keychain & import Apple Distribution (.p12)
-        shell: bash
+      - name: Create Keychain & Import Certificate
         run: |
           KEYCHAIN="$RUNNER_TEMP/build.keychain"
           KPWD=$(uuidgen)
           security create-keychain -p "$KPWD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KPWD" "$KEYCHAIN"
-          printf '%s' "$P12_BASE64" | base64 -D > cert.p12
+          echo "$P12_BASE64" | base64 --decode > cert.p12
           security import cert.p12 -k "$KEYCHAIN" -P "$P12_PASSWORD" -A
-          security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed 's/["']//g')
+          security list-keychains -s "$KEYCHAIN"
           security default-keychain -s "$KEYCHAIN"
 
-      - name: Install provisioning profile
-        shell: bash
+      - name: Install Provisioning Profile
         run: |
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
           DECODED_PLIST="$RUNNER_TEMP/profile.plist"
-          /usr/bin/security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" -o "$DECODED_PLIST"
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" -o "$DECODED_PLIST"
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$DECODED_PLIST")
           PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$DECODED_PLIST")
-          APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$DECODED_PLIST")
           echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
           cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
 
       - name: Create ExportOptions.plist
-        shell: bash
         run: |
           EXPORT_OPTS="ios/ExportOptions.plist"
           /usr/libexec/PlistBuddy -c 'Clear dict' "$EXPORT_OPTS" || true
@@ -168,7 +124,7 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :stripSwiftSymbols bool true' "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :compileBitcode bool false' "$EXPORT_OPTS"
 
-      - name: Bump version in pubspec.yaml
+      - name: Bump Build Number
         run: |
           version_line=$(grep '^version:' pubspec.yaml)
           version_number=$(echo $version_line | cut -d ":" -f2 | xargs)
@@ -177,13 +133,13 @@ jobs:
           tail -n +2 pubspec.yaml >> temp.yaml
           mv temp.yaml pubspec.yaml
 
-      - name: Build IPA via Flutter
+      - name: Build IPA
         run: |
           flutter build ipa --release \
             --build-number "${GITHUB_RUN_NUMBER}" \
             --export-options-plist ios/ExportOptions.plist
 
-      - name: Upload IPA artifact
+      - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
           name: fiinny-ipa
@@ -195,7 +151,7 @@ jobs:
           name: export-options
           path: ios/ExportOptions.plist
 
-      - name: Install fastlane
+      - name: Install Fastlane
         run: sudo gem install fastlane -N
 
       - name: Create ASC API Key JSON
@@ -211,16 +167,16 @@ jobs:
             --skip_submission \
             --skip_waiting_for_build_processing
 
-      - name: Notify Slack (success)
-        if: success()
+      - name: Notify Slack (Success)
+        if: success() && env.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: '{"text": "✅ Fiinny iOS build uploaded to TestFlight!"}'
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
-      - name: Notify Slack (failure)
-        if: failure()
+      - name: Notify Slack (Failure)
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: '{"text": "❌ Fiinny iOS build failed. Please check logs."}'
