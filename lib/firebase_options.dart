@@ -5,21 +5,12 @@ import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
 /// Default [FirebaseOptions] for use with your Firebase apps.
-///
-/// Example:
-/// ```dart
-/// import 'firebase_options.dart';
-/// // ...
-/// await Firebase.initializeApp(
-///   options: DefaultFirebaseOptions.currentPlatform,
-/// );
-/// ```
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
       throw UnsupportedError(
         'DefaultFirebaseOptions have not been configured for web - '
-        'you can reconfigure this by running the FlutterFire CLI again.',
+            'you can reconfigure this by running the FlutterFire CLI again.',
       );
     }
     switch (defaultTargetPlatform) {
@@ -29,18 +20,13 @@ class DefaultFirebaseOptions {
         return ios;
       case TargetPlatform.macOS:
         throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
+          'DefaultFirebaseOptions have not been configured for macOS - '
+              'you can reconfigure this by running the FlutterFire CLI again.',
         );
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
       case TargetPlatform.linux:
         throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
+          'DefaultFirebaseOptions have not been configured for this platform.',
         );
       default:
         throw UnsupportedError(
@@ -54,7 +40,7 @@ class DefaultFirebaseOptions {
     appId: '1:1085936196639:android:b74ffa7e9ded49e616492a',
     messagingSenderId: '1085936196639',
     projectId: 'lifemap-72b21',
-    storageBucket: 'lifemap-72b21.firebasestorage.app',
+    storageBucket: 'lifemap-72b21.appspot.com', // ✅ FIXED (.app → .com)
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
@@ -62,10 +48,9 @@ class DefaultFirebaseOptions {
     appId: '1:1085936196639:ios:3cbdc12cca308cbc16492a',
     messagingSenderId: '1085936196639',
     projectId: 'lifemap-72b21',
-    storageBucket: 'lifemap-72b21.firebasestorage.app',
+    storageBucket: 'lifemap-72b21.appspot.com', // ✅ FIXED
     androidClientId: '1085936196639-11mjkb68f4k99m8ebs7g0rn5hr0ee2cn.apps.googleusercontent.com',
     iosClientId: '1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00.apps.googleusercontent.com',
     iosBundleId: 'com.KaranArjunTechnologies.fiinny',
   );
-
 }

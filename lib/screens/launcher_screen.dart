@@ -24,24 +24,15 @@ class _LauncherScreenState extends State<LauncherScreen> {
   void initState() {
     super.initState();
 
-    // Paint first frame quickly
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() => _booted = true);
 
-      // Watchdog: if nothing happens in 3s, go to Welcome
-      _watchdog = Timer(const Duration(seconds: 3), () {
-        if (!_navigated && mounted) {
-          debugPrint('[Launcher] Watchdog fired → WelcomeScreen');
-          _go(const WelcomeScreen());
-        }
-      });
+      _startWatchdog();
 
-      // Listen for auth state
       _authSub = FirebaseAuth.instance.authStateChanges().listen((user) async {
         if (!mounted || _navigated) return;
 
-        // tiny delay for smoothness + Firebase warmup
         await Future.delayed(const Duration(milliseconds: 150));
 
         if (user == null) {
@@ -50,7 +41,6 @@ class _LauncherScreenState extends State<LauncherScreen> {
           return;
         }
 
-        // try by phone first (most of your app uses phone as ID), then uid
         final phone = (user.phoneNumber ?? '').trim();
         final String docIdPrimary = phone.isNotEmpty ? phone : user.uid;
         final String docIdFallback = phone.isNotEmpty ? user.uid : '';
@@ -60,7 +50,7 @@ class _LauncherScreenState extends State<LauncherScreen> {
         if (!mounted || _navigated) return;
 
         if (onboarded) {
-          final who = phone.isNotEmpty ? phone : user.uid; // MainNav needs a "phone-like" id
+          final who = phone.isNotEmpty ? phone : user.uid;
           debugPrint('[Launcher] Onboarded → MainNavScreen($who)');
           _go(MainNavScreen(userPhone: who));
         } else {
@@ -71,14 +61,21 @@ class _LauncherScreenState extends State<LauncherScreen> {
     });
   }
 
+  void _startWatchdog() {
+    _watchdog = Timer(const Duration(seconds: 3), () {
+      if (!_navigated && mounted) {
+        debugPrint('[Launcher] Watchdog fired → WelcomeScreen');
+        _go(const WelcomeScreen());
+      }
+    });
+  }
+
   Future<bool> _isOnboardedSafe(String primaryId, {String fallbackId = ''}) async {
     try {
-      // primary check with timeout
       final ok = await _fetchOnboarded(primaryId)
           .timeout(const Duration(seconds: 5), onTimeout: () => null);
       if (ok != null) return ok;
 
-      // fallback (uid) if primary (phone) failed/timed out
       if (fallbackId.isNotEmpty) {
         final ok2 = await _fetchOnboarded(fallbackId)
             .timeout(const Duration(seconds: 3), onTimeout: () => null);
@@ -87,7 +84,6 @@ class _LauncherScreenState extends State<LauncherScreen> {
     } catch (e) {
       debugPrint('[Launcher] _isOnboardedSafe error: $e');
     }
-    // If anything goes wrong, don’t block the user → treat as not onboarded
     return false;
   }
 
@@ -95,11 +91,11 @@ class _LauncherScreenState extends State<LauncherScreen> {
     try {
       final snap = await FirebaseFirestore.instance.collection('users').doc(docId).get();
       if (!snap.exists) return false;
-      final data = (snap.data() ?? {});
+      final data = snap.data() ?? {};
       return data['onboarded'] == true;
     } catch (e) {
       debugPrint('[Launcher] _fetchOnboarded("$docId") failed: $e');
-      return null; // signals "unknown" to the caller
+      return null;
     }
   }
 
@@ -110,7 +106,7 @@ class _LauncherScreenState extends State<LauncherScreen> {
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => page,
-        transitionDuration: const Duration(milliseconds: 200),
+        transitionDuration: const Duration(milliseconds: 250),
         transitionsBuilder: (_, anim, __, child) =>
             FadeTransition(opacity: anim, child: child),
       ),
@@ -126,9 +122,13 @@ class _LauncherScreenState extends State<LauncherScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // simple neutral loader (keeps splash → app smooth)
     return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
+      backgroundColor: Colors.black, // consistent with Fiinny dark splash
+      body: Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+        ),
+      ),
     );
   }
 }
