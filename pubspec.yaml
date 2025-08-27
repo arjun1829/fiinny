@@ -1,7 +1,7 @@
 name: lifemap
 description: A premium personal finance & social app (2025)
 publish_to: "none"
-version: 1.0.0+26
+version: 1.0.0+27
 
 environment:
   sdk: ">=3.2.0 <4.0.0"
@@ -57,7 +57,7 @@ dependencies:
   google_ml_kit: ^0.20.0
   file_picker: ^8.0.0
 
-  # Optional (Add if you use push or crash reporting)
+  # Optional (commented)
   # firebase_messaging: ^15.1.0
   # firebase_crashlytics: ^4.5.0
   # firebase_dynamic_links: ^6.0.0
@@ -68,10 +68,8 @@ dev_dependencies:
   flutter_native_splash: ^2.4.1
   flutter_launcher_icons: ^0.13.1
 
-# Flutter config
 flutter:
   uses-material-design: true
-
   assets:
     - assets/images/
     - assets/icons/
@@ -83,7 +81,6 @@ flutter:
     - assets/avatars/avatar2.png
     - assets/avatars/avatar3.png
     - assets/images/banks/
-
   fonts:
     - family: Montserrat
       fonts:
@@ -99,7 +96,6 @@ flutter:
         - asset: assets/fonts/Montserrat/Montserrat-Italic.ttf
           style: italic
 
-# Splash screen config
 flutter_native_splash:
   color: "#121212"
   image: assets/icons/fiinny_logo.png
@@ -111,7 +107,6 @@ flutter_native_splash:
   android_gravity: center
   ios_content_mode: scaleAspectFit
 
-# Launcher icon config
 flutter_launcher_icons:
   android: true
   ios: true
