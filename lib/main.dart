@@ -1,29 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
+import 'package:lifemap/themes/theme_provider.dart';
 import 'package:timezone/data/latest.dart' as tz;
 
-import 'firebase_options.dart';                 // <- from flutterfire configure
 import 'services/notification_service.dart';
 import 'routes.dart';
-import 'screens/auth_gate.dart';
-import 'themes/theme_provider.dart';
+import 'screens/welcome_screen.dart';
 
-Future<void> main() async {
+// If you have firebase_options.dart, keep this import.
+// If you don't yet, just leave it commented; the try/catch below will tolerate it.
+// import 'firebase_options.dart';
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Init platform stuff up-front
   tz.initializeTimeZones();
 
-  // ✅ Initialize Firebase with per-platform options (iOS needs this)
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // Don’t let Firebase init block the app from opening:
+  try {
+    // If you have firebase_options.dart, prefer this:
+    // await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    // Else fall back to default (requires GoogleService-Info.plist in iOS project):
+    await Firebase.initializeApp();
+  } catch (_) {
+    // swallow init errors so UI still opens
+  }
 
-  // Local notifications (safe to run after Firebase)
-  await NotificationService.initialize();
+  try {
+    await NotificationService.initialize();
+  } catch (_) {}
 
-  // Theme
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();
 
@@ -45,7 +51,8 @@ class FiinnyApp extends StatelessWidget {
       title: 'Fiinny',
       debugShowCheckedModeBanner: false,
       theme: themeProvider.themeData,
-      home: const AuthGate(),        // straight into auth gate
+      // Force open UI first; auth happens *after* user taps “Get Started”
+      home: const WelcomeScreen(),
       routes: appRoutes,
       onGenerateRoute: appOnGenerateRoute,
     );
