@@ -1,7 +1,7 @@
 ﻿name: lifemap
 description: A premium personal finance & social app (2025)
 publish_to: "none"
-version: 1.0.0+19
+version: 1.0.0+20
 
 environment:
   sdk: ">=3.2.0 <4.0.0"
