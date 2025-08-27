@@ -1,1 +1,19 @@
-flutter/ephemeral
+# Flutter intermediate build files
+flutter/ephemeral/
+flutter/generated_plugin_registrant.cc
+flutter/generated_plugin_registrant.h
+
+# Xcode-style user/workspace clutter (precaution)
+*.mode1v3
+*.mode2v3
+*.pbxuser
+*.xcuserstate
+*.xcworkspace
+*.moved-aside
+
+# VSCode or JetBrains IDEs (optional)
+.idea/
+.vscode/
+
+# Misc
+.DS_Store

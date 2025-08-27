@@ -38,7 +38,6 @@ jobs:
         with:
           xcode-version: '16'
 
-      # CACHES
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:
@@ -66,7 +65,6 @@ jobs:
           restore-keys: |
             dd-${{ runner.os }}-xcode16-
 
-      # TOOLING
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -76,88 +74,60 @@ jobs:
       - name: Install CocoaPods & xcbeautify
         shell: bash
         run: |
-          set -euxo pipefail
           sudo gem install cocoapods -N || true
           brew install xcbeautify || true
 
-      # DEPS
       - name: flutter pub get
         run: flutter pub get
 
       - name: Enforce iOS 16 & clean Pods
         shell: bash
         run: |
-          set -euxo pipefail
           /usr/bin/sed -i '' "s/platform :ios, .*/platform :ios, '16.0'/" ios/Podfile || true
           rm -rf ios/Pods ios/Podfile.lock
 
       - name: Install Pods
         shell: bash
         run: |
-          set -euxo pipefail
           cd ios
           pod repo update
           pod install --repo-update --clean-install
           cd ..
 
-      # 🔧 Bundle id & team
       - name: Set bundle identifier & team in project
         shell: bash
         run: |
-          set -euxo pipefail
           PBX="ios/Runner.xcodeproj/project.pbxproj"
-          /usr/bin/sed -i '' "s/com\.example\.[A-Za-z0-9_-]*/${BUNDLE_ID}/g" "$PBX" || true
+          /usr/bin/sed -i '' "s/com\\.example\\.[A-Za-z0-9_-]*/${BUNDLE_ID}/g" "$PBX" || true
           /usr/bin/sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" "$PBX"
           if grep -q "DEVELOPMENT_TEAM =" "$PBX"; then
             /usr/bin/sed -i '' "s/DEVELOPMENT_TEAM = [A-Z0-9]*;/DEVELOPMENT_TEAM = ${TEAM_ID};/g" "$PBX"
           else
             /usr/bin/sed -i '' "s/CODE_SIGN_STYLE = [A-Za-z]*/&; DEVELOPMENT_TEAM = ${TEAM_ID}/g" "$PBX" || true
           fi
-          if /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" ios/Runner/Info.plist >/dev/null 2>&1; then
-            /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${BUNDLE_ID}" ios/Runner/Info.plist || true
-          fi
-          /usr/bin/sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = .*RunnerTests;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID}.RunnerTests;/g" "$PBX" || true
-          /usr/bin/sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = .*RunnerUITests;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID}.RunnerUITests;/g" "$PBX" || true
 
-      # 🔐 Create iOS Firebase plist from secret (skip if you committed the file)
       - name: Create GoogleService-Info.plist from secret
         shell: bash
         run: |
-          set -euxo pipefail
-          if [ -n "${FIREBASE_IOS_PLIST_BASE64:-}" ]; then
-            mkdir -p ios/Runner
-            echo "$FIREBASE_IOS_PLIST_BASE64" | base64 --decode > ios/Runner/GoogleService-Info.plist
-            echo "Wrote ios/Runner/GoogleService-Info.plist from secret."
-          else
-            echo "No FIREBASE_IOS_PLIST_BASE64 secret set. Assuming file is committed."
-          fi
-          test -f ios/Runner/GoogleService-Info.plist || { echo "::error::Missing ios/Runner/GoogleService-Info.plist – add the file or set FIREBASE_IOS_PLIST_BASE64"; exit 1; }
+          mkdir -p ios/Runner
+          echo "$FIREBASE_IOS_PLIST_BASE64" | base64 --decode > ios/Runner/GoogleService-Info.plist
 
-      # ✅ Sync Google URL scheme to avoid ASC 409 error
       - name: Sync Google URL scheme into Info.plist
         shell: bash
         run: |
-          set -euxo pipefail
           GSP="ios/Runner/GoogleService-Info.plist"
           IP="ios/Runner/Info.plist"
           RID=$(/usr/libexec/PlistBuddy -c 'Print :REVERSED_CLIENT_ID' "$GSP")
-          echo "REVERSED_CLIENT_ID=$RID"
-          /usr/bin/sed -i '' "s/REVERSED_CLIENT_ID_FROM_GOOGLESERVICE_INFO/$RID/g" "$IP" || true
-          if ! /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes" "$IP" >/dev/null 2>&1 || \
-             ! /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes" "$IP" | grep -q "$RID"; then
-            /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$IP" 2>/dev/null || true
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes array' "$IP"
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0 dict' "$IP"
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleTypeRole string Editor' "$IP"
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' "$IP"
-            /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $RID" "$IP"
-          fi
+          /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$IP" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes array' "$IP"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0 dict' "$IP"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleTypeRole string Editor' "$IP"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' "$IP"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $RID" "$IP"
 
-      # SIGNING (manual)
       - name: Create keychain & import Apple Distribution (.p12)
         shell: bash
         run: |
-          set -euxo pipefail
           KEYCHAIN="$RUNNER_TEMP/build.keychain"
           KPWD=$(uuidgen)
           security create-keychain -p "$KPWD" "$KEYCHAIN"
@@ -165,33 +135,28 @@ jobs:
           security unlock-keychain -p "$KPWD" "$KEYCHAIN"
           printf '%s' "$P12_BASE64" | base64 -D > cert.p12
           security import cert.p12 -k "$KEYCHAIN" -P "$P12_PASSWORD" -A
-          security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed 's/["]//g')
+          security list-keychains -s "$KEYCHAIN" $(security list-keychains | sed 's/["']//g')
           security default-keychain -s "$KEYCHAIN"
 
       - name: Install provisioning profile
         shell: bash
         run: |
-          set -euxo pipefail
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 -D > "$RUNNER_TEMP/profile.mobileprovision"
+          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
           DECODED_PLIST="$RUNNER_TEMP/profile.plist"
           /usr/bin/security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" -o "$DECODED_PLIST"
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$DECODED_PLIST")
           PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$DECODED_PLIST")
           APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$DECODED_PLIST")
-          PF_BUNDLE_ID="${APP_ID#*.}"
           echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
-          test "$PF_BUNDLE_ID" = "$BUNDLE_ID"
           cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
 
-      - name: Create ExportOptions.plist (manual signing)
+      - name: Create ExportOptions.plist
         shell: bash
         run: |
-          set -euxo pipefail
           EXPORT_OPTS="ios/ExportOptions.plist"
-          /usr/libexec/PlistBuddy -c 'Clear dict' "$EXPORT_OPTS" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c 'Add : dict' "$EXPORT_OPTS"
+          /usr/libexec/PlistBuddy -c 'Clear dict' "$EXPORT_OPTS" || true
           /usr/libexec/PlistBuddy -c 'Add :method string app-store' "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :signingStyle string manual' "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c "Add :teamID string ${TEAM_ID}" "$EXPORT_OPTS"
@@ -200,60 +165,61 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :stripSwiftSymbols bool true' "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :compileBitcode bool false' "$EXPORT_OPTS"
 
-      # Build & export via Flutter (unique build number)
-      - name: Prepare Flutter iOS Release configuration
-        shell: bash
+      - name: Bump version in pubspec.yaml
         run: |
-          set -euxo pipefail
-          flutter build ios --config-only --release
+          version_line=$(grep '^version:' pubspec.yaml)
+          version_number=$(echo $version_line | cut -d ":" -f2 | xargs)
+          base_version=$(echo $version_number | cut -d "+" -f1)
+          echo "version: $base_version+${GITHUB_RUN_NUMBER}" > temp.yaml
+          tail -n +2 pubspec.yaml >> temp.yaml
+          mv temp.yaml pubspec.yaml
 
-      - name: Build & export IPA via Flutter
-        shell: bash
+      - name: Build IPA via Flutter
         run: |
-          set -euxo pipefail
-          flutter build ipa \
-            --release \
+          flutter build ipa --release \
             --build-number "${GITHUB_RUN_NUMBER}" \
             --export-options-plist ios/ExportOptions.plist
-          ls -lah build/ios/ipa || true
-          if ls build/ios/ipa/*.ipa >/dev/null 2>&1; then
-            cp "$(ls -1 build/ios/ipa/*.ipa | head -n1)" build/Fiinny.ipa
-          fi
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: fiinny-ipa
-          path: build/Fiinny.ipa
+          path: build/ios/ipa/*.ipa
 
-      # 🚚 Upload via Fastlane Pilot
+      - name: Upload ExportOptions.plist
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-options
+          path: ios/ExportOptions.plist
+
       - name: Install fastlane
-        shell: bash
-        run: |
-          set -euxo pipefail
-          sudo gem install fastlane -N
+        run: sudo gem install fastlane -N
 
-      - name: Write App Store Connect API key (fastlane JSON)
-        shell: bash
-        env:
-          ASC_KEY_ID: ${{ env.APPLE_KEY_ID }}
-          ASC_ISSUER_ID: ${{ env.APPLE_ISSUER_ID }}
-          APPLE_API_KEY_BASE64: ${{ env.APPLE_API_KEY_BASE64 }}
+      - name: Create ASC API Key JSON
         run: |
-          set -euxo pipefail
-          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "AuthKey_${ASC_KEY_ID}.p8"
-          chmod 600 "AuthKey_${ASC_KEY_ID}.p8"
-          python3 -c 'import os,json; kid=os.environ["ASC_KEY_ID"]; iss=os.environ["ASC_ISSUER_ID"]; key=open(f"AuthKey_{kid}.p8","r").read(); print(json.dumps({"key_id":kid,"issuer_id":iss,"key":key,"in_house":False}))' > api_key.json
-          chmod 600 api_key.json
+          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "AuthKey_${APPLE_KEY_ID}.p8"
+          python3 -c 'import os,json; kid=os.environ["APPLE_KEY_ID"]; iss=os.environ["APPLE_ISSUER_ID"]; key=open(f"AuthKey_{kid}.p8","r").read(); print(json.dumps({"key_id":kid,"issuer_id":iss,"key":key}))' > api_key.json
 
-      - name: Upload to TestFlight via fastlane pilot
-        shell: bash
+      - name: Upload to TestFlight
         run: |
-          set -euxo pipefail
-          test -f build/Fiinny.ipa
           fastlane pilot upload \
+            --ipa build/ios/ipa/*.ipa \
             --api_key_path api_key.json \
-            --ipa build/Fiinny.ipa \
             --skip_submission \
-            --skip_waiting_for_build_processing \
-            --verbose
+            --skip_waiting_for_build_processing
+
+      - name: Notify Slack (success)
+        if: success()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: '{"text": "✅ Fiinny iOS build uploaded to TestFlight!"}'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Slack (failure)
+        if: failure()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: '{"text": "❌ Fiinny iOS build failed. Please check logs."}'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

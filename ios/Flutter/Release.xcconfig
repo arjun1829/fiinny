@@ -1,7 +1,13 @@
 #include "Generated.xcconfig"
-// ---- CI manual signing for Release (Runner target only) ----
+
+// ---- Manual Signing for Release (for CI/CD or Archive) ----
 CODE_SIGN_STYLE = Manual
 DEVELOPMENT_TEAM = $(TEAM_ID)
 PRODUCT_BUNDLE_IDENTIFIER = $(BUNDLE_ID)
 PROVISIONING_PROFILE_SPECIFIER = $(PROFILE_NAME)
 CODE_SIGN_IDENTITY = Apple Distribution
+
+// ---- Recommended for smooth CI builds and iOS App Store deployment ----
+ENABLE_BITCODE = NO
+BUILD_LIBRARY_FOR_DISTRIBUTION = YES
+EXCLUDED_ARCHS[sdk=iphonesimulator*] = arm64

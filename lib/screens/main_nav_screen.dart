@@ -5,11 +5,10 @@ import 'dashboard_screen.dart';
 import 'expenses_screen.dart';
 import 'friends_screen.dart';
 import 'package:lifemap/sharing/screens/sharing_screen.dart';
-
 import 'package:lifemap/services/user_service.dart';
 
 class MainNavScreen extends StatefulWidget {
-  final String userPhone; // may actually be a UID on first launch
+  final String userPhone;
   const MainNavScreen({required this.userPhone, Key? key}) : super(key: key);
 
   @override
@@ -19,8 +18,6 @@ class MainNavScreen extends StatefulWidget {
 class _MainNavScreenState extends State<MainNavScreen>
     with TickerProviderStateMixin {
   int _currentIndex = 0;
-
-  // If we received a UID, we'll resolve to a phone number once.
   String? _resolvedPhone;
   bool _resolving = false;
   StreamSubscription? _resolveSub;
@@ -33,7 +30,6 @@ class _MainNavScreenState extends State<MainNavScreen>
   @override
   void initState() {
     super.initState();
-
     _iconData = const [
       Icons.dashboard_rounded,
       Icons.list_alt_rounded,
@@ -58,7 +54,6 @@ class _MainNavScreenState extends State<MainNavScreen>
 
     _shineTicker = List.generate(_iconData.length, (_) => null);
     _startShine(0);
-
     _resolvePhoneIfNeeded();
   }
 
@@ -80,17 +75,15 @@ class _MainNavScreenState extends State<MainNavScreen>
     super.dispose();
   }
 
-  // ----------------- Phone/UID resolution -----------------
+  // ----------- UID → Phone Resolution -----------
 
-  bool _looksLikeUid(String v) {
-    // Quick heuristic: Firebase UIDs are usually 28+ mixed chars (not guaranteed, but good signal)
-    return v.length >= 20 && RegExp(r'^[A-Za-z0-9_\-]+$').hasMatch(v);
-  }
+  bool _looksLikeUid(String v) =>
+      v.length >= 20 && RegExp(r'^[A-Za-z0-9_\-]+$').hasMatch(v);
 
   String get _effectivePhone => _resolvedPhone ?? widget.userPhone;
 
   Future<void> _resolvePhoneIfNeeded() async {
-    if (!_looksLikeUid(widget.userPhone)) return; // already a phone
+    if (!_looksLikeUid(widget.userPhone)) return;
     if (_resolvedPhone != null || _resolving) return;
 
     setState(() => _resolving = true);
@@ -101,21 +94,18 @@ class _MainNavScreenState extends State<MainNavScreen>
 
       if (!mounted) return;
       setState(() {
-        _resolvedPhone = (phone != null && phone.isNotEmpty)
+        _resolvedPhone = (phone?.isNotEmpty ?? false)
             ? phone
-            : widget.userPhone; // fail-soft: keep UID if no phone
+            : widget.userPhone; // fallback to UID
       });
     } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _resolvedPhone = widget.userPhone; // fail-soft
-      });
+      if (mounted) setState(() => _resolvedPhone = widget.userPhone);
     } finally {
       if (mounted) setState(() => _resolving = false);
     }
   }
 
-  // ----------------- Shine animation -----------------
+  // ----------- Shine Animation -----------
 
   void _startShine(int index) async {
     if (!mounted) return;
@@ -137,13 +127,11 @@ class _MainNavScreenState extends State<MainNavScreen>
     });
   }
 
-  // ----------------- UI -----------------
+  // ----------- UI -----------
 
   @override
   Widget build(BuildContext context) {
     final phone = _effectivePhone;
-
-    // Build screens each frame so they pick up the resolved phone automatically.
     final screens = <Widget>[
       DashboardScreen(userPhone: phone),
       ExpensesScreen(userPhone: phone),
@@ -154,91 +142,80 @@ class _MainNavScreenState extends State<MainNavScreen>
     return Scaffold(
       body: Stack(
         children: [
-          IndexedStack(
-            index: _currentIndex,
-            children: screens,
-          ),
+          IndexedStack(index: _currentIndex, children: screens),
           if (_resolving)
             const Positioned.fill(
               child: IgnorePointer(
                 ignoring: true,
-                child: SizedBox(), // keep it non-blocking; resolution is silent
+                child: SizedBox(),
               ),
             ),
         ],
       ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.only(bottom: 0),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border(
-              top: BorderSide(
-                color: Colors.grey.withOpacity(0.13),
-                width: 1.2,
-              ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border(
+            top: BorderSide(
+              color: Colors.grey.withOpacity(0.13),
+              width: 1.2,
             ),
           ),
-          child: BottomNavigationBar(
-            type: BottomNavigationBarType.fixed,
-            backgroundColor: Colors.transparent,
-            currentIndex: _currentIndex,
-            elevation: 0,
-            selectedItemColor: Theme.of(context).colorScheme.primary,
-            unselectedItemColor: const Color(0xFF535A68),
-            showUnselectedLabels: true,
-            onTap: _onTabTapped,
-            items: List.generate(_iconData.length, (i) {
-              final selected = _currentIndex == i;
-              return BottomNavigationBarItem(
-                icon: Stack(
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 320),
-                      curve: Curves.ease,
-                      decoration: selected
-                          ? BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .primary
-                            .withOpacity(0.09),
-                      )
-                          : null,
-                      child: SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: AnimatedBuilder(
-                          animation: _shineControllers[i],
-                          builder: (context, child) {
-                            return CustomPaint(
-                              painter: selected
-                                  ? ShinePainter(_shineAnimations[i].value)
-                                  : null,
-                              child: Icon(
-                                _iconData[i],
-                                size: selected ? 27 : 23,
-                                color: selected
-                                    ? Theme.of(context).colorScheme.primary
-                                    : const Color(0xFF535A68),
-                              ),
-                            );
-                          },
-                        ),
+        ),
+        child: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.transparent,
+          currentIndex: _currentIndex,
+          elevation: 0,
+          selectedItemColor: Theme.of(context).colorScheme.primary,
+          unselectedItemColor: const Color(0xFF535A68),
+          showUnselectedLabels: true,
+          onTap: _onTabTapped,
+          items: List.generate(_iconData.length, (i) {
+            final selected = _currentIndex == i;
+            return BottomNavigationBarItem(
+              icon: Stack(
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOut,
+                    decoration: selected
+                        ? BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withOpacity(0.10),
+                    )
+                        : null,
+                    child: SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: AnimatedBuilder(
+                        animation: _shineControllers[i],
+                        builder: (context, child) {
+                          return CustomPaint(
+                            painter: selected
+                                ? ShinePainter(_shineAnimations[i].value)
+                                : null,
+                            child: Icon(
+                              _iconData[i],
+                              size: selected ? 27 : 23,
+                              color: selected
+                                  ? Theme.of(context).colorScheme.primary
+                                  : const Color(0xFF535A68),
+                            ),
+                          );
+                        },
                       ),
                     ),
-                  ],
-                ),
-                label: const [
-                  "Dashboard",
-                  "Expenses",
-                  "Friends",
-                  "Sharing",
-                ][i],
-              );
-            }),
-          ),
+                  ),
+                ],
+              ),
+              label: const ["Dashboard", "Expenses", "Friends", "Sharing"][i],
+            );
+          }),
         ),
       ),
     );
@@ -280,7 +257,6 @@ class ShinePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant ShinePainter oldDelegate) {
-    return position != oldDelegate.position;
-  }
+  bool shouldRepaint(covariant ShinePainter oldDelegate) =>
+      position != oldDelegate.position;
 }

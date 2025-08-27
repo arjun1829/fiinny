@@ -1,39 +1,55 @@
-**/dgph
+# -------------------------
+# iOS Xcode Specific
+# -------------------------
+*.pbxuser
 *.mode1v3
 *.mode2v3
-*.moved-aside
-*.pbxuser
 *.perspectivev3
-**/*sync/
-.sconsign.dblite
-.tags*
-**/.vagrant/
-**/DerivedData/
-Icon?
-**/Pods/
-**/.symlinks/
+*.xcuserstate
+*.xcworkspace
+*.moved-aside
+*.xcuserdata/
+*.DS_Store
 profile
-xcuserdata
-**/.generated/
+tags*
+DerivedData/
+Icon?
+*.hmap
+
+# -------------------------
+# Flutter Generated
+# -------------------------
 Flutter/App.framework
 Flutter/Flutter.framework
 Flutter/Flutter.podspec
 Flutter/Generated.xcconfig
+Flutter/flutter_assets/
+Flutter/flutter_export_environment.sh
 Flutter/ephemeral/
 Flutter/app.flx
 Flutter/app.zip
-Flutter/flutter_assets/
-Flutter/flutter_export_environment.sh
-ServiceDefinitions.json
+
+# -------------------------
+# CocoaPods & Symlinks
+# -------------------------
+Pods/
+.symlinks/
+.podspec
+
+# -------------------------
+# Vagrant & SCons (edge cases)
+# -------------------------
+.vagrant/
+.sconsign.dblite
+
+# -------------------------
+# Plugin Registrant
+# -------------------------
 Runner/GeneratedPluginRegistrant.*
 
-# Exceptions to above rules.
-!default.mode1v3
-!default.mode2v3
-!default.pbxuser
-!default.perspectivev3
-Add-Content .gitignore @"
-# iOS signing secrets
+# -------------------------
+# Code Signing / Secrets
+# -------------------------
 *.p12
 *.cer
 *.pem
@@ -42,8 +58,9 @@ Add-Content .gitignore @"
 *.mobileprovision
 AuthKey_*.p8
 
-# local notes
-*secrete*.txt
+# -------------------------
+# Notes & Secret Text Files
+# -------------------------
 *secret*.txt
+*secrete*.txt
 *.txt
-"@

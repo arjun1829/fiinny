@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
@@ -8,18 +9,28 @@ class NotificationService {
 
   NotificationService._internal();
 
-  /// Call this ONCE before using notifications (eg. in main())
+  /// Call this ONCE before using notifications (e.g. in main.dart)
   static Future<void> initialize() async {
-    const AndroidInitializationSettings androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const DarwinInitializationSettings iosInit = DarwinInitializationSettings();
+    const AndroidInitializationSettings androidInit =
+    AndroidInitializationSettings('@mipmap/ic_launcher');
 
-    const InitializationSettings settings = InitializationSettings(
-      android: androidInit,
-      iOS: iosInit,
-      macOS: iosInit,
+    final DarwinInitializationSettings iosInit = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+      // Optional: Uncomment if targeting iOS < 10
+      // onDidReceiveLocalNotification: onDidReceiveLocalNotification,
     );
 
-    await _plugin.initialize(settings);
+    final InitializationSettings settings = InitializationSettings(
+      android: androidInit,
+      iOS: iosInit,
+    );
+
+    await _plugin.initialize(
+      settings,
+      onDidReceiveNotificationResponse: onDidReceiveNotificationResponse,
+    );
   }
 
   /// Show a basic notification. [title] and [body] required.
@@ -30,21 +41,34 @@ class NotificationService {
     const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
       'default_channel',
       'General Notifications',
-      channelDescription: 'Default channel for notifications',
+      channelDescription: 'Default channel for app notifications',
       importance: Importance.max,
       priority: Priority.high,
     );
+
     const DarwinNotificationDetails iosDetails = DarwinNotificationDetails();
 
-    const NotificationDetails details = NotificationDetails(
+    final NotificationDetails details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
-      macOS: iosDetails,
     );
 
-    // Use a unique id for each notification
     final int id = DateTime.now().millisecondsSinceEpoch.remainder(100000);
-
     await _plugin.show(id, title, body, details);
+  }
+
+  /// (Optional) Handles notification taps (Android 13+ / iOS)
+  static void onDidReceiveNotificationResponse(NotificationResponse response) {
+    debugPrint('🔔 Notification tapped: ${response.payload}');
+  }
+
+  /// (Optional) iOS < 10 legacy support
+  static void onDidReceiveLocalNotification(
+      int id,
+      String? title,
+      String? body,
+      String? payload,
+      ) async {
+    debugPrint('📱 iOS Legacy Notification: $title - $body');
   }
 }

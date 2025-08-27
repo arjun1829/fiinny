@@ -6,7 +6,10 @@
   <string>app-store</string>
 
   <key>signingStyle</key>
-  <string>automatic</string>
+  <string>manual</string> <!-- 🔧 Use manual if CODE_SIGN_STYLE = Manual -->
+
+  <key>uploadBitcode</key>
+  <false/> <!-- Bitcode deprecated by Apple -->
 
   <key>stripSwiftSymbols</key>
   <true/>
@@ -14,7 +17,23 @@
   <key>compileBitcode</key>
   <false/>
 
+  <key>thinning</key>
+  <string>&lt;none&gt;</string> <!-- Keeps all slices -->
+
   <key>destination</key>
   <string>export</string>
+
+  <!-- Optional but good to have: -->
+  <key>teamID</key>
+  <string>D9JTVVB85F</string>
+
+  <!-- Optional: Include provisioningProfiles if needed -->
+  <!--
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>com.KaranArjunTechnologies.fiinny</key>
+    <string>Fiinny_Provision_Profile</string>
+  </dict>
+  -->
 </dict>
 </plist>
