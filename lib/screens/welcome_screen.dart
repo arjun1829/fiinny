@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../theme_provider.dart';
-import 'auth_gate.dart';
+import 'auth_gate.dart'; // same folder
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({Key? key}) : super(key: key);
@@ -60,8 +59,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   void _openAuth() async {
     await _markOnboardingSeen();
     if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
+    Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const AuthGate()),
     );
   }
@@ -196,7 +194,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     final bottomPad = media.padding.bottom;
 
     final primaryBtnStyle = ElevatedButton.styleFrom(
-      backgroundColor: theme.colorScheme.primary,         // darker CTA
+      backgroundColor: theme.colorScheme.primary,
       foregroundColor: theme.colorScheme.onPrimary,
       padding: const EdgeInsets.symmetric(vertical: 16),
       elevation: 0,
@@ -239,16 +237,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       onPressed: _openQuickTour,
                       icon: const Icon(Icons.help_outline),
                     ),
-                    // Darker Skip
                     if (!isLast)
                       TextButton(
                         onPressed: _skipToEnd,
                         style: TextButton.styleFrom(
                           foregroundColor:
                           theme.colorScheme.onSurface.withOpacity(0.9),
-                          textStyle: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                          ),
+                          textStyle: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                         child: const Text("Skip"),
                       ),
@@ -283,18 +278,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       onPageChanged: (int page) {
                         setState(() {
                           _currentPage = page;
-                          _showSwipeHint = page == 0; // hint only on first page
+                          _showSwipeHint = page == 0;
                         });
                       },
                       itemBuilder: (_, idx) {
                         final data = _onboardData[idx];
                         return Center(
                           child: Padding(
-                            padding:
-                            const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 10),
                             child: ConstrainedBox(
                               constraints: BoxConstraints(
-                                maxWidth: 640, // tablet friendly
+                                maxWidth: 640,
                                 maxHeight: screen.height * 0.62,
                                 minHeight: 360,
                               ),
@@ -309,32 +304,31 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       },
                     ),
 
-                    // Swipe hint (first page only, well above footer)
+                    // Swipe hint (first page only)
                     if (_showSwipeHint && !isLast)
                       Positioned.fill(
                         child: IgnorePointer(
                           ignoring: true,
                           child: Align(
                             alignment: const Alignment(0, 0.80),
-                            child: AnimatedOpacity(
-                              opacity: 1,
-                              duration: const Duration(milliseconds: 600),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.swipe,
-                                      size: 18,
-                                      color: Colors.black.withOpacity(0.55)),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    "Swipe to continue",
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.black.withOpacity(0.55),
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.swipe,
+                                    size: 18,
+                                    color: Colors.black.withOpacity(0.55)),
+                                const SizedBox(width: 6),
+                                Text(
+                                  "Swipe to continue",
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                    color: Colors.black.withOpacity(0.55),
+                                    fontWeight: FontWeight.w600,
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -372,16 +366,17 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 ),
               ),
 
-              // CTA: only on last page; maintain space otherwise so layout doesn't jump
+              // CTA (last page only)
               Padding(
-                padding: EdgeInsets.fromLTRB(20, 0, 20, isLast ? (10 + bottomPad) : 0),
+                padding:
+                EdgeInsets.fromLTRB(20, 0, 20, isLast ? (10 + bottomPad) : 0),
                 child: isLast
                     ? ElevatedButton(
                   onPressed: _openAuth,
                   style: primaryBtnStyle,
                   child: const Text("Get Started"),
                 )
-                    : const SizedBox(height: 0),
+                    : const SizedBox.shrink(),
               ),
 
               // Footer links
@@ -393,9 +388,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     child: Wrap(
                       spacing: 16,
                       children: [
-                        _FooterLink(text: "Privacy", onTap: () => _openInfoSheet("Privacy")),
-                        _FooterLink(text: "Terms", onTap: () => _openInfoSheet("Terms")),
-                        _FooterLink(text: "Support", onTap: () => _openInfoSheet("Support")),
+                        _FooterLink(
+                            text: "Privacy",
+                            onTap: () => _openInfoSheet("Privacy")),
+                        _FooterLink(
+                            text: "Terms",
+                            onTap: () => _openInfoSheet("Terms")),
+                        _FooterLink(
+                            text: "Support",
+                            onTap: () => _openInfoSheet("Support")),
                       ],
                     ),
                   ),
@@ -420,8 +421,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title,
-                style:
-                theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 12),
             Text(
               "Coming soon. You can add your $title content here.",
@@ -471,7 +472,6 @@ class _OnboardCard extends StatelessWidget {
               color: theme.colorScheme.outline.withOpacity(0.14),
               width: 1.0,
             ),
-            // Stronger, softer card shadow
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.12),
@@ -485,14 +485,14 @@ class _OnboardCard extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Image sits on a mini-card for extra depth
               Flexible(
                 flex: 4,
                 child: Container(
                   padding: const EdgeInsets.all(10),
                   margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceVariant.withOpacity(0.25),
+                    color:
+                    theme.colorScheme.surfaceVariant.withOpacity(0.25),
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
@@ -509,8 +509,6 @@ class _OnboardCard extends StatelessWidget {
                   ),
                 ),
               ),
-
-              // Title
               Text(
                 title,
                 textAlign: TextAlign.center,
@@ -521,8 +519,6 @@ class _OnboardCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-
-              // Description
               Text(
                 desc,
                 textAlign: TextAlign.center,

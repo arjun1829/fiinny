@@ -5,6 +5,9 @@ import 'screens/onboarding_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/analytics_screen.dart';
 import 'screens/expenses_screen.dart';
+import 'screens/launcher_screen.dart';
+import 'screens/welcome_screen.dart';
+import 'screens/auth_gate.dart';
 
 // Screens that need arguments
 import 'screens/dashboard_screen.dart';
@@ -18,94 +21,161 @@ import 'screens/crisis_mode_screen.dart';
 import 'screens/insight_feed_screen.dart';
 import 'screens/transaction_count_screen.dart';
 import 'screens/transaction_amount_screen.dart';
-import 'screens/launcher_screen.dart';
+import 'screens/main_nav_screen.dart';
 
 import 'services/user_data.dart'; // For InsightFeedScreen
 
+// ---------- Simple (no-args) named routes ----------
 final Map<String, WidgetBuilder> appRoutes = {
   '/launcher': (_) => const LauncherScreen(),
+  '/welcome': (_) => const WelcomeScreen(),
+  '/auth': (_) => const AuthGate(),
   '/onboarding': (_) => const OnboardingScreen(),
   '/profile': (_) => ProfileScreen(),
   '/analytics': (_) => const AnalyticsScreen(),
-  // Screens that require arguments must be handled in onGenerateRoute.
 };
 
+// ---------- Routes that need arguments ----------
 Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
   final args = settings.arguments;
 
   switch (settings.name) {
+  // Entry to main tabbed app — expects String userPhone
+    case '/main':
+      if (args is String && args.isNotEmpty) {
+        return MaterialPageRoute(
+          builder: (_) => MainNavScreen(userPhone: args),
+        );
+      }
+      return _badArgs(settings.name, 'String userPhone');
+
     case '/dashboard':
-      return MaterialPageRoute(
-        builder: (_) => DashboardScreen(userPhone: args as String),
-      );
+      if (args is String) {
+        return MaterialPageRoute(
+          builder: (_) => DashboardScreen(userPhone: args),
+        );
+      }
+      return _badArgs(settings.name, 'String userPhone');
+
     case '/expenses':
-      return MaterialPageRoute(
-        builder: (_) => ExpensesScreen(userPhone: args as String),
-      );
+      if (args is String) {
+        return MaterialPageRoute(
+          builder: (_) => ExpensesScreen(userPhone: args),
+        );
+      }
+      return _badArgs(settings.name, 'String userPhone');
 
     case '/goals':
-      return MaterialPageRoute(
-        builder: (_) => GoalsScreen(userId: args as String),
-      );
+      if (args is String) {
+        return MaterialPageRoute(
+          builder: (_) => GoalsScreen(userId: args),
+        );
+      }
+      return _badArgs(settings.name, 'String userId');
 
     case '/add':
-      return MaterialPageRoute(
-        builder: (_) => AddTransactionScreen(userId: args as String),
-      );
+      if (args is String) {
+        return MaterialPageRoute(
+          builder: (_) => AddTransactionScreen(userId: args),
+        );
+      }
+      return _badArgs(settings.name, 'String userId');
 
     case '/addLoan':
-      return MaterialPageRoute(
-        builder: (_) => AddLoanScreen(userId: args as String),
-      );
+      if (args is String) {
+        return MaterialPageRoute(
+          builder: (_) => AddLoanScreen(userId: args),
+        );
+      }
+      return _badArgs(settings.name, 'String userId');
 
     case '/addAsset':
-      return MaterialPageRoute(
-        builder: (_) => AddAssetScreen(userId: args as String),
-      );
+      if (args is String) {
+        return MaterialPageRoute(
+          builder: (_) => AddAssetScreen(userId: args),
+        );
+      }
+      return _badArgs(settings.name, 'String userId');
 
     case '/loans':
-      final map = args as Map<String, dynamic>;
-      return MaterialPageRoute(
-        builder: (_) => LoansScreen(userId: map['userId'] as String),
-      );
+      if (args is Map<String, dynamic> && args['userId'] is String) {
+        return MaterialPageRoute(
+          builder: (_) => LoansScreen(userId: args['userId'] as String),
+        );
+      }
+      return _badArgs(settings.name, "{ 'userId': String }");
 
     case '/assets':
-      final map = args as Map<String, dynamic>;
-      return MaterialPageRoute(
-        builder: (_) => AssetsScreen(userId: map['userId'] as String),
-      );
+      if (args is Map<String, dynamic> && args['userId'] is String) {
+        return MaterialPageRoute(
+          builder: (_) => AssetsScreen(userId: args['userId'] as String),
+        );
+      }
+      return _badArgs(settings.name, "{ 'userId': String }");
 
     case '/crisisMode':
-      final map = args as Map<String, dynamic>;
-      return MaterialPageRoute(
-        builder: (_) => CrisisModeScreen(
-          userId: map['userId'] as String,
-          creditCardBill: map['creditCardBill'] as double,
-          salary: map['salary'] as double,
-        ),
+      if (args is Map<String, dynamic> &&
+          args['userId'] is String &&
+          args['creditCardBill'] is num &&
+          args['salary'] is num) {
+        return MaterialPageRoute(
+          builder: (_) => CrisisModeScreen(
+            userId: args['userId'] as String,
+            creditCardBill: (args['creditCardBill'] as num).toDouble(),
+            salary: (args['salary'] as num).toDouble(),
+          ),
+        );
+      }
+      return _badArgs(
+        settings.name,
+        "{ 'userId': String, 'creditCardBill': double, 'salary': double }",
       );
 
     case '/insights':
-      final map = args as Map<String, dynamic>;
-      return MaterialPageRoute(
-        builder: (_) => InsightFeedScreen(
-          userId: map['userId'] as String,
-          userData: map['userData'] as UserData,
-        ),
-      );
+      if (args is Map<String, dynamic> &&
+          args['userId'] is String &&
+          args['userData'] is UserData) {
+        return MaterialPageRoute(
+          builder: (_) => InsightFeedScreen(
+            userId: args['userId'] as String,
+            userData: args['userData'] as UserData,
+          ),
+        );
+      }
+      return _badArgs(settings.name, "{ 'userId': String, 'userData': UserData }");
 
-  // 👇👇👇 Add your new routes for Transaction Count/Amount screens here!
     case '/transactionCount':
-      return MaterialPageRoute(
-        builder: (_) => TransactionCountScreen(userId: args as String),
-      );
+      if (args is String) {
+        return MaterialPageRoute(
+          builder: (_) => TransactionCountScreen(userId: args),
+        );
+      }
+      return _badArgs(settings.name, 'String userId');
 
     case '/transactionAmount':
-      return MaterialPageRoute(
-        builder: (_) => TransactionAmountScreen(userId: args as String),
-      );
+      if (args is String) {
+        return MaterialPageRoute(
+          builder: (_) => TransactionAmountScreen(userId: args),
+        );
+      }
+      return _badArgs(settings.name, 'String userId');
 
     default:
       return null;
   }
+}
+
+// ---------- helper for bad/missing arguments ----------
+Route<dynamic> _badArgs(String? routeName, String expected) {
+  return MaterialPageRoute(
+    builder: (_) => Scaffold(
+      appBar: AppBar(title: const Text('Route error')),
+      body: Center(
+        child: Text(
+          'Route "$routeName" called with wrong/missing arguments.\nExpected: $expected',
+          textAlign: TextAlign.center,
+        ),
+      ),
+    ),
+  );
 }
