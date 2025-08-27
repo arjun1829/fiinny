@@ -1,19 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
-import 'package:lifemap/themes/theme_provider.dart';
 import 'package:timezone/data/latest.dart' as tz;
 
+import 'firebase_options.dart';                 // <- from flutterfire configure
 import 'services/notification_service.dart';
 import 'routes.dart';
-import 'screens/auth_gate.dart'; // <- our new entry screen
+import 'screens/auth_gate.dart';
+import 'themes/theme_provider.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Init platform stuff up-front
   tz.initializeTimeZones();
-  await Firebase.initializeApp();
+
+  // ✅ Initialize Firebase with per-platform options (iOS needs this)
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // Local notifications (safe to run after Firebase)
   await NotificationService.initialize();
 
+  // Theme
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();
 
@@ -35,8 +45,7 @@ class FiinnyApp extends StatelessWidget {
       title: 'Fiinny',
       debugShowCheckedModeBanner: false,
       theme: themeProvider.themeData,
-      // 🚫 No LauncherScreen. Go straight to the auth gate.
-      home: const AuthGate(),
+      home: const AuthGate(),        // straight into auth gate
       routes: appRoutes,
       onGenerateRoute: appOnGenerateRoute,
     );
