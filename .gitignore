@@ -38,3 +38,4 @@ android/.idea/
 *.log
 *.lock
 .idea/
+ios/Runner/GoogleService-Info.plist
