@@ -200,6 +200,23 @@ jobs:
           /usr/bin/perl -0777 -pe \
             "s/(name = Profile;\\n\\t*buildSettings = \\{)/\\1\\n\\t\\t\\t\\tBUILD_LIBRARY_FOR_DISTRIBUTION = NO;\\n\\t\\t\\t\\tDEFINES_MODULE = NO;/s" \
             -i "$PBX" || true
+
+      - name: Force OFF Swift module interfaces via xcconfig
+        shell: bash
+        run: |
+          set -euxo pipefail
+          for f in ios/Flutter/Debug.xcconfig ios/Flutter/Release.xcconfig; do
+            # ensure file exists
+            [ -f "$f" ] || touch "$f"
+            # remove old lines if present, then append clean values
+            sed -i '' '/^BUILD_LIBRARY_FOR_DISTRIBUTION/d' "$f" || true
+            sed -i '' '/^DEFINES_MODULE/d' "$f" || true
+            {
+              echo 'BUILD_LIBRARY_FOR_DISTRIBUTION=NO'
+              echo 'DEFINES_MODULE=NO'
+            } >> "$f"
+          done
+      
       
 
       - name: Bump build number in pubspec.yaml (safe replace)
@@ -230,6 +247,16 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:${BUNDLE_ID} string ${PROFILE_NAME}" "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :stripSwiftSymbols bool true' "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :compileBitcode bool false' "$EXPORT_OPTS"
+
+      - name: Verify build settings
+        shell: bash
+        run: |
+          set -euxo pipefail
+          xcodebuild -showBuildSettings \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release | egrep 'DEFINES_MODULE|BUILD_LIBRARY_FOR_DISTRIBUTION|SWIFT_OBJC_BRIDGING_HEADER' || true
+      
 
       - name: Build IPA (signed)
         shell: bash
