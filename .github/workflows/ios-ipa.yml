@@ -95,6 +95,7 @@ jobs:
         run: |
           set -euxo pipefail
           sudo gem install cocoapods -N || true
+          flutter pub get
           cd ios
           pod install --repo-update
           cd ..
