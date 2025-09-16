@@ -171,12 +171,9 @@ jobs:
       - name: Bump Build Number from GitHub run
         shell: bash
         run: |
-          set -euxo pipefail
-          version_line=$(grep '^version:' pubspec.yaml)
-          version_number=$(echo "$version_line" | cut -d ":" -f2 | xargs)
-          base_version=$(echo "$version_number" | cut -d "+" -f1)
-          { echo "version: $base_version+${GITHUB_RUN_NUMBER}"; tail -n +2 pubspec.yaml; } > temp.yaml
-          mv temp.yaml pubspec.yaml
+          sed -i '' -E "s/^version: .*/version: 1.0.0+${GITHUB_RUN_NUMBER}/" pubspec.yaml
+          cat pubspec.yaml
+      
 
       - name: Prepare ExportOptions.plist
         shell: bash
