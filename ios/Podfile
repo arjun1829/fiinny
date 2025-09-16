@@ -13,17 +13,17 @@ project 'Runner', {
 
 def flutter_root
   generated_xcconfig = File.expand_path('../Flutter/Generated.xcconfig', __FILE__)
-  raise "#{generated_xcconfig} missing — run flutter pub get" unless File.exist?(generated_xcconfig)
+  raise "#{generated_xcconfig} missing - run flutter pub get" unless File.exist?(generated_xcconfig)
   File.foreach(generated_xcconfig) do |line|
     return line.split('=').last.strip if line.start_with?('FLUTTER_ROOT')
   end
-  raise "FLUTTER_ROOT not found in Generated.xcconfig"
+  raise 'FLUTTER_ROOT not found in Generated.xcconfig'
 end
 
 require File.expand_path('packages/flutter_tools/bin/podhelper', flutter_root)
 
 target 'Runner' do
-  # Static frameworks reduce a lot of transitive-linker pain on CI
+  # Static frameworks = fewer transitive-linker issues on CI
   use_frameworks! :linkage => :static
   use_modular_headers!
 
@@ -31,25 +31,27 @@ target 'Runner' do
 end
 
 post_install do |installer|
-  # Make Xcode 15/16 happy & unify deployment target across everything
+  # Enforce iOS 16 and turn OFF Swift module interfaces for all Pods
+  installer.pods_project.targets.each do |t|
+    t.build_configurations.each do |config|
+      bs = config.build_settings
+      bs['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
+      bs['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'NO'
+      # Don't exclude arm64 for simulator; Apple Silicon needs it.
+    end
+    flutter_additional_ios_build_settings(t)
+  end
+
+  # Some generated projects may also carry config; keep them consistent
   installer.generated_projects.each do |project|
     project.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
-      # Leave SWIFT_VERSION to Xcode default to avoid toolchain mismatches.
-      config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'YES'
+      bs = config.build_settings
+      bs['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
+      bs['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'NO'
     end
   end
 
-  # Apply Flutter’s additional settings and enforce iOS 16 on all Pods
-  installer.pods_project.targets.each do |target|
-    target.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
-      # Do NOT exclude arm64 for simulator here; it breaks Apple-silicon sims.
-    end
-    flutter_additional_ios_build_settings(target)
-  end
-
-  # Disable code signing for Pods (Runner will be signed by CI / Xcode)
+  # Disable code signing for Pods (Runner is signed by Xcode/CI)
   installer.pods_project.targets.each do |t|
     t.build_configurations.each do |config|
       bs = config.build_settings
