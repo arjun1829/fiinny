@@ -185,6 +185,23 @@ jobs:
             sed -i '' "s/PROVISIONING_PROFILE_SPECIFIER = [^;]*;/PROVISIONING_PROFILE_SPECIFIER = ${PROFILE_NAME};/g" "$PBX" || true
           fi
 
+      - name: Disable Swift module interfaces (fix bridging-header error)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PBX="ios/Runner.xcodeproj/project.pbxproj"
+          # If Xcode auto-migrated these to YES, force them back to NO for the app target.
+          sed -i '' 's/BUILD_LIBRARY_FOR_DISTRIBUTION = YES;/BUILD_LIBRARY_FOR_DISTRIBUTION = NO;/g' "$PBX" || true
+          sed -i '' 's/DEFINES_MODULE = YES;/DEFINES_MODULE = NO;/g' "$PBX" || true
+          # (Optional) If your pbxproj doesn’t contain explicit keys, add them for Release/Profile.
+          /usr/bin/perl -0777 -pe \
+            "s/(name = Release;\\n\\t*buildSettings = \\{)/\\1\\n\\t\\t\\t\\tBUILD_LIBRARY_FOR_DISTRIBUTION = NO;\\n\\t\\t\\t\\tDEFINES_MODULE = NO;/s" \
+            -i "$PBX" || true
+          /usr/bin/perl -0777 -pe \
+            "s/(name = Profile;\\n\\t*buildSettings = \\{)/\\1\\n\\t\\t\\t\\tBUILD_LIBRARY_FOR_DISTRIBUTION = NO;\\n\\t\\t\\t\\tDEFINES_MODULE = NO;/s" \
+            -i "$PBX" || true
+      
+
       - name: Bump build number in pubspec.yaml (safe replace)
         shell: bash
         run: |
@@ -299,4 +316,3 @@ jobs:
             }
         env:
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
-
