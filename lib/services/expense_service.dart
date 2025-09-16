@@ -4,20 +4,29 @@ import '../models/expense_item.dart';
 class ExpenseService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Always use user phone (E.164) as key
+  // ── USER SCOPED COLLECTION (what Dashboard reads & Mirror writes) ─────────────
+  // expenses/<userPhone>/items/*
   CollectionReference<Map<String, dynamic>> getExpensesCollection(String userPhone) {
     return _firestore.collection('users').doc(userPhone).collection('expenses');
   }
 
-  /// List all expenses for user (includes credit card, group, etc.)
+  // ── GLOBAL/GROUP ANALYTICS (separate collection to avoid path collision) ─────
+  // group_expenses/<expenseId>
+  CollectionReference<Map<String, dynamic>> get _groupExpenses =>
+      _firestore.collection('group_expenses');
+
+  /// List all expenses for user
   Future<List<ExpenseItem>> getExpenses(String userPhone) async {
-    final snapshot = await getExpensesCollection(userPhone).get();
+    final snapshot = await getExpensesCollection(userPhone)
+        .orderBy('date', descending: true)
+        .get();
     return snapshot.docs.map((doc) => ExpenseItem.fromJson(doc.data())).toList();
   }
 
-  /// Add an expense (handles custom splits, mirroring, group logic, supports unregistered)
+  /// Add an expense (handles custom splits & mirrors to friends)
   Future<String> addExpenseWithDialog(ExpenseItem expense, String userPhone) async {
-    final docRef = getExpensesCollection(userPhone).doc();
+    final col = getExpensesCollection(userPhone);
+    final docRef = col.doc(); // id generated here; used to mirror to friends
     final expenseWithId = expense.copyWith(id: docRef.id);
     await docRef.set(expenseWithId.toJson());
 
@@ -26,7 +35,6 @@ class ExpenseService {
       for (final entry in expense.customSplits!.entries) {
         final friendPhone = entry.key;
         if (friendPhone != userPhone) {
-          // Each participant gets their split amount
           final mirrorDoc = getExpensesCollection(friendPhone).doc(expenseWithId.id);
           await mirrorDoc.set(expenseWithId.copyWith(
             payerId: expense.payerId,
@@ -46,17 +54,18 @@ class ExpenseService {
       }
     }
 
-    // Write to global group collection for group analytics
+    // Write to global group collection (separate)
     if (expense.groupId != null) {
-      await _firestore.collection('expenses').doc(expenseWithId.id).set(expenseWithId.toJson());
+      await _groupExpenses.doc(expenseWithId.id).set(expenseWithId.toJson());
     }
 
     return docRef.id;
   }
 
-  /// Add an expense (with custom splits and sync logic)
+  /// Add with sync (same as dialog variant, kept for compatibility)
   Future<String> addExpenseWithSync(String userPhone, ExpenseItem expense) async {
-    final docRef = getExpensesCollection(userPhone).doc();
+    final col = getExpensesCollection(userPhone);
+    final docRef = col.doc();
     final expenseWithId = expense.copyWith(id: docRef.id);
     await docRef.set(expenseWithId.toJson());
 
@@ -74,7 +83,6 @@ class ExpenseService {
         }
       }
     } else {
-      // Fallback: classic friends mirroring
       for (String friendPhone in expense.friendIds) {
         if (friendPhone != userPhone) {
           final mirrorDoc = getExpensesCollection(friendPhone).doc(expenseWithId.id);
@@ -84,25 +92,26 @@ class ExpenseService {
     }
 
     if (expense.groupId != null) {
-      await _firestore.collection('expenses').doc(expenseWithId.id).set(expenseWithId.toJson());
+      await _groupExpenses.doc(expenseWithId.id).set(expenseWithId.toJson());
     }
 
     return docRef.id;
   }
 
-  /// Add a basic expense (no mirroring, only for user)
+  /// Add a basic expense (no mirroring)
   Future<String> addExpense(String userPhone, ExpenseItem expense) async {
-    final docRef = getExpensesCollection(userPhone).doc();
+    final col = getExpensesCollection(userPhone);
+    final docRef = col.doc();
     final expenseWithId = expense.copyWith(id: docRef.id);
     await docRef.set(expenseWithId.toJson());
 
     if (expense.groupId != null) {
-      await _firestore.collection('expenses').doc(expenseWithId.id).set(expenseWithId.toJson());
+      await _groupExpenses.doc(expenseWithId.id).set(expenseWithId.toJson());
     }
     return docRef.id;
   }
 
-  /// Update an expense everywhere (user, friends, mirrored) by phone
+  /// Update an expense for user and all mirrored friends
   Future<void> updateExpense(String userPhone, ExpenseItem expense) async {
     await getExpensesCollection(userPhone).doc(expense.id).update(expense.toJson());
     for (String friendPhone in expense.friendIds) {
@@ -110,9 +119,12 @@ class ExpenseService {
         await getExpensesCollection(friendPhone).doc(expense.id).update(expense.toJson());
       }
     }
+    if (expense.groupId != null) {
+      await _groupExpenses.doc(expense.id).set(expense.toJson(), SetOptions(merge: true));
+    }
   }
 
-  /// Delete an expense everywhere (user, friends, group-level/global) by phone
+  /// Delete expense everywhere
   Future<void> deleteExpense(String userPhone, String expenseId, {List<String>? friendPhones}) async {
     await getExpensesCollection(userPhone).doc(expenseId).delete();
     if (friendPhones != null) {
@@ -122,30 +134,25 @@ class ExpenseService {
         }
       }
     }
-    // Remove from group/global expenses collection
-    await _firestore.collection('expenses').doc(expenseId).delete();
+    await _groupExpenses.doc(expenseId).delete();
   }
 
-  /// Settle up an expense (marks as settled for both users)
+  /// Settle an expense (two-way)
   Future<void> settleUpExpense(String userPhone, String expenseId, String friendPhone) async {
-    final ref = getExpensesCollection(userPhone).doc(expenseId);
-    await ref.update({
+    await getExpensesCollection(userPhone).doc(expenseId).update({
       'settledFriendIds': FieldValue.arrayUnion([friendPhone])
     });
-    final friendRef = getExpensesCollection(friendPhone).doc(expenseId);
-    await friendRef.update({
+    await getExpensesCollection(friendPhone).doc(expenseId).update({
       'settledFriendIds': FieldValue.arrayUnion([userPhone])
     });
   }
 
-  /// Update custom split for an expense (advanced, rarely used directly)
+  /// Update custom split (global record)
   Future<void> updateExpenseCustomSplit(String expenseId, Map<String, double> splits) async {
-    await _firestore.collection('expenses').doc(expenseId).update({
-      'customSplits': splits,
-    });
+    await _groupExpenses.doc(expenseId).set({'customSplits': splits}, SetOptions(merge: true));
   }
 
-  /// Realtime stream for user expenses (by phone)
+  /// Streams
   Stream<List<ExpenseItem>> getExpensesStream(String userPhone) {
     return getExpensesCollection(userPhone)
         .orderBy('date', descending: true)
@@ -153,22 +160,22 @@ class ExpenseService {
         .map((snapshot) => snapshot.docs.map((doc) => ExpenseItem.fromJson(doc.data())).toList());
   }
 
-  /// Realtime stream for group expenses (by phone)
   Stream<List<ExpenseItem>> getGroupExpensesStream(String userPhone, String groupId) {
-    final ref = getExpensesCollection(userPhone).where('groupId', isEqualTo: groupId);
-
-    return ref.snapshots().map((snap) =>
-        snap.docs.map((d) => ExpenseItem.fromJson(d.data())).toList());
+    return getExpensesCollection(userPhone)
+        .where('groupId', isEqualTo: groupId)
+        .orderBy('date', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs.map((d) => ExpenseItem.fromJson(d.data())).toList());
   }
 
   Future<List<ExpenseItem>> getExpensesByGroup(String userPhone, String groupId) async {
     final snap = await getExpensesCollection(userPhone)
         .where('groupId', isEqualTo: groupId)
+        .orderBy('date', descending: true)
         .get();
     return snap.docs.map((d) => ExpenseItem.fromJson(d.data())).toList();
   }
 
-  /// Add a settlement record (auto-mirrored)
   Future<void> addSettlement(
       String userPhone,
       String friendPhone,
@@ -198,7 +205,6 @@ class ExpenseService {
     await addExpenseWithSync(userPhone, tx);
   }
 
-  /// Group-level settlement helper
   Future<void> addGroupSettlement(
       String userPhone,
       String groupId,
@@ -209,12 +215,9 @@ class ExpenseService {
     await addSettlement(userPhone, friendPhone, amount, groupId: groupId);
   }
 
-  /// All expenses for a group (global)
+  // Global queries for group analytics
   Future<List<ExpenseItem>> getExpensesForGroup(String groupId) async {
-    final query = await _firestore
-        .collection('expenses')
-        .where('groupId', isEqualTo: groupId)
-        .get();
+    final query = await _groupExpenses.where('groupId', isEqualTo: groupId).get();
     return query.docs.map((doc) => ExpenseItem.fromJson(doc.data())).toList();
   }
 
@@ -233,16 +236,13 @@ class ExpenseService {
     return snapshot.docs.map((doc) => ExpenseItem.fromJson(doc.data())).toList();
   }
 
-  // ======= ADVANCED HELPERS FOR SUMMARY =======
-
-  /// Returns the open (not settled) net amount between user and friend
-  /// - Negative: You owe friend
-  /// - Positive: Friend owes you
+  // ======= Summary helpers (unchanged) =======
   Future<double> getOpenAmountWithFriend(String userPhone, String friendPhone) async {
     final expenses = await getExpenses(userPhone);
     double net = 0;
     for (var e in expenses) {
-      if (e.friendIds.contains(friendPhone) && (e.settledFriendIds == null || !e.settledFriendIds!.contains(friendPhone))) {
+      if (e.friendIds.contains(friendPhone) &&
+          (e.settledFriendIds == null || !e.settledFriendIds!.contains(friendPhone))) {
         if (e.payerId == userPhone) {
           net += e.amount;
         } else if (e.payerId == friendPhone) {
@@ -253,7 +253,6 @@ class ExpenseService {
     return net;
   }
 
-  /// Returns all open (not settled) expenses with a friend (for history, etc)
   Future<List<ExpenseItem>> getOpenExpensesWithFriend(String userPhone, String friendPhone) async {
     final expenses = await getExpenses(userPhone);
     return expenses.where((e) =>
@@ -262,11 +261,11 @@ class ExpenseService {
     ).toList();
   }
 
-  /// Utility: Settle up all open expenses between you and friend (across groups too)
   Future<void> settleAllWithFriend(String userPhone, String friendPhone) async {
     final expenses = await getExpenses(userPhone);
     for (var e in expenses) {
-      if (e.friendIds.contains(friendPhone) && (e.settledFriendIds == null || !e.settledFriendIds!.contains(friendPhone))) {
+      if (e.friendIds.contains(friendPhone) &&
+          (e.settledFriendIds == null || !e.settledFriendIds!.contains(friendPhone))) {
         await settleUpExpense(userPhone, e.id, friendPhone);
       }
     }

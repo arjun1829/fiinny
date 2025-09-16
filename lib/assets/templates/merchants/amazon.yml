@@ -1,0 +1,13 @@
+id: amazon_order_txn_v1
+applies_if:
+  sender_any: ['AMAZON', 'AMZIN', 'no-reply']
+  contains_any: ['order', 'refund', 'inr']
+extract:
+  amount: { regex: "(?:inr|₹|rs\\.?)+\\s*([0-9,]+\\.?[0-9]{0,2})" }
+  merchant: { regex: "(amazon(?:\\s*retail)?|amazon seller|amazon pay)" }
+classify:
+  direction: "UNKNOWN"
+  instrument: "UNKNOWN"
+  confidence: "0.85"
+post:
+  category_hint: "Shopping"

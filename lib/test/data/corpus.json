@@ -1,0 +1,7 @@
+[
+  {
+    "sender": "ICICIB",
+    "body": "Rs 1,234.56 debited from A/c XXXX1234 at SWIGGY on 12-Aug-24 18:42",
+    "expect": {"amount":1234.56,"direction":"DEBIT"}
+  }
+]

@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:characters/characters.dart';
 
 import '../models/friend_model.dart';
 import '../models/expense_item.dart';
@@ -14,10 +15,10 @@ import '../widgets/settleup_dialog.dart';
 import '../widgets/expense_list_widget.dart';
 import '../widgets/simple_bar_chart_widget.dart';
 
-// Chat tab (reuses the same thread id scheme as partners)
+// Chat tab
 import 'package:lifemap/sharing/widgets/partner_chat_tab.dart';
 
-// Shared split logic (keeps math identical everywhere)
+// Shared split logic
 import '../group/group_balance_math.dart' show computeSplits;
 
 class FriendDetailScreen extends StatefulWidget {
@@ -42,9 +43,18 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     with SingleTickerProviderStateMixin {
   Map<String, double>? _lastCustomSplit;
   late TabController _tabController;
+  bool _breakdownExpanded = false;
 
   String? _friendAvatarUrl;
   String? _friendDisplayName;
+
+  String _fmtShort(DateTime dt) {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return '${dt.day} ${months[dt.month - 1]}';
+  }
+
+  String _nameFor(String phone) =>
+      phone == widget.userPhone ? 'You' : _displayName;
 
   @override
   void initState() {
@@ -52,6 +62,235 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     _tabController = TabController(length: 3, vsync: this);
     _loadFriendProfile();
   }
+
+  void _goDiscussExpense(ExpenseItem e) {
+    final title = (e.label?.isNotEmpty == true)
+        ? e.label!
+        : ((e.category?.isNotEmpty == true) ? e.category! : 'Expense');
+    final msg = "Discussing: $title • ₹${e.amount.toStringAsFixed(0)} • ${_fmtShort(e.date)}";
+    _tabController.animateTo(2); // Chat tab
+    Clipboard.setData(ClipboardData(text: msg));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Context copied — paste in chat')),
+    );
+  }
+
+  double _yourImpact(ExpenseItem e) {
+    final splits = computeSplits(e);
+    if (widget.userPhone == e.payerId) {
+      double others = 0;
+      splits.forEach((k,v) { if (k != e.payerId) others += v; });
+      return others; // they owe you
+    }
+    final yourShare = splits[widget.userPhone] ?? 0;
+    return -yourShare; // you owe
+  }
+
+  // ======================= DETAILS SHEET (BIG) =======================
+
+  void _showExpenseDetailsFriend(BuildContext context, ExpenseItem e) {
+    final cs = Theme.of(context).colorScheme;
+    final splits = computeSplits(e);
+
+    final title = (e.label?.isNotEmpty == true)
+        ? e.label!
+        : ((e.category?.isNotEmpty == true) ? e.category! : 'Expense');
+
+    // keep note as plain text only
+    final cleanNote = e.note.trim();
+
+    final youDelta = _yourImpact(e); // + => owed to you, - => you owe
+
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        final h = MediaQuery.of(ctx).size.height * 0.92;
+        return SizedBox(
+          height: h,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            child: Column(
+              children: [
+                // grabber
+                Container(
+                  height: 4, width: 44, margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(3)),
+                ),
+
+                // header
+                Row(
+                  children: [
+                    const Icon(Icons.receipt_long_rounded),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      "₹${e.amount.toStringAsFixed(2)}",
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: cs.primary),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // avatars row
+                _participantsHeader(e),
+                const SizedBox(height: 12),
+
+                // meta chips
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _chip(
+                        text: "Paid by ${_nameFor(e.payerId)}",
+                        fg: Colors.teal.shade900,
+                        bg: Colors.teal.withOpacity(.10),
+                        icon: Icons.person,
+                      ),
+                      _chip(
+                        text: "${_fmtShort(e.date)} ${e.date.year} "
+                            "${e.date.hour.toString().padLeft(2,'0')}:${e.date.minute.toString().padLeft(2,'0')}",
+                        fg: Colors.grey.shade900,
+                        bg: Colors.grey.withOpacity(.12),
+                        icon: Icons.calendar_month_rounded,
+                      ),
+                      if ((e.category ?? '').isNotEmpty)
+                        _chip(
+                          text: e.category!,
+                          fg: Colors.indigo.shade900,
+                          bg: Colors.indigo.withOpacity(.08),
+                          icon: Icons.category_rounded,
+                        ),
+                      if ((e.groupId ?? '').isNotEmpty)
+                        _chip(
+                          text: "Group expense",
+                          fg: Colors.blueGrey.shade900,
+                          bg: Colors.blueGrey.withOpacity(.10),
+                          icon: Icons.groups_rounded,
+                        ),
+                      _chip(
+                        text: youDelta >= 0 ? "Owed to you ₹${youDelta.toStringAsFixed(0)}"
+                            : "You owe ₹${youDelta.abs().toStringAsFixed(0)}",
+                        fg: youDelta >= 0 ? Colors.green.shade800 : Colors.redAccent,
+                        bg: youDelta >= 0 ? Colors.green.withOpacity(.10) : Colors.red.withOpacity(.08),
+                        icon: youDelta >= 0 ? Icons.trending_up_rounded : Icons.trending_down_rounded,
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                // scrollable content
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        if (cleanNote.isNotEmpty)
+                          _section(
+                            title: "Note",
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(cleanNote),
+                            ),
+                          ),
+
+                        _section(
+                          title: "Split",
+                          child: Column(
+                            children: [
+                              ...splits.entries
+                                  .where((s) => s.key == widget.userPhone || s.key == widget.friend.phone)
+                                  .map((s) {
+                                final isYou = s.key == widget.userPhone;
+                                final owes = s.key != e.payerId; // payer "paid", others "owe"
+                                final who = isYou ? "You" : _displayName;
+                                final subtitle = owes ? (isYou ? "You owe" : "Owes")
+                                    : (isYou ? "You paid" : "Paid");
+                                final amtColor = owes ? cs.error : Colors.green.shade700;
+                                final avatar = isYou ? widget.userAvatar : (_friendAvatarUrl ?? widget.friend.avatar);
+
+                                return ListTile(
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: CircleAvatar(
+                                    backgroundColor: Colors.grey.shade200,
+                                    backgroundImage: (avatar != null && avatar.trim().startsWith('http'))
+                                        ? NetworkImage(avatar.trim()) : null,
+                                    child: (avatar == null || !avatar.trim().startsWith('http'))
+                                        ? Text(who.characters.first.toUpperCase())
+                                        : null,
+                                  ),
+                                  title: Text(who, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                  subtitle: Text("$subtitle ₹${s.value.toStringAsFixed(2)}"),
+                                  trailing: Text(
+                                    "₹${s.value.toStringAsFixed(2)}",
+                                    style: TextStyle(fontWeight: FontWeight.w700, color: amtColor),
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 6),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // actions
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      label: const Text('Discuss'),
+                      onPressed: () { Navigator.pop(context); _goDiscussExpense(e); },
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.edit),
+                      label: const Text('Edit'),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(content: Text('Edit coming soon')));
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                      label: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _deleteEntry(e);
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ======================= PROFILE / REFRESH =======================
 
   Future<void> _loadFriendProfile() async {
     try {
@@ -78,23 +317,18 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     if (mounted) setState(() {});
   }
 
-  // ---------- Pairwise logic (ONLY you <-> this friend) ----------
+  // ======================= PAIRWISE LOGIC =======================
 
-  // Settlement detector aligned with the rest of the app.
   bool _isSettlement(ExpenseItem e) {
     final t = (e.type).toLowerCase();
     final lbl = (e.label ?? '').toLowerCase();
     if (t.contains('settle') || lbl.contains('settle')) return true;
-    // Your Settle Up flow: single counterparty, no custom splits, marked as bill/transfer
     if ((e.friendIds.length == 1) && (e.customSplits == null || e.customSplits!.isEmpty)) {
       return e.isBill == true;
     }
     return false;
   }
 
-  /// Keep ONLY expenses that create a direct pairwise relation between YOU and FRIEND:
-  /// - Settlement: (payer==you && recipients include friend) OR (payer==friend && recipients include you)
-  /// - Normal:     (you paid AND friend is in split) OR (friend paid AND you are in split)
   bool _isPairwiseBetween(ExpenseItem e, String you, String friend) {
     if (_isSettlement(e)) {
       final recips = e.friendIds;
@@ -107,15 +341,12 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     return youPaid_friendIn || friendPaid_youIn;
   }
 
-  /// Filter & sort newest first
   List<ExpenseItem> _pairwiseExpenses(String you, String friend, List<ExpenseItem> all) {
     final list = all.where((e) => _isPairwiseBetween(e, you, friend)).toList();
     list.sort((a, b) => b.date.compareTo(a.date));
     return list;
   }
 
-  /// Accumulate totals using pairwise-only items.
-  /// Returns (youOwe, owedToYou, net) and per-group breakdown.
   (_Totals totals, Map<String, _BucketTotals> byBucket) _computePairwiseTotals(
       String you,
       String friend,
@@ -147,17 +378,14 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
       final theirShare = splits[friend] ?? 0.0;
 
       if (e.payerId == you) {
-        // They owe you their share
         owedToYou += theirShare;
         owedByBucket[b] = (owedByBucket[b] ?? 0) + theirShare;
       } else if (e.payerId == friend) {
-        // You owe your share
         youOwe += yourShare;
         oweByBucket[b] = (oweByBucket[b] ?? 0) + yourShare;
       }
     }
 
-    // Round to trim fp dust
     youOwe = double.parse(youOwe.toStringAsFixed(2));
     owedToYou = double.parse(owedToYou.toStringAsFixed(2));
     final net = double.parse((owedToYou - youOwe).toStringAsFixed(2));
@@ -173,7 +401,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     return (_Totals(owe: youOwe, owed: owedToYou, net: net), buckets);
   }
 
-  // ---------- UI helpers ----------
+  // ======================= UI HELPERS =======================
+
   BoxDecoration _cardDeco(BuildContext context) {
     return BoxDecoration(
       color: Colors.white,
@@ -203,10 +432,11 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
       (_friendDisplayName?.isNotEmpty == true) ? _friendDisplayName! : widget.friend.name;
 
   // ---------- Actions ----------
+
   void _openAddExpense() async {
     final result = await showDialog(
       context: context,
-      builder: (_) => AddFriendExpenseDialog(
+      builder: (_) => AddFriendExpenseScreen(
         userPhone: widget.userPhone,
         userName: widget.userName,
         userAvatar: widget.userAvatar,
@@ -253,7 +483,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     }
   }
 
-  // ---------- Build ----------
+  // ======================= BUILD =======================
+
   @override
   Widget build(BuildContext context) {
     final friendPhone = widget.friend.phone;
@@ -334,7 +565,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                   child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 16, 14, 18),
+                      // FIX 1: 16px sides avoids fractional leftover widths
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -456,14 +688,13 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                           ),
                           const SizedBox(height: 14),
 
-                          // Actions card (Add / Settle / Remind)
+                          // Actions card
                           _card(
                             context,
                             child: SingleChildScrollView(
                               scrollDirection: Axis.horizontal,
-                              child: Wrap(
-                                spacing: 12,
-                                runSpacing: 10,
+                              // FIX 2: Row (with SizedBox gaps) is safer than Wrap in a horizontal scroller
+                              child: Row(
                                 children: [
                                   ElevatedButton.icon(
                                     icon: const Icon(Icons.add),
@@ -476,6 +707,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                     ),
                                   ),
+                                  const SizedBox(width: 12),
                                   ElevatedButton.icon(
                                     icon: const Icon(Icons.handshake),
                                     label: const Text("Settle Up"),
@@ -487,6 +719,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                     ),
                                   ),
+                                  const SizedBox(width: 12),
                                   ElevatedButton.icon(
                                     icon: const Icon(Icons.notifications_active_rounded),
                                     label: const Text("Remind"),
@@ -533,53 +766,115 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
 
                               return _card(
                                 context,
-                                padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      "Breakdown",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 16,
-                                        color: Colors.teal.shade900,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    ...entries.map((e) {
-                                      final b = e.value;
-                                      final title = nameFor(e.key);
-                                      final netColor =
-                                      b.net >= 0 ? Colors.green : Colors.redAccent;
-                                      final netText =
-                                          "${b.net >= 0 ? '+' : '-'} ₹${b.net.abs().toStringAsFixed(2)}";
-                                      return ListTile(
-                                        contentPadding: EdgeInsets.zero,
-                                        dense: true,
-                                        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                        subtitle: Text(
-                                          "You owe: ₹${b.owe.toStringAsFixed(2)}   •   Owes you: ₹${b.owed.toStringAsFixed(2)}",
-                                          style: TextStyle(color: Colors.grey[800]),
-                                        ),
-                                        trailing: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                          decoration: BoxDecoration(
-                                            color: netColor.withOpacity(0.12),
-                                            borderRadius: BorderRadius.circular(999),
+                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+                                child: Theme(
+                                  data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                  child: ExpansionTile(
+                                    tilePadding: EdgeInsets.zero,
+                                    childrenPadding: EdgeInsets.zero,
+                                    initiallyExpanded: _breakdownExpanded,
+                                    onExpansionChanged: (v) => setState(() => _breakdownExpanded = v),
+                                    title: Row(
+                                      children: [
+                                        const Icon(Icons.bar_chart_rounded, color: Colors.teal),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          "Breakdown",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 16,
+                                            color: Colors.teal.shade900,
                                           ),
-                                          child: Text(netText,
-                                              style: TextStyle(color: netColor, fontWeight: FontWeight.w800)),
                                         ),
-                                      );
-                                    }),
-                                  ],
+                                        const Spacer(),
+                                        Builder(builder: (_) {
+                                          final netColor = net >= 0 ? Colors.green : Colors.redAccent;
+                                          final netText =
+                                              "${net >= 0 ? '+' : '-'} ₹${net.abs().toStringAsFixed(2)}";
+                                          return Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: netColor.withOpacity(0.12),
+                                              borderRadius: BorderRadius.circular(999),
+                                            ),
+                                            child: Text(
+                                              netText,
+                                              style: TextStyle(color: netColor, fontWeight: FontWeight.w800),
+                                            ),
+                                          );
+                                        }),
+                                        const SizedBox(width: 8),
+                                        AnimatedRotation(
+                                          turns: _breakdownExpanded ? 0.5 : 0.0,
+                                          duration: const Duration(milliseconds: 180),
+                                          child: const Icon(Icons.keyboard_arrow_down_rounded),
+                                        ),
+                                      ],
+                                    ),
+                                    children: [
+                                      const SizedBox(height: 6),
+                                      ...entries.map((e) {
+                                        final b = e.value;
+                                        final title = nameFor(e.key);
+                                        final netColor = b.net >= 0 ? Colors.green : Colors.redAccent;
+                                        final netText =
+                                            "${b.net >= 0 ? '+' : '-'} ₹${b.net.abs().toStringAsFixed(2)}";
+
+                                        // FIX 3: custom row with Expanded + FittedBox trailing
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 2),
+                                          child: Row(
+                                            children: [
+                                              CircleAvatar(
+                                                radius: 14,
+                                                backgroundColor: Colors.teal.withOpacity(.10),
+                                                child: const Icon(Icons.folder_copy_rounded, size: 16, color: Colors.teal),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(title,
+                                                        style: const TextStyle(fontWeight: FontWeight.w600),
+                                                        overflow: TextOverflow.ellipsis),
+                                                    Text(
+                                                      "You owe: ₹${b.owe.toStringAsFixed(2)}   •   Owes you: ₹${b.owed.toStringAsFixed(2)}",
+                                                      style: TextStyle(color: Colors.grey[800]),
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              FittedBox(
+                                                fit: BoxFit.scaleDown,
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                                  decoration: BoxDecoration(
+                                                    color: netColor.withOpacity(0.12),
+                                                    borderRadius: BorderRadius.circular(999),
+                                                  ),
+                                                  child: Text(
+                                                    netText,
+                                                    style: TextStyle(color: netColor, fontWeight: FontWeight.w800),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }),
+                                      const SizedBox(height: 6),
+                                    ],
+                                  ),
                                 ),
                               );
                             },
                           ),
                           const SizedBox(height: 16),
 
-                          // Pairwise history list
+                          // Pairwise history list with group names
                           _card(
                             context,
                             padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
@@ -595,11 +890,23 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                   ),
                                 ),
                                 const SizedBox(height: 10),
-                                ExpenseListWidget(
-                                  expenses: pairwise,
-                                  currentUserPhone: widget.userPhone,
-                                  friend: widget.friend,
-                                  onDelete: _deleteEntry,
+                                StreamBuilder<List<GroupModel>>(
+                                  stream: GroupService().streamGroups(widget.userPhone),
+                                  builder: (context, gSnap) {
+                                    final gs = gSnap.data ?? [];
+                                    final map = <String,String>{
+                                      for (final g in gs) g.id: g.name
+                                    };
+                                    return ExpenseListWidget(
+                                      expenses: pairwise,
+                                      currentUserPhone: widget.userPhone,
+                                      friend: widget.friend,
+                                      onDelete: _deleteEntry,
+                                      onTapExpense: (ex) => _showExpenseDetailsFriend(context, ex),
+                                      groupNames: map,
+                                      showGroupBadge: true,
+                                    );
+                                  },
                                 ),
                               ],
                             ),
@@ -616,7 +923,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                   child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 22, 14, 22),
+                      // FIX 1 mirror: 16px sides here too
+                      padding: const EdgeInsets.fromLTRB(16, 22, 16, 22),
                       child: _card(
                         context,
                         padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
@@ -640,7 +948,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                             ),
                             const SizedBox(height: 12),
 
-                            // Compact summary chips
                             Builder(builder: (context) {
                               final int txCount = pairwise.length;
                               final double totalAmt = pairwise.fold<double>(0.0, (s, e) => s + e.amount);
@@ -648,7 +955,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                 spacing: 8,
                                 runSpacing: 8,
                                 children: [
-                                  // Tx count
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     decoration: BoxDecoration(
@@ -668,7 +974,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                       ],
                                     ),
                                   ),
-                                  // Total amount
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     decoration: BoxDecoration(
@@ -688,7 +993,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                       ],
                                     ),
                                   ),
-                                  // You owe label
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     decoration: BoxDecoration(
@@ -701,7 +1005,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                           fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600),
                                     ),
                                   ),
-                                  // Owed to you label
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     decoration: BoxDecoration(
@@ -717,7 +1020,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                 ],
                               );
                             }),
-
                             const SizedBox(height: 14),
 
                             SizedBox(
@@ -746,6 +1048,78 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
             );
           },
         ),
+      ),
+    );
+  }
+
+  // ======================= SMALL UI BITS =======================
+
+  Widget _participantsHeader(ExpenseItem e) {
+    final youName = 'You';
+    final youAvatar = widget.userAvatar;
+    final friendName = _displayName;
+    final friendAvatar = (_friendAvatarUrl?.isNotEmpty == true) ? _friendAvatarUrl! : widget.friend.avatar;
+
+    Widget avatar(String? url, String fallbackInitial) {
+      if ((url ?? '').trim().startsWith('http')) {
+        return CircleAvatar(radius: 22, backgroundImage: NetworkImage(url!.trim()));
+      }
+      return CircleAvatar(radius: 22, child: Text(fallbackInitial.toUpperCase()));
+    }
+
+    return Row(
+      children: [
+        avatar(youAvatar, youName.characters.first),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(youName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
+        ),
+        const Icon(Icons.compare_arrows_rounded, size: 18, color: Colors.teal),
+        const SizedBox(width: 8),
+        avatar(friendAvatar, friendName.characters.first),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(friendName, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.w700)),
+        ),
+      ],
+    );
+  }
+
+  Widget _section({required String title, required Widget child}) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          ]),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _chip({required String text, required Color fg, required Color bg, required IconData icon}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: fg),
+          const SizedBox(width: 6),
+          Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
+        ],
       ),
     );
   }

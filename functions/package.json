@@ -1,0 +1,21 @@
+{
+  "name": "functions",
+  "private": true,
+  "engines": { "node": "20" },
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "serve": "npm run build && cd .. && firebase emulators:start --only \"functions\"",
+    "deploy": "npm run build && cd .. && firebase deploy --only \"functions\"",
+    "lint": "echo \"(optional) add eslint if you want linting\""
+  },
+  "dependencies": {
+    "firebase-admin": "^12.5.0",
+    "firebase-functions": "^5.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

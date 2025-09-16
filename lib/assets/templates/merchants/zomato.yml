@@ -1,0 +1,13 @@
+id: zomato_order_v1
+applies_if:
+  sender_any: ['ZOMATO', 'ZOMATC', 'noreply']
+  contains_any: ['order', 'paid', 'inr']
+extract:
+  amount: { regex: "(?:inr|₹|rs\\.?)+\\s*([0-9,]+\\.?[0-9]{0,2})" }
+  merchant: { regex: "(zomato)" }
+classify:
+  direction: "DEBIT"
+  instrument: "WALLET"
+  confidence: "0.86"
+post:
+  category_hint: "Dining"

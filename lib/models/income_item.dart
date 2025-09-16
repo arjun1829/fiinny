@@ -7,9 +7,19 @@ class IncomeItem {
   final String note;
   final DateTime date;
   final String source;
-  final String? imageUrl; // <-- Existing field
+
+  // Existing UI/meta
+  final String? imageUrl;
   final String? label;
-  final String? bankLogo; // ✅ New field for bank logo
+  final String? bankLogo;
+
+  // 🔗 Optional parity with expenses (nice to have for grouping)
+  final String? category; // e.g., "Income", "Salary", "Refund"
+
+  // 🧠 Fiinnny Brain (all optional; written after parsing)
+  final Map<String, dynamic>? brainMeta;   // employer, recurringKey, etc.
+  final double? confidence;                // 0..1
+  final List<String>? tags;                // ["fixed_income","refund","cashback",...]
 
   IncomeItem({
     required this.id,
@@ -20,7 +30,11 @@ class IncomeItem {
     required this.source,
     this.imageUrl,
     this.label,
-    this.bankLogo, // ✅ New field
+    this.bankLogo,
+    this.category,
+    this.brainMeta,
+    this.confidence,
+    this.tags,
   });
 
   factory IncomeItem.fromJson(Map<String, dynamic> json) {
@@ -35,7 +49,11 @@ class IncomeItem {
       source: json['source'] ?? '',
       imageUrl: json['imageUrl'],
       label: json['label'],
-      bankLogo: json['bankLogo'], // ✅ New
+      bankLogo: json['bankLogo'],
+      category: json['category'],
+      brainMeta: (json['brainMeta'] as Map?)?.cast<String, dynamic>(),
+      confidence: (json['confidence'] as num?)?.toDouble(),
+      tags: (json['tags'] is List) ? List<String>.from(json['tags']) : null,
     );
   }
 
@@ -48,7 +66,11 @@ class IncomeItem {
     'source': source,
     if (imageUrl != null) 'imageUrl': imageUrl,
     if (label != null) 'label': label,
-    'bankLogo': bankLogo, // ✅ New
+    'bankLogo': bankLogo,
+    if (category != null) 'category': category,
+    if (brainMeta != null) 'brainMeta': brainMeta,
+    if (confidence != null) 'confidence': confidence,
+    if (tags != null) 'tags': tags,
   };
 
   IncomeItem copyWith({
@@ -60,7 +82,11 @@ class IncomeItem {
     String? source,
     String? imageUrl,
     String? label,
-    String? bankLogo, // ✅ New
+    String? bankLogo,
+    String? category,
+    Map<String, dynamic>? brainMeta,
+    double? confidence,
+    List<String>? tags,
   }) {
     return IncomeItem(
       id: id ?? this.id,
@@ -71,7 +97,11 @@ class IncomeItem {
       source: source ?? this.source,
       imageUrl: imageUrl ?? this.imageUrl,
       label: label ?? this.label,
-      bankLogo: bankLogo ?? this.bankLogo, // ✅ New
+      bankLogo: bankLogo ?? this.bankLogo,
+      category: category ?? this.category,
+      brainMeta: brainMeta ?? this.brainMeta,
+      confidence: confidence ?? this.confidence,
+      tags: tags ?? this.tags,
     );
   }
 
@@ -88,7 +118,11 @@ class IncomeItem {
       source: data['source'] ?? '',
       imageUrl: data['imageUrl'],
       label: data['label'],
-      bankLogo: data['bankLogo'], // ✅ New
+      bankLogo: data['bankLogo'],
+      category: data['category'],
+      brainMeta: (data['brainMeta'] as Map?)?.cast<String, dynamic>(),
+      confidence: (data['confidence'] as num?)?.toDouble(),
+      tags: (data['tags'] is List) ? List<String>.from(data['tags']) : null,
     );
   }
 }

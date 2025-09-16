@@ -1,6 +1,8 @@
+// lib/models/expense_item.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ExpenseItem {
+  // --- Core fields (existing) ---
   final String id;
   final String type;
   final double amount;
@@ -17,7 +19,18 @@ class ExpenseItem {
   final String? imageUrl;
   final String? label;
   final String? category;
-  final String? bankLogo; // ✅ New
+  final String? bankLogo;            // ✅ existing
+  final String? attachmentUrl;       // ✅ existing
+  final String? attachmentName;      // ✅ existing
+  final int? attachmentSize;         // ✅ existing
+
+  // --- Fiinnny Brain (new, optional & non-breaking) ---
+  /// Arbitrary metadata learned by the brain (feeType, merchant, fxFee, recurringKey, etc.)
+  final Map<String, dynamic>? brainMeta;
+  /// Confidence score (0..1) for assigned label/category/tags.
+  final double? confidence;
+  /// Tags like: ["fee","subscription","loan_emi","autopay","forex","fixed_income"]
+  final List<String>? tags;
 
   ExpenseItem({
     required this.id,
@@ -36,7 +49,14 @@ class ExpenseItem {
     this.imageUrl,
     this.label,
     this.category,
-    this.bankLogo, // ✅ New
+    this.bankLogo,
+    this.attachmentUrl,
+    this.attachmentName,
+    this.attachmentSize,
+    // brain
+    this.brainMeta,
+    this.confidence,
+    this.tags,
   });
 
   ExpenseItem copyWith({
@@ -56,7 +76,13 @@ class ExpenseItem {
     String? imageUrl,
     String? label,
     String? category,
-    String? bankLogo, // ✅ New
+    String? bankLogo,
+    String? attachmentUrl,
+    String? attachmentName,
+    int? attachmentSize,
+    Map<String, dynamic>? brainMeta,
+    double? confidence,
+    List<String>? tags,
   }) {
     return ExpenseItem(
       id: id ?? this.id,
@@ -66,7 +92,8 @@ class ExpenseItem {
       date: date ?? this.date,
       friendIds: friendIds ?? List<String>.from(this.friendIds),
       groupId: groupId ?? this.groupId,
-      settledFriendIds: settledFriendIds ?? List<String>.from(this.settledFriendIds),
+      settledFriendIds:
+      settledFriendIds ?? List<String>.from(this.settledFriendIds),
       payerId: payerId ?? this.payerId,
       customSplits: customSplits ?? this.customSplits,
       cardType: cardType ?? this.cardType,
@@ -75,7 +102,14 @@ class ExpenseItem {
       imageUrl: imageUrl ?? this.imageUrl,
       label: label ?? this.label,
       category: category ?? this.category,
-      bankLogo: bankLogo ?? this.bankLogo, // ✅ New
+      bankLogo: bankLogo ?? this.bankLogo,
+      attachmentUrl: attachmentUrl ?? this.attachmentUrl,
+      attachmentName: attachmentName ?? this.attachmentName,
+      attachmentSize: attachmentSize ?? this.attachmentSize,
+      // brain
+      brainMeta: brainMeta ?? this.brainMeta,
+      confidence: confidence ?? this.confidence,
+      tags: tags ?? this.tags,
     );
   }
 
@@ -96,7 +130,14 @@ class ExpenseItem {
     if (imageUrl != null) 'imageUrl': imageUrl,
     if (label != null) 'label': label,
     if (category != null) 'category': category,
-    'bankLogo': bankLogo, // ✅ New
+    'bankLogo': bankLogo,
+    if (attachmentUrl != null) 'attachmentUrl': attachmentUrl,
+    if (attachmentName != null) 'attachmentName': attachmentName,
+    if (attachmentSize != null) 'attachmentSize': attachmentSize,
+    // brain
+    if (brainMeta != null) 'brainMeta': brainMeta,
+    if (confidence != null) 'confidence': confidence,
+    if (tags != null) 'tags': tags,
   };
 
   factory ExpenseItem.fromJson(Map<String, dynamic> json) {
@@ -113,8 +154,11 @@ class ExpenseItem {
       note: json['note'] ?? '',
       date: (json['date'] is Timestamp)
           ? (json['date'] as Timestamp).toDate()
-          : DateTime.tryParse(json['date']?.toString() ?? '') ?? DateTime.now(),
-      friendIds: (json['friendIds'] is List) ? List<String>.from(json['friendIds']) : const [],
+          : DateTime.tryParse(json['date']?.toString() ?? '') ??
+          DateTime.now(),
+      friendIds: (json['friendIds'] is List)
+          ? List<String>.from(json['friendIds'])
+          : const [],
       groupId: json['groupId'],
       settledFriendIds: (json['settledFriendIds'] is List)
           ? List<String>.from(json['settledFriendIds'])
@@ -127,7 +171,16 @@ class ExpenseItem {
       imageUrl: json['imageUrl'],
       label: json['label'],
       category: json['category'],
-      bankLogo: json['bankLogo'], // ✅ New
+      bankLogo: json['bankLogo'],
+      attachmentUrl: json['attachmentUrl'],
+      attachmentName: json['attachmentName'],
+      attachmentSize: (json['attachmentSize'] as num?)?.toInt(),
+      // brain
+      brainMeta: (json['brainMeta'] is Map)
+          ? Map<String, dynamic>.from(json['brainMeta'])
+          : null,
+      confidence: (json['confidence'] as num?)?.toDouble(),
+      tags: (json['tags'] is List) ? List<String>.from(json['tags']) : null,
     );
   }
 
@@ -147,8 +200,11 @@ class ExpenseItem {
       note: data['note'] ?? '',
       date: (data['date'] is Timestamp)
           ? (data['date'] as Timestamp).toDate()
-          : DateTime.tryParse(data['date']?.toString() ?? '') ?? DateTime.now(),
-      friendIds: (data['friendIds'] is List) ? List<String>.from(data['friendIds']) : const [],
+          : DateTime.tryParse(data['date']?.toString() ?? '') ??
+          DateTime.now(),
+      friendIds: (data['friendIds'] is List)
+          ? List<String>.from(data['friendIds'])
+          : const [],
       groupId: data['groupId'],
       settledFriendIds: (data['settledFriendIds'] is List)
           ? List<String>.from(data['settledFriendIds'])
@@ -161,7 +217,20 @@ class ExpenseItem {
       imageUrl: data['imageUrl'],
       label: data['label'],
       category: data['category'],
-      bankLogo: data['bankLogo'], // ✅ New
+      bankLogo: data['bankLogo'],
+      attachmentUrl: data['attachmentUrl'],
+      attachmentName: data['attachmentName'],
+      attachmentSize: (data['attachmentSize'] as num?)?.toInt(),
+      // brain
+      brainMeta: (data['brainMeta'] is Map)
+          ? Map<String, dynamic>.from(data['brainMeta'])
+          : null,
+      confidence: (data['confidence'] as num?)?.toDouble(),
+      tags: (data['tags'] is List) ? List<String>.from(data['tags']) : null,
     );
   }
+
+  // --- (nice to have) quick helpers ---
+  bool hasTag(String t) => tags?.contains(t) ?? false;
+  bool get isFee => hasTag('fee') || (brainMeta?['feeType'] != null);
 }

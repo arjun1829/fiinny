@@ -1,0 +1,13 @@
+id: paytm_wallet_v1
+applies_if:
+  sender_any: ['PAYTM', 'PAYTMM', 'paytm']
+  contains_any: ['wallet', 'inr', 'added', 'paid', 'received']
+extract:
+  amount: { regex: "(?:inr|₹|rs\\.?)+\\s*([0-9,]+\\.?[0-9]{0,2})" }
+  merchant: { regex: "(?:to|at|from)\\s+([a-z0-9 &._@-]{2,50})" }
+classify:
+  direction: "UNKNOWN"
+  instrument: "WALLET"
+  confidence: "0.88"
+post:
+  category_hint: "Transfers"

@@ -7,7 +7,6 @@ import '../models/insight_model.dart';
 import '../services/expense_service.dart';
 import '../services/income_service.dart';
 import '../services/goal_service.dart';
-import '../services/gmail_service.dart';
 import '../services/loan_service.dart';
 import '../services/asset_service.dart';
 import '../services/fiinny_brain_service.dart';
@@ -28,6 +27,47 @@ import 'dashboard_activity_screen.dart';
 import '../widgets/transaction_count_card.dart';
 import '../widgets/transaction_amount_card.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+// NEW portfolio module imports (aliased so they don't clash with your old service/model)
+import '../fiinny_assets/modules/portfolio/services/asset_service.dart' as PAssetService;
+import '../fiinny_assets/modules/portfolio/models/asset_model.dart' as PAssetModel;
+import '../fiinny_assets/modules/portfolio/models/price_quote.dart';
+import '../fiinny_assets/modules/portfolio/services/market_data_yahoo.dart';
+
+// SMS & Gmail pipelines
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io' show Platform;
+import '../services/sync/sync_coordinator.dart';
+
+// Use your **old** Gmail service (the snippet-based one you pasted)
+import '../services/gmail_service.dart' as OldGmail;
+import '../services/sms/sms_ingestor.dart';
+
+// SMS & Gmail pipelines
+import '../services/sms/sms_permission_helper.dart';
+import '../services/ingest_index_service.dart';
+import '../widgets/goals_summary_card.dart';
+import '../services/notif_prefs_service.dart';
+
+// Fiinnny Brain cards
+import '../widgets/fiinny_brain_diagnosis_card.dart';
+// (optional) quick monthly fees-only card if you also want it
+import '../widgets/hidden_charges_card.dart';
+import '../widgets/subscriptions_tracker_card.dart';
+import '../widgets/forex_charges_card.dart';
+import '../widgets/salary_predictor_card.dart';
+
+import '../brain/loan_detection_service.dart';
+import '../widgets/loan_suggestions_sheet.dart';
+
+import '../widgets/fiinny_brain_diagnosis_card.dart';
+import '../widgets/hidden_charges_review_sheet.dart';
+import '../widgets/forex_findings_sheet.dart';
+import '../widgets/subscriptions_review_sheet.dart';
+
+import 'package:lifemap/services/sms/sms_ingestor.dart';
+import '../screens/review_inbox_screen.dart';
+import '../services/review_queue_service.dart';
+import '../models/ingest_draft_model.dart';
 
 
 // --- Helper getters for dynamic model ---
@@ -44,7 +84,7 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingObserver {
   bool _loading = true;
   bool _showFetchButton = true;
   double totalIncome = 0.0;
@@ -67,20 +107,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? userName; // will be fetched from Firestore
   bool _isEmailLinked = false;
   String? _userEmail;
+  // Helper: Firestore doc ID for this user
+  String get _userDocId => widget.userPhone;
+
 
   bool _isFetchingEmail = false;
 
   // --- Limit logic ---
   double? _periodLimit;
   bool _savingLimit = false;
+  bool _warned80 = false;
+  bool _warned100 = false;
+  final _expenseSvc = ExpenseService();
+  final _incomeSvc  = IncomeService();
+  //final _indexSvc   = IngestIndexService();
+
+  bool _smsReady = false;
+  bool _didSmsBackfill = false;
+  bool _didGmailBackfill = false;
+  final _indexSvc   = IngestIndexService();
+  final _loanDetector = LoanDetectionService();
+  int _loanSuggestionsCount = 0;
+  bool _scanningLoans = false;
+
+
+
+
+
 
   @override
-
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initDashboard();
-    _fetchUserName();
+    _refreshSmsPermissionState();
+    _wirePipelines(); // ask permission + start SMS + Gmail backfill once
+    SyncCoordinator.instance.onAppStart(widget.userPhone);
+
+    Future.microtask(() async {
+      await _fetchUserName();              // sets _isEmailLinked / _userEmail
+      // no parsing init needed
+      await _wirePipelines();              // now only guards + gmail once (no SMS backfill)
+      await SyncCoordinator.instance.onAppStart(widget.userPhone);
+    });
   }
+
+
   Future<void> _fetchUserName() async {
     try {
       final doc = await FirebaseFirestore.instance
@@ -107,43 +179,239 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  Future<void> _refreshSmsPermissionState() async {
+    if (!Platform.isAndroid) {
+      setState(() => _smsReady = false); // iOS never shows banner
+      return;
+    }
+    final granted = await SmsPermissionHelper.hasPermissions();
+    setState(() => _smsReady = granted);
+  }
+
+
+
+  Future<void> _wirePipelines() async {
+    if (!Platform.isAndroid) return;
+    await _refreshSmsPermissionState();
+
+    await _ensureSmsPermissionWithDisclosure();
+
+    if (_smsReady) {
+      SmsIngestor.instance.init(
+        expenseService: _expenseSvc,
+        incomeService: _incomeSvc,
+        index: _indexSvc,
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      final smsFlagKey = 'smsBackfillDone_${widget.userPhone}';
+      _didSmsBackfill = prefs.getBool(smsFlagKey) ?? false;
+      if (!_didSmsBackfill) {
+        await SmsIngestor.instance.initialBackfill(
+          userPhone: widget.userPhone,
+          newerThanDays: 1000,
+        );
+        await prefs.setBool(smsFlagKey, true);
+        _didSmsBackfill = true;
+      }
+
+      await SmsIngestor.instance.startRealtime(userPhone: widget.userPhone);
+    }
+
+    if (_isEmailLinked == true && (_userEmail?.isNotEmpty ?? false)) {
+      await _maybeRunGmailBackfillOnce();
+    }
+  }
+
+
+
+
+
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      SyncCoordinator.instance.onAppResume(widget.userPhone);
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      SyncCoordinator.instance.onAppStop();
+    }
+    super.didChangeAppLifecycleState(state);
+  }
+
+
+
+
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    SyncCoordinator.instance.onAppStop();
+    super.dispose();
+  }
+
+
+  Future<void> _ensureSmsPermissionWithDisclosure() async {
+    if (!Platform.isAndroid) return;
+
+    // If already granted, don't bother the user
+    if (await SmsPermissionHelper.hasPermissions()) {
+      setState(() => _smsReady = true);
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    const flag = 'smsDisclosureShown';
+    final shown = prefs.getBool(flag) ?? false;
+
+    // If already shown once, don't show the dialog again here (banner still lets user enable)
+    if (shown) {
+      setState(() => _smsReady = false);
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Allow SMS for Auto-Tracking?"),
+        content: const Text(
+          "Fiinny reads ONLY bank & UPI alert SMS on this device to auto-track your expenses and income. "
+              "Content never leaves your phone unless you enable cloud backup. You can turn this off anytime.",
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("No, thanks")),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Continue")),
+        ],
+      ),
+    ) ?? false;
+
+    await prefs.setBool(flag, true);
+
+    if (!ok) {
+      setState(() => _smsReady = false);
+      return;
+    }
+
+    final granted = await SmsPermissionHelper.ensurePermissions();
+    setState(() => _smsReady = granted);
+    if (!granted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("SMS permission denied. You can enable it in Settings anytime.")),
+      );
+    }
+  }
+
+
+
+  Future<void> _maybeRunGmailBackfillOnce() async {
+    final prefs = await SharedPreferences.getInstance();
+    final gmailFlagKey = 'gmailBackfillDone_${widget.userPhone}';
+    final already = prefs.getBool(gmailFlagKey) ?? false;
+    if (already) return;
+
+    try {
+      await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
+      await prefs.setBool(gmailFlagKey, true);
+      await _initDashboard(); // refresh UI
+    } catch (e) {
+      debugPrint('Gmail backfill error: $e');
+    }
+  }
+
+
+  Future<void> _fetchEmailTx() async {
+    setState(() => _isFetchingEmail = true);
+    try {
+      await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
+      await _initDashboard();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Fetched Gmail transactions!"), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to fetch email data: $e"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isFetchingEmail = false);
+    }
+  }
+
+
+
+
+
+
+  Future<void> _loadPortfolioTotals() async {
+    final pService = PAssetService.AssetService();
+    final market = MarketDataYahoo();
+
+    // Load new holdings (from SharedPreferences)
+    final List<PAssetModel.AssetModel> assets = await pService.loadAssets();
+
+    // Build symbols to quote
+    final symbols = <String>{
+      for (final a in assets)
+        a.type == 'stock' ? a.name.toUpperCase() : 'GOLD',
+    }.toList();
+
+    Map<String, PriceQuote> quotes = {};
+    if (symbols.isNotEmpty) {
+      quotes = await market.fetchQuotes(symbols);
+    }
+
+    // Sum current value using latest price (fallback: avgBuyPrice)
+    double total = 0.0;
+    for (final a in assets) {
+      final key = a.type == 'stock' ? a.name.toUpperCase() : 'GOLD';
+      final ltp = quotes[key]?.ltp ?? a.avgBuyPrice;
+      total += a.quantity * ltp;
+    }
+
+    setState(() {
+      assetCount = assets.length;
+      totalAssets = total;
+    });
+  }
 
 
   // 1️⃣ --- Filtering Helpers ---
   List<ExpenseItem> _filteredExpensesForPeriod(String period) {
     DateTime now = DateTime.now();
     if (period == "D" || period == "Today") {
-      return allExpenses.where((e) =>
+      return allExpenses
+          .where((e) =>
       e.date.year == now.year &&
           e.date.month == now.month &&
-          e.date.day == now.day
-      ).toList();
+          e.date.day == now.day)
+          .toList();
     } else if (period == "W" || period == "This Week") {
       DateTime startOfWeek = now.subtract(Duration(days: now.weekday - 1));
       DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
-      return allExpenses.where((e) =>
+      return allExpenses
+          .where((e) =>
       e.date.isAfter(startOfWeek.subtract(const Duration(days: 1))) &&
-          e.date.isBefore(endOfWeek.add(const Duration(days: 1)))
-      ).toList();
+          e.date.isBefore(endOfWeek.add(const Duration(days: 1))))
+          .toList();
     } else if (period == "M" || period == "This Month") {
-      return allExpenses.where((e) =>
-      e.date.year == now.year &&
-          e.date.month == now.month
-      ).toList();
+      return allExpenses
+          .where((e) => e.date.year == now.year && e.date.month == now.month)
+          .toList();
     } else if (period == "Y" || period == "This Year") {
-      return allExpenses.where((e) =>
-      e.date.year == now.year
-      ).toList();
+      return allExpenses.where((e) => e.date.year == now.year).toList();
     } else if (period == "Last 2 Days") {
       DateTime start = now.subtract(const Duration(days: 1));
-      return allExpenses.where((e) =>
-          e.date.isAfter(start.subtract(const Duration(days: 1)))
-      ).toList();
+      return allExpenses
+          .where((e) => e.date.isAfter(start.subtract(const Duration(days: 1))))
+          .toList();
     } else if (period == "Last 5 Days") {
       DateTime start = now.subtract(const Duration(days: 4));
-      return allExpenses.where((e) =>
-          e.date.isAfter(start.subtract(const Duration(days: 1)))
-      ).toList();
+      return allExpenses
+          .where((e) => e.date.isAfter(start.subtract(const Duration(days: 1))))
+          .toList();
     } else if (period == "All Time") {
       return allExpenses;
     }
@@ -154,43 +422,76 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<IncomeItem> _filteredIncomesForPeriod(String period) {
     DateTime now = DateTime.now();
     if (period == "D" || period == "Today") {
-      return allIncomes.where((e) =>
+      return allIncomes
+          .where((e) =>
       e.date.year == now.year &&
           e.date.month == now.month &&
-          e.date.day == now.day
-      ).toList();
+          e.date.day == now.day)
+          .toList();
     } else if (period == "W" || period == "This Week") {
       DateTime startOfWeek = now.subtract(Duration(days: now.weekday - 1));
       DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
-      return allIncomes.where((e) =>
+      return allIncomes
+          .where((e) =>
       e.date.isAfter(startOfWeek.subtract(const Duration(days: 1))) &&
-          e.date.isBefore(endOfWeek.add(const Duration(days: 1)))
-      ).toList();
+          e.date.isBefore(endOfWeek.add(const Duration(days: 1))))
+          .toList();
     } else if (period == "M" || period == "This Month") {
-      return allIncomes.where((e) =>
-      e.date.year == now.year &&
-          e.date.month == now.month
-      ).toList();
+      return allIncomes
+          .where((e) => e.date.year == now.year && e.date.month == now.month)
+          .toList();
     } else if (period == "Y" || period == "This Year") {
-      return allIncomes.where((e) =>
-      e.date.year == now.year
-      ).toList();
+      return allIncomes.where((e) => e.date.year == now.year).toList();
     } else if (period == "Last 2 Days") {
       DateTime start = now.subtract(const Duration(days: 1));
-      return allIncomes.where((e) =>
-          e.date.isAfter(start.subtract(const Duration(days: 1)))
-      ).toList();
+      return allIncomes
+          .where((e) => e.date.isAfter(start.subtract(const Duration(days: 1))))
+          .toList();
     } else if (period == "Last 5 Days") {
       DateTime start = now.subtract(const Duration(days: 4));
-      return allIncomes.where((e) =>
-          e.date.isAfter(start.subtract(const Duration(days: 1)))
-      ).toList();
+      return allIncomes
+          .where((e) => e.date.isAfter(start.subtract(const Duration(days: 1))))
+          .toList();
     } else if (period == "All Time") {
       return allIncomes;
     }
     // fallback (just in case)
     return allIncomes;
   }
+  // --- Limit helpers (SPENDING only) ---
+  double get periodSpendOnly {
+    return _filteredExpensesForPeriod(txPeriod).fold(0.0, (a, b) => a + b.amount);
+  }
+
+  void _resetLimitWarnings() {
+    _warned80 = false;
+    _warned100 = false;
+  }
+
+  void _checkLimitWarnings() {
+    if (_periodLimit == null || _periodLimit! <= 0) return;
+    final used = periodSpendOnly;
+    final ratio = used / _periodLimit!;
+    if (!_warned80 && ratio >= 0.8 && ratio < 1.0) {
+      _warned80 = true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Heads up: You’ve crossed 80% of this period’s spending limit."),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+    if (!_warned100 && ratio >= 1.0) {
+      _warned100 = true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Limit exceeded: You’ve spent over the limit for this period."),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
 
 
   // 2️⃣ --- Bar Data for Amount ---
@@ -202,39 +503,61 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (txPeriod == "D" || txPeriod == "Today") {
       // 24h bar
       List<double> bars = List.filled(24, 0.0);
-      for (var e in expenses) { bars[e.date.hour] += e.amount; }
-      for (var i in incomes) { bars[i.date.hour] += i.amount; }
+      for (var e in expenses) {
+        bars[e.date.hour] += e.amount;
+      }
+      for (var i in incomes) {
+        bars[i.date.hour] += i.amount;
+      }
       return bars;
     } else if (txPeriod == "W" || txPeriod == "This Week") {
       // 7 days, Mon-Sun
       List<double> bars = List.filled(7, 0.0);
-      for (var e in expenses) { bars[e.date.weekday - 1] += e.amount; }
-      for (var i in incomes) { bars[i.date.weekday - 1] += i.amount; }
+      for (var e in expenses) {
+        bars[e.date.weekday - 1] += e.amount;
+      }
+      for (var i in incomes) {
+        bars[i.date.weekday - 1] += i.amount;
+      }
       return bars;
     } else if (txPeriod == "M" || txPeriod == "This Month") {
       // N days in this month
       int days = DateTime(now.year, now.month + 1, 0).day;
       List<double> bars = List.filled(days, 0.0);
-      for (var e in expenses) { bars[e.date.day - 1] += e.amount; }
-      for (var i in incomes) { bars[i.date.day - 1] += i.amount; }
+      for (var e in expenses) {
+        bars[e.date.day - 1] += e.amount;
+      }
+      for (var i in incomes) {
+        bars[i.date.day - 1] += i.amount;
+      }
       return bars;
     } else if (txPeriod == "Y" || txPeriod == "This Year") {
       // 12 months
       List<double> bars = List.filled(12, 0.0);
-      for (var e in expenses) { bars[e.date.month - 1] += e.amount; }
-      for (var i in incomes) { bars[i.date.month - 1] += i.amount; }
+      for (var e in expenses) {
+        bars[e.date.month - 1] += e.amount;
+      }
+      for (var i in incomes) {
+        bars[i.date.month - 1] += i.amount;
+      }
       return bars;
     } else if (txPeriod == "Last 2 Days") {
       // 2 bars: yesterday & today
       List<double> bars = List.filled(2, 0.0);
       DateTime yesterday = now.subtract(const Duration(days: 1));
       for (var e in expenses) {
-        if (_isSameDay(e.date, now)) bars[1] += e.amount;
-        else if (_isSameDay(e.date, yesterday)) bars[0] += e.amount;
+        if (_isSameDay(e.date, now)) {
+          bars[1] += e.amount;
+        } else if (_isSameDay(e.date, yesterday)) {
+          bars[0] += e.amount;
+        }
       }
       for (var i in incomes) {
-        if (_isSameDay(i.date, now)) bars[1] += i.amount;
-        else if (_isSameDay(i.date, yesterday)) bars[0] += i.amount;
+        if (_isSameDay(i.date, now)) {
+          bars[1] += i.amount;
+        } else if (_isSameDay(i.date, yesterday)) {
+          bars[0] += i.amount;
+        }
       }
       return bars;
     } else if (txPeriod == "Last 5 Days") {
@@ -264,14 +587,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (maxDate == null || i.date.isAfter(maxDate)) maxDate = i.date;
       }
       if (minDate == null || maxDate == null) return [];
-      int months = (maxDate.year - minDate.year) * 12 + (maxDate.month - minDate.month) + 1;
+      int months = (maxDate.year - minDate.year) * 12 +
+          (maxDate.month - minDate.month) +
+          1;
       List<double> bars = List.filled(months, 0.0);
       for (var e in expenses) {
-        int idx = (e.date.year - minDate.year) * 12 + (e.date.month - minDate.month);
+        int idx = (e.date.year - minDate.year) * 12 +
+            (e.date.month - minDate.month);
         bars[idx] += e.amount;
       }
       for (var i in incomes) {
-        int idx = (i.date.year - minDate.year) * 12 + (i.date.month - minDate.month);
+        int idx = (i.date.year - minDate.year) * 12 +
+            (i.date.month - minDate.month);
         bars[idx] += i.amount;
       }
       return bars;
@@ -286,35 +613,57 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     if (txPeriod == "D" || txPeriod == "Today") {
       List<int> bars = List.filled(24, 0);
-      for (var e in expenses) { bars[e.date.hour] += 1; }
-      for (var i in incomes) { bars[i.date.hour] += 1; }
+      for (var e in expenses) {
+        bars[e.date.hour] += 1;
+      }
+      for (var i in incomes) {
+        bars[i.date.hour] += 1;
+      }
       return bars;
     } else if (txPeriod == "W" || txPeriod == "This Week") {
       List<int> bars = List.filled(7, 0);
-      for (var e in expenses) { bars[e.date.weekday - 1] += 1; }
-      for (var i in incomes) { bars[i.date.weekday - 1] += 1; }
+      for (var e in expenses) {
+        bars[e.date.weekday - 1] += 1;
+      }
+      for (var i in incomes) {
+        bars[i.date.weekday - 1] += 1;
+      }
       return bars;
     } else if (txPeriod == "M" || txPeriod == "This Month") {
       int days = DateTime(now.year, now.month + 1, 0).day;
       List<int> bars = List.filled(days, 0);
-      for (var e in expenses) { bars[e.date.day - 1] += 1; }
-      for (var i in incomes) { bars[i.date.day - 1] += 1; }
+      for (var e in expenses) {
+        bars[e.date.day - 1] += 1;
+      }
+      for (var i in incomes) {
+        bars[i.date.day - 1] += 1;
+      }
       return bars;
     } else if (txPeriod == "Y" || txPeriod == "This Year") {
       List<int> bars = List.filled(12, 0);
-      for (var e in expenses) { bars[e.date.month - 1] += 1; }
-      for (var i in incomes) { bars[i.date.month - 1] += 1; }
+      for (var e in expenses) {
+        bars[e.date.month - 1] += 1;
+      }
+      for (var i in incomes) {
+        bars[i.date.month - 1] += 1;
+      }
       return bars;
     } else if (txPeriod == "Last 2 Days") {
       List<int> bars = List.filled(2, 0);
       DateTime yesterday = now.subtract(const Duration(days: 1));
       for (var e in expenses) {
-        if (_isSameDay(e.date, now)) bars[1] += 1;
-        else if (_isSameDay(e.date, yesterday)) bars[0] += 1;
+        if (_isSameDay(e.date, now)) {
+          bars[1] += 1;
+        } else if (_isSameDay(e.date, yesterday)) {
+          bars[0] += 1;
+        }
       }
       for (var i in incomes) {
-        if (_isSameDay(i.date, now)) bars[1] += 1;
-        else if (_isSameDay(i.date, yesterday)) bars[0] += 1;
+        if (_isSameDay(i.date, now)) {
+          bars[1] += 1;
+        } else if (_isSameDay(i.date, yesterday)) {
+          bars[0] += 1;
+        }
       }
       return bars;
     } else if (txPeriod == "Last 5 Days") {
@@ -341,14 +690,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (maxDate == null || i.date.isAfter(maxDate)) maxDate = i.date;
       }
       if (minDate == null || maxDate == null) return [];
-      int months = (maxDate.year - minDate.year) * 12 + (maxDate.month - minDate.month) + 1;
+      int months = (maxDate.year - minDate.year) * 12 +
+          (maxDate.month - minDate.month) +
+          1;
       List<int> bars = List.filled(months, 0);
       for (var e in expenses) {
-        int idx = (e.date.year - minDate.year) * 12 + (e.date.month - minDate.month);
+        int idx = (e.date.year - minDate.year) * 12 +
+            (e.date.month - minDate.month);
         bars[idx] += 1;
       }
       for (var i in incomes) {
-        int idx = (i.date.year - minDate.year) * 12 + (i.date.month - minDate.month);
+        int idx = (i.date.year - minDate.year) * 12 +
+            (i.date.month - minDate.month);
         bars[idx] += 1;
       }
       return bars;
@@ -356,16 +709,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return [];
   }
 
-// --- Utility for date comparison ---
+  // --- Utility for date comparison ---
   bool _isSameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-
   // 4️⃣ --- Get Total For Current Period ---
   double get periodTotalAmount {
-    final exp = _filteredExpensesForPeriod(txPeriod).fold(0.0, (a, b) => a + b.amount);
-    final inc = _filteredIncomesForPeriod(txPeriod).fold(0.0, (a, b) => a + b.amount);
+    final exp = _filteredExpensesForPeriod(txPeriod)
+        .fold(0.0, (a, b) => a + b.amount);
+    final inc = _filteredIncomesForPeriod(txPeriod)
+        .fold(0.0, (a, b) => a + b.amount);
     return exp + inc;
   }
 
@@ -380,17 +734,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _initDashboard() async {
     setState(() => _loading = true);
     try {
-      final expenses = await ExpenseService()
-          .getExpensesCollection(widget.userPhone)
-          .orderBy('date', descending: true)
-          .get()
-          .then((snap) => snap.docs.map((doc) => ExpenseItem.fromJson(doc.data())).toList());
-
-      final incomes = await IncomeService()
-          .getIncomesCollection(widget.userPhone)
-          .orderBy('date', descending: true)
-          .get()
-          .then((snap) => snap.docs.map((doc) => IncomeItem.fromJson(doc.data())).toList());
+      final expenses = await _expenseSvc.getExpenses(widget.userPhone);
+      final incomes  = await _incomeSvc.getIncomes(widget.userPhone);
 
       allExpenses = expenses;
       allIncomes = incomes;
@@ -399,21 +744,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
       currentGoal = goals.isNotEmpty ? goals.first : null;
 
       final loanService = LoanService();
-      final assetService = AssetService();
-      loanCount = await loanService.getLoanCount(widget.userPhone);
-      totalLoan = await loanService.getTotalLoan(widget.userPhone);
-      assetCount = await assetService.getAssetCount(widget.userPhone);
-      totalAssets = await assetService.getTotalAssets(widget.userPhone);
+      //final assetService = AssetService();
 
-      totalIncome = incomes.where((t) =>
-      t.date.month == DateTime.now().month &&
-          t.date.year == DateTime.now().year
-      ).fold(0.0, (a, b) => a + b.amount);
+      // ⬇️ Updated to new LoanService API
+      loanCount = await loanService.countOpenLoans(widget.userPhone);
+      totalLoan = await loanService.sumOutstanding(widget.userPhone);
 
-      totalExpense = expenses.where((t) =>
+      // ⬇️ NEW: compute assets from the Portfolio module store
+      await _loadPortfolioTotals();
+
+      totalIncome = incomes
+          .where((t) =>
       t.date.month == DateTime.now().month &&
-          t.date.year == DateTime.now().year
-      ).fold(0.0, (a, b) => a + b.amount);
+          t.date.year == DateTime.now().year)
+          .fold(0.0, (a, b) => a + b.amount);
+
+      totalExpense = expenses
+          .where((t) =>
+      t.date.month == DateTime.now().month &&
+          t.date.year == DateTime.now().year)
+          .fold(0.0, (a, b) => a + b.amount);
 
       savings = totalIncome - totalExpense;
       _showFetchButton = incomes.isEmpty && expenses.isEmpty;
@@ -426,25 +776,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
         loans: [],
         assets: [],
       );
-      insights = FiinnyBrainService.generateInsights(_mockUserData, userId: widget.userPhone);
+      insights = FiinnyBrainService.generateInsights(_mockUserData,
+          userId: widget.userPhone);
 
       // Fetch current limit for this period
       await _loadPeriodLimit();
-
     } catch (e) {
       print('[Dashboard] ERROR: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Dashboard error: $e")),
       );
     }
+    // Fetch current limit for this period
+    await _loadPeriodLimit();
+
+    // 🔎 NEW: refresh "new loan detected" badge count
+    try {
+      _loanSuggestionsCount =
+      await _loanDetector.pendingCount(widget.userPhone);
+    } catch (e) {
+      debugPrint('[Dashboard] loan suggestions count error: $e');
+    }
+
     setState(() => _loading = false);
+    _checkLimitWarnings();
+
+
   }
 
   // --- Limit Firestore Logic ---
   String get _limitDocId => "${widget.userPhone}_$txPeriod";
   Future<void> _loadPeriodLimit() async {
     try {
-      final doc = await FirebaseFirestore.instance.collection('limits').doc(_limitDocId).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('limits')
+          .doc(_limitDocId)
+          .get();
       if (doc.exists && doc.data()?['limit'] != null) {
         _periodLimit = (doc.data()!['limit'] as num?)?.toDouble();
       } else {
@@ -469,8 +836,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Set a maximum spending/income limit for the selected period. "
-                  "You’ll get alerts if you cross this amount!\n",
+              "Set a maximum SPENDING limit for the selected period. You’ll get alerts at 80% and 100% of the limit.\n",
               style: TextStyle(fontSize: 14, color: Colors.grey[800]),
             ),
             TextField(
@@ -515,10 +881,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() => _savingLimit = true);
       try {
         if (result == 0.0) {
-          await FirebaseFirestore.instance.collection('limits').doc(_limitDocId).delete();
+          await FirebaseFirestore.instance
+              .collection('limits')
+              .doc(_limitDocId)
+              .delete();
           _periodLimit = null;
         } else {
-          await FirebaseFirestore.instance.collection('limits').doc(_limitDocId).set({
+          await FirebaseFirestore.instance
+              .collection('limits')
+              .doc(_limitDocId)
+              .set({
             'limit': result,
             'userId': widget.userPhone,
             'period': txPeriod,
@@ -533,50 +905,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
       setState(() => _savingLimit = false);
     }
-  }
+    _resetLimitWarnings();
+    _checkLimitWarnings();
 
-  Future<void> _fetchEmailTx() async {
-    setState(() => _isFetchingEmail = true);
-    try {
-      await GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
-      await _initDashboard();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Fetched transactions from email!"), backgroundColor: Colors.green),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to fetch email data: $e"), backgroundColor: Colors.red),
-      );
-    } finally {
-      setState(() => _isFetchingEmail = false);
-    }
   }
 
   void _generateSmartInsight() {
     if (totalAssets > 0 || totalLoan > 0) {
       double netWorth = totalAssets - totalLoan;
       if (netWorth > 0) {
-        smartInsight = "Your net worth is ₹${netWorth.toStringAsFixed(0)}. You're building real wealth! 💰";
+        smartInsight =
+        "Your net worth is ₹${netWorth.toStringAsFixed(0)}. You're building real wealth! 💰";
       } else {
-        smartInsight = "Your net worth is negative (₹${netWorth.toStringAsFixed(0)}). Focus on reducing loans and growing assets! 🔄";
+        smartInsight =
+        "Your net worth is negative (₹${netWorth.toStringAsFixed(0)}). Focus on reducing loans and growing assets! 🔄";
       }
     } else if (totalIncome == 0 && totalExpense == 0) {
-      smartInsight = "Add your first transaction or fetch from Gmail to get insights!";
+      smartInsight =
+      "Add your first transaction or fetch from Gmail to get insights!";
     } else if (totalExpense > totalIncome) {
-      smartInsight = "You're spending more than you earn this month. Be careful!";
+      smartInsight =
+      "You're spending more than you earn this month. Be careful!";
     } else if (totalIncome > 0 && (savings / totalIncome) > 0.3) {
       smartInsight = "Great! You’ve saved over 30% of your income this month.";
-    } else if (currentGoal != null && currentGoal!.targetAmount > 0 && savings > 0) {
-      double months = ((currentGoal!.targetAmount - currentGoal!.savedAmount) / (savings == 0 ? 1 : savings)).clamp(1, 36);
-      smartInsight = "At this pace, you'll reach your goal '${currentGoal!.title}' in about ${months.toStringAsFixed(0)} months!";
+    } else if (currentGoal != null &&
+        currentGoal!.targetAmount > 0 &&
+        savings > 0) {
+      double months = ((currentGoal!.targetAmount - currentGoal!.savedAmount) /
+          (savings == 0 ? 1 : savings))
+          .clamp(1, 36);
+      smartInsight =
+      "At this pace, you'll reach your goal '${currentGoal!.title}' in about ${months.toStringAsFixed(0)} months!";
     } else {
       smartInsight = "Keep tracking your expenses and save more!";
     }
   }
 
   // --- FILTER BAR DATA ---
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -606,39 +971,79 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.notifications_active_rounded, color: Color(0xFF09857a), size: 25),
-            tooltip: 'Notifications',
-            onPressed: () => Navigator.pushNamed(context, '/notifications', arguments: widget.userPhone),
+            icon: const Icon(Icons.notifications_active_rounded,
+                color: Color(0xFF09857a), size: 25),
+            tooltip: 'Notification settings',
+            onPressed: () async {
+              await NotifPrefsService.ensureDefaultPrefs(); // make sure doc exists
+              if (!mounted) return;
+              Navigator.pushNamed(context, '/settings/notifications');
+            },
           ),
+
           IconButton(
-            icon: Icon(Icons.history_rounded, color: Color(0xFF09857a), size: 24),
-            tooltip: 'Activity',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (ctx) => DashboardActivityScreen(events: dashboardEvents)),
-            ),
+            tooltip: 'Analytics',
+            icon: const Icon(Icons.analytics_outlined),
+            onPressed: () {
+              Navigator.pushNamed(
+                context,
+                '/analytics',
+                arguments: widget.userPhone, // or just `userPhone` if Stateless
+              );
+            },
           ),
-          AnimatedRotation(
-            turns: _isFetchingEmail ? 2 : 0,
-            duration: const Duration(seconds: 1),
-            child: IconButton(
-              icon: Icon(Icons.sync_rounded, color: Color(0xFF09857a), size: 24),
+
+            // replace the AnimatedRotation(...) block with:
+            IconButton(
+              icon: _isFetchingEmail
+                  ? const SizedBox(
+                width: 22, height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+                  : const Icon(Icons.sync_rounded, color: Color(0xFF09857a), size: 24),
               tooltip: 'Fetch Email Data',
-              onPressed: _isFetchingEmail ? null : _fetchEmailTx,
+              onPressed: _isFetchingEmail ? null : () async {
+                setState(()=>_isFetchingEmail = true);
+                try {
+                  await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
+                  await _initDashboard();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Fetched Gmail transactions!')),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Email fetch failed: $e')),
+                    );
+                  }
+                } finally {
+                  if (mounted) setState(()=>_isFetchingEmail=false);
+                }
+              },
+
+
+
             ),
-          ),
+
           // 👇 Profile Avatar on right
           GestureDetector(
-            onTap: () => Navigator.pushNamed(context, '/profile', arguments: widget.userPhone),
+            onTap: () => Navigator.pushNamed(context, '/profile',
+                arguments: widget.userPhone),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: FutureBuilder<DocumentSnapshot>(
-                future: FirebaseFirestore.instance.collection('users').doc(widget.userPhone).get(),
+                future: FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(widget.userPhone)
+                    .get(),
                 builder: (context, snap) {
                   String? avatar = "assets/images/profile_default.png";
                   if (snap.hasData && snap.data!.data() != null) {
                     final data = snap.data!.data() as Map<String, dynamic>;
-                    if (data['avatar'] != null && data['avatar'].toString().isNotEmpty) {
+                    if (data['avatar'] != null &&
+                        data['avatar'].toString().isNotEmpty) {
                       avatar = data['avatar'];
                     }
                   }
@@ -663,22 +1068,60 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ? const Center(child: CircularProgressIndicator())
               : RefreshIndicator(
             onRefresh: () async {
-              if (!_isEmailLinked) {
-                await _fetchEmailTx();
-              } else {
-                await _initDashboard();
-              }
-            },
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(), // enables pull to refresh anytime
-              slivers: [
+              try {
+                // SMS: only re-check permission now (no pipeline sync)
+                if (Platform.isAndroid) {
+                  await _refreshSmsPermissionState();
+                }
 
+                // Gmail fetch (old service)
+                if (_isEmailLinked && (_userEmail?.isNotEmpty ?? false)) {
+                  await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
+                  await _initDashboard();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Synced Gmail transactions")),
+                    );
+                  }
+                } else {
+                  await _fetchEmailTx(); // already shows snackbar
+                }
+
+              } catch (e, st) {
+                debugPrint('[onRefresh] error: $e\n$st');
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Sync error: $e")),
+                  );
+                }
+              }
+              // 🔁 NEW: scan for loan suggestions on manual refresh
+              try {
+                await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
+                _loanSuggestionsCount =
+                await _loanDetector.pendingCount(widget.userPhone);
+                setState((){}); // update the chip count
+              } catch (e) {
+                debugPrint('[onRefresh] loan scan error: $e');
+              }
+
+
+            },
+
+
+
+
+            child: CustomScrollView(
+              physics:
+              const AlwaysScrollableScrollPhysics(), // enables pull to refresh anytime
+              slivers: [
                 // --- HERO SECTION: NUDGE, HELLO, HERO RING ---
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(
                       0,
-                      MediaQuery.of(context).padding.top + kToolbarHeight, // 👈 Adds space below AppBar!
+                      MediaQuery.of(context).padding.top +
+                          kToolbarHeight, // 👈 Adds space below AppBar!
                       0,
                       0,
                     ),
@@ -687,9 +1130,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       children: [
                         SmartNudgeWidget(userId: widget.userPhone),
                         Padding(
-                          padding: const EdgeInsets.only(left: 20, top: 2, bottom: 8),
+                          padding: const EdgeInsets.only(
+                              left: 20, top: 2, bottom: 8),
                           child: Text(
-                            "Welcome, ${userName ?? '...'}", // Replace with dynamic user name if needed
+                            "Welcome, ${userName ?? '...'}",
                             style: const TextStyle(
                               fontSize: 21,
                               fontWeight: FontWeight.bold,
@@ -699,7 +1143,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                         // --- Dashboard Hero Ring With Limit Icon ---
                         GestureDetector(
-                          onTap: () => Navigator.pushNamed(context, '/expense', arguments: widget.userPhone),
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            Navigator.pushNamed(
+                              context,
+                              '/tx-day-details',
+                              arguments: widget.userPhone,
+                            );
+                          },
                           child: Stack(
                             children: [
                               DashboardHeroRing(
@@ -707,16 +1158,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 debit: txSummary["debit"]!,
                                 period: txPeriod,
                                 onFilterTap: () async {
-                                  final result = await showModalBottomSheet<String>(
+                                  final result = await showModalBottomSheet<
+                                      String>(
                                     context: context,
                                     builder: (ctx) => TxFilterBar(
                                       selected: txPeriod,
-                                      onSelect: (period) => Navigator.pop(ctx, period),
+                                      onSelect: (period) =>
+                                          Navigator.pop(ctx, period),
                                     ),
                                   );
                                   if (result != null && result != txPeriod) {
                                     setState(() => txPeriod = result);
                                     await _loadPeriodLimit();
+                                    _resetLimitWarnings();
+                                    _checkLimitWarnings();
                                   }
                                 },
                               ),
@@ -725,10 +1180,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 top: 10,
                                 right: 24,
                                 child: GestureDetector(
-                                  onTap: _savingLimit ? null : _editLimitDialog,
+                                  onTap: _savingLimit
+                                      ? null
+                                      : _editLimitDialog,
                                   child: CircleAvatar(
                                     radius: 16,
-                                    backgroundColor: Colors.teal.withOpacity(0.09),
+                                    backgroundColor:
+                                    Colors.teal.withOpacity(0.09),
                                     child: Icon(
                                       Icons.edit_rounded,
                                       size: 17,
@@ -743,19 +1201,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   right: 30,
                                   bottom: 22,
                                   child: Container(
-                                    padding: EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 7, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: Colors.teal.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(11),
+                                      color: Colors.teal
+                                          .withOpacity(0.12),
+                                      borderRadius:
+                                      BorderRadius.circular(11),
                                     ),
-                                    child: Text(
-                                      "Limit ₹${_periodLimit!.toStringAsFixed(0)}",
-                                      style: TextStyle(
-                                        color: Colors.teal[900],
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 12,
-                                      ),
+                                    child: Builder(
+                                      builder: (_) {
+                                        final limit = _periodLimit!;
+                                        final used  = periodSpendOnly;
+                                        final pct = limit > 0 ? (used / limit) : 0.0;
+
+                                        return Text(
+                                          "Limit ₹${limit.toStringAsFixed(0)} • Used ₹${used.toStringAsFixed(0)} (${(pct * 100).toStringAsFixed(0)}%)",
+                                          style: TextStyle(
+                                            color: Colors.teal[900],
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
+                                          ),
+                                        );
+                                      },
                                     ),
+
                                   ),
                                 ),
                             ],
@@ -767,46 +1237,67 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           children: [
                             Expanded(
                               child: TransactionCountCard(
-                                count: filteredIncomes.length + filteredExpenses.length,
+                                count: filteredIncomes.length +
+                                    filteredExpenses.length,
                                 period: txPeriod,
                                 barData: _barDataCount(),
                                 onFilterTap: () async {
-                                  final result = await showModalBottomSheet<String>(
+                                  final result =
+                                  await showModalBottomSheet<String>(
                                     context: context,
                                     builder: (ctx) => TxFilterBar(
                                       selected: txPeriod,
-                                      onSelect: (period) => Navigator.pop(ctx, period),
+                                      onSelect: (period) =>
+                                          Navigator.pop(ctx, period),
                                     ),
                                   );
                                   if (result != null && result != txPeriod) {
                                     setState(() => txPeriod = result);
+                                    await _loadPeriodLimit();
+                                    _resetLimitWarnings();
+                                    _checkLimitWarnings();
                                   }
+
                                 },
-                                onViewAllTap: () => Navigator.pushNamed(context, '/transactionCount', arguments: widget.userPhone),
+                                onViewAllTap: () =>
+                                    Navigator.pushNamed(
+                                        context, '/transactionCount',
+                                        arguments: widget.userPhone),
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: TransactionAmountCard(
                                 label: "Transaction Amount",
-                                amount: filteredIncomes.fold(0.0, (a, b) => a + b.amount) +
-                                    filteredExpenses.fold(0.0, (a, b) => a + b.amount),
+                                amount: filteredIncomes.fold(
+                                    0.0,
+                                        (a, b) => a + b.amount) +
+                                    filteredExpenses.fold(
+                                        0.0,
+                                            (a, b) => a + b.amount),
                                 period: txPeriod,
                                 barData: _barDataAmount(),
                                 onFilterTap: () async {
-                                  final result = await showModalBottomSheet<String>(
+                                  final result =
+                                  await showModalBottomSheet<String>(
                                     context: context,
                                     builder: (ctx) => TxFilterBar(
                                       selected: txPeriod,
-                                      onSelect: (period) => Navigator.pop(ctx, period),
+                                      onSelect: (period) =>
+                                          Navigator.pop(ctx, period),
                                     ),
                                   );
                                   if (result != null && result != txPeriod) {
                                     setState(() => txPeriod = result);
                                     await _loadPeriodLimit();
+                                    _resetLimitWarnings();
+                                    _checkLimitWarnings();
                                   }
                                 },
-                                onViewAllTap: () => Navigator.pushNamed(context, '/transactionAmount', arguments: widget.userPhone),
+                                onViewAllTap: () =>
+                                    Navigator.pushNamed(
+                                        context, '/transactionAmount',
+                                        arguments: widget.userPhone),
                               ),
                             ),
                           ],
@@ -821,7 +1312,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Container(
                     decoration: const BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(36)),
+                      borderRadius:
+                      BorderRadius.vertical(top: Radius.circular(36)),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black12,
@@ -835,13 +1327,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (Platform.isAndroid && !_smsReady)
+                          Card(
+                              color: Colors.orange.withOpacity(0.10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              child: ListTile(
+                                leading: const Icon(Icons.sms_failed_rounded, color: Colors.orange),
+                                title: const Text("Enable SMS to auto-track transactions"),
+                                subtitle: const Text(
+                                    "We only read bank & UPI alerts. Nothing leaves your device without consent."
+                                ),
+                                trailing: TextButton(
+                                  child: const Text("Enable"),
+                                  onPressed: _ensureSmsPermissionWithDisclosure, // calls the method we added
+                                ),
+                              ),
+                            ),
                           CrisisAlertBanner(
                             userId: widget.userPhone,
                             totalIncome: totalIncome,
                             totalExpense: totalExpense,
                           ),
                           SmartInsightCard(
-                            key: ValueKey('$totalLoan|$totalAssets|$totalIncome|$totalExpense|$savings'),
+                            key: ValueKey(
+                                '$totalLoan|$totalAssets|$totalIncome|$totalExpense|$savings'),
                             income: totalIncome,
                             expense: totalExpense,
                             savings: savings,
@@ -850,41 +1359,157 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             totalAssets: totalAssets,
                           ),
                           const SizedBox(height: 14),
+                          FiinnyBrainDiagnosisCard(
+                            userPhone: widget.userPhone,
+                            daysWindow: 180,
+                            initiallyExpanded: false,
+                            salaryEarlyDays: 3,
+                          ),
+                          const SizedBox(height: 14),
+
+
+
                           Row(
                             children: [
+                              // ⬇️ Make Loans card tappable
                               Expanded(
-                                child: LoansSummaryCard(
-                                  userId: widget.userPhone,
-                                  loanCount: loanCount,
-                                  totalLoan: totalLoan,
-                                  onAddLoan: () async {
-                                    final added = await Navigator.pushNamed(
-                                      context,
-                                      '/addLoan',
-                                      arguments: widget.userPhone,
-                                    );
-                                    if (added == true) await _initDashboard();
-                                  },
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius:
+                                    BorderRadius.circular(16),
+                                    onTap: () async {
+                                      final changed = await Navigator
+                                          .pushNamed(context, '/loans',
+                                          arguments:
+                                          {'userId': widget.userPhone},);
+                                      if (changed == true) {
+                                        await _initDashboard();
+                                      }
+                                    },
+                                    child: LoansSummaryCard(
+                                      userId: widget.userPhone,
+                                      loanCount: loanCount,
+                                      totalLoan: totalLoan,
+
+                                      // 🆕 show detected loans + review handler
+                                      pendingSuggestions: _loanSuggestionsCount,
+                                      onReviewSuggestions: () async {
+                                        setState(() => _scanningLoans = true);
+                                        try {
+                                          await _loanDetector.scanAndWrite(
+                                              widget.userPhone,
+                                              daysWindow: 360);
+                                          _loanSuggestionsCount =
+                                          await _loanDetector.pendingCount(
+                                              widget.userPhone);
+                                        } finally {
+                                          if (mounted) setState(() => _scanningLoans = false);
+                                        }
+
+                                        await showModalBottomSheet(
+                                          context: context,
+                                          isScrollControlled: true,
+                                          shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(16)),
+                                          builder: (_) => SizedBox(
+                                            height: MediaQuery.of(context).size.height * 0.70,
+                                            child: LoanSuggestionsSheet(userId: widget.userPhone),
+                                          ),
+                                        );
+
+                                        // refresh badge + totals after sheet actions
+                                        _loanSuggestionsCount =
+                                        await _loanDetector.pendingCount(widget.userPhone);
+                                        final ls = await LoanService()
+                                            .countOpenLoans(widget.userPhone);
+                                        final sum = await LoanService()
+                                            .sumOutstanding(widget.userPhone);
+                                        if (mounted) {
+                                          setState(() {
+                                            loanCount = ls;
+                                            totalLoan = sum;
+                                          });
+                                        }
+                                      },
+
+                                      onAddLoan: () async {
+                                        final added = await Navigator.pushNamed(
+                                          context,
+                                          '/addLoan',
+                                          arguments: widget.userPhone,
+                                        );
+                                        if (added == true) {
+                                          await _initDashboard();
+                                        }
+                                      },
+                                    ),
+
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 10),
+                              // ⬇️ Make Assets card tappable
                               Expanded(
-                                child: AssetsSummaryCard(
-                                  userId: widget.userPhone,
-                                  assetCount: assetCount,
-                                  totalAssets: totalAssets,
-                                  onAddAsset: () async {
-                                    final added = await Navigator.pushNamed(
-                                      context,
-                                      '/addAsset',
-                                      arguments: widget.userPhone,
-                                    );
-                                    if (added == true) await _initDashboard();
-                                  },
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius:
+                                    BorderRadius.circular(16),
+                                    onTap: () async {
+                                      await Navigator.pushNamed(context, '/portfolio'); // open new list
+                                      await _loadPortfolioTotals();                     // refresh totals on return
+                                      // optional full refresh:
+                                      // await _initDashboard();
+                                    },
+
+                                    child: AssetsSummaryCard(
+                                      userId: widget.userPhone,
+                                      assetCount: assetCount,
+                                      totalAssets: totalAssets,
+                                      onAddAsset: () async {
+                                        await Navigator.pushNamed(context, '/asset-type-picker'); // picker → entry → save
+                                        await _loadPortfolioTotals();                              // refresh totals on dashboard
+                                        // optional: await _initDashboard();
+                                      },
+
+                                    ),
+                                  ),
                                 ),
                               ),
                             ],
                           ),
+                          const SizedBox(height: 10),
+
+                          // ⬇️ Make Goals card tappable (same shape as Assets)
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(16),
+                                    onTap: () async {
+                                      await Navigator.pushNamed(context, '/goals', arguments: widget.userPhone);
+                                      await _initDashboard();
+                                    },
+                                    child: GoalsSummaryCard(
+                                      userId: widget.userPhone,
+                                      goalCount: goals.length,
+                                      // Sum of targets (or use savedAmount if you prefer):
+                                      totalGoalAmount: goals.fold(0.0, (sum, g) => sum + g.targetAmount),
+                                      onAddGoal: () async {
+                                        await Navigator.pushNamed(context, '/addGoal', arguments: widget.userPhone);
+                                        await _initDashboard();
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+
+
                           const SizedBox(height: 16),
                           CustomDiamondCard(
                             isDiamondCut: false,
@@ -894,7 +1519,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               Colors.white.withOpacity(0.09)
                             ],
                             child: ListTile(
-                              leading: Icon(Icons.equalizer, color: Color(0xFF09857a), size: 33),
+                              leading: Icon(Icons.equalizer,
+                                  color: Color(0xFF09857a), size: 33),
                               title: Text(
                                 "Net Worth",
                                 style: TextStyle(
@@ -906,7 +1532,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               subtitle: Text(
                                 "₹${netWorth.toStringAsFixed(0)}",
                                 style: TextStyle(
-                                  color: netWorth >= 0 ? Colors.teal : Colors.red,
+                                  color: netWorth >= 0
+                                      ? Colors.teal
+                                      : Colors.red,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 19,
                                 ),
@@ -914,59 +1542,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           ),
                           const SizedBox(height: 18),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                "Your Goals",
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF09857a),
-                                  letterSpacing: 0.2,
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pushNamed(
-                                  context,
-                                  '/goals',
-                                  arguments: widget.userPhone,
-                                ).then((_) => _initDashboard()),
-                                child: const Text(
-                                  "View All",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                    color: Color(0xFF09857a),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
                           if (goals.isEmpty)
                             const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
+                              padding:
+                              EdgeInsets.symmetric(vertical: 10),
                               child: Text(
                                 "No goals added yet! Tap to add your first.",
                                 style: TextStyle(color: Colors.teal),
                               ),
                             ),
-                          ...goals.take(2).map(
-                                (g) => CustomDiamondCard(
-                              isDiamondCut: true,
-                              child: _GoalCardContent(goal: g),
-                            ),
-                          ),
-                          if (goals.length > 2)
-                            Center(
-                              child: Text(
-                                "+${goals.length - 2} more goals...",
-                                style: const TextStyle(
-                                  color: Color(0xFF09857a),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          const SizedBox(height: 16),
                           if (insights.isNotEmpty)
                             GestureDetector(
                               onTap: () {
@@ -980,31 +1564,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   ),
                                 );
                               },
-                              child: InsightFeedCard(insights: insights.take(3).toList()),
+                              child: InsightFeedCard(
+                                  insights: insights.take(3).toList()),
                             ),
                           const SizedBox(height: 18),
-                          if (_showFetchButton)if (!_isEmailLinked)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4.0), // Or whatever padding you want
-                              child: ElevatedButton.icon(
-                                //
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Color(0xFF09857a),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 13),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(15),
+                          if (_showFetchButton)
+                            if (!_isEmailLinked)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 4.0),
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Color(0xFF09857a),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 13),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                      BorderRadius.circular(15),
+                                    ),
+                                    elevation: 8,
                                   ),
-                                  elevation: 8,
+                                  icon: const Icon(Icons.mail_rounded,
+                                      color: Colors.white),
+                                  label: const Text(
+                                    "Fetch Email Data",
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16),
+                                  ),
+                                  onPressed: _fetchEmailTx,
                                 ),
-                                icon: const Icon(Icons.mail_rounded, color: Colors.white),
-                                label: const Text(
-                                  "Fetch Email Data",
-                                  style: TextStyle(color: Colors.white, fontSize: 16),
-                                ),
-                                onPressed: _fetchEmailTx,
                               ),
-                            ),
                           const SizedBox(height: 80),
                         ],
                       ),
@@ -1013,7 +1604,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ],
             ),
-          )],
+          ),
+        ],
       ),
     );
   }
@@ -1051,10 +1643,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     double credit = allIncomes
-        .where((t) => t.date.isAfter(start.subtract(const Duration(milliseconds: 1))) && t.date.isBefore(end))
+        .where((t) =>
+    t.date.isAfter(start.subtract(const Duration(milliseconds: 1))) &&
+        t.date.isBefore(end))
         .fold(0.0, (a, b) => a + b.amount);
     double debit = allExpenses
-        .where((t) => t.date.isAfter(start.subtract(const Duration(milliseconds: 1))) && t.date.isBefore(end))
+        .where((t) =>
+    t.date.isAfter(start.subtract(const Duration(milliseconds: 1))) &&
+        t.date.isBefore(end))
         .fold(0.0, (a, b) => a + b.amount);
 
     return {"credit": credit, "debit": debit, "net": credit - debit};
@@ -1179,7 +1775,8 @@ class DashboardHeroRing extends StatelessWidget {
                 GestureDetector(
                   onTap: onFilterTap,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(
                       color: Colors.teal.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(13),
@@ -1195,7 +1792,8 @@ class DashboardHeroRing extends StatelessWidget {
                             fontSize: 14,
                           ),
                         ),
-                        const Icon(Icons.expand_more_rounded, size: 21, color: Color(0xFF09857a)),
+                        const Icon(Icons.expand_more_rounded,
+                            size: 21, color: Color(0xFF09857a)),
                       ],
                     ),
                   ),
@@ -1254,7 +1852,6 @@ class _RingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
     final Paint bg = Paint()
       ..color = color.withOpacity(0.11)
       ..style = PaintingStyle.stroke
@@ -1270,36 +1867,24 @@ class _RingPainter extends CustomPainter {
     // BG arc (full)
     canvas.drawArc(
       Rect.fromCircle(center: size.center(Offset.zero), radius: size.width / 2),
-      0, 2 * 3.1415926535, false, bg,
+      0,
+      2 * 3.1415926535,
+      false,
+      bg,
     );
     // FG arc (progress)
     canvas.drawArc(
       Rect.fromCircle(center: size.center(Offset.zero), radius: size.width / 2),
-      -3.1415926535 / 2, 2 * 3.1415926535 * percent, false, fg,
+      -3.1415926535 / 2,
+      2 * 3.1415926535 * percent,
+      false,
+      fg,
     );
   }
 
   @override
   bool shouldRepaint(_RingPainter old) =>
       old.percent != percent || old.color != color || old.strokeWidth != strokeWidth;
-}
-
-class _GoalCardContent extends StatelessWidget {
-  final GoalModel goal;
-  const _GoalCardContent({required this.goal, super.key});
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: goal.emoji != null
-          ? Text(goal.emoji!, style: const TextStyle(fontSize: 27))
-          : const Icon(Icons.flag_circle_rounded, color: Color(0xFF09857a), size: 29),
-      title: Text(goal.title, style: const TextStyle(color: Color(0xFF09857a), fontWeight: FontWeight.w600)),
-      subtitle: Text(
-        "Target: ₹${goal.targetAmount.toStringAsFixed(0)}  By: ${goal.targetDate.day}/${goal.targetDate.month}/${goal.targetDate.year}",
-        style: const TextStyle(color: Colors.teal),
-      ),
-    );
-  }
 }
 
 class _MintFab extends StatelessWidget {
@@ -1309,7 +1894,7 @@ class _MintFab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FloatingActionButton(
-      heroTag: "dashboard-fab-$userPhone",
+      heroTag: "dashboard-fab-$userPhone", // unique => avoids Hero collisions
       tooltip: "Add Transaction",
       child: const Icon(Icons.add, size: 29),
       onPressed: () async {
@@ -1333,7 +1918,7 @@ class _AnimatedMintBackground extends StatelessWidget {
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0.0, end: 1.0),
       duration: const Duration(seconds: 2),
-      builder: (context, value, child) => Container(
+      builder: (context, v, _) => Container(
         decoration: BoxDecoration(
           gradient: RadialGradient(
             colors: [
@@ -1341,12 +1926,13 @@ class _AnimatedMintBackground extends StatelessWidget {
               Colors.teal.withOpacity(0.1),
               Colors.white.withOpacity(0.6),
             ],
-            radius: 1.2,
             center: Alignment.topLeft,
-            stops: [0.0, 0.5, value],
+            radius: 0.8 + 0.4 * v,   // animate radius
+            // stops: [0.0, 0.5, 1.0], // (optional) fixed, strictly increasing
           ),
         ),
       ),
     );
   }
 }
+

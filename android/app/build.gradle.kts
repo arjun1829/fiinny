@@ -5,10 +5,14 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
-    id("com.google.gms.google-services") // <-- Add this line for Firebase!
+    id("com.google.gms.google-services")
 }
 
-// Load keystore properties
+/* 🔧 EXCLUDE the old IID lib that causes the duplicate */
+configurations.all {
+    exclude(group = "com.google.firebase", module = "firebase-iid")
+}
+
 val keystorePropertiesFile = rootProject.file("C:/lifemap/android/key.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
@@ -20,15 +24,13 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
+    /* ✅ Use Java 11 to avoid legacy warnings */
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
         isCoreLibraryDesugaringEnabled = true
     }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8.toString()
-    }
+    kotlinOptions { jvmTarget = "11" }
 
     defaultConfig {
         applicationId = "com.KaranArjunTechnologies.lifemap"
@@ -52,7 +54,6 @@ android {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             isShrinkResources = false
-            // Add proguard if you need: proguardFiles(getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro")
         }
         debug {
             signingConfig = signingConfigs.getByName("release")
@@ -65,7 +66,11 @@ flutter {
 }
 
 dependencies {
-    // 🔥 UPDATED for flutter_local_notifications (and others needing new Java features)
+    // Align all Firebase artifacts to the same version via BOM
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+
+    // Needed by flutter_local_notifications and friends
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
-    // Firebase dependencies (handled by Flutter via pubspec.yaml)
+
+    // ✋ Do NOT add firebase-messaging directly here — FlutterFire provides it.
 }

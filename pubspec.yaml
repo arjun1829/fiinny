@@ -1,7 +1,7 @@
 name: lifemap
 description: A premium personal finance & social app (2025)
 publish_to: "none"
-version: 1.0.0+27
+version: 1.0.0+31
 
 environment:
   sdk: ">=3.2.0 <4.0.0"
@@ -12,17 +12,17 @@ dependencies:
 
   # Core
   provider: ^6.0.5
-  shared_preferences: ^2.2.2
+  shared_preferences: ^2.3.2
   intl: ^0.20.2
   uuid: ^4.2.2
   rxdart: ^0.27.7
   crypto: ^3.0.3
-  http: ^1.1.0
+  http: ^1.2.0
   path: ^1.8.3
   sqflite: ^2.3.3
 
   # Firebase & Google
-  firebase_core: ^3.1.0
+  firebase_core: ^3.15.2
   firebase_auth: ^5.1.0
   cloud_firestore: ^5.5.0
   firebase_storage: ^12.0.0
@@ -33,7 +33,7 @@ dependencies:
   firebase_ui_oauth_google: ^1.3.2
 
   # Notifications & Scheduling
-  flutter_local_notifications: ^19.4.0
+  flutter_local_notifications: ^19.4.2
   timezone: ^0.10.0
 
   # UI & Animations
@@ -56,6 +56,9 @@ dependencies:
   # ML / OCR
   google_ml_kit: ^0.20.0
   file_picker: ^8.0.0
+  telephony: ^0.2.0
+  firebase_messaging: ^15.2.10
+
 
   # Optional (commented)
   # firebase_messaging: ^15.1.0
@@ -81,6 +84,15 @@ flutter:
     - assets/avatars/avatar2.png
     - assets/avatars/avatar3.png
     - assets/images/banks/
+    - assets/banks/          # <-- added for AddLoanScreen bank logos
+    - assets/templates/banks/
+    - assets/templates/wallets/
+    - assets/templates/merchants/
+    - assets/enrich/
+    - assets/templates/upis/ # Parser enrichment dictionaries (optional but recommended)
+    - assets/enrich/merchants.json
+    - assets/enrich/categories.json
+
   fonts:
     - family: Montserrat
       fonts:

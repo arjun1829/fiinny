@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- helpers (kept from your file + new owner helper) ---
+    function authed() {
+      return request.auth != null;
+    }
+    function authPhone() {
+      return authed() && request.auth.token.phone_number is string
+        ? request.auth.token.phone_number
+        : "";
+    }
+    // A user "owns" a /users/{uid} doc if:
+    // - the path id equals their Firebase uid, OR
+    // - the doc stores their uid in resource.data.uid, OR
+    // - the path id equals their verified phone number (for your phone-key mirror)
+    function isUserOwner(uid) {
+      return authed()
+        && (
+          request.auth.uid == uid
+          || (resource.data.uid == request.auth.uid)
+          || (uid == authPhone())
+        );
+    }
+
+    // --- secure only partner_requests (unchanged) ---
+    match /partner_requests/{reqId} {
+      // Only the sender can create a pending request
+      allow create: if authed()
+                    && request.resource.data.fromUserPhone == authPhone()
+                    && request.resource.data.status == 'pending';
+
+      // Only the recipient can approve/reject a pending request
+      // Only the sender can cancel a pending request
+      allow update: if authed()
+                    && resource.data.status == 'pending'
+                    && (
+                         // recipient approves/rejects
+                         (resource.data.toUserPhone == authPhone()
+                          && (request.resource.data.status == 'approved'
+                              || request.resource.data.status == 'rejected'))
+                         ||
+                         // sender cancels
+                         (resource.data.fromUserPhone == authPhone()
+                          && request.resource.data.status == 'cancelled')
+                       );
+
+      // Only participants can read
+      allow get, list: if authed()
+                       && (resource.data.fromUserPhone == authPhone()
+                           || resource.data.toUserPhone == authPhone());
+
+      // Keep history
+      allow delete: if false;
+    }
+
+    // --- NEW: secure users subtree used by notifications/prefs/feed ---
+    match /users/{uid} {
+      // User root doc: the owner can read/write
+      allow read, write: if isUserOwner(uid);
+
+      // Notification preferences: owner only
+      match /prefs/{doc} {
+        allow read, write: if isUserOwner(uid);
+      }
+
+      // In-app notification feed: owner only
+      match /notif_feed/{nid} {
+        allow read, write: if isUserOwner(uid);
+      }
+
+      // Idempotency markers: owner may read (debug), but client may NOT write.
+      // Cloud Functions (Admin SDK) bypasses security rules and can write here.
+      match /recent_notifs/{rid} {
+        allow read: if isUserOwner(uid);
+        allow write: if false;
+      }
+    }
+
+    // --- everything else stays open (so nothing else breaks) ---
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

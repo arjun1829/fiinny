@@ -1,7 +1,10 @@
 // lib/details/group_detail_screen.dart
-import 'dart:io' show File;
+import '../chat/io_file_ops.dart' if (dart.library.html) '../chat/io_file_ops_stub.dart';
+
 import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
+import 'package:characters/characters.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -30,6 +33,39 @@ import '../group/group_reminder_dialog.dart';
 import '../widgets/add_group_expense_dialog.dart';
 import '../widgets/settleup_dialog.dart';
 
+// put this near the top of the file, after imports
+Future<Uri?> _safeDownloadUri(String raw) async {
+  try {
+    if (!raw.contains('://')) {
+      final ref = FirebaseStorage.instance.ref(raw);
+      final d = await ref.getDownloadURL();
+      return Uri.parse(d);
+    }
+
+    final uri = Uri.parse(raw);
+
+    if (uri.scheme == 'gs') {
+      final ref = FirebaseStorage.instance.refFromURL(raw);
+      final d = await ref.getDownloadURL();
+      return Uri.parse(d);
+    }
+
+    final looksLikeStorage = uri.host.contains('firebasestorage.googleapis.com');
+    final hasToken = uri.queryParameters.containsKey('token');
+    if (looksLikeStorage && !hasToken) {
+      final ref = FirebaseStorage.instance.refFromURL(raw);
+      final d = await ref.getDownloadURL();
+      return Uri.parse(d);
+    }
+
+    return uri; // non-Firebase links (Drive/Dropbox/etc.)
+  } catch (_) {
+    return null;
+  }
+}
+
+// Add near your helpers (below _safeDownloadUri)
+
 class GroupDetailScreen extends StatefulWidget {
   final String userId; // phone
   final GroupModel group;
@@ -51,9 +87,186 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   List<FriendModel> _members = [];
   FriendModel? _creator;
   bool _loadingMembers = true;
+  bool _balancesExpanded = true; // or false if you want it collapsed by default
+
 
   // Chat prefill when user taps "Discuss" on an expense
   String? _pendingChatDraft;
+
+  // Prefer names; otherwise show a friendly placeholder instead of phone
+  String _maskPhoneForDisplay(String phone) {
+    final digits = phone.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return 'Member';
+    final last4 = digits.length >= 4 ? digits.substring(digits.length - 4) : digits;
+    return 'Member ($last4)'; // e.g., Member (4821)
+  }
+
+  bool _looksLikeImageName(String? s) {
+    final n = (s ?? '').toLowerCase();
+    return n.endsWith('.jpg') || n.endsWith('.jpeg') ||
+        n.endsWith('.png') || n.endsWith('.gif') ||
+        n.endsWith('.webp');
+  }
+
+// Inline preview first; fallback to tile if not an image or if resolving fails
+  Widget _attachmentView({
+    required String url,
+    String? name,
+    int? sizeBytes,
+  }) {
+    return FutureBuilder<Uri?>(
+      future: _safeDownloadUri(url),
+      builder: (context, snap) {
+        final resolved = snap.data;
+        if (snap.connectionState != ConnectionState.done || resolved == null) {
+          // While resolving (or failed), show the tile
+          return _attachmentTile(url: url, name: name, sizeBytes: sizeBytes);
+        }
+
+        // Decide if it's an image by filename (explicit name or URL tail)
+        final tail = Uri.decodeComponent(
+          resolved.pathSegments.isNotEmpty ? resolved.pathSegments.last : '',
+        );
+        final isImg = _looksLikeImageName(name) || _looksLikeImageName(tail);
+
+        if (!isImg) {
+          // Not an image → keep the compact tile that opens externally
+          return _attachmentTile(
+            url: resolved.toString(),
+            name: name,
+            sizeBytes: sizeBytes,
+          );
+        }
+
+        // Image → show inline with tap-to-zoom
+        return GestureDetector(
+          onTap: () {
+            showDialog(
+              context: context,
+              builder: (_) => Dialog(
+                insetPadding: const EdgeInsets.all(16),
+                child: InteractiveViewer(
+                  child: Image.network(resolved.toString(), fit: BoxFit.contain),
+                ),
+              ),
+            );
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: Image.network(
+                resolved.toString(),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _attachmentTile(
+                  url: resolved.toString(),
+                  name: name,
+                  sizeBytes: sizeBytes,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+
+
+
+  Widget _attachmentTile({
+    required String url,
+    String? name,
+    int? sizeBytes,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+
+    String displayName = name ?? '';
+    if (displayName.isEmpty) {
+      final u = Uri.tryParse(url);
+      displayName = (u != null && u.pathSegments.isNotEmpty)
+          ? u.pathSegments.last
+          : 'Attachment';
+    }
+
+
+
+    String _fmtBytesLocal(int b) {
+      if (b <= 0) return '';
+      const units = ['B','KB','MB','GB','TB'];
+      double v = b.toDouble();
+      int i = 0;
+      while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+      return '${v < 10 ? v.toStringAsFixed(1) : v.toStringAsFixed(0)} ${units[i]}';
+    }
+
+    final sizeText = sizeBytes == null ? '' : _fmtBytesLocal(sizeBytes);
+
+    return InkWell(
+      onTap: () async {
+        final launchUri = await _safeDownloadUri(url);
+        if (launchUri == null) return;
+        final ok = await launchUrl(launchUri, mode: LaunchMode.externalApplication);
+        if (!ok && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not open $displayName')),
+          );
+        }
+      },
+
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: cs.surfaceVariant.withOpacity(0.6),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.attach_file, size: 18),
+            const SizedBox(width: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 220),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  if (sizeText.isNotEmpty)
+                    Text(sizeText,
+                        style: TextStyle(fontSize: 11, color: Colors.grey[700])),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.open_in_new, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+
+  String _nameFor(String phone) {
+    if (phone == widget.userId) return 'You';
+    final f = _friend(phone);
+    final n = f.name.trim();
+    // If FriendService has a real name, use it; if it fell back to the phone, mask it.
+    if (n.isNotEmpty && n != phone) return n;
+    return _maskPhoneForDisplay(phone);
+  }
+
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
 
   @override
   void initState() {
@@ -89,7 +302,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   Future<void> _openAddExpense() async {
     final result = await showDialog(
       context: context,
-      builder: (_) => AddGroupExpenseDialog(
+      builder: (_) => AddGroupExpenseScreen(
         userPhone: widget.userId,
         userName: "You",
         userAvatar: null,
@@ -238,41 +451,58 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     }
   }
 
-  void _showExpenseDetails(BuildContext context, ExpenseItem e) {
+  void _showExpenseDetailsUpgraded(BuildContext context, ExpenseItem e) {
     final splits = gbm.computeSplits(e);
-    final payer = _friend(e.payerId);
+    final cs = Theme.of(context).colorScheme;
+
+    String title = e.label?.isNotEmpty == true
+        ? e.label!
+        : (e.category?.isNotEmpty == true ? e.category! : "Expense");
+
+    String cleanNote = e.note;
+    String? noteUrl;
+    {
+      final m = RegExp(r'(https?:\/\/[^\s]+)', caseSensitive: false).firstMatch(cleanNote);
+      if (m != null) {
+        noteUrl = m.group(0);
+        cleanNote = cleanNote
+            .replaceFirst(m.group(0)!, '')
+            .replaceAll(RegExp(r'\s{2,}'), ' ')
+            .trim();
+      }
+    }
+
 
     showModalBottomSheet(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
+      backgroundColor: Theme.of(context).cardColor,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Grabber
             Container(
-              height: 4,
-              width: 44,
-              margin: const EdgeInsets.only(bottom: 12),
+              height: 4, width: 44, margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
                 color: Colors.grey[300],
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
-            // Header row
+
+            // Header
             Row(
               children: [
                 const Icon(Icons.receipt_long_rounded),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    e.label?.isNotEmpty == true
-                        ? e.label!
-                        : (e.category?.isNotEmpty == true ? e.category! : "Expense"),
+                    title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
@@ -281,82 +511,130 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                 const SizedBox(width: 8),
                 Text(
                   "₹${e.amount.toStringAsFixed(2)}",
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: cs.primary),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            // Payer / date
+            const SizedBox(height: 8),
+
+            // Paid by + date
             Row(
               children: [
-                const Text("Paid by: ", style: TextStyle(fontWeight: FontWeight.w700)),
                 _avatar(e.payerId, radius: 12),
                 const SizedBox(width: 8),
-                Text(
-                  payer.phone == widget.userId ? "You" : payer.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                Flexible(
+                  child: Text(
+                    "Paid by ${_nameFor(e.payerId)}",
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
                 ),
                 const Spacer(),
                 Text(
-                  "${_fmtShort(e.date)} ${e.date.hour.toString().padLeft(2,'0')}:${e.date.minute.toString().padLeft(2,'0')}",
+                  "${_fmtShort(e.date)} ${e.date.year}  "
+                      "${e.date.hour.toString().padLeft(2, '0')}:${e.date.minute.toString().padLeft(2, '0')}",
                   style: TextStyle(color: Colors.grey.shade700),
                 ),
               ],
             ),
-            if (e.category != null && e.category!.isNotEmpty) ...[
+
+            if ((e.category ?? '').isNotEmpty) ...[
               const SizedBox(height: 6),
               Row(
                 children: [
-                  const Text("Category: ", style: TextStyle(fontWeight: FontWeight.w700)),
+                  const Text("Category: ", style: TextStyle(fontWeight: FontWeight.w600)),
                   Flexible(child: Text(e.category!)),
                 ],
               ),
             ],
-            if (e.note.isNotEmpty) ...[
+
+            if (cleanNote.isNotEmpty) ...[
               const SizedBox(height: 6),
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text("Note: ${e.note}"),
+                child: Text("Note: $cleanNote"),
               ),
             ],
+
+            if ((noteUrl ?? '').isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  "Attachment",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    color: cs.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              _attachmentView(
+                url: noteUrl!,
+                // leave name/size null: tile derives a pretty name and hides raw URL
+                name: null,
+                sizeBytes: null,
+              ),
+            ],
+
+            if ((e.attachmentUrl ?? '').isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Attachment',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    color: cs.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              _attachmentView(
+                url: e.attachmentUrl!,
+                name: e.attachmentName,          // ok if null; tile will derive a name
+                sizeBytes: e.attachmentSize,     // ok if null; size hidden
+              ),
+            ],
+
+
+
             const Divider(height: 22),
+
+            // Split
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                "Split details",
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                  color: Colors.teal.shade900,
-                ),
+                "Split",
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: cs.primary),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
+
             ...splits.entries.map((s) {
-              final f = _friend(s.key);
               final isYou = s.key == widget.userId;
               final owes = s.key != e.payerId; // payer "paid", others "owe"
-              final subtitle = owes
-                  ? (isYou ? "You owe" : "Owes")
-                  : (isYou ? "You paid" : "Paid");
+              final who = isYou ? "You" : _nameFor(s.key);
+              final subtitle = owes ? (isYou ? "You owe" : "Owes") : (isYou ? "You paid" : "Paid");
+              final amtColor = owes ? cs.error : Colors.green.shade700;
+
               return ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 leading: _avatar(s.key),
-                title: Text(isYou ? "You" : f.name,
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                title: Text(who, style: const TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: Text("$subtitle ₹${s.value.toStringAsFixed(2)}"),
                 trailing: Text(
                   "₹${s.value.toStringAsFixed(2)}",
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: owes ? Colors.redAccent : Colors.green,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w700, color: amtColor),
                 ),
               );
             }),
+
             const SizedBox(height: 8),
-            // Actions inside sheet
+
+            // Actions (kept minimal)
             Row(
               children: [
                 OutlinedButton.icon(
@@ -373,16 +651,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   label: const Text('Edit'),
                   onPressed: () {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Edit coming soon')),
-                    );
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(const SnackBar(content: Text('Edit coming soon')));
                   },
                 ),
                 const SizedBox(width: 8),
                 TextButton.icon(
-                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                  label: const Text('Delete',
-                      style: TextStyle(color: Colors.redAccent)),
+                  icon: Icon(Icons.delete_outline, color: cs.error),
+                  label: Text('Delete', style: TextStyle(color: cs.error)),
                   onPressed: () {
                     Navigator.pop(context);
                     _confirmDelete(e);
@@ -396,16 +672,18 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
   }
 
+
   Widget _avatar(String phone, {double radius = 16}) {
     final f = _friend(phone);
     final a = f.avatar;
     if (a.startsWith('http')) {
       return CircleAvatar(radius: radius, backgroundImage: NetworkImage(a));
     }
-    final text =
-    (a.isNotEmpty ? a : (f.name.isNotEmpty ? f.name[0] : '?')).toUpperCase();
-    return CircleAvatar(radius: radius, child: Text(text));
+    final displayName  = _nameFor(phone);
+    final initial = displayName .isNotEmpty ? displayName .characters.first.toUpperCase() : '?';
+    return CircleAvatar(radius: radius, child: Text(initial));
   }
+
 
   // ---------- UI ----------
   @override
@@ -527,7 +805,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     required int txCount,
   }) {
     final createdByYou = widget.group.createdBy == widget.userId;
-    final creatorLabel = createdByYou ? "You" : _friend(widget.group.createdBy).name;
+    final creatorLabel = _nameFor(widget.group.createdBy);
+
 
     final net = owed - owe;
     final netColor = net >= 0 ? Colors.teal.shade800 : Colors.orange.shade800;
@@ -639,73 +918,150 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     final rows = pairNet.entries.toList()
       ..sort((a, b) => b.value.abs().compareTo(a.value.abs())); // big first
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text("Balances by member",
-            style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: Colors.teal.shade900)),
-        const SizedBox(height: 8),
-        if (rows.isEmpty)
-          Text("All settled for now.", style: TextStyle(color: Colors.grey[700]))
-        else
-          ...rows.map((e) {
-            final phone = e.key;
-            final amount = e.value; // + => they owe you, - => you owe them
-            final f = _friend(phone);
+    // how many members currently unsettled (non-zero balance)?
+    final unsettledCount = rows.where((e) => e.value.abs() > 0.005).length;
+    final headerSubtitle = unsettledCount == 0 ? 'All settled' : '$unsettledCount unsettled';
 
-            final displayName = phone == widget.userId
-                ? 'You'
-                : (f.name.isNotEmpty ? f.name : phone);
-
-            final avatarUrl = f.avatar;
-            final leading = avatarUrl.startsWith('http')
-                ? CircleAvatar(backgroundImage: NetworkImage(avatarUrl))
-                : CircleAvatar(child: Text((displayName.isNotEmpty ? displayName[0] : '?').toUpperCase()));
-
-            final sentence = amount > 0
-                ? "$displayName owes you ₹${amount.toStringAsFixed(2)}"
-                : "You owe $displayName ₹${(-amount).toStringAsFixed(2)}";
-
-            final amtColor = amount > 0 ? Colors.teal.shade800 : Colors.redAccent;
-
-            return Container(
-              margin: const EdgeInsets.symmetric(vertical: 6),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  )
-                ],
-                border: Border.all(color: Colors.grey.shade200),
+    return _glassCard(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      child: Theme( // hide ExpansionTile divider ripple seams
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: _balancesExpanded,
+          onExpansionChanged: (v) => setState(() => _balancesExpanded = v),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          childrenPadding: const EdgeInsets.only(top: 8, bottom: 8),
+          title: Row(
+            children: [
+              Text(
+                "Balances by member",
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.teal.shade900,
+                ),
               ),
-              child: Row(
-                children: [
-                  leading,
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      sentence,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withOpacity(.10),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  headerSubtitle,
+                  style: TextStyle(
+                    color: Colors.teal.shade900,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
                   ),
-                  Text(
-                    "₹${amount.abs().toStringAsFixed(0)}",
-                    style: TextStyle(fontWeight: FontWeight.w800, color: amtColor),
-                  ),
-                ],
+                ),
               ),
-            );
-          }),
-      ],
+            ],
+          ),
+          // Body
+          children: [
+            if (rows.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text("All settled for now.", style: TextStyle(color: Colors.grey[700])),
+              )
+            else
+              ...rows.map((e) {
+                final phone = e.key;
+                final amount = e.value; // + => they owe you, - => you owe them
+                final f = _friend(phone);
+                final displayName = _nameFor(phone);
+
+                final avatarUrl = f.avatar;
+                final leading = avatarUrl.startsWith('http')
+                    ? CircleAvatar(backgroundImage: NetworkImage(avatarUrl))
+                    : CircleAvatar(child: Text((displayName.isNotEmpty ? displayName[0] : '?').toUpperCase()));
+
+                final sentence = amount > 0
+                    ? "$displayName owes you ₹${amount.toStringAsFixed(2)}"
+                    : "You owe $displayName ₹${(-amount).toStringAsFixed(2)}";
+
+                final amtColor = amount > 0 ? Colors.teal.shade800 : Colors.redAccent;
+
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(.05),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      )
+                    ],
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      leading,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          sentence,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Text(
+                        "₹${amount.abs().toStringAsFixed(0)}",
+                        style: TextStyle(fontWeight: FontWeight.w800, color: amtColor),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
     );
+  }
+
+
+  // Helper: friendly date section label
+  String _friendlyDateLabel(DateTime dt) {
+    final now = DateTime.now();
+    bool sameDay(DateTime a, DateTime b) =>
+        a.year == b.year && a.month == b.month && a.day == b.day;
+
+    final yesterday = now.subtract(const Duration(days: 1));
+    if (sameDay(dt, now)) return 'Today';
+    if (sameDay(dt, yesterday)) return 'Yesterday';
+
+    final showYear = dt.year != now.year;
+    return '${_fmtShort(dt)}${showYear ? ' ${dt.year}' : ''}';
+  }
+
+// Helper: tiny category icon
+  IconData _categoryIcon(String? cat) {
+    final c = (cat ?? '').toLowerCase();
+    if (c.contains('food') || c.contains('lunch') || c.contains('dinner')) return Icons.restaurant_rounded;
+    if (c.contains('travel') || c.contains('trip') || c.contains('flight')) return Icons.flight_takeoff_rounded;
+    if (c.contains('stay') || c.contains('hotel')) return Icons.hotel_rounded;
+    if (c.contains('cab') || c.contains('ride') || c.contains('uber')) return Icons.local_taxi_rounded;
+    if (c.contains('grocer')) return Icons.local_grocery_store_rounded;
+    if (c.contains('movie') || c.contains('fun') || c.contains('entertain')) return Icons.local_activity_rounded;
+    return Icons.category_outlined;
+  }
+
+// Helper: your net impact for a single expense (+ you’re owed, – you owe)
+  double _yourImpact(ExpenseItem e) {
+    final splits = gbm.computeSplits(e);
+    if (widget.userId == e.payerId) {
+      double others = 0;
+      for (final entry in splits.entries) {
+        if (entry.key != e.payerId) others += entry.value;
+      }
+      return others; // others owe you
+    }
+    final yourShare = splits[widget.userId] ?? 0;
+    return -yourShare; // you owe
   }
 
   Widget _recentActivity(List<ExpenseItem> expenses) {
@@ -715,26 +1071,45 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           children: [
             const Icon(Icons.receipt_long_outlined),
             const SizedBox(width: 8),
-            Text("No group activity yet.",
-                style: TextStyle(color: Colors.grey.shade700)),
+            Text("No group activity yet.", style: TextStyle(color: Colors.grey.shade700)),
           ],
         ),
       );
     }
 
     final sorted = [...expenses]..sort((a, b) => b.date.compareTo(a.date));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text("Recent activity",
-            style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: Colors.teal.shade900)),
-        const SizedBox(height: 8),
-        ...sorted.map((e) => _activityCard(e)),
-      ],
-    );
+
+    String? lastSection;
+    final children = <Widget>[
+      Text("Recent activity",
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.teal.shade900)),
+      const SizedBox(height: 8),
+    ];
+
+    for (final e in sorted) {
+      final section = _friendlyDateLabel(e.date);
+      if (section != lastSection) {
+        lastSection = section;
+        children.add(Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 6),
+          child: Row(
+            children: [
+              Text(section,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.grey.shade800,
+                  )),
+              const SizedBox(width: 8),
+              Expanded(child: Divider(color: Colors.grey.shade300, height: 1)),
+            ],
+          ),
+        ));
+      }
+      children.add(_activityCard(e));
+    }
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: children);
   }
 
   Widget _activityCard(ExpenseItem e) {
@@ -744,10 +1119,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         ? e.label!
         : (e.category?.isNotEmpty == true ? e.category! : "Expense");
     final cat = e.category;
+    final youDelta = _yourImpact(e); // + => you’re owed, - => you owe
 
     // People preview (first 3)
     final previewPhones = splits.keys.take(3).toList();
     final more = splits.length - previewPhones.length;
+
+    final impactBg = (youDelta >= 0 ? Colors.green : Colors.red).withOpacity(.10);
+    final impactFg = youDelta >= 0 ? Colors.green.shade700 : Colors.redAccent;
+    final impactText =
+    youDelta >= 0 ? "You’re owed ₹${youDelta.toStringAsFixed(0)}" : "You owe ₹${(-youDelta).toStringAsFixed(0)}";
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
@@ -757,7 +1138,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           margin: const EdgeInsets.symmetric(vertical: 6),
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(.65),
+            color: Colors.white.withOpacity(.72),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.white.withOpacity(.6)),
             boxShadow: [
@@ -771,7 +1152,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Title + amount + menu
+              // Top row: payer + title + amount + overflow
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -782,8 +1163,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 16),
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -795,10 +1175,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                     ),
                     child: Text(
                       "₹${e.amount.toStringAsFixed(0)}",
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: Colors.teal.shade900,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.w800, color: Colors.teal.shade900),
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -807,26 +1184,22 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                     onSelected: (v) {
                       if (v == 'discuss') _goDiscussExpense(e);
                       if (v == 'delete') _confirmDelete(e);
-                      if (v == 'edit') {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Edit coming soon')),
-                        );
-                      }
+                      if (v == 'details') _showExpenseDetailsUpgraded(context, e);
                     },
                     itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: 'details',
+                        child: ListTile(
+                          leading: Icon(Icons.info_outline),
+                          title: Text('Details'),
+                          dense: true,
+                        ),
+                      ),
                       PopupMenuItem(
                         value: 'discuss',
                         child: ListTile(
                           leading: Icon(Icons.chat_bubble_outline),
                           title: Text('Discuss'),
-                          dense: true,
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'edit',
-                        child: ListTile(
-                          leading: Icon(Icons.edit),
-                          title: Text('Edit'),
                           dense: true,
                         ),
                       ),
@@ -843,18 +1216,26 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   ),
                 ],
               ),
+
               const SizedBox(height: 8),
 
-              // Meta chips: category / date / people
+              // Meta row: your impact + category + date + people avatars
               Wrap(
                 spacing: 8,
                 runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
+                  _chip(
+                    bg: impactBg,
+                    fg: impactFg,
+                    icon: youDelta >= 0 ? Icons.call_received_rounded : Icons.call_made_rounded,
+                    text: impactText,
+                  ),
                   if (cat != null && cat.isNotEmpty)
                     _chip(
                       bg: Colors.indigo.withOpacity(.08),
                       fg: Colors.indigo.shade900,
-                      icon: Icons.category_outlined,
+                      icon: _categoryIcon(cat),
                       text: cat,
                     ),
                   _chip(
@@ -879,10 +1260,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                           ),
                           child: Text(
                             "+$more",
-                            style: TextStyle(
-                              color: Colors.teal.shade900,
-                              fontWeight: FontWeight.w700,
-                            ),
+                            style: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.w700),
                           ),
                         ),
                     ],
@@ -892,41 +1270,29 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 
               if (e.note.isNotEmpty) ...[
                 const SizedBox(height: 6),
-                Text(
-                  e.note,
-                  style: TextStyle(color: Colors.grey.shade800),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                Text(e.note, style: TextStyle(color: Colors.grey.shade800), maxLines: 1, overflow: TextOverflow.ellipsis),
               ],
 
               const SizedBox(height: 8),
               Row(
                 children: [
                   Text(
-                    "Paid by ${payer.phone == widget.userId ? "You" : payer.name}",
-                    style: TextStyle(
-                        color: Colors.grey.shade800,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12),
+                    "Paid by ${_nameFor(e.payerId)}",
+                    style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w600, fontSize: 12),
                   ),
                   const Spacer(),
                   TextButton.icon(
-                    onPressed: () => _showExpenseDetails(context, e),
+                    onPressed: () => _showExpenseDetailsUpgraded(context, e),
                     icon: const Icon(Icons.info_outline, size: 18),
                     label: const Text("Details"),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.teal.shade800,
-                    ),
+                    style: TextButton.styleFrom(foregroundColor: Colors.teal.shade800),
                   ),
                   const SizedBox(width: 6),
                   TextButton.icon(
                     onPressed: () => _goDiscussExpense(e),
                     icon: const Icon(Icons.chat_bubble_outline, size: 18),
                     label: const Text("Discuss"),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.orange.shade800,
-                    ),
+                    style: TextButton.styleFrom(foregroundColor: Colors.orange.shade800),
                   ),
                 ],
               ),
@@ -936,6 +1302,179 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       ),
     );
   }
+
+// UPGRADED DETAILS SHEET (clear header + "your impact")
+  void _showExpenseDetails(BuildContext context, ExpenseItem e) {
+    final splits = gbm.computeSplits(e);
+    final payer = _friend(e.payerId);
+    final youDelta = _yourImpact(e);
+
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 4, width: 44, margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(3)),
+            ),
+            // Header
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: Colors.teal.withOpacity(.12),
+                  foregroundColor: Colors.teal.shade900,
+                  child: const Icon(Icons.receipt_long_rounded),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    e.label?.isNotEmpty == true
+                        ? e.label!
+                        : (e.category?.isNotEmpty == true ? e.category! : "Expense"),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text("₹${e.amount.toStringAsFixed(2)}",
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // Meta row
+            Wrap(
+              spacing: 8, runSpacing: 8,
+              children: [
+                _chip(
+                  bg: (youDelta >= 0 ? Colors.green : Colors.red).withOpacity(.10),
+                  fg: youDelta >= 0 ? Colors.green.shade700 : Colors.redAccent,
+                  icon: youDelta >= 0 ? Icons.call_received_rounded : Icons.call_made_rounded,
+                  text: youDelta >= 0
+                      ? "You’re owed ₹${youDelta.toStringAsFixed(0)}"
+                      : "You owe ₹${(-youDelta).toStringAsFixed(0)}",
+                ),
+                if ((e.category ?? '').isNotEmpty)
+                  _chip(
+                    bg: Colors.indigo.withOpacity(.08),
+                    fg: Colors.indigo.shade900,
+                    icon: _categoryIcon(e.category),
+                    text: e.category!,
+                  ),
+                _chip(
+                  bg: Colors.grey.withOpacity(.10),
+                  fg: Colors.grey.shade900,
+                  icon: Icons.event,
+                  text:
+                  "${_fmtShort(e.date)} ${e.date.year}  ${e.date.hour.toString().padLeft(2, '0')}:${e.date.minute.toString().padLeft(2, '0')}",
+                ),
+                _chip(
+                  bg: Colors.grey.withOpacity(.10),
+                  fg: Colors.grey.shade900,
+                  icon: Icons.person,
+                  text: "Paid by ${_nameFor(e.payerId)}",
+                ),
+              ],
+            ),
+
+            if (e.note.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text("Note: ${e.note}", style: TextStyle(color: Colors.grey.shade800)),
+              ),
+            ],
+
+            const Divider(height: 22),
+
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                "Split details",
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Colors.teal.shade900),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            ...splits.entries.map((s) {
+              final f = _friend(s.key);
+              final isYou = s.key == widget.userId;
+              final owes = s.key != e.payerId; // payer "paid", others "owe"
+              final subtitle = owes
+                  ? (isYou ? "You owe" : "Owes")
+                  : (isYou ? "You paid" : "Paid");
+              return ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: _avatar(s.key),
+                title: Text(_nameFor(s.key), style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text("$subtitle ₹${s.value.toStringAsFixed(2)}"),
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: (owes ? Colors.red : Colors.green).withOpacity(.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    "₹${s.value.toStringAsFixed(2)}",
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: owes ? Colors.redAccent : Colors.green.shade700,
+                    ),
+                  ),
+                ),
+              );
+            }),
+
+            const SizedBox(height: 10),
+
+            // Actions
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.chat_bubble_outline),
+                  label: const Text('Discuss'),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _goDiscussExpense(e);
+                  },
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.edit),
+                  label: const Text('Edit'),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(const SnackBar(content: Text('Edit coming soon')));
+                  },
+                ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  label: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _confirmDelete(e);
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 
   // ---------- Common UI bits ----------
   Widget _glassCard({required Widget child, EdgeInsets? padding}) {
@@ -1025,12 +1564,41 @@ class _GroupChatTabState extends State<GroupChatTab> {
   bool _pickingEmoji = false;
   bool _pickingSticker = false;
   bool _uploading = false;
+  String _fmtBytes(int b) {
+    if (b <= 0) return '';
+    const units = ['B','KB','MB','GB','TB'];
+    double v = b.toDouble();
+    int i = 0;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    final digits = v < 10 ? 1 : 0;
+    return '${v.toStringAsFixed(digits)} ${units[i]}';
+  }
+
 
   DocumentReference<Map<String, dynamic>> get _threadRef =>
       FirebaseFirestore.instance.collection('group_chats').doc(widget.groupId);
 
   CollectionReference<Map<String, dynamic>> get _messagesRef =>
       _threadRef.collection('messages');
+
+  // Compact icon used in the composer like PartnerChatTab
+  Widget _miniIcon({
+    required IconData icon,
+    String? tooltip,
+    VoidCallback? onPressed,
+  }) {
+    return IconButton(
+      icon: Icon(icon, size: 18),
+      tooltip: tooltip,
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+      splashRadius: 18,
+      color: Colors.teal,
+    );
+  }
+
 
   @override
   void initState() {
@@ -1094,12 +1662,21 @@ class _GroupChatTabState extends State<GroupChatTab> {
       ...extra,
     });
 
-    final lastPreview = switch (type) {
-      'image' => '[photo]',
-      'file' => extra['fileName'] ?? '[file]',
-      'sticker' => msg,
-      _ => msg,
-    };
+    String lastPreview;
+    switch (type) {
+      case 'image':
+        lastPreview = '[photo]';
+        break;
+      case 'file':
+        lastPreview = (extra['fileName'] ?? '[file]').toString();
+        break;
+      case 'sticker':
+        lastPreview = msg;
+        break;
+      default:
+        lastPreview = msg;
+    }
+
 
     await _threadRef.set({
       'lastMessage': lastPreview,
@@ -1188,6 +1765,8 @@ class _GroupChatTabState extends State<GroupChatTab> {
       _toast('Gallery unavailable');
     }
   }
+
+
 
   Future<void> _pickAnyFile() async {
     try {
@@ -1281,10 +1860,11 @@ class _GroupChatTabState extends State<GroupChatTab> {
           .child('${DateTime.now().millisecondsSinceEpoch}_$name');
 
       final metadata = SettableMetadata(contentType: mime);
-      final task = await ref.putFile(File(path), metadata);
-      final url = await task.ref.getDownloadURL();
 
-      final fileSize = await File(path).length();
+      // uses conditional helper (io on mobile/desktop; throws on web)
+      final task = await ioPutFile(ref, path, metadata);
+      final url = await task.ref.getDownloadURL();
+      final fileSize = await ioFileLength(path);
 
       await _sendMessage(
         text: typeHint == 'image' ? '[photo]' : name,
@@ -1301,6 +1881,7 @@ class _GroupChatTabState extends State<GroupChatTab> {
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
+
   }
 
   // ---- Message actions ----
@@ -1428,9 +2009,9 @@ class _GroupChatTabState extends State<GroupChatTab> {
 
   Widget _buildEmojiPicker() {
     return SizedBox(
-      height: 200,
+      height: 220,
       child: GridView.builder(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(10),
         itemCount: _emojiBank.length,
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 8,
@@ -1440,11 +2021,12 @@ class _GroupChatTabState extends State<GroupChatTab> {
         itemBuilder: (_, i) {
           final e = _emojiBank[i];
           return InkWell(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             onTap: () {
               _msgController.text += e;
               _msgController.selection = TextSelection.fromPosition(
-                  TextPosition(offset: _msgController.text.length));
+                TextPosition(offset: _msgController.text.length),
+              );
               setState(() => _pickingEmoji = false);
             },
             child: Center(child: Text(e, style: const TextStyle(fontSize: 22))),
@@ -1456,9 +2038,9 @@ class _GroupChatTabState extends State<GroupChatTab> {
 
   Widget _buildStickerPicker() {
     return SizedBox(
-      height: 200,
+      height: 220,
       child: GridView.builder(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(10),
         itemCount: _stickerBank.length,
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 6,
@@ -1468,7 +2050,7 @@ class _GroupChatTabState extends State<GroupChatTab> {
         itemBuilder: (_, i) {
           final s = _stickerBank[i];
           return InkWell(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
             onTap: () {
               _sendMessage(text: s, type: 'sticker');
               setState(() => _pickingSticker = false);
@@ -1476,16 +2058,17 @@ class _GroupChatTabState extends State<GroupChatTab> {
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.teal.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(16),
               ),
               alignment: Alignment.center,
-              child: Text(s, style: const TextStyle(fontSize: 32)),
+              child: Text(s, style: const TextStyle(fontSize: 34)),
             ),
           );
         },
       ),
     );
   }
+
 
   // ---- UI helpers ----
   void _toast(String msg) {
@@ -1599,27 +2182,40 @@ class _GroupChatTabState extends State<GroupChatTab> {
     );
   }
 
-  void _onOpenAttachment(Map<String, dynamic> data) {
-    final url = (data['fileUrl'] ?? '').toString();
-    final mime = (data['mime'] ?? '').toString();
+  Future<void> _onOpenAttachment(Map<String, dynamic> data) async {
+    final raw  = (data['fileUrl']  ?? '').toString();
+    final mime = (data['mime']     ?? '').toString();
     final name = (data['fileName'] ?? '').toString();
-    if (url.isEmpty) return;
+
+    if (raw.isEmpty) return;
+
+    final resolved = await _safeDownloadUri(raw);
+    if (resolved == null) {
+      _toast('Invalid link');
+      return;
+    }
 
     if (mime.startsWith('image/')) {
+      // In-app preview for images
       showDialog(
         context: context,
         builder: (_) => Dialog(
           insetPadding: const EdgeInsets.all(16),
           child: InteractiveViewer(
-            child: Image.network(url, fit: BoxFit.contain),
+            child: Image.network(resolved.toString(), fit: BoxFit.contain),
           ),
         ),
       );
-    } else {
-      Clipboard.setData(ClipboardData(text: url));
-      _toast('Link copied: $name');
+      return;
     }
+
+    // Non-image → open externally (browser / viewer)
+    final ok = await launchUrl(resolved, mode: LaunchMode.externalApplication);
+    if (!ok) _toast('Could not open $name');
   }
+
+
+
 
   @override
   void dispose() {
@@ -1631,6 +2227,23 @@ class _GroupChatTabState extends State<GroupChatTab> {
   @override
   Widget build(BuildContext context) {
     final pickerVisible = _pickingEmoji || _pickingSticker;
+
+    // local compact icon helper (keeps this snippet self-contained)
+    Widget miniIcon({
+      required IconData icon,
+      String? tooltip,
+      VoidCallback? onPressed,
+    }) {
+      return IconButton(
+        icon: Icon(icon, size: 18, color: Colors.teal),
+        tooltip: tooltip,
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+        splashRadius: 18,
+      );
+    }
 
     return Column(
       children: [
@@ -1666,12 +2279,13 @@ class _GroupChatTabState extends State<GroupChatTab> {
                       : '';
                   final edited = data['edited'] == true;
 
-                  final bubbleColor =
-                  isMe ? Colors.teal.withOpacity(0.15) : Colors.grey.withOpacity(0.15);
+                  final bubbleColor = isMe
+                      ? Colors.teal.withOpacity(0.15)
+                      : Colors.grey.withOpacity(0.15);
 
                   Widget content;
                   if (type == 'sticker') {
-                    content = Text(msg, style: const TextStyle(fontSize: 32));
+                    content = Text(msg, style: const TextStyle(fontSize: 34));
                   } else if (type == 'image') {
                     content = GestureDetector(
                       onTap: () => _onOpenAttachment(data),
@@ -1691,24 +2305,60 @@ class _GroupChatTabState extends State<GroupChatTab> {
                       ),
                     );
                   } else if (type == 'file') {
+                    final url  = (data['fileUrl'] ?? '').toString();
+                    final name = (data['fileName'] ?? '').toString();
+                    final size = (data['size'] ?? 0) as int;
+
+                    // Derive a display name ONLY from fileName or the URL's last path segment.
+                    String displayName = name;
+                    if (displayName.isEmpty && url.isNotEmpty) {
+                      final u = Uri.tryParse(url);
+                      displayName = (u != null && u.pathSegments.isNotEmpty)
+                          ? u.pathSegments.last
+                          : 'Attachment';
+                    }
+
+                    final prettySize = _fmtBytes(size); // helper below
+
                     content = InkWell(
                       onTap: () => _onOpenAttachment(data),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.insert_drive_file, size: 20),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              (data['fileName'] ?? 'file').toString(),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.insert_drive_file, size: 18),
+                            const SizedBox(width: 8),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 200),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                  if (prettySize.isNotEmpty)
+                                    Text(prettySize,
+                                        style: TextStyle(fontSize: 11, color: Colors.grey[700])),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 8),
+                            const Icon(Icons.open_in_new, size: 16),
+                          ],
+                        ),
                       ),
                     );
-                  } else {
+                  }
+
+                  else {
                     content = Text(
                       msg,
                       style: TextStyle(
@@ -1741,10 +2391,14 @@ class _GroupChatTabState extends State<GroupChatTab> {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(timeStr, style: TextStyle(fontSize: 11, color: Colors.grey[700])),
+                                Text(
+                                  timeStr,
+                                  style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                                ),
                                 if (edited) ...[
                                   const SizedBox(width: 6),
-                                  Text('edited', style: TextStyle(fontSize: 10, color: Colors.grey[600])),
+                                  Text('edited',
+                                      style: TextStyle(fontSize: 10, color: Colors.grey[600])),
                                 ]
                               ],
                             ),
@@ -1774,24 +2428,21 @@ class _GroupChatTabState extends State<GroupChatTab> {
 
         const Divider(height: 1),
 
-        // Composer
+        // Composer (compact, PartnerChatTab-style)
         SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                IconButton(
-                  padding: const EdgeInsets.all(6),
-                  constraints: const BoxConstraints(),
+                miniIcon(
+                  icon: Icons.attach_file_rounded,
                   tooltip: 'Attach',
                   onPressed: _showAttachmentSheet,
-                  icon: const Icon(Icons.attach_file_rounded, size: 20, color: Colors.teal),
                 ),
-                IconButton(
-                  padding: const EdgeInsets.all(6),
-                  constraints: const BoxConstraints(),
+                miniIcon(
+                  icon: Icons.emoji_emotions_outlined,
                   tooltip: 'Emoji',
                   onPressed: () {
                     setState(() {
@@ -1799,12 +2450,9 @@ class _GroupChatTabState extends State<GroupChatTab> {
                       _pickingEmoji = !_pickingEmoji;
                     });
                   },
-                  icon:
-                  const Icon(Icons.emoji_emotions_outlined, size: 20, color: Colors.teal),
                 ),
-                IconButton(
-                  padding: const EdgeInsets.all(6),
-                  constraints: const BoxConstraints(),
+                miniIcon(
+                  icon: Icons.auto_awesome,
                   tooltip: 'Stickers',
                   onPressed: () {
                     setState(() {
@@ -1812,36 +2460,42 @@ class _GroupChatTabState extends State<GroupChatTab> {
                       _pickingSticker = !_pickingSticker;
                     });
                   },
-                  icon: const Icon(Icons.auto_awesome, size: 20, color: Colors.teal),
                 ),
+
+                // Expanding input
                 Expanded(
-                  child: TextField(
-                    controller: _msgController,
-                    keyboardType: TextInputType.multiline,
-                    textInputAction: TextInputAction.newline,
-                    minLines: 1,
-                    maxLines: 6,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(
-                      hintText: "Type a message…",
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(12)),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 40),
+                    child: TextField(
+                      controller: _msgController,
+                      keyboardType: TextInputType.multiline,
+                      textInputAction: TextInputAction.newline,
+                      minLines: 1,
+                      maxLines: 6,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: const InputDecoration(
+                        hintText: "Type a message…",
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(12)),
+                        ),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                IconButton(
-                  padding: const EdgeInsets.all(6),
-                  constraints: const BoxConstraints(),
-                  icon: const Icon(Icons.send_rounded, size: 20, color: Colors.teal),
+
+                miniIcon(
+                  icon: Icons.send_rounded,
+                  tooltip: 'Send',
                   onPressed: () => _sendMessage(text: _msgController.text),
                 ),
+
                 PopupMenuButton<String>(
-                  tooltip: 'More',
-                  icon: const Icon(Icons.more_vert, size: 20, color: Colors.teal),
+                  padding: EdgeInsets.zero,
+                  iconSize: 18,
+                  constraints: const BoxConstraints(minWidth: 140),
+                  icon: const Icon(Icons.more_vert, color: Colors.teal, size: 18),
                   onSelected: (v) {
                     if (v == 'clear') _clearChat();
                   },
@@ -1856,4 +2510,5 @@ class _GroupChatTabState extends State<GroupChatTab> {
       ],
     );
   }
+
 }
