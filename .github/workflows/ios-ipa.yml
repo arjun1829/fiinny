@@ -19,6 +19,7 @@ jobs:
     runs-on: macos-14
     env:
       CI: "true"
+      # Required secrets
       BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
       TEAM_ID: ${{ secrets.TEAM_ID }}
       P12_BASE64: ${{ secrets.P12_BASE64 }}
@@ -29,6 +30,8 @@ jobs:
       APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
       FIREBASE_IOS_PLIST_BASE64: ${{ secrets.FIREBASE_IOS_PLIST_BASE64 }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      # Convenience
       WORKSPACE: ios/Runner.xcworkspace
       SCHEME: Runner
       CONFIGURATION: Release
@@ -74,7 +77,7 @@ jobs:
           ruby --version || true
           pod --version || true
 
-      - name: Flutter pub get
+      - name: Flutter pub get (initial)
         shell: bash
         run: |
           set -euxo pipefail
@@ -87,6 +90,23 @@ jobs:
           flutter clean
           /usr/bin/sed -i '' "s/platform :ios, .*/platform :ios, '16.0'/" ios/Podfile || true
           rm -rf ios/Pods ios/Podfile.lock
+          # IMPORTANT: regenerate ios/Flutter/Generated.xcconfig after clean
+          flutter pub get
+
+      - name: Normalize Podfile quotes (optional)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          p='ios/Podfile'
+          try:
+              s=open(p,encoding='utf-8',errors='replace').read()
+          except FileNotFoundError:
+              raise SystemExit(0)
+          s=s.replace('“','"').replace('”','"').replace('‘',"\'").replace('’',"\'").replace('—','-')
+          open(p,'w',encoding='utf-8').write(s)
+          print('Normalized quotes in', p)
+          PY
 
       - name: Install CocoaPods (update repos)
         shell: bash
@@ -152,47 +172,29 @@ jobs:
         run: |
           set -euxo pipefail
           PBX="ios/Runner.xcodeproj/project.pbxproj"
+          # Bundle ID
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" "$PBX" || true
+          # Team
           sed -i '' "s/DEVELOPMENT_TEAM = [A-Z0-9]*;/DEVELOPMENT_TEAM = ${TEAM_ID};/g" "$PBX" || true
+          # Manual signing style
           sed -i '' "s/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g" "$PBX" || true
+          # Ensure specifier lines exist / updated
           if ! grep -q "PROVISIONING_PROFILE_SPECIFIER" "$PBX"; then
             /usr/bin/perl -0777 -pe "s/(CODE_SIGN_IDENTITY = .+?;)/\\1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = ${PROFILE_NAME};/gs" -i "$PBX"
           else
             sed -i '' "s/PROVISIONING_PROFILE_SPECIFIER = [^;]*;/PROVISIONING_PROFILE_SPECIFIER = ${PROFILE_NAME};/g" "$PBX" || true
           fi
 
-      # ---- FIX 1: Robustly bump the version without duplicating the `version:` key ----
-      - name: Bump Build Number from GitHub run (no-duplicate)
+      - name: Bump build number in pubspec.yaml (safe replace)
         shell: bash
         run: |
           set -euxo pipefail
-          # Extract base version (left of '+') from the FIRST version line found
-          base_version=$(grep -m1 '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//' | cut -d'+' -f1)
-          # Remove ALL existing version lines, then insert one canonical version line after 'publish_to:' if present
-          awk '!/^version:[[:space:]]*/{print}' pubspec.yaml > pubspec.nover.yaml
-          if grep -n '^publish_to:' pubspec.nover.yaml >/dev/null; then
-            n=$(grep -n '^publish_to:' pubspec.nover.yaml | head -n1 | cut -d: -f1)
-            head -n "$n" pubspec.nover.yaml > pubspec.yaml
-            echo "version: $base_version+${GITHUB_RUN_NUMBER}" >> pubspec.yaml
-            tail -n +"$((n+1))" pubspec.nover.yaml >> pubspec.yaml
-          else
-            { echo "version: $base_version+${GITHUB_RUN_NUMBER}"; cat pubspec.nover.yaml; } > pubspec.yaml
-          fi
-          rm -f pubspec.nover.yaml
-          echo "New pubspec version line:"
-          grep -n '^version:' pubspec.yaml
-
-      # ---- FIX 2: Stop generating Swift module interfaces (Xcode 16 + bridging header crash) ----
-      - name: Disable Swift module interfaces (Runner target)
-        shell: bash
-        run: |
-          set -euxo pipefail
-          PBX="ios/Runner.xcodeproj/project.pbxproj"
-          # Force OFF if keys exist
-          sed -i '' "s/SWIFT_EMIT_MODULE_INTERFACE = YES;/SWIFT_EMIT_MODULE_INTERFACE = NO;/g" "$PBX" || true
-          sed -i '' "s/BUILD_LIBRARY_FOR_DISTRIBUTION = YES;/BUILD_LIBRARY_FOR_DISTRIBUTION = NO;/g" "$PBX" || true
-          # Ensure keys are present next to SWIFT_VERSION
-          /usr/bin/perl -0777 -pe 's/(SWIFT_VERSION = [^;]+;)/$1\n\t\t\t\tSWIFT_EMIT_MODULE_INTERFACE = NO;\n\t\t\t\tBUILD_LIBRARY_FOR_DISTRIBUTION = NO;/g' -i "$PBX"
+          # Read base version (left of '+')
+          base_version="$(grep -m1 '^version:' pubspec.yaml | cut -d ':' -f2 | xargs | cut -d '+' -f1)"
+          # Replace the FIRST occurrence of version: ... in-place (no duplicates)
+          perl -0777 -pe "s/^version:\\s*[^\\r\\n]+/version: ${base_version}+${GITHUB_RUN_NUMBER}/m" pubspec.yaml > pubspec.yaml.tmp
+          mv pubspec.yaml.tmp pubspec.yaml
+          echo "Updated version to: $(grep -m1 '^version:' pubspec.yaml)"
 
       - name: Prepare ExportOptions.plist
         shell: bash
@@ -281,7 +283,9 @@ jobs:
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
-            { "text": "✅ Fiinny iOS build uploaded to TestFlight!" }
+            {
+              "text": "✅ Fiinny iOS build uploaded to TestFlight!"
+            }
         env:
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
 
@@ -290,6 +294,9 @@ jobs:
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
-            { "text": "❌ Fiinny iOS build failed. Check logs." }
+            {
+              "text": "❌ Fiinny iOS build failed. Check logs."
+            }
         env:
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
