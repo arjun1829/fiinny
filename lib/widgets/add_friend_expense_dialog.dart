@@ -1,9 +1,7 @@
 // lib/widgets/add_friend_expense_dialog.dart
-
 import 'dart:io' show File;
 import 'dart:typed_data';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -16,28 +14,37 @@ import '../models/expense_item.dart';
 import '../services/expense_service.dart';
 import '../utils/helpers.dart';
 
-class AddFriendExpenseDialog extends StatefulWidget {
+/// Palette — not just green :) (teal + indigo gradient accents)
+const Color _kBg = Color(0xFFF6F7FB);
+const Color _kText = Color(0xFF0F1E1C);
+const Color _kTeal = Color(0xFF0BAE8E);
+const Color _kIndigo = Color(0xFF6C63FF);
+const Color _kLine = Color(0x14000000);
+
+class AddFriendExpenseScreen extends StatefulWidget {
   final String userPhone;
   final FriendModel friend;
   final String userName;
-  final String? userAvatar; // Pass image url if available
+  final String? userAvatar; // url if available
   final Map<String, double>? initialSplits;
 
-  const AddFriendExpenseDialog({
+  const AddFriendExpenseScreen({
+    Key? key,
     required this.userPhone,
     required this.friend,
     required this.userName,
     this.userAvatar,
     this.initialSplits,
-    Key? key,
   }) : super(key: key);
 
   @override
-  State<AddFriendExpenseDialog> createState() => _AddFriendExpenseDialogState();
+  State<AddFriendExpenseScreen> createState() => _AddFriendExpenseScreenState();
 }
 
-class _AddFriendExpenseDialogState extends State<AddFriendExpenseDialog> {
+class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _pg = PageController();
+  int _step = 0;
 
   // Amount & meta
   double _amount = 0.0;
@@ -52,18 +59,18 @@ class _AddFriendExpenseDialogState extends State<AddFriendExpenseDialog> {
   Map<String, double> _splits = {};
   final Map<String, TextEditingController> _splitCtrls = {};
 
-  // Loading state
+  // Loading states
   bool _saving = false;
   bool _uploading = false;
 
-  // Current user as FriendModel for consistent UI
+  // Current user as FriendModel (consistent UI)
   late FriendModel currentUser;
 
   // Attachments
   final _imagePicker = ImagePicker();
   final List<_Attachment> _attachments = [];
 
-  // Category definitions (label + icon)
+  // Category quick chips
   final List<_CategoryDef> _categories = const [
     _CategoryDef('Food', Icons.restaurant),
     _CategoryDef('Travel', Icons.flight_takeoff),
@@ -75,6 +82,7 @@ class _AddFriendExpenseDialogState extends State<AddFriendExpenseDialog> {
     _CategoryDef('Other', Icons.category),
   ];
 
+  // --- lifecycle -------------------------------------------------------------
   @override
   void initState() {
     super.initState();
@@ -102,13 +110,14 @@ class _AddFriendExpenseDialogState extends State<AddFriendExpenseDialog> {
 
   @override
   void dispose() {
+    _pg.dispose();
     for (final c in _splitCtrls.values) {
       c.dispose();
     }
     super.dispose();
   }
 
-  // ---------- Helpers ----------
+  // --- helpers ---------------------------------------------------------------
   List<FriendModel> get _payers => [currentUser, widget.friend];
   List<String> get _participantsPhones =>
       [currentUser.phone, widget.friend.phone];
@@ -137,7 +146,7 @@ class _AddFriendExpenseDialogState extends State<AddFriendExpenseDialog> {
     setState(() {});
   }
 
-  void _pickDate() async {
+  Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
       initialDate: _date,
@@ -149,42 +158,22 @@ class _AddFriendExpenseDialogState extends State<AddFriendExpenseDialog> {
     }
   }
 
-  // ---------- Avatars ----------
-  Widget _avatarFriend(FriendModel f, {double r = 13}) {
-    if (f.avatar.startsWith('http')) {
-      return CircleAvatar(radius: r, backgroundImage: NetworkImage(f.avatar));
-    }
-    return CircleAvatar(
-      radius: r,
-      child: Text(
-        (f.avatar.isNotEmpty ? f.avatar : f.name.isNotEmpty ? f.name[0] : '👤')
-            .toString()
-            .characters
-            .first,
-      ),
-    );
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  Widget _avatarYou({double r = 13}) {
-    final url = widget.userAvatar ?? '';
-    if (url.startsWith('http')) {
-      return CircleAvatar(radius: r, backgroundImage: NetworkImage(url));
-    }
-    return CircleAvatar(
-      radius: r,
-      child: Text(widget.userName.characters.first.toUpperCase()),
-    );
-  }
-
-  // ---------- Attachments ----------
+  // --- attachments -----------------------------------------------------------
   void _showAttachmentSheet() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) => SafeArea(
-        child: Wrap(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
               leading: const Icon(Icons.camera_alt_rounded),
@@ -210,6 +199,7 @@ class _AddFriendExpenseDialogState extends State<AddFriendExpenseDialog> {
                 _pickAnyFile();
               },
             ),
+            const SizedBox(height: 6),
           ],
         ),
       ),
@@ -220,7 +210,7 @@ class _AddFriendExpenseDialogState extends State<AddFriendExpenseDialog> {
     try {
       final shot = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 80, // lightweight compression
+        imageQuality: 80,
       );
       if (shot == null) return;
       await _uploadXFile(shot, typeHint: 'image');
@@ -233,7 +223,7 @@ class _AddFriendExpenseDialogState extends State<AddFriendExpenseDialog> {
     try {
       final img = await _imagePicker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 80, // lightweight compression
+        imageQuality: 80,
       );
       if (img == null) return;
       await _uploadXFile(img, typeHint: 'image');
@@ -357,37 +347,53 @@ class _AddFriendExpenseDialogState extends State<AddFriendExpenseDialog> {
     }
   }
 
-  // ---------- Submit ----------
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_selectedPayerPhone == null) {
-      Helpers.showSnackbar(context, "Select who paid");
-      return;
-    }
-    if (_uploading) {
-      Helpers.showSnackbar(context, "Please wait for uploads to finish");
-      return;
-    }
-
-    if (_customSplit) {
-      final total = _round2(_sumSplits);
-      final amt = _round2(_amount);
-      if ((total - amt).abs() > 0.01) {
-        Helpers.showSnackbar(
-            context, "Splits must total to ₹${_fmt2(_amount)}");
+  // --- nav / form flow -------------------------------------------------------
+  void _goNext() {
+    if (_step == 0) {
+      if (_amount <= 0) {
+        _toast("Enter a valid amount");
         return;
       }
     }
+    if (_step == 2 && _customSplit) {
+      final total = _round2(_sumSplits);
+      final amt = _round2(_amount);
+      if ((total - amt).abs() > 0.01) {
+        _toast("Splits must total ₹${_fmt2(_amount)}");
+        return;
+      }
+    }
+    if (_step < 3) {
+      setState(() => _step++);
+      _pg.animateToPage(_step, duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
+    }
+  }
 
-    // Pack attachments (non-breaking): append to note
+  void _goBack() {
+    if (_step > 0) {
+      setState(() => _step--);
+      _pg.animateToPage(_step, duration: const Duration(milliseconds: 260), curve: Curves.easeOut);
+    } else {
+      Navigator.pop(context, false);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedPayerPhone == null) {
+      _toast("Select who paid");
+      return;
+    }
+    if (_uploading) {
+      _toast("Please wait for uploads to finish");
+      return;
+    }
+
+    // Append attachments (non-breaking)
     String noteOut = _note.trim();
     if (_attachments.isNotEmpty) {
-      final parts = _attachments
-          .map((a) => '${a.name} (${a.url})')
-          .join(', ');
-      noteOut = noteOut.isEmpty
-          ? 'Attachments: $parts'
-          : '$noteOut\nAttachments: $parts';
+      final parts = _attachments.map((a) => '${a.name} (${a.url})').join(', ');
+      noteOut = noteOut.isEmpty ? 'Attachments: $parts' : '$noteOut\nAttachments: $parts';
     }
 
     setState(() => _saving = true);
@@ -409,7 +415,7 @@ class _AddFriendExpenseDialogState extends State<AddFriendExpenseDialog> {
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
-      Helpers.showSnackbar(context, "Failed to add: $e");
+      _toast("Failed to add: $e");
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -421,434 +427,563 @@ class _AddFriendExpenseDialogState extends State<AddFriendExpenseDialog> {
     };
   }
 
-  // ---------- UI helpers ----------
-  BoxDecoration _glossyCard() {
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.08),
-          blurRadius: 18,
-          offset: const Offset(0, 10),
-        ),
-      ],
-      border: Border.all(color: Colors.grey.shade200),
-    );
-  }
-
-  InputDecoration _dec({
-    required String label,
-    IconData? icon,
-    String? hint,
-  }) {
+  // --- UI --------------------------------------------------------------------
+  InputDecoration _pillDec({required String label, IconData? icon, String? hint}) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
-      prefixIcon: icon != null ? Icon(icon, color: Colors.black87) : null,
-      labelStyle: const TextStyle(color: Colors.black87),
-      hintStyle: TextStyle(color: Colors.grey.shade700),
+      prefixIcon: icon != null ? Icon(icon) : null,
       filled: true,
       fillColor: Colors.white,
-      contentPadding:
-      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: Colors.grey.shade300),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide:
-        BorderSide(color: Colors.teal.shade700, width: 1.2),
+        borderSide: const BorderSide(color: _kIndigo, width: 1.2),
       ),
     );
   }
 
-  void _toast(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  Widget _avatarFriend(FriendModel f, {double r = 14}) {
+    final a = f.avatar.trim();
+    ImageProvider? prov;
+    if (a.startsWith('http')) prov = NetworkImage(a);
+    if (a.startsWith('assets/')) prov = AssetImage(a);
+    return CircleAvatar(
+      radius: r,
+      backgroundColor: _kTeal.withOpacity(.12),
+      foregroundImage: prov,
+      child: prov == null
+          ? Text(
+        (a.isNotEmpty ? a.characters.first : f.name.characters.first).toUpperCase(),
+        style: const TextStyle(fontSize: 12),
+      )
+          : null,
+    );
+  }
+
+  Widget _avatarYou({double r = 14}) {
+    final url = widget.userAvatar ?? '';
+    ImageProvider? prov;
+    if (url.startsWith('http')) prov = NetworkImage(url);
+    return CircleAvatar(
+      radius: r,
+      backgroundColor: _kIndigo.withOpacity(.12),
+      foregroundImage: prov,
+      child: prov == null
+          ? Text(widget.userName.characters.first.toUpperCase())
+          : null,
+    );
+  }
+
+  Widget _header() {
+    const titles = ["Amount & Category", "Payer", "Split", "Details"];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Gradient progress
+        LayoutBuilder(builder: (ctx, c) {
+          final w = c.maxWidth;
+          final v = (_step + 1) / 4;
+          return Container(
+            height: 8,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white.withOpacity(.6)),
+            ),
+            child: Stack(children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 380),
+                curve: Curves.easeOutCubic,
+                width: w * v,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [_kIndigo, _kTeal],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ]),
+          );
+        }),
+        const SizedBox(height: 12),
+
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFEDF0FF), Color(0xFFE6FFF7)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.receipt_long, color: _kIndigo),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                child: Text(
+                  "Add expense with ${widget.friend.name}",
+                  key: ValueKey(_step),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: _kText,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            Text("${_step + 1}/4", style: const TextStyle(color: Colors.black54)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          titles[_step],
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _kText),
+        ),
+      ],
+    );
+  }
+
+  // --- Step 0: Amount & Category --------------------------------------------
+  Widget _step0() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 14),
+        _SlideFade(
+          delayMs: 0,
+          child: TextFormField(
+            decoration: _pillDec(
+              label: "Amount",
+              icon: Icons.currency_rupee,
+              hint: "e.g. 1200.00",
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'^\d{0,7}(\.\d{0,2})?$')),
+            ],
+            validator: (v) {
+              if (_step != 3) return null; // full validate on submit
+              final d = double.tryParse((v ?? '').trim());
+              if (d == null) return "Enter a valid amount";
+              if (d <= 0) return "Amount must be greater than 0";
+              return null;
+            },
+            onChanged: (v) {
+              _amount = double.tryParse(v) ?? 0.0;
+              if (_customSplit && _amount > 0) {
+                _recalcEqualSplit();
+              }
+              setState(() {});
+            },
+            enabled: !_saving,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _SlideFade(
+          delayMs: 60,
+          child: DropdownButtonFormField<String>(
+            value: _category.isEmpty ? null : _category,
+            decoration: _pillDec(label: "Category", icon: Icons.category),
+            items: _categories
+                .map((c) => DropdownMenuItem(
+              value: c.label,
+              child: Row(
+                children: [
+                  Icon(c.icon, size: 18),
+                  const SizedBox(width: 8),
+                  Text(c.label),
+                ],
+              ),
+            ))
+                .toList(),
+            onChanged: _saving ? null : (v) => setState(() => _category = v ?? ''),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _SlideFade(
+          delayMs: 100,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: _categories.map((c) {
+              final selected = c.label == _category;
+              return ChoiceChip(
+                label: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(c.icon, size: 16),
+                  const SizedBox(width: 6),
+                  Text(c.label),
+                ]),
+                selected: selected,
+                onSelected: _saving ? null : (v) => setState(() => _category = v ? c.label : ''),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // --- Step 1: Payer ---------------------------------------------------------
+  Widget _step1() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 14),
+        _SlideFade(
+          delayMs: 0,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: Colors.grey.shade200),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 14, offset: Offset(0, 8))],
+            ),
+            child: Column(
+              children: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: _avatarYou(),
+                  title: const Text("You", style: TextStyle(fontWeight: FontWeight.w700)),
+                  trailing: Radio<String>(
+                    value: currentUser.phone,
+                    groupValue: _selectedPayerPhone,
+                    onChanged: (v) => setState(() => _selectedPayerPhone = v),
+                  ),
+                ),
+                const Divider(height: 0),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: _avatarFriend(widget.friend),
+                  title: Text(widget.friend.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(widget.friend.phone, style: const TextStyle(color: Colors.black54)),
+                  trailing: Radio<String>(
+                    value: widget.friend.phone,
+                    groupValue: _selectedPayerPhone,
+                    onChanged: (v) => setState(() => _selectedPayerPhone = v),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // --- Step 2: Split ---------------------------------------------------------
+  Widget _step2() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          value: _customSplit,
+          onChanged: _saving
+              ? null
+              : (v) {
+            setState(() {
+              _customSplit = v;
+              if (_customSplit && _amount > 0) {
+                _recalcEqualSplit();
+              }
+            });
+          },
+          title: const Text("Custom split", style: TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: const Text("Turn off for equal split"),
+          activeColor: _kIndigo,
+        ),
+        if (_customSplit) ...[
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              ActionChip(
+                label: const Text("Equal split"),
+                avatar: const Icon(Icons.balance, size: 18),
+                onPressed: (_saving || _amount <= 0) ? null : _recalcEqualSplit,
+              ),
+              ActionChip(
+                label: const Text("Clear"),
+                avatar: const Icon(Icons.clear, size: 18),
+                onPressed: _saving ? null : _clearSplits,
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [_kIndigo, _kTeal]),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  "Sum: ₹${_fmt2(_sumSplits)} / ₹${_fmt2(_amount)}",
+                  style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Two participants (You + Friend)
+          ..._payers.map((f) {
+            final isYou = f.phone == currentUser.phone;
+            final ctrl = _splitCtrls[f.phone]!;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  isYou ? _avatarYou(r: 16) : _avatarFriend(f, r: 16),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 100,
+                    child: Text(isYou ? "You" : f.name, overflow: TextOverflow.ellipsis),
+                  ),
+                  const Spacer(),
+                  SizedBox(
+                    width: 140,
+                    child: TextField(
+                      controller: ctrl,
+                      enabled: !_saving,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d{0,7}(\.\d{0,2})?$')),
+                      ],
+                      decoration: _pillDec(label: "₹"),
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+          if (_amount <= 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                "Tip: Enter amount first to enable equal split.",
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+              ),
+            ),
+        ],
+        if (!_customSplit)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, size: 18, color: Colors.black45),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    "Equal split between both participants.",
+                    style: TextStyle(color: Colors.grey.shade700),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  // --- Step 3: Details & Attachments ----------------------------------------
+  Widget _step3() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          decoration: _pillDec(label: "Label (e.g., Dinner, Cab)", icon: Icons.label_outline),
+          onChanged: (v) => _label = v,
+          enabled: !_saving,
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            const Icon(Icons.calendar_today, size: 18, color: Colors.black54),
+            const SizedBox(width: 8),
+            Expanded(child: Text("Date: ${_date.toLocal().toString().substring(0, 10)}")),
+            TextButton(onPressed: _saving ? null : _pickDate, child: const Text("Change")),
+          ],
+        ),
+        const SizedBox(height: 10),
+        TextFormField(
+          decoration: _pillDec(label: "Note", icon: Icons.sticky_note_2_outlined),
+          onChanged: (v) => _note = v,
+          enabled: !_saving,
+          maxLines: 2,
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.icon(
+              onPressed: _saving ? null : _showAttachmentSheet,
+              icon: const Icon(Icons.attach_file_rounded),
+              label: const Text("Add attachment"),
+              style: FilledButton.styleFrom(
+                backgroundColor: _kIndigo,
+                foregroundColor: Colors.white,
+              ),
+            ),
+            ..._attachments.map((a) => InputChip(
+              label: Text(a.name),
+              avatar: Icon(_isImage(a.mime) ? Icons.image : Icons.insert_drive_file, size: 18),
+              onDeleted: _saving
+                  ? null
+                  : () {
+                setState(() => _attachments.remove(a));
+              },
+            )),
+          ],
+        ),
+        if (_saving || _uploading) ...[
+          const SizedBox(height: 12),
+          const LinearProgressIndicator(minHeight: 2),
+        ],
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final primary = Colors.teal.shade700;
-
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeInOut,
-        child: Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
+    return Scaffold(
+      backgroundColor: _kBg,
+      appBar: AppBar(
+        elevation: 0,
+        centerTitle: false,
+        foregroundColor: _kText,
+        title: const Text("Add Expense"),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFFFFFFFF), Color(0xFFF0F3FF)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
           ),
-          child: SingleChildScrollView(
-            child: Container(
-              decoration: _glossyCard(),
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: _saving ? null : () => Navigator.pop(context, false),
+        ),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Form(
                 key: _formKey,
-                autovalidateMode: AutovalidateMode.onUserInteraction,
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Header
-                    Row(
-                      children: [
-                        Container(
-                          height: 40,
-                          width: 40,
+                    _header(),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
                           decoration: BoxDecoration(
-                            color: Colors.teal.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(Icons.receipt_long, size: 22),
-                        ),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text(
-                            "Add Expense",
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.black87,
+                            gradient: LinearGradient(
+                              colors: [Colors.white.withOpacity(.98), Colors.white.withOpacity(.94)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
                             ),
+                            border: Border.all(color: Colors.white.withOpacity(.65)),
+                            boxShadow: const [BoxShadow(color: Color(0x1F000000), blurRadius: 22, offset: Offset(0, 10))],
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.black87),
-                          onPressed: _saving ? null : () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                    if (_saving || _uploading) ...[
-                      const SizedBox(height: 8),
-                      const LinearProgressIndicator(minHeight: 2),
-                    ],
-                    const SizedBox(height: 12),
-
-                    // Amount
-                    TextFormField(
-                      decoration: _dec(
-                        label: "Amount",
-                        icon: Icons.currency_rupee,
-                        hint: "e.g. 1200.00",
-                      ),
-                      keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                          RegExp(r'^\d{0,7}(\.\d{0,2})?$'),
-                        ),
-                      ],
-                      validator: (v) {
-                        final d = double.tryParse((v ?? '').trim());
-                        if (d == null) return "Enter a valid amount";
-                        if (d <= 0) return "Amount must be greater than 0";
-                        return null;
-                      },
-                      onChanged: (v) {
-                        _amount = double.tryParse(v) ?? 0.0;
-                        if (_customSplit && _amount > 0) {
-                          _recalcEqualSplit();
-                        }
-                        setState(() {});
-                      },
-                      enabled: !_saving,
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Paid by
-                    DropdownButtonFormField<String>(
-                      decoration: _dec(label: "Paid by", icon: Icons.wallet),
-                      value: _selectedPayerPhone,
-                      items: [
-                        DropdownMenuItem(
-                          value: currentUser.phone,
-                          child: Row(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                          child: PageView(
+                            controller: _pg,
+                            physics: const NeverScrollableScrollPhysics(),
                             children: [
-                              _avatarYou(),
-                              const SizedBox(width: 8),
-                              const Text("You", style: TextStyle(color: Colors.black87)),
+                              SingleChildScrollView(child: _step0()),
+                              SingleChildScrollView(child: _step1()),
+                              SingleChildScrollView(child: _step2()),
+                              SingleChildScrollView(child: _step3()),
                             ],
                           ),
                         ),
-                        DropdownMenuItem(
-                          value: widget.friend.phone,
-                          child: Row(
-                            children: [
-                              _avatarFriend(widget.friend),
-                              const SizedBox(width: 8),
-                              Text(widget.friend.name, style: const TextStyle(color: Colors.black87)),
-                            ],
-                          ),
-                        ),
-                      ],
-                      onChanged:
-                      _saving ? null : (v) => setState(() => _selectedPayerPhone = v),
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Custom split toggle
-                    SwitchListTile.adaptive(
-                      title: const Text("Custom split", style: TextStyle(color: Colors.black87)),
-                      value: _customSplit,
-                      onChanged: _saving
-                          ? null
-                          : (v) {
-                        setState(() {
-                          _customSplit = v;
-                          if (_customSplit && _amount > 0) {
-                            _recalcEqualSplit();
-                          }
-                        });
-                      },
-                      contentPadding: EdgeInsets.zero,
-                    ),
-
-                    // Split editor (overflow-safe)
-                    if (_customSplit) ...[
-                      // Buttons + Sum in a Wrap, so Sum moves to next line if needed
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          ActionChip(
-                            label: const Text("Equal split"),
-                            avatar: const Icon(Icons.balance, size: 18),
-                            onPressed: (_saving || _amount <= 0) ? null : _recalcEqualSplit,
-                          ),
-                          ActionChip(
-                            label: const Text("Clear"),
-                            avatar: const Icon(Icons.clear, size: 18),
-                            onPressed: _saving ? null : _clearSplits,
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.teal.withOpacity(0.10),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              "Sum: ₹${_fmt2(_sumSplits)} / ₹${_fmt2(_amount)}",
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black87,
-                              ),
-                            ),
-                          ),
-                        ],
                       ),
-                      const SizedBox(height: 8),
+                    ),
 
-                      ..._payers.map((f) {
-                        final isYou = f.phone == currentUser.phone;
-                        final ctrl = _splitCtrls[f.phone]!;
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            children: [
-                              isYou ? _avatarYou(r: 16) : _avatarFriend(f, r: 16),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 90,
-                                child: Text(
-                                  isYou ? "You" : f.name,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: Colors.black87),
-                                ),
-                              ),
-                              const Spacer(),
-                              SizedBox(
-                                width: 120,
-                                child: TextField(
-                                  controller: ctrl,
-                                  enabled: !_saving,
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'^\d{0,7}(\.\d{0,2})?$'),
-                                    ),
-                                  ],
-                                  decoration: _dec(label: "₹"),
-                                  textAlign: TextAlign.right,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                      const SizedBox(height: 6),
-                      if (_amount <= 0)
-                        Text(
-                          "Tip: Enter amount first to enable equal split.",
-                          style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
-                        ),
-                    ],
-
+                    // Footer
                     const SizedBox(height: 12),
-
-                    // Attachments row
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          FilledButton.icon(
-                            onPressed: _saving ? null : _showAttachmentSheet,
-                            icon: const Icon(Icons.attach_file_rounded),
-                            label: const Text("Add attachment"),
-                          ),
-                          ..._attachments.map((a) => InputChip(
-                            label: Text(
-                              a.name,
-                              style: const TextStyle(color: Colors.black87),
-                            ),
-                            avatar: Icon(
-                              _isImage(a.mime) ? Icons.image : Icons.insert_drive_file,
-                              size: 18,
-                            ),
-                            onDeleted: _saving
-                                ? null
-                                : () {
-                              setState(() {
-                                _attachments.remove(a);
-                              });
-                            },
-                          )),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // Category quick chips
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: _categories.map((c) {
-                          final selected = c.label == _category;
-                          return ChoiceChip(
-                            label: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(c.icon, size: 16, color: Colors.black87),
-                                const SizedBox(width: 6),
-                                Text(c.label, style: const TextStyle(color: Colors.black87)),
-                              ],
-                            ),
-                            selected: selected,
-                            onSelected: _saving
-                                ? null
-                                : (v) => setState(() => _category = v ? c.label : ''),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Category dropdown (explicit)
-                    DropdownButtonFormField<String>(
-                      value: _category.isEmpty ? null : _category,
-                      items: _categories
-                          .map((c) => DropdownMenuItem(
-                        value: c.label,
-                        child: Row(
-                          children: [
-                            Icon(c.icon, size: 18, color: Colors.black87),
-                            const SizedBox(width: 8),
-                            Text(c.label, style: const TextStyle(color: Colors.black87)),
-                          ],
-                        ),
-                      ))
-                          .toList(),
-                      onChanged:
-                      _saving ? null : (v) => setState(() => _category = v ?? ''),
-                      decoration: _dec(label: "Category", icon: Icons.category),
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Label
-                    TextFormField(
-                      decoration: _dec(
-                        label: "Label (e.g., Dinner, Cab)",
-                        icon: Icons.label_outline,
-                      ),
-                      onChanged: (v) => _label = v,
-                      enabled: !_saving,
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Date row
                     Row(
                       children: [
-                        const Icon(Icons.calendar_today, size: 18, color: Colors.grey),
-                        const SizedBox(width: 8),
-                        Text(
-                          "Date: ${_date.toLocal().toString().substring(0, 10)}",
-                          style: const TextStyle(color: Colors.black87),
-                        ),
+                        if (_step > 0)
+                          _Bouncy(
+                            onTap: _goBack,
+                            child: OutlinedButton.icon(
+                              onPressed: _goBack,
+                              icon: const Icon(Icons.chevron_left_rounded),
+                              label: const Text("Back"),
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(color: _kIndigo.withOpacity(.35)),
+                                foregroundColor: _kIndigo,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              ),
+                            ),
+                          )
+                        else
+                          const SizedBox.shrink(),
                         const Spacer(),
-                        TextButton(
-                          onPressed: _saving ? null : _pickDate,
-                          child: const Text("Change"),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Note
-                    TextFormField(
-                      decoration: _dec(label: "Note", icon: Icons.sticky_note_2_outlined),
-                      onChanged: (v) => _note = v,
-                      enabled: !_saving,
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Actions
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _saving ? null : () => Navigator.pop(context),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                            ),
-                            child: const Text("Cancel", style: TextStyle(color: Colors.black87)),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: _saving ? null : _submit,
-                            icon: const Icon(Icons.check_rounded),
-                            label: _saving
-                                ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                                : const Text("Add"),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.redAccent,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
+                        if (_step < 3)
+                          _Bouncy(
+                            onTap: _goNext,
+                            child: ElevatedButton.icon(
+                              onPressed: _goNext,
+                              icon: const Icon(Icons.chevron_right_rounded),
+                              label: const Text("Next"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _kIndigo,
+                                foregroundColor: Colors.white,
+                                elevation: 6,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              ),
                             ),
                           ),
-                        ),
+                        if (_step == 3)
+                          _Bouncy(
+                            onTap: _submit,
+                            child: ElevatedButton.icon(
+                              onPressed: _saving ? null : _submit,
+                              icon: const Icon(Icons.check_rounded),
+                              label: _saving
+                                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  : const Text("Add Expense"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _kTeal,
+                                foregroundColor: Colors.white,
+                                elevation: 6,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
+                    const SizedBox(height: 12),
                   ],
                 ),
               ),
@@ -859,6 +994,8 @@ class _AddFriendExpenseDialogState extends State<AddFriendExpenseDialog> {
     );
   }
 }
+
+// --- tiny helpers / models ---------------------------------------------------
 
 class _CategoryDef {
   final String label;
@@ -879,4 +1016,68 @@ class _Attachment {
     required this.size,
     required this.kind,
   });
+}
+
+/// Bouncy press effect for buttons/cards
+class _Bouncy extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  const _Bouncy({required this.child, required this.onTap});
+  @override
+  State<_Bouncy> createState() => _BouncyState();
+}
+
+class _BouncyState extends State<_Bouncy> with SingleTickerProviderStateMixin {
+  double _scale = 1;
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _scale = .96),
+      onTapCancel: () => setState(() => _scale = 1),
+      onTapUp: (_) => setState(() => _scale = 1),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 120),
+        scale: _scale,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Slide up + fade in, with stagger using delayMs
+class _SlideFade extends StatefulWidget {
+  final Widget child;
+  final int delayMs;
+  const _SlideFade({required this.child, this.delayMs = 0});
+  @override
+  State<_SlideFade> createState() => _SlideFadeState();
+}
+
+class _SlideFadeState extends State<_SlideFade> {
+  double _target = 0;
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(Duration(milliseconds: widget.delayMs), () {
+      if (!mounted) return;
+      setState(() => _target = 1);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+      tween: Tween(begin: 0, end: _target),
+      builder: (context, t, _) {
+        final dy = 16 * (1 - t);
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(offset: Offset(0, dy), child: widget.child),
+        );
+      },
+    );
+  }
 }

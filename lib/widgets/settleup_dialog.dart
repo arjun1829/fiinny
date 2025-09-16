@@ -4,7 +4,6 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:io' show File;
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -107,6 +106,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
 
   void _relistenAndRecompute() {
     _cancelSubs();
+    if (!mounted) return;
     setState(() {
       _maxAmount = 0.0;
       _direction = 0.0;
@@ -129,6 +129,8 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   }
 
   void _recomputeOutstanding(List<ExpenseItem> all) {
+    if (!mounted) return;
+
     final current = widget.userPhone;
     final friend  = _selectedFriend?.phone;
     if (friend == null) return;
@@ -144,6 +146,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
     final net = _pairwiseNet(scoped, current, friend);
 
     final abs = double.parse(net.abs().toStringAsFixed(2));
+    if (!mounted) return;
     setState(() {
       _direction = net;       // + they owe you, - you owe them
       _maxAmount = abs;
@@ -181,19 +184,25 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
     return net;
   }
 
+  // STRICT: do not piggyback on isBill; match actual settlement label/type.
   bool _looksLikeSettlement(ExpenseItem e) {
-    final t = e.type.toLowerCase();
-    final lbl = (e.label ?? '').toLowerCase();
-    return e.isBill == true || t.contains('settle') || lbl.contains('settle');
+    final t = (e.type ?? '').trim().toLowerCase();
+    final lbl = (e.label ?? '').trim().toLowerCase();
+    return t == 'settlement' || lbl == 'settlement';
   }
 
   // ======= Submit (explicit "Settlement" expense with payer you choose) =======
   Future<void> _submit() async {
     if (_submitting) return;
 
-    final amt = double.tryParse(_amountCtrl.text.trim());
+    final raw = _amountCtrl.text.trim();
+    final amt = double.tryParse(raw);
     if (amt == null || amt <= 0) {
       setState(() => _error = "Enter a valid amount");
+      return;
+    }
+    if (_maxAmount > 0 && amt > _maxAmount + 0.005) {
+      setState(() => _error = "Amount exceeds outstanding: ₹${_maxAmount.toStringAsFixed(2)}");
       return;
     }
     if (_selectedFriend == null) {
@@ -225,14 +234,14 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
         id: '',
         type: 'Settlement',
         label: 'Settlement',
-        amount: amt,
+        amount: double.parse(amt.toStringAsFixed(2)),
         note: finalNote,
         date: _date,
         payerId: payerId,
         friendIds: [otherId],
         customSplits: null,
         groupId: _selectedGroup?.id, // nullable for non-group
-        isBill: true,                // so lists/logic can flag this
+        isBill: true,                // keep if other UI relies on this flag
       );
 
       await ExpenseService().addExpenseWithSync(widget.userPhone, settlementItem);
@@ -257,10 +266,12 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
 
   // ======= Attachment helpers =======
   Future<void> _pickFromCamera() async {
+    if (kIsWeb) return; // not supported on web
     try {
       final shot = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 88);
       if (shot == null) return;
       final bytes = await shot.readAsBytes();
+      if (!mounted) return;
       setState(() {
         _attachBytes = bytes;
         _attachName  = shot.name;
@@ -272,10 +283,12 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   }
 
   Future<void> _pickFromGallery() async {
+    if (kIsWeb) return; // not supported on web
     try {
       final img = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 85);
       if (img == null) return;
       final bytes = await img.readAsBytes();
+      if (!mounted) return;
       setState(() {
         _attachBytes = bytes;
         _attachName  = img.name;
@@ -297,6 +310,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
       final f = res.files.first;
       if (kIsWeb) {
         if (f.bytes == null) return;
+        if (!mounted) return;
         setState(() {
           _attachBytes = f.bytes!;
           _attachName  = f.name;
@@ -306,6 +320,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
         if (f.path == null) return;
         final file  = File(f.path!);
         final bytes = await file.readAsBytes();
+        if (!mounted) return;
         setState(() {
           _attachBytes = bytes;
           _attachName  = f.name;
@@ -471,6 +486,32 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                 ),
                 const SizedBox(height: 14),
 
+                // Error banner (if any)
+                if (_error != null) ...[
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.08),
+                      border: Border.all(color: Colors.red.shade200),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(_error!, style: const TextStyle(color: Colors.red))),
+                        IconButton(
+                          tooltip: 'Dismiss',
+                          icon: const Icon(Icons.close, size: 16, color: Colors.red),
+                          onPressed: () => setState(() => _error = null),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 // Selection + direction
                 _sectionCard(
                   child: Column(
@@ -494,7 +535,21 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                       ],
 
                       // Friend (exclude "me")
-                      if (!singleFriend) ...[
+                      if (friendChoices.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(.12),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.amber.shade300),
+                          ),
+                          child: const Text(
+                            "No eligible friends found (you can’t settle with yourself).",
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        )
+                      else if (!singleFriend) ...[
                         DropdownButtonFormField<FriendModel?>(
                           value: _selectedFriend != null && !_isMeFriend(_selectedFriend!)
                               ? _selectedFriend
@@ -546,23 +601,21 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                       const SizedBox(height: 10),
 
                       // Who paid toggle
-                      if (_maxAmount > 0)
-                        DropdownButtonFormField<String>(
-                          value: _payerIsMe ? 'me' : 'they',
-                          items: const [
-                            DropdownMenuItem(value: 'they', child: Text('They paid me')),
-                            DropdownMenuItem(value: 'me',   child: Text('I paid them')),
-                          ],
-                          onChanged: (v) {
-                            if (v == null) return;
-                            setState(() => _payerIsMe = (v == 'me'));
-                          },
-                          decoration: const InputDecoration(
-                            labelText: 'Who paid',
-                            prefixIcon: Icon(Icons.swap_horiz_rounded),
-                          ),
+                      DropdownButtonFormField<String>(
+                        value: _payerIsMe ? 'me' : 'they',
+                        items: const [
+                          DropdownMenuItem(value: 'they', child: Text('They paid me')),
+                          DropdownMenuItem(value: 'me',   child: Text('I paid them')),
+                        ],
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(() => _payerIsMe = (v == 'me'));
+                        },
+                        decoration: const InputDecoration(
+                          labelText: 'Who paid',
+                          prefixIcon: Icon(Icons.swap_horiz_rounded),
                         ),
-
+                      ),
                     ],
                   ),
                 ),
@@ -591,6 +644,10 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                               : "Outstanding (they owe you): ₹${_maxAmount.toStringAsFixed(2)}")
                               : "If this looks wrong, choose friend/group above.",
                         ),
+                        onChanged: (_) {
+                          // clear previous error if user edits
+                          if (_error != null) setState(() => _error = null);
+                        },
                       ),
                       const SizedBox(height: 8),
                       Wrap(children: _chips()),
@@ -641,16 +698,18 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                           const SizedBox(width: 8),
                           const Text("Receipt (optional)", style: TextStyle(fontWeight: FontWeight.w600)),
                           const Spacer(),
-                          IconButton(
-                            tooltip: 'Camera',
-                            onPressed: _pickFromCamera,
-                            icon: const Icon(Icons.photo_camera_outlined, color: Colors.teal),
-                          ),
-                          IconButton(
-                            tooltip: 'Gallery',
-                            onPressed: _pickFromGallery,
-                            icon: const Icon(Icons.photo_library_outlined, color: Colors.teal),
-                          ),
+                          if (!kIsWeb) ...[
+                            IconButton(
+                              tooltip: 'Camera',
+                              onPressed: _pickFromCamera,
+                              icon: const Icon(Icons.photo_camera_outlined, color: Colors.teal),
+                            ),
+                            IconButton(
+                              tooltip: 'Gallery',
+                              onPressed: _pickFromGallery,
+                              icon: const Icon(Icons.photo_library_outlined, color: Colors.teal),
+                            ),
+                          ],
                           IconButton(
                             tooltip: 'File / PDF',
                             onPressed: _pickAnyFile,
@@ -693,11 +752,6 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                   ),
                 ),
 
-                if (_error != null) ...[
-                  const SizedBox(height: 8),
-                  Text(_error!, style: const TextStyle(color: Colors.red)),
-                ],
-
                 const SizedBox(height: 14),
 
                 // Actions
@@ -705,7 +759,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _submitting ? null : () => Navigator.pop(context),
+                        onPressed: _submitting ? null : () => Navigator.pop(context, false),
                         icon: const Icon(Icons.close_rounded),
                         label: const Text("Cancel"),
                       ),

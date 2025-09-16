@@ -1,43 +1,63 @@
 // lib/widgets/expense_list_widget.dart
 import 'package:flutter/material.dart';
+
 import '../models/expense_item.dart';
 import '../models/friend_model.dart';
 
+/// Upgraded list of expenses with:
+/// - robust overflow handling on narrow screens
+/// - attachment chip (attachmentUrl/attachmentName OR URL in note)
+/// - compact chips & optional "in <Group>" badge
+/// - friend-aware pairwise math for signed amounts
+/// - optional onTap (or built-in fallback detail sheet)
+/// - optional onDelete
 class ExpenseListWidget extends StatelessWidget {
   final List<ExpenseItem> expenses;
-  final String currentUserPhone; // was userId, now phone!
+  final String currentUserPhone;
   final FriendModel? friend;
-  final void Function(ExpenseItem)? onDelete; // optional
+
+  /// map of groupId -> groupName for badges
+  final Map<String, String>? groupNames;
+
+  final bool showGroupBadge;
+  final void Function(ExpenseItem e)? onTapExpense;
+  final void Function(ExpenseItem e)? onDelete;
 
   const ExpenseListWidget({
     Key? key,
     required this.expenses,
     required this.currentUserPhone,
     this.friend,
+    this.groupNames,
+    this.showGroupBadge = true,
+    this.onTapExpense,
     this.onDelete,
   }) : super(key: key);
 
-  String _money(double v) => "₹${v.toStringAsFixed(2)}";
+  // -------------------- formatting --------------------
+  String _money(double v, {bool noPaise = false}) =>
+      "₹${noPaise ? v.toStringAsFixed(0) : v.toStringAsFixed(2)}";
 
   String _dateShort(DateTime? d) {
     if (d == null) return "";
     final dd = d.toLocal();
-    return "${dd.day}/${dd.month}/${dd.year}";
+    const months = [
+      'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'
+    ];
+    return "${dd.day} ${months[dd.month - 1]} ${dd.year}";
   }
 
-  // ---------- math helpers (local only; no API changes) ----------
+  // -------------------- logic --------------------
   bool _isSettlement(ExpenseItem e) {
     final t = (e.type).toLowerCase();
     final lbl = (e.label ?? '').toLowerCase();
     if (t.contains('settle') || lbl.contains('settle')) return true;
-    // Settle-up heuristic used across the app: single counterparty, no custom splits, flagged
-    if ((e.friendIds.length == 1) && (e.customSplits == null || e.customSplits!.isNotEmpty == false)) {
+    if ((e.friendIds.length == 1) && (e.customSplits == null || e.customSplits!.isEmpty)) {
       return e.isBill == true;
     }
     return false;
   }
 
-  /// Participants = payer + friendIds + customSplit keys (defensive against legacy data).
   Set<String> _participantsOf(ExpenseItem e) {
     final s = <String>{};
     if (e.payerId.isNotEmpty) s.add(e.payerId);
@@ -48,77 +68,84 @@ class ExpenseListWidget extends StatelessWidget {
     return s;
   }
 
-  /// Splits:
-  /// - customSplits when present
-  /// - else equal among participants
   Map<String, double> _splits(ExpenseItem e) {
     if (e.customSplits != null && e.customSplits!.isNotEmpty) {
       return Map<String, double>.from(e.customSplits!);
     }
-    final participants = _participantsOf(e).toList();
-    if (participants.isEmpty) return const {};
-    final each = e.amount / participants.length;
-    return {for (final id in participants) id: each};
+    final ps = _participantsOf(e).toList();
+    if (ps.isEmpty) return const {};
+    final each = e.amount / ps.length;
+    return {for (final id in ps) id: each};
   }
 
   /// Signed pairwise delta between 'you' and 'other':
-  /// + => other owes YOU ; - => YOU owe other ; 0 => no effect between you two.
+  /// + => other owes YOU ; - => YOU owe other ; 0 => no pairwise effect.
   double _pairSigned(ExpenseItem e, String you, String other) {
     final participants = _participantsOf(e);
     if (!participants.contains(you) || !participants.contains(other)) return 0.0;
 
-    // Settlements: direct transfer payer -> friendIds, split equally among friendIds
     if (_isSettlement(e)) {
       final others = e.friendIds;
       if (others.isEmpty) return 0.0;
-      final perOther = e.amount / others.length;
-      if (e.payerId == you && others.contains(other)) return perOther;      // you paid them
-      if (e.payerId == other && others.contains(you)) return -perOther;     // they paid you
-      return 0.0;                                                            // third-party settlement
+      final per = e.amount / others.length;
+      if (e.payerId == you && others.contains(other)) return per;   // you paid them
+      if (e.payerId == other && others.contains(you)) return -per;  // they paid you
+      return 0.0;
     }
 
-    // Normal expenses
     final splits = _splits(e);
-
-    // You paid ⇒ they owe you THEIR share.
     if (e.payerId == you && splits.containsKey(other)) {
-      return splits[other] ?? 0.0;
+      return splits[other] ?? 0.0; // they owe you their share
     }
-    // They paid ⇒ you owe them YOUR share.
     if (e.payerId == other && splits.containsKey(you)) {
-      return -(splits[you] ?? 0.0);
+      return -(splits[you] ?? 0.0); // you owe them your share
     }
-
-    // Third party paid (e.g., F1 paid while you’re viewing F2) ⇒ no pairwise effect.
     return 0.0;
   }
 
+  bool _noteHasUrl(String note) {
+    if (note.isEmpty) return false;
+    return RegExp(r'https?://\S+', caseSensitive: false).hasMatch(note);
+  }
+
+  IconData _categoryIcon(String? cat) {
+    final c = (cat ?? '').toLowerCase();
+    if (c.contains('food') || c.contains('lunch') || c.contains('dinner')) {
+      return Icons.restaurant_rounded;
+    }
+    if (c.contains('travel') || c.contains('trip') || c.contains('flight')) {
+      return Icons.flight_takeoff_rounded;
+    }
+    if (c.contains('stay') || c.contains('hotel')) return Icons.hotel_rounded;
+    if (c.contains('cab') || c.contains('ride') || c.contains('uber')) {
+      return Icons.local_taxi_rounded;
+    }
+    if (c.contains('grocer')) return Icons.local_grocery_store_rounded;
+    if (c.contains('movie') || c.contains('entertain')) return Icons.local_activity_rounded;
+    if (c.contains('fuel') || c.contains('gas')) return Icons.local_gas_station_rounded;
+    return Icons.receipt_long_rounded;
+  }
+
+  // -------------------- build --------------------
   @override
   Widget build(BuildContext context) {
     if (expenses.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(20),
-        child: Text(
-          friend != null
-              ? "No transactions with ${friend!.name} yet."
-              : "No transactions yet.",
-        ),
+        child: Text(friend != null
+            ? "No transactions with ${friend!.name} yet."
+            : "No transactions yet."),
       );
     }
 
-    // Copy list to preserve original order
+    // Copy to preserve caller list
     final items = List<ExpenseItem>.from(expenses);
 
-    // In friend context: only keep rows that actually affect YOU <-> FRIEND
+    // In friend view: keep only rows that affect YOU <-> FRIEND
     if (friend != null) {
       final you = currentUserPhone;
       final other = friend!.phone;
-
-      items.removeWhere((e) {
-        final delta = _pairSigned(e, you, other);
-        return delta.abs() < 0.005; // drop noise / third-party rows
-      });
-
+      items.removeWhere((e) => _pairSigned(e, you, other).abs() < 0.005);
       if (items.isEmpty) {
         return Padding(
           padding: const EdgeInsets.all(20),
@@ -129,179 +156,233 @@ class ExpenseListWidget extends StatelessWidget {
 
     return ListView.separated(
       shrinkWrap: true,
-      physics: const ClampingScrollPhysics(),
+      physics: const NeverScrollableScrollPhysics(), // parent scrolls
       itemCount: items.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (context, i) {
         final e = items[i];
 
         final isSettlement = _isSettlement(e);
-        final isPaidByYou = e.payerId == currentUserPhone;
+        final paidByYou = e.payerId == currentUserPhone;
 
-        // Who’s the counterparty label
-        String counterParty() {
-          if (friend != null) return friend!.name;
-          // Group context or mixed: keep generic label
-          return isPaidByYou ? "Group" : "A member";
-        }
+        final String title = isSettlement
+            ? "Settlement"
+            : (e.label?.trim().isNotEmpty == true
+            ? e.label!.trim()
+            : (e.category?.trim().isNotEmpty == true
+            ? e.category!.trim()
+            : "Expense"));
 
-        // Custom split (for details / chips only)
-        final hasCustomSplit = e.customSplits != null && e.customSplits!.isNotEmpty;
-        final yourSplit = e.customSplits?[currentUserPhone] ?? 0.0;
-        final friendSplit =
-        friend != null ? (e.customSplits?[friend!.phone] ?? 0.0) : null;
+        final String dateStr = _dateShort(e.date);
 
-        // Subtitle content (unchanged visually)
-        Widget subtitle;
-        if (isSettlement) {
-          subtitle = Text(
-            isPaidByYou
-                ? "You settled up with ${counterParty()}"
-                : "${counterParty()} settled up with you",
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          );
-        } else if (hasCustomSplit) {
-          final chips = <Widget>[
-            _MiniChip(label: "You ${_money(yourSplit)}"),
-          ];
-          if (friendSplit != null) {
-            chips.add(_MiniChip(label: "${friend!.name} ${_money(friendSplit)}"));
-          }
-          if (e.note.isNotEmpty) chips.add(_MiniChip(label: "Note"));
-          subtitle = Wrap(
-            spacing: 6,
-            runSpacing: -6,
-            children: chips,
-          );
-        } else {
-          final who = isPaidByYou ? "You paid" : "${counterParty()} paid";
-          final hasNote = e.note.isNotEmpty;
-          subtitle = Text(
-            hasNote ? "$who  •  ${e.note}" : who,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          );
-        }
-
-        // Card colors
-        final baseColor = isSettlement ? Colors.green : Colors.blue;
-        final bg = isSettlement ? Colors.green.withOpacity(.06) : Colors.blue.withOpacity(.06);
-
-        // Pairwise amount for friend view; legacy amount elsewhere
-        double? pairSigned;
+        // Signed amount (friend view) or +/- by payer
+        late final String trailingText;
+        late final Color trailingColor;
         if (friend != null) {
-          pairSigned = _pairSigned(e, currentUserPhone, friend!.phone);
+          final v = _pairSigned(e, currentUserPhone, friend!.phone);
+          trailingText = _money(v.abs(), noPaise: true);
+          trailingColor = v >= 0 ? Colors.teal.shade800 : Colors.redAccent;
+        } else {
+          trailingText = (paidByYou ? "- " : "+ ") + _money(e.amount, noPaise: true);
+          trailingColor = paidByYou ? Colors.red.shade700 : Colors.green.shade700;
         }
+
+        // Chips
+        final List<Widget> chips = [];
+        if (isSettlement) {
+          final who = friend?.name ?? "member";
+          final settleText = paidByYou ? "You settled with $who" : "$who settled with you";
+          chips.add(_chip(
+            text: settleText,
+            fg: Colors.teal.shade900,
+            bg: Colors.teal.withOpacity(.10),
+            icon: Icons.handshake,
+          ));
+        } else {
+          chips.add(_chip(
+            text: paidByYou ? "You paid" : "Paid by ${friend != null ? friend!.name : 'member'}",
+            fg: Colors.grey.shade900,
+            bg: Colors.grey.withOpacity(.12),
+            icon: Icons.person,
+          ));
+        }
+
+        if ((e.category ?? '').trim().isNotEmpty) {
+          chips.add(_chip(
+            text: e.category!.trim(),
+            fg: Colors.indigo.shade900,
+            bg: Colors.indigo.withOpacity(.08),
+            icon: _categoryIcon(e.category),
+          ));
+        }
+
+        // Custom split quick summary (your share / friend's share)
+        final hasCustom = e.customSplits != null && e.customSplits!.isNotEmpty;
+        if (hasCustom) {
+          final yourShare = e.customSplits?[currentUserPhone];
+          if (yourShare != null) {
+            chips.add(_chip(
+              text: "You ${_money(yourShare, noPaise: true)}",
+              fg: Colors.black87,
+              bg: Colors.grey.withOpacity(.12),
+              icon: Icons.account_circle,
+            ));
+          }
+          if (friend != null) {
+            final fs = e.customSplits?[friend!.phone];
+            if (fs != null) {
+              chips.add(_chip(
+                text: "${friend!.name} ${_money(fs, noPaise: true)}",
+                fg: Colors.black87,
+                bg: Colors.grey.withOpacity(.12),
+                icon: Icons.account_circle_outlined,
+              ));
+            }
+          }
+        }
+
+        // Attachment/Note badges
+        final hasAttachExplicit = (e.attachmentUrl ?? '').trim().isNotEmpty ||
+            (e.attachmentName ?? '').trim().isNotEmpty;
+        final hasAttachViaNote = _noteHasUrl(e.note);
+        final hasNote = e.note.trim().isNotEmpty;
+
+        if (hasNote) {
+          chips.add(_chip(
+            text: "Note",
+            fg: Colors.orange.shade900,
+            bg: Colors.orange.withOpacity(.10),
+            icon: Icons.sticky_note_2_outlined,
+          ));
+        }
+        if (hasAttachExplicit || hasAttachViaNote) {
+          chips.add(_chip(
+            text: "Attachment",
+            fg: Colors.blueGrey.shade900,
+            bg: Colors.blueGrey.withOpacity(.10),
+            icon: Icons.attach_file_rounded,
+          ));
+        }
+
+        // Group badge
+        final gid = (e.groupId ?? '');
+        if (showGroupBadge && gid.isNotEmpty) {
+          final gName = groupNames?[gid] ?? 'Group';
+          chips.add(_chip(
+            text: "in $gName",
+            fg: Colors.teal.shade900,
+            bg: Colors.teal.withOpacity(.10),
+            icon: Icons.groups_rounded,
+          ));
+        }
+
+        // Visual styles
+        final Color accent = isSettlement ? Colors.teal : Colors.indigo;
+        final Color cardBorder = accent.withOpacity(.14);
+        final Color cardBg = accent.withOpacity(.06);
 
         return InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () => _showDetailsSheet(context, e, isSettlement, hasCustomSplit, yourSplit, friendSplit),
+          onTap: () => onTapExpense != null ? onTapExpense!(e) : _showFallbackDetails(context, e),
           onLongPress: () => _showActions(context, e, canDelete: onDelete != null),
           child: Container(
             decoration: BoxDecoration(
-              color: bg,
+              color: cardBg,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: baseColor.withOpacity(.12)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+              border: Border.all(color: cardBorder),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
             ),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Leading icon
+                // leading bubble
                 Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: baseColor.withOpacity(.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    isSettlement ? Icons.handshake : Icons.currency_rupee,
-                    color: baseColor,
-                  ),
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(color: accent.withOpacity(.15), shape: BoxShape.circle),
+                  child: Icon(isSettlement ? Icons.handshake : Icons.receipt_long_rounded, color: accent),
                 ),
                 const SizedBox(width: 10),
 
-                // Title + subtitle + date
+                // middle (expands and ellipsizes first)
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Title row (ellipsis-safe)
+                      // title + date row
                       Row(
                         children: [
                           Expanded(
                             child: Text(
-                              isSettlement
-                                  ? "Settlement"
-                                  : (e.label?.isNotEmpty == true ? e.label! : "Expense"),
+                              title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15.5,
-                              ),
+                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          // Date (small)
-                          Text(
-                            _dateShort(e.date),
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: Colors.grey[700],
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              dateStr,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
+                              style: TextStyle(fontSize: 11.5, color: Colors.grey[700]),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      subtitle,
+                      const SizedBox(height: 6),
+                      // chips
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: -6,
+                          children: chips,
+                        ),
+                      ),
                     ],
                   ),
                 ),
 
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
 
-                // Trailing amount (friend context shows pairwise amount)
-                ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 68, maxWidth: 120),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      friend != null
-                          ? "₹${(pairSigned!.abs()).toStringAsFixed(0)}"
-                          : (isPaidByYou ? "- " : "+ ") + _money(e.amount),
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: friend != null
-                            ? (pairSigned! >= 0 ? Colors.teal.shade800 : Colors.redAccent)
-                            : (isPaidByYou ? Colors.red[700] : Colors.green[700]),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
-                        letterSpacing: .2,
+                // right cluster (fits instead of overflowing)
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        trailingText,
+                        maxLines: 1,
+                        overflow: TextOverflow.fade,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          color: trailingColor,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          letterSpacing: .2,
+                        ),
                       ),
-                    ),
+                      if (onDelete != null) ...[
+                        const SizedBox(width: 6),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            splashRadius: 18,
+                            tooltip: "Delete",
+                            onPressed: () => onDelete!(e),
+                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-
-                if (onDelete != null) ...[
-                  const SizedBox(width: 2),
-                  IconButton(
-                    tooltip: "Delete",
-                    splashRadius: 20,
-                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                    onPressed: () => onDelete!(e),
-                  ),
-                ],
               ],
             ),
           ),
@@ -310,98 +391,115 @@ class ExpenseListWidget extends StatelessWidget {
     );
   }
 
-  void _showDetailsSheet(
-      BuildContext context,
-      ExpenseItem e,
-      bool isSettlement,
-      bool hasCustomSplit,
-      double yourSplit,
-      double? friendSplit,
-      ) {
+  // -------------------- fallback details sheet --------------------
+  void _showFallbackDetails(BuildContext context, ExpenseItem e) {
+    final isSettlement = _isSettlement(e);
+    final hasCustom = e.customSplits != null && e.customSplits!.isNotEmpty;
+
+    final yourSplit = e.customSplits?[currentUserPhone] ?? 0.0;
+    final friendSplit = (friend != null) ? (e.customSplits?[friend!.phone] ?? 0.0) : null;
+
+    final hasAttach = (e.attachmentUrl ?? '').trim().isNotEmpty ||
+        (e.attachmentName ?? '').trim().isNotEmpty ||
+        _noteHasUrl(e.note);
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
-      builder: (_) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(22, 18, 22, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    isSettlement ? Icons.handshake : Icons.receipt_long,
-                    color: isSettlement ? Colors.green : Colors.blue,
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(isSettlement ? Icons.handshake : Icons.receipt_long_rounded,
+                    color: isSettlement ? Colors.teal : Colors.indigo),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isSettlement ? "Settlement" : (e.label?.isNotEmpty == true ? e.label! : "Expense"),
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    isSettlement
-                        ? "Settlement"
-                        : (e.label?.isNotEmpty == true ? e.label! : "Expense"),
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const Spacer(),
-                  Text(
-                    _dateShort(e.date),
-                    style: TextStyle(fontSize: 12.5, color: Colors.grey[700]),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  const Text("Amount:", style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(width: 6),
-                  Text(_money(e.amount)),
-                ],
-              ),
-              const SizedBox(height: 6),
-              if (hasCustomSplit) ...[
-                const Text("Custom Split:", style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                _SplitLine(label: "You", value: yourSplit),
-                if (friend != null)
-                  _SplitLine(label: friend!.name, value: friendSplit ?? 0.0),
-                const SizedBox(height: 6),
-              ],
-              if (e.category != null && e.category!.isNotEmpty) ...[
-                Row(
-                  children: [
-                    const Text("Category:", style: TextStyle(fontWeight: FontWeight.w600)),
-                    const SizedBox(width: 6),
-                    Text(e.category!),
-                  ],
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(width: 8),
+                Text(_dateShort(e.date), style: TextStyle(color: Colors.grey[700])),
               ],
-              if (e.note.isNotEmpty) ...[
-                const Text("Note:", style: TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                Text(e.note),
-                const SizedBox(height: 6),
-              ],
+            ),
+            const SizedBox(height: 10),
+
+            Row(children: [
+              const Text("Amount:", style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(width: 6),
+              Text(_money(e.amount)),
+            ]),
+            const SizedBox(height: 6),
+
+            if ((e.category ?? '').isNotEmpty) ...[
+              Row(children: [
+                const Text("Category:", style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(width: 6),
+                Flexible(child: Text(e.category!)),
+              ]),
+              const SizedBox(height: 6),
+            ],
+
+            if (hasCustom) ...[
+              const Text("Custom split", style: TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              _SplitLine(label: "You", value: yourSplit),
+              if (friend != null) _SplitLine(label: friend!.name, value: friendSplit ?? 0.0),
+              const SizedBox(height: 6),
+            ],
+
+            if (e.note.trim().isNotEmpty) ...[
+              const Text("Note", style: TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text(e.note.trim()),
+              const SizedBox(height: 6),
+            ],
+
+            if (hasAttach) ...[
+              const SizedBox(height: 4),
               Row(
                 children: [
-                  const Spacer(),
-                  if (onDelete != null)
-                    TextButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        onDelete!(e);
-                      },
-                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                      label: const Text("Delete"),
-                      style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                  const Icon(Icons.attach_file_rounded, size: 18),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      (e.attachmentName ?? '').trim().isNotEmpty
+                          ? e.attachmentName!.trim()
+                          : ((e.attachmentUrl ?? '').trim().isNotEmpty ? 'Attachment' : 'Link in note'),
+                      overflow: TextOverflow.ellipsis,
                     ),
+                  ),
                 ],
               ),
             ],
-          ),
-        );
-      },
+
+            Row(
+              children: [
+                const Spacer(),
+                if (onDelete != null)
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      onDelete!(e);
+                    },
+                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    label: const Text("Delete"),
+                    style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -419,12 +517,7 @@ class ExpenseListWidget extends StatelessWidget {
               title: const Text('View details'),
               onTap: () {
                 Navigator.pop(context);
-                final isSettlement = _isSettlement(e);
-                final hasCustomSplit = e.customSplits != null && e.customSplits!.isNotEmpty;
-                final yourSplit = e.customSplits?[currentUserPhone] ?? 0.0;
-                final friendSplit =
-                friend != null ? (e.customSplits?[friend!.phone] ?? 0.0) : null;
-                _showDetailsSheet(context, e, isSettlement, hasCustomSplit, yourSplit, friendSplit);
+                onTapExpense != null ? onTapExpense!(e) : _showFallbackDetails(context, e);
               },
             ),
             if (canDelete)
@@ -441,24 +534,24 @@ class ExpenseListWidget extends StatelessWidget {
       ),
     );
   }
-}
 
-class _MiniChip extends StatelessWidget {
-  final String label;
-  const _MiniChip({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
+  // -------------------- tiny UI bits --------------------
+  Widget _chip({
+    required String text,
+    required Color fg,
+    required Color bg,
+    required IconData icon,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(.12),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 12.5),
-        overflow: TextOverflow.ellipsis,
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: fg),
+          const SizedBox(width: 4),
+          Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg), maxLines: 1, overflow: TextOverflow.ellipsis),
+        ],
       ),
     );
   }
@@ -477,15 +570,10 @@ class _SplitLine extends StatelessWidget {
         children: [
           SizedBox(
             width: 120,
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13.5),
-            ),
+            child: Text(label, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5)),
           ),
           const SizedBox(width: 6),
-          Text("•  ₹${value.toStringAsFixed(2)}",
-              style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text("•  ₹${value.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.w700)),
         ],
       ),
     );

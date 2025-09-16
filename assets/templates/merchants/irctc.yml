@@ -1,0 +1,13 @@
+id: irctc_ticket_v1
+applies_if:
+  sender_any: ['IRCTC', 'TICKET', 'noreply']
+  contains_any: ['booked', 'inr', 'pnr']
+extract:
+  amount: { regex: "(?:inr|₹|rs\\.?)+\\s*([0-9,]+\\.?[0-9]{0,2})" }
+  merchant: { regex: "(irctc|indian railways)" }
+classify:
+  direction: "DEBIT"
+  instrument: "ACCOUNT"
+  confidence: "0.86"
+post:
+  category_hint: "Travel"

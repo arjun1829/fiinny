@@ -1,0 +1,14 @@
+id: icici_card_spend_v1
+applies_if:
+  sender_any: ['ICICIB', 'ICICI', 'alerts']
+  contains_any: ['spent', 'card', 'inr']
+extract:
+  amount: { regex: "(?:inr|₹|rs\\.?)+\\s*([0-9,]+\\.?[0-9]{0,2})" }
+  account_tail: { regex: "card\\s*xx?x?([0-9]{3,4})" }
+  merchant: { regex: "(?:at)\\s+([a-z0-9 &\\-_.]{2,40})" }
+classify:
+  direction: "DEBIT"
+  instrument: "CARD"
+  confidence: "0.93"
+post:
+  category_hint: "Dining"

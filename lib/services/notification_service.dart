@@ -1,3 +1,4 @@
+// lib/services/notification_service.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -9,7 +10,6 @@ class NotificationService {
 
   NotificationService._internal();
 
-  /// Call this ONCE before using notifications (e.g. in main.dart)
   static Future<void> initialize() async {
     const AndroidInitializationSettings androidInit =
     AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -18,8 +18,6 @@ class NotificationService {
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
-      // Optional: Uncomment if targeting iOS < 10
-      // onDidReceiveLocalNotification: onDidReceiveLocalNotification,
     );
 
     final InitializationSettings settings = InitializationSettings(
@@ -33,10 +31,10 @@ class NotificationService {
     );
   }
 
-  /// Show a basic notification. [title] and [body] required.
   Future<void> showNotification({
     required String title,
     required String body,
+    String? payload, // NEW: deeplink for tap
   }) async {
     const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
       'default_channel',
@@ -54,21 +52,13 @@ class NotificationService {
     );
 
     final int id = DateTime.now().millisecondsSinceEpoch.remainder(100000);
-    await _plugin.show(id, title, body, details);
+    await _plugin.show(id, title, body, details, payload: payload);
   }
 
-  /// (Optional) Handles notification taps (Android 13+ / iOS)
   static void onDidReceiveNotificationResponse(NotificationResponse response) {
     debugPrint('🔔 Notification tapped: ${response.payload}');
+    // TODO: route using your app router with response.payload (deeplink)
   }
 
-  /// (Optional) iOS < 10 legacy support
-  static void onDidReceiveLocalNotification(
-      int id,
-      String? title,
-      String? body,
-      String? payload,
-      ) async {
-    debugPrint('📱 iOS Legacy Notification: $title - $body');
-  }
+  static FlutterLocalNotificationsPlugin get plugin => _plugin;
 }

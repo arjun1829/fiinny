@@ -4,44 +4,115 @@ import '../models/asset_model.dart';
 class AssetService {
   final _collection = FirebaseFirestore.instance.collection('assets');
 
-  // Fetch all assets for a user (returns List<AssetModel>)
+  // -------------------------
+  // Get all assets for a user
+  // -------------------------
   Future<List<AssetModel>> getAssets(String userId) async {
-    final snap = await _collection.where('userId', isEqualTo: userId).get();
+    final snap = await _collection
+        .where('userId', isEqualTo: userId)
+        .orderBy('createdAt', descending: true)
+        .get();
+
     return snap.docs
         .map((doc) => AssetModel.fromJson(doc.data(), doc.id))
         .toList();
   }
 
+  // -------------------------
   // Add a new asset
-  Future<void> addAsset(AssetModel asset) async {
-    final data = asset.toJson();
-    data['createdAt'] = DateTime.now().toIso8601String();
-    await _collection.add(data);
+  // -------------------------
+  Future<String> addAsset(AssetModel asset) async {
+    final data = asset.toJson()
+      ..['createdAt'] = DateTime.now().toIso8601String();
+    final docRef = await _collection.add(data);
+    return docRef.id;
   }
 
-  // Delete an asset by ID
+  // -------------------------
+  // Delete asset by ID
+  // -------------------------
   Future<void> deleteAsset(String assetId) async {
     await _collection.doc(assetId).delete();
   }
 
-  // Update an asset
+  // -------------------------
+  // Update asset (partial safe update)
+  // -------------------------
   Future<void> updateAsset(AssetModel asset) async {
-    await _collection.doc(asset.id).set(asset.toJson());
-  }
-
-  // Get total asset value (sum of all assets)
-  Future<double> getTotalAssets(String userId) async {
-    final assets = await getAssets(userId); // List<AssetModel>
-    double sum = 0.0;
-    for (final a in assets) {
-      sum += a.value;
+    if (asset.id == null) {
+      throw Exception("Asset must have an ID to update");
     }
-    return sum;
+    await _collection.doc(asset.id).update(asset.toJson());
   }
 
-  // Get count of all assets
+  // -------------------------
+  // Get single asset by ID
+  // -------------------------
+  Future<AssetModel?> getAssetById(String assetId) async {
+    final doc = await _collection.doc(assetId).get();
+    if (!doc.exists) return null;
+    return AssetModel.fromJson(doc.data()!, doc.id);
+  }
+
+  // -------------------------
+  // Aggregate: total assets value
+  // -------------------------
+  Future<double> getTotalAssets(String userId) async {
+    final assets = await getAssets(userId);
+    return assets.fold<double>(0.0, (sum, a) => sum + a.value);
+  }
+
+  // -------------------------
+  // Aggregate: asset count
+  // -------------------------
   Future<int> getAssetCount(String userId) async {
-    final assets = await getAssets(userId); // List<AssetModel>
+    final assets = await getAssets(userId);
     return assets.length;
+  }
+
+  // -------------------------
+  // Aggregate: by assetType
+  // -------------------------
+  Future<Map<String, double>> getAssetBreakdown(String userId) async {
+    final assets = await getAssets(userId);
+    final Map<String, double> breakdown = {};
+    for (final a in assets) {
+      breakdown[a.assetType] = (breakdown[a.assetType] ?? 0) + a.value;
+    }
+    return breakdown;
+  }
+
+  // -------------------------
+  // Get recent assets (for dashboard)
+  // -------------------------
+  Future<List<AssetModel>> getRecentAssets(String userId, {int limit = 5}) async {
+    final snap = await _collection
+        .where('userId', isEqualTo: userId)
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .get();
+
+    return snap.docs
+        .map((doc) => AssetModel.fromJson(doc.data(), doc.id))
+        .toList();
+  }
+
+  // -------------------------
+  // Search by tags or institution
+  // -------------------------
+  Future<List<AssetModel>> searchAssets(String userId, {String? tag, String? institution}) async {
+    Query query = _collection.where('userId', isEqualTo: userId);
+
+    if (tag != null) {
+      query = query.where('tags', arrayContains: tag);
+    }
+    if (institution != null) {
+      query = query.where('institution', isEqualTo: institution);
+    }
+
+    final snap = await query.get();
+    return snap.docs
+        .map((doc) => AssetModel.fromJson(doc.data() as Map<String, dynamic>, doc.id))
+        .toList();
   }
 }

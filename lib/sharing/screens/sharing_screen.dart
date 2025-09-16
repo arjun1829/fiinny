@@ -21,7 +21,7 @@ Future<bool?> showEditPermissionsDialog(
     ...partner.permissions,
   };
 
-  return showDialog<bool>(
+  final saved = await showDialog<bool>(
     context: context,
     builder: (ctx) {
       return StatefulBuilder(
@@ -29,13 +29,16 @@ Future<bool?> showEditPermissionsDialog(
           title: Text('Edit Permissions — ${partner.partnerName}'),
           content: SingleChildScrollView(
             child: Column(
-              children: SharingPermissions.allKeys().map((key) {
-                return CheckboxListTile(
-                  title: Text(SharingPermissions.label(key)),
-                  value: permissions[key] ?? false,
-                  onChanged: (val) => setSt(() => permissions[key] = val ?? false),
-                );
-              }).toList(),
+              mainAxisSize: MainAxisSize.min,
+              children: SharingPermissions
+                  .allKeys()
+                  .map((key) => CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(SharingPermissions.label(key)),
+                value: permissions[key] ?? false,
+                onChanged: (val) => setSt(() => permissions[key] = val ?? false),
+              ))
+                  .toList(),
             ),
           ),
           actions: [
@@ -51,17 +54,19 @@ Future<bool?> showEditPermissionsDialog(
         ),
       );
     },
-  ).then((saved) async {
-    if (saved == true) {
-      await PartnerService().updatePartnerPermissions(
-        currentUserPhone: currentUserPhone,
-        partnerPhone: partner.partnerId, // phone-first id
-        permissions: permissions,
-      );
-      return true;
-    }
-    return false;
-  });
+  );
+
+  if (saved == true) {
+    // NOTE: Your code comments say partnerId is "phone-first id".
+    // If you actually carry a separate phone field, pass that instead.
+    await PartnerService().updatePartnerPermissions(
+      currentUserPhone: currentUserPhone,
+      partnerPhone: partner.partnerId,
+      permissions: permissions,
+    );
+    return true;
+  }
+  return false;
 }
 
 Future<bool?> showConfirmRemoveDialog(BuildContext context, PartnerModel partner) {
@@ -78,14 +83,14 @@ Future<bool?> showConfirmRemoveDialog(BuildContext context, PartnerModel partner
   );
 }
 
-// Relation emoji mapping
+/// Relation emoji mapping — keys are lowercase for robust matching.
 const Map<String, String> relationEmojis = {
-  'Partner': '❤️',
-  'Spouse': '💍',
-  'Brother': '💍',
-  'Child': '👶',
-  'Friend': '🤝',
-  'Other': '🌟',
+  'partner': '❤️',
+  'spouse': '💍',
+  'brother': '👨‍👦',
+  'child': '👶',
+  'friend': '🤝',
+  'other': '🌟',
 };
 
 class SharingScreen extends StatefulWidget {
@@ -131,9 +136,10 @@ class _SharingScreenState extends State<SharingScreen> {
 
     final data = userDoc.data() ?? {};
     setState(() {
-      userName = (data['name'] as String?)?.trim().isNotEmpty == true ? data['name'] : 'You';
-      final avatar = (data['avatar'] as String?) ?? '';
-      userAvatar = avatar.isNotEmpty ? avatar : "assets/images/profile_default.png";
+      final n = (data['name'] as String?)?.trim();
+      userName = (n != null && n.isNotEmpty) ? n : 'You';
+      final avatar = (data['avatar'] as String?)?.trim() ?? '';
+      userAvatar = avatar.isNotEmpty ? avatar : 'assets/images/profile_default.png';
     });
 
     // Today's stats
@@ -166,6 +172,7 @@ class _SharingScreenState extends State<SharingScreen> {
       count++;
     }
 
+    if (!mounted) return;
     setState(() {
       _todayTxCount = count;
       _todayTxAmount = credit + debit;
@@ -210,14 +217,23 @@ class _SharingScreenState extends State<SharingScreen> {
   }
 
   Widget _buildPartnerCard(PartnerModel partner, int index) {
-    final relationEmoji =
-        relationEmojis[partner.relation?.toLowerCase() ?? 'other'] ?? '🌟';
+    final relationKey = (partner.relation ?? 'other').toLowerCase().trim();
+    final relationEmoji = relationEmojis[relationKey] ?? '🌟';
 
     return AnimatedSlideFade(
       delayMilliseconds: 170 + 60 * index,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(10, 14, 10, 18),
-        child: GestureDetector(
+        child: SharingHeroCard(
+          userName: "$relationEmoji ${partner.partnerName}",
+          avatar: partner.avatar?.trim().isNotEmpty == true ? partner.avatar : null,
+          credit: partner.todayCredit ?? 0.0,
+          debit: partner.todayDebit ?? 0.0,
+          txCount: partner.todayTxCount ?? 0,
+          txAmount: partner.todayTxAmount ?? 0.0,
+          isMe: false,
+          cardScale: 1.1,
+          glossy: true,
           onTap: () {
             setState(() => _selectedPartner = partner);
             Navigator.push(
@@ -231,29 +247,6 @@ class _SharingScreenState extends State<SharingScreen> {
               ),
             );
           },
-          child: SharingHeroCard(
-            userName: "$relationEmoji ${partner.partnerName}",
-            avatar: partner.avatar,
-            credit: partner.todayCredit ?? 0.0,
-            debit: partner.todayDebit ?? 0.0,
-            txCount: partner.todayTxCount ?? 0,
-            txAmount: partner.todayTxAmount ?? 0.0,
-            isMe: false,
-            cardScale: 1.1,
-            glossy: true,
-            onTap: () {
-              setState(() => _selectedPartner = partner);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PartnerDashboardScreen(
-                    partner: partner,
-                    currentUserId: widget.currentUserPhone,
-                  ),
-                ),
-              );
-            },
-          ),
         ),
       ),
     );
@@ -397,7 +390,7 @@ class _SharingScreenState extends State<SharingScreen> {
           cardScale: 1.1,
           glossy: true,
           onTap: () {
-            // Optionally open your own dashboard screen here
+            // Optional: open your own dashboard
           },
         ),
       ),
@@ -426,6 +419,12 @@ class _SharingScreenState extends State<SharingScreen> {
               ),
             ),
             actions: [
+              IconButton(
+                icon: Icon(Icons.settings,
+                    color: selected ? const Color(0xFF09857a) : Colors.grey),
+                tooltip: 'Edit Permissions',
+                onPressed: selected ? _onEditPermissions : null,
+              ),
               IconButton(
                 icon: Icon(Icons.delete_forever,
                     color: selected ? Colors.red[700] : Colors.grey),
@@ -483,7 +482,9 @@ class _SharingScreenState extends State<SharingScreen> {
                     }
 
                     return RefreshIndicator(
-                      onRefresh: () async => _refreshAll(),
+                      onRefresh: () async {
+                        _refreshAll();
+                      },
                       child: ListView(
                         physics: const AlwaysScrollableScrollPhysics(
                           parent: BouncingScrollPhysics(),

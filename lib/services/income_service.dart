@@ -1,24 +1,28 @@
+// lib/services/income_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/income_item.dart';
 
 class IncomeService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  // incomes/<userId>/items/*
   CollectionReference<Map<String, dynamic>> getIncomesCollection(String userId) {
     return _firestore.collection('users').doc(userId).collection('incomes');
   }
 
-  // ✅ NEW: Get all incomes for dashboard
+  // List all incomes for dashboard
   Future<List<IncomeItem>> getIncomes(String userId) async {
-    final snapshot = await getIncomesCollection(userId).get();
+    final snapshot = await getIncomesCollection(userId)
+        .orderBy('date', descending: true)
+        .get();
     return snapshot.docs.map((doc) => IncomeItem.fromJson(doc.data())).toList();
   }
 
-  // Add Income
+  // Add income
   Future<String> addIncome(String userId, IncomeItem income) async {
     final docRef = getIncomesCollection(userId).doc();
-    final incomeWithId = income.copyWith(id: docRef.id);
-    await docRef.set(incomeWithId.toJson());
+    final withId = income.copyWith(id: docRef.id);
+    await docRef.set(withId.toJson());
     return docRef.id;
   }
 
@@ -30,25 +34,23 @@ class IncomeService {
     await getIncomesCollection(userId).doc(incomeId).delete();
   }
 
-  // Get Incomes Stream
   Stream<List<IncomeItem>> getIncomesStream(String userId) {
     return getIncomesCollection(userId)
         .orderBy('date', descending: true)
         .snapshots()
-        .map((snapshot) =>
-        snapshot.docs.map((doc) => IncomeItem.fromJson(doc.data())).toList());
+        .map((snap) => snap.docs.map((d) => IncomeItem.fromJson(d.data())).toList());
   }
 
-  // 🚀 NEW: Get incomes for a specific date range (inclusive start, exclusive end)
   Future<List<IncomeItem>> getIncomesInDateRange(
       String userId, {
         required DateTime start,
         required DateTime end,
       }) async {
-    final snapshot = await getIncomesCollection(userId)
+    final snap = await getIncomesCollection(userId)
         .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
         .where('date', isLessThan: Timestamp.fromDate(end))
+        .orderBy('date', descending: true)
         .get();
-    return snapshot.docs.map((doc) => IncomeItem.fromJson(doc.data())).toList();
+    return snap.docs.map((d) => IncomeItem.fromJson(d.data())).toList();
   }
 }
