@@ -1,6 +1,136 @@
+name: iOS IPA (Flutter export + ASC upload)
 
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "ios/**"
+      - "lib/**"
+      - "pubspec.*"
+      - ".github/workflows/**"
 
-           security default-keychain -s "$KEYCHAIN"
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    runs-on: macos-14
+    env:
+      CI: "true"
+      BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+      TEAM_ID: ${{ secrets.TEAM_ID }}
+      P12_BASE64: ${{ secrets.P12_BASE64 }}
+      P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+      PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+      APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+      APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
+      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+      FIREBASE_IOS_PLIST_BASE64: ${{ secrets.FIREBASE_IOS_PLIST_BASE64 }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      WORKSPACE: ios/Runner.xcworkspace
+      SCHEME: Runner
+      CONFIGURATION: Release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Cache Pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('pubspec.lock') }}
+          restore-keys: ${{ runner.os }}-pub-
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cocoapods/repos
+            ios/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile.lock') }}
+          restore-keys: ${{ runner.os }}-pods-
+
+      - name: Tool versions
+        shell: bash
+        run: |
+          set -euxo pipefail
+          flutter --version
+          xcodebuild -version
+          swift --version || true
+          ruby --version || true
+          pod --version || true
+
+      - name: Flutter pub get
+        shell: bash
+        run: |
+          set -euxo pipefail
+          flutter pub get
+
+      - name: Clean and enforce iOS 16
+        shell: bash
+        run: |
+          set -euxo pipefail
+          flutter clean
+          /usr/bin/sed -i '' "s/platform :ios, .*/platform :ios, '16.0'/" ios/Podfile || true
+          rm -rf ios/Pods ios/Podfile.lock
+
+      - name: Install CocoaPods (update repos)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo gem install cocoapods -N || true
+          cd ios
+          pod install --repo-update
+          cd ..
+
+      - name: Create GoogleService-Info.plist
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p ios/Runner
+          echo "$FIREBASE_IOS_PLIST_BASE64" | base64 --decode > ios/Runner/GoogleService-Info.plist
+
+      - name: Add Google URL Scheme to Info.plist
+        shell: bash
+        run: |
+          set -euxo pipefail
+          GSP="ios/Runner/GoogleService-Info.plist"
+          IP="ios/Runner/Info.plist"
+          RID=$(/usr/libexec/PlistBuddy -c 'Print :REVERSED_CLIENT_ID' "$GSP")
+          /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$IP" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes array' "$IP"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0 dict' "$IP"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleTypeRole string Editor' "$IP"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' "$IP"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $RID" "$IP"
+
+      - name: Create Keychain & Import Certificate
+        shell: bash
+        run: |
+          set -euxo pipefail
+          KEYCHAIN="$RUNNER_TEMP/build.keychain"
+          KPWD=$(uuidgen)
+          security create-keychain -p "$KPWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KPWD" "$KEYCHAIN"
+          echo "$P12_BASE64" | base64 --decode > cert.p12
+          security import cert.p12 -k "$KEYCHAIN" -P "$P12_PASSWORD" -A -T /usr/bin/codesign -T /usr/bin/security
+          security list-keychains -s "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
           security find-identity -p codesigning -v || true
 
       - name: Install Provisioning Profile
@@ -22,32 +152,53 @@
         run: |
           set -euxo pipefail
           PBX="ios/Runner.xcodeproj/project.pbxproj"
-          # Bundle ID
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" "$PBX" || true
-          # Team
           sed -i '' "s/DEVELOPMENT_TEAM = [A-Z0-9]*;/DEVELOPMENT_TEAM = ${TEAM_ID};/g" "$PBX" || true
-          # Manual signing style
           sed -i '' "s/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g" "$PBX" || true
-          # Ensure specifier lines exist / updated
           if ! grep -q "PROVISIONING_PROFILE_SPECIFIER" "$PBX"; then
             /usr/bin/perl -0777 -pe "s/(CODE_SIGN_IDENTITY = .+?;)/\\1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = ${PROFILE_NAME};/gs" -i "$PBX"
           else
             sed -i '' "s/PROVISIONING_PROFILE_SPECIFIER = [^;]*;/PROVISIONING_PROFILE_SPECIFIER = ${PROFILE_NAME};/g" "$PBX" || true
           fi
 
-      - name: Bump Build Number from GitHub run
+      # ---- FIX 1: Robustly bump the version without duplicating the `version:` key ----
+      - name: Bump Build Number from GitHub run (no-duplicate)
         shell: bash
         run: |
-          sed -i '' -E "s/^version: .*/version: 1.0.0+${GITHUB_RUN_NUMBER}/" pubspec.yaml
-          cat pubspec.yaml
-      
+          set -euxo pipefail
+          # Extract base version (left of '+') from the FIRST version line found
+          base_version=$(grep -m1 '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//' | cut -d'+' -f1)
+          # Remove ALL existing version lines, then insert one canonical version line after 'publish_to:' if present
+          awk '!/^version:[[:space:]]*/{print}' pubspec.yaml > pubspec.nover.yaml
+          if grep -n '^publish_to:' pubspec.nover.yaml >/dev/null; then
+            n=$(grep -n '^publish_to:' pubspec.nover.yaml | head -n1 | cut -d: -f1)
+            head -n "$n" pubspec.nover.yaml > pubspec.yaml
+            echo "version: $base_version+${GITHUB_RUN_NUMBER}" >> pubspec.yaml
+            tail -n +"$((n+1))" pubspec.nover.yaml >> pubspec.yaml
+          else
+            { echo "version: $base_version+${GITHUB_RUN_NUMBER}"; cat pubspec.nover.yaml; } > pubspec.yaml
+          fi
+          rm -f pubspec.nover.yaml
+          echo "New pubspec version line:"
+          grep -n '^version:' pubspec.yaml
+
+      # ---- FIX 2: Stop generating Swift module interfaces (Xcode 16 + bridging header crash) ----
+      - name: Disable Swift module interfaces (Runner target)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PBX="ios/Runner.xcodeproj/project.pbxproj"
+          # Force OFF if keys exist
+          sed -i '' "s/SWIFT_EMIT_MODULE_INTERFACE = YES;/SWIFT_EMIT_MODULE_INTERFACE = NO;/g" "$PBX" || true
+          sed -i '' "s/BUILD_LIBRARY_FOR_DISTRIBUTION = YES;/BUILD_LIBRARY_FOR_DISTRIBUTION = NO;/g" "$PBX" || true
+          # Ensure keys are present next to SWIFT_VERSION
+          /usr/bin/perl -0777 -pe 's/(SWIFT_VERSION = [^;]+;)/$1\n\t\t\t\tSWIFT_EMIT_MODULE_INTERFACE = NO;\n\t\t\t\tBUILD_LIBRARY_FOR_DISTRIBUTION = NO;/g' -i "$PBX"
 
       - name: Prepare ExportOptions.plist
         shell: bash
         run: |
           set -euxo pipefail
           EXPORT_OPTS="ios/ExportOptions.plist"
-          # Create a fresh empty plist reliably (PlistBuddy can't create from scratch)
           cat > "$EXPORT_OPTS" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -107,7 +258,7 @@
           kid = os.environ["APPLE_KEY_ID"]
           iss = os.environ["APPLE_ISSUER_ID"]
           with open(f"AuthKey_{kid}.p8","r") as f:
-          key = f.read()
+              key = f.read()
           print(json.dumps({"key_id": kid, "issuer_id": iss, "key": key}))
           PY
 
@@ -130,9 +281,7 @@
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
-            {
-              "text": "✅ Fiinny iOS build uploaded to TestFlight!"
-            }
+            { "text": "✅ Fiinny iOS build uploaded to TestFlight!" }
         env:
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
 
@@ -140,3 +289,7 @@
         if: failure() && env.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.24.0
         with:
+          payload: |
+            { "text": "❌ Fiinny iOS build failed. Check logs." }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
