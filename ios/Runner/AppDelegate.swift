@@ -12,32 +12,25 @@ private func handleUncaughtException(_ exception: NSException) {
 @main
 @objc class AppDelegate: FlutterAppDelegate {
 
-  var window: UIWindow?
-
   override func application(
     _ application: UIApplication,
-    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]?
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
 
-    // Install early so we catch post-launch issues (storyboard no longer involved)
+    // Catch Obj-C exceptions
     NSSetUncaughtExceptionHandler(handleUncaughtException)
 
     // Firebase
-    if FirebaseApp.app() == nil {
-      FirebaseApp.configure()
-    }
+    if FirebaseApp.app() == nil { FirebaseApp.configure() }
     if let app = FirebaseApp.app() {
-      let bid = Bundle.main.bundleIdentifier ?? "?"
-      NSLog("ℹ️ FIR configured. bundle=\(bid) googleAppID=\(app.options.googleAppID)")
+      NSLog("ℹ️ FIR configured. bundle=\(Bundle.main.bundleIdentifier ?? "?") googleAppID=\(app.options.googleAppID)")
     }
 
-    // Create a Flutter root view controller manually
+    // Create Flutter root VC programmatically (no Main.storyboard)
     let flutterVC = FlutterViewController(project: nil, nibName: nil, bundle: nil)
-
-    let win = UIWindow(frame: UIScreen.main.bounds)
-    win.rootViewController = flutterVC
-    win.makeKeyAndVisible()
-    self.window = win
+    self.window = UIWindow(frame: UIScreen.main.bounds)
+    self.window?.rootViewController = flutterVC
+    self.window?.makeKeyAndVisible()
 
     // Notifications
     if #available(iOS 10.0, *) {
@@ -49,11 +42,10 @@ private func handleUncaughtException(_ exception: NSException) {
     // Plugins
     GeneratedPluginRegistrant.register(with: self)
 
-    // Call super for plugin lifecycle wiring
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  // APNs token -> Firebase
+  // APNs token -> FCM
   override func application(_ application: UIApplication,
                             didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
     Messaging.messaging().apnsToken = deviceToken
