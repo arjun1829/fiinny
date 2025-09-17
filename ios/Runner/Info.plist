@@ -1,122 +1,107 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-  <dict>
-    <!-- Identity -->
-    <key>CFBundleDevelopmentRegion</key>
-    <string>$(DEVELOPMENT_LANGUAGE)</string>
-    <key>CFBundleDisplayName</key>
-    <string>Fiinny</string>
-    <key>CFBundleExecutable</key>
-    <string>$(EXECUTABLE_NAME)</string>
-    <key>CFBundleIdentifier</key>
-    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>Fiinny</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>$(FLUTTER_BUILD_NAME)</string>
-    <key>CFBundleSignature</key>
-    <string>????</string>
-    <key>CFBundleVersion</key>
-    <string>$(FLUTTER_BUILD_NUMBER)</string>
+<dict>
+  <!-- Identity -->
+  <key>CFBundleDevelopmentRegion</key><string>$(DEVELOPMENT_LANGUAGE)</string>
+  <key>CFBundleDisplayName</key><string>Fiinny</string>
+  <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>Fiinny</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>$(FLUTTER_BUILD_NAME)</string>
+  <key>CFBundleVersion</key><string>$(FLUTTER_BUILD_NUMBER)</string>
 
-    <!-- Flutter / Launch basics -->
-    <key>LSRequiresIPhoneOS</key>
-    <true/>
-    <key>UILaunchStoryboardName</key>
-    <string>LaunchScreen</string>
+  <!-- Flutter / Launch -->
+  <key>LSRequiresIPhoneOS</key><true/>
+  <key>UILaunchStoryboardName</key><string>LaunchScreen</string>
+  <!-- Use Flutter’s default Main.storyboard (required by the template) -->
+  <key>UIMainStoryboardFile</key><string>Main</string>
 
-    <!-- Orientation -->
-    <key>UISupportedInterfaceOrientations</key>
-    <array>
-      <string>UIInterfaceOrientationPortrait</string>
-      <string>UIInterfaceOrientationLandscapeLeft</string>
-      <string>UIInterfaceOrientationLandscapeRight</string>
-    </array>
-    <key>UISupportedInterfaceOrientations~ipad</key>
-    <array>
-      <string>UIInterfaceOrientationPortrait</string>
-      <string>UIInterfaceOrientationPortraitUpsideDown</string>
-      <string>UIInterfaceOrientationLandscapeLeft</string>
-      <string>UIInterfaceOrientationLandscapeRight</string>
-    </array>
+  <!-- Orientation -->
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
+  <key>UISupportedInterfaceOrientations~ipad</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationPortraitUpsideDown</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
 
-    <!-- Performance / input -->
-    <key>CADisableMinimumFrameDurationOnPhone</key>
-    <true/>
-    <key>UIApplicationSupportsIndirectInputEvents</key>
-    <true/>
+  <!-- Performance / input -->
+  <key>CADisableMinimumFrameDurationOnPhone</key><true/>
+  <key>UIApplicationSupportsIndirectInputEvents</key><true/>
 
-    <!-- Status bar -->
-    <key>UIStatusBarHidden</key>
-    <true/>
-    <key>UIViewControllerBasedStatusBarAppearance</key>
-    <false/>
+  <!-- Status bar -->
+  <key>UIStatusBarHidden</key><true/>
+  <key>UIViewControllerBasedStatusBarAppearance</key><false/>
 
-    <!-- Firebase + Auth -->
-    <key>FirebaseAppDelegateProxyEnabled</key>
-    <true/>
-    <key>CFBundleURLTypes</key>
-    <array>
-      <dict>
-        <key>CFBundleTypeRole</key>
-        <string>Editor</string>
-        <key>CFBundleURLSchemes</key>
-        <array>
-          <!-- From your GoogleService-Info.plist reversed_client_id -->
-          <string>com.googleusercontent.apps.1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00</string>
-        </array>
-      </dict>
-    </array>
+  <!-- Firebase -->
+  <key>FirebaseAppDelegateProxyEnabled</key><true/>
 
-    <!-- App Linking -->
-    <key>LSApplicationQueriesSchemes</key>
-    <array>
-      <string>google</string>
-      <string>comgooglemaps</string>
-      <string>tel</string>
-      <string>whatsapp</string>
-      <string>instagram</string>
-      <string>twitter</string>
-    </array>
-
-    <!-- Privacy Permissions (Required for Flutter plugins) -->
-    <key>NSCameraUsageDescription</key>
-    <string>This app uses the camera to let you capture photos and videos.</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>This app uses the microphone when recording videos.</string>
-    <key>NSPhotoLibraryUsageDescription</key>
-    <string>This app needs access to your photo library to select and save media.</string>
-    <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>This app saves images and videos to your photo library.</string>
-    <key>NSContactsUsageDescription</key>
-    <string>This app reads contacts to help you select and share with people you know.</string>
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>This app uses location data to enhance financial suggestions and insights.</string>
-    <key>NSUserTrackingUsageDescription</key>
-    <string>This helps us offer smarter financial insights, tips, and personalized experience.</string>
-
-    <!-- Optional (used in future if Face ID login added) -->
-    <key>NSFaceIDUsageDescription</key>
-    <string>This app uses Face ID to securely unlock your profile.</string>
-
-    <!-- Optional (future calendar feature) -->
-    <key>NSCalendarsUsageDescription</key>
-    <string>Fiinny needs access to your calendar for tracking goal due dates and reminders.</string>
-
-    <!-- App Store Export Compliance -->
-    <key>ITSAppUsesNonExemptEncryption</key>
-    <false/>
-
-    <!-- Networking / Debug (tighten before release) -->
-    <key>NSAppTransportSecurity</key>
+  <!-- URL Schemes (Google Sign-In etc.). CI step keeps this in sync -->
+  <key>CFBundleURLTypes</key>
+  <array>
     <dict>
-      <key>NSAllowsArbitraryLoads</key>
-      <true/>
+      <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <!-- From GoogleService-Info.plist: REVERSED_CLIENT_ID -->
+        <string>com.googleusercontent.apps.1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00</string>
+      </array>
     </dict>
+  </array>
+
+  <!-- Background (for FCM silent pushes if you use them) -->
+  <key>UIBackgroundModes</key>
+  <array>
+    <string>remote-notification</string>
+  </array>
+
+  <!-- App Linking / canOpenURL -->
+  <key>LSApplicationQueriesSchemes</key>
+  <array>
+    <string>google</string>
+    <string>comgooglemaps</string>
+    <string>tel</string>
+    <string>whatsapp</string>
+    <string>instagram</string>
+    <string>twitter</string>
+  </array>
+
+  <!-- Privacy Permissions -->
+  <key>NSCameraUsageDescription</key>
+  <string>This app uses the camera to let you capture photos and videos.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>This app uses the microphone when recording videos.</string>
+  <key>NSPhotoLibraryUsageDescription</key>
+  <string>This app needs access to your photo library to select and save media.</string>
+  <key>NSPhotoLibraryAddUsageDescription</key>
+  <string>This app saves images and videos to your photo library.</string>
+  <key>NSContactsUsageDescription</key>
+  <string>This app reads contacts to help you select and share with people you know.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>This app uses location data to enhance financial suggestions and insights.</string>
+  <key>NSUserTrackingUsageDescription</key>
+  <string>This helps us offer smarter financial insights, tips, and personalized experience.</string>
+  <key>NSFaceIDUsageDescription</key>
+  <string>This app uses Face ID to securely unlock your profile.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Fiinny needs access to your calendar for tracking goal due dates and reminders.</string>
+
+  <!-- App Store Export Compliance -->
+  <key>ITSAppUsesNonExemptEncryption</key><false/>
+
+  <!-- ATS (tighten before release) -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key><true/>
   </dict>
+</dict>
 </plist>
