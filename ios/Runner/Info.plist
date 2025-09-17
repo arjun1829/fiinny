@@ -17,7 +17,7 @@
   <key>LSRequiresIPhoneOS</key><true/>
   <key>UILaunchStoryboardName</key><string>LaunchScreen</string>
   <!-- Use Flutter’s default Main.storyboard (required by the template) -->
-  <key>UIMainStoryboardFile</key><string>Main</string>
+
 
   <!-- Orientation -->
   <key>UISupportedInterfaceOrientations</key>
