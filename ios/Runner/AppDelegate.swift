@@ -1,3 +1,4 @@
+// ios/Runner/AppDelegate.swift
 import UIKit
 import Flutter
 import FirebaseCore
@@ -5,7 +6,7 @@ import FirebaseMessaging
 import UserNotifications
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, UNUserNotificationCenterDelegate {
+@objc class AppDelegate: FlutterAppDelegate {
 
   override func application(
     _ application: UIApplication,
@@ -42,7 +43,7 @@ import UserNotifications
 
   // Foreground notification presentation
   @available(iOS 10.0, *)
-  func userNotificationCenter(
+  override func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
@@ -52,7 +53,7 @@ import UserNotifications
 
   // Tapping a notification
   @available(iOS 10.0, *)
-  func userNotificationCenter(
+  override func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
@@ -66,11 +67,10 @@ import UserNotifications
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey : Any] = [:]
   ) -> Bool {
-    // Let Flutter plugins handle it
     return super.application(app, open: url, options: options)
   }
 
-  // Universal Links (Dynamic Links, etc.) passthrough
+  // Universal Links passthrough (e.g., Dynamic Links)
   override func application(
     _ application: UIApplication,
     continue userActivity: NSUserActivity,
