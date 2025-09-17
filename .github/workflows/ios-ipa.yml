@@ -290,6 +290,20 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Delete :UIBackgroundModes' "$IP" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes array' "$IP"
           /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string remote-notification' "$IP"
+          
+      - name: Sanity check Firebase plist vs Bundle ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s ios/Runner/GoogleService-Info.plist || { echo "❌ Missing GoogleService-Info.plist"; exit 1; }
+          PLIST_BID=$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/Runner/GoogleService-Info.plist)
+          echo "Plist BUNDLE_ID: $PLIST_BID"
+          echo "Env   BUNDLE_ID: ${BUNDLE_ID}"
+          if [ "$PLIST_BID" != "${BUNDLE_ID}" ]; then
+            echo "❌ GoogleService-Info.plist BUNDLE_ID mismatch"; exit 1;
+          fi
+          /usr/libexec/PlistBuddy -c 'Print :GOOGLE_APP_ID' ios/Runner/GoogleService-Info.plist >/dev/null
+
 
       - name: Verify build settings
         shell: bash

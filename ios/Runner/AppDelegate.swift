@@ -1,9 +1,14 @@
-// ios/Runner/AppDelegate.swift
 import UIKit
 import Flutter
 import FirebaseCore
 import FirebaseMessaging
 import UserNotifications
+
+// Uncaught Objective-C exceptions (prints to console/TestFlight diagnostics)
+private func handleUncaughtException(_ exception: NSException) {
+  NSLog("🔥 Uncaught exception: \(exception.name.rawValue) – \(exception.reason ?? "no reason")")
+  NSLog("Stack:\n\(exception.callStackSymbols.joined(separator: "\n"))")
+}
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -13,26 +18,36 @@ import UserNotifications
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
 
-    // Configure Firebase once
+    // Log any Obj-C exceptions so we see the actual reason next time
+    NSSetUncaughtExceptionHandler(handleUncaughtException)
+
+    // --- Firebase
     if FirebaseApp.app() == nil {
       FirebaseApp.configure()
     }
 
-    // Register Flutter plugins
-    GeneratedPluginRegistrant.register(with: self)
+    // Useful breadcrumbs in console/TestFlight
+    if let app = FirebaseApp.app() {
+      let bid = Bundle.main.bundleIdentifier ?? "?"
+      NSLog("ℹ️ FIR configured. bundle=\(bid) googleAppID=\(app.options.googleAppID)")
+    } else {
+      NSLog("⚠️ FIR NOT configured")
+    }
 
-    // Push notification setup (iOS 10+)
+    // --- Push notifications (safe defaults)
     if #available(iOS 10.0, *) {
-      UNUserNotificationCenter.current().delegate = self
-      let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
-      UNUserNotificationCenter.current().requestAuthorization(options: authOptions) { _, _ in }
+      UNUserNotificationCenter.current().delegate = self   // FlutterAppDelegate already adopts this
+      UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
     }
     application.registerForRemoteNotifications()
+
+    // --- Flutter plugins
+    GeneratedPluginRegistrant.register(with: self)
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  // Pass APNs token to Firebase Messaging
+  // APNs token -> Firebase Messaging
   override func application(
     _ application: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
@@ -61,7 +76,7 @@ import UserNotifications
     completionHandler()
   }
 
-  // URL schemes (e.g., Google Sign-In / OAuth redirects)
+  // URL schemes (Google/OAuth)
   override func application(
     _ app: UIApplication,
     open url: URL,
@@ -70,7 +85,7 @@ import UserNotifications
     return super.application(app, open: url, options: options)
   }
 
-  // Universal Links passthrough (e.g., Dynamic Links)
+  // Universal Links passthrough
   override func application(
     _ application: UIApplication,
     continue userActivity: NSUserActivity,
