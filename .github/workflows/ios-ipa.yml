@@ -119,35 +119,29 @@ jobs:
           cd ..
 
       - name: Create GoogleService-Info.plist (if secret present)
+        if: env.FIREBASE_IOS_PLIST_BASE64 != ''
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p ios/Runner
-          if [[ -n "${FIREBASE_IOS_PLIST_BASE64:-}" ]]; then
-            echo "$FIREBASE_IOS_PLIST_BASE64" | base64 --decode > ios/Runner/GoogleService-Info.plist
-            test -s ios/Runner/GoogleService-Info.plist && echo "✅ GoogleService-Info.plist created"
-          else
-            echo "ℹ️ FIREBASE_IOS_PLIST_BASE64 is empty; skipping plist creation."
-          fi
+          echo "$FIREBASE_IOS_PLIST_BASE64" | base64 --decode > ios/Runner/GoogleService-Info.plist
+          test -s ios/Runner/GoogleService-Info.plist && echo "✅ GoogleService-Info.plist created"
 
-      - name: Add Google URL Scheme to Info.plist (only if plist exists)
+      - name: Add Google URL Scheme to Info.plist
+        if: env.FIREBASE_IOS_PLIST_BASE64 != ''
         shell: bash
         run: |
           set -euxo pipefail
           GSP="ios/Runner/GoogleService-Info.plist"
           IP="ios/Runner/Info.plist"
-          if [[ -s "$GSP" ]]; then
-            RID=$(/usr/libexec/PlistBuddy -c 'Print :REVERSED_CLIENT_ID' "$GSP")
-            /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$IP" 2>/dev/null || true
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes array' "$IP"
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0 dict' "$IP"
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleTypeRole string Editor' "$IP"
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' "$IP"
-            /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $RID" "$IP"
-            echo "✅ Added reversed client ID to Info.plist"
-          else
-            echo "ℹ️ Skipping URL scheme injection (no GoogleService-Info.plist)"
-          fi
+          RID=$(/usr/libexec/PlistBuddy -c 'Print :REVERSED_CLIENT_ID' "$GSP")
+          /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$IP" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes array' "$IP"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0 dict' "$IP"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleTypeRole string Editor' "$IP"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' "$IP"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $RID" "$IP"
+      
 
       - name: Create Keychain & Import Certificate
         shell: bash
@@ -246,6 +240,20 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:${BUNDLE_ID} string ${PROFILE_NAME}" "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :stripSwiftSymbols bool true' "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :compileBitcode bool false' "$EXPORT_OPTS"
+          
+      - name: Lint & sanity-check Info.plist
+        shell: bash
+        run: |
+          set -euxo pipefail
+          plutil -lint ios/Runner/Info.plist
+          echo "---- CFBundleURLTypes ----"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes' ios/Runner/Info.plist || true
+          echo "---- Launch/Main storyboards ----"
+          /usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName' ios/Runner/Info.plist || true
+          /usr/libexec/PlistBuddy -c 'Print :UIMainStoryboardFile' ios/Runner/Info.plist || true
+
+
+
 
       - name: Ensure iOS privacy usage strings
         shell: bash
@@ -292,6 +300,7 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string remote-notification' "$IP"
           
       - name: Sanity check Firebase plist vs Bundle ID
+        if: env.FIREBASE_IOS_PLIST_BASE64 != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -300,7 +309,7 @@ jobs:
           echo "Plist BUNDLE_ID: $PLIST_BID"
           echo "Env   BUNDLE_ID: ${BUNDLE_ID}"
           if [ "$PLIST_BID" != "${BUNDLE_ID}" ]; then
-            echo "❌ GoogleService-Info.plist BUNDLE_ID mismatch"; exit 1;
+          echo "❌ GoogleService-Info.plist BUNDLE_ID mismatch"; exit 1;
           fi
           /usr/libexec/PlistBuddy -c 'Print :GOOGLE_APP_ID' ios/Runner/GoogleService-Info.plist >/dev/null
 

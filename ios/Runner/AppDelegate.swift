@@ -4,39 +4,39 @@ import FirebaseCore
 import FirebaseMessaging
 import UserNotifications
 
-// Uncaught Objective-C exceptions (prints to console/TestFlight diagnostics)
+// Log uncaught Obj-C exceptions so TestFlight shows real reasons
 private func handleUncaughtException(_ exception: NSException) {
   NSLog("🔥 Uncaught exception: \(exception.name.rawValue) – \(exception.reason ?? "no reason")")
   NSLog("Stack:\n\(exception.callStackSymbols.joined(separator: "\n"))")
 }
 
 @main
-@objc class AppDelegate: FlutterAppDelegate {
+@objc class AppDelegate: FlutterAppDelegate, MessagingDelegate {
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
 
-    // Log any Obj-C exceptions so we see the actual reason next time
+    // Capture uncaught Obj-C exceptions early
     NSSetUncaughtExceptionHandler(handleUncaughtException)
 
     // --- Firebase
     if FirebaseApp.app() == nil {
       FirebaseApp.configure()
     }
+    Messaging.messaging().delegate = self
 
-    // Useful breadcrumbs in console/TestFlight
     if let app = FirebaseApp.app() {
       let bid = Bundle.main.bundleIdentifier ?? "?"
-      NSLog("ℹ️ FIR configured. bundle=\(bid) googleAppID=\(app.options.googleAppID)")
+      NSLog("ℹ️ Firebase configured. bundle=\(bid) googleAppID=\(app.options.googleAppID)")
     } else {
-      NSLog("⚠️ FIR NOT configured")
+      NSLog("⚠️ Firebase NOT configured")
     }
 
-    // --- Push notifications (safe defaults)
+    // --- Push notifications
     if #available(iOS 10.0, *) {
-      UNUserNotificationCenter.current().delegate = self   // FlutterAppDelegate already adopts this
+      UNUserNotificationCenter.current().delegate = self // FlutterAppDelegate already adopts the delegate; we just set instance
       UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
     }
     application.registerForRemoteNotifications()
@@ -54,6 +54,21 @@ private func handleUncaughtException(_ exception: NSException) {
   ) {
     Messaging.messaging().apnsToken = deviceToken
     super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
+  }
+
+  // Optional: background remote notification (silent push) passthrough/logging
+  override func application(
+    _ application: UIApplication,
+    didReceiveRemoteNotification userInfo: [AnyHashable : Any],
+    fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+  ) {
+    NSLog("📬 didReceiveRemoteNotification: \(userInfo)")
+    super.application(application, didReceiveRemoteNotification: userInfo, fetchCompletionHandler: completionHandler)
+  }
+
+  // Firebase Messaging delegate (get FCM token)
+  func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+    NSLog("✅ FCM token: \(fcmToken ?? "nil")")
   }
 
   // Foreground notification presentation
