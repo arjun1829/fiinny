@@ -108,26 +108,22 @@ jobs:
           open(p,'w',encoding='utf-8').write(s)
           print('Normalized quotes in', p)
           PY
-      - name: Strip UTF-8 BOMs from Xcode files
+      - name: Strip UTF-8 BOMs from Xcode files (bash)
+        shell: bash
         run: |
-          python3 - <<'PY'
-          import os, sys
-          hits = 0
-          for root, _, files in os.walk("ios"):
-          for f in files:
-          if not f.endswith((".pbxproj",".plist",".xcconfig",".storyboard",".xcscheme",".entitlements",".pch",".h",".m",".mm",".swift",".rb",".sh",".txt",".xml")):
-          continue
-          p = os.path.join(root, f)
-          with open(p, "rb") as fh:
-          b = fh.read()
-          if b.startswith(b"\xef\xbb\xbf"):
-          with open(p, "wb") as fh:
-          fh.write(b[3:])
-          print("Stripped BOM:", p)
-          hits += 1
-          print("Done. Stripped", hits, "file(s).")
-          PY
-    
+          shopt -s nullglob globstar
+          exts=(pbxproj plist xcconfig storyboard xcscheme entitlements pch h m mm swift rb sh txt xml)
+          for ext in "${exts[@]}"; do
+            for f in ios/**/*.${ext}; do
+              # read first 3 bytes and compare to EF BB BF
+              if [ "$(head -c 3 "$f" | xxd -p)" = "efbbbf" ]; then
+                tail -c +4 "$f" > "$f.nobom" && mv "$f.nobom" "$f"
+                echo "Stripped BOM: $f"
+              fi
+            done
+          done
+      
+      
 
       - name: Install CocoaPods (update repos)
         shell: bash
