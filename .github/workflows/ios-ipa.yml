@@ -90,7 +90,7 @@ jobs:
           flutter clean
           /usr/bin/sed -i '' "s/platform :ios, .*/platform :ios, '16.0'/" ios/Podfile || true
           rm -rf ios/Pods ios/Podfile.lock
-          # IMPORTANT: regenerate ios/Flutter/Generated.xcconfig after clean
+          # regenerate ios/Flutter/Generated.xcconfig after clean
           flutter pub get
           test -f ios/Flutter/Generated.xcconfig && echo "✅ Generated.xcconfig present"
 
@@ -100,30 +100,29 @@ jobs:
           set -euxo pipefail
           python3 - <<'PY'
           p='ios/Podfile'
-          try:
-              s=open(p,encoding='utf-8',errors='replace').read()
-          except FileNotFoundError:
-              raise SystemExit(0)
+        try:
+          s=open(p,encoding='utf-8',errors='replace').read()
+        except FileNotFoundError:
+          raise SystemExit(0)
           s=s.replace('“','"').replace('”','"').replace('‘',"\'").replace('’',"\'").replace('—','-')
           open(p,'w',encoding='utf-8').write(s)
           print('Normalized quotes in', p)
           PY
-      - name: Strip UTF-8 BOMs from Xcode files (bash)
+
+      # ---- CRITICAL FIXES FOR COCOAPODS PARSER ----
+      - name: Strip UTF-8 BOMs from Xcode files (POSIX-safe)
         shell: bash
         run: |
-          shopt -s nullglob globstar
-          exts=(pbxproj plist xcconfig storyboard xcscheme entitlements pch h m mm swift rb sh txt xml)
-          for ext in "${exts[@]}"; do
-            for f in ios/**/*.${ext}; do
-              # read first 3 bytes and compare to EF BB BF
-              if [ "$(head -c 3 "$f" | xxd -p)" = "efbbbf" ]; then
-                tail -c +4 "$f" > "$f.nobom" && mv "$f.nobom" "$f"
-                echo "Stripped BOM: $f"
-              fi
-            done
-          done
-      
-      
+          set -euo pipefail
+          find ios \( -name '*.pbxproj' -o -name '*.plist' -o -name '*.xcconfig' -o -name '*.storyboard' -o -name '*.xcscheme' -o -name '*.entitlements' -o -name '*.pch' -o -name '*.h' -o -name '*.m' -o -name '*.mm' -o -name '*.swift' -o -name '*.rb' -o -name '*.sh' -o -name '*.txt' -o -name '*.xml' \) -type f -print0 \
+          | xargs -0 -n1 perl -0777 -i -pe 'BEGIN { binmode(STDIN); binmode(STDOUT) } s/^\xEF\xBB\xBF//'
+
+      - name: Normalize line endings to LF (avoid CRLF on macOS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          find ios \( -name '*.pbxproj' -o -name '*.plist' -o -name '*.xcconfig' -o -name '*.storyboard' -o -name '*.xcscheme' -o -name '*.entitlements' -o -name '*.pch' -o -name '*.h' -o -name '*.m' -o -name '*.mm' -o -name '*.swift' -o -name '*.rb' -o -name '*.sh' -o -name '*.txt' -o -name '*.xml' \) -type f -print0 \
+          | xargs -0 -n1 perl -pi -e 's/\r\n/\n/g'
 
       - name: Install CocoaPods (update repos)
         shell: bash
@@ -157,7 +156,6 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleTypeRole string Editor' "$IP"
           /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' "$IP"
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $RID" "$IP"
-      
 
       - name: Create Keychain & Import Certificate
         shell: bash
@@ -256,7 +254,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:${BUNDLE_ID} string ${PROFILE_NAME}" "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :stripSwiftSymbols bool true' "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c 'Add :compileBitcode bool false' "$EXPORT_OPTS"
-          
+
       - name: Lint & sanity-check Info.plist
         shell: bash
         run: |
@@ -267,9 +265,6 @@ jobs:
           echo "---- Launch/Main storyboards ----"
           /usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName' ios/Runner/Info.plist || true
           /usr/libexec/PlistBuddy -c 'Print :UIMainStoryboardFile' ios/Runner/Info.plist || true
-
-
-
 
       - name: Ensure iOS privacy usage strings
         shell: bash
@@ -282,13 +277,6 @@ jobs:
           add_str NSPhotoLibraryUsageDescription        "Photo library is used to pick images and receipts."
           add_str NSPhotoLibraryAddUsageDescription     "Photo library is used to save generated images."
           add_str NSContactsUsageDescription            "Contacts are used to help you connect with people you know."
-
-      - name: Verify GoogleService-Info.plist presence
-        if: env.FIREBASE_IOS_PLIST_BASE64 != ''
-        shell: bash
-        run: |
-          test -s ios/Runner/GoogleService-Info.plist || { echo "Missing GoogleService-Info.plist"; exit 1; }
-          /usr/libexec/PlistBuddy -c 'Print :GOOGLE_APP_ID' ios/Runner/GoogleService-Info.plist
 
       - name: Ensure export compliance key
         shell: bash
@@ -314,7 +302,7 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Delete :UIBackgroundModes' "$IP" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes array' "$IP"
           /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string remote-notification' "$IP"
-          
+
       - name: Sanity check Firebase plist vs Bundle ID
         if: env.FIREBASE_IOS_PLIST_BASE64 != ''
         shell: bash
@@ -324,11 +312,8 @@ jobs:
           PLIST_BID=$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/Runner/GoogleService-Info.plist)
           echo "Plist BUNDLE_ID: $PLIST_BID"
           echo "Env   BUNDLE_ID: ${BUNDLE_ID}"
-          if [ "$PLIST_BID" != "${BUNDLE_ID}" ]; then
-          echo "❌ GoogleService-Info.plist BUNDLE_ID mismatch"; exit 1;
-          fi
+          [ "$PLIST_BID" = "${BUNDLE_ID}" ] || { echo "❌ GoogleService-Info.plist BUNDLE_ID mismatch"; exit 1; }
           /usr/libexec/PlistBuddy -c 'Print :GOOGLE_APP_ID' ios/Runner/GoogleService-Info.plist >/dev/null
-
 
       - name: Verify build settings
         shell: bash
@@ -385,7 +370,7 @@ jobs:
           kid = os.environ["APPLE_KEY_ID"]
           iss = os.environ["APPLE_ISSUER_ID"]
           with open(f"AuthKey_{kid}.p8","r") as f:
-              key = f.read()
+          key = f.read()
           print(json.dumps({"key_id": kid, "issuer_id": iss, "key": key}))
           PY
 
@@ -408,9 +393,7 @@ jobs:
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
-            {
-              "text": "✅ Fiinny iOS build uploaded to TestFlight!"
-            }
+            { "text": "✅ Fiinny iOS build uploaded to TestFlight!" }
         env:
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
 
@@ -419,8 +402,6 @@ jobs:
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
-            {
-              "text": "❌ Fiinny iOS build failed. Check logs."
-            }
+            { "text": "❌ Fiinny iOS build failed. Check logs." }
         env:
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
