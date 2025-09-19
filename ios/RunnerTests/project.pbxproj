@@ -1,0 +1,14 @@
+$pbx = "ios\Runner.xcodeproj\project.pbxproj"
+$txt = Get-Content $pbx -Raw
+
+# Add the entitlements line after the main app’s bundle id (skip RunnerTests)
+$pattern = 'PRODUCT_BUNDLE_IDENTIFIER = com\.KaranArjunTechnologies\.fiinny;'
+$injection = "PRODUCT_BUNDLE_IDENTIFIER = com.KaranArjunTechnologies.fiinny;`n                                CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;"
+
+if ($txt -match $pattern) {
+  $txt = $txt -replace $pattern, $injection
+  $txt | Set-Content $pbx -Encoding UTF8
+  "✅ Injected CODE_SIGN_ENTITLEMENTS into project.pbxproj"
+} else {
+  "⚠️ Could not find main bundle id line; open project.pbxproj and add CODE_SIGN_ENTITLEMENTS under Runner target buildSettings."
+}
