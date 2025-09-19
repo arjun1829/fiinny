@@ -108,20 +108,6 @@ jobs:
           open(p,'w',encoding='utf-8').write(s)
           print('Normalized quotes in', p)
           PY
-      - name: Strip UTF-8 BOMs from Xcode files (bash)
-        shell: bash
-        run: |
-          shopt -s nullglob globstar
-          exts=(pbxproj plist xcconfig storyboard xcscheme entitlements pch h m mm swift rb sh txt xml)
-          for ext in "${exts[@]}"; do
-            for f in ios/**/*.${ext}; do
-              # read first 3 bytes and compare to EF BB BF
-              if [ "$(head -c 3 "$f" | xxd -p)" = "efbbbf" ]; then
-                tail -c +4 "$f" > "$f.nobom" && mv "$f.nobom" "$f"
-                echo "Stripped BOM: $f"
-              fi
-            done
-          done
 
       - name: Strip UTF-8 BOMs from Xcode files (POSIX-safe)
         shell: bash
