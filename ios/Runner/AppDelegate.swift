@@ -10,7 +10,7 @@ private func handleUncaughtException(_ exception: NSException) {
 }
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
+@objc class AppDelegate: FlutterAppDelegate, MessagingDelegate { // ← removed UNUserNotificationCenterDelegate
 
   // Single shared Flutter engine
   lazy var flutterEngine = FlutterEngine(name: "fiinny_engine")
@@ -34,35 +34,25 @@ private func handleUncaughtException(_ exception: NSException) {
     // Root Flutter VC (no Main.storyboard / SceneDelegate)
     let flutterVC = FlutterViewController(engine: flutterEngine, nibName: nil, bundle: nil)
 
-    // UIWindowScene-aware boot (avoids storyboard/state decode issues)
-    if #available(iOS 13.0, *) {
-      if let ws = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-        window = UIWindow(windowScene: ws)
-      } else {
-        window = UIWindow(frame: UIScreen.main.bounds)
-      }
+    // UIWindowScene-aware boot
+    if #available(iOS 13.0, *), let ws = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+      window = UIWindow(windowScene: ws)
     } else {
       window = UIWindow(frame: UIScreen.main.bounds)
     }
     window?.rootViewController = flutterVC
     window?.makeKeyAndVisible()
 
-    // Notifications (request on main thread to be safe)
-    if #available(iOS 10.0, *) {
-      let center = UNUserNotificationCenter.current()
-      center.delegate = self
-      DispatchQueue.main.async {
-        center.requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
-        application.registerForRemoteNotifications()
-      }
-    } else {
-      application.registerForRemoteNotifications()
-    }
+    // Notifications
+    let center = UNUserNotificationCenter.current()
+    center.delegate = self // OK: inherited via FlutterAppDelegate
+    center.requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
+    application.registerForRemoteNotifications()
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  // MARK: - Disable UI state restoration (prevents decode of removed controllers)
+  // MARK: - Disable UI state restoration
   override func application(_ application: UIApplication, shouldSaveApplicationState coder: NSCoder) -> Bool { false }
   override func application(_ application: UIApplication, shouldRestoreApplicationState coder: NSCoder) -> Bool { false }
 
