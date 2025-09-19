@@ -200,19 +200,7 @@ jobs:
             sed -i '' "s/PROVISIONING_PROFILE_SPECIFIER = [^;]*;/PROVISIONING_PROFILE_SPECIFIER = ${PROFILE_NAME};/g" "$PBX" || true
           fi
 
-      - name: Disable Swift module interfaces (fix bridging-header error)
-        shell: bash
-        run: |
-          set -euxo pipefail
-          PBX="ios/Runner.xcodeproj/project.pbxproj"
-          sed -i '' 's/BUILD_LIBRARY_FOR_DISTRIBUTION = YES;/BUILD_LIBRARY_FOR_DISTRIBUTION = NO;/g' "$PBX" || true
-          sed -i '' 's/DEFINES_MODULE = YES;/DEFINES_MODULE = NO;/g' "$PBX" || true
-          /usr/bin/perl -0777 -pe \
-            "s/(name = Release;\\n\\t*buildSettings = \\{)/\\1\\n\\t\\t\\t\\tBUILD_LIBRARY_FOR_DISTRIBUTION = NO;\\n\\t\\t\\t\\tDEFINES_MODULE = NO;/s" \
-            -i "$PBX" || true
-          /usr/bin/perl -0777 -pe \
-            "s/(name = Profile;\\n\\t*buildSettings = \\{)/\\1\\n\\t\\t\\t\\tBUILD_LIBRARY_FOR_DISTRIBUTION = NO;\\n\\t\\t\\t\\tDEFINES_MODULE = NO;/s" \
-            -i "$PBX" || true
+    
 
       - name: Force OFF Swift module interfaces via xcconfig
         shell: bash
