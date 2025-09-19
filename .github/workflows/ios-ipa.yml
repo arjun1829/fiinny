@@ -108,6 +108,26 @@ jobs:
           open(p,'w',encoding='utf-8').write(s)
           print('Normalized quotes in', p)
           PY
+      - name: Strip UTF-8 BOMs from Xcode files
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          hits = 0
+          for root, _, files in os.walk("ios"):
+          for f in files:
+          if not f.endswith((".pbxproj",".plist",".xcconfig",".storyboard",".xcscheme",".entitlements",".pch",".h",".m",".mm",".swift",".rb",".sh",".txt",".xml")):
+          continue
+          p = os.path.join(root, f)
+          with open(p, "rb") as fh:
+          b = fh.read()
+          if b.startswith(b"\xef\xbb\xbf"):
+          with open(p, "wb") as fh:
+          fh.write(b[3:])
+          print("Stripped BOM:", p)
+          hits += 1
+          print("Done. Stripped", hits, "file(s).")
+          PY
+    
 
       - name: Install CocoaPods (update repos)
         shell: bash

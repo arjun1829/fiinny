@@ -1,0 +1,16 @@
+$entPath = "ios\Runner\Runner.entitlements"
+$entXml = @'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>aps-environment</key>
+  <string>production</string>
+  <key>get-task-allow</key>
+  <false/>
+</dict>
+</plist>
+'@
+New-Item -ItemType Directory -Force -Path (Split-Path $entPath) | Out-Null
+$entXml | Set-Content -NoNewline $entPath -Encoding UTF8
+"✅ Created $entPath"
