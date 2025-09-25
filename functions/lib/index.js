@@ -1,47 +1,125 @@
 // functions/src/index.ts
-import { initializeApp } from "firebase-admin/app";
+// ---- Admin (modular) init ONCE ----
+import { initializeApp, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
-import { onSchedule } from "firebase-functions/v2/scheduler";
-// Init admin SDK (modular)
-initializeApp();
-export const cronDaily = onSchedule({ schedule: "* * * * *", timeZone: "Asia/Kolkata", region: "asia-south1" }, async () => {
-    const db = getFirestore();
-    const users = await db.collection("users").get();
-    const tasks = [];
-    const today = new Date().toISOString().slice(0, 10);
-    for (const u of users.docs) {
-        const uid = u.id;
-        const token = u.get("fcmToken");
-        if (!token)
+import { onDocumentCreated } from "firebase-functions/v2/firestore";
+if (getApps().length === 0)
+    initializeApp();
+const db = getFirestore();
+/** Helpers */
+async function getPrefs(uid) {
+    const doc = await db.doc(`users/${uid}/prefs/notifications`).get();
+    return doc.exists ? doc.data() : { push_enabled: true };
+}
+function inQuietHours(prefs) {
+    const q = prefs?.quiet_hours || {};
+    const start = String(q.start || "22:00");
+    const end = String(q.end || "08:00");
+    const now = new Date(new Date().getTime() + 5.5 * 3600 * 1000); // IST
+    const hh = String(now.getUTCHours()).padStart(2, "0");
+    const mm = String(now.getUTCMinutes()).padStart(2, "0");
+    const cur = `${hh}:${mm}`;
+    if (start <= end)
+        return cur >= start && cur <= end; // same-day window
+    return cur >= start || cur <= end; // crosses midnight
+}
+async function sendOrFeed(opts) {
+    const { uid, token, channelKey, title, body, deeplink, idempotencyKey } = opts;
+    // idempotency
+    const onceRef = db.doc(`users/${uid}/recent_notifs/${idempotencyKey}`);
+    if ((await onceRef.get()).exists)
+        return;
+    await onceRef.set({ at: FieldValue.serverTimestamp() });
+    const prefs = await getPrefs(uid);
+    if (prefs?.push_enabled === false)
+        return;
+    if (prefs?.channels?.[channelKey] === false)
+        return;
+    const quiet = inQuietHours(prefs);
+    // in-app feed always
+    await db
+        .collection("users")
+        .doc(uid)
+        .collection("notif_feed")
+        .add({
+        type: channelKey,
+        title,
+        body,
+        deeplink,
+        createdAt: FieldValue.serverTimestamp(),
+        read: false,
+    })
+        .catch(() => null);
+    // push (skip if quiet or no token)
+    if (!token || quiet)
+        return;
+    await getMessaging()
+        .send({
+        token,
+        notification: { title, body },
+        data: { type: channelKey, deeplink },
+        android: { priority: "high" },
+        apns: { headers: { "apns-priority": "10" } },
+    })
+        .catch(() => null);
+}
+/** 🔔 When someone creates a shared expense that assigns me */
+export const onSharedExpenseCreated = onDocumentCreated({ document: "shared_expenses/{expenseId}", region: "asia-south1" }, async (event) => {
+    const snap = event.data;
+    if (!snap)
+        return;
+    const d = snap.data();
+    const amount = Math.round(Number(d.amount || 0));
+    const payerName = String(d.payerName || "Someone");
+    const assignees = Array.isArray(d.assignees) ? d.assignees : [];
+    const payerUid = String(d.payerUid || "");
+    for (const uid of assignees) {
+        if (!uid || uid === payerUid)
             continue;
-        // read prefs
-        const prefsDoc = await db.doc(`users/${uid}/prefs/notifications`).get();
-        const prefs = prefsDoc.exists ? prefsDoc.data() : { push_enabled: true };
-        if (prefs?.push_enabled === false)
-            continue;
-        if (prefs?.channels?.daily_reminder === false)
-            continue;
-        // idempotency
-        const key = `${uid}:daily_reminder:${today}`;
-        const onceRef = db.doc(`users/${uid}/recent_notifs/${key}`);
-        if ((await onceRef.get()).exists)
-            continue;
-        await onceRef.set({ at: FieldValue.serverTimestamp() });
-        // push
-        tasks.push(getMessaging()
-            .send({
+        const userDoc = await db.doc(`users/${uid}`).get();
+        const token = userDoc.get("fcmToken");
+        await sendOrFeed({
+            uid,
             token,
-            notification: {
-                title: "👀 Did you check today?",
-                body: "Review today’s expenses in 30s.",
-            },
-            data: { type: "daily_reminder", deeplink: "app://tx/today" },
-            android: { priority: "high" },
-            apns: { headers: { "apns-priority": "10" } },
-        })
-            .catch(() => null));
+            channelKey: "realtime_expense",
+            title: "🧾 New shared expense",
+            body: `${payerName} added ₹${amount} to you.`,
+            deeplink: `app://expense/${snap.id}`,
+            idempotencyKey: `${uid}:expense:${snap.id}`,
+        });
     }
-    await Promise.allSettled(tasks);
 });
-//# sourceMappingURL=index.js.map
+/** 💬 New chat message → ping everyone except sender */
+export const onChatMessageCreated = onDocumentCreated({ document: "chats/{threadId}/messages/{messageId}", region: "asia-south1" }, async (event) => {
+    const { params, data } = event;
+    const snap = data;
+    if (!snap)
+        return;
+    const d = snap.data();
+    const threadId = String(params?.threadId || "");
+    const senderUid = String(d.senderUid || "");
+    const senderName = String(d.senderName || "Someone");
+    const text = String(d.text || "");
+    const threadDoc = await db.doc(`chats/${threadId}`).get();
+    const participants = Array.isArray(threadDoc.get("participants"))
+        ? threadDoc.get("participants")
+        : [];
+    for (const uid of participants) {
+        if (!uid || uid === senderUid)
+            continue;
+        const userDoc = await db.doc(`users/${uid}`).get();
+        const token = userDoc.get("fcmToken");
+        await sendOrFeed({
+            uid,
+            token,
+            channelKey: "realtime_chat",
+            title: `💬 ${senderName}`,
+            body: text.length > 60 ? `${text.substring(0, 57)}…` : text,
+            deeplink: `app://chat/${threadId}`,
+            idempotencyKey: `${uid}:chat:${threadId}:${snap.id}`,
+        });
+    }
+});
+// 🆕 Oracle LLM job consumer (ESM needs .js)
+export { onIngestJobCreate } from "./oracleCategorizer.js";
