@@ -1,21 +1,28 @@
 {
   "name": "functions",
   "private": true,
-  "engines": { "node": "20" },
   "type": "module",
   "main": "lib/index.js",
+  "files": [
+    "lib"
+  ],
+  "engines": {
+    "node": "20"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "serve": "npm run build && cd .. && firebase emulators:start --only \"functions\"",
-    "deploy": "npm run build && cd .. && firebase deploy --only \"functions\"",
-    "lint": "echo \"(optional) add eslint if you want linting\""
+    "serve": "npm run build && cd .. && firebase emulators:start --only functions",
+    "deploy": "npm run build && cd .. && firebase deploy --only functions",
+    "lint": "echo \"(optional) add eslint if you want linting\"",
+    "clean": "rm -rf lib"
   },
   "dependencies": {
     "firebase-admin": "^12.5.0",
-    "firebase-functions": "^5.0.1"
+    "firebase-functions": "^6.4.0"
   },
   "devDependencies": {
-    "typescript": "^5.4.0"
+    "@types/node": "^24.5.2",
+    "typescript": "^5.9.2"
   }
 }

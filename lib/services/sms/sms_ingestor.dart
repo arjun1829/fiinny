@@ -1,6 +1,5 @@
 // lib/services/sms/sms_ingestor.dart
 import 'dart:collection';
-import 'dart:math' as math;
 import 'package:telephony/telephony.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -11,58 +10,37 @@ import '../../models/income_item.dart';
 
 import 'sms_permission_helper.dart';
 import '../ingest_index_service.dart';
-import '../ingest_filters.dart'; // expects: isLikelyPromo, guessBankFromSms
+import '../ingest_filters.dart'; // uses: guessBankFromSms (be permissive; we won't call isLikelyPromo)
 import '../tx_key.dart';
-
-// 🧠 Brain suggestions
-import '../../brain/brain_enricher_service.dart';
-
-// ✅ Per-user ingest state (cutoff + progress – review flag is ignored)
 import '../ingest_state_service.dart';
+import '../ingest_job_queue.dart';
 
-// 🔍 Parser + suggestions (no hard category writes)
-import '../tx_analyzer.dart';
-
-// 🧼 Clean user-facing notes
-import '../note_sanitizer.dart';
-
-/// SMS Ingestor (trust-first parser + suggester)
-/// - Strict promo/ad & usage-alert filters
-/// - TxAnalyzer-powered extraction (amount/date/merchant/channel)
-/// - Category only suggested (stored as suggestedCategory + confidence)
-/// - Clean, compact user-visible notes; full raw kept under sourceRecord
-/// - Cross-source dedupe via IngestIndexService.claim(txKey)
-/// - Deterministic Firestore doc IDs (prevents dup docs)
-/// - Recent-event guard to avoid OEM double callbacks
 class SmsIngestor {
   SmsIngestor._();
   static final SmsIngestor instance = SmsIngestor._();
 
   // ── Behavior toggles ────────────────────────────────────────────────────────
-  static const bool USE_SERVICE_WRITES = false;       // use direct writes by default
-  static const bool AUTO_POST_TXNS = true;            // 🚀 post straight to expenses/incomes when valid
-  static const bool CONSERVATIVE_SUB_AUTOPAY = false; // allow first-time autopays too
-  static const bool SUGGESTION_MODE = true;           // do NOT write category automatically
+  static const bool USE_SERVICE_WRITES = false;  // write via Firestore by default
+  static const bool AUTO_POST_TXNS = true;       // create expenses/incomes immediately
+
+  // Testing: pull a chunk of inbox regardless of cutoff
+  static const bool TEST_MODE = true;
+  static const int TEST_BACKFILL_DAYS = 100;
+  static const int TEST_MAX_MSGBATCH = 4000;
+
+  // debug logs
+  static const bool _DEBUG_INGEST = true;
+  void _log(String s) { if (_DEBUG_INGEST) print('[SmsIngestor] $s'); }
 
   final Telephony _telephony = Telephony.instance;
   final ExpenseService _expense = ExpenseService();
   final IncomeService _income = IncomeService();
   final IngestIndexService _index = IngestIndexService();
 
-  // Recent event guard (some OEMs fire multiple callbacks)
+  // Recent event guard (OEMs sometimes double-fire callbacks)
   static const int _recentCap = 400;
   final ListQueue<String> _recent = ListQueue<String>(_recentCap);
 
-  // TxAnalyzer (ML Kit optional; falls back to regex internally)
-  final TxAnalyzer _analyzer = TxAnalyzer(
-    config: TxAnalyzerConfig(
-      enableMlKit: true,
-      autoApproveThreshold: 0.90, // we don't auto-commit category anyway
-      minHighPrecisionConf: 0.88,
-    ),
-  );
-
-  /// Optional init for older callers
   void init({
     ExpenseService? expenseService,
     IncomeService? incomeService,
@@ -79,18 +57,73 @@ class SmsIngestor {
     return false;
   }
 
-  // ── Public API ──────────────────────────────────────────────────────────────
+  // ─────────────────────── Public API ─────────────────────────────────────────
+
+  /// Permissive 100-day backfill for testing.
+  Future<void> backfillLastNDaysForTesting({
+    required String userPhone,
+    int days = TEST_BACKFILL_DAYS,
+  }) async {
+    final granted = await SmsPermissionHelper.hasPermissions();
+    if (!granted) {
+      _log('no SMS permission; skipping backfill');
+      return;
+    }
+
+    final now = DateTime.now();
+    final since = now.subtract(Duration(days: days));
+
+    final msgs = await _telephony.getInboxSms(
+      columns: [SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE],
+      sortOrder: [OrderBy(SmsColumn.DATE, sort: Sort.DESC)],
+    );
+
+    int processed = 0;
+    DateTime? newest;
+    for (final m in msgs) {
+      if (processed >= TEST_MAX_MSGBATCH) break;
+
+      final ts = DateTime.fromMillisecondsSinceEpoch(
+        m.date ?? now.millisecondsSinceEpoch,
+      );
+      if (ts.isBefore(since)) break;
+
+      final body = m.body ?? '';
+      if (_looksLikeOtpOnly(body)) continue; // drop pure OTPs, allow everything else
+
+      try {
+        await _handleOne(
+          userPhone: userPhone,
+          body: body,
+          ts: ts,
+          address: m.address,
+          ingestState: null, // ignore cutoff in TEST_MODE inside handler
+        );
+        processed++;
+        if (newest == null || ts.isAfter(newest)) newest = ts;
+      } catch (e) {
+        _log('backfill error: $e');
+      }
+    }
+
+    if (newest != null) {
+      await IngestStateService.instance.setProgress(userPhone, lastSmsTs: newest);
+    }
+    _log('backfill done: processed=$processed newest=$newest');
+  }
 
   Future<void> initialBackfill({
     required String userPhone,
     int newerThanDays = 1000,
   }) async {
+    if (TEST_MODE) {
+      return backfillLastNDaysForTesting(userPhone: userPhone, days: TEST_BACKFILL_DAYS);
+    }
+
     final granted = await SmsPermissionHelper.hasPermissions();
     if (!granted) return;
 
-    // Ensure ingest state exists (for cutoff/progress)
     final state = await IngestStateService.instance.ensureCutoff(userPhone);
-
     final now = DateTime.now();
     final deviceCutoff = now.subtract(Duration(days: newerThanDays));
 
@@ -111,7 +144,7 @@ class SmsIngestor {
         body: m.body ?? '',
         ts: ts,
         address: m.address,
-        ingestState: state, // reuse same state during this run
+        ingestState: state,
       );
 
       if (lastSeen == null || ts.isAfter(lastSeen)) lastSeen = ts;
@@ -133,7 +166,6 @@ class SmsIngestor {
           final ts = DateTime.fromMillisecondsSinceEpoch(
             m.date ?? DateTime.now().millisecondsSinceEpoch,
           );
-
           final localKey = '${ts.millisecondsSinceEpoch}|${(m.address ?? '')}|${body.hashCode}';
           if (_seenRecently(localKey)) return;
 
@@ -151,21 +183,20 @@ class SmsIngestor {
         listenInBackground: true,
       );
     } catch (_) {
-      // Some OEMs restrict background listeners; swallow safely.
+      // some OEMs restrict background listeners
     }
   }
 
   Future<void> syncDelta({
     required String userPhone,
-    int? overlapHours,   // new preferred
-    int? lookbackHours,  // legacy alias from old callers
+    int? overlapHours,
+    int? lookbackHours,
   }) async {
     final granted = await SmsPermissionHelper.hasPermissions();
     if (!granted) return;
 
     final overlap = overlapHours ?? lookbackHours ?? 24;
 
-    // Watermark-aware window: (lastSmsTs - overlap) → now
     final st = await IngestStateService.instance.get(userPhone);
     final now = DateTime.now();
 
@@ -177,7 +208,7 @@ class SmsIngestor {
       } else if (last is DateTime) {
         since = last.subtract(Duration(hours: overlap));
       } else {
-        since = now.subtract(const Duration(days: 1000)); // fallback like initial
+        since = now.subtract(const Duration(days: 1000));
       }
     } catch (_) {
       since = now.subtract(const Duration(days: 1000));
@@ -214,294 +245,176 @@ class SmsIngestor {
     }
   }
 
-  // ── Core handler ────────────────────────────────────────────────────────────
+  // ─────────────────────── Core handler ───────────────────────────────────────
 
   Future<void> _handleOne({
     required String userPhone,
     required String body,
     required DateTime ts,
     String? address,
-    dynamic ingestState, // avoid compile-coupling on fields like `cutoff`
+    dynamic ingestState,
   }) async {
-    // 0) Drop promos/ads, usage alerts, OTP-only, and pure balance/info pings
-    if (_isPromotionOrAd(body) || _isUsageOrQuotaAlert(body) || isLikelyPromo(body) || _looksLikeOtpOnly(body) || _isPureBalanceInfo(body)) {
+    // Be permissive so we don't skip real transactions.
+    // Only drop pure-OTP messages.
+    if (_looksLikeOtpOnly(body)) return;
+
+    _log('incoming ${ts.toIso8601String()} ${address ?? "?"}: ${_oneLine(body)}');
+
+    // 1) Minimal parsing: amount + direction (debit/credit)
+    final fx = _extractFx(body);
+    final amountInr = fx == null ? _extractAmountInr(body) : null;
+    final amount = amountInr ?? fx?['amount'] as double?;
+    if (amount == null || amount <= 0) {
+      _log('no valid amount; skip');
+      return;
+    }
+    final direction = _inferDirection(body); // 'debit' | 'credit' | null
+    if (direction == null) {
+      _log('no clear direction; skip');
       return;
     }
 
-    // 1) Parse with TxAnalyzer (amount, date, merchant, channel, ref) + suggestion
-    final analysis = await _analyzer.analyze(rawText: body);
-    final parsed = analysis.parse;
-
-    final amountInr = parsed.amount;
-    final isUPI = parsed.isUPI;
-    final isP2M = parsed.isP2M;
-    final upiRef = parsed.reference;
-    final canonicalMerchant = parsed.merchant;
-
-    // Suggested category (do NOT commit to 'category'; suggestion only)
-    var suggestedCategory = analysis.category.category;
-    var categoryConfidence = analysis.category.confidence ?? 0.0;
-    var categorySource = _topSignal(analysis.category.reasons);
-
-    // 2) Direction cues (prefer analyzer debit; override if strong credit cue)
-    String? type = parsed.isDebit ? 'debit' : null;
-
-    final lower = body.toLowerCase();
-    final debitRe = RegExp(
-      r'\b('
-      r'debit(?:ed)?|spent|purchase|paid|payment|pos|upi(?:\s*payment)?|imps|neft|rtgs|withdrawn|withdrawal|atm|charge[ds]?|'
-      r'recharge(?:d)?|bill\s*paid|autopay|auto[-\s]?debit|standing\s*instruction|si\b|e[-\s]?mandate|enach|nach|ecs|ach'
-      r')\b',
-      caseSensitive: false,
-    );
-    final creditRe = RegExp(
-      r'\b(credit(?:ed)?|received|rcvd|deposit(?:ed)?|salary|refund|reversal|cashback|interest)\b',
-      caseSensitive: false,
-    );
-    final isDR = RegExp(r'\bDR\b', caseSensitive: false).hasMatch(body);
-    final isCR = RegExp(r'\bCR\b', caseSensitive: false).hasMatch(body);
-    final looksDebit = debitRe.hasMatch(lower) || isDR;
-    final looksCredit = creditRe.hasMatch(lower) || isCR;
-
-    // If strong credit cues and analyzer didn't force debit, mark as credit
-    if (!parsed.isDebit && looksCredit && !looksDebit) {
-      type = 'credit';
-    } else if (looksDebit && looksCredit) {
-      // pick the earliest cue
-      final dIdx = debitRe.firstMatch(lower)?.start ?? -1;
-      final cIdx = creditRe.firstMatch(lower)?.start ?? -1;
-      if (dIdx >= 0 && cIdx >= 0) type = dIdx < cIdx ? 'debit' : 'credit';
-    }
-
-    Map<String, dynamic>? _extractAutopayInfo(String body) {
-      final b = body.toLowerCase();
-      String? platform;
-      if (RegExp(r'\bupi\s*auto ?pay\b', caseSensitive: false).hasMatch(b)) {
-        platform = 'UPI AutoPay';
-      } else if (RegExp(r'\b(e[-\s]?mandate|enach|nach)\b', caseSensitive: false).hasMatch(b)) {
-        platform = 'NACH/eMandate';
-      } else if (RegExp(r'\b(standing\s*instruction|si\b)\b', caseSensitive: false).hasMatch(b)) {
-        platform = 'Standing Instruction';
-      } else if (RegExp(r'\b(ecs|ach)\b', caseSensitive: false).hasMatch(b)) {
-        platform = 'ECS/ACH';
-      }
-
-      final umrn = RegExp(r'\bUMRN[:\s\-]*([A-Z0-9\-]+)', caseSensitive: false).firstMatch(body)?.group(1);
-      final mandate = RegExp(r'\bmandate(?:\s*id)?[:\s\-]*([A-Z0-9\-]+)', caseSensitive: false).firstMatch(body)?.group(1);
-      if (platform == null && umrn == null && mandate == null) return null;
-      return {
-        'platform': platform,
-        if (umrn != null) 'umrn': umrn,
-        if (mandate != null) 'mandateId': mandate,
-      };
-    }
-
-    // Optional FX fallback if no INR amount detected
-    Map<String, dynamic>? fx;
-    if (amountInr == null) {
-      fx = _extractFx(body);
-    }
-    if (amountInr == null && fx == null) return;              // need an amount
-    if (amountInr != null && amountInr <= 0.0) return;        // reject 0/negative
-    if (type == null && amountInr == null) return;            // nothing strong
-
-    // 3) Bank + last4 + merchantKey
+    // 2) Bank + last4 + merchantKey (best-effort)
     final bank = guessBankFromSms(address: address, body: body);
-    String? last4 = RegExp(r'(?:XX|x{2,}|ending|acct|a/c)[^\d]*(\d{4})', caseSensitive: false)
+    final last4 = RegExp(r'(?:XX|x{2,}|ending|acct|a/c)[^\d]*(\d{4})', caseSensitive: false)
         .firstMatch(body)
         ?.group(1);
-
-    String? merchant = canonicalMerchant ?? _guessMerchant(body);
-
-    // 🔎 Quick-commerce detection → suggest 'Online Groceries'
-    final _qc = _quickCommerceSuggest(body, seedMerchant: merchant);
-    if (_qc != null) {
-      if ((suggestedCategory == null) || (categoryConfidence < 0.85)) {
-        suggestedCategory = _qc['category'] as String;
-        categorySource = 'quickCommerceRule';
-      }
-      categoryConfidence = math.max(categoryConfidence, (_qc['confidence'] as double));
-      merchant ??= _qc['merchant'] as String?;
-    }
-
+    final merchant = _guessMerchant(body);
     final merchantKey = (merchant ?? last4 ?? bank ?? 'UNKNOWN').toUpperCase();
 
-    // 4) Stable cross-source key & dedupe
+    // 3) Stable key + dedupe
     final key = buildTxKey(
       bank: bank,
-      amount: amountInr ?? fx?['amount'],
+      amount: amount,
       time: ts,
-      type: (type ?? 'unknown'),
+      type: direction,
       last4: last4,
     );
-
     final claimed = await _index.claim(userPhone, key, source: 'sms').catchError((_) => false);
-    if (claimed != true) return;
-
-    // 5) Ingest state/cutoff
-    final st = ingestState ?? await IngestStateService.instance.get(userPhone);
-    final cutoff = _extractCutoff(st); // DateTime? or null if undefined
-    // ✅ Fix: we only ingest messages AFTER the cutoff
-    final isAfterCutoff = (cutoff == null) ? true : ts.isAfter(cutoff);
-
-    // 6) Autopay/subscription signals
-    final autopayInfo = _extractAutopayInfo(body);
-    final isSubOrAutopay = (autopayInfo != null) || _looksLikeSubscription(body);
-
-    // 7) Brain enrichment (keep raw body for semantic signals)
-    Map<String, dynamic>? brain;
-    try {
-      if (type == 'debit' || type == null) {
-        final probe = ExpenseItem(
-          id: 'probe',
-          type: 'SMS Debit',
-          amount: amountInr ?? (fx?['amount'] ?? 0.0),
-          note: body, // raw for brain models
-          date: ts,
-          payerId: userPhone,
-          cardLast4: last4,
-        );
-        brain = BrainEnricherService().buildExpenseBrainUpdate(probe);
-      } else {
-        final probe = IncomeItem(
-          id: 'probe',
-          type: 'SMS Credit',
-          amount: amountInr ?? 0.0,
-          note: body, // raw for brain models
-          date: ts,
-          source: 'SMS',
-        );
-        brain = BrainEnricherService().buildIncomeBrainUpdate(probe);
-      }
-    } catch (_) {}
-    if (isSubOrAutopay) {
-      brain ??= {};
-      brain!.addAll({
-        'isRecurringCandidate': true,
-        'merchantKey': merchantKey,
-        if (merchant != null) 'merchant': merchant,
-        if (autopayInfo != null) 'autopay': autopayInfo,
-      });
-    }
-    // Tag quick-commerce in brain (helps insights, no schema changes)
-    if (_qc != null) {
-      brain ??= {};
-      brain!.addAll({
-        'isQuickCommerce': true,
-        'categoryHint': 'Online Groceries',
-      });
-    }
-
-    // 8) Build clean note for UI
-    final clean = NoteSanitizer.build(raw: body, parse: parsed);
-
-    // 9) Auto-post gate (amount + direction + cutoff)
-    bool seenRecurringBefore = false;
-    if (CONSERVATIVE_SUB_AUTOPAY && isSubOrAutopay && amountInr != null) {
-      seenRecurringBefore = await _seenRecurringBefore(userPhone, merchantKey, amountInr, ts);
-    }
-
-    final canAutopost = AUTO_POST_TXNS
-        && isAfterCutoff
-        && (type != null)
-        && ((amountInr != null) || (fx != null))
-        && (!CONSERVATIVE_SUB_AUTOPAY || !isSubOrAutopay || seenRecurringBefore);
-
-    // 10) Source metadata (include analyzer + sanitizer info)
-    final sourceMeta = {
-      'type': 'sms',
-      'raw': body,                           // full raw kept for audit
-      'rawPreview': clean.rawPreview,        // short, cleaned preview
-      'at': Timestamp.fromDate(ts),
-      if (address != null) 'address': address,
-      if (upiRef != null) 'upiRef': upiRef,
-      if (autopayInfo != null) 'autopay': autopayInfo,
-      if (merchant != null) 'merchant': merchant,
-      'analyzer': {
-        'isUPI': isUPI,
-        'isP2M': isP2M,
-        'reasons': analysis.category.reasons,
-        'suggestedCategory': suggestedCategory,   // may be QC override
-        'categoryConfidence': categoryConfidence, // merged confidence
-        'categorySource': categorySource,
-      },
-      'sanitizer': {
-        'removedLines': clean.removedLines,
-        'tags': clean.tags,
-      },
-      if (_qc != null) 'merchantTags': (_qc['tags'] as List<String>),
-    };
-
-    if (canAutopost) {
-      final docId = _docIdFromKey(key); // deterministic -> no dup docs
-      if (type == 'debit') {
-        final expRef = FirebaseFirestore.instance
-            .collection('users').doc(userPhone)
-            .collection('expenses').doc(docId);
-        final e = ExpenseItem(
-          id: expRef.id,
-          type: 'SMS Debit',
-          amount: (amountInr ?? fx?['amount'])!,
-          note: clean.note, // 👈 clean, compact note
-          date: ts,
-          payerId: userPhone,
-          cardLast4: last4,
-        );
-        if (USE_SERVICE_WRITES) {
-          await _expense.addExpense(userPhone, e);
-        } else {
-          await expRef.set(e.toJson(), SetOptions(merge: true));
-        }
-        await expRef.set({
-          'sourceRecord': sourceMeta,
-          'merchantKey': merchantKey,
-          if (merchant != null) 'merchant': merchant,
-          // 👇 suggestion-only fields; category remains null until user confirms
-          'suggestedCategory': suggestedCategory,
-          'categoryConfidence': categoryConfidence,
-          'categorySource': categorySource,
-          'category': null,
-          if (brain != null) ...brain,
-        }, SetOptions(merge: true));
-      } else {
-        final incRef = FirebaseFirestore.instance
-            .collection('users').doc(userPhone)
-            .collection('incomes').doc(docId);
-        final i = IncomeItem(
-          id: incRef.id,
-          type: 'SMS Credit',
-          amount: (amountInr ?? fx?['amount'])!,
-          note: clean.note, // 👈 clean, compact note
-          date: ts,
-          source: 'SMS',
-        );
-        if (USE_SERVICE_WRITES) {
-          await _income.addIncome(userPhone, i);
-        } else {
-          await incRef.set(i.toJson(), SetOptions(merge: true));
-        }
-        await incRef.set({
-          'sourceRecord': sourceMeta,
-          'merchantKey': merchantKey,
-          if (merchant != null) 'merchant': merchant,
-          // 👇 suggestion-only fields; category remains null until user confirms
-          'suggestedCategory': suggestedCategory,
-          'categoryConfidence': categoryConfidence,
-          'categorySource': categorySource,
-          'category': null,
-          if (brain != null) ...brain,
-        }, SetOptions(merge: true));
-      }
+    if (claimed != true) {
+      _log('duplicate (key=$key) — skip');
       return;
     }
 
-    // If we can’t safely auto-post (no valid amount or unclear direction), just drop it.
-    return;
+    // 4) Cutoff (ignored in TEST_MODE)
+    final st = ingestState ?? await IngestStateService.instance.get(userPhone);
+    final cutoff = _extractCutoff(st);
+    final isAfterCutoff = TEST_MODE ? true : (cutoff == null ? true : ts.isAfter(cutoff));
+    if (!isAfterCutoff) {
+      _log('before cutoff — skip');
+      return;
+    }
+
+    // 5) Clean user-facing note + source record
+    final note = _cleanNoteSimple(body);
+    final sourceMeta = {
+      'type': 'sms',
+      'raw': body,
+      'rawPreview': _preview(body),
+      'at': Timestamp.fromDate(ts),
+      if (address != null) 'address': address,
+      if (merchant != null) 'merchant': merchant,
+      'txKey': key,
+      'when': FieldValue.serverTimestamp(),
+    };
+
+    // 6) Create expense/income and enqueue Oracle job (with write-back routing)
+    final docId = _docIdFromKey(key);
+    final currency = (fx?['currency'] as String?) ?? 'INR';
+
+    if (direction == 'debit') {
+      final expRef = FirebaseFirestore.instance
+          .collection('users').doc(userPhone)
+          .collection('expenses').doc(docId);
+
+      final e = ExpenseItem(
+        id: expRef.id,
+        type: 'SMS Debit',
+        amount: amount,
+        note: note,
+        date: ts,
+        payerId: userPhone,
+        cardLast4: last4,
+      );
+
+      if (USE_SERVICE_WRITES) {
+        await _expense.addExpense(userPhone, e);
+      } else {
+        await expRef.set(e.toJson(), SetOptions(merge: true));
+      }
+
+      await expRef.set({
+        'sourceRecord': sourceMeta,
+        'merchantKey': merchantKey,
+        if (merchant != null) 'merchant': merchant,
+        'txKey': key, // 👈 write at the root so the updater can find it
+      }, SetOptions(merge: true));
+
+      try {
+        await IngestJobQueue.enqueue(
+          userId: userPhone,
+          txKey: key,
+          rawText: body,
+          amount: amount,
+          currency: currency,
+          timestamp: ts,
+          source: 'sms',
+          direction: 'debit',
+          docId: docId,
+          docCollection: 'expenses',
+          docPath: 'users/$userPhone/expenses/$docId',
+          enabled: true,
+        );
+      } catch (_) {}
+    } else {
+      final incRef = FirebaseFirestore.instance
+          .collection('users').doc(userPhone)
+          .collection('incomes').doc(docId);
+
+      final i = IncomeItem(
+        id: incRef.id,
+        type: 'SMS Credit',
+        amount: amount,
+        note: note,
+        date: ts,
+        source: 'SMS',
+      );
+
+      if (USE_SERVICE_WRITES) {
+        await _income.addIncome(userPhone, i);
+      } else {
+        await incRef.set(i.toJson(), SetOptions(merge: true));
+      }
+
+      await incRef.set({
+        'sourceRecord': sourceMeta,
+        'merchantKey': merchantKey,
+        if (merchant != null) 'merchant': merchant,
+      }, SetOptions(merge: true));
+
+      try {
+        await IngestJobQueue.enqueue(
+          userId: userPhone,
+          txKey: key,
+          rawText: body,
+          amount: amount,
+          currency: currency,
+          timestamp: ts,
+          source: 'sms',
+          direction: 'credit',
+          docId: docId,
+          docCollection: 'incomes',
+          docPath: 'users/$userPhone/incomes/$docId',
+          enabled: true,
+        );
+      } catch (_) {}
+    }
+
+    _log('WRITE type=$direction amt=$amount key=$key');
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ─────────────────────── Helpers ────────────────────────────────────────────
 
-  // Safely extract a cutoff from a dynamic ingest state (DateTime or Timestamp or absent)
   DateTime? _extractCutoff(dynamic st) {
     try {
       final c = (st as dynamic)?.cutoff;
@@ -511,92 +424,55 @@ class SmsIngestor {
     return null;
   }
 
-  // Deterministic doc id derived from txKey (simple djb2)
   String _docIdFromKey(String key) {
     int hash = 5381;
     for (final code in key.codeUnits) {
-      hash = ((hash << 5) + hash) + code; // hash * 33 + code
+      hash = ((hash << 5) + hash) + code;
     }
     final hex = (hash & 0x7fffffff).toRadixString(16);
     return 'ing_${hex}';
   }
 
-  // Pick the top signal name from reasons map
-  String _topSignal(Map<String, double> r) {
-    if (r.isEmpty) return 'none';
-    final list = r.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-    return list.first.key;
+  // Collapse to one line for logs
+  String _oneLine(String s) => s.replaceAll('\n', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+
+  // Very simple note cleaner (no ML/regex analyzer dependency)
+  String _cleanNoteSimple(String raw) {
+    var t = raw.trim();
+    // remove obvious OTP lines
+    t = t.replaceAll(RegExp(r'(^|\s)(OTP|One[-\s]?Time\s*Password)\b[^\n]*', caseSensitive: false), '');
+    // collapse whitespace
+    t = t.replaceAll(RegExp(r'\s+'), ' ').trim();
+    // keep it short
+    if (t.length > 220) t = '${t.substring(0, 220)}…';
+    return t;
   }
 
-  // A real transaction message tends to include “confirmation cues”.
-  bool _hasConfirmationCue(String lower) {
-    return RegExp(
-      r'(successful|successfully|has\s+been|was\s+|done|processed|posted|debited|credited|spent|charged|paid)',
-      caseSensitive: false,
-    ).hasMatch(lower);
+  String _preview(String raw) {
+    var p = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (p.length > 80) p = '${p.substring(0, 80)}…';
+    return p;
   }
 
-  // Treat as marketing if it looks like an offer/cta or topup/recharge upsell and there is NO confirmation cue.
-  bool _isPromotionOrAd(String body) {
-    final lower = body.toLowerCase();
-
-    // Transaction verbs we care about (same family used in _extractAmountInr)
-    final txnVerb = RegExp(
-      r'\b(debit(?:ed)?|credit(?:ed)?|received|rcvd|deposit(?:ed)?|spent|purchase|paid|payment|withdrawn|transfer(?:red)?|txn|transaction|upi|recharge(?:d)?)\b',
-      caseSensitive: false,
-    );
-    final hasTxnVerb = txnVerb.hasMatch(lower);
-    final hasConfirm = _hasConfirmationCue(lower);
-
-    // Common promo cues
-    final promoWords = RegExp(
-      r'(shop\s*now|use\s*code|coupon|offer|flat\s*\d+|%\s*off|off\b|sale|hurry|limited\s*time|t&c|refer|referral|upgrade\s*to|down\s*payment|emi\s+at)',
-      caseSensitive: false,
-    );
-
-    // Upsell topup/recharge/pack/add-on/booster + Rs amount
-    final topupUpsell = RegExp(
-      r'\b(get|buy)\b.*\b(top[- ]?up|topup|recharge|pack|add[- ]?on|addon|booster)\b.*(?:rs\.?|inr|₹)\s*\d',
-      caseSensitive: false,
-    );
-
-    // URL heavy (shorteners/marketing)
-    final hasMarketingLink = RegExp(
-      r'https?://[^\s]+|(bit\.ly|tinyurl\.com|t\.co|lnkd\.in|linktr\.ee|r\.bflcomm\.in|i\.airtel\.in|u\d\.[a-z0-9\-]+\.[a-z]{2,})',
-      caseSensitive: false,
-    ).hasMatch(lower);
-
-    // If this is a topup/recharge **upsell** and there is no confirmation cue → promo.
-    if (topupUpsell.hasMatch(lower) && !hasConfirm) return true;
-
-    // General promo: No txn verb AND promo cues/link/amount-off language.
-    if (!hasTxnVerb && (promoWords.hasMatch(lower) || hasMarketingLink)) {
-      return true;
+  // INR amount like: ₹1,234.50 / INR 1234 / Rs 1,234 / rs.250
+  double? _extractAmountInr(String text) {
+    final patterns = <RegExp>[
+      RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\.\d{1,2})?)', caseSensitive: false),
+      // fallback: "amount of 123.45"
+      RegExp(r'\bamount\s+of\s+([0-9][\d,]*(?:\.\d{1,2})?)', caseSensitive: false),
+    ];
+    for (final re in patterns) {
+      final m = re.firstMatch(text);
+      if (m != null) {
+        final numStr = (m.group(1) ?? '').replaceAll(',', '');
+        final v = double.tryParse(numStr);
+        if (v != null && v > 0) return v;
+      }
     }
-
-    // “Rs ___ OFF/discount” etc.
-    if (RegExp(r'((?:rs\.?|inr|₹)\s*\d[\d,]*(?:\.\d{1,2})?\s*(?:off|discount))', caseSensitive: false).hasMatch(lower)) {
-      return true;
-    }
-
-    return false;
+    return null;
   }
 
-  // Usage/quota alerts like “50% data consumed”, “low balance, recharge to continue”
-  bool _isUsageOrQuotaAlert(String body) {
-    final lower = body.toLowerCase();
-    final usage = RegExp(
-      r'(data\s+consumed|data\s+usage|daily\s+high\s+speed\s+data|low\s+balance|balance\s+low|expire|validity|pack\s+ending|pack\s+expires)',
-      caseSensitive: false,
-    ).hasMatch(lower);
-    final upsell = RegExp(r'(get|buy)\s+(?:more|extra|top[- ]?up|topup|recharge|pack|add[- ]?on|addon|booster)', caseSensitive: false).hasMatch(lower);
-    return usage && upsell;
-  }
-
-  // ── Legacy helpers kept for rare fallbacks ─────────────────────────────────
-
-  /// Capture foreign-currency spends like "Spent USD 23.6", "Purchase EUR 12.00".
-  /// Returns {'currency': 'USD', 'amount': 23.6} or null.
+  /// FX examples: "Spent USD 23.6", "Transaction of EUR 12.00"
   Map<String, dynamic>? _extractFx(String text) {
     final pats = <RegExp>[
       RegExp(r'(spent|purchase|txn|transaction|charged)\s+(usd|eur|gbp|aed|sgd|jpy|aud|cad)\s*([0-9]+(?:\.[0-9]+)?)', caseSensitive: false),
@@ -606,23 +482,43 @@ class SmsIngestor {
     for (final re in pats) {
       final m = re.firstMatch(text);
       if (m != null) {
-        final tokens = m.groups([1,2,3]);
-        String cur;
-        String amtStr;
+        final g = m.groups([1,2,3]);
+        String cur; String amtStr;
         if (re.pattern.startsWith('(spent')) {
-          cur = tokens[1]!.toUpperCase();
-          amtStr = tokens[2]!;
+          cur = g[1]!.toUpperCase(); amtStr = g[2]!;
         } else if (re.pattern.startsWith(r'\b(usd')) {
-          cur = tokens[0]!.toUpperCase();
-          amtStr = tokens[1]!;
+          cur = g[0]!.toUpperCase(); amtStr = g[1]!;
         } else {
-          cur = tokens[1]!.toUpperCase();
-          amtStr = tokens[2]!;
+          cur = g[1]!.toUpperCase(); amtStr = g[2]!;
         }
         final amt = double.tryParse(amtStr);
-        if (amt != null) return {'currency': cur, 'amount': amt};
+        if (amt != null && amt > 0) return {'currency': cur, 'amount': amt};
       }
     }
+    return null;
+  }
+
+  // infer debit/credit from common cues
+  String? _inferDirection(String body) {
+    final lower = body.toLowerCase();
+    final isDR = RegExp(r'\bdr\b').hasMatch(lower);
+    final isCR = RegExp(r'\bcr\b').hasMatch(lower);
+    final debit = RegExp(
+      r'\b(debit(?:ed)?|spent|purchase|paid|payment|pos|upi(?:\s*payment)?|imps|neft|rtgs|withdrawn|withdrawal|atm|charge[ds]?|recharge(?:d)?|bill\s*paid)\b',
+      caseSensitive: false,
+    ).hasMatch(lower);
+    final credit = RegExp(
+      r'\b(credit(?:ed)?|received|rcvd|deposit(?:ed)?|salary|refund|reversal|cashback|interest)\b',
+      caseSensitive: false,
+    ).hasMatch(lower);
+
+    if ((debit || isDR) && !(credit || isCR)) return 'debit';
+    if ((credit || isCR) && !(debit || isDR)) return 'credit';
+
+    // both seen: pick first occurrence
+    final dIdx = RegExp(r'debit|spent|purchase|paid|payment|dr', caseSensitive: false).firstMatch(lower)?.start ?? -1;
+    final cIdx = RegExp(r'credit|received|rcvd|deposit|salary|refund|cr', caseSensitive: false).firstMatch(lower)?.start ?? -1;
+    if (dIdx >= 0 && cIdx >= 0) return dIdx < cIdx ? 'debit' : 'credit';
     return null;
   }
 
@@ -630,41 +526,15 @@ class SmsIngestor {
     final t = body.toUpperCase();
     final known = <String>[
       'NETFLIX','AMAZON PRIME','PRIME VIDEO','SPOTIFY','YOUTUBE','GOOGLE *YOUTUBE',
-      'APPLE.COM/BILL','APPLE','MICROSOFT','ADOBE','SWIGGY ONE','ZOMATO GOLD','HOTSTAR','DISNEY+ HOTSTAR',
-      'SONYLIV','AIRTEL','JIO','VI','HATHWAY','ACT FIBERNET','BOOKMYSHOW','BIGTREE','OLA','UBER','IRCTC',
-      'REDBUS','AMAZON','FLIPKART','MEESHO',
-      // 🛒 Quick commerce & supermarkets
-      'BLINKIT','GROFERS','ZEPTO','INSTAMART','SWIGGY INSTAMART','BIGBASKET','BBDAILY',
-      'DMART','STAR BAZAAR','STAR BAZAR','STAR MARKET','RATNADEEP','JIOMART',
-      'RELIANCE SMART BAZAAR','RELIANCE FRESH','RELIANCE SMART','MORE SUPERMARKET',
-      'SPENCER\'S','NATURE\'S BASKET','LICIOUS','FRESHTOHOME'
+      'APPLE.COM/BILL','APPLE','MICROSOFT','ADOBE','SWIGGY','ZOMATO','HOTSTAR','DISNEY+ HOTSTAR',
+      'SONYLIV','AIRTEL','JIO','VI','HATHWAY','ACT FIBERNET','BOOKMYSHOW','BIGTREE','OLA','UBER',
+      'IRCTC','REDBUS','AMAZON','FLIPKART','MEESHO','BLINKIT','ZEPTO'
     ];
     for (final k in known) { if (t.contains(k)) return k; }
     final m = RegExp(r'\b(for|towards|at)\b\s*([A-Z0-9\*\._\- ]{3,25})').firstMatch(t);
     return m?.group(2)?.trim();
   }
 
-  bool _looksLikeSubscription(String body) {
-    return RegExp(r'\b(subscription|renewal|auto\s*renew|recurring)\b', caseSensitive: false).hasMatch(body);
-  }
-
-  /// Ignore pure balance / available limit reports (incl. Angel One fund/securities bal)
-  bool _isPureBalanceInfo(String body) {
-    final lower = body.toLowerCase();
-    final hasBalanceWords = RegExp(
-        r'(available\s*limit|avl\s*limit|available\s*balance|account\s*balance|fund\s*bal|securities\s*bal|\bbal\b)',
-        caseSensitive: false).hasMatch(lower);
-
-    final hasTxnVerb = RegExp(
-        r'\b(debit(?:ed)?|credit(?:ed)?|received|rcvd|deposit(?:ed)?|spent|purchase|paid|payment|withdrawn|transfer(?:red)?|txn|transaction)\b',
-        caseSensitive: false).hasMatch(lower);
-
-    final isReporty = RegExp(r'\b(statement|report(ed)?)\b', caseSensitive: false).hasMatch(lower);
-
-    return (hasBalanceWords && !hasTxnVerb) || (isReporty && !hasTxnVerb);
-  }
-
-  /// OTP-only detector (allow through only if there’s a real txn verb too)
   bool _looksLikeOtpOnly(String body) {
     final lower = body.toLowerCase();
     if (RegExp(r'\botp\b', caseSensitive: false).hasMatch(lower)) {
@@ -675,81 +545,5 @@ class SmsIngestor {
       if (!hasTxnVerb) return true;
     }
     return false;
-  }
-
-  // ── Recurrence check for subscriptions/autopays ────────────────────────────
-  Future<bool> _seenRecurringBefore(
-      String userPhone,
-      String merchantKey,
-      double amount,
-      DateTime ts,
-      ) async {
-    final from = ts.subtract(const Duration(days: 90));
-    try {
-      final q = await FirebaseFirestore.instance
-          .collection('users').doc(userPhone).collection('expenses')
-          .where('merchantKey', isEqualTo: merchantKey)
-          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
-          .limit(15)
-          .get();
-
-      for (final d in q.docs) {
-        final a = (d.data()['amount'] as num?)?.toDouble() ?? 0.0;
-        if (a == 0) continue;
-        final diff = (a - amount).abs() / a;
-        if (diff <= 0.05) return true;
-      }
-    } catch (_) {}
-    return false;
-  }
-
-  /// Quick-commerce matcher → returns canonical merchant + category suggestion.
-  Map<String, dynamic>? _quickCommerceSuggest(String text, {String? seedMerchant}) {
-    final u = text.toUpperCase();
-    final pairs = <MapEntry<RegExp, String>>[
-      MapEntry(RegExp(r"\bBLINKIT\b|\bGROFERS\b"), "Blinkit"),
-      MapEntry(RegExp(r"\bZEPTO\b"), "Zepto"),
-      MapEntry(RegExp(r"\bSWIGGY\s*INSTAMART\b|\bINSTAMART\b"), "Swiggy Instamart"),
-      MapEntry(RegExp(r"\bBIG\s*BASKET\b|\bBIGBASKET\b|\bBB\s*DAILY\b"), "BigBasket"),
-      MapEntry(RegExp(r"\bDMART\b"), "DMart"),
-      MapEntry(RegExp(r"\bSTAR\s*BAZAAR\b|\bSTAR\s*BAZAR\b|\bSTAR\s*MARKET\b"), "Star Bazaar"),
-      MapEntry(RegExp(r"\bRATNADEEP\b"), "Ratnadeep"),
-      MapEntry(RegExp(r"\bJIOMART\b|\bJIO\s*MART\b"), "JioMart"),
-      MapEntry(RegExp(r"\bRELIANCE\s*(SMART\s*BAZAAR|FRESH|SMART)\b"), "Reliance Smart Bazaar"),
-      MapEntry(RegExp(r"\bMORE\s*SUPERMARKET\b|\bMORE\s*MEGASTORE\b"), "More Supermarket"),
-      MapEntry(RegExp(r"\bSPENCER'?S\b"), "Spencer's"),
-      MapEntry(RegExp(r"\bNATURE[’']?\s*BASKET\b"), "Nature's Basket"),
-      MapEntry(RegExp(r"\bFRESH\s*TO\s*HOME\b|\bFRESHTOHOME\b"), "FreshToHome"),
-      MapEntry(RegExp(r"\bLICIOUS\b"), "Licious"),
-      // ⚠️ Avoid generic "ZOMATO" as groceries; only match explicit markets.
-      MapEntry(RegExp(r"\bZOMATO\s*(MARKET|INSTANT)\b"), "Zomato Market"),
-    ];
-
-    for (final e in pairs) {
-      if (e.key.hasMatch(u)) {
-        return {
-          'merchant': e.value,
-          'category': 'Online Groceries',
-          'confidence': 0.98,
-          'tags': const ['quickCommerce', 'groceries'],
-        };
-      }
-    }
-
-    // Seed merchant already indicates QC?
-    if (seedMerchant != null) {
-      final sm = seedMerchant.toUpperCase();
-      for (final e in pairs) {
-        if (e.key.hasMatch(sm)) {
-          return {
-            'merchant': seedMerchant,
-            'category': 'Online Groceries',
-            'confidence': 0.95,
-            'tags': const ['quickCommerce', 'groceries'],
-          };
-        }
-      }
-    }
-    return null;
   }
 }

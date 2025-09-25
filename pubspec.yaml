@@ -124,3 +124,6 @@ flutter_launcher_icons:
   ios: true
   image_path: assets/icons/fiinny_logo.png
   remove_alpha_ios: true
+
+
+

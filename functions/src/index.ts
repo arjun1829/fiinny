@@ -1,9 +1,15 @@
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+// functions/src/index.ts
+
+// ---- Admin (modular) init ONCE ----
+import { initializeApp, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
+import { onDocumentCreated } from "firebase-functions/v2/firestore";
+
+if (getApps().length === 0) initializeApp();
+const db = getFirestore();
 
 /** Helpers */
-const db = getFirestore();
 async function getPrefs(uid: string) {
   const doc = await db.doc(`users/${uid}/prefs/notifications`).get();
   return doc.exists ? (doc.data() as any) : { push_enabled: true };
@@ -13,18 +19,12 @@ function inQuietHours(prefs: any): boolean {
   const q = prefs?.quiet_hours || {};
   const start = String(q.start || "22:00");
   const end = String(q.end || "08:00");
-  const tz = String(q.tz || "Asia/Kolkata");
-  // Simple check: compare against IST wall clock
-  const now = new Date(new Date().getTime() + 5.5 * 3600 * 1000);
+  const now = new Date(new Date().getTime() + 5.5 * 3600 * 1000); // IST
   const hh = String(now.getUTCHours()).padStart(2, "0");
   const mm = String(now.getUTCMinutes()).padStart(2, "0");
   const cur = `${hh}:${mm}`;
-  const afterStart = cur >= start;
-  const beforeEnd = cur <= end;
-  // If window doesn’t cross midnight:
-  if (start <= end) return cur >= start && cur <= end;
-  // Crosses midnight (e.g., 22:00–08:00):
-  return afterStart || beforeEnd;
+  if (start <= end) return cur >= start && cur <= end; // same-day window
+  return cur >= start || cur <= end; // crosses midnight
 }
 
 async function sendOrFeed(opts: {
@@ -48,23 +48,34 @@ async function sendOrFeed(opts: {
   if (prefs?.channels?.[channelKey] === false) return;
 
   const quiet = inQuietHours(prefs);
-  // Always write to in-app feed
-  await db.collection("users").doc(uid).collection("notif_feed").add({
-    type: channelKey,
-    title, body, deeplink,
-    createdAt: FieldValue.serverTimestamp(),
-    read: false,
-  }).catch(() => null);
 
-  if (!token || quiet) return; // skip push in quiet hours or no token
+  // in-app feed always
+  await db
+    .collection("users")
+    .doc(uid)
+    .collection("notif_feed")
+    .add({
+      type: channelKey,
+      title,
+      body,
+      deeplink,
+      createdAt: FieldValue.serverTimestamp(),
+      read: false,
+    })
+    .catch(() => null);
 
-  await getMessaging().send({
-    token,
-    notification: { title, body },
-    data: { type: channelKey, deeplink },
-    android: { priority: "high" },
-    apns: { headers: { "apns-priority": "10" } },
-  }).catch(() => null);
+  // push (skip if quiet or no token)
+  if (!token || quiet) return;
+
+  await getMessaging()
+    .send({
+      token,
+      notification: { title, body },
+      data: { type: channelKey, deeplink },
+      android: { priority: "high" },
+      apns: { headers: { "apns-priority": "10" } },
+    })
+    .catch(() => null);
 }
 
 /** 🔔 When someone creates a shared expense that assigns me */
@@ -112,9 +123,10 @@ export const onChatMessageCreated = onDocumentCreated(
     const senderName = String(d.senderName || "Someone");
     const text = String(d.text || "");
 
-    // get participants from thread doc
     const threadDoc = await db.doc(`chats/${threadId}`).get();
-    const participants: string[] = Array.isArray(threadDoc.get("participants")) ? threadDoc.get("participants") : [];
+    const participants: string[] = Array.isArray(threadDoc.get("participants"))
+      ? threadDoc.get("participants")
+      : [];
 
     for (const uid of participants) {
       if (!uid || uid === senderUid) continue;
@@ -133,3 +145,6 @@ export const onChatMessageCreated = onDocumentCreated(
     }
   }
 );
+
+// 🆕 Oracle LLM job consumer (ESM needs .js)
+export { onIngestJobCreate } from "./oracleCategorizer.js";
