@@ -41,3 +41,6 @@ android/.idea/
 ios/Runner/GoogleService-Info.plist
 
 *.bak
+**/io/flutter/plugins/GeneratedPluginRegistrant.java
+**/io/flutter/plugins/GeneratedPluginRegistrant.kt
+**/io/flutter/plugins/
