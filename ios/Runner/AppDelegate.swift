@@ -144,15 +144,30 @@ private extension Notification.Name {
   }
 
   private func configureFirebaseIfNeeded() {
-    if FirebaseApp.app() != nil { return }
+    guard FirebaseApp.app() == nil else { return }
 
     if
       let filePath = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
       let options = FirebaseOptions(contentsOfFile: filePath)
     {
       FirebaseApp.configure(options: options)
-    } else {
-      FirebaseApp.configure()
+      NSLog("✅ Firebase configured using bundled GoogleService-Info.plist")
+      return
     }
+
+    // Fallback for TestFlight/IPAs that were built without bundling the plist.
+    let fallback = FirebaseOptions(
+      googleAppID: "1:1085936196639:ios:3cbdc12cca308cbc16492a",
+      gcmSenderID: "1085936196639"
+    )
+    fallback.apiKey = "AIzaSyCt-xTvI1TGF3AlFSeR5rVpzfC14D4v_iY"
+    fallback.projectID = "lifemap-72b21"
+    fallback.storageBucket = "lifemap-72b21.firebasestorage.app"
+    fallback.databaseURL = "https://lifemap-72b21-default-rtdb.firebaseio.com"
+    fallback.bundleID = "com.KaranArjunTechnologies.fiinny"
+    fallback.clientID = "1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00.apps.googleusercontent.com"
+
+    FirebaseApp.configure(options: fallback)
+    NSLog("⚠️ Firebase configured using inline fallback options (GoogleService-Info.plist missing)")
   }
 }
