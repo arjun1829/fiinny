@@ -9,9 +9,6 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'themes/theme_provider.dart';
 import 'services/notification_service.dart';
 
-// Firebase config (generated via FlutterFire CLI)
-import 'firebase_options.dart';
-
 // Push layer
 import 'services/push/push_service.dart';
 
@@ -42,15 +39,25 @@ Future<void> main() async {
 
   // Timezone DB (needed by NotificationService & LocalNotifs)
   tz.initializeTimeZones();
-<<<<<<< HEAD
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-=======
 
-  // Firebase
-  await Firebase.initializeApp();
->>>>>>> cecd23e (chore: first commit)
+  // Configure Firebase once native runtime has booted. The iOS release build
+  // now bundles GoogleService-Info.plist again, so we defer to the platform's
+  // default configuration and only initialize Dart-side Firebase if needed.
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp();
+      debugPrint('[main] Firebase initialized via default platform options.');
+    } else {
+      debugPrint('[main] Firebase already configured before Dart execution.');
+    }
+  } on FirebaseException catch (e) {
+    if (e.code == 'duplicate-app') {
+      debugPrint('[main] Firebase already configured natively.');
+    } else {
+      debugPrint('[main] Firebase.initializeApp failed: ${e.code}');
+      rethrow;
+    }
+  }
 
   // Your existing local notification wrapper
   await NotificationService.initialize();
