@@ -59,7 +59,6 @@ dependencies:
   # ML / OCR
   google_ml_kit: ^0.20.0
   file_picker: ^8.0.0
-  telephony: ^0.2.0
   firebase_messaging: ^15.2.10
 
   google_mobile_ads: ^5.1.0
