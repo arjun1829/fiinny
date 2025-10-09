@@ -40,25 +40,12 @@ Future<void> main() async {
   // Timezone DB (needed by NotificationService & LocalNotifs)
   tz.initializeTimeZones();
 
-  // Configure Firebase once native runtime has booted. The native iOS runner
-  // now provides its Firebase options directly (without relying on a bundled
-  // GoogleService-Info.plist), so we only call into Firebase from Dart when an
-  // app instance is not already available.
-  try {
-    if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp();
-      debugPrint('[main] Firebase initialized via default platform options.');
-    } else {
-      debugPrint('[main] Firebase already configured before Dart execution.');
-    }
-  } on FirebaseException catch (e) {
-    if (e.code == 'duplicate-app') {
-      debugPrint('[main] Firebase already configured natively.');
-    } else {
-      debugPrint('[main] Firebase.initializeApp failed: ${e.code}');
-      rethrow;
-    }
-  }
+  // Configure Firebase with explicit options so TestFlight builds no longer
+  // crash before Dart executes if the GoogleService-Info.plist is missing or
+  // mispackaged. (We still ship the file for native plugins that expect it.)
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   // Your existing local notification wrapper
   await NotificationService.initialize();
