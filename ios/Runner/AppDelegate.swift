@@ -5,7 +5,7 @@ import FirebaseMessaging
 import UserNotifications
 
 private func handleUncaughtException(_ exception: NSException) {
-  NSLog("🔥 Uncaught exception: \(exception.name.rawValue) – \(exception.reason ?? "no reason")")
+  NSLog("🔥 Uncaught exception: \(exception.name.rawValue) – \(exception.reason ?? \"no reason\")")
   NSLog("Stack:\n\(exception.callStackSymbols.joined(separator: "\n"))")
 }
 
@@ -23,8 +23,10 @@ private func handleUncaughtException(_ exception: NSException) {
     // Catch Obj-C exceptions early
     NSSetUncaughtExceptionHandler(handleUncaughtException)
 
-    // Firebase
-    if FirebaseApp.app() == nil { FirebaseApp.configure() }
+    // Firebase (uses bundled GoogleService-Info.plist)
+    if FirebaseApp.app() == nil {
+      FirebaseApp.configure()
+    }
     Messaging.messaging().delegate = self
 
     // Start engine & register plugins
