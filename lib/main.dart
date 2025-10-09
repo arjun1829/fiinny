@@ -11,6 +11,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'themes/theme_provider.dart';
 import 'services/notification_service.dart';
 
+// Firebase config (generated via FlutterFire CLI)
+import 'firebase_options.dart';
+
 // Push layer
 import 'services/push/push_service.dart';
 
@@ -33,7 +36,9 @@ Future<void> main() async {
 
   // Init order
   tz.initializeTimeZones();
-  await Firebase.initializeApp();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   // Local notifications (you already had this)
   await NotificationService.initialize();
