@@ -11,21 +11,14 @@
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
-    <!-- ✅ SMS + notifications -->
-    <uses-permission android:name="android.permission.READ_SMS" />
-    <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
+    <!-- Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
     <!-- (Optional) restart listeners after reboot -->
     <!-- <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" /> -->
-
-    <!-- Not all devices have telephony; don't block install -->
-    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <application
         android:label="Fiinny"
@@ -56,21 +49,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <!-- ✅ Telephony plugin receiver for realtime SMS ingest -->
-        <receiver
-            android:name="com.shounakmulay.telephony.sms.SmsReceiver"
-            android:exported="true"
-            android:permission="android.permission.BROADCAST_SMS">
-            <!-- High priority so OEM filters don't swallow alerts -->
-            <intent-filter android:priority="999">
-                <!-- Standard SMS -->
-                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
-                <!-- Some banks/carriers push as WAP/MMS-style alerts -->
-                <action android:name="android.provider.Telephony.WAP_PUSH_RECEIVED" />
-                <data android:mimeType="application/vnd.wap.mms-message" />
-            </intent-filter>
-        </receiver>
 
         <!-- (Optional) If you want to re-init listeners after reboot:
         <receiver

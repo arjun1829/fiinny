@@ -10,66 +10,59 @@ private func handleUncaughtException(_ exception: NSException) {
 }
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, MessagingDelegate { // ← removed UNUserNotificationCenterDelegate
-
-  // Single shared Flutter engine
-  lazy var flutterEngine = FlutterEngine(name: "fiinny_engine")
+@objc class AppDelegate: FlutterAppDelegate, MessagingDelegate {
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-
-    // Catch Obj-C exceptions early
     NSSetUncaughtExceptionHandler(handleUncaughtException)
 
-    // Firebase (configure explicitly so we don't rely on a bundled
-    // GoogleService-Info.plist, which the IPA currently lacks.)
     if FirebaseApp.app() == nil {
-      let options = FirebaseOptions(
-        googleAppID: "1:1085936196639:ios:3cbdc12cca308cbc16492a",
-        gcmSenderID: "1085936196639"
-      )
-      options.apiKey = "AIzaSyCt-xTvI1TGF3AlFSeR5rVpzfC14D4v_iY"
-      options.projectID = "lifemap-72b21"
-      options.storageBucket = "lifemap-72b21.appspot.com"
-      options.bundleID = "com.KaranArjunTechnologies.fiinny"
-      options.clientID = "1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00.apps.googleusercontent.com"
+      var didConfigureFromFile = false
+      if
+        let filePath = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+        let fileOptions = FirebaseOptions(contentsOfFile: filePath)
+      {
+        FirebaseApp.configure(options: fileOptions)
+        didConfigureFromFile = true
+      }
 
-      FirebaseApp.configure(options: options)
+      if !didConfigureFromFile {
+        let options = FirebaseOptions(
+          googleAppID: "1:1085936196639:ios:3cbdc12cca308cbc16492a",
+          gcmSenderID: "1085936196639"
+        )
+        options.apiKey = "AIzaSyCt-xTvI1TGF3AlFSeR5rVpzfC14D4v_iY"
+        options.projectID = "lifemap-72b21"
+        options.storageBucket = "lifemap-72b21.appspot.com"
+        options.bundleID = "com.KaranArjunTechnologies.fiinny"
+        options.clientID = "1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00.apps.googleusercontent.com"
+
+        FirebaseApp.configure(options: options)
+      }
     }
+
     Messaging.messaging().delegate = self
 
-    // Start engine & register plugins
-    flutterEngine.run()
-    GeneratedPluginRegistrant.register(with: flutterEngine)
+    GeneratedPluginRegistrant.register(with: self)
 
-    // Root Flutter VC (no Main.storyboard / SceneDelegate)
-    let flutterVC = FlutterViewController(engine: flutterEngine, nibName: nil, bundle: nil)
-
-    // UIWindowScene-aware boot
-    if #available(iOS 13.0, *), let ws = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-      window = UIWindow(windowScene: ws)
-    } else {
-      window = UIWindow(frame: UIScreen.main.bounds)
-    }
+    let flutterVC = FlutterViewController(project: nil, nibName: nil, bundle: nil)
+    window = UIWindow(frame: UIScreen.main.bounds)
     window?.rootViewController = flutterVC
     window?.makeKeyAndVisible()
 
-    // Notifications
     let center = UNUserNotificationCenter.current()
-    center.delegate = self // OK: inherited via FlutterAppDelegate
+    center.delegate = self
     center.requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
     application.registerForRemoteNotifications()
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  // MARK: - Disable UI state restoration
   override func application(_ application: UIApplication, shouldSaveApplicationState coder: NSCoder) -> Bool { false }
   override func application(_ application: UIApplication, shouldRestoreApplicationState coder: NSCoder) -> Bool { false }
 
-  // MARK: - APNs token -> FCM
   override func application(_ application: UIApplication,
                             didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
     Messaging.messaging().apnsToken = deviceToken
@@ -81,12 +74,12 @@ private func handleUncaughtException(_ exception: NSException) {
     NSLog("❌ APNs registration failed: \(error.localizedDescription)")
   }
 
-  // MARK: - FCM token callback
   func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
-    if let t = fcmToken { NSLog("📨 FCM token refreshed: \(t)") }
+    if let token = fcmToken {
+      NSLog("📨 FCM token refreshed: \(token)")
+    }
   }
 
-  // MARK: - Foreground notification banner
   @available(iOS 10.0, *)
   override func userNotificationCenter(_ center: UNUserNotificationCenter,
                                        willPresent notification: UNNotification,
@@ -94,16 +87,13 @@ private func handleUncaughtException(_ exception: NSException) {
     completionHandler([.banner, .list, .sound, .badge])
   }
 
-  // MARK: - Notification tap handling
   @available(iOS 10.0, *)
   override func userNotificationCenter(_ center: UNUserNotificationCenter,
                                        didReceive response: UNNotificationResponse,
                                        withCompletionHandler completionHandler: @escaping () -> Void) {
-    // TODO: forward response.notification.request.content.userInfo to Flutter via MethodChannel if needed
     completionHandler()
   }
 
-  // MARK: - URL schemes / universal links
   override func application(_ app: UIApplication,
                             open url: URL,
                             options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
