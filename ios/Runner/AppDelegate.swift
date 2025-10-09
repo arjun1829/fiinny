@@ -10,10 +10,7 @@ private func handleUncaughtException(_ exception: NSException) {
 }
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, MessagingDelegate { // ← removed UNUserNotificationCenterDelegate
-
-  // Single shared Flutter engine
-  lazy var flutterEngine = FlutterEngine(name: "fiinny_engine")
+@objc class AppDelegate: FlutterAppDelegate, MessagingDelegate {
 
   override func application(
     _ application: UIApplication,
@@ -29,21 +26,8 @@ private func handleUncaughtException(_ exception: NSException) {
     }
     Messaging.messaging().delegate = self
 
-    // Start engine & register plugins
-    flutterEngine.run()
-    GeneratedPluginRegistrant.register(with: flutterEngine)
-
-    // Root Flutter VC (no Main.storyboard / SceneDelegate)
-    let flutterVC = FlutterViewController(engine: flutterEngine, nibName: nil, bundle: nil)
-
-    // UIWindowScene-aware boot
-    if #available(iOS 13.0, *), let ws = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-      window = UIWindow(windowScene: ws)
-    } else {
-      window = UIWindow(frame: UIScreen.main.bounds)
-    }
-    window?.rootViewController = flutterVC
-    window?.makeKeyAndVisible()
+    // Register plugins with the default FlutterAppDelegate engine.
+    GeneratedPluginRegistrant.register(with: self)
 
     // Notifications
     let center = UNUserNotificationCenter.current()
