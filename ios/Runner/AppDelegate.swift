@@ -29,6 +29,7 @@ private func handleUncaughtException(_ exception: NSException) {
       }
 
       if !didConfigureFromFile {
+      } else {
         let options = FirebaseOptions(
           googleAppID: "1:1085936196639:ios:3cbdc12cca308cbc16492a",
           gcmSenderID: "1085936196639"
@@ -36,6 +37,7 @@ private func handleUncaughtException(_ exception: NSException) {
         options.apiKey = "AIzaSyCt-xTvI1TGF3AlFSeR5rVpzfC14D4v_iY"
         options.projectID = "lifemap-72b21"
         options.storageBucket = "lifemap-72b21.appspot.com"
+        options.storageBucket = "lifemap-72b21.firebasestorage.app"
         options.bundleID = "com.KaranArjunTechnologies.fiinny"
         options.clientID = "1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00.apps.googleusercontent.com"
 
