@@ -9,9 +9,6 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'themes/theme_provider.dart';
 import 'services/notification_service.dart';
 
-// Firebase config (generated via FlutterFire CLI)
-import 'firebase_options.dart';
-
 // Push layer
 import 'services/push/push_service.dart';
 
