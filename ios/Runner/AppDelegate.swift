@@ -26,17 +26,24 @@ private func handleUncaughtException(_ exception: NSException) {
     // Firebase (configure explicitly so we don't rely on a bundled
     // GoogleService-Info.plist, which the IPA currently lacks.)
     if FirebaseApp.app() == nil {
-      let options = FirebaseOptions(
-        googleAppID: "1:1085936196639:ios:3cbdc12cca308cbc16492a",
-        gcmSenderID: "1085936196639"
-      )
-      options.apiKey = "AIzaSyCt-xTvI1TGF3AlFSeR5rVpzfC14D4v_iY"
-      options.projectID = "lifemap-72b21"
-      options.storageBucket = "lifemap-72b21.appspot.com"
-      options.bundleID = "com.KaranArjunTechnologies.fiinny"
-      options.clientID = "1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00.apps.googleusercontent.com"
+      if
+        let filePath = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+        let fileOptions = FirebaseOptions(contentsOfFile: filePath)
+      {
+        FirebaseApp.configure(options: fileOptions)
+      } else {
+        let options = FirebaseOptions(
+          googleAppID: "1:1085936196639:ios:3cbdc12cca308cbc16492a",
+          gcmSenderID: "1085936196639"
+        )
+        options.apiKey = "AIzaSyCt-xTvI1TGF3AlFSeR5rVpzfC14D4v_iY"
+        options.projectID = "lifemap-72b21"
+        options.storageBucket = "lifemap-72b21.firebasestorage.app"
+        options.bundleID = "com.KaranArjunTechnologies.fiinny"
+        options.clientID = "1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00.apps.googleusercontent.com"
 
-      FirebaseApp.configure(options: options)
+        FirebaseApp.configure(options: options)
+      }
     }
     Messaging.messaging().delegate = self
 
