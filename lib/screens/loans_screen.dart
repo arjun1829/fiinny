@@ -14,6 +14,82 @@ const Color kBg = Color(0xFFF8FAF9);
 const Color kPrimary = Color(0xFF09857a);
 const Color kText = Color(0xFF0F1E1C);
 const Color kLine = Color(0x14000000);
+class _HeroHeader extends StatelessWidget {
+  final String quoteText;
+  final int quoteIndex;
+  const _HeroHeader({Key? key, required this.quoteText, required this.quoteIndex}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final safeTop = media.padding.top;
+    final heroHeight = 170.0 + safeTop;
+
+    return SizedBox(
+      height: heroHeight,
+      child: Stack(
+        children: [
+          const Positioned.fill(child: _SheenOverlay()),
+          Positioned.fill(
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _GlassChip(
+                      child: _LoansQuote(
+                        text: quoteText,
+                        index: quoteIndex,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      "Loans",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(.98),
+                        fontSize: 36,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoansQuote extends StatelessWidget {
+  final String text;
+  final int index;
+  const _LoansQuote({Key? key, required this.text, required this.index}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      child: Text(
+        text,
+        key: ValueKey(index),
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 13.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: .2,
+        ),
+      ),
+    );
+  }
+}
+
 
 class LoansScreen extends StatefulWidget {
   final String userId;
@@ -75,6 +151,8 @@ class _LoansScreenState extends State<LoansScreen> {
     return DateTime(nextYear, nextMonth, 0).day;
   }
 
+  DateTime _onlyYMD(DateTime d) => DateTime(d.year, d.month, d.day);
+
   DateTime _dateWithDOM(int y, int m, int dom) {
     final d = dom.clamp(1, _lastDayOfMonth(y, m));
     return DateTime(y, m, d);
@@ -87,7 +165,7 @@ class _LoansScreenState extends State<LoansScreen> {
     if (dom == null) return storedDue;
 
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    final today = _onlyYMD(now);
     var candidate = _dateWithDOM(now.year, now.month, dom);
     if (!candidate.isAfter(today)) {
       final y = now.month == 12 ? now.year + 1 : now.year;
@@ -95,7 +173,7 @@ class _LoansScreenState extends State<LoansScreen> {
       candidate = _dateWithDOM(y, m, dom);
     }
     if (storedDue != null) {
-      final s = DateTime(storedDue.year, storedDue.month, storedDue.day);
+      final s = _onlyYMD(storedDue);
       if (!candidate.isBefore(s)) return s;
     }
     return candidate;
@@ -104,8 +182,8 @@ class _LoansScreenState extends State<LoansScreen> {
   String _dueBadge(LoanModel l) {
     final nd = _nextPaymentDate(l);
     if (nd == null) return "--";
-    final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
-    final d = DateTime(nd.year, nd.month, nd.day);
+    final today = _onlyYMD(DateTime.now());
+    final d = _onlyYMD(nd);
     final diff = d.difference(today).inDays;
     if (diff < 0) return "Overdue";
     if (diff == 0) return "Due today";
@@ -129,9 +207,7 @@ class _LoansScreenState extends State<LoansScreen> {
     if (l.isClosed) return 0;
     final now = DateTime.now();
     if (l.dueDate != null) {
-      final days = DateTime(l.dueDate!.year, l.dueDate!.month, l.dueDate!.day)
-          .difference(DateTime(now.year, now.month, now.day))
-          .inDays;
+      final days = _onlyYMD(l.dueDate!).difference(_onlyYMD(now)).inDays;
       return days <= 0 ? 0 : (days / 30).ceil();
     }
     return l.tenureMonths ?? 0;
@@ -152,10 +228,10 @@ class _LoansScreenState extends State<LoansScreen> {
       if (nextDue == null || nd.isBefore(nextDue)) nextDue = nd;
     }
 
-    final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    final today = _onlyYMD(DateTime.now());
     final overdueCount = active.where((l) {
       final nd = _nextPaymentDate(l);
-      return nd != null && nd.isBefore(today);
+      return nd != null && _onlyYMD(nd).isBefore(today);
     }).length;
 
     final withOriginal = active.where((l) => (l.originalAmount ?? 0) > 0).toList();
@@ -170,6 +246,9 @@ class _LoansScreenState extends State<LoansScreen> {
     final loansCount = active.length;
     final loansProgress = (loansCount / 5.0).clamp(0.0, 1.0);
 
+    // shared count (inferred from note)
+    final sharedCount = active.where((l) => _parseShare(l).isShared).length;
+
     return {
       'totalOutstanding': totalOutstanding,
       'totalEmi': totalEmi,
@@ -181,7 +260,42 @@ class _LoansScreenState extends State<LoansScreen> {
       'yearsProgress': yearsProgress,
       'loansCount': loansCount,
       'loansProgress': loansProgress,
+      'sharedCount': sharedCount,
     };
+  }
+
+  // ----- Share parsing (from note) -----
+  _ShareMeta _parseShare(LoanModel l) {
+    final note = (l.note ?? '').trim();
+    if (note.isEmpty) return const _ShareMeta.empty();
+
+    final idx = note.toLowerCase().indexOf("share with:");
+    if (idx == -1) return const _ShareMeta.empty();
+
+    final lines = note.substring(idx).split('\n').map((e) => e.trim()).toList();
+    // Expect:
+    // Share with:
+    // • Name — 25.0%
+    // • Phone — 25%
+    final members = <_ShareEntry>[];
+    for (final line in lines.skip(1)) {
+      if (!line.startsWith('•')) break;
+      final body = line.substring(1).trim(); // "Name — 25%"
+      final parts = body.split('—');
+      if (parts.length < 2) continue;
+      final name = parts[0].trim();
+      final pctStr = parts[1].trim().replaceAll('%', '');
+      final pct = double.tryParse(pctStr) ?? 0.0;
+      if (name.isEmpty) continue;
+      members.add(_ShareEntry(name: name, percent: pct));
+    }
+    if (members.isEmpty) return const _ShareMeta.empty();
+
+    // equal vs custom: if all same -> equal
+    final all = members.map((m) => m.percent.toStringAsFixed(1)).toSet();
+    final mode = all.length == 1 ? _ShareMode.equal : _ShareMode.custom;
+
+    return _ShareMeta(isShared: true, mode: mode, members: members);
   }
 
   // ---------------- actions ----------------
@@ -258,8 +372,16 @@ class _LoansScreenState extends State<LoansScreen> {
           heroTag: 'loans-fab',
           backgroundColor: kPrimary,
           onPressed: () async {
-            final added = await Navigator.pushNamed(context, '/addLoan', arguments: widget.userId);
-            if (added == true) setState(_fetchLoans);
+            final res = await Navigator.pushNamed(context, '/addLoan', arguments: widget.userId);
+            // accept both new & old contract: String loanId OR bool true
+            if (res == true || res is String) {
+              if (res is String) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Loan added')),
+                );
+              }
+              setState(_fetchLoans);
+            }
           },
           child: const Icon(Icons.add, color: Colors.white),
           tooltip: "Add Loan",
@@ -271,13 +393,26 @@ class _LoansScreenState extends State<LoansScreen> {
               return const Center(child: CircularProgressIndicator());
             }
 
-            _latest = snap.data ?? [];
+            _latest = snap.data ?? const <LoanModel>[];
             final counts = {
               'active': _latest.where(_isActive).length,
               'closed': _latest.where((l) => l.isClosed).length,
             };
             final view = _view(_latest);
+
+            // Be defensive if your _summary map sometimes misses keys
             final sum = _summary(_latest);
+            final totalOutstanding = (sum['totalOutstanding'] as double?) ?? 0.0;
+            final totalEmi         = (sum['totalEmi'] as double?) ?? 0.0;
+            final avgRate          = (sum['avgRate'] as double?) ?? 0.0;
+            final nextDue          = (sum['nextDue'] as DateTime?);
+            final overdueCount     = (sum['overdueCount'] as int?) ?? 0;
+            final paidPct          = (sum['paidPct'] as double?);
+            final yearsLeft        = (sum['yearsLeft'] as double?) ?? 0.0;
+            final yearsProgress    = (sum['yearsProgress'] as double?) ?? 0.0;
+            final loansCount       = (sum['loansCount'] as int?) ?? view.length;
+            final loansProgress    = (sum['loansProgress'] as double?) ?? 0.0;
+            final sharedCount      = (sum['sharedCount'] as int?) ?? 0;
 
             return RefreshIndicator(
               onRefresh: () async {
@@ -294,55 +429,12 @@ class _LoansScreenState extends State<LoansScreen> {
                     slivers: [
                       // HERO — quote + Loans title
                       SliverToBoxAdapter(
-                        child: SizedBox(
-                          height: heroHeight,
-                          child: Stack(
-                            children: [
-                              const Positioned.fill(child: _SheenOverlay()),
-                              Positioned.fill(
-                                child: SafeArea(
-                                  bottom: false,
-                                  child: Padding(
-                                    padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                      children: [
-                                        _GlassChip(
-                                          child: AnimatedSwitcher(
-                                            duration: const Duration(milliseconds: 300),
-                                            child: Text(
-                                              _quotes[_quoteIndex],
-                                              key: ValueKey(_quoteIndex),
-                                              textAlign: TextAlign.center,
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 13.5,
-                                                fontWeight: FontWeight.w800,
-                                                letterSpacing: .2,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 16),
-                                        Text(
-                                          "Loans",
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            color: Colors.white.withOpacity(.98),
-                                            fontSize: 36,
-                                            fontWeight: FontWeight.w900,
-                                            letterSpacing: -.3,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                        child: _HeroHeader(
+                          quoteText: _quotes[_quoteIndex],
+                          quoteIndex: _quoteIndex,
                         ),
                       ),
+
 
                       // SUMMARY — glassy card
                       SliverToBoxAdapter(
@@ -357,17 +449,18 @@ class _LoansScreenState extends State<LoansScreen> {
                               bg: Colors.white.withOpacity(.78),
                               accent: Colors.black87,
                               segment: _segment,
-                              totalOutstanding: sum['totalOutstanding'] as double,
-                              totalEmi: sum['totalEmi'] as double,
-                              avgRate: sum['avgRate'] as double,
-                              nextDue: sum['nextDue'] as DateTime?,
-                              overdueCount: sum['overdueCount'] as int,
-                              paidPct: sum['paidPct'] as double?,
-                              yearsLeft: sum['yearsLeft'] as double,
-                              yearsProgress: sum['yearsProgress'] as double,
-                              loansCount: sum['loansCount'] as int,
-                              loansProgress: sum['loansProgress'] as double,
+                              totalOutstanding: totalOutstanding,
+                              totalEmi: totalEmi,
+                              avgRate: avgRate,
+                              nextDue: nextDue,
+                              overdueCount: overdueCount,
+                              paidPct: paidPct,
+                              yearsLeft: yearsLeft,
+                              yearsProgress: yearsProgress,
+                              loansCount: loansCount,
+                              loansProgress: loansProgress,
                               currency: _inr,
+                              sharedCount: sharedCount,
                             ),
                           ),
                         ),
@@ -394,8 +487,10 @@ class _LoansScreenState extends State<LoansScreen> {
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                           child: Row(
                             children: const [
-                              Text("Our Loans",
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
+                              Text(
+                                "Our Loans",
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white),
+                              ),
                             ],
                           ),
                         ),
@@ -421,8 +516,8 @@ class _LoansScreenState extends State<LoansScreen> {
                                   if (_segment == 'active')
                                     ElevatedButton.icon(
                                       onPressed: () async {
-                                        final added = await Navigator.pushNamed(context, '/addLoan', arguments: widget.userId);
-                                        if (added == true) setState(_fetchLoans);
+                                        final res = await Navigator.pushNamed(context, '/addLoan', arguments: widget.userId);
+                                        if (res == true || res is String) setState(_fetchLoans);
                                       },
                                       icon: const Icon(Icons.add),
                                       label: const Text("Add Loan"),
@@ -437,26 +532,37 @@ class _LoansScreenState extends State<LoansScreen> {
                           ),
                         )
                       else
+                      // Use SliverList with a builder that inserts separators.
                         SliverPadding(
                           padding: const EdgeInsets.fromLTRB(16, 2, 16, 110),
-                          sliver: SliverList.separated(
-                            itemCount: view.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 12),
-                            itemBuilder: (ctx, i) {
-                              final l = view[i];
-                              return _LoanTile(
-                                loan: l,
-                                accent: _accent,
-                                currency: _inr,
-                                dueBadge: _dueBadge(l),
-                                onToggleClosed: () => _toggleClosed(l),
-                                onToggleReminder: () => _toggleReminder(l),
-                                onDelete: () => _confirmDelete(l),
-                                onTap: () => _showDetails(l),
-                                onEdit: () => _editLoan(l),
-                                showInlineActions: false,
-                              );
-                            },
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                                  (ctx, i) {
+                                // For N items, we build 2*N-1 children: tile, spacer, tile, spacer, ...
+                                final isSeparator = i.isOdd;
+                                if (isSeparator) {
+                                  return const SizedBox(height: 12);
+                                }
+                                final itemIndex = i ~/ 2;
+                                final l = view[itemIndex];
+                                final share = _parseShare(l);
+                                return _LoanTile(
+                                  loan: l,
+                                  accent: _accent,
+                                  currency: _inr,
+                                  dueBadge: _dueBadge(l),
+                                  onToggleClosed: () => _toggleClosed(l),
+                                  onToggleReminder: () => _toggleReminder(l),
+                                  onDelete: () => _confirmDelete(l),
+                                  onTap: () => _showDetails(l),
+                                  onEdit: () => _editLoan(l),
+                                  showInlineActions: false,
+                                  shareMeta: share,
+                                );
+                              },
+                              // childCount must be non-null and consistent.
+                              childCount: view.isEmpty ? 0 : (view.length * 2 - 1),
+                            ),
                           ),
                         ),
                     ],
@@ -470,10 +576,13 @@ class _LoansScreenState extends State<LoansScreen> {
     );
   }
 
+
   // Bottom sheet (actions live here)
   void _showDetails(LoanModel l) {
     final nd = _nextPaymentDate(l);
     final dueBadge = _dueBadge(l);
+    final share = _parseShare(l);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -527,8 +636,13 @@ class _LoansScreenState extends State<LoansScreen> {
                 if (l.tenureMonths != null) _kpi("Tenure", "${l.tenureMonths} mo"),
                 if (l.paymentDayOfMonth != null) _kpi("Pay on", "Day ${l.paymentDayOfMonth}"),
                 _kpi("Reminder", (l.reminderEnabled ?? false) ? "On" : "Off"),
+                if (share.isShared) _kpi("Sharing", share.mode == _ShareMode.equal ? "Equal" : "Custom %"),
               ],
             ),
+            if (share.isShared) ...[
+              const SizedBox(height: 10),
+              _ShareMembersBlock(share: share),
+            ],
             if ((l.note ?? '').isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(l.note!, style: const TextStyle(color: Colors.black87)),
@@ -789,6 +903,8 @@ class _SummaryCard extends StatelessWidget {
   final int loansCount;
   final double loansProgress;
 
+  final int sharedCount;
+
   final NumberFormat currency;
 
   const _SummaryCard({
@@ -807,6 +923,7 @@ class _SummaryCard extends StatelessWidget {
     required this.loansCount,
     required this.loansProgress,
     required this.currency,
+    required this.sharedCount,
   }) : super(key: key);
 
   @override
@@ -857,6 +974,7 @@ class _SummaryCard extends StatelessWidget {
               _chip("Avg rate", avgRate > 0 ? "${avgRate.toStringAsFixed(1)}%" : "--"),
               _chip("Next due", segment == 'active' ? nextDueText : "--"),
               _chip("Overdue", segment == 'active' ? "$overdueCount" : "0"),
+              _chip("Shared", "$sharedCount"),
             ],
           ),
           const SizedBox(height: 14),
@@ -897,6 +1015,7 @@ class _LoanTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onEdit;
   final bool showInlineActions;
+  final _ShareMeta shareMeta;
 
   const _LoanTile({
     Key? key,
@@ -910,6 +1029,7 @@ class _LoanTile extends StatelessWidget {
     required this.onTap,
     required this.onEdit,
     this.showInlineActions = false,
+    required this.shareMeta,
   }) : super(key: key);
 
   @override
@@ -932,7 +1052,6 @@ class _LoanTile extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
-            // tightened trailing padding prevents tiny pixel overflow on some devices
             padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -942,7 +1061,7 @@ class _LoanTile extends StatelessWidget {
                   lenderType: loan.lenderType,
                   accent: accent,
                   isClosed: isClosed,
-                  size: 54, // presence
+                  size: 54,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -951,102 +1070,145 @@ class _LoanTile extends StatelessWidget {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
+                        // Left side: title + shared badge (already expands)
                         Expanded(
-                          child: Text(
-                            loan.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16.8, color: kText),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  loan.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 16.8,
+                                    color: kText,
+                                  ),
+                                ),
+                              ),
+                              if (shareMeta.isShared) ...[
+                                const SizedBox(width: 6),
+                                const _SharedBadge(),
+                              ],
+                            ],
                           ),
                         ),
+
                         const SizedBox(width: 8),
-                        _StatusBadge(text: isClosed ? 'Closed' : dueBadge, isClosed: isClosed),
-                        const SizedBox(width: 4),
-                        PopupMenuButton<String>(
-                          padding: EdgeInsets.zero,
-                          position: PopupMenuPosition.under,
-                          offset: const Offset(-20, 0),
-                          constraints: const BoxConstraints(minWidth: 160),
-                          tooltip: 'Actions',
-                          icon: const Icon(Icons.more_vert),
-                          onSelected: (v) {
-                            switch (v) {
-                              case 'edit':
-                                onEdit();
-                                break;
-                              case 'toggleClosed':
-                                onToggleClosed();
-                                break;
-                              case 'toggleReminder':
-                                onToggleReminder();
-                                break;
-                              case 'delete':
-                                onDelete();
-                                break;
-                            }
-                          },
-                          itemBuilder: (ctx) => const [
-                            PopupMenuItem(
-                              value: 'edit',
-                              child: ListTile(
-                                leading: Icon(Icons.edit_rounded),
-                                title: Text('Edit'),
-                                dense: true,
-                                visualDensity: VisualDensity(horizontal: -2, vertical: -2),
+
+                        // Right side: status badge + menu — allow them to scale down
+                        Flexible(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: _StatusBadge(
+                                    text: loan.isClosed ? 'Closed' : dueBadge,
+                                    isClosed: loan.isClosed,
+                                  ),
+                                ),
                               ),
-                            ),
-                            PopupMenuItem(
-                              value: 'toggleClosed',
-                              child: ListTile(
-                                leading: Icon(Icons.verified_rounded),
-                                title: Text('Toggle closed'),
-                                dense: true,
-                                visualDensity: VisualDensity(horizontal: -2, vertical: -2),
+                              const SizedBox(width: 4),
+                              // Keep the popup menu but ensure it doesn't demand extra width
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: PopupMenuButton<String>(
+                                  padding: EdgeInsets.zero,
+                                  position: PopupMenuPosition.under,
+                                  offset: const Offset(-20, 0),
+                                  constraints: const BoxConstraints(minWidth: 160),
+                                  tooltip: 'Actions',
+                                  icon: const Icon(Icons.more_vert),
+                                  onSelected: (v) {
+                                    switch (v) {
+                                      case 'edit': onEdit(); break;
+                                      case 'toggleClosed': onToggleClosed(); break;
+                                      case 'toggleReminder': onToggleReminder(); break;
+                                      case 'delete': onDelete(); break;
+                                    }
+                                  },
+                                  itemBuilder: (ctx) => const [
+                                    PopupMenuItem(
+                                      value: 'edit',
+                                      child: ListTile(
+                                        leading: Icon(Icons.edit_rounded),
+                                        title: Text('Edit'),
+                                        dense: true,
+                                        visualDensity: VisualDensity(horizontal: -2, vertical: -2),
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'toggleClosed',
+                                      child: ListTile(
+                                        leading: Icon(Icons.verified_rounded),
+                                        title: Text('Toggle closed'),
+                                        dense: true,
+                                        visualDensity: VisualDensity(horizontal: -2, vertical: -2),
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'toggleReminder',
+                                      child: ListTile(
+                                        leading: Icon(Icons.notifications_rounded),
+                                        title: Text('Toggle reminder'),
+                                        dense: true,
+                                        visualDensity: VisualDensity(horizontal: -2, vertical: -2),
+                                      ),
+                                    ),
+                                    PopupMenuDivider(),
+                                    PopupMenuItem(
+                                      value: 'delete',
+                                      child: ListTile(
+                                        leading: Icon(Icons.delete_forever_rounded, color: Colors.red),
+                                        title: Text('Delete'),
+                                        dense: true,
+                                        visualDensity: VisualDensity(horizontal: -2, vertical: -2),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            PopupMenuItem(
-                              value: 'toggleReminder',
-                              child: ListTile(
-                                leading: Icon(Icons.notifications_rounded),
-                                title: Text('Toggle reminder'),
-                                dense: true,
-                                visualDensity: VisualDensity(horizontal: -2, vertical: -2),
-                              ),
-                            ),
-                            PopupMenuDivider(),
-                            PopupMenuItem(
-                              value: 'delete',
-                              child: ListTile(
-                                leading: Icon(Icons.delete_forever_rounded, color: Colors.red),
-                                title: Text('Delete'),
-                                dense: true,
-                                visualDensity: VisualDensity(horizontal: -2, vertical: -2),
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 8),
 
-                    Row(children: [
-                      // Note: original code prefixes ₹ + currency.format (which already has ₹).
-                      // Kept as-is to avoid any behavioral change.
-                      Text("₹ ${currency.format(loan.amount)}",
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-                      const SizedBox(width: 10),
-                      if ((loan.interestRate ?? 0) > 0) _pill(Icons.percent_rounded, "${loan.interestRate}%"),
-                      if ((loan.emi ?? 0) > 0)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 6),
-                          child: _pill(Icons.savings_rounded, "EMI ${currency.format(loan.emi)}"),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          "₹ ${currency.format(loan.amount)}",
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                    ]),
+                        if ((loan.interestRate ?? 0) > 0)
+                          _pill(Icons.percent_rounded, "${loan.interestRate}%"),
+                        if ((loan.emi ?? 0) > 0)
+                          _pill(Icons.savings_rounded, "EMI ${currency.format(loan.emi)}"),
+                      ],
+                    ),
                     const SizedBox(height: 6),
-                    Text(
-                      "${loan.lenderType}${loan.lenderName != null ? " • ${loan.lenderName}" : ""}",
-                      style: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            "${loan.lenderType}${loan.lenderName != null ? " • ${loan.lenderName}" : ""}",
+                            style: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (shareMeta.isShared) ...[
+                          const SizedBox(width: 8),
+                          _AvatarStack(members: shareMeta.members),
+                        ],
+                      ],
                     ),
                   ]),
                 ),
@@ -1204,7 +1366,6 @@ class _AssetIndex {
     var s = raw.trim().toLowerCase();
     s = s.replaceAll('&', 'and');
 
-
     final dropWords = ['bank', 'ltd', 'limited', 'financial', 'finance', 'co', 'company'];
     final tokens = s
         .replaceAll(RegExp(r'[^a-z0-9\s_-]'), ' ')
@@ -1236,4 +1397,128 @@ class _AssetIndex {
       withBankCollapsed,
     }.where((e) => e.isNotEmpty).toList();
   }
+}
+
+// ==================== Sharing UI bits ====================
+
+class _SharedBadge extends StatelessWidget {
+  const _SharedBadge({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFD0E3FF)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: const [
+        Icon(Icons.people_alt_rounded, size: 14, color: Color(0xFF0B67A3)),
+        SizedBox(width: 4),
+        Text("Shared", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0B67A3))),
+      ]),
+    );
+  }
+}
+
+
+class _AvatarStack extends StatelessWidget {
+  final List<_ShareEntry> members;
+  const _AvatarStack({Key? key, required this.members}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final count = members.isEmpty ? 0 : (members.length > 3 ? 3 : members.length);
+    if (count == 0) return const SizedBox.shrink();
+
+    // Each avatar is 22 wide; we overlap by 8 (22 - 14) so add 14 per extra.
+    final double width = 22 + (count - 1) * 14.0;
+
+    return SizedBox(
+      width: width,
+      height: 22,
+      child: Stack(
+        children: List.generate(count, (i) {
+          final m = members[i];
+          return Positioned(
+            left: i * 14.0,
+            child: CircleAvatar(
+              radius: 11,
+              backgroundColor: Colors.grey[200],
+              child: Text(
+                _initials(m.name),
+                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.black87),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts.first.characters.first.toUpperCase();
+    return (parts.first.characters.first + parts.last.characters.first).toUpperCase();
+  }
+}
+
+
+class _ShareMembersBlock extends StatelessWidget {
+  final _ShareMeta share;
+  const _ShareMembersBlock({Key? key, required this.share}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = share.members
+        .map((m) => Row(
+      children: [
+        const Icon(Icons.person_rounded, size: 18),
+        const SizedBox(width: 8),
+        Expanded(child: Text(m.name, style: const TextStyle(fontWeight: FontWeight.w800))),
+        Text("${m.percent.toStringAsFixed(1)}%", style: const TextStyle(fontWeight: FontWeight.w900)),
+      ],
+    ))
+        .toList();
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(share.mode == _ShareMode.equal ? "Sharing (equal)" : "Sharing (custom %)",
+              style: const TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          ...rows,
+        ],
+      ),
+    );
+  }
+}
+
+// DTOs for parsed share
+class _ShareEntry {
+  final String name;
+  final double percent;
+  _ShareEntry({required this.name, required this.percent});
+}
+
+enum _ShareMode { equal, custom }
+
+class _ShareMeta {
+  final bool isShared;
+  final _ShareMode mode;
+  final List<_ShareEntry> members;
+  const _ShareMeta({required this.isShared, required this.mode, required this.members});
+  const _ShareMeta.empty()
+      : isShared = false,
+        mode = _ShareMode.equal,
+        members = const [];
 }

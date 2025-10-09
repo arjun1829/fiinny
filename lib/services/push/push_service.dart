@@ -1,5 +1,6 @@
 // lib/services/push/push_service.dart
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -13,6 +14,10 @@ final FlutterLocalNotificationsPlugin _fln = FlutterLocalNotificationsPlugin();
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // Keep super light; if needed, init Firebase here first.
   // await Firebase.initializeApp();
+  if (kDebugMode) {
+    // ignore: avoid_print
+    print('[PushService] BG message: ${message.messageId} ${message.data}');
+  }
 }
 
 class PushService {
@@ -53,35 +58,52 @@ class PushService {
       const InitializationSettings(android: androidInit, iOS: iosInit),
       onDidReceiveNotificationResponse: (resp) {
         final deeplink = resp.payload;
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('[PushService] onDidReceiveNotificationResponse payload=$deeplink');
+        }
         if (deeplink != null && deeplink.isNotEmpty) _handleDeeplink(deeplink);
       },
     );
 
-    // 2) Ensure Android channels (no Android runtime permission call here;
-    //    flutter_local_notifications 19.x doesn't expose it)
+    // 2) Ensure Android channels
     await _ensureAndroidChannels();
 
-    // 3) iOS permission
-    if (Platform.isIOS) {
-      await _messaging.requestPermission(alert: true, badge: true, sound: true);
-    }
+    // 3) Permissions (iOS prompts; Android 13+ uses app manifest permission)
+    await ensurePermissions();
 
     // 4) Background handler
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     // 5) Token save + refresh
-    final token = await _messaging.getToken();
-    await _saveToken(token);
-    _messaging.onTokenRefresh.listen(_saveToken);
+    try {
+      final token = await _messaging.getToken();
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('[PushService] FCM token: $token');
+      }
+      await _saveToken(token);
+      _messaging.onTokenRefresh.listen(_saveToken);
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('[PushService] getToken failed: $e');
+      }
+    }
 
     // 6) Foreground messages → local banner (+ in-app feed)
     FirebaseMessaging.onMessage.listen((msg) async {
       final title = msg.notification?.title ?? msg.data['title'] ?? 'Fiinny';
       final body = msg.notification?.body ?? msg.data['body'] ?? '';
-      final deeplink = msg.data['deeplink'] ?? 'app://home';
+      final String? deeplink = msg.data['deeplink']; // do NOT fabricate one
       final channelId = _channelFromType(msg.data['type'], msg.data['severity']);
 
-      await _showLocalNow(title, body, deeplink, channelId: channelId);
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('[PushService] onMessage type=${msg.data['type']} deeplink=$deeplink');
+      }
+
+      await _showLocalNow(title, body, deeplink ?? '', channelId: channelId);
 
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null) {
@@ -101,33 +123,103 @@ class PushService {
       }
     });
 
-    // 7) Tap from background
+    // 7) Tap from background (user explicitly tapped the push)
     FirebaseMessaging.onMessageOpenedApp.listen((msg) {
-      final deeplink = msg.data['deeplink'] ?? 'app://home';
-      _handleDeeplink(deeplink);
+      final String? deeplink = msg.data['deeplink'];
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('[PushService] onMessageOpenedApp deeplink=$deeplink');
+      }
+      if (deeplink != null && deeplink.isNotEmpty) {
+        _handleDeeplink(deeplink);
+      }
     });
 
-    // 8) Cold start from push
-    final initialMsg = await _messaging.getInitialMessage();
-    if (initialMsg != null) {
-      final deeplink = initialMsg.data['deeplink'] ?? 'app://home';
-      _handleDeeplink(deeplink);
+    // ✅ Intentionally NO cold-start deeplink handling here.
+    // We DO NOT call getInitialMessage() to avoid auto-navigation when opening from the app icon.
+  }
+
+  /// Ask for notification permission where relevant.
+  /// - iOS: prompts user
+  /// - Android: runtime permission handled by OS (manifest) on 13+, nothing to do here
+  static Future<void> ensurePermissions() async {
+    if (Platform.isIOS) {
+      try {
+        final settings = await _messaging.requestPermission(
+          alert: true, badge: true, sound: true, announcement: false,
+          carPlay: false, criticalAlert: false, provisional: false,
+        );
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('[PushService] iOS permission: ${settings.authorizationStatus}');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('[PushService] iOS requestPermission error: $e');
+        }
+      }
     }
+  }
+
+  // ---- public helpers ----
+
+  /// Generic public local notification (wrapper around the private _showLocalNow).
+  static Future<void> showLocal({
+    required String title,
+    required String body,
+    String deeplink = '', // default: no navigation on tap
+    String? channelId,
+  }) async {
+    await _showLocalNow(
+      title,
+      body,
+      deeplink,
+      channelId: channelId ?? _chDefault.id,
+    );
+  }
+
+  /// Prebuilt local nudge that deep-links to a specific friend's recurring screen.
+  /// app://friend/{friendId}/recurring
+  static Future<void> nudgeFriendRecurringLocal({
+    required String friendId,
+    required String itemTitle,
+    DateTime? dueOn,
+    String? frequency, // e.g., daily/weekly/monthly/yearly/custom
+    String? amount,    // optional "₹1,200"
+  }) async {
+    final title = 'Reminder: $itemTitle';
+    final String when = (dueOn != null) ? _fmtDate(dueOn) : 'soon';
+    final freqPart = (frequency != null && frequency.isNotEmpty) ? ' • $frequency' : '';
+    final amtPart = (amount != null && amount.isNotEmpty) ? ' • $amount' : '';
+    final body = '$itemTitle is due on $when$freqPart$amtPart';
+
+    final deeplink = 'app://friend/$friendId/recurring';
+    await _showLocalNow(title, body, deeplink, channelId: _chNudges.id);
   }
 
   // ---- helpers ----
 
   static Future<void> _ensureAndroidChannels() async {
     if (!Platform.isAndroid) return;
-    final android = _fln
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final android =
+    _fln.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (android == null) return;
     try {
       await android.createNotificationChannel(_chDefault);
       await android.createNotificationChannel(_chNudges);
       await android.createNotificationChannel(_chDigests);
       await android.createNotificationChannel(_chCritical);
-    } catch (_) {}
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('[PushService] Android channels ensured.');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('[PushService] createNotificationChannel error: $e');
+      }
+    }
   }
 
   static String _channelFromType(dynamic type, dynamic severity) {
@@ -167,6 +259,11 @@ class PushService {
     const ios = DarwinNotificationDetails();
     final details = NotificationDetails(android: android, iOS: ios);
 
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[PushService] showLocalNow channel=$channelId title="$title" deeplink=$deeplink');
+    }
+
     await _fln.show(
       DateTime.now().millisecondsSinceEpoch ~/ 1000,
       title,
@@ -184,6 +281,11 @@ class PushService {
       'fcmToken': token,
       'fcmTokenUpdatedAt': DateTime.now().millisecondsSinceEpoch,
     }, SetOptions(merge: true));
+
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[PushService] Saved FCM token for $uid');
+    }
   }
 
   /// Centralized deeplink navigation.
@@ -191,35 +293,65 @@ class PushService {
     final nav = rootNavigatorKey.currentState;
     if (nav == null) return;
 
-    final uri = Uri.tryParse(deeplink) ?? Uri.parse('app://home');
-    // e.g. app://expense/ABC -> host=expense, path=/ABC
+    // Harden: ignore empty/home deeplinks
+    if (deeplink.isEmpty) return;
+    final uri = Uri.tryParse(deeplink);
+    if (uri == null) return;
     final host = uri.host.toLowerCase();
+    if (host == 'home' || host.isEmpty) return;
+
     final firstSeg = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : '';
+
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[PushService] handleDeeplink host=$host seg=$firstSeg full=$deeplink');
+    }
 
     switch (host) {
       case 'tx': // app://tx/today
-        nav.pushNamed('/tx-day-details',
-            arguments: FirebaseAuth.instance.currentUser?.phoneNumber ??
-                FirebaseAuth.instance.currentUser?.uid ??
-                '');
+        nav.pushNamed(
+          '/tx-day-details',
+          arguments: FirebaseAuth.instance.currentUser?.phoneNumber ??
+              FirebaseAuth.instance.currentUser?.uid ??
+              '',
+        );
         break;
 
       case 'analytics': // app://analytics/weekly or /monthly
         final sub = firstSeg;
-        if (sub == 'weekly')  nav.pushNamed('/analytics-weekly');
-        else if (sub == 'monthly') nav.pushNamed('/analytics-monthly');
-        else nav.pushNamed('/analytics');
+        if (sub == 'weekly') {
+          nav.pushNamed('/analytics-weekly');
+        } else if (sub == 'monthly') {
+          nav.pushNamed('/analytics-monthly');
+        } else {
+          nav.pushNamed('/analytics');
+        }
         break;
 
-      case 'expense': // ✅ app://expense/{expenseId}
+      case 'expense': // app://expense/{expenseId}
         if (firstSeg.isNotEmpty) {
           nav.pushNamed('/expense-details', arguments: firstSeg);
         }
         break;
 
-      case 'chat': // ✅ app://chat/{threadId}
+      case 'chat': // app://chat/{threadId}
         if (firstSeg.isNotEmpty) {
           nav.pushNamed('/chat', arguments: firstSeg);
+        }
+        break;
+
+      case 'friend': // app://friend/{friendId}/recurring
+        if (firstSeg.isNotEmpty) {
+          nav.pushNamed(
+            '/friend-recurring',
+            arguments: {
+              'friendId': firstSeg,
+              if (uri.queryParameters['name'] != null)
+                'friendName': uri.queryParameters['name'],
+            },
+          );
+        } else {
+          nav.pushNamed('/friends'); // fallback to friends list
         }
         break;
 
@@ -236,10 +368,22 @@ class PushService {
         break;
 
       default:
-        nav.pushNamed('/'); // fallback
+      // Do nothing on unknown hosts to avoid accidental navigation loops.
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('[PushService] Unknown deeplink host="$host" – ignoring');
+        }
     }
   }
 
+  // ---- small utils ----
+
+  static String _fmtDate(DateTime d) {
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    final yyyy = d.year.toString();
+    return '$dd-$mm-$yyyy';
+  }
 
   /// Quick local test (call from a debug button)
   static Future<void> debugLocalTest() async {

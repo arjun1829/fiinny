@@ -4,6 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
+import '../details/services/recurring_service.dart';
 
 import '../models/loan_model.dart';
 import '../services/loan_service.dart';
@@ -15,6 +18,7 @@ const Color kSubtle = Color(0xFF9AA5A1);
 const Color kLine   = Color(0x14000000);
 
 enum _InputMode { knowEmi, knowMonths }
+enum _ShareMode { none, equal, custom }
 
 class AddLoanScreen extends StatefulWidget {
   final String userId;
@@ -37,6 +41,20 @@ class _AddLoanScreenState extends State<AddLoanScreen>
   final _origCtrl = TextEditingController();
   final _lenderNameCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
+  final _recurringSvc = RecurringService();
+
+  // --- Share / Split controllers for custom % ---
+  final Map<String, TextEditingController> _pctCtrls = {};
+  void _ensurePctCtrl(String key, double value) {
+    _pctCtrls.putIfAbsent(key, () {
+      return TextEditingController(text: value.toStringAsFixed(1));
+    });
+  }
+  void _removePctCtrl(String key) {
+    final c = _pctCtrls.remove(key);
+    c?.dispose();
+  }
+
 
   // lifted selections (persist across rebuilds/scroll)
   String? _titleSelected; // from title options OR "Other…"
@@ -50,6 +68,12 @@ class _AddLoanScreenState extends State<AddLoanScreen>
   int _daysBefore = 2;
   TimeOfDay _reminderTime = const TimeOfDay(hour: 9, minute: 0);
   bool _autopay = false;
+
+  // ---- Share / Split state ----
+  bool _shareEnabled = false;
+  _ShareMode _shareMode = _ShareMode.equal;
+  final List<_Member> _members = []; // chosen members
+  final Map<String, double> _customPct = {}; // member.key => percent
 
   bool _saving = false;
   bool _didPersist = false;
@@ -266,8 +290,55 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     if (_paymentDOM == null) out.add("Pick a monthly due date (1–31) for reminders.");
     if (_reminderEnabled && _daysBefore < 2) out.add("Set reminders ≥2 days before due date.");
     if (plan.isValid && plan.months > 60) out.add("Long payoff (>60 mo) → try prepayments.");
+    if (_shareEnabled && _members.isEmpty) out.add("Add at least one person to share with.");
+    if (_shareEnabled && _shareMode == _ShareMode.custom && !_customValid) out.add("Custom split must total 100%.");
     return out;
   }
+
+  bool get _customValid {
+    if (_shareMode != _ShareMode.custom) return true;
+    double total = 0;
+    for (final m in _members) {
+      total += (_customPct[m.key] ?? 0);
+    }
+    return (total - 100.0).abs() <= 0.6; // slightly more lenient
+  }
+  Future<void> _shareCreateRecurringForMembers(String loanId, LoanModel savedLoan) async {
+    // We need the loan id inside the link payload
+    final loanForLink = savedLoan.copyWith(id: loanId);
+
+    for (final m in _members) {
+      // Prefer the Firestore friend document id. Fallback to phone if your schema uses phone as friendId.
+      final friendId = (m.id?.isNotEmpty == true)
+          ? m.id!
+          : ((m.phone?.isNotEmpty == true) ? m.phone! : '');
+
+      if (friendId.isEmpty) {
+        debugPrint('⚠️ Skipping member without friendId/phone: ${m.nameOrPhone}');
+        continue;
+      }
+
+      try {
+        await _recurringSvc.attachLoanToFriend(
+          userPhone: widget.userId,   // <-- Make sure this is the SAME key you use in users/{userPhone}
+          friendId: friendId,         // <-- friend doc id or phone (matches your Firestore path)
+          loan: loanForLink,
+          mirrorToFriend: true,
+        );
+
+      } catch (e) {
+        debugPrint('attachLoanToFriend failed for $friendId: $e');
+        // (Optional) show a soft warning but don't block the whole save
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Couldn’t link to ${m.nameOrPhone}. You can try again later.')),
+          );
+        }
+      }
+    }
+  }
+
+
 
   // -------------------------- save / success --------------------------
   Future<void> _showSuccessOverlay() async {
@@ -304,6 +375,25 @@ class _AddLoanScreenState extends State<AddLoanScreen>
       return false;
     }
 
+    if (_shareEnabled) {
+      if (_members.isEmpty) {
+        if (showSnackOnSkip) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Add at least one person to share with.")),
+          );
+        }
+        return false;
+      }
+      if (_shareMode == _ShareMode.custom && !_customValid) {
+        if (showSnackOnSkip) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Custom split must total 100%.")),
+          );
+        }
+        return false;
+      }
+    }
+
     final plan = _computePlan();
     if (!plan.isValid) {
       if (showSnackOnSkip) {
@@ -318,6 +408,22 @@ class _AddLoanScreenState extends State<AddLoanScreen>
 
     setState(() => _saving = true);
     try {
+      // build note with share details (non-destructive append)
+      String? finalNote;
+      if (_shareEnabled && _members.isNotEmpty) {
+        final shareLines = _shareSummaryLines();
+        final existing = _noteCtrl.text.trim();
+        final app = [
+          if (existing.isNotEmpty) existing,
+          "—",
+          "Share with:",
+          ...shareLines,
+        ].join("\n");
+        finalNote = app;
+      } else {
+        finalNote = _noteCtrl.text.trim().isNotEmpty ? _noteCtrl.text.trim() : null;
+      }
+
       final loan = LoanModel(
         userId: widget.userId,
         title: _titleCtrl.text.trim(),
@@ -338,20 +444,43 @@ class _AddLoanScreenState extends State<AddLoanScreen>
         reminderEnabled: _reminderEnabled,
         reminderDaysBefore: _daysBefore,
         reminderTime: "${_reminderTime.hour.toString().padLeft(2, '0')}:${_reminderTime.minute.toString().padLeft(2, '0')}",
-        note: _noteCtrl.text.trim().isNotEmpty ? _noteCtrl.text.trim() : null,
+        note: finalNote,
         isClosed: false,
         createdAt: DateTime.now(),
       );
 
       final id = await LoanService().addLoan(loan);
+
+
+      // Optional: tag for shared metadata (keeps model backward-compatible)
+      if (_shareEnabled && _members.isNotEmpty) {
+        final tags = <String>[
+          'shared',
+          'share:${_shareMode == _ShareMode.equal ? 'equal' : 'custom'}',
+          ..._members.map((m) => 'with:${m.phone ?? m.name}'),
+        ];
+        try { await LoanService().addTags(id, tags); } catch (_) {}
+      }
+
       await LoanService().setReminderPrefs(
         id,
         enabled: _reminderEnabled,
         daysBefore: _daysBefore,
         timeHHmm: "${_reminderTime.hour.toString().padLeft(2, '0')}:${_reminderTime.minute.toString().padLeft(2, '0')}",
       );
+      if (_shareEnabled && _members.isNotEmpty) {
+        await _shareCreateRecurringForMembers(id, loan);
+      }
 
       _didPersist = true;
+
+      // If you want to immediately return loanId (for auto-link flows),
+      // pop now with id. If you prefer overlay, comment next line and keep overlay.
+      if (mounted) {
+        Navigator.pop(context, id); // RETURN loanId string
+        return true;
+      }
+
       if (mounted) await _showSuccessOverlay();
       return true;
     } catch (e) {
@@ -360,6 +489,22 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  List<String> _shareSummaryLines() {
+    final lines = <String>[];
+    if (_shareMode == _ShareMode.equal) {
+      final pct = _members.isEmpty ? 0 : (100 / _members.length);
+      for (final m in _members) {
+        lines.add("• ${m.nameOrPhone} — ${pct.toStringAsFixed(1)}%");
+      }
+    } else {
+      for (final m in _members) {
+        final pct = _customPct[m.key] ?? 0;
+        lines.add("• ${m.nameOrPhone} — ${pct.toStringAsFixed(1)}%");
+      }
+    }
+    return lines;
   }
 
   Future<bool> _autoSaveIfPossible() async {
@@ -373,7 +518,7 @@ class _AddLoanScreenState extends State<AddLoanScreen>
   void _next() {
     FocusScope.of(context).unfocus();
     if (!_validateStep(_step)) return;
-    if (_step < 3) setState(() => _step++);
+    if (_step < 4) setState(() => _step++);
     _pg.animateToPage(_step, duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic);
   }
   void _back() {
@@ -395,6 +540,12 @@ class _AddLoanScreenState extends State<AddLoanScreen>
       final plan = _computePlan();
       return (_annualRate ?? 0) > 0 && plan.isValid && _paymentDOM != null;
     }
+    if (s == 2) {
+      if (!_shareEnabled) return true;
+      if (_members.isEmpty) return false;
+      if (_shareMode == _ShareMode.custom && !_customValid) return false;
+      return true;
+    }
     return true;
   }
 
@@ -403,7 +554,7 @@ class _AddLoanScreenState extends State<AddLoanScreen>
   Widget build(BuildContext context) {
     final plan = _computePlan();
     final ally = _ally(plan);
-    final steps = ['Basics','Schedule','Reminders','Review'];
+    final steps = ['Basics','Schedule','Share','Reminders','Review'];
 
     // promoted locals for safe formatting in Review
     final eInput = _E;
@@ -600,13 +751,13 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                   currency: _inr,
                                 ),
                               ),
-                              if (ally.isNotEmpty) ...[
+                              if (_ally(plan).isNotEmpty) ...[
                                 const SizedBox(height: 10),
                                 Text("Suggestions", style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey[900])),
                                 const SizedBox(height: 6),
                                 Wrap(
                                   spacing: 6, runSpacing: 6,
-                                  children: ally.map((s) => Chip(
+                                  children: _ally(plan).map((s) => Chip(
                                     label: Text(s),
                                     backgroundColor: Colors.blue[50],
                                     visualDensity: VisualDensity.compact,
@@ -625,7 +776,146 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                           ),
                         ),
 
-                        // STEP 2 — Reminders
+                        // STEP 2 — Share / Split
+                        SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _H2('Share / Split (optional)', brand: _brand),
+                              const SizedBox(height: 10),
+                              SwitchListTile.adaptive(
+                                value: _shareEnabled,
+                                onChanged: (v) {
+                                  setState(() {
+                                    _shareEnabled = v;
+                                    if (!v) {
+                                      // if user turns it off, clear state & controllers
+                                      for (final m in _members) _removePctCtrl(m.key);
+                                      _members.clear();
+                                      _customPct.clear();
+                                    } else {
+                                      // turning on? seed controllers for current members (if any)
+                                      if (_members.isNotEmpty) {
+                                        final eq = 100.0 / _members.length;
+                                        for (final m in _members) {
+                                          _ensurePctCtrl(m.key, _shareMode == _ShareMode.custom
+                                              ? (_customPct[m.key] ?? eq)
+                                              : eq);
+                                        }
+                                      }
+                                    }
+                                  });
+                                },
+                                title: const Text("Split/share this loan"),
+                                subtitle: const Text("Add friends or groups to share EMI burden"),
+                                activeColor: _brand,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                              AnimatedCrossFade(
+                                crossFadeState: _shareEnabled ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+                                duration: const Duration(milliseconds: 200),
+                                firstChild: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Wrap(
+                                      spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
+                                      children: [
+                                        ChoiceChip(
+                                          label: const Text("Equal"),
+                                          selected: _shareMode == _ShareMode.equal,
+                                          onSelected: (_) => setState(() {
+                                            _shareMode = _ShareMode.equal;
+                                            if (_members.isNotEmpty) {
+                                              final eq = 100.0 / _members.length;
+                                              for (final m in _members) {
+                                                _customPct[m.key] = eq;
+                                                _ensurePctCtrl(m.key, eq);
+                                                _pctCtrls[m.key]!.text = eq.toStringAsFixed(1);
+                                              }
+                                            }
+                                          }),
+                                          selectedColor: _brand.withOpacity(.15),
+                                          labelStyle: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            color: _shareMode == _ShareMode.equal ? _brand : Colors.black87,
+                                          ),
+                                        ),
+                                        ChoiceChip(
+                                          label: const Text("Custom %"),
+                                          selected: _shareMode == _ShareMode.custom,
+                                          onSelected: (_) => setState(() {
+                                            _shareMode = _ShareMode.custom;
+                                            if (_members.isNotEmpty) {
+                                              // seed equal if nothing yet
+                                              final eq = 100.0 / _members.length;
+                                              for (final m in _members) {
+                                                final v = _customPct[m.key] ?? eq;
+                                                _customPct[m.key] = v;
+                                                _ensurePctCtrl(m.key, v);
+                                                _pctCtrls[m.key]!.text = v.toStringAsFixed(1);
+                                              }
+                                            }
+                                          }),
+                                          selectedColor: _brand.withOpacity(.15),
+                                          labelStyle: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            color: _shareMode == _ShareMode.custom ? _brand : Colors.black87,
+                                          ),
+                                        ),
+                                        TextButton.icon(
+                                          onPressed: _openMemberPicker,
+                                          icon: const Icon(Icons.group_add_rounded),
+                                          label: const Text("Select people"),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+
+                                    if (_members.isEmpty)
+                                      Text("No people added yet.", style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600)),
+
+                                    if (_members.isNotEmpty)
+                                      _MembersList(
+                                        members: _members,
+                                        shareMode: _shareMode,
+                                        customPct: _customPct,
+                                        controllers: _pctCtrls,
+                                        onRemove: (m) => setState(() {
+                                          _members.remove(m);
+                                          _customPct.remove(m.key);
+                                          _removePctCtrl(m.key);
+                                        }),
+                                        onChangePct: (m, v) => setState(() {
+                                          // clamp 0..100, keep 1 decimal
+                                          final clamped = v.clamp(0, 100).toDouble();
+                                          _customPct[m.key] = double.parse(clamped.toStringAsFixed(1));
+                                          _pctCtrls[m.key]?.text = _customPct[m.key]!.toStringAsFixed(1);
+                                        }),
+                                      ),
+
+                                    if (_shareMode == _ShareMode.custom && _members.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      _CustomTotalHint(customPct: _customPct, members: _members, brand: _brand),
+                                    ],
+                                  ],
+                                ),
+                                secondChild: const SizedBox.shrink(),
+                              ),
+                              const SizedBox(height: 24),
+                              Row(
+                                children: [
+                                  _GhostButton(text: 'Back', onPressed: _back),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: _PrimaryButton(text: 'Next', onPressed: _next, brand: _brand)),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+
+                        // STEP 3 — Reminders
                         SingleChildScrollView(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                           child: Column(
@@ -699,7 +989,7 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                           ),
                         ),
 
-                        // STEP 3 — Review
+                        // STEP 4 — Review
                         SingleChildScrollView(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                           child: Column(
@@ -719,6 +1009,8 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                 if (_mode == _InputMode.knowEmi && eInput != null) _KV('EMI (input)', _inr.format(eInput)),
                                 if (_mode == _InputMode.knowMonths && nInput != null) _KV('Months (input)', "$nInput"),
                                 _KV('Monthly Due Day', _paymentDOM?.toString() ?? '--'),
+                                if (_shareEnabled) _KV('Sharing', _shareMode == _ShareMode.equal ? 'Equal' : 'Custom %'),
+                                if (_shareEnabled && _members.isNotEmpty) _KV('Members', _members.map((m) => m.nameOrPhone).join(', ')),
                                 if (_noteCtrl.text.trim().isNotEmpty) _KV('Notes', _noteCtrl.text.trim()),
                                 _KV('Reminders', _reminderEnabled ? 'On' : 'Off'),
                                 if (_reminderEnabled) _KV('Notify', "$_daysBefore day(s) before at ${_reminderTime.hour.toString().padLeft(2,'0')}:${_reminderTime.minute.toString().padLeft(2,'0')}"),
@@ -852,6 +1144,47 @@ class _AddLoanScreenState extends State<AddLoanScreen>
       ),
     );
   }
+
+  // -------------------------- Share helpers --------------------------
+  void _openMemberPicker() async {
+    final picked = await showModalBottomSheet<List<_Member>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      builder: (ctx) => _SharePickerSheet(
+        initial: _members,
+        userId: widget.userId, // <-- pass real user id for Firestore
+      ),
+    );
+    if (picked != null) {
+      setState(() {
+        // remove controllers for removed members (if you added controller map earlier)
+        for (final m in _members) {
+          if (!picked.contains(m)) _removePctCtrl(m.key);
+        }
+        _members
+          ..clear()
+          ..addAll(picked);
+
+        _customPct.clear();
+        if (_shareMode == _ShareMode.custom && _members.isNotEmpty) {
+          final eq = 100.0 / _members.length;
+          for (final m in _members) {
+            _customPct[m.key] = double.parse(eq.toStringAsFixed(2));
+            _ensurePctCtrl(m.key, _customPct[m.key]!);
+          }
+        } else {
+          final eq = _members.isEmpty ? 0.0 : 100.0 / _members.length;
+          for (final m in _members) {
+            _ensurePctCtrl(m.key, eq);
+          }
+        }
+      });
+    }
+  }
+
+
 }
 
 // -----------------------------------------------------------------------------
@@ -1359,7 +1692,7 @@ class _Plan {
 }
 
 // -----------------------------------------------------------------------------
-// Stepper primitives (new, aligned with Add Transaction)
+// Stepper primitives (kept)
 // -----------------------------------------------------------------------------
 class _StepperBar extends StatelessWidget {
   final int current;
@@ -1525,6 +1858,413 @@ class _GlassCard extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: child,
+      ),
+    );
+  }
+}
+
+// ======================= Share picker + widgets =======================
+
+class _Member {
+  final String? id; // optional (friendId)
+  final String? phone;
+  final String? name;
+  _Member({this.id, this.phone, this.name});
+
+  String get key => (id?.isNotEmpty == true ? 'id:$id' : 'ph:${phone ?? name ?? ''}');
+  String get nameOrPhone => (name?.isNotEmpty == true)
+      ? name!
+      : (phone?.isNotEmpty == true ? phone! : 'Unknown');
+
+  @override
+  bool operator ==(Object other) => other is _Member && other.key == key;
+  @override
+  int get hashCode => key.hashCode;
+}
+
+class _MembersList extends StatelessWidget {
+  final List<_Member> members;
+  final _ShareMode shareMode;
+  final Map<String, double> customPct;
+  final Map<String, TextEditingController> controllers;
+  final void Function(_Member) onRemove;
+  final void Function(_Member, double) onChangePct;
+
+  const _MembersList({
+    Key? key,
+    required this.members,
+    required this.shareMode,
+    required this.customPct,
+    required this.controllers,
+    required this.onRemove,
+    required this.onChangePct,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final eq = members.isEmpty ? 0.0 : 100.0 / members.length;
+
+    return Column(
+      children: members.map((m) {
+        final k = m.key;
+        final pct = shareMode == _ShareMode.equal
+            ? eq
+            : (customPct[k] ?? eq);
+
+        // ensure a controller even in equal mode (stable UI)
+        final ctrl = controllers[k] ?? TextEditingController(text: pct.toStringAsFixed(1));
+        controllers[k] = ctrl;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.person_rounded, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  m.nameOrPhone,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              if (shareMode == _ShareMode.custom) ...[
+                SizedBox(
+                  width: 90,
+                  child: TextField(
+                    key: ValueKey('pct-${m.key}'),
+                    controller: ctrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      suffixText: '%',
+                      hintText: '0',
+                    ),
+                    onChanged: (v) {
+                      final d = double.tryParse(v.trim()) ?? 0;
+                      onChangePct(m, d);
+                    },
+                  ),
+                ),
+              ] else
+                Text("${pct.toStringAsFixed(1)}%",
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+              IconButton(
+                tooltip: 'Remove',
+                onPressed: () => onRemove(m),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+
+class _CustomTotalHint extends StatelessWidget {
+  final Map<String, double> customPct;
+  final List<_Member> members;
+  final Color brand;
+  const _CustomTotalHint({Key? key, required this.customPct, required this.members, required this.brand}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final total = members.fold<double>(0, (s, m) => s + (customPct[m.key] ?? 0.0));
+    final ok = (total - 100.0).abs() <= 0.5;
+    return Row(
+      children: [
+        Icon(ok ? Icons.check_circle_rounded : Icons.error_rounded,
+            color: ok ? Colors.green : Colors.orange),
+        const SizedBox(width: 6),
+        Text(
+          "Total: ${total.toStringAsFixed(1)}%",
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: ok ? Colors.green[800] : brand,
+          ),
+        ),
+        const Spacer(),
+        if (!ok)
+          const Text("Make it 100%", style: TextStyle(fontWeight: FontWeight.w700)),
+      ],
+    );
+  }
+}
+
+// ======================= Share picker (friends & groups only) =======================
+
+class _SharePickerSheet extends StatefulWidget {
+  final List<_Member> initial;
+  final String userId; // <-- pass widget.userId from AddLoanScreen
+  const _SharePickerSheet({Key? key, required this.initial, required this.userId}) : super(key: key);
+
+  @override
+  State<_SharePickerSheet> createState() => _SharePickerSheetState();
+}
+
+class _SharePickerSheetState extends State<_SharePickerSheet> {
+  final _q = TextEditingController();
+  final List<_Member> _selected = [];
+  final Set<String> _expandedGroups = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _selected.addAll(widget.initial);
+  }
+
+  @override
+  void dispose() {
+    _q.dispose();
+    super.dispose();
+  }
+
+  void _toggleMember(_Member m) {
+    setState(() {
+      if (_selected.contains(m)) {
+        _selected.remove(m);
+      } else {
+        _selected.add(m);
+      }
+    });
+  }
+
+  bool _matchesQuery(_Member m, String q) =>
+      q.isEmpty ||
+          (m.nameOrPhone.toLowerCase().contains(q)) ||
+          ((m.phone ?? '').toLowerCase().contains(q));
+
+  _Member _mapFriendDoc(QueryDocumentSnapshot<Map<String, dynamic>> d) {
+    final data = d.data();
+    return _Member(
+      id: d.id,
+      name: (data['name'] ?? data['displayName'] ?? '').toString(),
+      phone: (data['phone'] ?? data['phoneNumber'] ?? '').toString(),
+    );
+  }
+
+  List<_Member> _mapGroupMembers(
+      QueryDocumentSnapshot<Map<String, dynamic>> d) {
+    final data = d.data();
+    final membersRaw = (data['members'] ?? []) as List;
+    return membersRaw.map((m) {
+      final mm = (m as Map).cast<String, dynamic>();
+      final name = (mm['name'] ?? '').toString();
+      final phone = (mm['phone'] ?? mm['phoneNumber'] ?? '').toString();
+      // Use a stable key for group members to avoid clashes
+      final key = 'g:${d.id}:${phone.isNotEmpty ? phone : name}';
+      return _Member(id: key, name: name, phone: phone);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _q.text.trim().toLowerCase();
+    final firestore = FirebaseFirestore.instance;
+
+    final friendsCol = firestore
+        .collection('users')
+        .doc(widget.userId)
+        .collection('friends')
+        .orderBy('name');
+
+    final groupsCol = firestore
+        .collection('users')
+        .doc(widget.userId)
+        .collection('groups')
+        .orderBy('name');
+
+    return SafeArea(
+      minimum: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            height: 4, width: 42, margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(99)),
+          ),
+          Row(
+            children: [
+              const Icon(Icons.group_rounded),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('Add people to share',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+              ),
+              TextButton.icon(
+                onPressed: () => Navigator.pop(context, _selected),
+                icon: const Icon(Icons.check),
+                label: const Text('Done'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _q,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+              hintText: 'Search friends or group members…',
+              prefixIcon: Icon(Icons.search_rounded),
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Content
+          Flexible(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: friendsCol.snapshots(),
+              builder: (ctx, friendsSnap) {
+                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: groupsCol.snapshots(),
+                  builder: (ctx, groupsSnap) {
+                    final friends = <_Member>[];
+                    final groups = <({String id, String name, List<_Member> members})>[];
+
+                    if (friendsSnap.hasData) {
+                      for (final d in friendsSnap.data!.docs) {
+                        friends.add(_mapFriendDoc(d));
+                      }
+                    }
+                    if (groupsSnap.hasData) {
+                      for (final d in groupsSnap.data!.docs) {
+                        final name = (d.data()['name'] ?? '').toString();
+                        groups.add((
+                        id: d.id,
+                        name: name,
+                        members: _mapGroupMembers(d),
+                        ));
+                      }
+                    }
+
+                    // Filter by query
+                    final filteredFriends = friends.where((m) => _matchesQuery(m, q)).toList();
+                    final filteredGroups = groups.map((g) {
+                      final mems = g.members.where((m) => _matchesQuery(m, q)).toList();
+                      return (id: g.id, name: g.name, members: mems);
+                    }).where((g) => g.members.isNotEmpty || q.isEmpty).toList();
+
+                    final isLoading = (friendsSnap.connectionState == ConnectionState.waiting) ||
+                        (groupsSnap.connectionState == ConnectionState.waiting);
+
+                    if (isLoading) {
+                      return const Center(child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: CircularProgressIndicator(),
+                      ));
+                    }
+
+                    final hasAny =
+                        filteredFriends.isNotEmpty || filteredGroups.isNotEmpty;
+
+                    if (!hasAny) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            q.isEmpty ? 'No friends or groups yet.' : 'No matches for “$q”.',
+                            style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      );
+                    }
+
+                    return ListView(
+                      shrinkWrap: true,
+                      children: [
+                        if (filteredFriends.isNotEmpty) ...[
+                          _sectionHeader('Friends'),
+                          ...filteredFriends.map((m) => _memberTile(m)),
+                          const SizedBox(height: 10),
+                        ],
+                        if (filteredGroups.isNotEmpty) ...[
+                          _sectionHeader('Groups'),
+                          ...filteredGroups.map((g) => _groupTile(g.id, g.name, g.members)),
+                        ],
+                        const SizedBox(height: 8),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionHeader(String text) => Padding(
+    padding: const EdgeInsets.only(left: 4, bottom: 6, top: 6),
+    child: Text(text,
+        style: TextStyle(
+          color: Colors.grey[800],
+          fontWeight: FontWeight.w900,
+          fontSize: 12,
+          letterSpacing: .2,
+        )),
+  );
+
+  Widget _memberTile(_Member m) {
+    final sel = _selected.contains(m);
+    return ListTile(
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: sel ? Colors.teal : Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      leading: CircleAvatar(child: Text(m.nameOrPhone.characters.first.toUpperCase())),
+      title: Text(m.nameOrPhone, style: const TextStyle(fontWeight: FontWeight.w800)),
+      subtitle: (m.phone?.isNotEmpty ?? false) ? Text(m.phone!) : null,
+      trailing: sel
+          ? const Icon(Icons.check_circle, color: Colors.teal)
+          : const Icon(Icons.add_circle_outline),
+      onTap: () => _toggleMember(m),
+    );
+  }
+
+  Widget _groupTile(String groupId, String name, List<_Member> members) {
+    final expanded = _expandedGroups.contains(groupId);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+      ),
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.groups_rounded),
+            title: Text(name, style: const TextStyle(fontWeight: FontWeight.w900)),
+            subtitle: Text("${members.length} member${members.length == 1 ? '' : 's'}"),
+            trailing: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+            onTap: () {
+              setState(() {
+                if (expanded) {
+                  _expandedGroups.remove(groupId);
+                } else {
+                  _expandedGroups.add(groupId);
+                }
+              });
+            },
+          ),
+          if (expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Column(
+                children: members.map(_memberTile).toList(),
+              ),
+            ),
+        ],
       ),
     );
   }

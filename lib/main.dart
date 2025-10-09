@@ -1,13 +1,11 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:timezone/data/latest.dart' as tz;
 
-// (Optional: if you handle Android 13+ notif permission elsewhere, keep it there)
-import 'package:firebase_auth/firebase_auth.dart';
-
-// Your existing
+// Theme & notifications
 import 'themes/theme_provider.dart';
 import 'services/notification_service.dart';
 
@@ -17,42 +15,62 @@ import 'firebase_options.dart';
 // Push layer
 import 'services/push/push_service.dart';
 
+// Screens / routes
 import 'screens/launcher_screen.dart';
 import 'routes.dart';
 
-// ✅ Portfolio module routes
+// Portfolio module routes
 import 'fiinny_assets/modules/portfolio/screens/portfolio_screen.dart';
 import 'fiinny_assets/modules/portfolio/screens/asset_type_picker_screen.dart';
 import 'fiinny_assets/modules/portfolio/screens/add_asset_entry_screen.dart';
 
-// ✅ NEW: TxDayDetailsScreen import
+// Typed route
 import 'screens/tx_day_details_screen.dart';
+
+// 🔔 Local one-shot notifications binder (Option B)
+import 'core/notifications/local_notifications.dart';
+
+// Ads (centralized service)
+import 'core/ads/ad_service.dart';
 
 // Global navigator key (for deeplinks / notif taps)
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
+// ✅ Keep ONLY ONE main()
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Init order
+  // Timezone DB (needed by NotificationService & LocalNotifs)
   tz.initializeTimeZones();
+<<<<<<< HEAD
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+=======
 
-  // Local notifications (you already had this)
+  // Firebase
+  await Firebase.initializeApp();
+>>>>>>> cecd23e (chore: first commit)
+
+  // Your existing local notification wrapper
   await NotificationService.initialize();
+
+  // 🔔 Initialize our LocalNotifs (safe to call multiple times)
+  await LocalNotifs.init();
+
+  // Ads (Google Mobile Ads) – init & preload
+  await AdService.I.init();
 
   // Theme
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();
 
-  // Schedule push init to run AFTER the first frame (non-blocking + timeout)
+  // Kick push init after first frame (non-blocking)
   WidgetsBinding.instance.addPostFrameCallback((_) {
     Future.microtask(_safePushInit);
   });
 
-  // Also re-run (non-blocking) after login, but only after a frame
+  // Also retry push init when user logs in (non-blocking)
   FirebaseAuth.instance.authStateChanges().listen((user) {
     if (user == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -81,7 +99,7 @@ Future<void> _safePushInit() async {
 class FiinnyApp extends StatelessWidget {
   const FiinnyApp({Key? key}) : super(key: key);
 
-  // Merge-in portfolio routes
+  // Portfolio routes
   Map<String, WidgetBuilder> get _portfolioRoutes => {
     '/portfolio': (_) => const PortfolioScreen(),
     '/asset-type-picker': (_) => const AssetTypePickerScreen(),
@@ -100,10 +118,10 @@ class FiinnyApp extends StatelessWidget {
       // Navigator key for deeplink navigation from notif taps
       navigatorKey: rootNavigatorKey,
 
-      // Entry point: ✅ this remains the first screen
+      // Entry point (unchanged)
       home: const LauncherScreen(),
 
-      // Static route table
+      // Static routes
       routes: {
         ...appRoutes, // from routes.dart
         ..._portfolioRoutes,
@@ -115,7 +133,7 @@ class FiinnyApp extends StatelessWidget {
         final generated = appOnGenerateRoute(settings);
         if (generated != null) return generated;
 
-        // ✅ tx-day-details expects a String phone argument
+        // tx-day-details expects a String phone argument
         if (settings.name == '/tx-day-details') {
           final phone = settings.arguments as String;
           return MaterialPageRoute(
@@ -124,7 +142,7 @@ class FiinnyApp extends StatelessWidget {
           );
         }
 
-        // Fallback for unknown routes
+        // Fallback
         return MaterialPageRoute(
           builder: (_) => _RouteNotFoundScreen(
             unknownRoute: settings.name ?? 'unknown',
@@ -137,7 +155,8 @@ class FiinnyApp extends StatelessWidget {
 
 class _RouteNotFoundScreen extends StatelessWidget {
   final String unknownRoute;
-  const _RouteNotFoundScreen({required this.unknownRoute});
+  const _RouteNotFoundScreen({required this.unknownRoute, Key? key})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {

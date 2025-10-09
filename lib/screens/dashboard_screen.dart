@@ -1,3 +1,6 @@
+// `lib/screens/dashboard_screen.dart`
+
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../models/expense_item.dart';
@@ -34,7 +37,8 @@ import '../fiinny_assets/modules/portfolio/models/price_quote.dart';
 import '../fiinny_assets/modules/portfolio/services/market_data_yahoo.dart';
 
 // SMS & Gmail pipelines
-import 'package:shared_preferences/shared_preferences.dart';
+import '../shims/shared_prefs_shim.dart';
+
 import 'dart:io' show Platform;
 import '../services/sync/sync_coordinator.dart';
 
@@ -52,7 +56,6 @@ import '../services/notif_prefs_service.dart';
 import '../widgets/fiinny_brain_diagnosis_card.dart';
 // (optional) quick monthly fees-only card if you also want it
 import '../widgets/hidden_charges_card.dart';
-import '../widgets/subscriptions_tracker_card.dart';
 import '../widgets/forex_charges_card.dart';
 import '../widgets/salary_predictor_card.dart';
 
@@ -62,12 +65,22 @@ import '../widgets/loan_suggestions_sheet.dart';
 import '../widgets/fiinny_brain_diagnosis_card.dart';
 import '../widgets/hidden_charges_review_sheet.dart';
 import '../widgets/forex_findings_sheet.dart';
-import '../widgets/subscriptions_review_sheet.dart';
 
 import 'package:lifemap/services/sms/sms_ingestor.dart';
 import '../screens/review_inbox_screen.dart';
 import '../services/review_queue_service.dart';
 import '../models/ingest_draft_model.dart';
+
+import 'package:lifemap/screens/widets/subs_bills_screen.dart';
+
+import 'package:lifemap/screens/subs_bills/subs_bills_screen.dart';
+
+// Adds Imports
+import 'package:lifemap/core/ads/adaptive_banner.dart';
+import 'package:lifemap/core/ads/ad_ids.dart';
+
+import '../core/notifications/local_notifications.dart'
+    show SystemRecurringLocalScheduler;
 
 
 // --- Helper getters for dynamic model ---
@@ -110,8 +123,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   // Helper: Firestore doc ID for this user
   String get _userDocId => widget.userPhone;
 
-
   bool _isFetchingEmail = false;
+  SystemRecurringLocalScheduler? _sysNotifs;
+
 
   // --- Limit logic ---
   double? _periodLimit;
@@ -120,7 +134,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   bool _warned100 = false;
   final _expenseSvc = ExpenseService();
   final _incomeSvc  = IncomeService();
-  //final _indexSvc   = IngestIndexService();
 
   bool _smsReady = false;
   bool _didSmsBackfill = false;
@@ -130,10 +143,12 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   int _loanSuggestionsCount = 0;
   bool _scanningLoans = false;
 
-
-
-
-
+  // 🔴 NEW: live counters from Firestore
+  StreamSubscription? _subsSub, _sipsSub, _cardsSub;
+  int _activeSubs = 0;
+  int _activeSips = 0;
+  int _cardsDue = 0;
+  int _autopayCount = 0; // derived from current period
 
   @override
   void initState() {
@@ -143,15 +158,89 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     _refreshSmsPermissionState();
     _wirePipelines(); // ask permission + start SMS + Gmail backfill once
     SyncCoordinator.instance.onAppStart(widget.userPhone);
+    // 🔔 Start system recurring reminders (subs, SIPs, loans, card bills)
+    _sysNotifs = SystemRecurringLocalScheduler(userId: widget.userPhone);
+    _sysNotifs!.bind();
 
     Future.microtask(() async {
       await _fetchUserName();              // sets _isEmailLinked / _userEmail
-      // no parsing init needed
       await _wirePipelines();              // now only guards + gmail once (no SMS backfill)
       await SyncCoordinator.instance.onAppStart(widget.userPhone);
     });
+
+    _wireLiveCounters(); // 🔴 start Firestore listeners
   }
 
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    SyncCoordinator.instance.onAppStop();
+    _subsSub?.cancel();
+    _sysNotifs?.unbind();
+    _sipsSub?.cancel();
+    _cardsSub?.cancel();
+    super.dispose();
+  }
+
+
+  // 🔴 Firestore listeners for Subscriptions / SIPs / Cards
+  void _wireLiveCounters() {
+    final db = FirebaseFirestore.instance;
+    _subsSub = db
+        .collection('users').doc(widget.userPhone)
+        .collection('subscriptions')
+        .where('active', isEqualTo: true)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      setState(() => _activeSubs = snap.size);
+    });
+
+    _sipsSub = db
+        .collection('users').doc(widget.userPhone)
+        .collection('sips')
+        .where('active', isEqualTo: true)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      setState(() => _activeSips = snap.size);
+    });
+
+    _cardsSub = db
+        .collection('users').doc(widget.userPhone)
+        .collection('cards')
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      int due = 0;
+      final now = DateTime.now();
+      for (final d in snap.docs) {
+        final data = d.data();
+        final status = (data['status'] ?? '').toString().toLowerCase();
+        final lastBill = data['lastBill'] as Map<String, dynamic>?;
+        DateTime? dueDate;
+        if (lastBill != null && lastBill['dueDate'] is Timestamp) {
+          dueDate = (lastBill['dueDate'] as Timestamp).toDate();
+        }
+        if (status == 'due') {
+          due++;
+        } else if (dueDate != null && !now.isBefore(dueDate)) {
+          // if dueDate is today/past and status not set, still count as due
+          due++;
+        }
+      }
+      setState(() => _cardsDue = due);
+    });
+  }
+
+  // --- recompute derived autopay count for current period filter
+  void _recomputeAutopayCount() {
+    final list = _filteredExpensesForPeriod(txPeriod);
+    setState(() {
+      _autopayCount = list.where((e) => (e.tags ?? const []).contains('autopay')).length;
+    });
+  }
 
   Future<void> _fetchUserName() async {
     try {
@@ -188,8 +277,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     setState(() => _smsReady = granted);
   }
 
-
-
   Future<void> _wirePipelines() async {
     if (!Platform.isAndroid) return;
     await _refreshSmsPermissionState();
@@ -223,11 +310,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     }
   }
 
-
-
-
-
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -237,18 +319,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     }
     super.didChangeAppLifecycleState(state);
   }
-
-
-
-
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    SyncCoordinator.instance.onAppStop();
-    super.dispose();
-  }
-
 
   Future<void> _ensureSmsPermissionWithDisclosure() async {
     if (!Platform.isAndroid) return;
@@ -301,8 +371,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     }
   }
 
-
-
   Future<void> _maybeRunGmailBackfillOnce() async {
     final prefs = await SharedPreferences.getInstance();
     final gmailFlagKey = 'gmailBackfillDone_${widget.userPhone}';
@@ -317,7 +385,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       debugPrint('Gmail backfill error: $e');
     }
   }
-
 
   Future<void> _fetchEmailTx() async {
     setState(() => _isFetchingEmail = true);
@@ -339,11 +406,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       if (mounted) setState(() => _isFetchingEmail = false);
     }
   }
-
-
-
-
-
 
   Future<void> _loadPortfolioTotals() async {
     final pService = PAssetService.AssetService();
@@ -376,7 +438,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       totalAssets = total;
     });
   }
-
 
   // 1️⃣ --- Filtering Helpers ---
   List<ExpenseItem> _filteredExpensesForPeriod(String period) {
@@ -458,6 +519,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     // fallback (just in case)
     return allIncomes;
   }
+
   // --- Limit helpers (SPENDING only) ---
   double get periodSpendOnly {
     return _filteredExpensesForPeriod(txPeriod).fold(0.0, (a, b) => a + b.amount);
@@ -491,8 +553,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       );
     }
   }
-
-
 
   // 2️⃣ --- Bar Data for Amount ---
   List<double> _barDataAmount() {
@@ -729,8 +789,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     return exp + inc;
   }
 
-  // ...rest of your State code...
-
   Future<void> _initDashboard() async {
     setState(() => _loading = true);
     try {
@@ -744,7 +802,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       currentGoal = goals.isNotEmpty ? goals.first : null;
 
       final loanService = LoanService();
-      //final assetService = AssetService();
 
       // ⬇️ Updated to new LoanService API
       loanCount = await loanService.countOpenLoans(widget.userPhone);
@@ -781,14 +838,15 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
       // Fetch current limit for this period
       await _loadPeriodLimit();
+
+      // 🔴 recompute autopay derived count for the chosen period
+      _recomputeAutopayCount();
     } catch (e) {
       print('[Dashboard] ERROR: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Dashboard error: $e")),
       );
     }
-    // Fetch current limit for this period
-    await _loadPeriodLimit();
 
     // 🔎 NEW: refresh "new loan detected" badge count
     try {
@@ -800,8 +858,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
     setState(() => _loading = false);
     _checkLimitWarnings();
-
-
   }
 
   // --- Limit Firestore Logic ---
@@ -907,7 +963,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     }
     _resetLimitWarnings();
     _checkLimitWarnings();
-
   }
 
   void _generateSmartInsight() {
@@ -952,6 +1007,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
     return Scaffold(
       extendBodyBehindAppBar: true,
+      bottomNavigationBar: AdaptiveBanner(adUnitId: AdIds.banner),
       floatingActionButton: _MintFab(
         onRefresh: _initDashboard,
         userPhone: widget.userPhone,
@@ -980,7 +1036,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               Navigator.pushNamed(context, '/settings/notifications');
             },
           ),
-
           IconButton(
             tooltip: 'Analytics',
             icon: const Icon(Icons.analytics_outlined),
@@ -988,45 +1043,39 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               Navigator.pushNamed(
                 context,
                 '/analytics',
-                arguments: widget.userPhone, // or just `userPhone` if Stateless
+                arguments: widget.userPhone,
               );
             },
           ),
-
-            // replace the AnimatedRotation(...) block with:
-            IconButton(
-              icon: _isFetchingEmail
-                  ? const SizedBox(
-                width: 22, height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-                  : const Icon(Icons.sync_rounded, color: Color(0xFF09857a), size: 24),
-              tooltip: 'Fetch Email Data',
-              onPressed: _isFetchingEmail ? null : () async {
-                setState(()=>_isFetchingEmail = true);
-                try {
-                  await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
-                  await _initDashboard();
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Fetched Gmail transactions!')),
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Email fetch failed: $e')),
-                    );
-                  }
-                } finally {
-                  if (mounted) setState(()=>_isFetchingEmail=false);
+          IconButton(
+            icon: _isFetchingEmail
+                ? const SizedBox(
+              width: 22, height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+                : const Icon(Icons.sync_rounded, color: Color(0xFF09857a), size: 24),
+            tooltip: 'Fetch Email Data',
+            onPressed: _isFetchingEmail ? null : () async {
+              setState(()=>_isFetchingEmail = true);
+              try {
+                await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
+                await _initDashboard();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Fetched Gmail transactions!')),
+                  );
                 }
-              },
-
-
-
-            ),
-
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Email fetch failed: $e')),
+                  );
+                }
+              } finally {
+                if (mounted) setState(()=>_isFetchingEmail=false);
+              }
+            },
+          ),
           // 👇 Profile Avatar on right
           GestureDetector(
             onTap: () => Navigator.pushNamed(context, '/profile',
@@ -1073,7 +1122,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                 if (Platform.isAndroid) {
                   await _refreshSmsPermissionState();
                 }
-
                 // Gmail fetch (old service)
                 if (_isEmailLinked && (_userEmail?.isNotEmpty ?? false)) {
                   await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
@@ -1086,7 +1134,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                 } else {
                   await _fetchEmailTx(); // already shows snackbar
                 }
-
               } catch (e, st) {
                 debugPrint('[onRefresh] error: $e\n$st');
                 if (mounted) {
@@ -1104,24 +1151,16 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               } catch (e) {
                 debugPrint('[onRefresh] loan scan error: $e');
               }
-
-
             },
-
-
-
-
             child: CustomScrollView(
-              physics:
-              const AlwaysScrollableScrollPhysics(), // enables pull to refresh anytime
+              physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
                 // --- HERO SECTION: NUDGE, HELLO, HERO RING ---
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(
                       0,
-                      MediaQuery.of(context).padding.top +
-                          kToolbarHeight, // 👈 Adds space below AppBar!
+                      MediaQuery.of(context).padding.top + kToolbarHeight,
                       0,
                       0,
                     ),
@@ -1158,13 +1197,11 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                 debit: txSummary["debit"]!,
                                 period: txPeriod,
                                 onFilterTap: () async {
-                                  final result = await showModalBottomSheet<
-                                      String>(
+                                  final result = await showModalBottomSheet<String>(
                                     context: context,
                                     builder: (ctx) => TxFilterBar(
                                       selected: txPeriod,
-                                      onSelect: (period) =>
-                                          Navigator.pop(ctx, period),
+                                      onSelect: (period) => Navigator.pop(ctx, period),
                                     ),
                                   );
                                   if (result != null && result != txPeriod) {
@@ -1172,6 +1209,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                     await _loadPeriodLimit();
                                     _resetLimitWarnings();
                                     _checkLimitWarnings();
+                                    _recomputeAutopayCount(); // 🔴
                                   }
                                 },
                               ),
@@ -1180,18 +1218,11 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                 top: 10,
                                 right: 24,
                                 child: GestureDetector(
-                                  onTap: _savingLimit
-                                      ? null
-                                      : _editLimitDialog,
+                                  onTap: _savingLimit ? null : _editLimitDialog,
                                   child: CircleAvatar(
                                     radius: 16,
-                                    backgroundColor:
-                                    Colors.teal.withOpacity(0.09),
-                                    child: Icon(
-                                      Icons.edit_rounded,
-                                      size: 17,
-                                      color: Colors.teal,
-                                    ),
+                                    backgroundColor: Colors.teal.withOpacity(0.09),
+                                    child: const Icon(Icons.edit_rounded, size: 17, color: Colors.teal),
                                   ),
                                 ),
                               ),
@@ -1201,20 +1232,16 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                   right: 30,
                                   bottom: 22,
                                   child: Container(
-                                    padding: EdgeInsets.symmetric(
-                                        horizontal: 7, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: Colors.teal
-                                          .withOpacity(0.12),
-                                      borderRadius:
-                                      BorderRadius.circular(11),
+                                      color: Colors.teal.withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(11),
                                     ),
                                     child: Builder(
                                       builder: (_) {
                                         final limit = _periodLimit!;
                                         final used  = periodSpendOnly;
                                         final pct = limit > 0 ? (used / limit) : 0.0;
-
                                         return Text(
                                           "Limit ₹${limit.toStringAsFixed(0)} • Used ₹${used.toStringAsFixed(0)} (${(pct * 100).toStringAsFixed(0)}%)",
                                           style: TextStyle(
@@ -1225,7 +1252,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                         );
                                       },
                                     ),
-
                                   ),
                                 ),
                             ],
@@ -1237,18 +1263,15 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           children: [
                             Expanded(
                               child: TransactionCountCard(
-                                count: filteredIncomes.length +
-                                    filteredExpenses.length,
+                                count: filteredIncomes.length + filteredExpenses.length,
                                 period: txPeriod,
                                 barData: _barDataCount(),
                                 onFilterTap: () async {
-                                  final result =
-                                  await showModalBottomSheet<String>(
+                                  final result = await showModalBottomSheet<String>(
                                     context: context,
                                     builder: (ctx) => TxFilterBar(
                                       selected: txPeriod,
-                                      onSelect: (period) =>
-                                          Navigator.pop(ctx, period),
+                                      onSelect: (period) => Navigator.pop(ctx, period),
                                     ),
                                   );
                                   if (result != null && result != txPeriod) {
@@ -1256,35 +1279,28 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                     await _loadPeriodLimit();
                                     _resetLimitWarnings();
                                     _checkLimitWarnings();
+                                    _recomputeAutopayCount(); // 🔴
                                   }
-
                                 },
-                                onViewAllTap: () =>
-                                    Navigator.pushNamed(
-                                        context, '/transactionCount',
-                                        arguments: widget.userPhone),
+                                onViewAllTap: () => Navigator.pushNamed(
+                                    context, '/transactionCount',
+                                    arguments: widget.userPhone),
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: TransactionAmountCard(
                                 label: "Transaction Amount",
-                                amount: filteredIncomes.fold(
-                                    0.0,
-                                        (a, b) => a + b.amount) +
-                                    filteredExpenses.fold(
-                                        0.0,
-                                            (a, b) => a + b.amount),
+                                amount: filteredIncomes.fold(0.0, (a, b) => a + b.amount) +
+                                    filteredExpenses.fold(0.0, (a, b) => a + b.amount),
                                 period: txPeriod,
                                 barData: _barDataAmount(),
                                 onFilterTap: () async {
-                                  final result =
-                                  await showModalBottomSheet<String>(
+                                  final result = await showModalBottomSheet<String>(
                                     context: context,
                                     builder: (ctx) => TxFilterBar(
                                       selected: txPeriod,
-                                      onSelect: (period) =>
-                                          Navigator.pop(ctx, period),
+                                      onSelect: (period) => Navigator.pop(ctx, period),
                                     ),
                                   );
                                   if (result != null && result != txPeriod) {
@@ -1292,28 +1308,42 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                     await _loadPeriodLimit();
                                     _resetLimitWarnings();
                                     _checkLimitWarnings();
+                                    _recomputeAutopayCount(); // 🔴
                                   }
                                 },
-                                onViewAllTap: () =>
-                                    Navigator.pushNamed(
-                                        context, '/transactionAmount',
-                                        arguments: widget.userPhone),
+                                onViewAllTap: () => Navigator.pushNamed(
+                                    context, '/transactionAmount',
+                                    arguments: widget.userPhone),
                               ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 8),
+
+                        // 🔴 NEW: parser-sourced KPI badges row
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
+                          child: Wrap(
+                            spacing: 8, runSpacing: 8,
+                            children: [
+                              _kpiBadge(Icons.subscriptions, Colors.purple, "Subscriptions", '$_activeSubs'),
+                              _kpiBadge(Icons.savings, Colors.orange, "SIPs", '$_activeSips'),
+                              _kpiBadge(Icons.credit_card, Colors.redAccent, "Cards Due", '$_cardsDue'),
+                              _kpiBadge(Icons.autorenew, Colors.teal, "Autopay", '$_autopayCount'),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 ),
+
                 // --- SCROLLABLE MAIN WHITE PANEL ---
                 SliverToBoxAdapter(
                   child: Container(
                     decoration: const BoxDecoration(
                       color: Colors.white,
-                      borderRadius:
-                      BorderRadius.vertical(top: Radius.circular(36)),
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(36)),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black12,
@@ -1328,7 +1358,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (Platform.isAndroid && !_smsReady)
-                          Card(
+                            Card(
                               color: Colors.orange.withOpacity(0.10),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                               child: ListTile(
@@ -1339,18 +1369,18 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                 ),
                                 trailing: TextButton(
                                   child: const Text("Enable"),
-                                  onPressed: _ensureSmsPermissionWithDisclosure, // calls the method we added
+                                  onPressed: _ensureSmsPermissionWithDisclosure,
                                 ),
                               ),
                             ),
+
                           CrisisAlertBanner(
                             userId: widget.userPhone,
                             totalIncome: totalIncome,
                             totalExpense: totalExpense,
                           ),
                           SmartInsightCard(
-                            key: ValueKey(
-                                '$totalLoan|$totalAssets|$totalIncome|$totalExpense|$savings'),
+                            key: ValueKey('$totalLoan|$totalAssets|$totalIncome|$totalExpense|$savings'),
                             income: totalIncome,
                             expense: totalExpense,
                             savings: savings,
@@ -1367,8 +1397,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           ),
                           const SizedBox(height: 14),
 
-
-
                           Row(
                             children: [
                               // ⬇️ Make Loans card tappable
@@ -1376,13 +1404,13 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                 child: Material(
                                   color: Colors.transparent,
                                   child: InkWell(
-                                    borderRadius:
-                                    BorderRadius.circular(16),
+                                    borderRadius: BorderRadius.circular(16),
                                     onTap: () async {
-                                      final changed = await Navigator
-                                          .pushNamed(context, '/loans',
-                                          arguments:
-                                          {'userId': widget.userPhone},);
+                                      final changed = await Navigator.pushNamed(
+                                        context,
+                                        '/loans',
+                                        arguments: {'userId': widget.userPhone},
+                                      );
                                       if (changed == true) {
                                         await _initDashboard();
                                       }
@@ -1432,7 +1460,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                           });
                                         }
                                       },
-
                                       onAddLoan: () async {
                                         final added = await Navigator.pushNamed(
                                           context,
@@ -1444,7 +1471,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                         }
                                       },
                                     ),
-
                                   ),
                                 ),
                               ),
@@ -1454,25 +1480,19 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                 child: Material(
                                   color: Colors.transparent,
                                   child: InkWell(
-                                    borderRadius:
-                                    BorderRadius.circular(16),
+                                    borderRadius: BorderRadius.circular(16),
                                     onTap: () async {
                                       await Navigator.pushNamed(context, '/portfolio'); // open new list
                                       await _loadPortfolioTotals();                     // refresh totals on return
-                                      // optional full refresh:
-                                      // await _initDashboard();
                                     },
-
                                     child: AssetsSummaryCard(
                                       userId: widget.userPhone,
                                       assetCount: assetCount,
                                       totalAssets: totalAssets,
                                       onAddAsset: () async {
-                                        await Navigator.pushNamed(context, '/asset-type-picker'); // picker → entry → save
-                                        await _loadPortfolioTotals();                              // refresh totals on dashboard
-                                        // optional: await _initDashboard();
+                                        await Navigator.pushNamed(context, '/asset-type-picker');
+                                        await _loadPortfolioTotals();
                                       },
-
                                     ),
                                   ),
                                 ),
@@ -1481,7 +1501,67 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           ),
                           const SizedBox(height: 10),
 
-                          // ⬇️ Make Goals card tappable (same shape as Assets)
+                          // 🆕 Subscriptions & Bills card (full-width)
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(16),
+                                    onTap: () async {
+                                      await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => SubsBillsScreen(
+                                            userPhone: widget.userPhone,
+                                          ),
+                                        ),
+                                      );
+                                      await _initDashboard();
+                                    },
+                                    child: CustomDiamondCard(
+                                      isDiamondCut: false,
+                                      borderRadius: 16,
+                                      glassGradient: [
+                                        Colors.white.withOpacity(0.23),
+                                        Colors.white.withOpacity(0.09),
+                                      ],
+                                      child: ListTile(
+                                        leading: const Icon(
+                                          Icons.receipt_long_rounded,
+                                          color: Color(0xFF09857a),
+                                          size: 30,
+                                        ),
+                                        title: const Text(
+                                          "Subscriptions & Bills",
+                                          style: TextStyle(
+                                            color: Color(0xFF09857a),
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                        subtitle: const Text(
+                                          "Manage recurring, subscriptions, EMIs & reminders",
+                                          style: TextStyle(
+                                            color: Colors.black87,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        trailing: const Icon(
+                                          Icons.chevron_right_rounded,
+                                          color: Color(0xFF09857a),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+
+                          // ⬇️ Goals card
                           Row(
                             children: [
                               Expanded(
@@ -1496,7 +1576,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                     child: GoalsSummaryCard(
                                       userId: widget.userPhone,
                                       goalCount: goals.length,
-                                      // Sum of targets (or use savedAmount if you prefer):
                                       totalGoalAmount: goals.fold(0.0, (sum, g) => sum + g.targetAmount),
                                       onAddGoal: () async {
                                         await Navigator.pushNamed(context, '/addGoal', arguments: widget.userPhone);
@@ -1508,7 +1587,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                               ),
                             ],
                           ),
-
 
                           const SizedBox(height: 16),
                           CustomDiamondCard(
@@ -1544,8 +1622,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           const SizedBox(height: 18),
                           if (goals.isEmpty)
                             const Padding(
-                              padding:
-                              EdgeInsets.symmetric(vertical: 10),
+                              padding: EdgeInsets.symmetric(vertical: 10),
                               child: Text(
                                 "No goals added yet! Tap to add your first.",
                                 style: TextStyle(color: Colors.teal),
@@ -1571,27 +1648,21 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           if (_showFetchButton)
                             if (!_isEmailLinked)
                               Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    vertical: 4.0),
+                                padding: const EdgeInsets.symmetric(vertical: 4.0),
                                 child: ElevatedButton.icon(
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Color(0xFF09857a),
                                     foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 13),
+                                    padding: const EdgeInsets.symmetric(vertical: 13),
                                     shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                      BorderRadius.circular(15),
+                                      borderRadius: BorderRadius.circular(15),
                                     ),
                                     elevation: 8,
                                   ),
-                                  icon: const Icon(Icons.mail_rounded,
-                                      color: Colors.white),
+                                  icon: const Icon(Icons.mail_rounded, color: Colors.white),
                                   label: const Text(
                                     "Fetch Email Data",
-                                    style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 16),
+                                    style: TextStyle(color: Colors.white, fontSize: 16),
                                   ),
                                   onPressed: _fetchEmailTx,
                                 ),
@@ -1605,6 +1676,27 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // small KPI badge
+  Widget _kpiBadge(IconData icon, Color color, String title, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: Colors.white.withOpacity(0.15),
+        border: Border.all(color: Colors.white.withOpacity(0.15)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 16),
+          const SizedBox(width: 6),
+          Text("$title: ", style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w600)),
+          Text(value, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: color)),
         ],
       ),
     );
@@ -1654,6 +1746,26 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         .fold(0.0, (a, b) => a + b.amount);
 
     return {"credit": credit, "debit": debit, "net": credit - debit};
+  }
+}
+
+class SubscriptionsBillsScreen extends StatelessWidget {
+  final String userPhone;
+  const SubscriptionsBillsScreen({Key? key, required this.userPhone}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Subscriptions & Bills'),
+      ),
+      body: const Center(
+        child: Text(
+          'Subscriptions & Bills — coming soon',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
   }
 }
 
@@ -1927,12 +2039,10 @@ class _AnimatedMintBackground extends StatelessWidget {
               Colors.white.withOpacity(0.6),
             ],
             center: Alignment.topLeft,
-            radius: 0.8 + 0.4 * v,   // animate radius
-            // stops: [0.0, 0.5, 1.0], // (optional) fixed, strictly increasing
+            radius: 0.8 + 0.4 * v,
           ),
         ),
       ),
     );
   }
 }
-

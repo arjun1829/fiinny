@@ -1,11 +1,16 @@
 // lib/screens/welcome_screen.dart
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import '../shims/shared_prefs_shim.dart';
 import '../theme_provider.dart';
 import 'auth_gate.dart';
+
+// ---- Mint colors tuned to match the artwork ----
+const kMintBase = Color(0xFF21B9A3); // lighter mint
+const kMintDeep = Color(0xFF159E8A); // deeper mint for gradient start
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({Key? key}) : super(key: key);
@@ -14,41 +19,102 @@ class WelcomeScreen extends StatefulWidget {
   State<WelcomeScreen> createState() => _WelcomeScreenState();
 }
 
-class _WelcomeScreenState extends State<WelcomeScreen> {
+class _WelcomeScreenState extends State<WelcomeScreen>
+    with SingleTickerProviderStateMixin {
   final PageController _pageController = PageController();
   int _currentPage = 0;
   bool _showSwipeHint = true;
 
+  // Auto-advance + progress animation (stories-style)
+  late AnimationController _progressCtl;
+  Timer? _autoTimer;
+  static const _kAutoInterval = Duration(seconds: 2);
+
+  // CTA breathing pulse
+  bool _pulseUp = true;
+  Timer? _pulseTimer;
+
+  // CTA height (bigger)
+  static const double _kCtaHeight = 60;
+
+  // 👉 Updated slogans (Option A)
   final List<Map<String, String>> _onboardData = const [
     {
       'image': 'assets/onboarding/onboarding_1.png',
-      'title': "Track Every Penny",
-      'desc': "Know exactly where your money goes—clear, fast, and automatic.",
+      'title': "See Every Rupee",
+      'desc': "Automatic tracking that’s clean, fast, and accurate.",
     },
     {
       'image': 'assets/onboarding/onboarding_5.png',
       'title': "Grow Together",
-      'desc': "Build shared goals with your partner and stay in sync, effortlessly.",
+      'desc': "Share totals, set goals, and stay in sync—on your terms.",
     },
     {
       'image': 'assets/onboarding/onboarding_2.png',
-      'title': "Split With Friends",
-      'desc': "Split and settle bills without awkwardness—transparent and fair.",
+      'title': "Split. Settle. Smile.",
+      'desc': "Fair splits with friends, minus the awkward math.",
     },
     {
       'image': 'assets/onboarding/onboarding_4.png',
       'title': "Plan Big, Anywhere",
-      'desc': "Track, save, and plan for what matters—wherever life takes you.",
+      'desc': "Save for what matters—travel, home, study.",
     },
   ];
 
   @override
   void initState() {
     super.initState();
+    _progressCtl = AnimationController(vsync: this, duration: _kAutoInterval);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (final d in _onboardData) {
         precacheImage(AssetImage(d['image']!), context);
       }
+      _startAuto();
+      _startPulse();
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoTimer?.cancel();
+    _pulseTimer?.cancel();
+    _progressCtl.dispose();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  // ---------- Auto advance ----------
+  void _startAuto() {
+    _autoTimer?.cancel();
+    _progressCtl
+      ..stop()
+      ..reset()
+      ..forward();
+    _autoTimer = Timer(_kAutoInterval, () {
+      if (!mounted) return;
+      if (_currentPage < _onboardData.length - 1) {
+        _pageController.nextPage(
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        _progressCtl.stop();
+      }
+    });
+  }
+
+  void _stopAuto() {
+    _autoTimer?.cancel();
+    _progressCtl.stop();
+  }
+
+  // ---------- CTA pulse ----------
+  void _startPulse() {
+    _pulseTimer?.cancel();
+    _pulseTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
+      if (!mounted) return;
+      setState(() => _pulseUp = !_pulseUp);
     });
   }
 
@@ -60,20 +126,11 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   void _openAuth() async {
     await _markOnboardingSeen();
     if (!mounted) return;
+    HapticFeedback.mediumImpact();
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const AuthGate()),
     );
-  }
-
-  void _next() {
-    if (_currentPage < _onboardData.length - 1) {
-      HapticFeedback.lightImpact();
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeOutCubic,
-      );
-    }
   }
 
   void _skipToEnd() {
@@ -97,7 +154,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       ],
       1 => [
         "Invite partner from Sharing → Add Partner.",
-        "Permissions: choose what you share (totals, categories, goals).",
+        "Choose what you share (totals, categories, goals).",
         "You can revoke access anytime."
       ],
       2 => [
@@ -168,11 +225,26 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                         child: ElevatedButton(
                           onPressed: () => Navigator.pop(ctx),
                           style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).colorScheme.surface,
+                            foregroundColor: Colors.black,
                             padding: const EdgeInsets.symmetric(vertical: 14),
+                            elevation: 0,
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color: Colors.black.withOpacity(0.10),
+                                width: 1,
+                              ),
+                            ),
+                          ).copyWith(
+                            overlayColor: MaterialStatePropertyAll(
+                              Colors.black.withOpacity(0.06),
+                            ),
                           ),
-                          child: const Text("Got it"),
+                          child: const Text(
+                            "Got it",
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
                         ),
                       )
                     ],
@@ -192,32 +264,28 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     final media = MediaQuery.of(context);
     final screen = media.size;
     final isLast = _currentPage == _onboardData.length - 1;
-    final progress = (_currentPage + 1) / _onboardData.length;
     final bottomPad = media.padding.bottom;
 
+    // Button style uses transparent bg; gradient painted behind it.
     final primaryBtnStyle = ElevatedButton.styleFrom(
-      backgroundColor: theme.colorScheme.primary,         // darker CTA
-      foregroundColor: theme.colorScheme.onPrimary,
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      backgroundColor: Colors.transparent,
+      foregroundColor: Colors.white,
+      minimumSize: const Size.fromHeight(_kCtaHeight),
+      padding: EdgeInsets.zero,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shadowColor: Colors.transparent,
+      textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+    ).copyWith(
+      overlayColor: MaterialStatePropertyAll(Colors.white.withOpacity(0.08)),
     );
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
+      // FORCE pure white so images blend seamlessly
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                theme.colorScheme.primary.withOpacity(0.08),
-                theme.colorScheme.surfaceVariant.withOpacity(0.06),
-                theme.colorScheme.surface.withOpacity(0.02),
-              ],
-            ),
-          ),
+          color: Colors.white, // no gradient
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -238,8 +306,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       tooltip: "Quick tour",
                       onPressed: _openQuickTour,
                       icon: const Icon(Icons.help_outline),
+                      color: Colors.black,
                     ),
-                    // Darker Skip
                     if (!isLast)
                       TextButton(
                         onPressed: _skipToEnd,
@@ -256,19 +324,50 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 ),
               ),
 
-              // Progress line
+              // Story-style progress rail
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 4,
-                    backgroundColor: Colors.black.withOpacity(0.06),
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      theme.colorScheme.primary.withOpacity(0.9),
-                    ),
-                  ),
+                child: Row(
+                  children: List.generate(_onboardData.length, (i) {
+                    final isActive = i == _currentPage;
+                    return Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                            right: i == _onboardData.length - 1 ? 0 : 6),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: SizedBox(
+                            height: 4,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Container(color: Colors.black.withOpacity(0.08)),
+                                if (i < _currentPage)
+                                  FractionallySizedBox(
+                                    widthFactor: 1,
+                                    alignment: Alignment.centerLeft,
+                                    child: Container(
+                                      color: Colors.black.withOpacity(0.85),
+                                    ),
+                                  ),
+                                if (isActive)
+                                  AnimatedBuilder(
+                                    animation: _progressCtl,
+                                    builder: (_, __) => FractionallySizedBox(
+                                      widthFactor: _progressCtl.value,
+                                      alignment: Alignment.centerLeft,
+                                      child: Container(
+                                        color: Colors.black.withOpacity(0.85),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
                 ),
               ),
 
@@ -276,46 +375,54 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               Expanded(
                 child: Stack(
                   children: [
-                    PageView.builder(
-                      controller: _pageController,
-                      physics: const ClampingScrollPhysics(),
-                      itemCount: _onboardData.length,
-                      onPageChanged: (int page) {
-                        setState(() {
-                          _currentPage = page;
-                          _showSwipeHint = page == 0; // hint only on first page
-                        });
-                      },
-                      itemBuilder: (_, idx) {
-                        final data = _onboardData[idx];
-                        return Center(
-                          child: Padding(
-                            padding:
-                            const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: 640, // tablet friendly
-                                maxHeight: screen.height * 0.62,
-                                minHeight: 360,
-                              ),
-                              child: _OnboardCard(
-                                image: data['image']!,
-                                title: data['title']!,
-                                desc: data['desc']!,
+                    // Pause/resume auto-play on interaction
+                    GestureDetector(
+                      onTapDown: (_) => _stopAuto(),
+                      onTapUp: (_) => _startAuto(),
+                      onHorizontalDragStart: (_) => _stopAuto(),
+                      onHorizontalDragEnd: (_) => _startAuto(),
+                      child: PageView.builder(
+                        controller: _pageController,
+                        physics: const ClampingScrollPhysics(),
+                        itemCount: _onboardData.length,
+                        onPageChanged: (int page) {
+                          setState(() {
+                            _currentPage = page;
+                            _showSwipeHint = page == 0;
+                          });
+                          _startAuto(); // restart progress for the new page
+                        },
+                        itemBuilder: (_, idx) {
+                          final data = _onboardData[idx];
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 10),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: 640, // tablet friendly
+                                  maxHeight: screen.height * 0.62,
+                                  minHeight: 360,
+                                ),
+                                child: _OnboardCard(
+                                  image: data['image']!,
+                                  title: data['title']!,
+                                  desc: data['desc']!,
+                                ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
 
-                    // Swipe hint (first page only, well above footer)
+                    // Swipe hint (first page only)
                     if (_showSwipeHint && !isLast)
                       Positioned.fill(
                         child: IgnorePointer(
                           ignoring: true,
                           child: Align(
-                            alignment: const Alignment(0, 0.80),
+                            alignment: const Alignment(0, 0.92),
                             child: AnimatedOpacity(
                               opacity: 1,
                               duration: const Duration(milliseconds: 600),
@@ -328,8 +435,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                   const SizedBox(width: 6),
                                   Text(
                                     "Swipe to continue",
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.black.withOpacity(0.55),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                      color:
+                                      Colors.black.withOpacity(0.55),
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -343,45 +454,28 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 ),
               ),
 
-              // Dots
+              // CTA (only on last page) with pulse + glossy sheen + gradient + shadow
               Padding(
-                padding: const EdgeInsets.only(top: 6, bottom: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(
-                    _onboardData.length,
-                        (idx) => AnimatedContainer(
-                      duration: const Duration(milliseconds: 240),
-                      margin: const EdgeInsets.symmetric(horizontal: 5),
-                      width: _currentPage == idx ? 22 : 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: _currentPage == idx
-                            ? theme.colorScheme.onSurface.withOpacity(0.85)
-                            : theme.colorScheme.onSurface.withOpacity(0.25),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: theme.colorScheme.primary.withOpacity(
-                            _currentPage == idx ? 0.35 : 0.15,
-                          ),
-                          width: 1,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // CTA: only on last page; maintain space otherwise so layout doesn't jump
-              Padding(
-                padding: EdgeInsets.fromLTRB(20, 0, 20, isLast ? (10 + bottomPad) : 0),
+                padding:
+                EdgeInsets.fromLTRB(20, 0, 20, isLast ? (10 + bottomPad) : 0),
                 child: isLast
-                    ? ElevatedButton(
-                  onPressed: _openAuth,
-                  style: primaryBtnStyle,
-                  child: const Text("Get Started"),
+                    ? TweenAnimationBuilder<double>(
+                  tween: Tween(
+                      begin: _pulseUp ? 1.0 : 1.03,
+                      end: _pulseUp ? 1.03 : 1.0),
+                  duration: const Duration(milliseconds: 1200),
+                  curve: Curves.easeInOut,
+                  builder: (context, scale, child) =>
+                      Transform.scale(scale: scale, child: child),
+                  child: _GlossyCtaButton(
+                    label: "Get Started",
+                    onPressed: _openAuth,
+                    buttonStyle: primaryBtnStyle,
+                    height: _kCtaHeight,
+                    gradientColors: const [kMintDeep, kMintBase],
+                  ),
                 )
-                    : const SizedBox(height: 0),
+                    : const SizedBox.shrink(),
               ),
 
               // Footer links
@@ -393,9 +487,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     child: Wrap(
                       spacing: 16,
                       children: [
-                        _FooterLink(text: "Privacy", onTap: () => _openInfoSheet("Privacy")),
-                        _FooterLink(text: "Terms", onTap: () => _openInfoSheet("Terms")),
-                        _FooterLink(text: "Support", onTap: () => _openInfoSheet("Support")),
+                        _FooterLink(
+                            text: "Privacy",
+                            onTap: () => _openInfoSheet("Privacy")),
+                        _FooterLink(
+                            text: "Terms",
+                            onTap: () => _openInfoSheet("Terms")),
+                        _FooterLink(
+                            text: "Support",
+                            onTap: () => _openInfoSheet("Support")),
                       ],
                     ),
                   ),
@@ -410,9 +510,42 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
   Future<void> _openInfoSheet(String title) async {
     final theme = Theme.of(context);
+    String body;
+    switch (title) {
+      case "Privacy":
+        body = """
+We value your privacy. Fiinny processes your data locally where possible and syncs securely to your account when enabled.
+
+• Data you control: incomes, expenses, goals, attachments.
+• Permissions: SMS/Gmail/Drive are off by default and can be revoked anytime.
+• Storage: Google Firebase (IND/EU) with encryption in transit and at rest.
+• Deletion: Delete account from Profile → Privacy to remove synced data.
+""";
+        break;
+      case "Terms":
+        body = """
+By using Fiinny, you agree to:
+
+• Use the app for personal, lawful purposes.
+• Keep your login secure.
+• Understand that insights are suggestions, not financial advice.
+• Accept that services may change as we improve the product.
+""";
+        break;
+      default: // Support
+        body = """
+Need help? We’re here.
+
+• Email: support@fiinny.app
+• FAQ: Settings → Help & FAQs
+• Share logs: Settings → Diagnostics (redacts sensitive content)
+""";
+    }
+
     await showModalBottomSheet(
       context: context,
       useSafeArea: true,
+      showDragHandle: true,
       builder: (_) => Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -420,12 +553,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title,
-                style:
-                theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 12),
             Text(
-              "Coming soon. You can add your $title content here.",
-              style: theme.textTheme.bodyMedium,
+              body,
+              style: theme.textTheme.bodyMedium?.copyWith(height: 1.35),
             ),
             const SizedBox(height: 16),
             Align(
@@ -465,19 +598,18 @@ class _OnboardCard extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
           decoration: BoxDecoration(
-            color: theme.colorScheme.surface.withOpacity(0.96),
+            // ✅ Full white card background (matches pure-white screen & image matte)
+            color: Colors.white,
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
-              color: theme.colorScheme.outline.withOpacity(0.14),
+              color: Colors.white.withOpacity(0.08),
               width: 1.0,
             ),
-            // Stronger, softer card shadow
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.12),
-                blurRadius: 26,
-                spreadRadius: 2,
-                offset: const Offset(0, 14),
+                color: Colors.white.withOpacity(0.08),
+                blurRadius: 22,
+                offset: const Offset(0, 12),
               ),
             ],
           ),
@@ -485,18 +617,22 @@ class _OnboardCard extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Image sits on a mini-card for extra depth
+              // ✅ White image-holder so PNG/WebP blends perfectly
               Flexible(
                 flex: 4,
                 child: Container(
                   padding: const EdgeInsets.all(10),
                   margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceVariant.withOpacity(0.25),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.04), // hairline
+                      width: 1,
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
+                        color: Colors.white.withOpacity(0.06),
                         blurRadius: 18,
                         offset: const Offset(0, 10),
                       ),
@@ -538,6 +674,139 @@ class _OnboardCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _GlossyCtaButton extends StatefulWidget {
+  final String label;
+  final VoidCallback onPressed;
+  final ButtonStyle buttonStyle;
+  final double height;
+  final List<Color> gradientColors;
+
+  const _GlossyCtaButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    required this.buttonStyle,
+    required this.height,
+    required this.gradientColors,
+  });
+
+  @override
+  State<_GlossyCtaButton> createState() => _GlossyCtaButtonState();
+}
+
+class _GlossyCtaButtonState extends State<_GlossyCtaButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _sheenCtl;
+
+  @override
+  void initState() {
+    super.initState();
+    _sheenCtl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _sheenCtl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(16);
+
+    return SizedBox(
+      width: double.infinity, // full width
+      height: widget.height,  // big height
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          boxShadow: const [
+            BoxShadow( // deeper, softer shadow
+              color: Color(0x33000000), // ~20% black
+              blurRadius: 28,
+              offset: Offset(0, 12),
+            ),
+          ],
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: widget.gradientColors,
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: radius,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // base button (transparent, uses gradient behind)
+              ElevatedButton(
+                onPressed: widget.onPressed,
+                style: widget.buttonStyle,
+                child: Text(
+                  widget.label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+              // glossy sheen sweep
+              IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _sheenCtl,
+                  builder: (context, _) => CustomPaint(
+                    painter: _SheenPainter(_sheenCtl.value),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SheenPainter extends CustomPainter {
+  final double t;
+  _SheenPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bandW = size.width * 0.26; // a bit wider band
+    final x = lerpDouble(-bandW, size.width + bandW, t)!;
+
+    canvas.save();
+    canvas.translate(x, 0);
+    canvas.rotate(0.35);
+
+    final rect =
+    Rect.fromLTWH(-bandW / 2, -size.height * 0.3, bandW, size.height * 1.6);
+    final gradient = const LinearGradient(
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+      colors: [
+        Color(0x00FFFFFF),
+        Color(0x66FFFFFF), // glossy core brighter
+        Color(0x11FFFFFF), // soft tail
+        Color(0x00FFFFFF),
+      ],
+      stops: [0.0, 0.45, 0.7, 1.0],
+    );
+    final paint = Paint()..shader = gradient.createShader(rect);
+    canvas.drawRect(rect, paint);
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _SheenPainter old) => old.t != t;
 }
 
 class _FooterLink extends StatelessWidget {

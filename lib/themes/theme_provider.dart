@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../shims/shared_prefs_shim.dart';
+
 import 'app_theme.dart';
 
 enum FiinnyTheme {

@@ -12,13 +12,74 @@ LoanInterestMethod _parseMethod(dynamic v) {
 
 String _methodToString(LoanInterestMethod m) => m.name;
 
+/// ----------------------------------------------------------------------------
+/// Optional structured sharing/split
+/// ----------------------------------------------------------------------------
+enum LoanShareMode { equal, custom }
+
+class LoanShareMember {
+  final String? name;
+  final String? phone;   // for lookups / contacts
+  final String? userId;  // if friend is also an app user
+  final double? percent; // only used when mode == custom
+
+  const LoanShareMember({this.name, this.phone, this.userId, this.percent});
+
+  factory LoanShareMember.fromJson(Map<String, dynamic> j) => LoanShareMember(
+    name: (j['name'] ?? '').toString().trim().isEmpty ? null : (j['name'] as String),
+    phone: (j['phone'] ?? '').toString().trim().isEmpty ? null : (j['phone'] as String),
+    userId: (j['userId'] ?? '').toString().trim().isEmpty ? null : (j['userId'] as String),
+    percent: j['percent'] is num ? (j['percent'] as num).toDouble() : null,
+  );
+
+  Map<String, dynamic> toJson() => {
+    if (name != null && name!.isNotEmpty) 'name': name,
+    if (phone != null && phone!.isNotEmpty) 'phone': phone,
+    if (userId != null && userId!.isNotEmpty) 'userId': userId,
+    if (percent != null) 'percent': percent,
+  };
+}
+
+class LoanShare {
+  final bool isShared;
+  final LoanShareMode mode;            // equal | custom
+  final List<LoanShareMember> members; // empty => not shared
+
+  const LoanShare({
+    required this.isShared,
+    required this.mode,
+    required this.members,
+  });
+
+  factory LoanShare.fromJson(Map<String, dynamic> j) {
+    final rawMembers = (j['members'] as List?) ?? const [];
+    return LoanShare(
+      isShared: (j['isShared'] as bool?) ?? rawMembers.isNotEmpty,
+      mode: (j['mode']?.toString() ?? '').toLowerCase() == 'custom'
+          ? LoanShareMode.custom
+          : LoanShareMode.equal,
+      members: rawMembers
+          .whereType<Map<String, dynamic>>()
+          .map(LoanShareMember.fromJson)
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'isShared': isShared,
+    'mode': mode.name,
+    'members': members.map((m) => m.toJson()).toList(),
+  };
+}
+
 /// v2 model notes:
 /// - Backward-compatible with your existing data.
 /// - Adds optional UX/credit-style fields (accountLast4, minDue, billCycleDay, tags).
-/// - Adds helpful computed getters: nextPaymentDate, isDueToday, isHighInterest, monthsBetweenDates, etc.
+/// - Adds optional structured share/split fields (share, shareMemberPhones).
+/// - Helpful computed getters: nextPaymentDate, isDueToday, etc.
 /// - Flexible parsing for Timestamp / ISO / millis.
 class LoanModel {
-  final String? id;                 // Firestore doc id (optional when creating)
+  final String? id; // Firestore doc id (optional when creating)
   final String userId;
   final String title;
 
@@ -33,14 +94,14 @@ class LoanModel {
   final String? lenderName;
 
   /// Optional meta often useful for cards/bills UI.
-  final String? accountLast4;       // e.g., "1234" (masked)
-  final double? minDue;             // for credit-style loans/cards
-  final int? billCycleDay;          // statement/cycle day (1..28 preferred)
+  final String? accountLast4; // e.g., "1234" (masked)
+  final double? minDue; // for credit-style loans/cards
+  final int? billCycleDay; // statement/cycle day (1..28 preferred)
 
-  final DateTime? startDate;        // optional
-  final DateTime? dueDate;          // final maturity or manual override
+  final DateTime? startDate; // optional
+  final DateTime? dueDate; // final maturity or manual override
 
-  final double? interestRate;       // Annual %, e.g. 12.5
+  final double? interestRate; // Annual %, e.g. 12.5
   final LoanInterestMethod interestMethod;
 
   /// Monthly EMI (computed or user-provided override).
@@ -53,7 +114,7 @@ class LoanModel {
   /// Safe day-of-month for payment (1..28).
   final int? paymentDayOfMonth;
   final bool? reminderEnabled;
-  final int? reminderDaysBefore;    // e.g., 2 days before
+  final int? reminderDaysBefore; // e.g., 2 days before
   /// Stored as "HH:mm" (24h) for portability (e.g., "09:00").
   final String? reminderTime;
   final bool? autopay;
@@ -64,6 +125,10 @@ class LoanModel {
 
   // Tagging/labels for filters (e.g., ["education","secured"])
   final List<String>? tags;
+
+  // Sharing / split (optional)
+  final LoanShare? share;                 // structured sharing
+  final List<String>? shareMemberPhones;  // flattened for arrayContains queries
 
   final String? note;
   final bool isClosed;
@@ -94,6 +159,8 @@ class LoanModel {
     this.lastPaymentDate,
     this.lastPaymentAmount,
     this.tags,
+    this.share,
+    this.shareMemberPhones,
     this.note,
     this.isClosed = false,
     this.createdAt,
@@ -116,8 +183,7 @@ class LoanModel {
     return double.tryParse(v.toString().trim());
   }
 
-  static double _asDouble(dynamic v, {double fallback = 0.0}) =>
-      _asDoubleN(v) ?? fallback;
+  static double _asDouble(dynamic v, {double fallback = 0.0}) => _asDoubleN(v) ?? fallback;
 
   static int? _asIntN(dynamic v) {
     if (v == null) return null;
@@ -171,6 +237,10 @@ class LoanModel {
       lastPaymentDate: _asDate(json['lastPaymentDate']),
       lastPaymentAmount: _asDoubleN(json['lastPaymentAmount']),
       tags: _asStringListN(json['tags']),
+      share: (json['share'] is Map<String, dynamic>)
+          ? LoanShare.fromJson(json['share'] as Map<String, dynamic>)
+          : null,
+      shareMemberPhones: _asStringListN(json['shareMemberPhones']),
       note: _asStringN(json['note']),
       isClosed: (json['isClosed'] as bool?) ?? false,
       createdAt: _asDate(json['createdAt']),
@@ -178,8 +248,7 @@ class LoanModel {
   }
 
   // Alias for Firestore docs
-  factory LoanModel.fromFirestore(Map<String, dynamic> data, String id) =>
-      LoanModel.fromJson(data, id);
+  factory LoanModel.fromFirestore(Map<String, dynamic> data, String id) => LoanModel.fromJson(data, id);
 
   // -------------------------------- JSON ----------------------------------
 
@@ -213,6 +282,8 @@ class LoanModel {
       if (lastPaymentDate != null) 'lastPaymentDate': _outDate(lastPaymentDate),
       if (lastPaymentAmount != null) 'lastPaymentAmount': lastPaymentAmount,
       if (tags != null && tags!.isNotEmpty) 'tags': tags,
+      if (share != null) 'share': share!.toJson(),
+      if (shareMemberPhones != null && shareMemberPhones!.isNotEmpty) 'shareMemberPhones': shareMemberPhones,
       if (note != null && note!.isNotEmpty) 'note': note,
       'isClosed': isClosed,
       if (createdAt != null) 'createdAt': _outDate(createdAt),
@@ -244,9 +315,7 @@ class LoanModel {
   }
 
   /// Returns the safe day-of-month clamped to 1..28 (avoids month-end bugs).
-  int? get safePaymentDay => paymentDayOfMonth == null
-      ? null
-      : paymentDayOfMonth!.clamp(1, 28);
+  int? get safePaymentDay => paymentDayOfMonth == null ? null : paymentDayOfMonth!.clamp(1, 28);
 
   /// Compute next payment date using [paymentDayOfMonth] (clamped) and [dueDate].
   /// - If closed => null
@@ -256,14 +325,15 @@ class LoanModel {
     if (isClosed) return null;
     now ??= DateTime.now();
     if (safePaymentDay != null) {
-      // compute this month's occurrence
       final int day = _minDay(now.year, now.month, safePaymentDay!);
       DateTime candidate = DateTime(now.year, now.month, day);
       final today = DateTime(now.year, now.month, now.day);
       if (!candidate.isAfter(today)) {
-        // next month
         int ny = now.year, nm = now.month + 1;
-        if (nm == 13) { nm = 1; ny++; }
+        if (nm == 13) {
+          nm = 1;
+          ny++;
+        }
         final int day2 = _minDay(ny, nm, safePaymentDay!);
         candidate = DateTime(ny, nm, day2);
       }
@@ -294,6 +364,32 @@ class LoanModel {
     return total < 0 ? 0 : total;
   }
 
+  // ----------- Sharing helpers (optional; useful for UI calculations) -----------
+
+  bool get isShared => (share?.isShared ?? false) && (share?.members.isNotEmpty ?? false);
+
+  /// Returns this member’s percent if custom mode is used; otherwise null (equal split).
+  double? sharePercentForPhone(String phone) {
+    if (share == null || share!.mode != LoanShareMode.custom) return null;
+    final m = share!.members.firstWhere(
+          (e) => (e.phone ?? '').trim() == phone.trim(),
+      orElse: () => const LoanShareMember(),
+    );
+    return m.percent;
+  }
+
+  /// Compute monthly share amount for a given phone (falls back to equal split).
+  double monthlyShareForPhone(String phone) {
+    final monthly = (emi ?? 0);
+    if (monthly <= 0 || !isShared) return 0;
+    if (share!.mode == LoanShareMode.custom) {
+      final pct = sharePercentForPhone(phone);
+      if (pct != null) return monthly * (pct / 100.0);
+    }
+    final count = share!.members.isEmpty ? 1 : share!.members.length;
+    return monthly / count;
+  }
+
   // -------------------------------- copyWith --------------------------------
 
   LoanModel copyWith({
@@ -321,6 +417,8 @@ class LoanModel {
     DateTime? lastPaymentDate,
     double? lastPaymentAmount,
     List<String>? tags,
+    LoanShare? share,
+    List<String>? shareMemberPhones,
     String? note,
     bool? isClosed,
     DateTime? createdAt,
@@ -350,6 +448,8 @@ class LoanModel {
       lastPaymentDate: lastPaymentDate ?? this.lastPaymentDate,
       lastPaymentAmount: lastPaymentAmount ?? this.lastPaymentAmount,
       tags: tags ?? this.tags,
+      share: share ?? this.share,
+      shareMemberPhones: shareMemberPhones ?? this.shareMemberPhones,
       note: note ?? this.note,
       isClosed: isClosed ?? this.isClosed,
       createdAt: createdAt ?? this.createdAt,
@@ -359,9 +459,7 @@ class LoanModel {
   // ----------------------------- Utils / internals -----------------------------
 
   static int _daysInMonth(int year, int month) {
-    final firstOfNext = (month == 12)
-        ? DateTime(year + 1, 1, 1)
-        : DateTime(year, month + 1, 1);
+    final firstOfNext = (month == 12) ? DateTime(year + 1, 1, 1) : DateTime(year, month + 1, 1);
     return firstOfNext.subtract(const Duration(days: 1)).day;
   }
 

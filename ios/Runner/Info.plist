@@ -31,6 +31,13 @@
     <string>UIInterfaceOrientationLandscapeLeft</string>
     <string>UIInterfaceOrientationLandscapeRight</string>
   </array>
+  <key>UIBackgroundModes</key>
+  <array>
+    <string>remote-notification</string>
+  </array>
+  <key>NSUserNotificationUsageDescription</key>
+  <string>We use notifications to remind you about upcoming dues.</string>
+
 
   <!-- Performance / input -->
   <key>CADisableMinimumFrameDurationOnPhone</key><true/>
@@ -95,6 +102,10 @@
 
   <!-- App Store Export Compliance -->
   <key>ITSAppUsesNonExemptEncryption</key><false/>
+
+  <key>GADApplicationIdentifier</key>
+  <string>ca-app-pub-3940256099942544~1458002511</string>
+
 
   <!-- ATS (tighten before release) -->
   <key>NSAppTransportSecurity</key>

@@ -279,6 +279,67 @@ class LoanService {
       'closedCount': loans.where((l) => l.isClosed).length,
     };
   }
+  // ----------------------------- Sharing (optional) -----------------------------
+
+  /// Sets or updates sharing on a loan.
+  /// Persists under a single `share` object and a flattened `shareMemberPhones`
+  /// array for efficient queries.
+  /// members: [{ name, phone, userId, percent }]
+  Future<void> setSharing(
+      String loanId, {
+        required List<Map<String, dynamic>> members,
+        bool equalSplit = true,
+      }) async {
+    // sanitize & coerce
+    final cleaned = members.map((m) {
+      final name = (m['name'] ?? '').toString().trim();
+      final phone = (m['phone'] ?? '').toString().trim();
+      final userId = (m['userId'] ?? '').toString().trim();
+      final pct = (m['percent'] is num) ? (m['percent'] as num).toDouble() : null;
+
+      return {
+        if (name.isNotEmpty) 'name': name,
+        if (phone.isNotEmpty) 'phone': phone,
+        if (userId.isNotEmpty) 'userId': userId,
+        if (pct != null) 'percent': pct,
+      };
+    }).where((m) => m.isNotEmpty).toList();
+
+    final phones = cleaned.map((e) => (e['phone'] ?? '').toString()).where((p) => p.isNotEmpty).toSet().toList();
+
+    await patch(loanId, {
+      'share': {
+        'isShared': cleaned.isNotEmpty,
+        'mode': equalSplit ? 'equal' : 'custom',
+        'members': cleaned,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      'shareMemberPhones': phones, // flattened indexable list
+    });
+  }
+
+  /// Clears structured sharing. (Keeps your free-text note untouched.)
+  Future<void> clearSharing(String loanId) async {
+    await patch(loanId, {
+      'share': {
+        'isShared': false,
+        'mode': 'equal',
+        'members': [],
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      'shareMemberPhones': [],
+    });
+  }
+
+  /// Fetch loans shared with a phone number (works even if user isn’t the owner).
+  Future<List<LoanModel>> loansSharedWithPhone(String phone) async {
+    final snap = await _raw
+        .where('shareMemberPhones', arrayContains: phone)
+        .get();
+
+    return snap.docs.map((d) => LoanModel.fromJson(d.data(), d.id)).toList();
+  }
+
 
   // -------------------------------- Analytics --------------------------------
 
