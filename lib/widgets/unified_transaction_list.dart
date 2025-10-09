@@ -1,3 +1,4 @@
+// lib/widgets/unified_transaction_list.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -6,9 +7,11 @@ import '../models/expense_item.dart';
 import '../models/income_item.dart';
 import '../models/friend_model.dart';
 import '../themes/custom_card.dart';
-import '../services/expense_service.dart';   // + add this
-import '../services/income_service.dart';    // + add this (for incomes)
+import '../services/expense_service.dart';
+import '../services/income_service.dart';
 
+// ✅ for inline ads inside the details sheet
+import '../core/ads/ad_slots.dart';
 
 class UnifiedTransactionList extends StatefulWidget {
   final List<ExpenseItem> expenses;
@@ -21,28 +24,28 @@ class UnifiedTransactionList extends StatefulWidget {
   final Function(dynamic tx)? onDelete;
   final Function(dynamic tx)? onSplit;
   final bool showBillIcon;
-  final String userPhone;  // + add this field
+  final String userPhone;
 
-
-  // --- Multi-select support ---
+  // Multi-select
   final bool multiSelectEnabled;
   final Set<String> selectedIds;
   final void Function(String txId, bool selected)? onSelectTx;
 
-  // --- Optional: unified docs from Firestore `users/{uid}/transactions`
-  // amount(double), date(Timestamp/DateTime/int ms/String ISO), isDebit(bool), category(String),
-  // note(String), merchant(String), badges.bankLogo(String?), badges.schemeLogo(String?),
-  // meta.cardLast4(String?), meta.channel(String?)
+  // Optional unified docs
   final List<Map<String, dynamic>>? unifiedDocs;
 
-  // --- Category dropdown support (defaults aligned with EditExpenseScreen) ---
+  // Category dropdown options
   final List<String> categoryOptions;
 
-  // Persistor (optional)
+  // ✅ new: tell parent when a modal/sheet/dialog opens/closes (so it can hide the anchored banner)
+  final VoidCallback? onBeginModal;
+  final VoidCallback? onEndModal;
+
+  // Optional persistor
   final Future<void> Function({
   required String txId,
   required String newCategory,
-  required dynamic payload, // raw (legacy) or unified map
+  required dynamic payload,
   })? onChangeCategory;
 
   const UnifiedTransactionList({
@@ -61,8 +64,10 @@ class UnifiedTransactionList extends StatefulWidget {
     this.selectedIds = const {},
     this.onSelectTx,
     this.unifiedDocs,
-    this.categoryOptions = const ["General", "Food", "Travel", "Shopping", "Bills","Rent", "Other"],
+    this.categoryOptions = const ["General", "Food", "Travel", "Shopping", "Bills", "Rent", "Other"],
     this.onChangeCategory,
+    this.onBeginModal,
+    this.onEndModal,
   }) : super(key: key);
 
   @override
@@ -70,29 +75,18 @@ class UnifiedTransactionList extends StatefulWidget {
 }
 
 class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
-  // Normalized item:
+  // Normalized item (per row) with enriched fields:
   // {'mode':'legacy'|'unified', 'type':'expense'|'income', 'id':String, 'date':DateTime,
   //  'amount':double, 'category':String, 'note':String, 'raw':dynamic,
-  //  'merchant':String?, 'bankLogo':String?, 'schemeLogo':String?, 'cardLast4':String?, 'channel':String?}
+  //  'merchant':String?, 'bankLogo':String?, 'schemeLogo':String?, 'cardLast4':String?, 'channel':String?,
+  //  'instrument':String?, 'network':String?, 'issuerBank':String?, 'counterparty':String?,
+  //  'isInternational':bool, 'hasFees':bool,
+  //  'tags':String?, 'labels': List<String>, 'title': String?}
   late List<Map<String, dynamic>> allTx;
   int shownCount = 10;
 
   final NumberFormat _inCurrency =
   NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 2);
-  String _billUrlFromUnified(Map<String, dynamic> raw) {
-    final a = (raw['billImageUrl'] ?? raw['attachmentUrl']);
-    return (a == null) ? '' : a.toString();
-  }
-
-  String _billUrlFromLegacy(dynamic raw) {
-    try {
-      final v = raw.billImageUrl ?? raw.attachmentUrl; // may not exist
-      return (v == null) ? '' : v.toString();
-    } catch (_) {
-      return '';
-    }
-  }
-
 
   @override
   void initState() {
@@ -104,12 +98,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   @override
   void didUpdateWidget(covariant UnifiedTransactionList oldWidget) {
     super.didUpdateWidget(oldWidget);
-
-    // Respect parent increasing previewCount (keeps UX consistent)
     if (shownCount < widget.previewCount) {
       shownCount = widget.previewCount;
     }
-
     final bool changed =
         oldWidget.unifiedDocs != widget.unifiedDocs ||
             oldWidget.expenses != widget.expenses ||
@@ -122,7 +113,172 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     }
   }
 
-  // ---------- COMBINE ----------
+  // -------------------- DYNAMIC READ HELPERS --------------------
+  T? _dyn<T>(dynamic obj, String field) {
+    try {
+      final v = (obj as dynamic)?.toJson?.call();
+      if (v is Map<String, dynamic> && v.containsKey(field)) {
+        final val = v[field];
+        if (val is T) return val;
+        if (val == null) return null;
+        if (T == String) return val.toString() as T;
+        if (T == double && val is num) return val.toDouble() as T;
+        if (T == int && val is num) return val.toInt() as T;
+      }
+    } catch (_) {}
+    try {
+      if (obj is Map) {
+        final val = obj[field];
+        if (val is T) return val;
+        if (val == null) return null;
+        if (T == String) return val.toString() as T;
+        if (T == double && val is num) return val.toDouble() as T;
+        if (T == int && val is num) return val.toInt() as T;
+      }
+    } catch (_) {}
+    try {
+      final v = (obj as dynamic);
+      switch (field) {
+        case 'category':
+          return (v.category as T?);
+        case 'subcategory':
+          return (v.subcategory as T?);
+        case 'merchant':
+          return (v.merchant as T?);
+        case 'tags':
+          return (v.tags as T?);
+        case 'cardLast4':
+          return (v.cardLast4 as T?);
+        case 'title':
+          return (v.title as T?);
+        case 'comments':
+          return (v.comments as T?);
+        case 'labels':
+          return (v.labels as T?);
+      // enriched legacy fields
+        case 'counterparty':
+          return (v.counterparty as T?);
+        case 'instrument':
+          return (v.instrument as T?);
+        case 'instrumentNetwork':
+          return (v.instrumentNetwork as T?);
+        case 'issuerBank':
+          return (v.issuerBank as T?);
+        case 'isInternational':
+          return (v.isInternational as T?);
+        case 'fees':
+          return (v.fees as T?);
+        default:
+          return null;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  String _legacyResolvedCategory(dynamic item, {required bool isIncome}) {
+    final String? cat =
+        _dyn<String>(item, 'category') ?? _dyn<String>(item, 'subcategory');
+    if (cat != null && cat.trim().isNotEmpty) return cat.trim();
+
+    try {
+      final json = (item as dynamic).toJson?.call();
+      if (json is Map<String, dynamic>) {
+        final c = (json['category'] ?? json['subcategory'])?.toString();
+        if (c != null && c.trim().isNotEmpty) return c.trim();
+      }
+    } catch (_) {}
+
+    final String t = (item is ExpenseItem || item is IncomeItem)
+        ? (item as dynamic).type?.toString() ?? ''
+        : '';
+    if (t.isNotEmpty) return t;
+    return isIncome ? 'Income' : 'General';
+  }
+
+  String _legacyMerchant(dynamic item) {
+    final m = _dyn<String>(item, 'merchant') ??
+        (() {
+          try {
+            final j = (item as dynamic).toJson?.call();
+            if (j is Map<String, dynamic> && j['merchant'] != null) {
+              return j['merchant'].toString();
+            }
+          } catch (_) {}
+          return null;
+        })();
+    return (m ?? '').trim();
+  }
+
+  String _legacyTags(dynamic item) {
+    try {
+      final j = (item as dynamic).toJson?.call();
+      if (j is Map<String, dynamic>) {
+        final t = j['tags'];
+        if (t is Map && t['type'] != null) return t['type'].toString();
+        if (t is String) return t;
+      }
+    } catch (_) {}
+    final direct = _dyn<String>(item, 'tags');
+    return (direct ?? '').toString();
+  }
+
+  String _legacyCardLast4(dynamic item) {
+    final s = _dyn<String>(item, 'cardLast4');
+    return (s ?? '').trim();
+  }
+
+  // enriched legacy extras
+  String? _legacyCounterparty(dynamic item) => _dyn<String>(item, 'counterparty');
+  String? _legacyInstrument(dynamic item) => _dyn<String>(item, 'instrument');
+  String? _legacyNetwork(dynamic item) => _dyn<String>(item, 'instrumentNetwork');
+  String? _legacyIssuer(dynamic item) => _dyn<String>(item, 'issuerBank');
+  bool _legacyIsIntl(dynamic item) => (_dyn<bool>(item, 'isInternational') ?? false);
+  bool _legacyHasFees(dynamic item) {
+    final f = _dyn<Map<String, dynamic>>(item, 'fees');
+    return f != null && f.isNotEmpty;
+  }
+
+  List<String> _legacyLabels(dynamic item) {
+    final labels = <String>[];
+    try {
+      final arr = _dyn<List<dynamic>>(item, 'labels');
+      if (arr != null) {
+        labels.addAll(arr.whereType<String>());
+      }
+    } catch (_) {}
+    final legacySingle = _dyn<String>(item, 'label');
+    if (legacySingle != null && legacySingle.trim().isNotEmpty) {
+      labels.add(legacySingle.trim());
+    }
+    final seen = <String>{};
+    return labels
+        .where((l) => l.trim().isNotEmpty && seen.add(l.toLowerCase()))
+        .toList();
+  }
+
+  String? _legacyTitle(dynamic item) => _dyn<String>(item, 'title');
+
+  // bill/attachment helpers
+  String _billUrlFromUnified(Map<String, dynamic> raw) {
+    final a = (raw['billImageUrl'] ?? raw['attachmentUrl']);
+    return (a == null) ? '' : a.toString();
+  }
+
+  String _billUrlFromLegacy(dynamic raw) {
+    try {
+      final json = (raw as dynamic).toJson?.call();
+      if (json is Map<String, dynamic>) {
+        final v = json['billImageUrl'] ?? json['attachmentUrl'];
+        return (v == null) ? '' : v.toString();
+      }
+      final v = (raw.billImageUrl ?? raw.attachmentUrl);
+      return (v == null) ? '' : v.toString();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  // -------------------- COMBINE --------------------
   void _combine() {
     if (widget.unifiedDocs != null) {
       allTx = _fromUnified(widget.unifiedDocs!);
@@ -149,36 +305,75 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       ) {
     final tx = <Map<String, dynamic>>[];
 
-    tx.addAll(expenses.map((e) => {
-      'mode': 'legacy',
-      'type': 'expense',
-      'id': e.id,
-      'date': e.date,
-      'amount': (e.amount is num) ? (e.amount as num).toDouble() : 0.0,
-      'category': e.type,
-      'note': e.note ?? '',
-      'raw': e,
-      'merchant': null,
-      'bankLogo': null,
-      'schemeLogo': null,
-      'cardLast4': e.cardLast4,
-      'channel': null,
+    tx.addAll(expenses.map((e) {
+      final cat = _legacyResolvedCategory(e, isIncome: false);
+      final merchant = _legacyMerchant(e);
+      final tags = _legacyTags(e);
+      final last4 = _legacyCardLast4(e);
+      final labels = _legacyLabels(e);
+      final title = _legacyTitle(e);
+
+      return {
+        'mode': 'legacy',
+        'type': 'expense',
+        'id': e.id,
+        'date': e.date,
+        'amount': (e.amount is num) ? (e.amount as num).toDouble() : 0.0,
+        'category': cat,
+        'note': e.note,
+        'raw': e,
+        'merchant': merchant.isEmpty ? null : merchant,
+        'bankLogo': e.bankLogo,
+        'schemeLogo': null,
+        'cardLast4': last4.isEmpty ? null : last4,
+        'channel': null,
+        // enriched:
+        'instrument': _legacyInstrument(e),
+        'network': _legacyNetwork(e),
+        'issuerBank': _legacyIssuer(e),
+        'counterparty': _legacyCounterparty(e),
+        'isInternational': _legacyIsIntl(e),
+        'hasFees': _legacyHasFees(e),
+        // legacy tags/labels/title
+        'tags': tags.isEmpty ? null : tags,
+        'labels': labels,
+        'title': (title != null && title.trim().isNotEmpty) ? title.trim() : null,
+      };
     }));
 
-    tx.addAll(incomes.map((i) => {
-      'mode': 'legacy',
-      'type': 'income',
-      'id': i.id,
-      'date': i.date,
-      'amount': (i.amount is num) ? (i.amount as num).toDouble() : 0.0,
-      'category': i.type,
-      'note': i.note ?? '',
-      'raw': i,
-      'merchant': null,
-      'bankLogo': null,
-      'schemeLogo': null,
-      'cardLast4': null,
-      'channel': null,
+    tx.addAll(incomes.map((i) {
+      final cat = _legacyResolvedCategory(i, isIncome: true);
+      final merchant = _legacyMerchant(i);
+      final tags = _legacyTags(i);
+      final labels = _legacyLabels(i);
+      final title = _legacyTitle(i);
+
+      return {
+        'mode': 'legacy',
+        'type': 'income',
+        'id': i.id,
+        'date': i.date,
+        'amount': (i.amount is num) ? (i.amount as num).toDouble() : 0.0,
+        'category': cat,
+        'note': i.note,
+        'raw': i,
+        'merchant': merchant.isEmpty ? null : merchant,
+        'bankLogo': i.bankLogo,
+        'schemeLogo': null,
+        'cardLast4': null,
+        'channel': null,
+        // enriched:
+        'instrument': _legacyInstrument(i),
+        'network': _legacyNetwork(i),
+        'issuerBank': _legacyIssuer(i),
+        'counterparty': _legacyCounterparty(i),
+        'isInternational': _legacyIsIntl(i),
+        'hasFees': _legacyHasFees(i),
+        // tags/labels/title
+        'tags': tags.isEmpty ? null : tags,
+        'labels': labels,
+        'title': (title != null && title.trim().isNotEmpty) ? title.trim() : null,
+      };
     }));
 
     return tx;
@@ -195,8 +390,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         if (parsed != null) return parsed;
       }
       final dyn = v as dynamic;
-      // Firestore Timestamp support
-      if (dyn.toDate != null) return dyn.toDate() as DateTime;
+      if (dyn.toDate != null) return dyn.toDate() as DateTime; // Firestore Timestamp
     } catch (_) {}
     return DateTime.now();
   }
@@ -220,15 +414,49 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     return cur.toString();
   }
 
+  bool _readBool(Map<String, dynamic> map, String key) {
+    final v = map[key];
+    if (v is bool) return v;
+    if (v == null) return false;
+    final s = v.toString().toLowerCase();
+    return s == 'true' || s == '1';
+  }
+
+  bool _mapHasFees(Map<String, dynamic> map) {
+    final f = map['fees'];
+    if (f is Map) {
+      return f.isNotEmpty;
+    }
+    return false;
+  }
+
   List<Map<String, dynamic>> _fromUnified(List<Map<String, dynamic>> docs) {
     final tx = <Map<String, dynamic>>[];
 
     for (final doc in docs) {
-      final channel = _readString(doc, ['meta', 'channel']);
+      final channel = _readString(doc, ['meta', 'channel']); // kept
       if (channel == 'CreditCardBill') continue; // skip bills list items
 
       final bool isDebit = (doc['isDebit'] == true);
       final String type = isDebit ? 'expense' : 'income';
+
+      String? _pick(String? s) => (s == null || s.trim().isEmpty) ? null : s.trim();
+      final resolvedCat = _pick(doc['category']?.toString()) ??
+          _pick(doc['subcategory']?.toString()) ??
+          (isDebit ? 'General' : 'Income');
+
+      // Labels (if present)
+      final labelsArr = <String>[];
+      final rawLabels = doc['labels'];
+      if (rawLabels is List) {
+        for (final x in rawLabels) {
+          if (x is String && x.trim().isNotEmpty) labelsArr.add(x.trim());
+        }
+      }
+      final seen = <String>{};
+      final labels = labelsArr.where((l) => seen.add(l.toLowerCase())).toList();
+
+      final title = _pick(doc['title']?.toString());
 
       tx.add({
         'mode': 'unified',
@@ -236,7 +464,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'id': (doc['fingerprint'] ?? doc['id'] ?? '').toString(),
         'date': _asDate(doc['date']),
         'amount': _asDouble(doc['amount']),
-        'category': (doc['category'] ?? (isDebit ? 'Expense' : 'Income')).toString(),
+        'category': resolvedCat,
         'note': (doc['note'] ?? '').toString(),
         'raw': doc,
         'merchant': (doc['merchant'] ?? '').toString(),
@@ -244,17 +472,33 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'schemeLogo': _readString(doc, ['badges', 'schemeLogo']),
         'cardLast4': _readString(doc, ['meta', 'cardLast4']),
         'channel': channel,
+        // enriched unified keys (use what parser/source wrote)
+        'instrument': _pick(doc['instrument']?.toString()) ?? channel,
+        'network': _pick(doc['instrumentNetwork']?.toString()),
+        'issuerBank': _pick(doc['issuerBank']?.toString()),
+        'counterparty': _pick(doc['counterparty']?.toString()),
+        'isInternational': _readBool(doc, 'isInternational'),
+        'hasFees': _mapHasFees(doc),
+        // tags/labels/title
+        'tags': (() {
+          final t = doc['tags'];
+          if (t is Map && t['type'] != null) return t['type'].toString();
+          if (t is String) return t;
+          return null;
+        })(),
+        'labels': labels,
+        'title': title,
       });
     }
 
     return tx;
   }
 
-  // ---------- HELPERS ----------
+  // -------------------- GROUPING & FORMATTING --------------------
   String getDateLabel(DateTime date) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final d = DateTime(date.year, date.month, date.day); // fixed dot
+    final d = DateTime(date.year, date.month, date.day);
     if (d == today) return "Today";
     if (d == today.subtract(const Duration(days: 1))) return "Yesterday";
     return DateFormat('d MMM, yyyy').format(date);
@@ -307,9 +551,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     return Image.asset(path, width: w, height: h);
   }
 
-  // ---------- DETAILS SHEETS ----------
-  void _showBillImage(BuildContext context, String imageUrl) {
-    showDialog(
+  // -------------------- DETAILS (with banner-hide hooks) --------------------
+  Future<void> _showBillImage(BuildContext context, String imageUrl) async {
+    widget.onBeginModal?.call();
+    await showDialog(
       context: context,
       builder: (_) => Dialog(
         insetPadding: const EdgeInsets.all(12),
@@ -331,9 +576,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                       imageUrl,
                       fit: BoxFit.contain,
                       loadingBuilder: (context, child, progress) =>
-                      progress == null
-                          ? child
-                          : const Center(child: CircularProgressIndicator()),
+                      progress == null ? child : const Center(child: CircularProgressIndicator()),
                       errorBuilder: (context, error, stackTrace) =>
                       const Center(child: Text("Could not load attachment", style: TextStyle(color: Colors.white))),
                     ),
@@ -353,20 +596,31 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         ),
       ),
     );
+    widget.onEndModal?.call();
   }
 
-  void _showDetailsScreenFromUnified(Map<String, dynamic> doc, BuildContext context) async {
+  // ---- UNIFIED DETAILS
+  Future<void> _showDetailsScreenFromUnified(Map<String, dynamic> doc, BuildContext context) async {
+    widget.onBeginModal?.call();
+
     final isIncome = (doc['type'] == 'income');
     final amount = (doc['amount'] is num) ? (doc['amount'] as num).toDouble() : 0.0;
     final category = (doc['category'] ?? (isIncome ? 'Income' : 'Expense')).toString();
     final date = (doc['date'] as DateTime);
     final note = (doc['note'] ?? '').toString();
-    final merchant = (doc['merchant'] ?? '').toString();
     final bankLogo = doc['bankLogo'] as String?;
     final schemeLogo = doc['schemeLogo'] as String?;
     final last4 = doc['cardLast4'] as String?;
     final channel = doc['channel'] as String?;
     final billUrl = (doc['billImageUrl'] ?? doc['attachmentUrl'] ?? '').toString();
+
+    // enriched
+    final instrument = (doc['instrument'] ?? channel)?.toString();
+    final network = doc['network']?.toString();
+    final issuer = doc['issuerBank']?.toString();
+    final counterparty = doc['counterparty']?.toString();
+    final isIntl = (doc['isInternational'] == true);
+    final hasFees = (doc['hasFees'] == true);
 
     await showModalBottomSheet(
       context: context,
@@ -406,53 +660,36 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
                 textAlign: TextAlign.center,
               ),
-              if ((channel != null && channel.isNotEmpty) ||
-                  (last4 != null && last4.isNotEmpty)) ...[
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (channel != null && channel.isNotEmpty)
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.blueGrey.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Text(channel, style: const TextStyle(fontWeight: FontWeight.w600)),
-                      ),
-                    if (last4 != null && last4.isNotEmpty)
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.deepPurple.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Text("****$last4", style: const TextStyle(fontWeight: FontWeight.w600)),
-                      ),
-                  ],
-                ),
-              ],
+              const SizedBox(height: 8),
+              if (counterparty != null && counterparty.isNotEmpty)
+                Text(isIncome ? "From: $counterparty" : "Paid to: $counterparty"),
+              if (instrument != null && instrument.isNotEmpty)
+                Text("Instrument: $instrument"),
+              if (issuer != null && issuer.isNotEmpty)
+                Text("Bank: $issuer"),
+              if (network != null && network.isNotEmpty)
+                Text("Network: $network"),
+              if (last4 != null && last4.isNotEmpty)
+                Text("Card: ****$last4"),
+              if (isIntl) const Text("International: Yes"),
+              if (hasFees) const Text("Fees Detected: Yes"),
               const SizedBox(height: 12),
-              Text(
-                "Amount: ${_inCurrency.format(amount)}",
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
+              Text("Amount: ${_inCurrency.format(amount)}", style: const TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               Text("Date: ${DateFormat('d MMM yyyy, h:mm a').format(date)}"),
-              if (merchant.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text("Merchant:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(merchant),
-              ],
               if (note.trim().isNotEmpty) ...[
                 const SizedBox(height: 8),
                 const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
                 Text(note),
               ],
+
+              // ✅ Inline ad inside the details sheet
+              const SizedBox(height: 16),
+              const Text("Sponsored", style: TextStyle(fontSize: 12, color: Colors.black54)),
+              const SizedBox(height: 6),
+              const AdsBannerSlot(inline: true, inlineMaxHeight: 120, padding: EdgeInsets.zero),
               const SizedBox(height: 12),
+
               if (widget.showBillIcon && billUrl.isNotEmpty)
                 Align(
                   alignment: Alignment.centerLeft,
@@ -493,20 +730,29 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                         widget.onDelete?.call(doc);
                       },
                     ),
-                  TextButton(
-                    child: const Text("Close"),
-                    onPressed: () => Navigator.pop(context),
-                  ),
+                  TextButton(child: const Text("Close"), onPressed: () => Navigator.pop(context)),
                 ],
               ),
             ],
           ),
         );
       },
-    );
+    ).whenComplete(() => widget.onEndModal?.call());
   }
 
-  void _showDetailsScreenLegacy(dynamic item, bool isIncome, BuildContext context) async {
+  // ---- LEGACY DETAILS
+  Future<void> _showDetailsScreenLegacy(dynamic item, bool isIncome, BuildContext context) async {
+    widget.onBeginModal?.call();
+
+    // enriched
+    final counterparty = _legacyCounterparty(item);
+    final instrument = _legacyInstrument(item);
+    final issuer = _legacyIssuer(item);
+    final network = _legacyNetwork(item);
+    final last4 = _legacyCardLast4(item);
+    final isIntl = _legacyIsIntl(item);
+    final hasFees = _legacyHasFees(item);
+
     await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -521,17 +767,30 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             children: [
               Center(
                 child: Icon(
-                  getCategoryIcon(item.type, isIncome: isIncome),
+                  getCategoryIcon(_legacyResolvedCategory(item, isIncome: isIncome), isIncome: isIncome),
                   size: 40,
                   color: isIncome ? Colors.green : Colors.pink,
                 ),
               ),
               const SizedBox(height: 16),
               Text(
-                "${isIncome ? 'Income' : 'Expense'} - ${item.type}",
+                "${isIncome ? 'Income' : 'Expense'} - ${_legacyResolvedCategory(item, isIncome: isIncome)}",
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
                 textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 8),
+              if ((counterparty ?? '').toString().trim().isNotEmpty)
+                Text(isIncome ? "From: $counterparty" : "Paid to: $counterparty"),
+              if ((instrument ?? '').toString().trim().isNotEmpty)
+                Text("Instrument: $instrument"),
+              if ((issuer ?? '').toString().trim().isNotEmpty)
+                Text("Bank: $issuer"),
+              if ((network ?? '').toString().trim().isNotEmpty)
+                Text("Network: $network"),
+              if ((last4 ?? '').toString().trim().isNotEmpty)
+                Text("Card: ****$last4"),
+              if (isIntl) const Text("International: Yes"),
+              if (hasFees) const Text("Fees Detected: Yes"),
               const SizedBox(height: 12),
               Text(
                 "Amount: ${_inCurrency.format((item.amount is num) ? (item.amount as num).toDouble() : 0.0)}",
@@ -544,19 +803,24 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
                 Text(item.note ?? ''),
               ],
-              if (!isIncome && item.friendIds.isNotEmpty) ...[
+              if (!isIncome && (item.friendIds != null) && item.friendIds.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 const Text("Split with:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(
-                  item.friendIds.map((id) => widget.friendsById[id]?.name ?? "Friend").join(', '),
-                ),
+                Text(item.friendIds.map((id) => widget.friendsById[id]?.name ?? "Friend").join(', ')),
               ],
               if (isIncome && (item.source ?? '').toString().isNotEmpty) ...[
                 const SizedBox(height: 8),
                 const Text("Source:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(item.source ?? ''), // safe for String?
+                Text(item.source ?? ''),
               ],
-              const SizedBox(height: 24),
+
+              // ✅ Inline ad inside the details sheet
+              const SizedBox(height: 16),
+              const Text("Sponsored", style: TextStyle(fontSize: 12, color: Colors.black54)),
+              const SizedBox(height: 6),
+              const AdsBannerSlot(inline: true, inlineMaxHeight: 120, padding: EdgeInsets.zero),
+              const SizedBox(height: 12),
+
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -587,27 +851,24 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                         widget.onDelete?.call(item);
                       },
                     ),
-                  TextButton(
-                    child: const Text("Close"),
-                    onPressed: () => Navigator.pop(context),
-                  ),
+                  TextButton(child: const Text("Close"), onPressed: () => Navigator.pop(context)),
                 ],
               ),
             ],
           ),
         );
       },
-    );
+    ).whenComplete(() => widget.onEndModal?.call());
   }
 
-  // ---------- CATEGORY DROPDOWN ----------
+  // -------------------- CATEGORY DROPDOWN --------------------
   Widget _categoryDropdown({
     required String txId,
     required String current,
     required bool isIncome,
     required dynamic payload,
   }) {
-    final String value = (current.isEmpty ? "General" : current);
+    final String value = (current.isEmpty ? (isIncome ? "Income" : "General") : current);
     List<String> options = List<String>.from(widget.categoryOptions);
     if (!options.contains(value)) {
       options = [value, ...options];
@@ -625,9 +886,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             style: const TextStyle(
               fontWeight: FontWeight.w700,
               fontSize: 15.3,
-              color: Color(0xFF0F1E1C), // high-contrast dark
+              color: Color(0xFF0F1E1C),
             ),
-
           ),
         ))
             .toList(),
@@ -640,7 +900,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             if (idx != -1) allTx[idx]['category'] = newVal;
           });
 
-          // 1) If parent provided a handler, use that first
+          // Prefer parent handler
           if (widget.onChangeCategory != null) {
             try {
               await widget.onChangeCategory!(
@@ -650,50 +910,26 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
               );
               return;
             } catch (_) {
-              // fall through to revert below
+              // fall through to revert
             }
           } else {
-            // 2) Default persistence (SAME as EditExpenseScreen):
-            //    - For legacy ExpenseItem → ExpenseService.updateExpense(...)
-            //    - For legacy IncomeItem  → IncomeService.updateIncome(...)
+            // Default persistence: write category/type to legacy docs
             try {
               if (payload is ExpenseItem) {
                 final e = payload as ExpenseItem;
-                final updated = ExpenseItem(
-                  id: e.id,
-                  type: newVal,                     // <-- save new category
-                  amount: e.amount,
-                  note: e.note,
-                  date: e.date,
-                  friendIds: e.friendIds,
-                  payerId: e.payerId,
-                  groupId: e.groupId,
-                  settledFriendIds: e.settledFriendIds,
-                  customSplits: e.customSplits,
-                  label: e.label,
-                  cardLast4: e.cardLast4,          // keep if your model has it
-                );
+                final updated = e.copyWith(type: newVal, category: newVal);
                 await ExpenseService().updateExpense(widget.userPhone, updated);
-                return; // success
+                return;
               } else if (payload is IncomeItem) {
                 final i = payload as IncomeItem;
-                final updated = IncomeItem(
-                  id: i.id,
-                  type: newVal,                     // <-- save new category
-                  amount: i.amount,
-                  note: i.note,
-                  date: i.date,
-                  source: i.source,
-                );
+                final updated = i.copyWith(type: newVal, category: newVal);
                 await IncomeService().updateIncome(widget.userPhone, updated);
-                return; // success
+                return;
               }
-              // If it's a unified Map doc, we **don’t** auto-save here
-              // because you asked to do it the same as EditExpenseScreen (legacy path).
-              // If you want unified docs to save too, tell me and I’ll wire Firestore update.
+              // unified map -> external handler required
               throw Exception('Unsupported payload for default saver');
             } catch (_) {
-              // will revert below
+              // revert below
             }
           }
 
@@ -703,7 +939,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             if (idx != -1) allTx[idx]['category'] = value;
           });
         },
-
         isDense: true,
         icon: const Icon(Icons.expand_more_rounded, size: 18),
         borderRadius: BorderRadius.circular(12),
@@ -712,13 +947,11 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           fontSize: 15.3,
           color: Color(0xFF0F1E1C),
         ),
-
         menuMaxHeight: 300,
       ),
     );
   }
 
-  // ---------- TRAILING UI (Amount + actions) ----------
   Widget _amountPill(double amount, bool isIncome) {
     return ConstrainedBox(
       constraints: const BoxConstraints(minWidth: 92, maxWidth: 108),
@@ -750,7 +983,17 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     );
   }
 
-  // ---------- BUILD ----------
+  // -------------------- ADS --------------------
+  // Keep your list-level placeholders as-is (non-breaking).
+  Widget _adBanner(String placement) {
+    return _BannerAdSlot(placement: placement);
+  }
+
+  Widget _inlineAdCard(String placement) {
+    return const _InlineAdCard(placement: 'txn_list_inline');
+  }
+
+  // -------------------- BUILD --------------------
   @override
   Widget build(BuildContext context) {
     final groupedTx = groupTxByDate();
@@ -762,378 +1005,495 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       );
     }
 
+    final groupCount = groupedTx.keys.length;
+
     return CustomDiamondCard(
       padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
       borderRadius: 21,
       child: ListView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        itemCount: groupedTx.keys.length + (shownCount < allTx.length ? 1 : 0),
+        itemCount: groupCount + (shownCount < allTx.length ? 1 : 0),
         itemBuilder: (context, idx) {
-          if (idx >= groupedTx.keys.length) {
-            return Center(
-              child: TextButton(
-                child: const Text("Show More"),
-                onPressed: () {
-                  setState(() {
-                    shownCount += 10;
-                  });
-                },
-              ),
+          // "Show more" row
+          if (idx >= groupCount) {
+            return Column(
+              children: [
+                Center(
+                  child: TextButton(
+                    child: const Text("Show More"),
+                    onPressed: () {
+                      setState(() {
+                        shownCount += 10;
+                      });
+                    },
+                  ),
+                ),
+                // Bottom banner ad under the list (always visible when reaching the end section)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _adBanner('txn_list_bottom'),
+                ),
+              ],
             );
           }
 
           final dateLabel = groupedTx.keys.elementAt(idx);
           final txs = groupedTx[dateLabel]!;
 
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ---- DATE HEADER ----
-              Container(
-                margin: const EdgeInsets.only(left: 14, right: 8, top: 11, bottom: 4),
-                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Text(
-                  dateLabel,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: Color(0xFF0F1E1C),
-                  ),
+          // Build rows with the ability to inject an inline ad
+          final rows = <Widget>[];
+
+          // ---- Top banner ad only for the first group ----
+          if (idx == 0) {
+            rows.add(Padding(
+              padding: const EdgeInsets.only(left: 12, right: 12, top: 10, bottom: 6),
+              child: _adBanner('txn_list_top'),
+            ));
+          }
+
+          // ---- DATE HEADER ----
+          rows.add(
+            Container(
+              margin: const EdgeInsets.only(left: 14, right: 8, top: 11, bottom: 4),
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Text(
+                dateLabel,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  color: Color(0xFF0F1E1C),
                 ),
               ),
-              ...txs.map((tx) {
-                final bool isIncome = tx['type'] == 'income';
-                final String id = (tx['id'] ?? '').toString();
-                final String category =
-                (tx['category'] ?? (isIncome ? 'Income' : 'General')).toString();
-                final String note = (tx['note'] ?? '').toString();
-                final double amount = (tx['amount'] is num)
-                    ? (tx['amount'] as num).toDouble()
-                    : 0.0;
+            ),
+          );
 
-                // unified extras
-                final String? bankLogo = tx['bankLogo'] as String?;
-                final String? schemeLogo = tx['schemeLogo'] as String?;
-                final String? merchant = (tx['merchant'] as String?)?.trim();
-                final String? cardLast4 = tx['cardLast4'] as String?;
-                final String? channel = tx['channel'] as String?;
+          for (int i = 0; i < txs.length; i++) {
+            final tx = txs[i];
+            final bool isIncome = tx['type'] == 'income';
+            final String id = (tx['id'] ?? '').toString();
+            final String category = (tx['category'] ?? (isIncome ? 'Income' : 'General')).toString();
+            final String note = (tx['note'] ?? '').toString();
+            final String? title = (tx['title'] as String?);
+            final List<String> labels = (tx['labels'] is List)
+                ? List<String>.from(tx['labels'])
+                : const <String>[];
+            final double amount = (tx['amount'] is num) ? (tx['amount'] as num).toDouble() : 0.0;
 
-                // legacy raw item
-                final raw = tx['raw'];
+            // unified & enriched extras
+            final String? bankLogo = tx['bankLogo'] as String?;
+            final String? schemeLogo = tx['schemeLogo'] as String?;
+            final String? merchant = (tx['merchant'] as String?)?.trim();
+            final String? cardLast4 = tx['cardLast4'] as String?;
+            final String? channel = tx['channel'] as String?;
+            final String? instrument = (tx['instrument'] as String?) ?? channel;
+            final String? network = tx['network'] as String?;
+            final String? issuerBank = tx['issuerBank'] as String?;
+            final String? counterparty = tx['counterparty'] as String?;
+            final bool isInternational = (tx['isInternational'] == true);
+            final bool hasFees = (tx['hasFees'] == true);
+            final String? tags = (tx['tags'] as String?);
 
-                // Friend names (legacy only)
-                String? friendsStr;
-                if (tx['mode'] == 'legacy' && !isIncome && raw.friendIds.isNotEmpty) {
-                  friendsStr = raw.friendIds
-                      .map((fid) => widget.friendsById[fid]?.name ?? "Friend")
-                      .join(', ');
-                }
+            // legacy raw item
+            final raw = tx['raw'];
 
-                final String showLine2 = () {
-                  if (merchant != null && merchant.isNotEmpty) return merchant;
-                  if (note.isNotEmpty) return note.length > 40 ? "${note.substring(0, 40)}..." : note;
-                  return '';
-                }();
+            // Friend names (legacy only)
+            String? friendsStr;
+            try {
+              if (tx['mode'] == 'legacy' && !isIncome && (raw.friendIds != null) && raw.friendIds.isNotEmpty) {
+                friendsStr = raw.friendIds
+                    .map((fid) => widget.friendsById[fid]?.name ?? "Friend")
+                    .join(', ');
+              }
+            } catch (_) {
+              friendsStr = null;
+            }
 
-                final bool isSelectable =
-                    widget.multiSelectEnabled && widget.onSelectTx != null;
-                final bool isSelected =
-                    isSelectable && widget.selectedIds.contains(id);
+            // Line 2: Prefer user title; else "Paid to/From <counterparty>"; else merchant; else note
+            final String showLine2 = () {
+              if (title != null && title.trim().isNotEmpty) return title.trim();
+              if ((counterparty ?? '').toString().trim().isNotEmpty) {
+                return isIncome ? "From ${counterparty!.trim()}" : "Paid to ${counterparty!.trim()}";
+              }
+              if (merchant != null && merchant.isNotEmpty) return merchant;
+              if (note.isNotEmpty) return note.length > 40 ? "${note.substring(0, 40)}..." : note;
+              return '';
+            }();
 
-                // Determine which object to send to actions (raw for legacy, whole tx for unified)
-                final dynamic payload = tx['mode'] == 'unified' ? tx : raw;
+            final bool isSelectable = widget.multiSelectEnabled && widget.onSelectTx != null;
+            final bool isSelected = isSelectable && widget.selectedIds.contains(id);
 
-                // Try to read a bill URL if present (unified or legacy custom)
-                String billUrl = '';
-                if (widget.showBillIcon) {
+            // Which object to send to actions (raw for legacy, whole tx for unified)
+            final dynamic payload = tx['mode'] == 'unified' ? tx : raw;
+
+            // bill url (both paths)
+            String billUrl = '';
+            if (widget.showBillIcon) {
+              if (tx['mode'] == 'unified') {
+                final rawMap = (tx['raw'] is Map<String, dynamic>) ? tx['raw'] as Map<String, dynamic> : <String, dynamic>{};
+                billUrl = _billUrlFromUnified(rawMap);
+              } else {
+                billUrl = _billUrlFromLegacy(raw);
+              }
+            }
+
+            // Chips
+            final chipWidgets = <Widget>[];
+            if ((instrument ?? '').isNotEmpty) {
+              chipWidgets.add(_chip(instrument!));
+            } else if ((channel ?? '').isNotEmpty) {
+              chipWidgets.add(_chip(channel!));
+            }
+            if ((cardLast4 ?? '').isNotEmpty) chipWidgets.add(_chip("****$cardLast4"));
+            if ((network ?? '').isNotEmpty) chipWidgets.add(_chip(network!));
+            if (isInternational) chipWidgets.add(_chip("INTL"));
+            if (hasFees) chipWidgets.add(_chip("Fees"));
+            if ((tags ?? '').isNotEmpty) chipWidgets.add(_chip(tags!));
+
+            rows.add(
+              GestureDetector(
+                key: ValueKey(id),
+                behavior: HitTestBehavior.opaque,
+                onTap: isSelectable
+                    ? () => widget.onSelectTx!(id, !isSelected)
+                    : () {
                   if (tx['mode'] == 'unified') {
-                    final rawMap = (tx['raw'] is Map<String, dynamic>) ? tx['raw'] as Map<String, dynamic> : <String, dynamic>{};
-                    billUrl = _billUrlFromUnified(rawMap);
+                    _showDetailsScreenFromUnified(tx, context);
                   } else {
-                    billUrl = _billUrlFromLegacy(raw); // safe even if properties don’t exist
+                    _showDetailsScreenLegacy(raw, isIncome, context);
                   }
-                }
-
-
-                return GestureDetector(
-                  key: ValueKey(id),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: isSelectable
-                      ? () => widget.onSelectTx!(id, !isSelected)
-                      : () {
-                    if (tx['mode'] == 'unified') {
-                      _showDetailsScreenFromUnified(tx, context);
-                    } else {
-                      _showDetailsScreenLegacy(raw, isIncome, context);
-                    }
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    constraints: const BoxConstraints(minHeight: 58),
-                    margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? Colors.deepPurple.withOpacity(0.09)
-                          : Colors.white.withOpacity(0.93),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.028),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                      border: isSelected
-                          ? Border.all(color: Colors.deepPurple, width: 1.4)
-                          : null,
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        if (isSelectable)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: Checkbox(
-                              value: isSelected,
-                              onChanged: (val) => widget.onSelectTx!(id, val ?? false),
-                              activeColor: Colors.deepPurple,
-                              visualDensity: VisualDensity.compact,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(7),
-                              ),
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 120),
+                  constraints: const BoxConstraints(minHeight: 58),
+                  margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? Colors.deepPurple.withOpacity(0.09)
+                        : Colors.white.withOpacity(0.93),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.028),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                    border: isSelected
+                        ? Border.all(color: Colors.deepPurple, width: 1.4)
+                        : null,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      if (isSelectable)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: Checkbox(
+                            value: isSelected,
+                            onChanged: (val) => widget.onSelectTx!(id, val ?? false),
+                            activeColor: Colors.deepPurple,
+                            visualDensity: VisualDensity.compact,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(7),
                             ),
                           ),
-
-                        // Logos + avatar
-                        if (bankLogo != null && bankLogo.isNotEmpty) ...[
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: _logo(bankLogo, w: 22, h: 22),
-                          ),
-                        ],
-                        CircleAvatar(
-                          radius: 16,
-                          backgroundColor:
-                          isIncome ? Colors.green[50] : Colors.pink[50],
-                          child: Icon(
-                            getCategoryIcon(category, isIncome: isIncome),
-                            color:
-                            isIncome ? Colors.green[700] : Colors.pink[700],
-                            size: 18,
-                          ),
                         ),
-                        if (schemeLogo != null && schemeLogo.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 6),
-                            child: _logo(schemeLogo, w: 18, h: 18),
-                          ),
-                        const SizedBox(width: 8),
 
-                        // MIDDLE: category dropdown + secondary line + chips + legacy extras
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Line 1: Category DROPDOWN (compact)
-                              SizedBox(
-                                height: 28,
-                                child: _categoryDropdown(
-                                  txId: id,
-                                  current: category,
-                                  isIncome: isIncome,
-                                  payload: payload,
+                      // Logos + avatar
+                      if (bankLogo != null && bankLogo.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: _logo(bankLogo, w: 22, h: 22),
+                        ),
+                      ],
+                      CircleAvatar(
+                        radius: 16,
+                        backgroundColor: isIncome ? Colors.green[50] : Colors.pink[50],
+                        child: Icon(
+                          getCategoryIcon(category, isIncome: isIncome),
+                          color: isIncome ? Colors.green[700] : Colors.pink[700],
+                          size: 18,
+                        ),
+                      ),
+                      if (schemeLogo != null && schemeLogo.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: _logo(schemeLogo, w: 18, h: 18),
+                        ),
+                      const SizedBox(width: 8),
+
+                      // MIDDLE
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Line 1: Category dropdown
+                            SizedBox(
+                              height: 28,
+                              child: _categoryDropdown(
+                                txId: id,
+                                current: category,
+                                isIncome: isIncome,
+                                payload: payload,
+                              ),
+                            ),
+
+                            // Line 2: title / merchant / note with Paid to/From
+                            if (showLine2.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2.0),
+                                child: Text(
+                                  showLine2,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: Colors.black.withOpacity(0.75),
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
 
-                              // Line 2: merchant/note
-                              if (showLine2.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2.0),
-                                  child: Text(
-                                    showLine2,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      color: Colors.black.withOpacity(0.75), // more visible
-                                      fontWeight: FontWeight.w500,
-                                    ),
-
-                                  ),
+                            // Chips: labels first, then channel/card/tags/instrument/network/intl/fees
+                            if (labels.isNotEmpty ||
+                                (instrument ?? '').isNotEmpty ||
+                                (channel ?? '').isNotEmpty ||
+                                (cardLast4 ?? '').isNotEmpty ||
+                                (network ?? '').isNotEmpty ||
+                                isInternational ||
+                                hasFees ||
+                                (tags ?? '').isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Wrap(
+                                  spacing: 6,
+                                  runSpacing: -6,
+                                  children: [
+                                    // labels
+                                    ...labels.take(3).map((l) => Chip(
+                                      label: Text(
+                                        '#$l',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                      backgroundColor: Colors.teal.withOpacity(0.10),
+                                      visualDensity: VisualDensity.compact,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    )),
+                                    if (labels.length > 3)
+                                      Chip(
+                                        label: Text(
+                                          '+${labels.length - 3}',
+                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                        ),
+                                        backgroundColor: Colors.teal.withOpacity(0.08),
+                                        visualDensity: VisualDensity.compact,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                    // enriched chips
+                                    ...chipWidgets,
+                                  ],
                                 ),
+                              ),
 
-                              // Chips wrap under text
-                              if ((channel != null && channel.isNotEmpty) ||
-                                  (cardLast4 != null && cardLast4.isNotEmpty))
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4.0),
-                                  child: Wrap(
-                                    spacing: 6,
-                                    runSpacing: -6,
-                                    children: [
-                                      if (channel != null && channel.isNotEmpty)
-                                        Chip(
-                                          label: Text(
-                                            channel,
-                                            style: const TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.black87, // increase contrast
-                                            ),
-
+                            // Legacy-only mini row
+                            if (tx['mode'] == 'legacy')
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2.0),
+                                child: Row(
+                                  children: [
+                                    if (friendsStr != null) ...[
+                                      Icon(Icons.person_2_rounded, size: 15, color: Colors.deepPurple[500]),
+                                      Flexible(
+                                        child: Text(
+                                          " $friendsStr",
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            color: Colors.deepPurple[700],
+                                            fontWeight: FontWeight.w500,
                                           ),
-                                          backgroundColor:
-                                          Colors.blueGrey.withOpacity(0.12),
-                                          visualDensity: VisualDensity.compact,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                            BorderRadius.circular(12),
-                                          ),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 0,
-                                          ),
-                                          materialTapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
                                         ),
-                                      if (cardLast4 != null &&
-                                          cardLast4.isNotEmpty)
-                                        Chip(
-                                          label: Text(
-                                            "****$cardLast4",
-                                            style: const TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.black87, // increase contrast
-                                            ),
-
-                                          ),
-                                          backgroundColor: Colors.deepPurple
-                                              .withOpacity(0.12),
-                                          visualDensity: VisualDensity.compact,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                            BorderRadius.circular(12),
-                                          ),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 0,
-                                          ),
-                                          materialTapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                        ),
+                                      ),
                                     ],
-                                  ),
+                                    if (tx['type'] == 'income' &&
+                                        (raw.source ?? '').toString().isNotEmpty) ...[
+                                      const SizedBox(width: 8),
+                                      Icon(Icons.input_rounded, size: 15, color: Colors.teal[600]),
+                                      Flexible(
+                                        child: Text(
+                                          " ${raw.source}",
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            color: Colors.teal[700],
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
+                              ),
+                          ],
+                        ),
+                      ),
 
-                              // Legacy-only mini row
-                              if (tx['mode'] == 'legacy')
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2.0),
-                                  child: Row(
-                                    children: [
-                                      if (friendsStr != null) ...[
-                                        Icon(Icons.person_2_rounded,
-                                            size: 15,
-                                            color: Colors.deepPurple[500]),
-                                        Flexible(
-                                          child: Text(
-                                            " $friendsStr",
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 12.5,
-                                              color: Colors.deepPurple[700],
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                      if (tx['type'] == 'income' &&
-                                          (raw.source ?? '')
-                                              .toString()
-                                              .isNotEmpty) ...[
-                                        const SizedBox(width: 8),
-                                        Icon(Icons.input_rounded,
-                                            size: 15, color: Colors.teal[600]),
-                                        Flexible(
-                                          child: Text(
-                                            " ${raw.source}",
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 12.5,
-                                              color: Colors.teal[700],
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
+                      const SizedBox(width: 8),
+
+                      // TRAILING
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          _amountPill(amount, isIncome),
+                          const SizedBox(height: 10),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (widget.showBillIcon && billUrl.isNotEmpty)
+                                IconButton(
+                                  icon: const Icon(Icons.receipt_long_rounded, size: 18, color: Colors.brown),
+                                  tooltip: 'View bill',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => _showBillImage(context, billUrl),
+                                ),
+                              if (tx['mode'] == 'legacy' && !isIncome && widget.onSplit != null)
+                                IconButton(
+                                  icon: const Icon(Icons.group, size: 18, color: Colors.deepPurple),
+                                  tooltip: 'Split',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => widget.onSplit?.call(payload),
+                                ),
+                              if (widget.onEdit != null)
+                                IconButton(
+                                  icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
+                                  tooltip: 'Edit',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => widget.onEdit?.call(payload),
+                                ),
+                              if (widget.onDelete != null)
+                                IconButton(
+                                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                                  tooltip: 'Delete',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => widget.onDelete?.call(payload),
                                 ),
                             ],
                           ),
-                        ),
-
-                        const SizedBox(width: 8),
-
-                        // TRAILING COLUMN: amount on top, actions below
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            _amountPill(amount, isIncome),
-                            const SizedBox(height: 10),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (widget.showBillIcon && billUrl.isNotEmpty)
-                                  IconButton(
-                                    icon: const Icon(Icons.receipt_long_rounded, size: 18, color: Colors.brown),
-                                    tooltip: 'View bill',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => _showBillImage(context, billUrl),
-                                  ),
-                                if (tx['mode'] == 'legacy' && !isIncome && widget.onSplit != null)
-                                  IconButton(
-                                    icon: const Icon(Icons.group, size: 18, color: Colors.deepPurple),
-                                    tooltip: 'Split',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => widget.onSplit?.call(payload),
-                                  ),
-                                if (widget.onEdit != null)
-                                  IconButton(
-                                    icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
-                                    tooltip: 'Edit',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => widget.onEdit?.call(payload),
-                                  ),
-                                if (widget.onDelete != null)
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                                    tooltip: 'Delete',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => widget.onDelete?.call(payload),
-                                  ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ),
-                );
-              }),
-            ],
+                ),
+              ),
+            );
+
+            // Inject an inline ad after a few rows (e.g., after 3rd item in this section)
+            if (i == 2) {
+              rows.add(
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  child: _inlineAdCard('txn_list_inline'),
+                ),
+              );
+            }
+          }
+
+          // Add a subtle spacing between groups; bottom banner is added after the "Show More" section
+          rows.add(const SizedBox(height: 4));
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: rows,
           );
         },
+      ),
+    );
+  }
+
+  Widget _chip(String label) {
+    return Chip(
+      label: Text(label,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black87)),
+      backgroundColor: Colors.blueGrey.withOpacity(0.12),
+      visualDensity: VisualDensity.compact,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+}
+
+// -------------------- Ad Placeholders (list-level) --------------------
+class _BannerAdSlot extends StatelessWidget {
+  final String placement;
+  const _BannerAdSlot({required this.placement});
+
+  @override
+  Widget build(BuildContext context) {
+    // keep as placeholder so nothing breaks in the list itself
+    return Container(
+      height: 64,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F6F8),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0x14000000)),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        'Ad • $placement',
+        style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF6B7280)),
+      ),
+    );
+  }
+}
+
+class _InlineAdCard extends StatelessWidget {
+  final String placement;
+  const _InlineAdCard({required this.placement});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 92,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F7FA),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x11000000)),
+        boxShadow: const [BoxShadow(color: Color(0x0F000000), blurRadius: 8, offset: Offset(0, 3))],
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: const [
+          CircleAvatar(radius: 22, backgroundColor: Color(0xFFE5E7EB)),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Sponsored • txn_list_inline',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF6B7280)),
+            ),
+          ),
+          SizedBox(width: 8),
+          Icon(Icons.chevron_right_rounded, color: Color(0xFF9CA3AF)),
+        ],
       ),
     );
   }

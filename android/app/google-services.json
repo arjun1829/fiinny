@@ -30,6 +30,14 @@
           }
         },
         {
+          "client_id": "1085936196639-u1kqun6no9grdib26vk148dbip0denf9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.KaranArjunTechnologies.lifemap",
+            "certificate_hash": "21e7cc8d0d8d777daf3aff467c80ddafa2f71b19"
+          }
+        },
+        {
           "client_id": "1085936196639-ffl2rshle55b6ukgq22u5agku68mqpr1.apps.googleusercontent.com",
           "client_type": 3
         }

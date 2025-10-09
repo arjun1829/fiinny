@@ -1,9 +1,15 @@
 // lib/screens/notification_prefs_screen.dart
+import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/notif_prefs_service.dart';
 import '../services/push/push_service.dart';
+
+// 👇 Ads (your existing infra)
+import 'package:lifemap/core/ads/adaptive_banner.dart';
+import 'package:lifemap/core/ads/ad_ids.dart';
 
 class NotificationPrefsScreen extends StatefulWidget {
   const NotificationPrefsScreen({super.key});
@@ -13,6 +19,8 @@ class NotificationPrefsScreen extends StatefulWidget {
 }
 
 class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
+  static const Color _accent = Color(0xFF159E8A);
+
   Future<TimeOfDay?> _pickTime(BuildContext context, String hhmm) async {
     final parts = hhmm.split(':');
     final now = TimeOfDay.now();
@@ -34,15 +42,24 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
     }
 
     final theme = Theme.of(context);
-    final accent = const Color(0xFF09857a);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notifications'),
+        backgroundColor: _accent,
+        elevation: 0,
+        title: const Text(
+          'Notifications',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        centerTitle: true,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
+        foregroundColor: Colors.white,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
           IconButton(
             tooltip: 'Test nudge',
-            icon: const Icon(Icons.notification_important_outlined),
+            icon: const Icon(Icons.notification_important_outlined, color: Colors.white),
             onPressed: () => PushService.debugLocalTest(),
           ),
         ],
@@ -52,7 +69,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter, end: Alignment.bottomCenter,
             colors: [
-              accent.withOpacity(0.06),
+              _accent.withOpacity(0.06),
               Colors.white,
             ],
           ),
@@ -73,7 +90,13 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
 
             Widget sectionTitle(String text) => Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-              child: Text(text, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+              child: Text(
+                text,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black87,
+                ),
+              ),
             );
 
             return ListView(
@@ -85,7 +108,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                       Container(
                         width: 44, height: 44,
                         decoration: BoxDecoration(
-                          color: accent.withOpacity(0.12),
+                          color: _accent.withOpacity(0.12),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Center(child: Text('🔔', style: TextStyle(fontSize: 22))),
@@ -93,8 +116,8 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'Control how Fiiny nudges you — keep it helpful, not spammy.',
-                          style: theme.textTheme.bodyMedium?.copyWith(height: 1.3),
+                          'Control how Fiinny nudges you — keep it helpful, not spammy.',
+                          style: theme.textTheme.bodyMedium?.copyWith(height: 1.3, color: Colors.black87),
                         ),
                       ),
                     ],
@@ -105,18 +128,29 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
 
                 _GlassCard(
                   child: SwitchListTile.adaptive(
-                    activeColor: accent,
-                    title: const Text('Enable push notifications'),
-                    subtitle: const Text('You can still see the in-app bell feed anytime.'),
+                    activeColor: _accent,
+                    title: const Text('Enable push notifications', style: TextStyle(color: Colors.black87)),
+                    subtitle: const Text('You can still see the in-app bell feed anytime.', style: TextStyle(color: Colors.black54)),
                     value: pushEnabled,
                     onChanged: (v) => NotifPrefsService.setPushEnabled(v),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // 👇 Banner Ad placed BEFORE "Channels"
+                SafeArea(
+                  top: false,
+                  child: AdaptiveBanner(
+                    adUnitId: AdIds.banner,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   ),
                 ),
 
                 sectionTitle('Channels'),
 
                 _ChannelTile(
-                  icon: Icons.wb_sunny, color: Colors.orange, // safer icon
+                  icon: Icons.wb_sunny, color: Colors.orange,
                   title: 'Daily reminder',
                   subtitle: 'Quick nudge to review today’s expenses',
                   value: (channels['daily_reminder'] as bool?) ?? true,
@@ -124,7 +158,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                   onChanged: (v) => NotifPrefsService.toggleChannel('daily_reminder', v),
                 ),
                 _ChannelTile(
-                  icon: Icons.calendar_view_week, color: Colors.indigo, // safer icon
+                  icon: Icons.calendar_view_week, color: Colors.indigo,
                   title: 'Weekly digest',
                   subtitle: 'Your week in ₹ + quick review CTA',
                   value: (channels['weekly_digest'] as bool?) ?? true,
@@ -132,7 +166,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                   onChanged: (v) => NotifPrefsService.toggleChannel('weekly_digest', v),
                 ),
                 _ChannelTile(
-                  icon: Icons.date_range, color: Colors.teal, // safer icon
+                  icon: Icons.date_range, color: Colors.teal,
                   title: 'Monthly reflection',
                   subtitle: 'Trends & insights you can act on',
                   value: (channels['monthly_reflection'] as bool?) ?? true,
@@ -140,7 +174,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                   onChanged: (v) => NotifPrefsService.toggleChannel('monthly_reflection', v),
                 ),
                 _ChannelTile(
-                  icon: Icons.warning_amber, color: Colors.redAccent, // safer icon
+                  icon: Icons.warning_amber, color: Colors.redAccent,
                   title: 'Overspend alerts',
                   subtitle: 'Pings when limits are breached',
                   value: (channels['overspend_alerts'] as bool?) ?? true,
@@ -148,7 +182,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                   onChanged: (v) => NotifPrefsService.toggleChannel('overspend_alerts', v),
                 ),
                 _ChannelTile(
-                  icon: Icons.group, color: Colors.purple, // safer icon
+                  icon: Icons.group, color: Colors.purple,
                   title: 'Partner check-ins',
                   subtitle: 'Weekly review with your partner',
                   value: (channels['partner_checkins'] as bool?) ?? true,
@@ -156,7 +190,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                   onChanged: (v) => NotifPrefsService.toggleChannel('partner_checkins', v),
                 ),
                 _ChannelTile(
-                  icon: Icons.payments, color: Colors.blueGrey, // safer icon
+                  icon: Icons.payments, color: Colors.blueGrey,
                   title: 'Settle up nudges',
                   subtitle: 'Remind friends to pay',
                   value: (channels['settleup_nudges'] as bool?) ?? true,
@@ -173,11 +207,11 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                     children: [
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: Icon(Icons.nights_stay, color: accent), // safer icon
-                        title: const Text('No notifications during'),
-                        subtitle: Text('$start – $end  ($tz)'),
+                        leading: Icon(Icons.nights_stay, color: _accent),
+                        title: const Text('No notifications during', style: TextStyle(color: Colors.black87)),
+                        subtitle: Text('$start – $end  ($tz)', style: const TextStyle(color: Colors.black54)),
                         trailing: Switch.adaptive(
-                          activeColor: accent,
+                          activeColor: _accent,
                           value: !(start == '00:00' && end == '00:00'),
                           onChanged: pushEnabled ? (v) async {
                             if (v) {
@@ -189,7 +223,6 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      // AFTER
                       Wrap(
                         spacing: 10,
                         runSpacing: 8,
@@ -220,18 +253,17 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
-                              color: accent.withOpacity(0.08),
+                              color: _accent.withOpacity(0.08),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
                               tz,
                               style: theme.textTheme.labelMedium?.copyWith(
-                                  color: accent, fontWeight: FontWeight.w700),
+                                  color: _accent, fontWeight: FontWeight.w700),
                             ),
                           ),
                         ],
                       ),
-
                       const SizedBox(height: 6),
                       Text(
                         'Critical alerts may bypass quiet hours.',
@@ -308,14 +340,20 @@ class _ChannelTile extends StatelessWidget {
           ),
           child: Icon(icon, color: color),
         ),
-        title: Text(title, style: TextStyle(
-          fontWeight: FontWeight.w600,
-          color: disabled ? Colors.black54 : Colors.black87,
-        )),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: disabled ? Colors.black54 : Colors.black87,
+          ),
+        ),
         subtitle: subtitle != null
-            ? Text(subtitle!, style: TextStyle(
-          color: disabled ? Colors.black45 : Colors.black54,
-        ))
+            ? Text(
+          subtitle!,
+          style: TextStyle(
+            color: disabled ? Colors.black45 : Colors.black54,
+          ),
+        )
             : null,
         trailing: Switch.adaptive(
           value: value,
@@ -340,7 +378,7 @@ class _TimeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = const Color(0xFF09857a);
+    const accent = Color(0xFF159E8A);
     return InkWell(
       onTap: enabled ? onTap : null,
       borderRadius: BorderRadius.circular(12),
@@ -359,13 +397,13 @@ class _TimeChip extends StatelessWidget {
               color: enabled ? accent : Colors.grey,
             )),
             const SizedBox(width: 6),
-            Text(time, style: TextStyle(
-              fontFeatures: const [FontFeature.tabularFigures()],
-              color: enabled ? Colors.black87 : Colors.black54,
+            Text(time, style: const TextStyle(
+              fontFeatures: [FontFeature.tabularFigures()],
+              color: Colors.black87,
               fontWeight: FontWeight.w600,
             )),
             const SizedBox(width: 4),
-            Icon(Icons.schedule, size: 18, color: enabled ? accent : Colors.grey), // ✅ safe icon
+            Icon(Icons.schedule, size: 18, color: enabled ? accent : Colors.grey),
           ],
         ),
       ),

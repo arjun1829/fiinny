@@ -1,4 +1,5 @@
-import 'package:shared_preferences/shared_preferences.dart';
+import '../shims/shared_prefs_shim.dart';
+
 
 class SettingsService {
   static Future<void> setString(String key, String value) async {

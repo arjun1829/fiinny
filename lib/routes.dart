@@ -1,5 +1,6 @@
 // lib/routes.dart
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // NEW: to derive userPhone when missing
 
 // ---------- Static screens (no arguments) ----------
 import 'screens/onboarding_screen.dart';
@@ -35,6 +36,12 @@ import 'ui_devtools/parse_debug_screen.dart';
 // ---------- Settings screens ----------
 import 'screens/notification_prefs_screen.dart'; // ✅ correct import
 
+// ---------- Friend recurring (NEW route target) ----------
+import 'details/recurring/friend_recurring_screen.dart';
+
+import 'package:flutter/material.dart';
+import '../screens/subs_bills/subs_bills_screen.dart';
+
 /// Static routes that don't require arguments.
 /// (Do NOT put `/analytics` here because it requires a userPhone.)
 final Map<String, WidgetBuilder> appRoutes = {
@@ -65,6 +72,28 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
   final args = settings.arguments;
 
   switch (settings.name) {
+  /* ------------------ NEW: Subscriptions & Bills ------------------ */
+    case '/subscriptions-bills':
+    case '/subs-bills': // alias
+      {
+        String? userPhone;
+        if (args is String) {
+          userPhone = args;
+        } else if (args is Map<String, dynamic>) {
+          if (args['userPhone'] is String) {
+            userPhone = args['userPhone'] as String;
+          }
+        }
+        // Derive from FirebaseAuth if not provided
+        userPhone ??= FirebaseAuth.instance.currentUser?.phoneNumber ??
+            FirebaseAuth.instance.currentUser?.uid ??
+            '';
+        return MaterialPageRoute(
+          builder: (_) => SubscriptionsBillsScreen(userPhone: userPhone!),
+          settings: settings,
+        );
+      }
+
     case '/dashboard':
       if (args is String) {
         return MaterialPageRoute(builder: (_) => DashboardScreen(userPhone: args));
@@ -189,6 +218,43 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
     case '/transactionAmount':
       if (args is String) {
         return MaterialPageRoute(builder: (_) => TransactionAmountScreen(userId: args));
+      }
+      break;
+
+  /* ------------------ NEW: Friend Recurring (deeplink target) ------------------ */
+    case '/friend-recurring':
+    // Accept:
+    //   - String friendId
+    //   - Map { friendId, userPhone?, friendName?, section? }
+      {
+        String? friendId;
+        String? userPhone;
+        String? friendName;
+
+        if (args is String) {
+          friendId = args;
+        } else if (args is Map<String, dynamic>) {
+          if (args['friendId'] is String) friendId = args['friendId'] as String;
+          if (args['userPhone'] is String) userPhone = args['userPhone'] as String?;
+          if (args['friendName'] is String) friendName = args['friendName'] as String?;
+          // args['section'] is optional; if you need it later, read it in the screen via settings.arguments
+        }
+
+        // Derive userPhone if missing (phoneNumber first, fallback to uid)
+        userPhone ??= FirebaseAuth.instance.currentUser?.phoneNumber ??
+            FirebaseAuth.instance.currentUser?.uid ??
+            '';
+
+        if (friendId != null && friendId.isNotEmpty) {
+          return MaterialPageRoute(
+            builder: (_) => FriendRecurringScreen(
+              userPhone: userPhone!,
+              friendId: friendId!,
+              friendName: friendName,
+            ),
+            settings: settings, // keep settings so screen can inspect section if needed
+          );
+        }
       }
       break;
 

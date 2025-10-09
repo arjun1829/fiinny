@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:lifemap/shims/shared_prefs_shim.dart';
+
 import '../models/asset_model.dart';
 
 /// AssetService handles saving, loading, and updating the user's portfolio.

@@ -15,7 +15,9 @@
     "serve": "npm run build && cd .. && firebase emulators:start --only functions",
     "deploy": "npm run build && cd .. && firebase deploy --only functions",
     "lint": "echo \"(optional) add eslint if you want linting\"",
-    "clean": "rm -rf lib"
+    "clean": "rm -rf lib",
+    "typecheck": "tsc --noEmit",
+    "predeploy": "npm run build"
   },
   "dependencies": {
     "firebase-admin": "^12.5.0",

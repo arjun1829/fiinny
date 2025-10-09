@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:lifemap/shims/shared_prefs_shim.dart';
 import '../models/price_quote.dart';
 
 class QuoteCache {

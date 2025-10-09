@@ -32,6 +32,9 @@ import '../group/group_reminder_dialog.dart';
 // Replaced: use the upgraded group-specific dialog
 import '../widgets/add_group_expense_dialog.dart';
 import '../widgets/settleup_dialog.dart';
+import 'package:lifemap/ui/comp/share_badge.dart';
+
+import '../details/recurring/group_recurring_screen.dart';
 
 // put this near the top of the file, after imports
 Future<Uri?> _safeDownloadUri(String raw) async {
@@ -88,6 +91,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   FriendModel? _creator;
   bool _loadingMembers = true;
   bool _balancesExpanded = true; // or false if you want it collapsed by default
+  List<Map<String, dynamic>> get _shareFaces => _members
+            .map((m) => {
+                    'id': m.phone,
+                    'name': (m.name.isNotEmpty && m.name != m.phone)
+                          ? m.name
+                          : _maskPhoneForDisplay(m.phone),
+              'avatarUrl': m.avatar.startsWith('http') ? m.avatar : null,
+            })
+      .toList();
 
 
   // Chat prefill when user taps "Discuss" on an expense
@@ -763,6 +775,57 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                         txCount: expenses.length,
                       ),
                       const SizedBox(height: 14),
+                      // NEW: Group Recurring entry (like the friend screen)
+                      _glassCard(
+                        child: InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                // AFTER
+                                builder: (_) => GroupRecurringScreen(
+                                  groupId: widget.group.id,
+                                  currentUserPhone: widget.userId,
+                                  groupName: widget.group.name,
+                                ),
+
+                              ),
+                            );
+                          },
+                          child: Row(
+                            children: [
+                              Container(
+                                height: 40, width: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.teal.withOpacity(.10),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.repeat_rounded, color: Colors.teal),
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  'Recurring',
+                                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                                ),
+                              ),
+                              Text(
+                                'View all',
+                                style: TextStyle(
+                                  color: Colors.teal.shade700,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              const Icon(Icons.chevron_right),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+
+
                       _actionsRow(expenses),
                       const SizedBox(height: 16),
                       _balancesByMember(pairNet),
@@ -861,6 +924,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                     ),
                   ],
                 ),
+              const SizedBox(height: 10),
+                              // Facepile: show who’s in the group (tappable → open settings/members)
+                              Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: ShareBadge(
+                                      participants: _shareFaces,
+                                      dense: true,
+                                      onTap: _openSettings,
+                                    ),
+                              ),
               ],
             ),
           ),

@@ -34,7 +34,8 @@ import '../fiinny_assets/modules/portfolio/models/price_quote.dart';
 import '../fiinny_assets/modules/portfolio/services/market_data_yahoo.dart';
 
 // SMS & Gmail pipelines
-import 'package:shared_preferences/shared_preferences.dart';
+import '../shims/shared_prefs_shim.dart';
+
 import 'dart:io' show Platform;
 import '../services/sync/sync_coordinator.dart';
 

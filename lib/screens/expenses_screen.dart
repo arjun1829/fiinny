@@ -1,6 +1,6 @@
+// lib/screens/expenses_screen.dart
 import 'dart:async';
 import 'dart:math' as math;
-
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -20,6 +20,10 @@ import '../widgets/unified_transaction_list.dart';
 import '../themes/custom_card.dart';
 import '../widgets/animated_mint_background.dart';
 
+// ✅ Ads
+import '../core/ads/ad_slots.dart';
+import '../core/ads/ad_service.dart';
+
 class ExpensesScreen extends StatefulWidget {
   final String userPhone;
   const ExpensesScreen({required this.userPhone, Key? key}) : super(key: key);
@@ -34,6 +38,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   String _chartType = "Pie";
   String _dataType = "All";
   String _viewMode = 'summary';
+  static const double _bannerH = 60.0;
 
   // Data
   List<ExpenseItem> allExpenses = [];
@@ -60,6 +65,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   DateTime? _searchFrom;
   DateTime? _searchTo;
   final TextEditingController _searchController = TextEditingController();
+  final ValueNotifier<bool> _showBottomBanner = ValueNotifier<bool>(true);
 
   // Subscriptions / Debounce
   StreamSubscription? _expSub, _incSub, _friendSub;
@@ -91,7 +97,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       return PieChartSectionData(
         value: e.value,
         color: colors[i++ % colors.length],
-        // small donut look: no labels on slices
         title: '',
         radius: 34,
       );
@@ -130,10 +135,16 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     }).toList();
   }
 
-
   @override
   void initState() {
     super.initState();
+
+    // ✅ Ensure Google Mobile Ads is initialized for this screen.
+    // Safe to call more than once; AdService guards & reloads creative as needed.
+    // (If you already init at app start, this is still harmless.)
+    // ignore: discarded_futures
+    AdService.I.init();
+
     _listenToData();
   }
 
@@ -224,7 +235,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     bool inMainRange(DateTime date) {
       final d = _d(date);
       return (d.isAtSameMomentAs(start) || d.isAfter(start)) &&
-          (d.isAtSameMomentAs(end)   || d.isBefore(end));
+          (d.isAtSameMomentAs(end) || d.isBefore(end));
     }
 
     bool searchMatchExpense(ExpenseItem e) {
@@ -250,7 +261,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       if (q.isNotEmpty) {
         final note = (i.note).toLowerCase();
         final label = (i.label ?? '').toLowerCase();
-        final type  = (i.type).toLowerCase();
+        final type = (i.type).toLowerCase();
         if (!(note.contains(q) || label.contains(q) || type.contains(q))) return false;
       }
       if (_searchFrom != null && _searchTo != null) {
@@ -260,19 +271,16 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       return inMainRange(i.date);
     }
 
-    // compute once
     filteredExpenses = allExpenses.where(searchMatchExpense).toList();
-    filteredIncomes  = allIncomes.where(searchMatchIncome).toList();
+    filteredIncomes = allIncomes.where(searchMatchIncome).toList();
     periodTotalExpense = filteredExpenses.fold(0.0, (a, b) => a + b.amount);
-    periodTotalIncome  = filteredIncomes.fold(0.0, (a, b) => a + b.amount);
+    periodTotalIncome = filteredIncomes.fold(0.0, (a, b) => a + b.amount);
 
-    // keep the category dropdown safe AFTER recompute
     final catsNow = _expenseCategories().toSet();
     if (_searchCategory != null && !catsNow.contains(_searchCategory)) {
       _searchCategory = null;
     }
   }
-
 
   void _generateDailyTotals() {
     _dailyTotals.clear();
@@ -287,83 +295,126 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     _expensesForSelectedDay = allExpenses.where((e) => _d(e.date) == d).toList();
   }
 
-
   // ------- Build -------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+
+      // ✅ Persistent anchored adaptive banner at bottom of this screen
+      // PATCH 1B: replace bottomNavigationBar
+
       floatingActionButton: _buildFAB(context),
       body: Stack(
         children: [
           const AnimatedMintBackground(),
-          SafeArea(
-            child: Column(
-              children: [
-                // HEADER ROW
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 18, 12, 4),
-                  child: Row(
+          ValueListenableBuilder<bool>(
+            valueListenable: _showBottomBanner,
+            builder: (context, show, _) {
+              final keyboardUp = MediaQuery.of(context).viewInsets.bottom > 0;
+              final bottomPad = (show && !keyboardUp)
+                  ? _bannerH + kBottomNavigationBarHeight + MediaQuery.of(context).padding.bottom + 6
+                  : 0.0;
+
+              return SafeArea(
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: bottomPad),
+                  child: Column(
                     children: [
-                      const Text(
-                        "Expenses",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 28,
-                          letterSpacing: 0.5,
-                          color: Color(0xFF09857a),
+                      // HEADER ROW (unchanged)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 18, 12, 4),
+                        child: Row(
+                          children: [
+                            const Text(
+                              "Expenses",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 28,
+                                letterSpacing: 0.5,
+                                color: Color(0xFF09857a),
+                              ),
+                            ),
+                            const Spacer(),
+                            Tooltip(
+                              message: "Calendar View",
+                              child: IconButton(
+                                icon: Icon(
+                                  Icons.calendar_today,
+                                  color: _viewMode == 'calendar' ? Colors.teal : Colors.grey[500],
+                                  size: 26,
+                                ),
+                                onPressed: () => setState(() => _viewMode = 'calendar'),
+                              ),
+                            ),
+                            Tooltip(
+                              message: "Summary",
+                              child: IconButton(
+                                icon: Icon(
+                                  Icons.dashboard,
+                                  color: _viewMode == 'summary' ? Colors.blueAccent : Colors.grey[500],
+                                  size: 26,
+                                ),
+                                onPressed: () => setState(() => _viewMode = 'summary'),
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            Tooltip(
+                              message: "Analytics",
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.insights_rounded,
+                                  color: Colors.indigoAccent,
+                                  size: 26,
+                                ),
+                                onPressed: () async {
+                                  _showBottomBanner.value = false;
+                                  try {
+                                    await Navigator.pushNamed(
+                                      context,
+                                      '/analytics',
+                                      arguments: widget.userPhone,
+                                    );
+                                  } finally {
+                                    _showBottomBanner.value = true;
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const Spacer(),
-                      Tooltip(
-                        message: "Calendar View",
-                        child: IconButton(
-                          icon: Icon(
-                            Icons.calendar_today,
-                            color: _viewMode == 'calendar' ? Colors.teal : Colors.grey[500],
-                            size: 26,
-                          ),
-                          onPressed: () => setState(() => _viewMode = 'calendar'),
-                        ),
-                      ),
-
-                      Tooltip(
-                        message: "Summary",
-                        child: IconButton(
-                          icon: Icon(
-                            Icons.dashboard,
-                            color: _viewMode == 'summary' ? Colors.blueAccent : Colors.grey[500],
-                            size: 26,
-                          ),
-                          onPressed: () => setState(() => _viewMode = 'summary'),
-                        ),
-                      ),
-                      const SizedBox(width: 2),
-                      Tooltip(
-                        message: "Analytics",
-                        child: IconButton(
-                          icon: const Icon(
-                            Icons.insights_rounded,
-                            color: Colors.indigoAccent,
-                            size: 26,
-                          ),
-                          onPressed: () {
-                            Navigator.pushNamed(
-                              context,
-                              '/analytics',
-                              arguments: widget.userPhone, // <- pass the phone
-                            );
-                          },
-                        ),
-                      ),
-
+                      const SizedBox(height: 2),
+                      Expanded(child: _getCurrentView(context)),
                     ],
                   ),
                 ),
-                const SizedBox(height: 2),
-                Expanded(child: _getCurrentView(context)),
-              ],
-            ),
+              );
+            },
+          ),
+          ValueListenableBuilder<bool>(
+            valueListenable: _showBottomBanner,
+            builder: (context, show, _) {
+              final keyboardUp = MediaQuery.of(context).viewInsets.bottom > 0;
+              if (!show || keyboardUp) return const SizedBox.shrink();
+              return Positioned(
+                left: 8,
+                right: 8,
+                bottom: kBottomNavigationBarHeight + MediaQuery.of(context).padding.bottom + 4,
+                child: SafeArea(
+                  top: false,
+                  bottom: false,
+                  child: SizedBox(
+                    height: _bannerH,
+                    child: const AdsBannerSlot(
+                      inline: false,
+                      padding: EdgeInsets.zero,
+                      alignment: Alignment.center,
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -371,40 +422,60 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   Widget _buildFAB(BuildContext context) {
-    return SizedBox(
-      height: 66,
-      child: FloatingActionButton.extended(
-        onPressed: () async {
-          await Navigator.pushNamed(
-            context,
-            '/add',
-            arguments: widget.userPhone,
-          );
-        },
-        icon: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(100),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.tealAccent.withOpacity(0.45),
-                blurRadius: 12,
-                offset: const Offset(0, 6),
-              )
-            ],
+    return ValueListenableBuilder<bool>(
+      valueListenable: _showBottomBanner,
+      builder: (context, show, _) {
+        final mq = MediaQuery.of(context);
+        final keyboardUp = mq.viewInsets.bottom > 0;
+        final bump = (show && !keyboardUp)
+            ? _bannerH + kBottomNavigationBarHeight + mq.padding.bottom + 6
+            : 0.0;
+
+        return Padding(
+          padding: EdgeInsets.only(bottom: bump),
+          child: SizedBox(
+            height: 66,
+            child: FloatingActionButton.extended(
+              onPressed: () async {
+                _showBottomBanner.value = false;
+                try {
+                  await Navigator.pushNamed(
+                    context,
+                    '/add',
+                    arguments: widget.userPhone,
+                  );
+                } finally {
+                  _showBottomBanner.value = true;
+                }
+              },
+              icon: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(100),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.tealAccent.withOpacity(0.45),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    )
+                  ],
+                ),
+                child: const Icon(Icons.add_circle_rounded, size: 30),
+              ),
+              label: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                child: Text(
+                  "",
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+              ),
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.teal,
+              elevation: 6,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+            ),
           ),
-          child: const Icon(Icons.add_circle_rounded, size: 30),
-        ),
-        // keep your empty label behavior exactly as-is
-        label: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-          child: Text("",
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-        ),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.teal,
-        elevation: 6,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      ),
+        );
+      },
     );
   }
 
@@ -418,6 +489,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         return _summaryView(context);
     }
   }
+
 
   Widget _summaryView(BuildContext context) {
     return RefreshIndicator(
@@ -436,13 +508,19 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             ],
             child: InkWell(
               // tap anywhere on the card to open Analytics
-              onTap: () {
-                Navigator.pushNamed(
-                  context,
-                  '/analytics',
-                  arguments: widget.userPhone,
-                );
+              onTap: () async {
+                _showBottomBanner.value = false;
+                try {
+                  await Navigator.pushNamed(
+                    context,
+                    '/analytics',
+                    arguments: widget.userPhone,
+                  );
+                } finally {
+                  _showBottomBanner.value = true;
+                }
               },
+
               borderRadius: BorderRadius.circular(5),
               child: Row(
                 children: [
@@ -489,33 +567,48 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     onPressed: _selectedTxIds.isEmpty ? null : () async {
                       final newLabel = await _showLabelDialog();
                       if (newLabel != null && newLabel.trim().isNotEmpty) {
-                        for (final tx in filteredExpenses
-                            .where((e) => _selectedTxIds.contains(e.id))) {
+                        // Expenses
+                        for (final tx in filteredExpenses.where((e) => _selectedTxIds.contains(e.id))) {
                           await ExpenseService().updateExpense(
                             widget.userPhone,
                             tx.copyWith(label: newLabel),
                           );
                         }
+                        // Incomes (only if your IncomeItem supports label)
+                        for (final inc in filteredIncomes.where((i) => _selectedTxIds.contains(i.id))) {
+                          await IncomeService().updateIncome(
+                            widget.userPhone,
+                            inc.copyWith(label: newLabel),
+                          );
+                        }
+
                         setState(() {
                           _selectedTxIds.clear();
                           _multiSelectMode = false;
                         });
                       }
                     },
+
                   ),
                   IconButton(
                     icon: const Icon(Icons.delete_forever, color: Colors.red),
                     tooltip: "Delete Selected",
                     onPressed: _selectedTxIds.isEmpty ? null : () async {
-                      for (final tx in filteredExpenses
-                          .where((e) => _selectedTxIds.contains(e.id))) {
+                      // Expenses
+                      for (final tx in filteredExpenses.where((e) => _selectedTxIds.contains(e.id))) {
                         await ExpenseService().deleteExpense(widget.userPhone, tx.id);
                       }
+                      // Incomes
+                      for (final inc in filteredIncomes.where((i) => _selectedTxIds.contains(i.id))) {
+                        await IncomeService().deleteIncome(widget.userPhone, inc.id);
+                      }
+
                       setState(() {
                         _selectedTxIds.clear();
                         _multiSelectMode = false;
                       });
                     },
+
                   ),
                   IconButton(
                     icon: const Icon(Icons.close_rounded),
@@ -699,21 +792,25 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             foregroundColor: Colors.black87,
                           ),
                           onPressed: () async {
-                            final picked = await showDateRangePicker(
-                              context: context,
-                              firstDate: DateTime(2000),
-                              lastDate: DateTime.now().add(const Duration(days: 1)),
-                            );
-                            if (picked != null) {
-                              setState(() {
-                                _searchFrom = picked.start;
-                                _searchTo = picked.end;
-                                // keep whatever _selectedFilter is; custom range will intersect.
-                                // If you want custom range to ignore presets, you could set _selectedFilter = 'All';
-                              });
-                              _recompute();
+                            _showBottomBanner.value = false;
+                            try {
+                              final picked = await showDateRangePicker(
+                                context: context,
+                                firstDate: DateTime(2000),
+                                lastDate: DateTime.now().add(const Duration(days: 1)),
+                              );
+                              if (picked != null) {
+                                setState(() {
+                                  _searchFrom = picked.start;
+                                  _searchTo = picked.end;
+                                });
+                                _recompute();
+                              }
+                            } finally {
+                              _showBottomBanner.value = true;
                             }
                           },
+
                         ),
 
                         if (_searchFrom != null || _searchTo != null)
@@ -789,6 +886,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               showBillIcon: true,
               multiSelectEnabled: _multiSelectMode,
               selectedIds: _selectedTxIds,
+              onBeginModal: () => _showBottomBanner.value = false,
+              onEndModal:   () => _showBottomBanner.value = true,
+
+
               onSelectTx: (txId, selected) {
                 setState(() {
                   if (selected) {
@@ -800,20 +901,25 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               },
               onEdit: (tx) async {
                 if (_multiSelectMode) return;
-                if (tx is ExpenseItem) {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => EditExpenseScreen(
-                        userPhone: widget.userPhone,
-                        expense: tx,
+                _showBottomBanner.value = false;
+                try {
+                  if (tx is ExpenseItem) {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => EditExpenseScreen(
+                          userPhone: widget.userPhone,
+                          expense: tx,
+                        ),
                       ),
-                    ),
-                  );
-                  _recompute();
+                    );
+                    _recompute();
+                  }
+                } finally {
+                  _showBottomBanner.value = true;
                 }
-                // Income edit can be added similarly if needed
               },
+
               onDelete: (tx) async {
                 if (_multiSelectMode) return;
                 if (tx is ExpenseItem) {
@@ -859,20 +965,26 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             color: Colors.teal, size: 24),
                         tooltip: "Pick Date",
                         onPressed: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: _focusedDay,
-                            firstDate: DateTime(2000),
-                            lastDate: DateTime(2100),
-                          );
-                          if (picked != null) {
-                            setState(() {
-                              _selectedDay = picked;
-                              _focusedDay = picked;
-                            });
-                            _updateExpensesForSelectedDay(picked);
+                          _showBottomBanner.value = false;
+                          try {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: _focusedDay,
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime(2100),
+                            );
+                            if (picked != null) {
+                              setState(() {
+                                _selectedDay = picked;
+                                _focusedDay = picked;
+                              });
+                              _updateExpensesForSelectedDay(picked);
+                            }
+                          } finally {
+                            _showBottomBanner.value = true;
                           }
                         },
+
                       ),
                     ],
                   ),
@@ -992,6 +1104,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 showBillIcon: true,
                 multiSelectEnabled: _multiSelectMode,
                 selectedIds: _selectedTxIds,
+                onBeginModal: () => _showBottomBanner.value = false,
+                onEndModal:   () => _showBottomBanner.value = true,
+
                 onSelectTx: (txId, selected) {
                   setState(() {
                     if (selected) {
@@ -1003,19 +1118,25 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 },
                 onEdit: (tx) async {
                   if (_multiSelectMode) return;
-                  if (tx is ExpenseItem) {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EditExpenseScreen(
-                          userPhone: widget.userPhone,
-                          expense: tx,
+                  _showBottomBanner.value = false;
+                  try {
+                    if (tx is ExpenseItem) {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EditExpenseScreen(
+                            userPhone: widget.userPhone,
+                            expense: tx,
+                          ),
                         ),
-                      ),
-                    );
-                    _recompute();
+                      );
+                      _recompute();
+                    }
+                  } finally {
+                    _showBottomBanner.value = true;
                   }
                 },
+
                 onDelete: (tx) async {
                   if (_multiSelectMode) return;
                   if (tx is ExpenseItem) {
@@ -1273,6 +1394,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             showBillIcon: true,
             multiSelectEnabled: _multiSelectMode,
             selectedIds: _selectedTxIds,
+            onBeginModal: () => _showBottomBanner.value = false,
+            onEndModal:   () => _showBottomBanner.value = true,
+
             onSelectTx: (txId, selected) {
               setState(() {
                 if (selected) {
@@ -1284,19 +1408,25 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             },
             onEdit: (tx) async {
               if (_multiSelectMode) return;
-              if (tx is ExpenseItem) {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => EditExpenseScreen(
-                      userPhone: widget.userPhone,
-                      expense: tx,
+              _showBottomBanner.value = false;
+              try {
+                if (tx is ExpenseItem) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditExpenseScreen(
+                        userPhone: widget.userPhone,
+                        expense: tx,
+                      ),
                     ),
-                  ),
-                );
-                _recompute();
+                  );
+                  _recompute();
+                }
+              } finally {
+                _showBottomBanner.value = true;
               }
             },
+
             onDelete: (tx) async {
               if (_multiSelectMode) return;
               if (tx is ExpenseItem) {

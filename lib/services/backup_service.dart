@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../shims/shared_prefs_shim.dart';
+
 import 'package:share_plus/share_plus.dart'; // <-- NEW!
 import '../models/income_item.dart';
 import '../models/expense_item.dart';
