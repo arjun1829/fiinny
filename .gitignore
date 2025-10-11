@@ -38,7 +38,6 @@ android/.idea/
 *.log
 *.lock
 .idea/
-ios/Runner/GoogleService-Info.plist
 
 *.bak
 **/io/flutter/plugins/GeneratedPluginRegistrant.java
