@@ -40,7 +40,7 @@ class DefaultFirebaseOptions {
     appId: '1:1085936196639:android:b74ffa7e9ded49e616492a',
     messagingSenderId: '1085936196639',
     projectId: 'lifemap-72b21',
-    storageBucket: 'lifemap-72b21.appspot.com', // ✅ FIXED (.app → .com)
+    storageBucket: 'lifemap-72b21.appspot.com',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
@@ -48,7 +48,7 @@ class DefaultFirebaseOptions {
     appId: '1:1085936196639:ios:3cbdc12cca308cbc16492a',
     messagingSenderId: '1085936196639',
     projectId: 'lifemap-72b21',
-    storageBucket: 'lifemap-72b21.appspot.com', // ✅ FIXED
+    storageBucket: 'lifemap-72b21.appspot.com',
     androidClientId: '1085936196639-11mjkb68f4k99m8ebs7g0rn5hr0ee2cn.apps.googleusercontent.com',
     iosClientId: '1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00.apps.googleusercontent.com',
     iosBundleId: 'com.KaranArjunTechnologies.fiinny',
