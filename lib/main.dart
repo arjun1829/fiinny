@@ -42,8 +42,9 @@ Future<void> main() async {
   tz.initializeTimeZones();
 
   // Configure Firebase once native runtime has booted. The native iOS runner
-  // now bundles GoogleService-Info.plist and configures Firebase before Dart
-  // when possible, so we only initialize here if no app instance exists yet.
+  // configures Firebase with bundled credentials when they are provided at
+  // build time and otherwise falls back to manual options, so we only
+  // initialize here if no app instance exists yet.
   try {
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
@@ -61,12 +62,6 @@ Future<void> main() async {
       rethrow;
     }
   }
-  // Configure Firebase with explicit options so TestFlight builds no longer
-  // crash before Dart executes if the GoogleService-Info.plist is missing or
-  // mispackaged. (We still ship the file for native plugins that expect it.)
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
 
   // Your existing local notification wrapper
   await NotificationService.initialize();

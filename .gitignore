@@ -43,3 +43,5 @@ android/.idea/
 **/io/flutter/plugins/GeneratedPluginRegistrant.java
 **/io/flutter/plugins/GeneratedPluginRegistrant.kt
 **/io/flutter/plugins/
+# Firebase iOS config (provided via CI secrets)
+ios/Runner/GoogleService-Info.plist
