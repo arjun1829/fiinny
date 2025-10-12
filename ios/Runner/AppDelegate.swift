@@ -23,6 +23,8 @@ import UserNotifications
       NSLog("ℹ️ Firebase already configured by native runtime")
     }
 
+    GeneratedPluginRegistrant.register(with: self)
+
     Messaging.messaging().delegate = self
 
     let center = UNUserNotificationCenter.current()
