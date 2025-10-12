@@ -61,6 +61,12 @@ Future<void> main() async {
       rethrow;
     }
   }
+  // Configure Firebase with explicit options so TestFlight builds no longer
+  // crash before Dart executes if the GoogleService-Info.plist is missing or
+  // mispackaged. (We still ship the file for native plugins that expect it.)
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   // Your existing local notification wrapper
   await NotificationService.initialize();
