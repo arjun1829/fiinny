@@ -9,6 +9,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:lifemap/utils/permissions_helper.dart';
 
 import '../models/group_model.dart';
 import '../models/friend_model.dart';
@@ -755,30 +756,41 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
   }
 
   Future<void> _loadContacts() async {
-    try {
-      final granted = await FlutterContacts.requestPermission(readonly: true);
-      if (!granted) {
-        setState(() {
-          _loading = false;
-          _contacts = [];
-        });
-        return;
-      }
-      final contacts = await FlutterContacts.getContacts(
-        withProperties: true, // ensures phones are loaded
-        withPhoto: false,
-      );
-      contacts.sort((a, b) => (a.displayName).compareTo(b.displayName));
-      setState(() {
-        _contacts = contacts.where((c) => (c.phones.isNotEmpty)).toList();
-        _loading = false;
-      });
-    } catch (_) {
+    final result = await getContactsWithPermission();
+    if (!mounted) return;
+
+    if (result.permanentlyDenied) {
+      await showContactsPermissionSettingsDialog(context);
       setState(() {
         _loading = false;
         _contacts = [];
       });
+      return;
     }
+
+    if (!result.granted || result.hasError) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.hasError
+                  ? 'Failed to load contacts'
+                  : 'Contacts permission denied',
+            ),
+          ),
+        );
+      }
+      setState(() {
+        _loading = false;
+        _contacts = [];
+      });
+      return;
+    }
+
+    setState(() {
+      _contacts = result.contacts;
+      _loading = false;
+    });
   }
 
   @override
