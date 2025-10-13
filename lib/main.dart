@@ -37,32 +37,30 @@ import 'core/ads/ad_service.dart';
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 // ✅ Keep ONLY ONE main()
-Future<void> main() async {
-  await runZonedGuarded<Future<void>>(() async {
-    WidgetsFlutterBinding.ensureInitialized();
-
-    // Timezone DB (needed by NotificationService & LocalNotifs)
-    tz.initializeTimeZones();
-
-    await _ensureFirebaseInitialized();
+Future<void> main() => runZonedGuarded(() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
     final themeProvider = ThemeProvider();
     await themeProvider.loadTheme();
 
-    await _initializeSupportingServices();
+  await _ensureFirebaseInitialized();
 
-    _schedulePushBootstrap();
+  final themeProvider = ThemeProvider();
+  await themeProvider.loadTheme();
 
-    runApp(
-      ChangeNotifierProvider.value(
-        value: themeProvider,
-        child: const FiinnyApp(),
-      ),
-    );
-  }, (error, stackTrace) {
-    debugPrint('[main] Uncaught zone error: $error\n$stackTrace');
-  });
-}
+  await _initializeSupportingServices();
+
+  _schedulePushBootstrap();
+
+  runApp(
+    ChangeNotifierProvider.value(
+      value: themeProvider,
+      child: const FiinnyApp(),
+    ),
+  );
+}, (error, stackTrace) {
+  debugPrint('[main] Uncaught zone error: $error\n$stackTrace');
+});
 
 Future<void> _ensureFirebaseInitialized() async {
   // Configure Firebase once native runtime has booted. The native iOS runner
