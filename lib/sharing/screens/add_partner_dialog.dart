@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:lifemap/utils/firebase_error_mapper.dart';
+import 'package:lifemap/utils/permissions_helper.dart';
+
 import '../services/partner_service.dart';
 import '../utils/sharing_permissions.dart';
-import 'package:flutter_contacts/flutter_contacts.dart';
 
 class AddPartnerDialog extends StatefulWidget {
   final String currentUserId; // (phone) kept name to avoid breaking callers
@@ -76,7 +79,10 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _errorMsg = "Could not add partner. Please try again.";
+        _errorMsg = mapFirebaseError(
+          e,
+          fallback: 'Could not add partner. Please check your Firebase connection and try again.',
+        );
       });
     }
   }
@@ -104,56 +110,56 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
   // Contacts picker
   // ----------------------------
   Future<void> _pickFromContacts() async {
-    try {
-      final granted = await FlutterContacts.requestPermission();
-      if (!granted) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Contacts permission denied')),
-        );
-        return;
-      }
+    final result = await getContactsWithPermission();
+    if (!mounted) return;
 
-      final contacts = await FlutterContacts.getContacts(
-        withProperties: true, // needed for phone numbers
-        withThumbnail: false,
-      );
-
-      // Keep only contacts that have at least one phone and sort by name
-      final contactsWithPhones = contacts
-          .where((c) => c.phones.isNotEmpty)
-          .toList()
-        ..sort((a, b) => a.displayName.compareTo(b.displayName));
-
-      if (!mounted) return;
-
-      await showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        backgroundColor: Colors.white,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (ctx) => _ContactsSheet(
-          contacts: contactsWithPhones,
-          onPick: (name, rawPhone) async {
-            final formatted = await _formatToE164(rawPhone);
-            if (!mounted) return;
-            setState(() {
-              _identifierController.text = formatted;
-              _errorMsg = null;
-            });
-            Navigator.pop(ctx);
-          },
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to open contacts')),
-      );
+    if (result.permanentlyDenied) {
+      await showContactsPermissionSettingsDialog(context);
+      return;
     }
+
+    if (!result.granted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Contacts permission denied')),
+      );
+      return;
+    }
+
+    if (result.hasError) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to load contacts')),
+      );
+      return;
+    }
+
+    if (result.contacts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No contacts with phone numbers found')),
+      );
+      return;
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _ContactsSheet(
+        contacts: result.contacts,
+        onPick: (name, rawPhone) async {
+          final formatted = await _formatToE164(rawPhone);
+          if (!mounted) return;
+          setState(() {
+            _identifierController.text = formatted;
+            _errorMsg = null;
+          });
+          Navigator.pop(ctx);
+        },
+      ),
+    );
   }
 
   // Basic formatter toward E.164: strips spaces/dashes and prefixes default code if missing.
