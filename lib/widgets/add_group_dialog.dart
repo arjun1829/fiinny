@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
-import 'package:permission_handler/permission_handler.dart';
+
+import '../utils/permissions_helper.dart';
 
 import '../services/group_service.dart';
 import '../models/friend_model.dart';
@@ -109,23 +110,38 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
 
   Future<void> _openContactsPicker() async {
     setState(() => _error = null);
-    final status = await Permission.contacts.request();
-    if (!status.isGranted) {
+    setState(() => _loadingContacts = true);
+
+    final result = await getContactsWithPermission();
+    if (!mounted) return;
+
+    setState(() => _loadingContacts = false);
+
+    if (result.permanentlyDenied) {
+      await showContactsPermissionSettingsDialog(context);
       setState(() => _error = "Contacts permission denied");
       return;
     }
-    try {
-      if (!await FlutterContacts.requestPermission()) {
-        setState(() => _error = "Contacts permission denied");
-        return;
-      }
-      setState(() => _loadingContacts = true);
-      final contacts = await FlutterContacts.getContacts(withProperties: true);
-      contacts.sort((a, b) => a.displayName.compareTo(b.displayName));
-      _allContacts = contacts;
-      _filteredContacts = contacts;
-      setState(() => _loadingContacts = false);
 
+    if (!result.granted) {
+      setState(() => _error = "Contacts permission denied");
+      return;
+    }
+
+    if (result.hasError) {
+      setState(() => _error = "Failed to load contacts");
+      return;
+    }
+
+    if (result.contacts.isEmpty) {
+      setState(() => _error = "No contacts with phone numbers found");
+      return;
+    }
+
+    _allContacts = result.contacts;
+    _filteredContacts = result.contacts;
+
+    try {
       final picked = await showModalBottomSheet<List<Contact>>(
         context: context,
         isScrollControlled: true,

@@ -2,7 +2,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
-import 'package:permission_handler/permission_handler.dart';
+import '../utils/permissions_helper.dart';
 import '../services/friend_service.dart';
 
 class AddFriendDialog extends StatefulWidget {
@@ -45,27 +45,42 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
   // ------------------------ Contacts picker (searchable) ------------------------
   Future<void> _importFromContacts() async {
     setState(() => _error = null);
-    final status = await Permission.contacts.request();
-    if (!status.isGranted) {
+    setState(() {
+      _loadingContacts = true;
+    });
+
+    final result = await getContactsWithPermission();
+    if (!mounted) return;
+
+    setState(() {
+      _loadingContacts = false;
+    });
+
+    if (result.permanentlyDenied) {
+      await showContactsPermissionSettingsDialog(context);
       setState(() => _error = "Contacts permission denied");
       return;
     }
-    try {
-      if (!await FlutterContacts.requestPermission()) {
-        setState(() => _error = "Contacts permission denied");
-        return;
-      }
-      setState(() {
-        _loadingContacts = true;
-      });
-      final contacts = await FlutterContacts.getContacts(withProperties: true);
-      contacts.sort((a, b) => (a.displayName).compareTo(b.displayName));
-      _allContacts = contacts;
-      _filtered = contacts;
-      setState(() {
-        _loadingContacts = false;
-      });
 
+    if (!result.granted) {
+      setState(() => _error = "Contacts permission denied");
+      return;
+    }
+
+    if (result.hasError) {
+      setState(() => _error = "Failed to load contacts");
+      return;
+    }
+
+    if (result.contacts.isEmpty) {
+      setState(() => _error = "No contacts with phone numbers found");
+      return;
+    }
+
+    _allContacts = result.contacts;
+    _filtered = result.contacts;
+
+    try {
       final picked = await showModalBottomSheet<Contact?>(
         context: context,
         isScrollControlled: true,
