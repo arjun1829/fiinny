@@ -1,6 +1,8 @@
 // lib/sharing/services/partner_service.dart
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:lifemap/utils/phone_number_utils.dart';
+
 import '../models/partner_model.dart';
 
 class PartnerService {
@@ -14,15 +16,8 @@ class PartnerService {
     return t.startsWith('+') && RegExp(r'^\+\d{8,15}$').hasMatch(t);
   }
 
-  String _normalizePhone(String raw) {
-    var s = raw.trim().replaceAll(RegExp(r'[^\d+]'), '');
-    if (s.startsWith('+')) {
-      s = '+' + s.substring(1).replaceFirst(RegExp(r'^0+'), '');
-      return s;
-    }
-    s = s.replaceFirst(RegExp(r'^0+'), '');
-    return '+91$s';
-  }
+  String _normalizePhone(String raw) =>
+      normalizeToE164(raw, fallbackCountryCode: kDefaultCountryCode);
 
   // Resolve a user by identifier (phone/email/phone field/referral)
   Future<DocumentSnapshot<Map<String, dynamic>>?> _resolveUserDoc(String identifier) async {
