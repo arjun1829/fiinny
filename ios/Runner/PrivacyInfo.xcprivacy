@@ -3,7 +3,19 @@
     {
       "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryContacts",
       "NSPrivacyAccessedAPITypeReasons": [
-        "C617.1"
+        "C617.2"
+      ]
+    },
+    {
+      "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryPhotoLibrary",
+      "NSPrivacyAccessedAPITypeReasons": [
+        "P735.1"
+      ]
+    },
+    {
+      "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryPhotoLibraryAddOnly",
+      "NSPrivacyAccessedAPITypeReasons": [
+        "P735.1"
       ]
     }
   ]
