@@ -40,8 +40,8 @@ final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 Future<void> main() => runZonedGuarded(() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Timezone DB (needed by NotificationService & LocalNotifs)
-  tz.initializeTimeZones();
+    final themeProvider = ThemeProvider();
+    await themeProvider.loadTheme();
 
   await _ensureFirebaseInitialized();
 
