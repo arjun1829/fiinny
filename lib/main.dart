@@ -37,30 +37,28 @@ import 'core/ads/ad_service.dart';
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 // ✅ Keep ONLY ONE main()
-Future<void> main() => runZonedGuarded(() async {
-  WidgetsFlutterBinding.ensureInitialized();
+Future<void> main() async {
+  await runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
     final themeProvider = ThemeProvider();
     await themeProvider.loadTheme();
 
-  await _ensureFirebaseInitialized();
+    await _ensureFirebaseInitialized();
+    await _initializeSupportingServices();
 
-  final themeProvider = ThemeProvider();
-  await themeProvider.loadTheme();
+    _schedulePushBootstrap();
 
-  await _initializeSupportingServices();
-
-  _schedulePushBootstrap();
-
-  runApp(
-    ChangeNotifierProvider.value(
-      value: themeProvider,
-      child: const FiinnyApp(),
-    ),
-  );
-}, (error, stackTrace) {
-  debugPrint('[main] Uncaught zone error: $error\n$stackTrace');
-});
+    runApp(
+      ChangeNotifierProvider.value(
+        value: themeProvider,
+        child: const FiinnyApp(),
+      ),
+    );
+  }, (error, stackTrace) {
+    debugPrint('[main] Uncaught zone error: $error\n$stackTrace');
+  });
+}
 
 Future<void> _ensureFirebaseInitialized() async {
   // Configure Firebase once native runtime has booted. The native iOS runner
