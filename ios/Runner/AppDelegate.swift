@@ -6,6 +6,39 @@ import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, MessagingDelegate {
+  // Some plugins (for example flutter_contacts and certain permission handlers) still rely on
+  // UIApplication.shared.delegate?.window being populated synchronously. With the scene-based
+  // lifecycle introduced in iOS 13 the delegate's window can legitimately be nil during early
+  // startup or after system permission alerts, which makes those plugins crash via fatalError.
+  // We keep a cached reference and fall back to whatever window the connected scenes expose so
+  // the delegate can always hand back a valid UIWindow when asked.
+  private var cachedWindow: UIWindow?
+
+  override var window: UIWindow? {
+    get {
+      if let window = super.window ?? cachedWindow {
+        return window
+      }
+
+      if #available(iOS 13.0, *) {
+        let sceneWindows = UIApplication.shared.connectedScenes
+          .compactMap { $0 as? UIWindowScene }
+          .flatMap { $0.windows }
+        if let sceneWindow = sceneWindows.first(where: { $0.isKeyWindow }) ?? sceneWindows.first {
+          cachedWindow = sceneWindow
+          return sceneWindow
+        }
+      }
+
+      let legacyWindow = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? UIApplication.shared.windows.first
+      cachedWindow = legacyWindow
+      return legacyWindow
+    }
+    set {
+      cachedWindow = newValue
+      super.window = newValue
+    }
+  }
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -24,6 +57,9 @@ import UserNotifications
     }
 
     GeneratedPluginRegistrant.register(with: self)
+    if window == nil {
+      cachedWindow = super.window
+    }
 
     Messaging.messaging().delegate = self
 

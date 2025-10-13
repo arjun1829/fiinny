@@ -3,7 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
-import 'package:permission_handler/permission_handler.dart';
+
+import '../utils/firebase_error_mapper.dart';
+import '../utils/permissions_helper.dart';
+import '../utils/phone_number_utils.dart';
 
 import '../services/group_service.dart';
 import '../models/friend_model.dart';
@@ -27,7 +30,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
   final _groupNameCtrl = TextEditingController();
   final _friendSearchCtrl = TextEditingController();
 
-  String _countryCode = '+91'; // default for contacts without +
+  String _countryCode = kDefaultCountryCode; // default for contacts without +
   String? _error;
   bool _loading = false;
 
@@ -42,7 +45,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
   List<Contact> _filteredContacts = const [];
   bool _loadingContacts = false;
 
-  final List<String> _countryCodes = const ['+91', '+1', '+44', '+84', '+81'];
+  final List<String> _countryCodes = kSupportedCountryCodes;
 
   @override
   void initState() {
@@ -59,23 +62,14 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
 
   // ------------------------ Helpers ------------------------
 
-  String _digitsOnly(String s) => s.replaceAll(RegExp(r'\D'), '');
-
-  String _normalizeContactPhone(String raw) {
-    final trimmed = raw.trim();
-    if (trimmed.startsWith('+')) {
-      // keep + and digits
-      return '+${_digitsOnly(trimmed)}';
-    }
-    final local = _digitsOnly(trimmed).replaceAll(RegExp(r'^0+'), '');
-    return '$_countryCode$local';
-  }
+  String _normalizeContactPhone(String raw) =>
+      normalizeToE164(raw, fallbackCountryCode: _countryCode);
 
   /// Try to find an existing FriendModel by end-digit match.
   FriendModel? _matchFriendByPhone(String phoneE164) {
-    final t = _digitsOnly(phoneE164);
+    final t = digitsOnly(phoneE164);
     for (final f in widget.allFriends) {
-      final fd = _digitsOnly(f.phone);
+      final fd = digitsOnly(f.phone);
       if (fd.endsWith(t) || t.endsWith(fd)) return f;
     }
     return null;
@@ -109,23 +103,38 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
 
   Future<void> _openContactsPicker() async {
     setState(() => _error = null);
-    final status = await Permission.contacts.request();
-    if (!status.isGranted) {
+    setState(() => _loadingContacts = true);
+
+    final result = await getContactsWithPermission();
+    if (!mounted) return;
+
+    setState(() => _loadingContacts = false);
+
+    if (result.permanentlyDenied) {
+      await showContactsPermissionSettingsDialog(context);
       setState(() => _error = "Contacts permission denied");
       return;
     }
-    try {
-      if (!await FlutterContacts.requestPermission()) {
-        setState(() => _error = "Contacts permission denied");
-        return;
-      }
-      setState(() => _loadingContacts = true);
-      final contacts = await FlutterContacts.getContacts(withProperties: true);
-      contacts.sort((a, b) => a.displayName.compareTo(b.displayName));
-      _allContacts = contacts;
-      _filteredContacts = contacts;
-      setState(() => _loadingContacts = false);
 
+    if (!result.granted) {
+      setState(() => _error = "Contacts permission denied");
+      return;
+    }
+
+    if (result.hasError) {
+      setState(() => _error = "Failed to load contacts");
+      return;
+    }
+
+    if (result.contacts.isEmpty) {
+      setState(() => _error = "No contacts with phone numbers found");
+      return;
+    }
+
+    _allContacts = result.contacts;
+    _filteredContacts = result.contacts;
+
+    try {
       final picked = await showModalBottomSheet<List<Contact>>(
         context: context,
         isScrollControlled: true,
@@ -404,7 +413,10 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = e.toString().replaceAll('Exception: ', '');
+        _error = mapFirebaseError(
+          e,
+          fallback: 'Could not create group. Please check your Firebase connection and try again.',
+        );
       });
     }
   }

@@ -9,6 +9,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:lifemap/services/group_service.dart';
+import 'package:lifemap/utils/firebase_error_mapper.dart';
+import 'package:lifemap/utils/permissions_helper.dart';
+import 'package:lifemap/utils/phone_number_utils.dart';
 
 import '../models/group_model.dart';
 import '../models/friend_model.dart';
@@ -122,6 +126,7 @@ class GroupSettingsSheet extends StatelessWidget {
       builder: (_) => _AddMembersReviewSheet(
         groupId: group.id,
         members: members,
+        currentUserPhone: currentUserPhone,
       ),
     );
     if (changed == true) onChanged?.call();
@@ -639,11 +644,13 @@ class _SectionLabel extends StatelessWidget {
 class _AddMembersReviewSheet extends StatefulWidget {
   final String groupId;
   final List<FriendModel> members;
+  final String currentUserPhone;
 
   const _AddMembersReviewSheet({
     Key? key,
     required this.groupId,
     required this.members,
+    required this.currentUserPhone,
   }) : super(key: key);
 
   @override
@@ -705,7 +712,13 @@ class _AddMembersReviewSheetState extends State<_AddMembersReviewSheet> {
                         shape: const RoundedRectangleBorder(
                           borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
                         ),
-                        builder: (_) => _ContactsPickerSheet(groupId: widget.groupId),
+                        builder: (_) => _ContactsPickerSheet(
+                          groupId: widget.groupId,
+                          defaultCountryCode: inferCountryCode(
+                            widget.currentUserPhone,
+                            fallback: kDefaultCountryCode,
+                          ),
+                        ),
                       );
                       if (!mounted) return;
                       setState(() => _busy = false);
@@ -736,7 +749,12 @@ class _AddMembersReviewSheetState extends State<_AddMembersReviewSheet> {
 
 class _ContactsPickerSheet extends StatefulWidget {
   final String groupId;
-  const _ContactsPickerSheet({Key? key, required this.groupId}) : super(key: key);
+  final String defaultCountryCode;
+  const _ContactsPickerSheet({
+    Key? key,
+    required this.groupId,
+    required this.defaultCountryCode,
+  }) : super(key: key);
 
   @override
   State<_ContactsPickerSheet> createState() => _ContactsPickerSheetState();
@@ -755,30 +773,41 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
   }
 
   Future<void> _loadContacts() async {
-    try {
-      final granted = await FlutterContacts.requestPermission(readonly: true);
-      if (!granted) {
-        setState(() {
-          _loading = false;
-          _contacts = [];
-        });
-        return;
-      }
-      final contacts = await FlutterContacts.getContacts(
-        withProperties: true, // ensures phones are loaded
-        withPhoto: false,
-      );
-      contacts.sort((a, b) => (a.displayName).compareTo(b.displayName));
-      setState(() {
-        _contacts = contacts.where((c) => (c.phones.isNotEmpty)).toList();
-        _loading = false;
-      });
-    } catch (_) {
+    final result = await getContactsWithPermission();
+    if (!mounted) return;
+
+    if (result.permanentlyDenied) {
+      await showContactsPermissionSettingsDialog(context);
       setState(() {
         _loading = false;
         _contacts = [];
       });
+      return;
     }
+
+    if (!result.granted || result.hasError) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.hasError
+                  ? 'Failed to load contacts'
+                  : 'Contacts permission denied',
+            ),
+          ),
+        );
+      }
+      setState(() {
+        _loading = false;
+        _contacts = [];
+      });
+      return;
+    }
+
+    setState(() {
+      _contacts = result.contacts;
+      _loading = false;
+    });
   }
 
   @override
@@ -889,26 +918,30 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
   String? _firstPhone(Contact c) =>
       c.phones.isNotEmpty ? c.phones.first.number : null;
 
-  String _normalizePhone(String raw) {
-    // keep digits; simple normalization to match your phone-as-unique-id design
-    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
-    return digits;
-  }
+  String _normalizePhone(String raw) => normalizeToE164(
+        raw,
+        fallbackCountryCode: widget.defaultCountryCode,
+      );
 
   Future<void> _commitAdd() async {
     // Write to group's memberPhones array
     final phones = _selectedPhones.where((p) => p.isNotEmpty).toList();
     if (phones.isEmpty) return;
     try {
-      await FirebaseFirestore.instance.collection('groups').doc(widget.groupId).update({
-        'memberPhones': FieldValue.arrayUnion(phones),
-      });
+      await GroupService().addMembers(widget.groupId, phones);
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to add: $e')),
+        SnackBar(
+          content: Text(
+            mapFirebaseError(
+              e,
+              fallback: 'Failed to add members. Please check your Firebase connection and try again.',
+            ),
+          ),
+        ),
       );
     }
   }

@@ -52,12 +52,15 @@ class GroupService {
       avatarUrl: avatarUrl,
       memberAvatars: memberAvatars,
     );
-    await docRef.set(group.toJson());
+    final batch = _firestore.batch();
+    batch.set(docRef, group.toJson());
 
     // (Optional) Mirror in each member's personal collection (for notifications/offline/legacy)
     for (final memberPhone in allMembers) {
-      await getGroupsCollection(memberPhone).doc(docRef.id).set(group.toJson());
+      final userDoc = getGroupsCollection(memberPhone).doc(docRef.id);
+      batch.set(userDoc, group.toJson(), SetOptions(merge: true));
     }
+    await batch.commit();
     return docRef.id;
   }
 
@@ -101,17 +104,24 @@ class GroupService {
 
   /// Add members to a group (updates all relevant places)
   Future<void> addMembers(String groupId, List<String> newMemberPhones) async {
+    if (newMemberPhones.isEmpty) return;
+
+    final uniqueMembers = newMemberPhones.toSet().toList();
+
     // Update global collection
     await globalGroups.doc(groupId).update({
-      'memberPhones': FieldValue.arrayUnion(newMemberPhones),
+      'memberPhones': FieldValue.arrayUnion(uniqueMembers),
     });
 
     // Fetch group and mirror for each new member (for notifications/offline)
     final group = await getGroupById(groupId);
     if (group != null) {
-      for (final memberPhone in newMemberPhones) {
-        await getGroupsCollection(memberPhone).doc(groupId).set(group.toJson());
+      final batch = _firestore.batch();
+      for (final memberPhone in uniqueMembers) {
+        final userDoc = getGroupsCollection(memberPhone).doc(groupId);
+        batch.set(userDoc, group.toJson(), SetOptions(merge: true));
       }
+      await batch.commit();
     }
   }
 
