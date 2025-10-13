@@ -30,9 +30,23 @@ import UserNotifications
         }
       }
 
-      let legacyWindow = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? UIApplication.shared.windows.first
-      cachedWindow = legacyWindow
-      return legacyWindow
+      if let legacyWindow = UIApplication.shared.windows.first(where: { $0.isKeyWindow })
+        ?? UIApplication.shared.windows.first
+      {
+        cachedWindow = legacyWindow
+        return legacyWindow
+      }
+
+      // On some iOS 17/18 builds the `UIApplication` window list is still empty
+      // while plugins such as flutter_contacts synchronously ask for the
+      // delegate's window during `didFinishLaunchingWithOptions`. Returning nil
+      // makes those plugins trap via `fatalError("window not set")`. As a last
+      // resort we hand back a temporary hidden UIWindow that will be replaced as
+      // soon as the real Flutter window becomes available.
+      let placeholder = UIWindow(frame: UIScreen.main.bounds)
+      placeholder.isHidden = true
+      cachedWindow = placeholder
+      return placeholder
     }
     set {
       cachedWindow = newValue
@@ -57,8 +71,8 @@ import UserNotifications
     }
 
     GeneratedPluginRegistrant.register(with: self)
-    if window == nil {
-      cachedWindow = super.window
+    if let flutterWindow = super.window {
+      cachedWindow = flutterWindow
     }
 
     Messaging.messaging().delegate = self
