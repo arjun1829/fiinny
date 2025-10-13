@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 
+import '../utils/firebase_error_mapper.dart';
 import '../utils/permissions_helper.dart';
+import '../utils/phone_number_utils.dart';
 
 import '../services/group_service.dart';
 import '../models/friend_model.dart';
@@ -28,7 +30,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
   final _groupNameCtrl = TextEditingController();
   final _friendSearchCtrl = TextEditingController();
 
-  String _countryCode = '+91'; // default for contacts without +
+  String _countryCode = kDefaultCountryCode; // default for contacts without +
   String? _error;
   bool _loading = false;
 
@@ -43,7 +45,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
   List<Contact> _filteredContacts = const [];
   bool _loadingContacts = false;
 
-  final List<String> _countryCodes = const ['+91', '+1', '+44', '+84', '+81'];
+  final List<String> _countryCodes = kSupportedCountryCodes;
 
   @override
   void initState() {
@@ -60,23 +62,14 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
 
   // ------------------------ Helpers ------------------------
 
-  String _digitsOnly(String s) => s.replaceAll(RegExp(r'\D'), '');
-
-  String _normalizeContactPhone(String raw) {
-    final trimmed = raw.trim();
-    if (trimmed.startsWith('+')) {
-      // keep + and digits
-      return '+${_digitsOnly(trimmed)}';
-    }
-    final local = _digitsOnly(trimmed).replaceAll(RegExp(r'^0+'), '');
-    return '$_countryCode$local';
-  }
+  String _normalizeContactPhone(String raw) =>
+      normalizeToE164(raw, fallbackCountryCode: _countryCode);
 
   /// Try to find an existing FriendModel by end-digit match.
   FriendModel? _matchFriendByPhone(String phoneE164) {
-    final t = _digitsOnly(phoneE164);
+    final t = digitsOnly(phoneE164);
     for (final f in widget.allFriends) {
-      final fd = _digitsOnly(f.phone);
+      final fd = digitsOnly(f.phone);
       if (fd.endsWith(t) || t.endsWith(fd)) return f;
     }
     return null;
@@ -420,7 +413,10 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = e.toString().replaceAll('Exception: ', '');
+        _error = mapFirebaseError(
+          e,
+          fallback: 'Could not create group. Please check your Firebase connection and try again.',
+        );
       });
     }
   }

@@ -2,8 +2,11 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
-import '../utils/permissions_helper.dart';
+
 import '../services/friend_service.dart';
+import '../utils/firebase_error_mapper.dart';
+import '../utils/permissions_helper.dart';
+import '../utils/phone_number_utils.dart';
 
 class AddFriendDialog extends StatefulWidget {
   final String userPhone; // current user's phone (E.164, e.g. +91xxx)
@@ -18,7 +21,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
   final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
 
-  String _countryCode = '+91';
+  String _countryCode = kDefaultCountryCode;
   String? _error;
   bool _loading = false;
 
@@ -27,13 +30,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
   List<Contact> _filtered = const [];
   bool _loadingContacts = false;
 
-  final List<String> countryCodes = const [
-    '+91', // India
-    '+1',  // USA
-    '+44', // UK
-    '+84', // Vietnam
-    '+81', // Japan
-  ];
+  final List<String> countryCodes = kSupportedCountryCodes;
 
   @override
   void dispose() {
@@ -217,10 +214,10 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
       if (picked != null) {
         final contactName = picked.displayName;
         final raw = picked.phones.isNotEmpty ? picked.phones.first.number : '';
-        final parsed = _parseIncomingPhone(raw);
+        final parsed = splitPhone(raw, fallbackCountryCode: _countryCode);
         setState(() {
           _nameCtrl.text = contactName;
-          _countryCode = parsed.countryCode ?? _countryCode;
+          _countryCode = parsed.countryCode;
           _phoneCtrl.text = parsed.localDigits;
         });
       }
@@ -230,35 +227,9 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
   }
 
   // ------------------------ Phone helpers / normalization ------------------------
-  String _digitsOnly(String s) => s.replaceAll(RegExp(r'\D'), '');
-
-  /// Parses a raw phone string; if it starts with '+' and matches a known code,
-  /// we split it. Otherwise we keep current countryCode and return local digits.
-  _ParsedPhone _parseIncomingPhone(String raw) {
-    var s = raw.trim();
-    if (s.startsWith('+')) {
-      final justDigits = _digitsOnly(s);
-      // Try to match any known country code prefix
-      for (final cc in countryCodes) {
-        final ccDigits = _digitsOnly(cc);
-        if (justDigits.startsWith(ccDigits)) {
-          final local = justDigits.substring(ccDigits.length);
-          return _ParsedPhone(countryCode: cc, localDigits: local.replaceAll(RegExp(r'^0+'), ''));
-        }
-      }
-      // Fallback: keep current code, strip everything else
-      return _ParsedPhone(countryCode: _countryCode, localDigits: justDigits.replaceAll(RegExp(r'^0+'), ''));
-    } else {
-      // No leading + : treat as local, keep current code
-      final local = _digitsOnly(s).replaceAll(RegExp(r'^0+'), '');
-      return _ParsedPhone(countryCode: _countryCode, localDigits: local);
-    }
-  }
-
   String get _fullE164 {
-    final local = _digitsOnly(_phoneCtrl.text).replaceAll(RegExp(r'^0+'), '');
-    final cc = _countryCode;
-    return '$cc$local';
+    return normalizeToE164('${_countryCode}${_phoneCtrl.text}',
+        fallbackCountryCode: _countryCode);
   }
 
   // ------------------------ Submit ------------------------
@@ -279,7 +250,10 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = e.toString().replaceAll('Exception: ', '');
+        _error = mapFirebaseError(
+          e,
+          fallback: 'Could not add friend. Please check your Firebase connection and try again.',
+        );
       });
     }
   }
@@ -530,8 +504,3 @@ class _GlassField extends StatelessWidget {
   }
 }
 
-class _ParsedPhone {
-  final String? countryCode;
-  final String localDigits;
-  _ParsedPhone({this.countryCode, required this.localDigits});
-}
