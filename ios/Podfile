@@ -1,7 +1,7 @@
 # ios/Podfile
 
-platform :ios, '16.0'
-$ios_deployment_target = '16.0'
+platform :ios, '13.0'
+$ios_deployment_target = '13.0'
 
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
@@ -31,7 +31,7 @@ target 'Runner' do
 end
 
 post_install do |installer|
-  # Enforce iOS 16 and DISABLE module interfaces for ALL Pods
+  # Enforce iOS 13 and DISABLE module interfaces for ALL Pods
   installer.pods_project.targets.each do |t|
     t.build_configurations.each do |config|
       bs = config.build_settings
