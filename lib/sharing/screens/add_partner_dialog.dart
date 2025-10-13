@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:lifemap/utils/firebase_error_mapper.dart';
 import 'package:lifemap/utils/permissions_helper.dart';
 
 import '../services/partner_service.dart';
@@ -78,7 +79,10 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _errorMsg = "Could not add partner. Please try again.";
+        _errorMsg = mapFirebaseError(
+          e,
+          fallback: 'Could not add partner. Please check your Firebase connection and try again.',
+        );
       });
     }
   }
