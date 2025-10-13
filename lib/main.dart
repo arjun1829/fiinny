@@ -1,4 +1,6 @@
 // lib/main.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -35,12 +37,32 @@ import 'core/ads/ad_service.dart';
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 // ✅ Keep ONLY ONE main()
-Future<void> main() async {
+Future<void> main() => runZonedGuarded(() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Timezone DB (needed by NotificationService & LocalNotifs)
   tz.initializeTimeZones();
 
+  await _ensureFirebaseInitialized();
+
+  final themeProvider = ThemeProvider();
+  await themeProvider.loadTheme();
+
+  await _initializeSupportingServices();
+
+  _schedulePushBootstrap();
+
+  runApp(
+    ChangeNotifierProvider.value(
+      value: themeProvider,
+      child: const FiinnyApp(),
+    ),
+  );
+}, (error, stackTrace) {
+  debugPrint('[main] Uncaught zone error: $error\n$stackTrace');
+});
+
+Future<void> _ensureFirebaseInitialized() async {
   // Configure Firebase once native runtime has booted. The native iOS runner
   // configures Firebase with bundled credentials when they are provided at
   // build time and otherwise falls back to manual options, so we only
@@ -62,20 +84,37 @@ Future<void> main() async {
       rethrow;
     }
   }
+}
 
-  // Your existing local notification wrapper
-  await NotificationService.initialize();
+Future<void> _initializeSupportingServices() async {
+  await Future.wait([
+    _guardAsync(
+      'NotificationService.initialize',
+      NotificationService.initialize,
+    ),
+    _guardAsync(
+      'LocalNotifs.init',
+      LocalNotifs.init,
+    ),
+    _guardAsync(
+      'AdService.I.init',
+      () => AdService.I.init(),
+    ),
+  ]);
+}
 
-  // 🔔 Initialize our LocalNotifs (safe to call multiple times)
-  await LocalNotifs.init();
+Future<void> _guardAsync(
+  String label,
+  Future<void> Function() runner,
+) async {
+  try {
+    await runner();
+  } catch (error, stackTrace) {
+    debugPrint('[main] $label failed: $error\n$stackTrace');
+  }
+}
 
-  // Ads (Google Mobile Ads) – init & preload
-  await AdService.I.init();
-
-  // Theme
-  final themeProvider = ThemeProvider();
-  await themeProvider.loadTheme();
-
+void _schedulePushBootstrap() {
   // Kick push init after first frame (non-blocking)
   WidgetsBinding.instance.addPostFrameCallback((_) {
     Future.microtask(_safePushInit);
@@ -88,22 +127,15 @@ Future<void> main() async {
       Future.microtask(_safePushInit);
     });
   });
-
-  runApp(
-    ChangeNotifierProvider.value(
-      value: themeProvider,
-      child: const FiinnyApp(),
-    ),
-  );
 }
 
 // Never await this in main/UI-critical paths.
 Future<void> _safePushInit() async {
   try {
     await PushService.init().timeout(const Duration(seconds: 6));
-  } catch (e) {
+  } catch (error, stackTrace) {
     // If APNs/FCM is slow or misconfigured, don't block the app.
-    debugPrint('[main] Push init skipped/timeout: $e');
+    debugPrint('[main] Push init skipped/timeout: $error\n$stackTrace');
   }
 }
 
