@@ -36,19 +36,12 @@ import '../fiinny_assets/modules/portfolio/models/asset_model.dart' as PAssetMod
 import '../fiinny_assets/modules/portfolio/models/price_quote.dart';
 import '../fiinny_assets/modules/portfolio/services/market_data_yahoo.dart';
 
-// SMS & Gmail pipelines
+// Gmail pipeline helpers
 import '../shims/shared_prefs_shim.dart';
-
-import 'dart:io' show Platform;
 import '../services/sync/sync_coordinator.dart';
 
 // Use your **old** Gmail service (the snippet-based one you pasted)
 import '../services/gmail_service.dart' as OldGmail;
-import '../services/sms/sms_ingestor.dart';
-
-// SMS & Gmail pipelines
-import '../services/sms/sms_permission_helper.dart';
-import '../services/ingest_index_service.dart';
 import '../widgets/goals_summary_card.dart';
 import '../services/notif_prefs_service.dart';
 
@@ -66,7 +59,6 @@ import '../widgets/fiinny_brain_diagnosis_card.dart';
 import '../widgets/hidden_charges_review_sheet.dart';
 import '../widgets/forex_findings_sheet.dart';
 
-import 'package:lifemap/services/sms/sms_ingestor.dart';
 import '../screens/review_inbox_screen.dart';
 import '../services/review_queue_service.dart';
 import '../models/ingest_draft_model.dart';
@@ -135,10 +127,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   final _expenseSvc = ExpenseService();
   final _incomeSvc  = IncomeService();
 
-  bool _smsReady = false;
-  bool _didSmsBackfill = false;
-  bool _didGmailBackfill = false;
-  final _indexSvc   = IngestIndexService();
   final _loanDetector = LoanDetectionService();
   int _loanSuggestionsCount = 0;
   bool _scanningLoans = false;
@@ -155,8 +143,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initDashboard();
-    _refreshSmsPermissionState();
-    _wirePipelines(); // ask permission + start SMS + Gmail backfill once
+    _wirePipelines(); // kick off Gmail backfill (if linked)
     SyncCoordinator.instance.onAppStart(widget.userPhone);
     // 🔔 Start system recurring reminders (subs, SIPs, loans, card bills)
     _sysNotifs = SystemRecurringLocalScheduler(userId: widget.userPhone);
@@ -164,7 +151,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
     Future.microtask(() async {
       await _fetchUserName();              // sets _isEmailLinked / _userEmail
-      await _wirePipelines();              // now only guards + gmail once (no SMS backfill)
+      await _wirePipelines();              // trigger Gmail backfill after profile loads
       await SyncCoordinator.instance.onAppStart(widget.userPhone);
     });
 
@@ -268,43 +255,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     }
   }
 
-  Future<void> _refreshSmsPermissionState() async {
-    if (!Platform.isAndroid) {
-      setState(() => _smsReady = false); // iOS never shows banner
-      return;
-    }
-    final granted = await SmsPermissionHelper.hasPermissions();
-    setState(() => _smsReady = granted);
-  }
-
   Future<void> _wirePipelines() async {
-    if (!Platform.isAndroid) return;
-    await _refreshSmsPermissionState();
-
-    await _ensureSmsPermissionWithDisclosure();
-
-    if (_smsReady) {
-      SmsIngestor.instance.init(
-        expenseService: _expenseSvc,
-        incomeService: _incomeSvc,
-        index: _indexSvc,
-      );
-
-      final prefs = await SharedPreferences.getInstance();
-      final smsFlagKey = 'smsBackfillDone_${widget.userPhone}';
-      _didSmsBackfill = prefs.getBool(smsFlagKey) ?? false;
-      if (!_didSmsBackfill) {
-        await SmsIngestor.instance.initialBackfill(
-          userPhone: widget.userPhone,
-          newerThanDays: 1000,
-        );
-        await prefs.setBool(smsFlagKey, true);
-        _didSmsBackfill = true;
-      }
-
-      await SmsIngestor.instance.startRealtime(userPhone: widget.userPhone);
-    }
-
     if (_isEmailLinked == true && (_userEmail?.isNotEmpty ?? false)) {
       await _maybeRunGmailBackfillOnce();
     }
@@ -318,57 +269,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       SyncCoordinator.instance.onAppStop();
     }
     super.didChangeAppLifecycleState(state);
-  }
-
-  Future<void> _ensureSmsPermissionWithDisclosure() async {
-    if (!Platform.isAndroid) return;
-
-    // If already granted, don't bother the user
-    if (await SmsPermissionHelper.hasPermissions()) {
-      setState(() => _smsReady = true);
-      return;
-    }
-
-    final prefs = await SharedPreferences.getInstance();
-    const flag = 'smsDisclosureShown';
-    final shown = prefs.getBool(flag) ?? false;
-
-    // If already shown once, don't show the dialog again here (banner still lets user enable)
-    if (shown) {
-      setState(() => _smsReady = false);
-      return;
-    }
-
-    final ok = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Allow SMS for Auto-Tracking?"),
-        content: const Text(
-          "Fiinny reads ONLY bank & UPI alert SMS on this device to auto-track your expenses and income. "
-              "Content never leaves your phone unless you enable cloud backup. You can turn this off anytime.",
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("No, thanks")),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Continue")),
-        ],
-      ),
-    ) ?? false;
-
-    await prefs.setBool(flag, true);
-
-    if (!ok) {
-      setState(() => _smsReady = false);
-      return;
-    }
-
-    final granted = await SmsPermissionHelper.ensurePermissions();
-    setState(() => _smsReady = granted);
-    if (!granted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("SMS permission denied. You can enable it in Settings anytime.")),
-      );
-    }
   }
 
   Future<void> _maybeRunGmailBackfillOnce() async {
@@ -1118,10 +1018,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               : RefreshIndicator(
             onRefresh: () async {
               try {
-                // SMS: only re-check permission now (no pipeline sync)
-                if (Platform.isAndroid) {
-                  await _refreshSmsPermissionState();
-                }
                 // Gmail fetch (old service)
                 if (_isEmailLinked && (_userEmail?.isNotEmpty ?? false)) {
                   await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
@@ -1357,23 +1253,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (Platform.isAndroid && !_smsReady)
-                            Card(
-                              color: Colors.orange.withOpacity(0.10),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                              child: ListTile(
-                                leading: const Icon(Icons.sms_failed_rounded, color: Colors.orange),
-                                title: const Text("Enable SMS to auto-track transactions"),
-                                subtitle: const Text(
-                                    "We only read bank & UPI alerts. Nothing leaves your device without consent."
-                                ),
-                                trailing: TextButton(
-                                  child: const Text("Enable"),
-                                  onPressed: _ensureSmsPermissionWithDisclosure,
-                                ),
-                              ),
-                            ),
-
                           CrisisAlertBanner(
                             userId: widget.userPhone,
                             totalIncome: totalIncome,
