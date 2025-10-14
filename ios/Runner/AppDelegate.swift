@@ -13,6 +13,32 @@ import UserNotifications
   // We keep a cached reference and fall back to whatever window the connected scenes expose so
   // the delegate can always hand back a valid UIWindow when asked.
   private var cachedWindow: UIWindow?
+  private lazy var placeholderViewController = UIViewController()
+
+  @discardableResult
+  private func installPlaceholderWindowIfNeeded() -> UIWindow {
+    if let window = super.window ?? cachedWindow {
+      cachedWindow = window
+      return window
+    }
+
+    let placeholder: UIWindow
+    if let cached = cachedWindow {
+      placeholder = cached
+    } else {
+      placeholder = UIWindow(frame: UIScreen.main.bounds)
+      placeholder.isHidden = true
+      placeholder.backgroundColor = .clear
+      placeholder.rootViewController = placeholderViewController
+      cachedWindow = placeholder
+    }
+
+    if super.window == nil {
+      super.window = placeholder
+    }
+
+    return placeholder
+  }
 
   override var window: UIWindow? {
     get {
@@ -43,10 +69,7 @@ import UserNotifications
       // makes those plugins trap via `fatalError("window not set")`. As a last
       // resort we hand back a temporary hidden UIWindow that will be replaced as
       // soon as the real Flutter window becomes available.
-      let placeholder = UIWindow(frame: UIScreen.main.bounds)
-      placeholder.isHidden = true
-      cachedWindow = placeholder
-      return placeholder
+      return installPlaceholderWindowIfNeeded()
     }
     set {
       cachedWindow = newValue
@@ -57,6 +80,8 @@ import UserNotifications
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    installPlaceholderWindowIfNeeded()
+
     if FirebaseApp.app() == nil {
       if let options = Self.loadFirebaseOptions() {
         FirebaseApp.configure(options: options)
@@ -73,6 +98,9 @@ import UserNotifications
     GeneratedPluginRegistrant.register(with: self)
     if let flutterWindow = super.window {
       cachedWindow = flutterWindow
+      if flutterWindow.rootViewController == nil {
+        flutterWindow.rootViewController = placeholderViewController
+      }
     }
 
     Messaging.messaging().delegate = self
