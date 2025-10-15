@@ -8,7 +8,7 @@ const bool forceTestAds = false;
 class AdIds {
   // ---------- REAL App IDs ----------
   static const _androidAppIdReal = 'ca-app-pub-5891610127665684~2144640230';
-  static const _iosAppIdReal = 'ca-app-pub-xxxxxxxxxxxxxxxx~zzzzzzzzzz'; // fill later
+  static const _iosAppIdReal = 'ca-app-pub-5891610127665684~7171759721';
 
   // ---------- REAL UNIT IDs (ANDROID) ----------
   static const _androidBannerReal = 'ca-app-pub-5891610127665684/1238736762'; // Dashboard_Banner
@@ -16,9 +16,9 @@ class AdIds {
   static const _androidRewardReal = 'ca-app-pub-5891610127665684/6770265044'; // Insights_Rewarded
 
   // ---------- REAL UNIT IDs (iOS) ----------
-  static const _iosBannerReal = 'ca-app-pub-xxxxxxxxxxxxxxxx/dddddddddd'; // fill later
-  static const _iosInterReal = 'ca-app-pub-xxxxxxxxxxxxxxxx/eeeeeeeeee'; // fill later
-  static const _iosRewardReal = 'ca-app-pub-xxxxxxxxxxxxxxxx/ffffffffff'; // fill later
+  static const _iosBannerReal = 'ca-app-pub-5891610127665684/1649712954';
+  static const _iosInterReal = 'ca-app-pub-5891610127665684/1651774466';
+  static const _iosRewardReal = 'ca-app-pub-5891610127665684/8515531876';
 
   // ---------- Google TEST IDs (keep) ----------
   static const _androidAppIdTest = 'ca-app-pub-3940256099942544~3347511713';
@@ -33,6 +33,12 @@ class AdIds {
   // ---------- Switch logic: test in debug, real in release ----------
   static bool get _useReal =>
       kReleaseMode && !forceTestAds && _hasRealIdsForCurrentPlatform;
+
+  /// Whether production AdMob identifiers are present for the current platform.
+  static bool get hasRealIdsForCurrentPlatform => _hasRealIdsForCurrentPlatform;
+
+  /// True when the runtime is falling back to Google's public test identifiers.
+  static bool get isUsingTestIds => !_useReal;
 
   static bool get _hasRealIdsForCurrentPlatform {
     if (Platform.isAndroid) {
