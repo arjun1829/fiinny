@@ -165,7 +165,7 @@ import UserNotifications
     )
     options.apiKey = "AIzaSyCt-xTvI1TGF3AlFSeR5rVpzfC14D4v_iY"
     options.projectID = "lifemap-72b21"
-    options.storageBucket = "lifemap-72b21.appspot.com"
+    options.storageBucket = "lifemap-72b21.firebasestorage.app"
     options.clientID = "1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00.apps.googleusercontent.com"
     options.androidClientID = "1085936196639-11mjkb68f4k99m8ebs7g0rn5hr0ee2cn.apps.googleusercontent.com"
     return options

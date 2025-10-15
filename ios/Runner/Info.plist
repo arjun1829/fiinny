@@ -50,6 +50,7 @@
 
   <!-- Firebase -->
   <key>FirebaseAppDelegateProxyEnabled</key><true/>
+  <key>FirebaseDeepLinkPasteboardRetrievalEnabled</key><false/>
 
   <!-- URL Schemes (Google Sign-In etc.) -->
   <key>CFBundleURLTypes</key>
@@ -62,12 +63,6 @@
         <string>com.googleusercontent.apps.1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00</string>
       </array>
     </dict>
-  </array>
-
-  <!-- Background (for FCM silent pushes if used) -->
-  <key>UIBackgroundModes</key>
-  <array>
-    <string>remote-notification</string>
   </array>
 
   <!-- App Linking / canOpenURL -->
@@ -93,7 +88,7 @@
   <key>NSContactsUsageDescription</key>
   <string>This app reads contacts to help you select and share with people you know.</string>
   <key>NSLocationWhenInUseUsageDescription</key>
-  <string>This app uses location data to enhance financial suggestions and insights.</string>
+  <string>Your app needs access to your location for a specific feature.</string>
   <key>NSUserTrackingUsageDescription</key>
   <string>This helps us offer smarter financial insights, tips, and personalized experience.</string>
   <key>NSFaceIDUsageDescription</key>
@@ -111,7 +106,7 @@
   <!-- ATS (tighten before release) -->
   <key>NSAppTransportSecurity</key>
   <dict>
-    <key>NSAllowsArbitraryLoads</key><true/>
+    <key>NSAllowsArbitraryLoads</key><false/>
   </dict>
 </dict>
 </plist>

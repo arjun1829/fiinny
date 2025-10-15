@@ -14,6 +14,7 @@ import 'services/notification_service.dart';
 
 // Push layer
 import 'services/push/push_service.dart';
+import 'services/push/first_surface_gate.dart';
 
 // Screens / routes
 import 'screens/launcher_screen.dart';
@@ -158,6 +159,14 @@ Future<void> _waitForNavigatorAndBootstrap() async {
 
   // Ensure at least one full frame has painted after the navigator attaches.
   await WidgetsBinding.instance.endOfFrame;
+
+  // Defer push initialization until after the first navigation has safely
+  // transitioned away from the launcher so iOS permission UI cannot interrupt
+  // Flutter mid-frame. A timeout keeps us from hanging forever if something
+  // goes wrong but still gives navigation a fair chance to complete.
+  await FirstSurfaceGate.waitUntilReady(
+    timeout: const Duration(seconds: 5),
+  );
 
   await _safePushInit();
 }
