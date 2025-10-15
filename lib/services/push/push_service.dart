@@ -210,9 +210,11 @@ class PushService {
         status = settings.authorizationStatus;
       }
 
+      final isEphemeral = status.name == 'ephemeral';
+
       granted = status == AuthorizationStatus.authorized ||
           status == AuthorizationStatus.provisional ||
-          status == AuthorizationStatus.ephemeral;
+          isEphemeral;
 
       if (kDebugMode) {
         // ignore: avoid_print
