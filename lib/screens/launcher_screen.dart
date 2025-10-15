@@ -1,6 +1,5 @@
 // lib/screens/launcher_screen.dart
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,8 +8,7 @@ import 'package:lifemap/screens/welcome_screen.dart';
 import 'package:lifemap/screens/onboarding_screen.dart';
 import 'package:lifemap/screens/main_nav_screen.dart';
 
-// Push bootstrap + prefs + push service
-import 'package:lifemap/services/push/push_service.dart';
+// Push bootstrap + prefs (push init is orchestrated centrally in main.dart)
 import 'package:lifemap/services/push/push_bootstrap.dart';
 import 'package:lifemap/services/push/notif_prefs_service.dart';
 
@@ -111,11 +109,6 @@ class _LauncherScreenState extends State<LauncherScreen> {
         await NotifPrefsService.ensureDefaultPrefs()
             .timeout(const Duration(seconds: 3));
 
-        // iOS can be finicky: slight delay; never block forever
-        if (Platform.isIOS) {
-          await Future.delayed(const Duration(milliseconds: 400));
-        }
-        await PushService.init().timeout(const Duration(seconds: 6));
       } catch (e) {
         debugPrint('[Launcher] bootstrap (background) error: $e'); // never fatal
       }
