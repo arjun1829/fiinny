@@ -103,10 +103,5 @@
   <string>ca-app-pub-3940256099942544~1458002511</string>
 
 
-  <!-- ATS (tighten before release) -->
-  <key>NSAppTransportSecurity</key>
-  <dict>
-    <key>NSAllowsArbitraryLoads</key><false/>
-  </dict>
 </dict>
 </plist>
