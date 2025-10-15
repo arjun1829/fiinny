@@ -8,9 +8,12 @@ import 'package:lifemap/screens/welcome_screen.dart';
 import 'package:lifemap/screens/onboarding_screen.dart';
 import 'package:lifemap/screens/main_nav_screen.dart';
 
+import '../shims/shared_prefs_shim.dart';
+
 // Push bootstrap + prefs (push init is orchestrated centrally in main.dart)
 import 'package:lifemap/services/push/push_bootstrap.dart';
 import 'package:lifemap/services/push/notif_prefs_service.dart';
+import 'package:lifemap/services/push/first_surface_gate.dart';
 
 class LauncherScreen extends StatefulWidget {
   const LauncherScreen({Key? key}) : super(key: key);
@@ -29,47 +32,63 @@ class _LauncherScreenState extends State<LauncherScreen> {
   void initState() {
     super.initState();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       setState(() => _booted = true);
 
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+
+      final seenOnboarding = prefs.getBool('seen_onboarding') ?? false;
+      if (!seenOnboarding) {
+        debugPrint('[Launcher] First launch → WelcomeScreen');
+        _go(const WelcomeScreen());
+        return;
+      }
+
       _startWatchdog();
 
-      // Decide quickly; navigate first; bootstrap AFTER navigation.
-      _authSub = FirebaseAuth.instance.authStateChanges().listen((user) async {
-        if (!mounted || _navigated) return;
+      await _handleAuthState(FirebaseAuth.instance.currentUser);
+      if (!mounted || _navigated) return;
 
-        // small delay for smoother splash
-        await Future.delayed(const Duration(milliseconds: 150));
-
-        if (user == null) {
-          debugPrint('[Launcher] No user → WelcomeScreen');
-          _go(const WelcomeScreen());
-          return;
-        }
-
-        // ---- onboarding decision (fast) ----
-        final phone = (user.phoneNumber ?? '').trim();
-        final String docIdPrimary = phone.isNotEmpty ? phone : user.uid;
-        final String docIdFallback = phone.isNotEmpty ? user.uid : '';
-
-        final onboarded =
-        await _isOnboardedSafe(docIdPrimary, fallbackId: docIdFallback);
-        if (!mounted || _navigated) return;
-
-        if (onboarded) {
-          final who = phone.isNotEmpty ? phone : user.uid;
-          debugPrint('[Launcher] Onboarded → MainNavScreen($who)');
-          _go(MainNavScreen(userPhone: who));
-        } else {
-          debugPrint('[Launcher] Not onboarded → OnboardingScreen');
-          _go(const OnboardingScreen());
-        }
-
-        // 🔽 Kick off bootstrap in the background (non-blocking)
-        _kickoffBootstrap(user);
+      _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+        unawaited(_handleAuthState(user));
       });
     });
+  }
+
+  Future<void> _handleAuthState(User? user) async {
+    if (!mounted || _navigated) return;
+
+    if (user == null) {
+      debugPrint('[Launcher] No user → WelcomeScreen');
+      _go(const WelcomeScreen());
+      return;
+    }
+
+    // small delay for smoother splash when we already have a session
+    await Future.delayed(const Duration(milliseconds: 150));
+
+    // ---- onboarding decision (fast) ----
+    final phone = (user.phoneNumber ?? '').trim();
+    final String docIdPrimary = phone.isNotEmpty ? phone : user.uid;
+    final String docIdFallback = phone.isNotEmpty ? user.uid : '';
+
+    final onboarded =
+        await _isOnboardedSafe(docIdPrimary, fallbackId: docIdFallback);
+    if (!mounted || _navigated) return;
+
+    if (onboarded) {
+      final who = phone.isNotEmpty ? phone : user.uid;
+      debugPrint('[Launcher] Onboarded → MainNavScreen($who)');
+      _go(MainNavScreen(userPhone: who));
+    } else {
+      debugPrint('[Launcher] Not onboarded → OnboardingScreen');
+      _go(const OnboardingScreen());
+    }
+
+    // 🔽 Kick off bootstrap in the background (non-blocking)
+    _kickoffBootstrap(user);
   }
 
   // Run push + prefs wiring AFTER navigation; never block the UI.
@@ -159,6 +178,8 @@ class _LauncherScreenState extends State<LauncherScreen> {
     _navigated = true;
     _watchdog?.cancel();
     _authSub?.cancel(); // stop listening once we leave
+
+    FirstSurfaceGate.markReady();
 
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
