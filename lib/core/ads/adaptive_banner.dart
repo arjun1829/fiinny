@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import 'ad_service.dart';
+
 class AdaptiveBanner extends StatefulWidget {
   final String adUnitId;
   final EdgeInsets padding;
@@ -40,6 +42,10 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
     _ad?.dispose();
     _ad = null;
     _loaded = false;
+
+    if (!AdService.I.isEnabled) {
+      return;
+    }
 
     final width = MediaQuery.of(context).size.width.truncate();
 
@@ -92,7 +98,9 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_loaded || _ad == null) return const SizedBox.shrink();
+    if (!AdService.I.isEnabled || !_loaded || _ad == null) {
+      return const SizedBox.shrink();
+    }
     return Padding(
       padding: widget.padding,
       child: SizedBox(

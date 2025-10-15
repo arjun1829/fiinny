@@ -1,5 +1,7 @@
 // lib/core/ads/ad_service.dart
 import 'dart:async';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'ad_ids.dart';
 
@@ -14,22 +16,80 @@ class AdService {
   DateTime _lastInterShown = DateTime.fromMillisecondsSinceEpoch(0);
   int _actionsSinceInter = 0;
 
-  Future<void> init() async {
-    await MobileAds.instance.initialize();
+  bool _adsEnabled = false;
+  Future<void>? _inFlightInit;
 
-    // Not const (avoids "const constructor" error)
-    await MobileAds.instance.updateRequestConfiguration(
-      RequestConfiguration(
-        testDeviceIds: const <String>[], // add your device id(s) if needed
-      ),
-    );
+  bool get isEnabled => _adsEnabled;
 
-    preloadInterstitial();
-    preloadRewarded();
+  Future<void> init() {
+    if (_adsEnabled) {
+      return SynchronousFuture<void>(null);
+    }
+
+    final pending = _inFlightInit;
+    if (pending != null) {
+      return pending;
+    }
+
+    final future = _initializeInternal();
+    _inFlightInit = future;
+
+    return future.whenComplete(() {
+      if (identical(_inFlightInit, future)) {
+        _inFlightInit = null;
+      }
+    });
+  }
+
+  Future<void> _initializeInternal() async {
+    if (!_shouldEnableAds()) {
+      _adsEnabled = false;
+      return;
+    }
+
+    try {
+      await MobileAds.instance.initialize();
+
+      await MobileAds.instance.updateRequestConfiguration(
+        RequestConfiguration(
+          testDeviceIds: const <String>[],
+        ),
+      );
+
+      _adsEnabled = true;
+
+      preloadInterstitial();
+      preloadRewarded();
+    } catch (err, stackTrace) {
+      _adsEnabled = false;
+      debugPrint('[AdService] Google Mobile Ads init failed: $err\n$stackTrace');
+    }
+  }
+
+  bool _shouldEnableAds() {
+    if (kIsWeb) return false;
+    if (!(Platform.isAndroid || Platform.isIOS)) return false;
+
+    if (!AdIds.hasRealIdsForCurrentPlatform) {
+      if (kReleaseMode && !forceTestAds) {
+        debugPrint(
+          '[AdService] Skipping Google Mobile Ads init on '
+          '${Platform.operatingSystem} – real AdMob IDs are not configured.',
+        );
+        return false;
+      }
+
+      if (Platform.isIOS && AdIds.isUsingTestIds) {
+        debugPrint('[AdService] Using Google test ads on iOS.');
+      }
+    }
+
+    return true;
   }
 
   // ---------- Preload ----------
   void preloadInterstitial() {
+    if (!_adsEnabled) return;
     if (_inter != null) return;
     InterstitialAd.load(
       adUnitId: AdIds.interstitial,
@@ -64,6 +124,7 @@ class AdService {
   }
 
   void preloadRewarded() {
+    if (!_adsEnabled) return;
     if (_rewarded != null) return;
     RewardedAd.load(
       adUnitId: AdIds.rewarded,
@@ -99,6 +160,7 @@ class AdService {
     int minActions = 6,
     Duration minGap = const Duration(minutes: 2),
   }) async {
+    if (!_adsEnabled) return;
     _actionsSinceInter++;
     final now = DateTime.now();
 
@@ -118,6 +180,7 @@ class AdService {
   // ---------- Rewarded logic ----------
   // Keep signature (int,String) to avoid breaking callers.
   Future<bool> showRewarded({required void Function(int, String) onReward}) async {
+    if (!_adsEnabled) return false;
     final ad = _rewarded;
     if (ad == null) {
       preloadRewarded();
