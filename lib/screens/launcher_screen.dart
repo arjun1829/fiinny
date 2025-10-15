@@ -13,6 +13,7 @@ import '../shims/shared_prefs_shim.dart';
 // Push bootstrap + prefs (push init is orchestrated centrally in main.dart)
 import 'package:lifemap/services/push/push_bootstrap.dart';
 import 'package:lifemap/services/push/notif_prefs_service.dart';
+import 'package:lifemap/services/push/first_surface_gate.dart';
 
 class LauncherScreen extends StatefulWidget {
   const LauncherScreen({Key? key}) : super(key: key);
@@ -177,6 +178,8 @@ class _LauncherScreenState extends State<LauncherScreen> {
     _navigated = true;
     _watchdog?.cancel();
     _authSub?.cancel(); // stop listening once we leave
+
+    FirstSurfaceGate.markReady();
 
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
