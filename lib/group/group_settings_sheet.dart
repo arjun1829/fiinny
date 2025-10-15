@@ -769,7 +769,11 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
   @override
   void initState() {
     super.initState();
-    _loadContacts();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future.delayed(const Duration(milliseconds: 250));
+      if (!mounted) return;
+      await _loadContacts();
+    });
   }
 
   Future<void> _loadContacts() async {
