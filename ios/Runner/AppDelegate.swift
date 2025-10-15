@@ -14,7 +14,6 @@ import UserNotifications
   // the delegate can always hand back a valid UIWindow when asked.
   private var cachedWindow: UIWindow?
   private lazy var placeholderViewController = UIViewController()
-
   @discardableResult
   private func installPlaceholderWindowIfNeeded() -> UIWindow {
     if let window = super.window ?? cachedWindow {
@@ -198,5 +197,39 @@ import UserNotifications
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
     completionHandler()
+  }
+
+  // The app does not rely on UIKit state restoration and the archived state can
+  // become incompatible across builds. Starting with iPadOS/iOS 18 the system
+  // may attempt to restore immediately after certain permission alerts and
+  // crash while decoding the stale state (`NSException initWithCoder`). Opting
+  // out of saving/restoring — including the secure-coding variants — prevents
+  // that crash and matches the app's actual behaviour.
+  override func application(
+    _ application: UIApplication,
+    shouldSaveApplicationState coder: NSCoder
+  ) -> Bool {
+    false
+  }
+
+  override func application(
+    _ application: UIApplication,
+    shouldRestoreApplicationState coder: NSCoder
+  ) -> Bool {
+    false
+  }
+
+  override func application(
+    _ application: UIApplication,
+    shouldSaveSecureApplicationState coder: NSCoder
+  ) -> Bool {
+    false
+  }
+
+  override func application(
+    _ application: UIApplication,
+    shouldRestoreSecureApplicationState coder: NSCoder
+  ) -> Bool {
+    false
   }
 }

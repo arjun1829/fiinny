@@ -42,6 +42,7 @@
   <!-- Performance / input -->
   <key>CADisableMinimumFrameDurationOnPhone</key><true/>
   <key>UIApplicationSupportsIndirectInputEvents</key><true/>
+  <key>UIApplicationStateRestorationEnabled</key><false/>
 
   <!-- Status bar -->
   <key>UIStatusBarHidden</key><true/>
