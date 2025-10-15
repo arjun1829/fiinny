@@ -33,6 +33,11 @@ import UserNotifications
       cachedWindow = placeholder
     }
 
+
+    if super.window == nil {
+      super.window = placeholder
+    }
+
     return placeholder
   }
 
@@ -76,6 +81,8 @@ import UserNotifications
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    installPlaceholderWindowIfNeeded()
+
     if FirebaseApp.app() == nil {
       if let options = Self.loadFirebaseOptions() {
         FirebaseApp.configure(options: options)
@@ -90,6 +97,12 @@ import UserNotifications
     }
 
     GeneratedPluginRegistrant.register(with: self)
+    if let flutterWindow = super.window {
+      cachedWindow = flutterWindow
+      if flutterWindow.rootViewController == nil {
+        flutterWindow.rootViewController = placeholderViewController
+      }
+    }
 
     Messaging.messaging().delegate = self
 
