@@ -1,4 +1,5 @@
 // lib/services/push/push_service.dart
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +23,9 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 class PushService {
   static final _messaging = FirebaseMessaging.instance;
+  static Future<void>? _initInFlight;
+  static bool _initialized = false;
+  static Completer<void>? _permissionRequest;
 
   // --- Android notification channels ---
   static const _chDefault = AndroidNotificationChannel(
@@ -50,116 +54,157 @@ class PushService {
   );
 
   /// Call once after Firebase.initializeApp(). Recalling is safe (idempotent).
-  static Future<void> init() async {
-    // 1) Local notifications init
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosInit = DarwinInitializationSettings();
-    await _fln.initialize(
-      const InitializationSettings(android: androidInit, iOS: iosInit),
-      onDidReceiveNotificationResponse: (resp) {
-        final deeplink = resp.payload;
+  static Future<void> init() {
+    if (_initialized) return Future.value();
+    if (_initInFlight != null) return _initInFlight!;
+
+    _initInFlight = _performInit();
+    return _initInFlight!;
+  }
+
+  static Future<void> _performInit() async {
+    var success = false;
+    try {
+      // 1) Local notifications init
+      const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const iosInit = DarwinInitializationSettings();
+      await _fln.initialize(
+        const InitializationSettings(android: androidInit, iOS: iosInit),
+        onDidReceiveNotificationResponse: (resp) {
+          final deeplink = resp.payload;
+          if (kDebugMode) {
+            // ignore: avoid_print
+            print('[PushService] onDidReceiveNotificationResponse payload=$deeplink');
+          }
+          if (deeplink != null && deeplink.isNotEmpty) _handleDeeplink(deeplink);
+        },
+      );
+
+      // 2) Ensure Android channels
+      await _ensureAndroidChannels();
+
+      // 3) Permissions (iOS prompts; Android 13+ uses app manifest permission)
+      await ensurePermissions();
+
+      // 4) Background handler
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+      // 5) Token save + refresh
+      try {
+        final token = await _messaging.getToken();
         if (kDebugMode) {
           // ignore: avoid_print
-          print('[PushService] onDidReceiveNotificationResponse payload=$deeplink');
+          print('[PushService] FCM token: $token');
         }
-        if (deeplink != null && deeplink.isNotEmpty) _handleDeeplink(deeplink);
-      },
-    );
-
-    // 2) Ensure Android channels
-    await _ensureAndroidChannels();
-
-    // 3) Permissions (iOS prompts; Android 13+ uses app manifest permission)
-    await ensurePermissions();
-
-    // 4) Background handler
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-    // 5) Token save + refresh
-    try {
-      final token = await _messaging.getToken();
-      if (kDebugMode) {
-        // ignore: avoid_print
-        print('[PushService] FCM token: $token');
+        await _saveToken(token);
+        _messaging.onTokenRefresh.listen(_saveToken);
+      } catch (e) {
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('[PushService] getToken failed: $e');
+        }
       }
-      await _saveToken(token);
-      _messaging.onTokenRefresh.listen(_saveToken);
-    } catch (e) {
-      if (kDebugMode) {
-        // ignore: avoid_print
-        print('[PushService] getToken failed: $e');
-      }
+
+      // 6) Foreground messages → local banner (+ in-app feed)
+      FirebaseMessaging.onMessage.listen((msg) async {
+        final title = msg.notification?.title ?? msg.data['title'] ?? 'Fiinny';
+        final body = msg.notification?.body ?? msg.data['body'] ?? '';
+        final String? deeplink = msg.data['deeplink']; // do NOT fabricate one
+        final channelId = _channelFromType(msg.data['type'], msg.data['severity']);
+
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('[PushService] onMessage type=${msg.data['type']} deeplink=$deeplink');
+        }
+
+        await _showLocalNow(title, body, deeplink ?? '', channelId: channelId);
+
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid != null) {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .collection('notif_feed')
+              .doc()
+              .set({
+            'type': msg.data['type'] ?? 'info',
+            'title': title,
+            'body': body,
+            'deeplink': deeplink,
+            'createdAt': DateTime.now().millisecondsSinceEpoch,
+            'read': false,
+          }, SetOptions(merge: false));
+        }
+      });
+
+      // 7) Tap from background (user explicitly tapped the push)
+      FirebaseMessaging.onMessageOpenedApp.listen((msg) {
+        final String? deeplink = msg.data['deeplink'];
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('[PushService] onMessageOpenedApp deeplink=$deeplink');
+        }
+        if (deeplink != null && deeplink.isNotEmpty) {
+          _handleDeeplink(deeplink);
+        }
+      });
+
+      // ✅ Intentionally NO cold-start deeplink handling here.
+      // We DO NOT call getInitialMessage() to avoid auto-navigation when opening from the app icon.
+      success = true;
+    } finally {
+      _initialized = success;
+      _initInFlight = null;
     }
-
-    // 6) Foreground messages → local banner (+ in-app feed)
-    FirebaseMessaging.onMessage.listen((msg) async {
-      final title = msg.notification?.title ?? msg.data['title'] ?? 'Fiinny';
-      final body = msg.notification?.body ?? msg.data['body'] ?? '';
-      final String? deeplink = msg.data['deeplink']; // do NOT fabricate one
-      final channelId = _channelFromType(msg.data['type'], msg.data['severity']);
-
-      if (kDebugMode) {
-        // ignore: avoid_print
-        print('[PushService] onMessage type=${msg.data['type']} deeplink=$deeplink');
-      }
-
-      await _showLocalNow(title, body, deeplink ?? '', channelId: channelId);
-
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid != null) {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .collection('notif_feed')
-            .doc()
-            .set({
-          'type': msg.data['type'] ?? 'info',
-          'title': title,
-          'body': body,
-          'deeplink': deeplink,
-          'createdAt': DateTime.now().millisecondsSinceEpoch,
-          'read': false,
-        }, SetOptions(merge: false));
-      }
-    });
-
-    // 7) Tap from background (user explicitly tapped the push)
-    FirebaseMessaging.onMessageOpenedApp.listen((msg) {
-      final String? deeplink = msg.data['deeplink'];
-      if (kDebugMode) {
-        // ignore: avoid_print
-        print('[PushService] onMessageOpenedApp deeplink=$deeplink');
-      }
-      if (deeplink != null && deeplink.isNotEmpty) {
-        _handleDeeplink(deeplink);
-      }
-    });
-
-    // ✅ Intentionally NO cold-start deeplink handling here.
-    // We DO NOT call getInitialMessage() to avoid auto-navigation when opening from the app icon.
   }
 
   /// Ask for notification permission where relevant.
   /// - iOS: prompts user
   /// - Android: runtime permission handled by OS (manifest) on 13+, nothing to do here
   static Future<void> ensurePermissions() async {
-    if (Platform.isIOS) {
-      try {
+    if (!Platform.isIOS) return;
+
+    if (_permissionRequest != null) {
+      await _permissionRequest!.future;
+      return;
+    }
+
+    final completer = Completer<void>();
+    _permissionRequest = completer;
+
+    try {
+      final currentSettings = await _messaging.getNotificationSettings();
+      if (currentSettings.authorizationStatus == AuthorizationStatus.notDetermined) {
         final settings = await _messaging.requestPermission(
-          alert: true, badge: true, sound: true, announcement: false,
-          carPlay: false, criticalAlert: false, provisional: false,
+          alert: true,
+          badge: true,
+          sound: true,
+          announcement: false,
+          carPlay: false,
+          criticalAlert: false,
+          provisional: false,
         );
         if (kDebugMode) {
           // ignore: avoid_print
           print('[PushService] iOS permission: ${settings.authorizationStatus}');
         }
-      } catch (e) {
-        if (kDebugMode) {
-          // ignore: avoid_print
-          print('[PushService] iOS requestPermission error: $e');
-        }
+      } else if (kDebugMode) {
+        // ignore: avoid_print
+        print('[PushService] iOS permission already ${currentSettings.authorizationStatus}');
       }
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('[PushService] iOS requestPermission error: $e');
+      }
+    } finally {
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+      _permissionRequest = null;
     }
+
+    await completer.future;
   }
 
   // ---- public helpers ----
