@@ -1,9 +1,11 @@
 // lib/main.dart
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:provider/provider.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'firebase_options.dart';
@@ -46,6 +48,7 @@ Future<void> main() async {
     await themeProvider.loadTheme();
 
     await _ensureFirebaseInitialized();
+    await _configureCrashlytics();
     await _initializeSupportingServices();
 
     _schedulePushBootstrap();
@@ -56,8 +59,19 @@ Future<void> main() async {
         child: const FiinnyApp(),
       ),
     );
-  }, (error, stackTrace) {
+  }, (error, stackTrace) async {
     debugPrint('[main] Uncaught zone error: $error\n$stackTrace');
+    if (!kIsWeb) {
+      try {
+        await FirebaseCrashlytics.instance.recordError(
+          error,
+          stackTrace,
+          fatal: true,
+        );
+      } catch (crashError, crashStack) {
+        debugPrint('[main] Crashlytics.recordError failed: $crashError\n$crashStack');
+      }
+    }
   });
 }
 
@@ -85,29 +99,64 @@ Future<void> _ensureFirebaseInitialized() async {
   }
 }
 
+Future<void> _configureCrashlytics() async {
+  if (kIsWeb) {
+    return;
+  }
+
+  try {
+    final crashlytics = FirebaseCrashlytics.instance;
+    await crashlytics.setCrashlyticsCollectionEnabled(!kDebugMode);
+
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      crashlytics.recordFlutterFatalError(details);
+    };
+
+    final dispatcher = WidgetsBinding.instance.platformDispatcher;
+    dispatcher.onError = (error, stack) {
+      crashlytics.recordError(error, stack, fatal: true);
+      return false;
+    };
+  } catch (error, stackTrace) {
+    debugPrint('[main] Crashlytics setup failed: $error\n$stackTrace');
+  }
+}
+
 Future<void> _initializeSupportingServices() async {
   await Future.wait([
     _guardAsync(
       'NotificationService.initialize',
       NotificationService.initialize,
+      timeout: const Duration(seconds: 3),
     ),
     _guardAsync(
       'LocalNotifs.init',
       LocalNotifs.init,
+      timeout: const Duration(seconds: 3),
     ),
     _guardAsync(
       'AdService.I.init',
       () => AdService.I.init(),
+      timeout: const Duration(seconds: 4),
     ),
   ]);
 }
 
+// Prevent a single background service from holding the splash indefinitely.
 Future<void> _guardAsync(
   String label,
-  Future<void> Function() runner,
-) async {
+  Future<void> Function() runner, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
   try {
-    await runner();
+    if (timeout == Duration.zero) {
+      await runner();
+    } else {
+      await runner().timeout(timeout);
+    }
+  } on TimeoutException catch (error) {
+    debugPrint('[main] $label timed out after ${timeout.inMilliseconds}ms: $error');
   } catch (error, stackTrace) {
     debugPrint('[main] $label failed: $error\n$stackTrace');
   }
