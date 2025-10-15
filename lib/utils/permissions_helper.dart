@@ -72,9 +72,19 @@ Future<ContactsLoadResult> getContactsWithPermission({
       return ContactsLoadResult.denied();
     }
 
-    final granted = await FlutterContacts.requestPermission(readonly: true);
-    if (!granted) {
-      return ContactsLoadResult.denied();
+    final targetPlatform = defaultTargetPlatform;
+    // On iOS 17/18 the flutter_contacts plugin can synchronously ask for the
+    // delegate window while the system permission dialog is still dismissing,
+    // which may crash the app. We rely on permission_handler for iOS/macOS and
+    // only invoke the plugin's permission helper on Android.
+    final bool needsFlutterContactsPrompt = !kIsWeb &&
+        targetPlatform == TargetPlatform.android;
+
+    if (needsFlutterContactsPrompt) {
+      final granted = await FlutterContacts.requestPermission(readonly: true);
+      if (!granted) {
+        return ContactsLoadResult.denied();
+      }
     }
 
     final contacts = await FlutterContacts.getContacts(
