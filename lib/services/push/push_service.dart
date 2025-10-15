@@ -27,6 +27,7 @@ class PushService {
   static Future<void>? _initInFlight;
   static bool _initialized = false;
   static Completer<void>? _permissionRequest;
+  static bool _lastKnownPermissionStatus = false;
 
   // --- Android notification channels ---
   static const _chDefault = AndroidNotificationChannel(
@@ -93,10 +94,18 @@ class PushService {
       await _ensureAndroidChannels();
 
       // 3) Permissions (iOS prompts; Android 13+ uses app manifest permission)
-      await ensurePermissions();
+      final bool notificationsAllowed = await ensurePermissions();
 
       // 4) Background handler
       FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+      if (!notificationsAllowed) {
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('[PushService] Notifications not authorized; deferring push init.');
+        }
+        return;
+      }
 
       // 5) Token save + refresh
       try {
@@ -170,23 +179,26 @@ class PushService {
   /// Ask for notification permission where relevant.
   /// - iOS: prompts user
   /// - Android: runtime permission handled by OS (manifest) on 13+, nothing to do here
-  static Future<void> ensurePermissions() async {
-    if (!Platform.isIOS) return;
+  static Future<bool> ensurePermissions() async {
+    if (!Platform.isIOS) return true;
 
-    await FirstSurfaceGate.waitUntilReady(timeout: Duration.zero);
+    await FirstSurfaceGate.waitUntilReady(timeout: const Duration(seconds: 5));
 
     if (_permissionRequest != null) {
       await _permissionRequest!.future;
-      return;
+      return _lastKnownPermissionStatus;
     }
 
     final completer = Completer<void>();
     _permissionRequest = completer;
+    var granted = _lastKnownPermissionStatus;
 
     try {
-      final currentSettings = await _messaging.getNotificationSettings();
-      if (currentSettings.authorizationStatus == AuthorizationStatus.notDetermined) {
-        final settings = await _messaging.requestPermission(
+      NotificationSettings settings = await _messaging.getNotificationSettings();
+      AuthorizationStatus status = settings.authorizationStatus;
+
+      if (status == AuthorizationStatus.notDetermined) {
+        settings = await _messaging.requestPermission(
           alert: true,
           badge: true,
           sound: true,
@@ -195,13 +207,16 @@ class PushService {
           criticalAlert: false,
           provisional: false,
         );
-        if (kDebugMode) {
-          // ignore: avoid_print
-          print('[PushService] iOS permission: ${settings.authorizationStatus}');
-        }
-      } else if (kDebugMode) {
+        status = settings.authorizationStatus;
+      }
+
+      granted = status == AuthorizationStatus.authorized ||
+          status == AuthorizationStatus.provisional ||
+          status == AuthorizationStatus.ephemeral;
+
+      if (kDebugMode) {
         // ignore: avoid_print
-        print('[PushService] iOS permission already ${currentSettings.authorizationStatus}');
+        print('[PushService] iOS permission status: $status (granted=$granted)');
       }
     } catch (e) {
       if (kDebugMode) {
@@ -209,6 +224,7 @@ class PushService {
         print('[PushService] iOS requestPermission error: $e');
       }
     } finally {
+      _lastKnownPermissionStatus = granted;
       if (!completer.isCompleted) {
         completer.complete();
       }
@@ -216,6 +232,7 @@ class PushService {
     }
 
     await completer.future;
+    return _lastKnownPermissionStatus;
   }
 
   // ---- public helpers ----

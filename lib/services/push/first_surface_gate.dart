@@ -10,6 +10,9 @@ class FirstSurfaceGate {
 
   static final Completer<void> _readyCompleter = Completer<void>();
 
+  /// Whether the initial surface has already been marked as ready.
+  static bool get isReady => _readyCompleter.isCompleted;
+
   /// Await the first real navigation completing so we can safely surface
   /// intrusive UI such as the iOS notification permission sheet. The future
   /// resolves once [markReady] is invoked or after [timeout] elapses.
