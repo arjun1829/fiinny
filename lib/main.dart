@@ -112,19 +112,54 @@ Future<void> _guardAsync(
   }
 }
 
+Future<void>? _pushBootstrapInFlight;
+
 void _schedulePushBootstrap() {
-  // Kick push init after first frame (non-blocking)
+  void enqueueBootstrap() {
+    if (_pushBootstrapInFlight != null) {
+      // A bootstrap run is already queued/running. Let it finish instead of
+      // spamming init/permission prompts while the Navigator is still mounting.
+      return;
+    }
+
+    _pushBootstrapInFlight = _waitForNavigatorAndBootstrap().whenComplete(() {
+      _pushBootstrapInFlight = null;
+    });
+  }
+
+  // Kick push init after the very first frame but only once the navigator
+  // tree is available. This avoids showing the permission dialog while the
+  // app is still assembling its initial route (which manifested as a blank
+  // screen on iOS when the system sheet stole focus mid-build).
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    Future.microtask(_safePushInit);
+    enqueueBootstrap();
   });
 
-  // Also retry push init when user logs in (non-blocking)
+  // Also retry push init when the user logs in (non-blocking)
   FirebaseAuth.instance.authStateChanges().listen((user) {
     if (user == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.microtask(_safePushInit);
+      enqueueBootstrap();
     });
   });
+}
+
+Future<void> _waitForNavigatorAndBootstrap() async {
+  // Wait for the root navigator to mount so that any follow-up navigation from
+  // notification taps has a stable target. Without this guard, iOS could end
+  // up presenting the permission sheet while Flutter was still inflating the
+  // first frame, leaving a permanently blank surface when the dialog was
+  // dismissed.
+  var attempts = 0;
+  while (rootNavigatorKey.currentState == null && attempts < 10) {
+    await Future.delayed(const Duration(milliseconds: 100));
+    attempts++;
+  }
+
+  // Ensure at least one full frame has painted after the navigator attaches.
+  await WidgetsBinding.instance.endOfFrame;
+
+  await _safePushInit();
 }
 
 // Never await this in main/UI-critical paths.
