@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:lifemap/main.dart' show rootNavigatorKey;
+import 'package:lifemap/services/push/first_surface_gate.dart';
 
 final FlutterLocalNotificationsPlugin _fln = FlutterLocalNotificationsPlugin();
 
@@ -171,6 +172,8 @@ class PushService {
   /// - Android: runtime permission handled by OS (manifest) on 13+, nothing to do here
   static Future<void> ensurePermissions() async {
     if (!Platform.isIOS) return;
+
+    await FirstSurfaceGate.waitUntilReady(timeout: Duration.zero);
 
     if (_permissionRequest != null) {
       await _permissionRequest!.future;
