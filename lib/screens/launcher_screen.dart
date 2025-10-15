@@ -179,8 +179,6 @@ class _LauncherScreenState extends State<LauncherScreen> {
     _watchdog?.cancel();
     _authSub?.cancel(); // stop listening once we leave
 
-    FirstSurfaceGate.markReady();
-
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => page,
@@ -189,6 +187,16 @@ class _LauncherScreenState extends State<LauncherScreen> {
             FadeTransition(opacity: anim, child: child),
       ),
     );
+
+    if (mounted && !FirstSurfaceGate.isReady) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          FirstSurfaceGate.markReady();
+        }
+      });
+    } else {
+      FirstSurfaceGate.markReady();
+    }
   }
 
   @override
