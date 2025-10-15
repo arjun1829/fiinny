@@ -34,6 +34,13 @@ class _LauncherScreenState extends State<LauncherScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+
+      // Signal that at least one frame has been rendered so permission sheets
+      // (e.g. iOS push alert) don't have to wait for the full navigation stack
+      // before showing up. This keeps prompts snappy without risking the blank
+      // surface issue we saw when triggering them during the very first frame.
+      FirstSurfaceGate.markReady();
+
       setState(() => _booted = true);
 
       final prefs = await SharedPreferences.getInstance();
