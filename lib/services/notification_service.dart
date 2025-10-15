@@ -14,10 +14,12 @@ class NotificationService {
     const AndroidInitializationSettings androidInit =
     AndroidInitializationSettings('@mipmap/ic_launcher');
 
-    final DarwinInitializationSettings iosInit = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
+    const DarwinInitializationSettings iosInit = DarwinInitializationSettings(
+      // iOS permission prompts are centralized in PushService.ensurePermissions().
+      // Requesting here would show a duplicate dialog during app launch.
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
     );
 
     final InitializationSettings settings = InitializationSettings(

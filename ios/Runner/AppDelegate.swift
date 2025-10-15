@@ -13,6 +13,28 @@ import UserNotifications
   // We keep a cached reference and fall back to whatever window the connected scenes expose so
   // the delegate can always hand back a valid UIWindow when asked.
   private var cachedWindow: UIWindow?
+  private lazy var placeholderViewController = UIViewController()
+
+  @discardableResult
+  private func installPlaceholderWindowIfNeeded() -> UIWindow {
+    if let window = super.window ?? cachedWindow {
+      cachedWindow = window
+      return window
+    }
+
+    let placeholder: UIWindow
+    if let cached = cachedWindow {
+      placeholder = cached
+    } else {
+      placeholder = UIWindow(frame: UIScreen.main.bounds)
+      placeholder.isHidden = true
+      placeholder.backgroundColor = .clear
+      placeholder.rootViewController = placeholderViewController
+      cachedWindow = placeholder
+    }
+
+    return placeholder
+  }
 
   override var window: UIWindow? {
     get {
@@ -43,10 +65,7 @@ import UserNotifications
       // makes those plugins trap via `fatalError("window not set")`. As a last
       // resort we hand back a temporary hidden UIWindow that will be replaced as
       // soon as the real Flutter window becomes available.
-      let placeholder = UIWindow(frame: UIScreen.main.bounds)
-      placeholder.isHidden = true
-      cachedWindow = placeholder
-      return placeholder
+      return installPlaceholderWindowIfNeeded()
     }
     set {
       cachedWindow = newValue
@@ -71,18 +90,19 @@ import UserNotifications
     }
 
     GeneratedPluginRegistrant.register(with: self)
-    if let flutterWindow = super.window {
-      cachedWindow = flutterWindow
-    }
 
     Messaging.messaging().delegate = self
 
     let center = UNUserNotificationCenter.current()
     center.delegate = self
-    center.requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
-    application.registerForRemoteNotifications()
+    ensureRemoteNotificationRegistration(for: application)
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  override func applicationDidBecomeActive(_ application: UIApplication) {
+    super.applicationDidBecomeActive(application)
+    ensureRemoteNotificationRegistration(for: application)
   }
 
   override func application(
@@ -101,6 +121,19 @@ import UserNotifications
     didFailToRegisterForRemoteNotificationsWithError error: Error
   ) {
     NSLog("❌ APNs registration failed: \(error.localizedDescription)")
+  }
+
+  private func ensureRemoteNotificationRegistration(for application: UIApplication) {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      switch settings.authorizationStatus {
+      case .authorized, .provisional, .ephemeral:
+        DispatchQueue.main.async {
+          application.registerForRemoteNotifications()
+        }
+      default:
+        break
+      }
+    }
   }
 
   private static func loadFirebaseOptions() -> FirebaseOptions? {
