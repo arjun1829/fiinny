@@ -45,9 +45,11 @@ class LocalNotifs {
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosInit = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
+      // Permission prompts are managed centrally via PushService.ensurePermissions().
+      // Avoid triggering a second dialog from this legacy scheduler bootstrap.
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
     );
     const init = InitializationSettings(android: androidInit, iOS: iosInit);
 

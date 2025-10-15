@@ -33,6 +33,7 @@ import UserNotifications
       cachedWindow = placeholder
     }
 
+
     if super.window == nil {
       super.window = placeholder
     }
@@ -107,10 +108,14 @@ import UserNotifications
 
     let center = UNUserNotificationCenter.current()
     center.delegate = self
-    center.requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
-    application.registerForRemoteNotifications()
+    ensureRemoteNotificationRegistration(for: application)
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  override func applicationDidBecomeActive(_ application: UIApplication) {
+    super.applicationDidBecomeActive(application)
+    ensureRemoteNotificationRegistration(for: application)
   }
 
   override func application(
@@ -129,6 +134,19 @@ import UserNotifications
     didFailToRegisterForRemoteNotificationsWithError error: Error
   ) {
     NSLog("❌ APNs registration failed: \(error.localizedDescription)")
+  }
+
+  private func ensureRemoteNotificationRegistration(for application: UIApplication) {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      switch settings.authorizationStatus {
+      case .authorized, .provisional, .ephemeral:
+        DispatchQueue.main.async {
+          application.registerForRemoteNotifications()
+        }
+      default:
+        break
+      }
+    }
   }
 
   private static func loadFirebaseOptions() -> FirebaseOptions? {
