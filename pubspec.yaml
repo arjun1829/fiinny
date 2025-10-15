@@ -67,7 +67,7 @@ dependencies:
 
   # Optional (commented)
   # firebase_messaging: ^15.1.0
-  firebase_crashlytics: ^4.3.10
+  firebase_crashlytics: ^4.0.4
   # firebase_dynamic_links: ^6.0.0
 
 dev_dependencies:
