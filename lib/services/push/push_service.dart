@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:lifemap/main.dart' show rootNavigatorKey;
+import 'package:lifemap/services/push/first_surface_gate.dart';
 
 final FlutterLocalNotificationsPlugin _fln = FlutterLocalNotificationsPlugin();
 
@@ -67,7 +68,15 @@ class PushService {
     try {
       // 1) Local notifications init
       const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-      const iosInit = DarwinInitializationSettings();
+      const iosInit = DarwinInitializationSettings(
+        // Permission prompts are orchestrated in ensurePermissions(). Requesting
+        // them again here during plugin bootstrap caused iOS to present the
+        // system alert while the Flutter surface was still mounting, which is
+        // what left users staring at a blank screen after dismissing it.
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      );
       await _fln.initialize(
         const InitializationSettings(android: androidInit, iOS: iosInit),
         onDidReceiveNotificationResponse: (resp) {
@@ -163,6 +172,8 @@ class PushService {
   /// - Android: runtime permission handled by OS (manifest) on 13+, nothing to do here
   static Future<void> ensurePermissions() async {
     if (!Platform.isIOS) return;
+
+    await FirstSurfaceGate.waitUntilReady(timeout: Duration.zero);
 
     if (_permissionRequest != null) {
       await _permissionRequest!.future;
