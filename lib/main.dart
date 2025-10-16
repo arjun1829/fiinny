@@ -47,10 +47,9 @@ Future<void> main() async {
   await runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
 
+    await _ensureFirebaseInitialized();
     final themeProvider = ThemeProvider();
     await themeProvider.loadTheme();
-
-    await _ensureFirebaseInitialized();
     await _configureCrashlytics();
     await _initializeSupportingServices();
 
