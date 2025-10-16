@@ -14,6 +14,9 @@
   <key>CFBundleVersion</key><string>$(FLUTTER_BUILD_NUMBER)</string>
 
   <!-- Flutter / Launch (no Main storyboard; only launch screen) -->
+  <!-- Temporarily disable Impeller to rule out iOS 18/Metal black-screen -->
+  <key>FLTEnableImpeller</key>
+  <false/>
   <key>LSRequiresIPhoneOS</key><true/>
   <key>UILaunchStoryboardName</key><string>LaunchScreen</string>
 
