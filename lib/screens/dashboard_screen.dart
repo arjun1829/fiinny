@@ -36,8 +36,6 @@ import '../fiinny_assets/modules/portfolio/models/asset_model.dart' as PAssetMod
 import '../fiinny_assets/modules/portfolio/models/price_quote.dart';
 import '../fiinny_assets/modules/portfolio/services/market_data_yahoo.dart';
 
-// Gmail pipeline helpers
-import '../shims/shared_prefs_shim.dart';
 import '../services/sync/sync_coordinator.dart';
 
 // Use your **old** Gmail service (the snippet-based one you pasted)
@@ -272,14 +270,23 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   }
 
   Future<void> _maybeRunGmailBackfillOnce() async {
-    final prefs = await SharedPreferences.getInstance();
-    final gmailFlagKey = 'gmailBackfillDone_${widget.userPhone}';
-    final already = prefs.getBool(gmailFlagKey) ?? false;
+    final docRef = FirebaseFirestore.instance.collection('users').doc(_userDocId);
+    bool already = false;
+    try {
+      final snapshot = await docRef.get();
+      already = (snapshot.data()?['gmailBackfillDone'] == true);
+    } catch (e) {
+      debugPrint('Gmail backfill flag read failed: $e');
+    }
+
     if (already) return;
 
     try {
       await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
-      await prefs.setBool(gmailFlagKey, true);
+      await docRef.set({
+        'gmailBackfillDone': true,
+        'gmailBackfillUpdatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
       await _initDashboard(); // refresh UI
     } catch (e) {
       debugPrint('Gmail backfill error: $e');
@@ -311,7 +318,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     final pService = PAssetService.AssetService();
     final market = MarketDataYahoo();
 
-    // Load new holdings (from SharedPreferences)
+    // Load new holdings from the Firestore-backed portfolio module
     final List<PAssetModel.AssetModel> assets = await pService.loadAssets();
 
     // Build symbols to quote

@@ -1,5 +1,9 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import '../shims/shared_prefs_shim.dart';
 
 import 'app_theme.dart';
 
@@ -15,6 +19,7 @@ enum FiinnyTheme {
 
 class ThemeProvider extends ChangeNotifier {
   FiinnyTheme _theme = FiinnyTheme.fresh;
+  StreamSubscription<User?>? _authSub;
 
   FiinnyTheme get theme => _theme;
   FiinnyTheme get currentThemeKey => _theme;   // 👈 Fix for profile screen
@@ -38,19 +43,56 @@ class ThemeProvider extends ChangeNotifier {
     }
   }
 
-  void setTheme(FiinnyTheme newTheme) async {
-    _theme = newTheme;
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    prefs.setInt('selected_theme', _theme.index);
+  ThemeProvider() {
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      unawaited(_syncThemeFromRemote(user));
+    });
   }
 
-  Future<void> loadTheme() async {  // 👈 Fix for main.dart
-    final prefs = await SharedPreferences.getInstance();
-    int? index = prefs.getInt('selected_theme');
-    if (index != null && index >= 0 && index < FiinnyTheme.values.length) {
-      _theme = FiinnyTheme.values[index];
-      // Don't notifyListeners here, since it will be before runApp.
+  Future<void> loadTheme() async {
+    await _syncThemeFromRemote(FirebaseAuth.instance.currentUser, notify: false);
+  }
+
+  Future<void> _syncThemeFromRemote(User? user, {bool notify = true}) async {
+    if (user == null) {
+      if (_theme != FiinnyTheme.fresh) {
+        _theme = FiinnyTheme.fresh;
+        if (notify) notifyListeners();
+      }
+      return;
+    }
+
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final key = doc.data()?['selectedTheme'];
+      if (key is String) {
+        final match = FiinnyTheme.values.firstWhere(
+          (t) => t.name == key,
+          orElse: () => _theme,
+        );
+        if (match != _theme) {
+          _theme = match;
+          if (notify) notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint('Theme sync failed: $e');
+    }
+  }
+
+  void setTheme(FiinnyTheme newTheme) async {
+    if (_theme == newTheme) return;
+    _theme = newTheme;
+    notifyListeners();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set({'selectedTheme': newTheme.name}, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Theme persist failed: $e');
     }
   }
 
@@ -63,5 +105,11 @@ class ThemeProvider extends ChangeNotifier {
     } else {
       setTheme(FiinnyTheme.midnight);
     }
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
   }
 }
