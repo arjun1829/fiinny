@@ -143,7 +143,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     // Safe to call more than once; AdService guards & reloads creative as needed.
     // (If you already init at app start, this is still harmless.)
     // ignore: discarded_futures
-    AdService.I.init();
+    AdService.initLater();
 
     _listenToData();
   }
