@@ -8,8 +8,6 @@ import 'package:lifemap/screens/welcome_screen.dart';
 import 'package:lifemap/screens/onboarding_screen.dart';
 import 'package:lifemap/screens/main_nav_screen.dart';
 
-import '../shims/shared_prefs_shim.dart';
-
 // Push bootstrap + prefs (push init is orchestrated centrally in main.dart)
 import 'package:lifemap/services/push/push_bootstrap.dart';
 import 'package:lifemap/services/push/notif_prefs_service.dart';
@@ -23,7 +21,6 @@ class LauncherScreen extends StatefulWidget {
 }
 
 class _LauncherScreenState extends State<LauncherScreen> {
-  bool _booted = false;
   bool _navigated = false;
   StreamSubscription<User?>? _authSub;
   Timer? _watchdog;
@@ -35,23 +32,15 @@ class _LauncherScreenState extends State<LauncherScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
 
-      // Signal that at least one frame has been rendered so permission sheets
-      // (e.g. iOS push alert) don't have to wait for the full navigation stack
-      // before showing up. This keeps prompts snappy without risking the blank
-      // surface issue we saw when triggering them during the very first frame.
-      FirstSurfaceGate.markReady();
-
-      setState(() => _booted = true);
-
-      final prefs = await SharedPreferences.getInstance();
-      if (!mounted) return;
-
-      final seenOnboarding = prefs.getBool('seen_onboarding') ?? false;
-      if (!seenOnboarding) {
-        debugPrint('[Launcher] First launch → WelcomeScreen');
-        _go(const WelcomeScreen());
-        return;
-      }
+      // If navigation fails for some reason (e.g. network stall) make sure the
+      // push bootstrap does not wait forever. We delay the mark so the first
+      // permission prompt cannot appear until after we've had a chance to move
+      // away from the splash screen.
+      Future<void>.delayed(const Duration(seconds: 4), () {
+        if (mounted && !_navigated) {
+          FirstSurfaceGate.markReady();
+        }
+      });
 
       _startWatchdog();
 
