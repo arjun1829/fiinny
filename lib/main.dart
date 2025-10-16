@@ -9,11 +9,21 @@ import 'firebase_options.dart';
 // First visible screen (keep as our current entry)
 import 'screens/welcome_screen.dart';
 
+// Toggle from CI: --dart-define=SAFE_MODE=true
+const bool SAFE_MODE = bool.fromEnvironment('SAFE_MODE', defaultValue: true);
 const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: true);
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (SAFE_MODE) {
+    runApp(const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: SafeModeScreen(),
+    ));
+    return;
+  }
 
   final tracer = _StartupTracer();
   FlutterError.onError = (details) {
@@ -121,4 +131,21 @@ class _StartupTracer {
 
 extension _TakeLast on List<String> {
   List<String> takeLast(int n) => skip(length > n ? length - n : 0).toList();
+}
+
+class SafeModeScreen extends StatelessWidget {
+  const SafeModeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: Colors.white,
+      body: Center(
+        child: Text(
+          'SAFE MODE: Flutter engine is running',
+          style: TextStyle(fontSize: 18),
+        ),
+      ),
+    );
+  }
 }
