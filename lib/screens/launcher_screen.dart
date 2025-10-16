@@ -27,6 +27,7 @@ class _LauncherScreenState extends State<LauncherScreen> {
   bool _navigated = false;
   StreamSubscription<User?>? _authSub;
   Timer? _watchdog;
+  Timer? _firstSurfaceFallback;
 
   @override
   void initState() {
@@ -34,6 +35,18 @@ class _LauncherScreenState extends State<LauncherScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+
+      // Start a gentle fallback timer in case navigation takes unusually long.
+      // This ensures we don't block push permission prompts forever on slower
+      // devices while still preferring to mark the first surface ready only
+      // after we've transitioned away from the launcher splash.
+      _firstSurfaceFallback?.cancel();
+      _firstSurfaceFallback = Timer(const Duration(seconds: 2), () {
+        if (!mounted || FirstSurfaceGate.isReady) return;
+        debugPrint('[Launcher] First surface fallback → markReady()');
+        FirstSurfaceGate.markReady();
+      });
+
       setState(() => _booted = true);
 
       final prefs = await SharedPreferences.getInstance();
@@ -197,12 +210,16 @@ class _LauncherScreenState extends State<LauncherScreen> {
     } else {
       FirstSurfaceGate.markReady();
     }
+
+    _firstSurfaceFallback?.cancel();
+    _firstSurfaceFallback = null;
   }
 
   @override
   void dispose() {
     _watchdog?.cancel();
     _authSub?.cancel();
+    _firstSurfaceFallback?.cancel();
     super.dispose();
   }
 

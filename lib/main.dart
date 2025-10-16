@@ -1,5 +1,6 @@
 // lib/main.dart
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -38,6 +39,8 @@ import 'core/ads/ad_service.dart';
 
 // Global navigator key (for deeplinks / notif taps)
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
+bool _debugCrashlyticsSmokeTestSent = false;
 
 // ✅ Keep ONLY ONE main()
 Future<void> main() async {
@@ -106,18 +109,32 @@ Future<void> _configureCrashlytics() async {
 
   try {
     final crashlytics = FirebaseCrashlytics.instance;
-    await crashlytics.setCrashlyticsCollectionEnabled(!kDebugMode);
+    await crashlytics.setCrashlyticsCollectionEnabled(true);
+    crashlytics.log('Fiinny boot ok ${DateTime.now().toIso8601String()}');
 
     FlutterError.onError = (details) {
       FlutterError.presentError(details);
       crashlytics.recordFlutterFatalError(details);
     };
 
-    final dispatcher = WidgetsBinding.instance.platformDispatcher;
-    dispatcher.onError = (error, stack) {
+    PlatformDispatcher.instance.onError = (error, stack) {
       crashlytics.recordError(error, stack, fatal: true);
-      return false;
+      return true;
     };
+
+    assert(() {
+      if (!_debugCrashlyticsSmokeTestSent) {
+        _debugCrashlyticsSmokeTestSent = true;
+        unawaited(
+          crashlytics.recordError(
+            Exception('Test non-fatal from Fiinny (verify Crashlytics)'),
+            StackTrace.current,
+            reason: 'debug smoke test',
+          ),
+        );
+      }
+      return true;
+    }());
   } catch (error, stackTrace) {
     debugPrint('[main] Crashlytics setup failed: $error\n$stackTrace');
   }
