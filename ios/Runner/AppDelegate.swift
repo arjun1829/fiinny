@@ -7,12 +7,28 @@ import UserNotifications
 @main
 @objc class AppDelegate: FlutterAppDelegate, MessagingDelegate {
 
+  // ✅ Minimal pre-window so delegate.window is never nil during launch.
+  // This avoids rare UIKit/plugin traps on iOS 17/18.
+  private func installPreWindow() {
+    if self.window == nil {
+      let w = UIWindow(frame: UIScreen.main.bounds)
+      w.backgroundColor = .white
+      // A blank VC; Flutter will replace once the engine mounts.
+      w.rootViewController = UIViewController()
+      w.makeKeyAndVisible()
+      self.window = w
+      NSLog("✅ Pre-window installed")
+    }
+  }
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
 
-    // Configure Firebase from bundled plist if present; else default.
+    installPreWindow()
+
+    // ✅ Configure Firebase from bundled plist if present; else default.
     if FirebaseApp.app() == nil {
       if let filePath = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
          let options = FirebaseOptions(contentsOfFile: filePath) {
@@ -26,6 +42,7 @@ import UserNotifications
 
     GeneratedPluginRegistrant.register(with: self)
 
+    // Safe push wiring; no prompt here.
     UNUserNotificationCenter.current().delegate = self
     Messaging.messaging().delegate = self
 
@@ -48,7 +65,6 @@ import UserNotifications
     NSLog("❌ APNs registration failed: \(error.localizedDescription)")
   }
 
-  // Foreground notification presentation
   @available(iOS 10.0, *)
   override func userNotificationCenter(
     _ center: UNUserNotificationCenter,
@@ -59,7 +75,6 @@ import UserNotifications
     else { completionHandler([.alert, .sound, .badge]) }
   }
 
-  // Taps on notifications
   @available(iOS 10.0, *)
   override func userNotificationCenter(
     _ center: UNUserNotificationCenter,

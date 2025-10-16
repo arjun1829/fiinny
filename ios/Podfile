@@ -21,8 +21,7 @@ end
 require File.expand_path('packages/flutter_tools/bin/podhelper', flutter_root)
 
 target 'Runner' do
-  use_frameworks! :linkage => :static   # ✅ keep
-  # ❌ do NOT use: use_modular_headers!
+  use_frameworks! :linkage => :static
   flutter_install_all_ios_pods(File.dirname(File.realpath(__FILE__)))
 end
 
