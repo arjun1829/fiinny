@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'ad_ids.dart';
 
+const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: true);
+
 /// Simple, session-only caps (no SharedPreferences).
 class AdService {
   AdService._();
@@ -39,6 +41,15 @@ class AdService {
         _inFlightInit = null;
       }
     });
+  }
+
+  static Future<void> initLater() async {
+    if (kDiagBuild && Platform.isIOS) {
+      debugPrint('[AdService] Skipping ads init for diagnostic iOS build.');
+      return;
+    }
+
+    await AdService.I.init();
   }
 
   Future<void> _initializeInternal() async {

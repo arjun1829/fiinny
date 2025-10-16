@@ -13,6 +13,7 @@ import '../services/goal_service.dart';
 import '../services/loan_service.dart';
 import '../services/asset_service.dart';
 import '../services/fiinny_brain_service.dart';
+import '../services/notification_service.dart';
 import '../widgets/smart_insights_card.dart';
 import '../widgets/insight_feed_card.dart';
 import '../widgets/smart_nudge_widget.dart';
@@ -68,6 +69,7 @@ import 'package:lifemap/screens/subs_bills/subs_bills_screen.dart';
 // Adds Imports
 import 'package:lifemap/core/ads/adaptive_banner.dart';
 import 'package:lifemap/core/ads/ad_ids.dart';
+import '../core/ads/ad_service.dart';
 
 import '../core/notifications/local_notifications.dart'
     show SystemRecurringLocalScheduler;
@@ -154,6 +156,12 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     });
 
     _wireLiveCounters(); // 🔴 start Firestore listeners
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await NotificationService.initFull();
+      await AdService.initLater();
+    });
   }
 
 
