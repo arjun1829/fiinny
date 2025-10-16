@@ -48,7 +48,7 @@
   <key>UIApplicationStateRestorationEnabled</key><false/>
 
   <!-- Status bar -->
-  <key>UIStatusBarHidden</key><true/>
+  <key>UIStatusBarHidden</key><false/>
   <key>UIViewControllerBasedStatusBarAppearance</key><false/>
 
   <!-- Keep Firebase delegate proxy ON unless you manually forward everything -->
