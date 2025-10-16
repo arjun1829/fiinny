@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'auth_gate.dart';
+import '../services/notification_service.dart';
 
 // ---- Mint colors tuned to match the artwork ----
 const kMintBase = Color(0xFF21B9A3); // lighter mint
@@ -64,7 +65,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     super.initState();
     _progressCtl = AnimationController(vsync: this, duration: _kAutoInterval);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await NotificationService.requestPermissionLight();
       for (final d in _onboardData) {
         precacheImage(AssetImage(d['image']!), context);
       }
