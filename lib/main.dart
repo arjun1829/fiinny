@@ -10,7 +10,7 @@ import 'firebase_options.dart';
 import 'screens/welcome_screen.dart';
 
 // Toggle from CI: --dart-define=SAFE_MODE=true
-const bool SAFE_MODE = bool.fromEnvironment('SAFE_MODE', defaultValue: true);
+const bool SAFE_MODE = bool.fromEnvironment('SAFE_MODE', defaultValue: false);
 const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: true);
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
