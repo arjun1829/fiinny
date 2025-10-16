@@ -20,6 +20,11 @@
   <key>LSRequiresIPhoneOS</key><true/>
   <key>UILaunchStoryboardName</key><string>LaunchScreen</string>
 
+  <!-- Verified launch + status configuration -->
+  <key>UIApplicationStateRestorationEnabled</key><false/>
+  <key>UIStatusBarHidden</key><false/>
+  <key>UIViewControllerBasedStatusBarAppearance</key><false/>
+
   <!-- Orientation -->
   <key>UISupportedInterfaceOrientations</key>
   <array>
@@ -45,11 +50,6 @@
   <!-- Performance / input -->
   <key>CADisableMinimumFrameDurationOnPhone</key><true/>
   <key>UIApplicationSupportsIndirectInputEvents</key><true/>
-  <key>UIApplicationStateRestorationEnabled</key><false/>
-
-  <!-- Status bar -->
-  <key>UIStatusBarHidden</key><false/>
-  <key>UIViewControllerBasedStatusBarAppearance</key><false/>
 
   <!-- Keep Firebase delegate proxy ON unless you manually forward everything -->
   <key>FirebaseAppDelegateProxyEnabled</key><true/>
