@@ -4,8 +4,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../shims/shared_prefs_shim.dart';
-import '../theme_provider.dart';
 import 'auth_gate.dart';
 
 // ---- Mint colors tuned to match the artwork ----
@@ -118,13 +116,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     });
   }
 
-  Future<void> _markOnboardingSeen() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('seen_onboarding', true);
-  }
-
   void _openAuth() async {
-    await _markOnboardingSeen();
     if (!mounted) return;
     HapticFeedback.mediumImpact();
     Navigator.pushReplacement(

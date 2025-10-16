@@ -19,7 +19,7 @@ It helps users track income, expenses, financial goals, insights, and much more.
 - Flutter 3.22.6
 - Firebase Auth & Firestore
 - Local Notifications (`flutter_local_notifications`)
-- SQLite & SharedPreferences
+- SQLite & Firestore-backed settings/cache
 - Glassmorphism UI with animated charts
 
 ## 🧪 Run the App
