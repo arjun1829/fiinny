@@ -7,13 +7,12 @@ import UserNotifications
 @main
 @objc class AppDelegate: FlutterAppDelegate, MessagingDelegate {
 
-  // ✅ Minimal pre-window so delegate.window is never nil during launch.
-  // This avoids rare UIKit/plugin traps on iOS 17/18.
+  private var flutterEngine: FlutterEngine?
+
   private func installPreWindow() {
     if self.window == nil {
       let w = UIWindow(frame: UIScreen.main.bounds)
       w.backgroundColor = .white
-      // A blank VC; Flutter will replace once the engine mounts.
       w.rootViewController = UIViewController()
       w.makeKeyAndVisible()
       self.window = w
@@ -28,28 +27,46 @@ import UserNotifications
 
     installPreWindow()
 
-    // ✅ Configure Firebase from bundled plist if present; else default.
+    // Add a native overlay label so we can SEE native boot
+    let overlayLabel = UILabel(
+      frame: CGRect(x: 20, y: 60, width: UIScreen.main.bounds.width - 40, height: 24)
+    )
+    overlayLabel.text = "Native boot OK – waiting for Flutter…"
+    overlayLabel.textAlignment = .center
+    overlayLabel.textColor = .black
+    self.window?.addSubview(overlayLabel)
+
     if FirebaseApp.app() == nil {
-      if let filePath = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
-         let options = FirebaseOptions(contentsOfFile: filePath) {
-        FirebaseApp.configure(options: options)
-        NSLog("✅ Firebase configured from GoogleService-Info.plist")
+      if let file = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+         let opts = FirebaseOptions(contentsOfFile: file) {
+        FirebaseApp.configure(options: opts)
+        NSLog("✅ Firebase from plist")
       } else {
         FirebaseApp.configure()
-        NSLog("ℹ️ Firebase configured with default options")
+        NSLog("ℹ️ Firebase default")
       }
     }
 
-    GeneratedPluginRegistrant.register(with: self)
+    let engine = FlutterEngine(name: "fiinny_engine", project: nil)
+    self.flutterEngine = engine
+    engine.run() // Dart entrypoint 'main'
+    GeneratedPluginRegistrant.register(with: engine)
 
-    // Safe push wiring; no prompt here.
+    let controller = FlutterViewController(engine: engine, nibName: nil, bundle: nil)
+    self.window?.rootViewController = controller
+    self.window?.makeKeyAndVisible()
+
+    overlayLabel.text = "Flutter attached ✅"
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+      overlayLabel.removeFromSuperview()
+    }
+
     UNUserNotificationCenter.current().delegate = self
     Messaging.messaging().delegate = self
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  // APNs → FCM
   override func application(
     _ application: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
@@ -80,7 +97,5 @@ import UserNotifications
     _ center: UNUserNotificationCenter,
     didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
-  ) {
-    completionHandler()
-  }
+  ) { completionHandler() }
 }
