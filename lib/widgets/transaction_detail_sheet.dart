@@ -44,7 +44,7 @@ class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
   void initState() {
     super.initState();
     // ensure the GMA SDK is ready (safe to call more than once)
-    AdService.I.init();
+    AdService.initLater();
 
     if (widget.interstitialOnOpen) {
       AdService.I.maybeShowInterstitial(
