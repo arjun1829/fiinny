@@ -40,7 +40,7 @@ class DefaultFirebaseOptions {
     appId: '1:1085936196639:android:b74ffa7e9ded49e616492a',
     messagingSenderId: '1085936196639',
     projectId: 'lifemap-72b21',
-    storageBucket: 'lifemap-72b21.appspot.com',
+    storageBucket: 'lifemap-72b21.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
