@@ -1,3 +1,2 @@
 *.mp4 filter=lfs diff=lfs merge=lfs -text
-
 lib/assets/videos/your_welcome.mp4 -filter -diff -merge -text
