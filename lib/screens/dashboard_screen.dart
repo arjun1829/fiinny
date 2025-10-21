@@ -1921,19 +1921,22 @@ class _AnimatedMintBackground extends StatelessWidget {
   const _AnimatedMintBackground({super.key});
   @override
   Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0.0, end: 1.0),
-      duration: const Duration(seconds: 2),
-      builder: (context, v, _) => Container(
-        decoration: BoxDecoration(
-          gradient: RadialGradient(
-            colors: [
-              Colors.tealAccent.withOpacity(0.2),
-              Colors.teal.withOpacity(0.1),
-              Colors.white.withOpacity(0.6),
-            ],
-            center: Alignment.topLeft,
-            radius: 0.8 + 0.4 * v,
+    return IgnorePointer(
+      ignoring: true,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0.0, end: 1.0),
+        duration: const Duration(seconds: 2),
+        builder: (context, v, _) => Container(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              colors: [
+                Colors.tealAccent.withOpacity(0.2),
+                Colors.teal.withOpacity(0.1),
+                Colors.white.withOpacity(0.6),
+              ],
+              center: Alignment.topLeft,
+              radius: 0.8 + 0.4 * v,
+            ),
           ),
         ),
       ),
