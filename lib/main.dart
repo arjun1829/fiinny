@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'firebase_options.dart';
+import 'routes.dart';
 
 // First visible screen (keep as our current entry)
 import 'screens/welcome_screen.dart';
@@ -84,6 +85,8 @@ class _DiagAppState extends State<_DiagApp> {
     return MaterialApp(
       navigatorKey: _DiagApp.navKey,
       debugShowCheckedModeBanner: false,
+      routes: appRoutes,
+      onGenerateRoute: appOnGenerateRoute,
       home: Stack(
         children: [
           const Scaffold(
