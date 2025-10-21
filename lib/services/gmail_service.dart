@@ -10,6 +10,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/expense_item.dart';
 import '../models/income_item.dart';
 
+// 🔗 LLM config + extractor (LLM-first)
+import '../config/app_config.dart';
+import './ai/tx_extractor.dart';
+
 import './ingest_index_service.dart';
 import './tx_key.dart';
 import './ingest_state_service.dart';
@@ -17,7 +21,6 @@ import './ingest_job_queue.dart';
 import './ingest/cross_source_reconcile.dart';   // merge
 import './merchants/merchant_alias_service.dart'; // alias normalize
 import './ingest_filters.dart' as filt;            // ✅ stronger filtering helpers
-
 import './categorization/category_rules.dart';
 import './recurring/recurring_engine.dart';
 
@@ -563,18 +566,68 @@ class GmailService {
     if (direction == null) return null;
     if (amount == null || amount <= 0) return null;
 
-    // Merchant extraction & normalization (smarter)
+    // Merchant extraction & normalization (initial)
     final merchantRaw = _guessMerchantSmart(combined) ?? upiSender;
-
-    final merchantNorm = MerchantAlias.normalizeFromContext(
+    var merchantNorm = MerchantAlias.normalizeFromContext(
       raw: merchantRaw,
       upiVpa: upiVpa,
       emailDomain: emailDomain,
     );
-    final merchantKey = (merchantNorm.isNotEmpty
-        ? merchantNorm
-        : (emailDomain ?? last4 ?? bank ?? 'UNKNOWN'))
+    var merchantKey = (merchantNorm.isNotEmpty
+            ? merchantNorm
+            : (emailDomain ?? last4 ?? bank ?? 'UNKNOWN'))
         .toUpperCase();
+
+    // ===== LLM-FIRST categorization =====
+    final preview = _preview(_maskSensitive(combined));
+    String finalCategory = 'Other';
+    String finalSubcategory = '';
+    double finalConfidence = 0.0;
+    String categorySource = 'llm';
+    List<String> rulesTags = const [];
+
+    bool gotLlm = false;
+    if (AiConfig.llmOn) {
+      try {
+        final labels = await TxExtractor.labelUnknown([
+          TxRaw(
+            amount: amount,
+            merchant: merchantNorm.isNotEmpty
+                ? merchantNorm
+                : (merchantRaw ?? 'MERCHANT'),
+            desc: preview,
+            date: msgDate.toIso8601String(),
+          )
+        ]);
+
+        if (labels.isNotEmpty) {
+          final l = labels.first;
+          if (l.category.isNotEmpty) {
+            finalCategory = l.category;
+            finalConfidence = l.confidence;
+            gotLlm = true;
+          }
+          if (l.merchantNorm.isNotEmpty) {
+            merchantNorm = l.merchantNorm;
+            merchantKey = merchantNorm.toUpperCase();
+          }
+        }
+      } catch (e) {
+        _log('LLM error: $e');
+      }
+    }
+
+    // Fallback to rules only if LLM didn't produce a label
+    if (!gotLlm) {
+      categorySource = 'rules';
+      try {
+        final cat = CategoryRules.categorizeMerchant(combined, merchantKey);
+        finalCategory = cat.category;
+        finalSubcategory = cat.subcategory;
+        finalConfidence = cat.confidence;
+        rulesTags = cat.tags;
+      } catch (_) {}
+    }
 
     // txKey + claim for idempotency
     final key = buildTxKey(
@@ -594,7 +647,7 @@ class GmailService {
       'threadId': msg.threadId,
       'internalDateMs': int.tryParse(msg.internalDate ?? '0'),
       'raw': _maskSensitive(combined),
-      'rawPreview': _preview(combined),
+      'rawPreview': preview,
       'emailDomain': emailDomain,
       'when': Timestamp.fromDate(DateTime.now()),
       'txKey': key,
@@ -608,61 +661,61 @@ class GmailService {
       'instrument': instrument,
     };
 
-  String? existingDocId;
-  if (RECONCILE_POLICY != ReconcilePolicy.off) {
-  existingDocId = await CrossSourceReconcile.maybeMerge(
-  userId: userId,
-  direction: direction,
-  amount: amount,
-  timestamp: msgDate,
-  cardLast4: last4,
-  merchantKey: merchantKey,
-  txKey: key,
-  upiVpa: upiVpa,
-  issuerBank: bank,
-  instrument: instrument,
-  network: network,
-    amountTolerancePct: (amountFx != null || isIntl) ? 2.0 : 0.5,
-    newSourceMeta: sourceMeta,
-  );
-  }
+    String? existingDocId;
+    if (RECONCILE_POLICY != ReconcilePolicy.off) {
+      existingDocId = await CrossSourceReconcile.maybeMerge(
+        userId: userId,
+        direction: direction,
+        amount: amount,
+        timestamp: msgDate,
+        cardLast4: last4,
+        merchantKey: merchantKey,
+        txKey: key,
+        upiVpa: upiVpa,
+        issuerBank: bank,
+        instrument: instrument,
+        network: network,
+        amountTolerancePct: (amountFx != null || isIntl) ? 2.0 : 0.5,
+        newSourceMeta: sourceMeta,
+      );
+    }
 
-  if (existingDocId != null) {
-  if (RECONCILE_POLICY == ReconcilePolicy.mergeEnrich) {
-  final col = (direction == 'debit') ? 'expenses' : 'incomes';
-  final ref = FirebaseFirestore.instance
-      .collection('users').doc(userId)
-      .collection(col).doc(existingDocId);
+    if (existingDocId != null) {
+      if (RECONCILE_POLICY == ReconcilePolicy.mergeEnrich) {
+        final col = (direction == 'debit') ? 'expenses' : 'incomes';
+        final ref = FirebaseFirestore.instance
+            .collection('users').doc(userId)
+            .collection(col).doc(existingDocId);
 
-  await ref.set({
-  // mark that both SMS and Gmail contributed
-  'ingestSources': FieldValue.arrayUnion(['gmail']),
+        await ref.set({
+          // mark that both SMS and Gmail contributed
+          'ingestSources': FieldValue.arrayUnion(['gmail']),
 
-  // add/refresh a lightweight gmail record
-  'sourceRecord.gmail': {
-  'gmailId': msg.id,
-  'threadId': msg.threadId,
-  'internalDateMs': int.tryParse(msg.internalDate ?? '0'),
-  'rawPreview': _preview(combined),
-  'emailDomain': emailDomain,
-  'txKey': key,
-  'when': Timestamp.fromDate(DateTime.now()),
-  },
+          // add/refresh a lightweight gmail record
+          'sourceRecord.gmail': {
+            'gmailId': msg.id,
+            'threadId': msg.threadId,
+            'internalDateMs': int.tryParse(msg.internalDate ?? '0'),
+            'rawPreview': preview,
+            'emailDomain': emailDomain,
+            'txKey': key,
+            'when': Timestamp.fromDate(DateTime.now()),
+          },
 
-  // optional breadcrumbs
-  'mergeHints': {
-  'gmailMatched': true,
-  'gmailTxKey': key,
-  },
-  }, SetOptions(merge: true));
-  }
+          // optional breadcrumbs
+          'mergeHints': {
+            'gmailMatched': true,
+            'gmailTxKey': key,
+          },
+        }, SetOptions(merge: true));
+      }
 
-  _log('merge(${direction}) -> ${existingDocId} [policy: $RECONCILE_POLICY]');
-  return msgDate;
-  }
+      _log('merge(${direction}) -> ${existingDocId} [policy: $RECONCILE_POLICY]');
+      return msgDate;
+    }
 
 
-  final note = _cleanNoteSimple(combined);
+    final note = _cleanNoteSimple(combined);
     final currency = (amountFx?['currency'] as String?) ?? 'INR';
     final isIntlResolved = isIntl || (amountFx != null && currency.toUpperCase() != 'INR');
     final counterparty = _deriveCounterparty(
@@ -717,24 +770,18 @@ class GmailService {
         'merchantKey': merchantKey,
         if (merchantNorm.isNotEmpty) 'merchant': merchantNorm,
         'txKey': key,
+        'category': finalCategory,
+        'subcategory': finalSubcategory,
+        'categoryConfidence': finalConfidence,
+        'categorySource': categorySource,
+        'tags': [...(e.tags ?? const []), ...rulesTags],
+      }, SetOptions(merge: true));
+
+      await expRef.set({
+        'ingestSources': FieldValue.arrayUnion(['gmail']),
       }, SetOptions(merge: true));
 
       try {
-        final cat = CategoryRules.categorizeMerchant(combined, merchantKey);
-        await expRef.set({
-          'category': cat.category,
-          'subcategory': cat.subcategory,
-          'categoryConfidence': cat.confidence,
-          'tags': [...(e.tags ?? const []), ...cat.tags],
-        }, SetOptions(merge: true));
-      } catch (_) {}
-
-        await expRef.set({
-        'ingestSources': FieldValue.arrayUnion(['gmail']),
-        }, SetOptions(merge: true));
-
-
-  try {
         await RecurringEngine.maybeAttachToSubscription(userId, expRef.id);
         await RecurringEngine.maybeAttachToLoan(userId, expRef.id);
         await RecurringEngine.markPaidIfInWindow(userId, expRef.id);
@@ -799,13 +846,18 @@ class GmailService {
         'merchantKey': merchantKey,
         if (merchantNorm.isNotEmpty) 'merchant': merchantNorm,
         'txKey': key,
+        'category': finalCategory,
+        'subcategory': finalSubcategory,
+        'categoryConfidence': finalConfidence,
+        'categorySource': categorySource,
+        'tags': [...(i.tags ?? const []), ...rulesTags],
       }, SetOptions(merge: true));
+
       await incRef.set({
-      'ingestSources': FieldValue.arrayUnion(['gmail']),
+        'ingestSources': FieldValue.arrayUnion(['gmail']),
       }, SetOptions(merge: true));
 
-
-  try {
+      try {
         await IngestJobQueue.enqueue(
           userId: userId,
           txKey: key,
