@@ -42,6 +42,7 @@ import '../services/sync/sync_coordinator.dart';
 // Use your **old** Gmail service (the snippet-based one you pasted)
 import '../services/gmail_service.dart' as OldGmail;
 import '../widgets/goals_summary_card.dart';
+import '../widgets/add_goal_dialog.dart';
 import '../services/notif_prefs_service.dart';
 
 // Fiinnny Brain cards
@@ -61,10 +62,6 @@ import '../widgets/forex_findings_sheet.dart';
 import '../screens/review_inbox_screen.dart';
 import '../services/review_queue_service.dart';
 import '../models/ingest_draft_model.dart';
-
-import 'package:lifemap/screens/widets/subs_bills_screen.dart';
-
-import 'package:lifemap/screens/subs_bills/subs_bills_screen.dart';
 
 // Adds Imports
 import 'package:lifemap/core/ads/adaptive_banner.dart';
@@ -993,8 +990,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           ),
           // 👇 Profile Avatar on right
           GestureDetector(
-            onTap: () => Navigator.pushNamed(context, '/profile',
-                arguments: widget.userPhone),
+            onTap: () {
+              Navigator.pushNamed(context, '/profile', arguments: widget.userPhone);
+            },
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: FutureBuilder<DocumentSnapshot>(
@@ -1193,9 +1191,13 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                     _recomputeAutopayCount(); // 🔴
                                   }
                                 },
-                                onViewAllTap: () => Navigator.pushNamed(
-                                    context, '/transactionCount',
-                                    arguments: widget.userPhone),
+                                onViewAllTap: () {
+                                  Navigator.pushNamed(
+                                    context,
+                                    '/transactionCount',
+                                    arguments: widget.userPhone,
+                                  );
+                                },
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -1222,9 +1224,13 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                     _recomputeAutopayCount(); // 🔴
                                   }
                                 },
-                                onViewAllTap: () => Navigator.pushNamed(
-                                    context, '/transactionAmount',
-                                    arguments: widget.userPhone),
+                                onViewAllTap: () {
+                                  Navigator.pushNamed(
+                                    context,
+                                    '/transactionAmount',
+                                    arguments: widget.userPhone,
+                                  );
+                                },
                               ),
                             ),
                           ],
@@ -1300,7 +1306,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(16),
                                     onTap: () async {
-                                      final changed = await Navigator.pushNamed(
+                                      final changed = await Navigator.pushNamed<bool>(
                                         context,
                                         '/loans',
                                         arguments: {'userId': widget.userPhone},
@@ -1355,7 +1361,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                         }
                                       },
                                       onAddLoan: () async {
-                                        final added = await Navigator.pushNamed(
+                                        final added = await Navigator.pushNamed<bool>(
                                           context,
                                           '/addLoan',
                                           arguments: widget.userPhone,
@@ -1376,8 +1382,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(16),
                                     onTap: () async {
-                                      await Navigator.pushNamed(context, '/portfolio'); // open new list
-                                      await _loadPortfolioTotals();                     // refresh totals on return
+                                      await Navigator.pushNamed(context, '/portfolio');
+                                      await _loadPortfolioTotals();
                                     },
                                     child: AssetsSummaryCard(
                                       userId: widget.userPhone,
@@ -1404,13 +1410,10 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(16),
                                     onTap: () async {
-                                      await Navigator.push(
+                                      await Navigator.pushNamed(
                                         context,
-                                        MaterialPageRoute(
-                                          builder: (_) => SubsBillsScreen(
-                                            userPhone: widget.userPhone,
-                                          ),
-                                        ),
+                                        '/subs-bills',
+                                        arguments: widget.userPhone,
                                       );
                                       await _initDashboard();
                                     },
@@ -1464,7 +1467,11 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(16),
                                     onTap: () async {
-                                      await Navigator.pushNamed(context, '/goals', arguments: widget.userPhone);
+                                      await Navigator.pushNamed(
+                                        context,
+                                        '/goals',
+                                        arguments: widget.userPhone,
+                                      );
                                       await _initDashboard();
                                     },
                                     child: GoalsSummaryCard(
@@ -1472,8 +1479,17 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                       goalCount: goals.length,
                                       totalGoalAmount: goals.fold(0.0, (sum, g) => sum + g.targetAmount),
                                       onAddGoal: () async {
-                                        await Navigator.pushNamed(context, '/addGoal', arguments: widget.userPhone);
-                                        await _initDashboard();
+                                        final added = await showDialog<bool>(
+                                          context: context,
+                                          builder: (ctx) => AddGoalDialog(
+                                            onAdd: (goal) {
+                                              GoalService().addGoal(widget.userPhone, goal);
+                                            },
+                                          ),
+                                        );
+                                        if (added == true) {
+                                          await _initDashboard();
+                                        }
                                       },
                                     ),
                                   ),
@@ -1904,7 +1920,7 @@ class _MintFab extends StatelessWidget {
       tooltip: "Add Transaction",
       child: const Icon(Icons.add, size: 29),
       onPressed: () async {
-        final added = await Navigator.pushNamed(
+        final added = await Navigator.pushNamed<bool>(
           context,
           '/add',
           arguments: userPhone,
