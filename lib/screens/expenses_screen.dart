@@ -336,6 +336,16 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                               ),
                             ),
                             const Spacer(),
+                            IconButton(
+                              icon: const Icon(Icons.swap_horiz_rounded,
+                                  color: Colors.teal, size: 26),
+                              tooltip: 'Transactions',
+                              onPressed: () => Navigator.pushNamed(
+                                context,
+                                '/transactions',
+                                arguments: widget.userPhone,
+                              ),
+                            ),
                             Tooltip(
                               message: "Calendar View",
                               child: IconButton(
