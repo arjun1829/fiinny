@@ -39,8 +39,8 @@ import 'screens/notification_prefs_screen.dart'; // ✅ correct import
 // ---------- Friend recurring (NEW route target) ----------
 import 'details/recurring/friend_recurring_screen.dart';
 
-import 'package:flutter/material.dart';
-import '../screens/subs_bills/subs_bills_screen.dart';
+import 'screens/subs_bills/subs_bills_screen.dart';
+import 'screens/tx_day_details_screen.dart';
 
 /// Static routes that don't require arguments.
 /// (Do NOT put `/analytics` here because it requires a userPhone.)
@@ -82,17 +82,31 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
         } else if (args is Map<String, dynamic>) {
           if (args['userPhone'] is String) {
             userPhone = args['userPhone'] as String;
+          } else if (args['userId'] is String) {
+            userPhone = args['userId'] as String;
           }
         }
         // Derive from FirebaseAuth if not provided
         userPhone ??= FirebaseAuth.instance.currentUser?.phoneNumber ??
-            FirebaseAuth.instance.currentUser?.uid ??
-            '';
+            FirebaseAuth.instance.currentUser?.uid;
         return MaterialPageRoute(
-          builder: (_) => SubscriptionsBillsScreen(userPhone: userPhone!),
+          builder: (_) => SubsBillsScreen(userPhone: userPhone),
           settings: settings,
         );
       }
+
+    case '/tx-day-details':
+      if (args is String) {
+        return MaterialPageRoute(
+          builder: (_) => TxDayDetailsScreen(userPhone: args),
+        );
+      }
+      if (args is Map<String, dynamic> && args['userPhone'] is String) {
+        return MaterialPageRoute(
+          builder: (_) => TxDayDetailsScreen(userPhone: args['userPhone'] as String),
+        );
+      }
+      break;
 
     case '/dashboard':
       if (args is String) {
