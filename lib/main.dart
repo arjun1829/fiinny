@@ -4,11 +4,13 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'routes.dart';
 
 // First visible screen (keep as our current entry)
 import 'screens/welcome_screen.dart';
+import 'themes/theme_provider.dart';
 
 // Toggle from CI: --dart-define=SAFE_MODE=true
 const bool SAFE_MODE = bool.fromEnvironment('SAFE_MODE', defaultValue: false);
@@ -82,22 +84,39 @@ class _DiagAppState extends State<_DiagApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: _DiagApp.navKey,
-      debugShowCheckedModeBanner: false,
-      routes: appRoutes,
-      onGenerateRoute: appOnGenerateRoute,
-      home: Stack(
-        children: [
-          const Scaffold(
-            backgroundColor: Colors.black,
-            body: Center(child: Text('Fiinny is starting…', style: TextStyle(color: Colors.white))),
-          ),
-          Positioned(
-            left: 12, right: 12, bottom: 28,
-            child: _LogCard(lines: widget.tracer.lines),
-          ),
-        ],
+    return ChangeNotifierProvider<ThemeProvider>(
+      create: (_) {
+        final provider = ThemeProvider();
+        unawaited(provider.loadTheme());
+        return provider;
+      },
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) {
+          return MaterialApp(
+            navigatorKey: _DiagApp.navKey,
+            debugShowCheckedModeBanner: false,
+            theme: themeProvider.themeData,
+            routes: appRoutes,
+            onGenerateRoute: appOnGenerateRoute,
+            home: Stack(
+              children: [
+                const Scaffold(
+                  backgroundColor: Colors.black,
+                  body: Center(
+                    child: Text('Fiinny is starting…',
+                        style: TextStyle(color: Colors.white)),
+                  ),
+                ),
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  bottom: 28,
+                  child: _LogCard(lines: widget.tracer.lines),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
