@@ -224,6 +224,16 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     });
   }
 
+  Future<void> _openSubscriptionsAndBills(BuildContext context) async {
+    await Navigator.pushNamed(
+      context,
+      '/subs-bills',
+      arguments: {'userPhone': widget.userPhone},
+    );
+    if (!mounted) return;
+    await _initDashboard();
+  }
+
   // --- recompute derived autopay count for current period filter
   void _recomputeAutopayCount() {
     final list = _filteredExpensesForPeriod(txPeriod);
@@ -916,6 +926,11 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     final filteredExpenses = _filteredExpensesForPeriod(txPeriod);
     final txSummary = _getTxSummaryForPeriod(txPeriod);
     final netWorth = totalAssets - totalLoan;
+    final totalPlans = _activeSubs + _activeSips;
+    final dueLabel = _cardsDue == 1 ? 'bill' : 'bills';
+    final autopayLabel = _autopayCount == 1 ? 'autopay' : 'autopays';
+    final subsLabel = _activeSubs == 1 ? 'subscription' : 'subscriptions';
+    final sipLabel = _activeSips == 1 ? 'SIP' : 'SIPs';
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -1405,50 +1420,76 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           Row(
                             children: [
                               Expanded(
-                                child: Material(
-                                  color: Colors.transparent,
+                                child: Card(
+                                  elevation: 3,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(18)),
                                   child: InkWell(
-                                    borderRadius: BorderRadius.circular(16),
-                                    onTap: () async {
-                                      await Navigator.pushNamed(
-                                        context,
-                                        '/subs-bills',
-                                        arguments: widget.userPhone,
-                                      );
-                                      await _initDashboard();
-                                    },
-                                    child: CustomDiamondCard(
-                                      isDiamondCut: false,
-                                      borderRadius: 16,
-                                      glassGradient: [
-                                        Colors.white.withOpacity(0.23),
-                                        Colors.white.withOpacity(0.09),
-                                      ],
-                                      child: ListTile(
-                                        leading: const Icon(
-                                          Icons.receipt_long_rounded,
-                                          color: Color(0xFF09857a),
-                                          size: 30,
-                                        ),
-                                        title: const Text(
-                                          "Subscriptions & Bills",
-                                          style: TextStyle(
-                                            color: Color(0xFF09857a),
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
+                                    borderRadius: BorderRadius.circular(18),
+                                    onTap: () => _openSubscriptionsAndBills(context),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(13),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  "Subscriptions & Bills",
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.teal[800],
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
+                                              ),
+                                              const Icon(Icons.receipt_long_rounded,
+                                                  color: Color(0xFF09857a)),
+                                            ],
                                           ),
-                                        ),
-                                        subtitle: const Text(
-                                          "Manage recurring, subscriptions, EMIs & reminders",
-                                          style: TextStyle(
-                                            color: Colors.black87,
-                                            fontSize: 13,
+                                          const SizedBox(height: 7),
+                                          Text(
+                                            totalPlans > 0
+                                                ? "$totalPlans active"
+                                                : "No active plans yet",
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 18,
+                                              color: Colors.green[700],
+                                            ),
                                           ),
-                                        ),
-                                        trailing: const Icon(
-                                          Icons.chevron_right_rounded,
-                                          color: Color(0xFF09857a),
-                                        ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            "$_cardsDue $dueLabel due soon • $_autopayCount $autopayLabel",
+                                            style: const TextStyle(fontSize: 13),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  "$_activeSubs $subsLabel • $_activeSips $sipLabel",
+                                                  style: const TextStyle(fontSize: 13),
+                                                ),
+                                              ),
+                                              IconButton(
+                                                icon: const Icon(Icons.add_circle,
+                                                    color: Colors.teal),
+                                                tooltip:
+                                                    "Add subscription or bill",
+                                                onPressed: () async {
+                                                  await _openSubscriptionsAndBills(
+                                                      context);
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -1656,26 +1697,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         .fold(0.0, (a, b) => a + b.amount);
 
     return {"credit": credit, "debit": debit, "net": credit - debit};
-  }
-}
-
-class SubscriptionsBillsScreen extends StatelessWidget {
-  final String userPhone;
-  const SubscriptionsBillsScreen({Key? key, required this.userPhone}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Subscriptions & Bills'),
-      ),
-      body: const Center(
-        child: Text(
-          'Subscriptions & Bills — coming soon',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
-      ),
-    );
   }
 }
 
