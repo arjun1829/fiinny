@@ -1,12 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import '../models/expense_item.dart';
+import '../themes/tokens.dart';
+import '../themes/badge.dart';
+import '../themes/glass_card.dart';
 
 class SubscriptionsReviewSheet extends StatefulWidget {
   final String userId;
   final int daysWindow;
-
-  /// Optional fast-path payload of candidate txns.
   final List<ExpenseItem>? prefetched;
 
   const SubscriptionsReviewSheet({
@@ -22,32 +25,17 @@ class SubscriptionsReviewSheet extends StatefulWidget {
 
 class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
   bool _loading = true;
+  final Map<String, List<ExpenseItem>> _groups = {};
+  final _q = TextEditingController();
+  String _sort = 'count_desc'; // count_desc | amount_desc | newest
+  static final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
-  // simple grouping key
   String _keyFor(ExpenseItem e) {
     final meta = (e.toJson()['brainMeta'] as Map?)?.cast<String, dynamic>();
     final merchant = (meta?['merchant'] as String?) ?? e.label ?? e.category ?? 'Merchant';
     final bucket = ((e.amount / 10).round() * 10).toString();
     return '${merchant.toLowerCase()}|$bucket';
   }
-  void _showInfo(BuildContext ctx, String msg) {
-    showModalBottomSheet(
-      context: ctx,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-        child: Text(msg),
-      ),
-    );
-  }
-
-
-  final Map<String, List<ExpenseItem>> _groups = {};
-  final _q = TextEditingController();
-  String _sort = 'count_desc'; // count_desc | amount_desc | newest
 
   @override
   void initState() {
@@ -66,7 +54,7 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
       for (final e in widget.prefetched!) {
         _groups.putIfAbsent(_keyFor(e), () => []).add(e);
       }
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
       return;
     }
     await _loadFromDb();
@@ -101,31 +89,35 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
     for (final e in items) {
       _groups.putIfAbsent(_keyFor(e), () => []).add(e);
     }
-    setState(() => _loading = false);
+    if (mounted) setState(() => _loading = false);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // entries with basic metadata
     final entries = _groups.entries.map((e) {
       final merchant = e.key.split('|').first;
       final amt = e.value.isEmpty ? 0.0 : e.value.first.amount;
       final count = e.value.length;
-      final newest = e.value.map((x) => x.date).fold<DateTime?>(null, (m, d) => (m == null || d.isAfter(m)) ? d : m) ?? DateTime(2000);
+      final newest = e.value
+              .map((x) => x.date)
+              .fold<DateTime?>(null, (m, d) => (m == null || d.isAfter(m)) ? d : m) ??
+          DateTime(2000);
       return (key: e.key, merchant: merchant, amount: amt, count: count, newest: newest, items: e.value);
     }).toList();
 
-    // filter + sort
     final q = _q.text.trim().toLowerCase();
     var filtered = entries.where((e) => q.isEmpty || e.merchant.toLowerCase().contains(q)).toList();
     filtered.sort((a, b) {
       switch (_sort) {
-        case 'amount_desc': return b.amount.compareTo(a.amount);
-        case 'newest': return b.newest.compareTo(a.newest);
+        case 'amount_desc':
+          return b.amount.compareTo(a.amount);
+        case 'newest':
+          return b.newest.compareTo(a.newest);
         case 'count_desc':
-        default: return b.count.compareTo(a.count);
+        default:
+          return b.count.compareTo(a.count);
       }
     });
 
@@ -135,144 +127,111 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Subscriptions & Auto-pays',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'What is this?',
-                  icon: const Icon(Icons.info_outline, size: 18),
-                  onPressed: () => _showInfo(
-                    context,
-                    'We group recurring-looking debits by merchant & amount bucket. Save a group to track it as a subscription.',
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Close',
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 8, runSpacing: 8,
-              children: [
-                _chip('Groups', '${filtered.length}'),
-                _chip('Window', '${widget.daysWindow}d'),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            // Search + sort row
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _q,
-                    decoration: InputDecoration(
-                      hintText: 'Search merchant',
-                      prefixIcon: const Icon(Icons.search),
-                      isDense: true,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    const Icon(Icons.autorenew_rounded, color: Fx.mintDark),
+                    const SizedBox(width: Fx.s8),
+                    Text('Subscriptions & Auto-pays', style: Fx.title),
+                    const Spacer(),
+                    PillBadge('${filtered.length}', color: Fx.mintDark),
+                    IconButton(
+                      tooltip: 'Close',
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.of(context).maybePop(),
                     ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                PopupMenuButton<String>(
-                  tooltip: 'Sort',
-                  onSelected: (v) => setState(() => _sort = v),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'count_desc', child: Text('Most occurrences')),
-                    PopupMenuItem(value: 'amount_desc', child: Text('Amount (high → low)')),
-                    PopupMenuItem(value: 'newest', child: Text('Newest')),
-                  ],
-                  child: const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: Icon(Icons.sort_rounded),
-                  ),
-                ),
-              ],
-            ),
+                  ]),
+                  const SizedBox(height: Fx.s8),
+                  Wrap(spacing: Fx.s8, runSpacing: Fx.s8, children: [
+                    PillBadge('Window: ${widget.daysWindow}d', color: Fx.mintDark, icon: Icons.schedule_rounded),
+                    if (q.isNotEmpty) PillBadge('Filter: "$q"', color: Fx.mintDark, icon: Icons.filter_alt_rounded),
+                  ]),
+                  const SizedBox(height: Fx.s12),
 
-            const SizedBox(height: 10),
-
-            // List
-            Expanded(
-              child: filtered.isEmpty
-                  ? const Center(child: Text('No recurring-looking groups match your filters.'))
-                  : ListView.separated(
-                itemCount: filtered.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (_, i) {
-                  final e = filtered[i];
-                  return ExpansionTile(
-                    leading: const Icon(Icons.autorenew_rounded, color: Colors.indigo),
-                    title: Text('${_title(e.merchant)} • ₹${e.amount.toStringAsFixed(0)}'),
-                    subtitle: Text('${e.count} occurrence(s) • last ${_ddmmyy(e.newest)}'),
-                    childrenPadding: const EdgeInsets.only(left: 16, right: 8, bottom: 8),
-                    children: [
-                      // occurrences list (max 5 for brevity)
-                      ...e.items.take(5).map((x) => ListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsets.only(left: 8, right: 0),
-                        title: Text('₹${x.amount.toStringAsFixed(0)} • ${_ddmmyy(x.date)}'),
-                        subtitle: Text(x.note, maxLines: 2, overflow: TextOverflow.ellipsis),
-                      )),
-                      if (e.items.length > 5)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8, bottom: 6),
-                          child: Text('+ ${e.items.length - 5} more…',
-                              style: const TextStyle(color: Colors.black54)),
+                  Row(children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _q,
+                        decoration: InputDecoration(
+                          hintText: 'Search merchant',
+                          prefixIcon: const Icon(Icons.search),
+                          isDense: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(Fx.r12)),
                         ),
-                      Row(
-                        children: [
-                          TextButton.icon(
-                            icon: const Icon(Icons.delete_outline_rounded),
-                            label: const Text('Dismiss'),
-                            onPressed: () async => _dismissGroup(e.merchant, e.amount),
-                          ),
-                          const SizedBox(width: 6),
-                          ElevatedButton.icon(
-                            icon: const Icon(Icons.save_rounded),
-                            label: const Text('Confirm / Save'),
-                            onPressed: () async => _saveGroup(e.merchant, e.amount, e.items),
-                          ),
-                        ],
+                        onChanged: (_) => setState(() {}),
                       ),
-                    ],
-                  );
-                },
+                    ),
+                    const SizedBox(width: Fx.s8),
+                    PopupMenuButton<String>(
+                      tooltip: 'Sort',
+                      onSelected: (v) => setState(() => _sort = v),
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'count_desc', child: Text('Most occurrences')),
+                        PopupMenuItem(value: 'amount_desc', child: Text('Amount (high → low)')),
+                        PopupMenuItem(value: 'newest', child: Text('Newest')),
+                      ],
+                      child: const Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: Icon(Icons.sort_rounded),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: Fx.s10),
+
+                  Expanded(
+                    child: filtered.isEmpty
+                        ? const Center(child: Text('No recurring-looking groups match your filters.'))
+                        : ListView.separated(
+                            itemCount: filtered.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (_, i) {
+                              final e = filtered[i];
+                              return ExpansionTile(
+                                leading: const Icon(Icons.autorenew_rounded, color: Colors.indigo),
+                                title: Text('${_title(e.merchant)} • ${_inr.format(e.amount)}'),
+                                subtitle: Text('${e.count} occurrence(s) • last ${_ddmmyy(e.newest)}'),
+                                childrenPadding: const EdgeInsets.only(left: 16, right: 8, bottom: 8),
+                                children: [
+                                  ...e.items.take(5).map((x) => ListTile(
+                                        dense: true,
+                                        contentPadding: const EdgeInsets.only(left: 8, right: 0),
+                                        title: Text('${_inr.format(x.amount)} • ${_ddmmyy(x.date)}'),
+                                        subtitle: Text(x.note, maxLines: 2, overflow: TextOverflow.ellipsis),
+                                      )),
+                                  if (e.items.length > 5)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 8, bottom: 6),
+                                      child: Text('+ ${e.items.length - 5} more…', style: const TextStyle(color: Colors.black54)),
+                                    ),
+                                  Row(children: [
+                                    TextButton.icon(
+                                      icon: const Icon(Icons.delete_outline_rounded),
+                                      label: const Text('Dismiss'),
+                                      onPressed: () async {
+                                        await _dismissGroup(e.merchant, e.amount);
+                                        HapticFeedback.lightImpact();
+                                      },
+                                    ),
+                                    const SizedBox(width: Fx.s6),
+                                    ElevatedButton.icon(
+                                      icon: const Icon(Icons.save_rounded),
+                                      label: const Text('Confirm / Save'),
+                                      onPressed: () async {
+                                        await _saveGroup(e.merchant, e.amount, e.items);
+                                        HapticFeedback.mediumImpact();
+                                      },
+                                    ),
+                                  ]),
+                                ],
+                              );
+                            },
+                          ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
-
-  Widget _chip(String t, String v) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: Colors.indigo.withOpacity(0.08),
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Text('$t: ', style: const TextStyle(color: Colors.black54)),
-      Text(v, style: const TextStyle(fontWeight: FontWeight.w800)),
-    ]),
-  );
 
   Future<void> _saveGroup(String merchant, double amount, List<ExpenseItem> items) async {
     final db = FirebaseFirestore.instance;
@@ -287,17 +246,15 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
       'active': true,
     });
 
-    // mark suggestion doc if present (best-effort)
     final key = '${merchant.toLowerCase()}|${((amount / 10).round() * 10)}';
     final suggRef = db.collection('users').doc(widget.userId)
         .collection('subscription_suggestions').doc(key);
     await suggRef.set({'status': 'saved'}, SetOptions(merge: true));
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Saved ${_title(merchant)} subscription')),
-      );
-    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Saved ${_title(merchant)} subscription')),
+    );
   }
 
   Future<void> _dismissGroup(String merchant, double amount) async {
@@ -306,10 +263,11 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
     final suggRef = db.collection('users').doc(widget.userId)
         .collection('subscription_suggestions').doc(key);
     await suggRef.set({'status': 'dismissed'}, SetOptions(merge: true));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dismissed')));
-    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dismissed')));
   }
+
+  Widget _chip(String t, String v) => PillBadge('$t: $v', color: Fx.mintDark);
 
   static String _title(String s) => s
       .split(RegExp(r'\s+'))

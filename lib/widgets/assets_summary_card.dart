@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../themes/tokens.dart';
+import '../themes/glass_card.dart';
 
 class AssetsSummaryCard extends StatelessWidget {
   final String userId;
@@ -14,32 +17,35 @@ class AssetsSummaryCard extends StatelessWidget {
     Key? key,
   }) : super(key: key);
 
+  static final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(13.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Assets", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal[800], fontSize: 16)),
-            SizedBox(height: 7),
-            Text("₹${totalAssets.toStringAsFixed(0)}", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green[700])),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("$assetCount items", style: TextStyle(fontSize: 13)),
-                IconButton(
-                  icon: Icon(Icons.add_circle, color: Colors.teal),
-                  tooltip: "Add Asset",
-                  onPressed: onAddAsset,
-                ),
-              ],
-            )
-          ],
-        ),
+    return GlassCard(
+      radius: Fx.r24,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.savings_rounded, color: Fx.good),
+            const SizedBox(width: Fx.s8),
+            Text("Assets", style: Fx.title),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.add_circle, color: Fx.mintDark),
+              tooltip: "Add Asset",
+              onPressed: onAddAsset,
+            ),
+          ]),
+          const SizedBox(height: Fx.s6),
+          Text(_inr.format(totalAssets), style: Fx.number.copyWith(color: Fx.good)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text("$assetCount items", style: Fx.label),
+            ],
+          ),
+        ],
       ),
     );
   }

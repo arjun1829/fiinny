@@ -1,25 +1,71 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/insight_model.dart';
+import '../themes/tokens.dart';
+import '../themes/glass_card.dart';
+import '../themes/badge.dart';
 
 class InsightFeedCard extends StatelessWidget {
   final List<InsightModel> insights;
+  final int maxItems;
+  final bool showHeader;
 
-  const InsightFeedCard({Key? key, required this.insights}) : super(key: key);
+  const InsightFeedCard({
+    Key? key,
+    required this.insights,
+    this.maxItems = 5,
+    this.showHeader = true,
+  }) : super(key: key);
 
-  Color _getColor(InsightType type, int? severity) {
-    if (type == InsightType.positive) return Colors.green.shade600;
-    if (type == InsightType.warning) return Colors.orange.shade700;
-    if (type == InsightType.critical) return Colors.red.shade600;
-    if (severity != null) {
-      if (severity >= 3) return Colors.red.shade700;
-      if (severity == 2) return Colors.orange.shade700;
-      if (severity == 1) return Colors.teal.shade700;
+  static final _dt = DateFormat('dd MMM, hh:mm a');
+
+  // merge duplicates by (title|category|type) keeping worst severity + latest time
+  List<InsightModel> _prepare(List<InsightModel> list) {
+    final map = <String, InsightModel>{};
+    for (final i in list) {
+      final key = '${i.title}|${i.category}|${i.type.name}';
+      final existing = map[key];
+      if (existing == null) {
+        map[key] = i;
+      } else {
+        final a = existing.severity ?? 0;
+        final b = i.severity ?? 0;
+        final worse = (b > a) || (b == a && i.timestamp.isAfter(existing.timestamp));
+        if (worse) map[key] = i;
+      }
     }
-    return Colors.blue.shade600;
+    final merged = map.values.toList();
+    merged.sort((a, b) {
+      int sa = _severityScore(a.type, a.severity);
+      int sb = _severityScore(b.type, b.severity);
+      if (sb != sa) return sb.compareTo(sa);
+      return b.timestamp.compareTo(a.timestamp);
+    });
+    if (merged.length > maxItems) return merged.take(maxItems).toList();
+    return merged;
   }
 
-  IconData _getIcon(InsightType type, String? category) {
+  static int _severityScore(InsightType t, int? s) {
+    final base = switch (t) {
+      InsightType.critical => 3,
+      InsightType.warning => 2,
+      InsightType.positive => 1,
+      _ => 1,
+    };
+    return (s ?? base).clamp(0, 9);
+  }
+
+  Color _color(InsightType type, int? severity) {
+    if (type == InsightType.positive) return Fx.good;
+    if (type == InsightType.warning) return Fx.warn;
+    if (type == InsightType.critical) return Fx.bad;
+    if ((severity ?? 0) >= 3) return Fx.bad;
+    if (severity == 2) return Fx.warn;
+    if (severity == 1) return Fx.mintDark;
+    return Fx.text;
+  }
+
+  IconData _icon(InsightType type, String? category) {
     switch (category) {
       case 'loan':
         return Icons.account_balance_wallet_rounded;
@@ -33,217 +79,131 @@ class InsightFeedCard extends StatelessWidget {
         return Icons.error_rounded;
       case 'expense':
         return Icons.trending_up_rounded;
+    }
+    switch (type) {
+      case InsightType.positive:
+        return Icons.thumb_up_alt_rounded;
+      case InsightType.warning:
+        return Icons.warning_amber_rounded;
+      case InsightType.critical:
+        return Icons.error_rounded;
       default:
-        switch (type) {
-          case InsightType.positive:
-            return Icons.thumb_up_alt_rounded;
-          case InsightType.warning:
-            return Icons.warning_amber_rounded;
-          case InsightType.critical:
-            return Icons.error_rounded;
-          default:
-            return Icons.insights_rounded;
-        }
+        return Icons.insights_rounded;
     }
   }
 
+  String _categoryLabel(String? c) {
+    return switch (c) {
+      'loan' => 'Loan',
+      'asset' => 'Asset',
+      'goal' => 'Goal',
+      'netWorth' => 'Net Worth',
+      'crisis' => 'Crisis',
+      'expense' => 'Expense',
+      _ => '',
+    };
+  }
+
   String _timeAgo(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
+    final diff = DateTime.now().difference(date);
     if (diff.inDays >= 1) return '${diff.inDays}d ago';
     if (diff.inHours >= 1) return '${diff.inHours}h ago';
     if (diff.inMinutes >= 1) return '${diff.inMinutes}m ago';
     return 'Just now';
   }
 
-  String _categoryLabel(String? category) {
-    switch (category) {
-      case 'loan':
-        return 'Loan';
-      case 'asset':
-        return 'Asset';
-      case 'goal':
-        return 'Goal';
-      case 'netWorth':
-        return 'Net Worth';
-      case 'crisis':
-        return 'Crisis';
-      case 'expense':
-        return 'Expense';
-      default:
-        return '';
-    }
-  }
-
-  String _prettyDate(DateTime dt) {
-    try {
-      return DateFormat('dd MMM, hh:mm a').format(dt);
-    } catch (e) {
-      return dt.toIso8601String();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (insights.isEmpty) return const SizedBox.shrink();
+    final data = _prepare(insights);
+    if (data.isEmpty) return const SizedBox.shrink();
 
-    return Card(
-      elevation: 6,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      color: Colors.white.withOpacity(0.93),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.teal.shade300, Colors.teal.shade700],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text(
-                "🔍 Smart Insights",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+    return GlassCard(
+      radius: Fx.r24,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (showHeader) ...[
+            Row(
+              children: [
+                const Icon(Icons.psychology_alt_rounded, color: Fx.mintDark),
+                const SizedBox(width: Fx.s8),
+                Text("Smart Insights", style: Fx.title),
+                const Spacer(),
+                PillBadge("${data.length}", color: Fx.mintDark, icon: Icons.insights_rounded),
+              ],
             ),
-            const SizedBox(height: 12),
-
-            // Insight List
-            ...insights.map((insight) {
-              final color = _getColor(insight.type, insight.severity);
-              final icon = _getIcon(insight.type, insight.category);
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 7),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(13),
-                    onTap: () {
-                      // Show dialog with full details (future enhancement)
-                      showDialog(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          title: Row(
-                            children: [
-                              Icon(icon, color: color, size: 27),
-                              const SizedBox(width: 10),
-                              Expanded(child: Text(insight.title)),
-                            ],
-                          ),
-                          content: Text(insight.description),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Close'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(icon, color: color, size: 27),
-                        const SizedBox(width: 13),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      insight.title.isEmpty ? "No Title" : insight.title,
-                                      style: TextStyle(
-                                        color: color,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 15.2,
-                                      ),
-                                    ),
-                                  ),
-                                  if ((insight.category ?? '').isNotEmpty) ...[
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: color.withOpacity(0.09),
-                                        borderRadius: BorderRadius.circular(7),
-                                      ),
-                                      child: Text(
-                                        _categoryLabel(insight.category),
-                                        style: TextStyle(
-                                          color: color,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 11,
-                                          letterSpacing: 0.3,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                insight.description.isEmpty ? "No description available." : insight.description,
-                                style: const TextStyle(fontSize: 13.5, color: Colors.black87),
-                              ),
-                              Row(
-                                children: [
-                                  if (insight.severity != null)
-                                    Container(
-                                      margin: const EdgeInsets.only(right: 8, top: 1),
-                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: color.withOpacity(0.13),
-                                        borderRadius: BorderRadius.circular(5),
-                                      ),
-                                      child: Text(
-                                        "Severity: ${insight.severity}",
-                                        style: TextStyle(
-                                          color: color,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 10.8,
-                                        ),
-                                      ),
-                                    ),
-                                  const Spacer(),
-                                  Text(
-                                    _timeAgo(insight.timestamp),
-                                    style: TextStyle(
-                                      color: Colors.grey[600],
-                                      fontSize: 11.3,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 7),
-                                  Text(
-                                    _prettyDate(insight.timestamp),
-                                    style: TextStyle(
-                                      color: Colors.grey[500],
-                                      fontSize: 10.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
+            const SizedBox(height: Fx.s12),
           ],
-        ),
+          ...data.map((insight) {
+            final color = _color(insight.type, insight.severity);
+            final icon = _icon(insight.type, insight.category);
+
+            return Padding(
+              key: ValueKey('${insight.title}|${insight.timestamp.toIso8601String()}'),
+              padding: const EdgeInsets.symmetric(vertical: Fx.s6),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(Fx.r12),
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      title: Row(children: [
+                        Icon(icon, color: color),
+                        const SizedBox(width: Fx.s8),
+                        Expanded(child: Text(insight.title.isEmpty ? "Insight" : insight.title)),
+                      ]),
+                      content: Text(insight.description.isEmpty ? "No description available." : insight.description),
+                      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+                    ),
+                  );
+                },
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(icon, color: color, size: 22),
+                    const SizedBox(width: Fx.s10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(children: [
+                            Expanded(
+                              child: Text(
+                                insight.title.isEmpty ? "No Title" : insight.title,
+                                style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 15),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if ((insight.category ?? '').isNotEmpty) ...[
+                              const SizedBox(width: Fx.s8),
+                              PillBadge(_categoryLabel(insight.category), color: color),
+                            ],
+                          ]),
+                          const SizedBox(height: Fx.s4),
+                          Text(
+                            insight.description.isEmpty ? "No description available." : insight.description,
+                            style: Fx.label.copyWith(fontSize: 13.5, color: Colors.black87),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: Fx.s4),
+                          Row(children: [
+                            if (insight.severity != null) PillBadge("Severity: ${insight.severity}", color: color),
+                            const Spacer(),
+                            Text(_timeAgo(insight.timestamp), style: Fx.label.copyWith(fontSize: 11, color: Colors.grey[600])),
+                            const SizedBox(width: Fx.s6),
+                            Text(_dt.format(insight.timestamp), style: Fx.label.copyWith(fontSize: 10.5, color: Colors.grey[500])),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ],
       ),
     );
   }
