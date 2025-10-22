@@ -1,4 +1,5 @@
 // lib/widgets/unified_transaction_list.dart
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -12,6 +13,7 @@ import '../services/income_service.dart';
 
 // ✅ for inline ads inside the details sheet
 import '../core/ads/ad_slots.dart';
+import '../core/filters/transaction_filter.dart';
 
 class UnifiedTransactionList extends StatefulWidget {
   final List<ExpenseItem> expenses;
@@ -48,6 +50,11 @@ class UnifiedTransactionList extends StatefulWidget {
   required dynamic payload,
   })? onChangeCategory;
 
+  final TransactionFilter? filter;
+  final SortSpec? sort;
+  final GroupBy? groupBy;
+  final void Function(List<Map<String, dynamic>> normalized)? onNormalized;
+
   const UnifiedTransactionList({
     Key? key,
     required this.expenses,
@@ -68,6 +75,10 @@ class UnifiedTransactionList extends StatefulWidget {
     this.onChangeCategory,
     this.onBeginModal,
     this.onEndModal,
+    this.filter,
+    this.sort,
+    this.groupBy,
+    this.onNormalized,
   }) : super(key: key);
 
   @override
@@ -84,6 +95,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   //  'tags':String?, 'labels': List<String>, 'title': String?}
   late List<Map<String, dynamic>> allTx;
   int shownCount = 10;
+  TransactionFilter _activeFilter = TransactionFilter.defaults();
 
   final NumberFormat _inCurrency =
   NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 2);
@@ -106,7 +118,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             oldWidget.expenses != widget.expenses ||
             oldWidget.incomes != widget.incomes ||
             oldWidget.filterType != widget.filterType ||
-            oldWidget.previewCount != widget.previewCount;
+            oldWidget.previewCount != widget.previewCount ||
+            oldWidget.filter != widget.filter ||
+            oldWidget.sort != widget.sort ||
+            oldWidget.groupBy != widget.groupBy;
 
     if (changed) {
       _combine();
@@ -291,12 +306,18 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     } else if (widget.filterType == "Expense") {
       allTx = allTx.where((t) => t['type'] == 'expense').toList();
     }
+    final base = List<Map<String, dynamic>>.from(allTx);
+    widget.onNormalized?.call(base);
 
-    allTx.sort((a, b) {
-      final DateTime ad = a['date'] as DateTime;
-      final DateTime bd = b['date'] as DateTime;
-      return bd.compareTo(ad);
-    });
+    var f = widget.filter ?? TransactionFilter.defaults();
+    if (widget.sort != null && widget.sort != f.sort) {
+      f = f.copyWith(sort: widget.sort);
+    }
+    if (widget.groupBy != null && widget.groupBy != f.groupBy) {
+      f = f.copyWith(groupBy: widget.groupBy);
+    }
+    _activeFilter = f;
+    allTx = applyFilterAndSort(base, f);
   }
 
   List<Map<String, dynamic>> _fromLegacy(
@@ -504,14 +525,17 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     return DateFormat('d MMM, yyyy').format(date);
   }
 
-  Map<String, List<Map<String, dynamic>>> groupTxByDate() {
-    final map = <String, List<Map<String, dynamic>>>{};
-    for (final tx in allTx.take(shownCount)) {
-      final DateTime d = tx['date'] as DateTime;
-      final label = getDateLabel(d);
-      map.putIfAbsent(label, () => []).add(tx);
+  String _displayGroupLabel(String raw) {
+    if (raw.isEmpty) return '';
+    if (_activeFilter.groupBy == GroupBy.day) {
+      try {
+        final parsed = DateFormat('d MMM, yyyy').parse(raw);
+        return getDateLabel(parsed);
+      } catch (_) {
+        return raw;
+      }
     }
-    return map;
+    return raw;
   }
 
   IconData getCategoryIcon(String type, {bool isIncome = false}) {
@@ -996,7 +1020,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   // -------------------- BUILD --------------------
   @override
   Widget build(BuildContext context) {
-    final groupedTx = groupTxByDate();
+    final groupedMap = groupTx(allTx.take(shownCount).toList(), _activeFilter.groupBy);
+    final groupedEntries = groupedMap.entries.toList();
 
     if (allTx.isEmpty) {
       return const Padding(
@@ -1005,7 +1030,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       );
     }
 
-    final groupCount = groupedTx.keys.length;
+    final groupCount = groupedEntries.length;
 
     return CustomDiamondCard(
       padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
@@ -1038,8 +1063,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             );
           }
 
-          final dateLabel = groupedTx.keys.elementAt(idx);
-          final txs = groupedTx[dateLabel]!;
+          final entry = groupedEntries[idx];
+          final rawLabel = entry.key;
+          final txs = entry.value;
+          final dateLabel = _displayGroupLabel(rawLabel);
 
           // Build rows with the ability to inject an inline ad
           final rows = <Widget>[];
@@ -1053,24 +1080,25 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           }
 
           // ---- DATE HEADER ----
-          rows.add(
-            Container(
-              margin: const EdgeInsets.only(left: 14, right: 8, top: 11, bottom: 4),
-              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: Text(
-                dateLabel,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: Color(0xFF0F1E1C),
+          if (dateLabel.isNotEmpty)
+            rows.add(
+              Container(
+                margin: const EdgeInsets.only(left: 14, right: 8, top: 11, bottom: 4),
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Text(
+                  dateLabel,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: Color(0xFF0F1E1C),
+                  ),
                 ),
               ),
-            ),
-          );
+            );
 
           for (int i = 0; i < txs.length; i++) {
             final tx = txs[i];
@@ -1154,251 +1182,280 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             if (hasFees) chipWidgets.add(_chip("Fees"));
             if ((tags ?? '').isNotEmpty) chipWidgets.add(_chip(tags!));
 
+            final canSwipe = widget.onDelete != null || widget.onEdit != null;
             rows.add(
-              GestureDetector(
-                key: ValueKey(id),
-                behavior: HitTestBehavior.opaque,
-                onTap: isSelectable
-                    ? () => widget.onSelectTx!(id, !isSelected)
-                    : () {
-                  if (tx['mode'] == 'unified') {
-                    _showDetailsScreenFromUnified(tx, context);
-                  } else {
-                    _showDetailsScreenLegacy(raw, isIncome, context);
+              Dismissible(
+                key: ValueKey('dismiss_${id}_${tx.hashCode}_$i'),
+                direction: canSwipe ? DismissDirection.horizontal : DismissDirection.none,
+                background: widget.onEdit != null
+                    ? _buildSwipeBackground(
+                        alignment: Alignment.centerLeft,
+                        icon: Icons.edit,
+                        label: 'Edit',
+                        color: Colors.blue.withOpacity(0.15),
+                      )
+                    : const SizedBox(),
+                secondaryBackground: widget.onDelete != null
+                    ? _buildSwipeBackground(
+                        alignment: Alignment.centerRight,
+                        icon: Icons.delete,
+                        label: 'Delete',
+                        color: Colors.red.withOpacity(0.15),
+                      )
+                    : const SizedBox(),
+                confirmDismiss: (direction) async {
+                  if (direction == DismissDirection.startToEnd) {
+                    if (widget.onEdit != null) {
+                      widget.onEdit!(payload);
+                    }
+                    return false;
+                  }
+                  if (direction == DismissDirection.endToStart) {
+                    return widget.onDelete != null;
+                  }
+                  return false;
+                },
+                onDismissed: (direction) {
+                  if (direction == DismissDirection.endToStart && widget.onDelete != null) {
+                    final indexInAll = allTx.indexOf(tx);
+                    if (indexInAll >= 0) {
+                      _handleDelete(tx, indexInAll, payload);
+                    }
                   }
                 },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 120),
-                  constraints: const BoxConstraints(minHeight: 58),
-                  margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? Colors.deepPurple.withOpacity(0.09)
-                        : Colors.white.withOpacity(0.93),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.028),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                    border: isSelected
-                        ? Border.all(color: Colors.deepPurple, width: 1.4)
-                        : null,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      if (isSelectable)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: Checkbox(
-                            value: isSelected,
-                            onChanged: (val) => widget.onSelectTx!(id, val ?? false),
-                            activeColor: Colors.deepPurple,
-                            visualDensity: VisualDensity.compact,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(7),
-                            ),
-                          ),
-                        ),
-
-                      // Logos + avatar
-                      if (bankLogo != null && bankLogo.isNotEmpty) ...[
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: _logo(bankLogo, w: 22, h: 22),
+                child: GestureDetector(
+                  key: ValueKey(id),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: isSelectable
+                      ? () => widget.onSelectTx!(id, !isSelected)
+                      : () {
+                          if (tx['mode'] == 'unified') {
+                            _showDetailsScreenFromUnified(tx, context);
+                          } else {
+                            _showDetailsScreenLegacy(raw, isIncome, context);
+                          }
+                        },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    constraints: const BoxConstraints(minHeight: 58),
+                    margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? Colors.deepPurple.withOpacity(0.09)
+                          : Colors.white.withOpacity(0.93),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.028),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
                         ),
                       ],
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: isIncome ? Colors.green[50] : Colors.pink[50],
-                        child: Icon(
-                          getCategoryIcon(category, isIncome: isIncome),
-                          color: isIncome ? Colors.green[700] : Colors.pink[700],
-                          size: 18,
-                        ),
-                      ),
-                      if (schemeLogo != null && schemeLogo.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 6),
-                          child: _logo(schemeLogo, w: 18, h: 18),
-                        ),
-                      const SizedBox(width: 8),
-
-                      // MIDDLE
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Line 1: Category dropdown
-                            SizedBox(
-                              height: 28,
-                              child: _categoryDropdown(
-                                txId: id,
-                                current: category,
-                                isIncome: isIncome,
-                                payload: payload,
+                      border: isSelected
+                          ? Border.all(color: Colors.deepPurple, width: 1.4)
+                          : null,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        if (isSelectable)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: Checkbox(
+                              value: isSelected,
+                              onChanged: (val) => widget.onSelectTx!(id, val ?? false),
+                              activeColor: Colors.deepPurple,
+                              visualDensity: VisualDensity.compact,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(7),
                               ),
                             ),
+                          ),
 
-                            // Line 2: title / merchant / note with Paid to/From
-                            if (showLine2.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2.0),
-                                child: Text(
-                                  showLine2,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 12.5,
-                                    color: Colors.black.withOpacity(0.75),
-                                    fontWeight: FontWeight.w600,
+                        // Logos + avatar
+                        if (bankLogo != null && bankLogo.isNotEmpty) ...[
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: _logo(bankLogo, w: 22, h: 22),
+                          ),
+                        ],
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: isIncome ? Colors.green[50] : Colors.pink[50],
+                          child: Icon(
+                            getCategoryIcon(category, isIncome: isIncome),
+                            color: isIncome ? Colors.green[700] : Colors.pink[700],
+                            size: 18,
+                          ),
+                        ),
+                        if (schemeLogo != null && schemeLogo.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: _logo(schemeLogo, w: 18, h: 18),
+                          ),
+                        const SizedBox(width: 8),
+
+                        // MIDDLE
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                height: 28,
+                                child: _categoryDropdown(
+                                  txId: id,
+                                  current: category,
+                                  isIncome: isIncome,
+                                  payload: payload,
+                                ),
+                              ),
+                              if (showLine2.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2.0),
+                                  child: Text(
+                                    showLine2,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      color: Colors.black.withOpacity(0.75),
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
-                              ),
-
-                            // Chips: labels first, then channel/card/tags/instrument/network/intl/fees
-                            if (labels.isNotEmpty ||
-                                (instrument ?? '').isNotEmpty ||
-                                (channel ?? '').isNotEmpty ||
-                                (cardLast4 ?? '').isNotEmpty ||
-                                (network ?? '').isNotEmpty ||
-                                isInternational ||
-                                hasFees ||
-                                (tags ?? '').isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4.0),
-                                child: Wrap(
-                                  spacing: 6,
-                                  runSpacing: -6,
-                                  children: [
-                                    // labels
-                                    ...labels.take(3).map((l) => Chip(
-                                      label: Text(
-                                        '#$l',
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.black87,
+                              if (labels.isNotEmpty ||
+                                  (instrument ?? '').isNotEmpty ||
+                                  (channel ?? '').isNotEmpty ||
+                                  (cardLast4 ?? '').isNotEmpty ||
+                                  (network ?? '').isNotEmpty ||
+                                  isInternational ||
+                                  hasFees ||
+                                  (tags ?? '').isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4.0),
+                                  child: Wrap(
+                                    spacing: 6,
+                                    runSpacing: -6,
+                                    children: [
+                                      ...labels.take(3).map((l) => Chip(
+                                            label: Text(
+                                              '#$l',
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.black87,
+                                              ),
+                                            ),
+                                            backgroundColor: Colors.teal.withOpacity(0.10),
+                                            visualDensity: VisualDensity.compact,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          )),
+                                      if (labels.length > 3)
+                                        Chip(
+                                          label: Text(
+                                            '+${labels.length - 3}',
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                          ),
+                                          backgroundColor: Colors.teal.withOpacity(0.08),
+                                          visualDensity: VisualDensity.compact,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                         ),
-                                      ),
-                                      backgroundColor: Colors.teal.withOpacity(0.10),
-                                      visualDensity: VisualDensity.compact,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    )),
-                                    if (labels.length > 3)
-                                      Chip(
-                                        label: Text(
-                                          '+${labels.length - 3}',
-                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                                        ),
-                                        backgroundColor: Colors.teal.withOpacity(0.08),
-                                        visualDensity: VisualDensity.compact,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                      ),
-                                    // enriched chips
-                                    ...chipWidgets,
-                                  ],
+                                      ...chipWidgets,
+                                    ],
+                                  ),
                                 ),
-                              ),
-
-                            // Legacy-only mini row
-                            if (tx['mode'] == 'legacy')
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2.0),
-                                child: Row(
-                                  children: [
-                                    if (friendsStr != null) ...[
-                                      Icon(Icons.person_2_rounded, size: 15, color: Colors.deepPurple[500]),
-                                      Flexible(
-                                        child: Text(
-                                          " $friendsStr",
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 12.5,
-                                            color: Colors.deepPurple[700],
-                                            fontWeight: FontWeight.w500,
+                              if (tx['mode'] == 'legacy')
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2.0),
+                                  child: Row(
+                                    children: [
+                                      if (friendsStr != null) ...[
+                                        Icon(Icons.person_2_rounded, size: 15, color: Colors.deepPurple[500]),
+                                        Flexible(
+                                          child: Text(
+                                            " $friendsStr",
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 12.5,
+                                              color: Colors.deepPurple[700],
+                                              fontWeight: FontWeight.w500,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                    if (tx['type'] == 'income' &&
-                                        (raw.source ?? '').toString().isNotEmpty) ...[
-                                      const SizedBox(width: 8),
-                                      Icon(Icons.input_rounded, size: 15, color: Colors.teal[600]),
-                                      Flexible(
-                                        child: Text(
-                                          " ${raw.source}",
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 12.5,
-                                            color: Colors.teal[700],
-                                            fontWeight: FontWeight.w500,
+                                      ],
+                                      if (tx['type'] == 'income' &&
+                                          (raw.source ?? '').toString().isNotEmpty) ...[
+                                        const SizedBox(width: 8),
+                                        Icon(Icons.input_rounded, size: 15, color: Colors.teal[600]),
+                                        Flexible(
+                                          child: Text(
+                                            " ${raw.source}",
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 12.5,
+                                              color: Colors.teal[700],
+                                              fontWeight: FontWeight.w500,
+                                            ),
                                           ),
                                         ),
-                                      ),
+                                      ],
                                     ],
-                                  ],
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(width: 8),
-
-                      // TRAILING
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          _amountPill(amount, isIncome),
-                          const SizedBox(height: 10),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (widget.showBillIcon && billUrl.isNotEmpty)
-                                IconButton(
-                                  icon: const Icon(Icons.receipt_long_rounded, size: 18, color: Colors.brown),
-                                  tooltip: 'View bill',
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () => _showBillImage(context, billUrl),
-                                ),
-                              if (tx['mode'] == 'legacy' && !isIncome && widget.onSplit != null)
-                                IconButton(
-                                  icon: const Icon(Icons.group, size: 18, color: Colors.deepPurple),
-                                  tooltip: 'Split',
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () => widget.onSplit?.call(payload),
-                                ),
-                              if (widget.onEdit != null)
-                                IconButton(
-                                  icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
-                                  tooltip: 'Edit',
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () => widget.onEdit?.call(payload),
-                                ),
-                              if (widget.onDelete != null)
-                                IconButton(
-                                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                                  tooltip: 'Delete',
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () => widget.onDelete?.call(payload),
+                                  ),
                                 ),
                             ],
                           ),
-                        ],
-                      ),
-                    ],
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            _amountPill(amount, isIncome),
+                            const SizedBox(height: 10),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (widget.showBillIcon && billUrl.isNotEmpty)
+                                  IconButton(
+                                    icon: const Icon(Icons.receipt_long_rounded, size: 18, color: Colors.brown),
+                                    tooltip: 'View bill',
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => _showBillImage(context, billUrl),
+                                  ),
+                                if (tx['mode'] == 'legacy' && !isIncome && widget.onSplit != null)
+                                  IconButton(
+                                    icon: const Icon(Icons.group, size: 18, color: Colors.deepPurple),
+                                    tooltip: 'Split',
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => widget.onSplit?.call(payload),
+                                  ),
+                                if (widget.onEdit != null)
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
+                                    tooltip: 'Edit',
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => widget.onEdit?.call(payload),
+                                  ),
+                                if (widget.onDelete != null)
+                                  IconButton(
+                                    icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                                    tooltip: 'Delete',
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => widget.onDelete?.call(payload),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1437,6 +1494,85 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
+  }
+
+  Widget _buildSwipeBackground({
+    required Alignment alignment,
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    final isLeft = alignment == Alignment.centerLeft;
+    return Container(
+      alignment: alignment,
+      color: color,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: isLeft ? MainAxisAlignment.start : MainAxisAlignment.end,
+        children: [
+          if (!isLeft) ...[
+            Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
+            ),
+            const SizedBox(width: 8),
+            Icon(icon, color: Colors.black87),
+          ] else ...[
+            Icon(icon, color: Colors.black87),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _handleDelete(Map<String, dynamic> tx, int index, dynamic payload) {
+    final previousShown = shownCount;
+    setState(() {
+      if (index >= 0 && index < allTx.length) {
+        allTx.removeAt(index);
+      }
+      if (allTx.isEmpty) {
+        shownCount = 0;
+      } else {
+        shownCount = math.min(previousShown, allTx.length);
+      }
+    });
+
+    bool undone = false;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger
+        .showSnackBar(
+          SnackBar(
+            content: const Text('Deleted • UNDO'),
+            action: SnackBarAction(
+              label: 'UNDO',
+              onPressed: () {
+                undone = true;
+                setState(() {
+                  final insertIndex = math.min(index, allTx.length);
+                  allTx.insert(insertIndex, tx);
+                  shownCount = math.min(
+                    math.max(previousShown, insertIndex + 1),
+                    allTx.length,
+                  );
+                });
+              },
+            ),
+          ),
+        )
+        .closed
+        .then((reason) {
+      if (!undone && reason != SnackBarClosedReason.action) {
+        widget.onDelete?.call(payload);
+      }
+    });
   }
 }
 
