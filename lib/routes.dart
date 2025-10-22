@@ -23,6 +23,7 @@ import 'screens/transaction_amount_screen.dart';
 import 'screens/analytics_screen.dart'; // ✅ we’ll instantiate this in onGenerate
 import 'screens/gmail_link_screen.dart';
 import 'screens/premium_paywall.dart';
+import 'screens/transactions_screen.dart';
 
 // ---------- Services for typed args ----------
 import 'services/user_data.dart';
@@ -71,6 +72,10 @@ final Map<String, WidgetBuilder> appRoutes = {
   '/partner-dashboard': (_) => const _SimpleStubScreen(title: 'Partner Dashboard'),
   '/friends': (_) => const _SimpleStubScreen(title: 'Friends & Settle Up'),
   '/budget': (_) => const _SimpleStubScreen(title: 'Weekly Budget'),
+  '/transactions': (ctx) {
+    final phone = ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
+    return TransactionsScreen(userPhone: phone);
+  },
 };
 
 /// Routes that require arguments (or custom building) are handled here.
