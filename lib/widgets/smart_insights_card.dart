@@ -40,8 +40,14 @@ class SmartInsightCard extends StatelessWidget {
     if (sr.isNotEmpty) return sr;
 
     if (goal != null && goal!.targetAmount > 0 && savings > 0) {
-      final remaining = (goal!.targetAmount - goal!.savedAmount).clamp(0, double.infinity);
-      return InsightMicrocopy.goalPace(title: goal!.title, remaining: remaining, monthlySavings: savings);
+      final remaining = ((goal!.targetAmount - goal!.savedAmount)
+              .clamp(0, double.infinity) as num)
+          .toDouble();
+      return InsightMicrocopy.goalPace(
+        title: goal!.title,
+        remaining: remaining,
+        monthlySavings: savings.toDouble(),
+      );
     }
 
     return InsightMicrocopy.fallback();
