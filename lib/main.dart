@@ -1,6 +1,8 @@
 // lib/main.dart
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -30,7 +32,11 @@ void main() async {
 
   final tracer = _StartupTracer();
   FlutterError.onError = (details) {
+    FlutterError.presentError(details);
     tracer.add('FlutterError: ${details.exceptionAsString()}');
+    if (kReleaseMode) {
+      unawaited(FirebaseCrashlytics.instance.recordFlutterError(details));
+    }
     Zone.current.handleUncaughtError(details.exception, details.stack ?? StackTrace.current);
   };
 
@@ -53,6 +59,22 @@ Future<void> _boot(_StartupTracer tracer) async {
         .timeout(const Duration(seconds: 8));
     tracer.add('Firebase ✅');
     await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+      tracer.add('FlutterError: ${details.exceptionAsString()}');
+      if (kReleaseMode) {
+        FirebaseCrashlytics.instance.recordFlutterError(details);
+      }
+      Zone.current.handleUncaughtError(details.exception, details.stack ?? StackTrace.current);
+    };
+
+    PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+      if (kReleaseMode) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      }
+      return true;
+    };
   } catch (e) {
     tracer.add('Firebase ❌ $e');
   }

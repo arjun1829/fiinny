@@ -33,6 +33,18 @@ import '../widgets/transaction_amount_card.dart';
 import '../themes/tokens.dart';
 import '../themes/glass_card.dart';
 import '../themes/badge.dart';
+import '../widgets/hero_transaction_ring.dart';
+import '../widgets/net_worth_panel.dart';
+import '../core/formatters/inr.dart';
+import '../widgets/subscriptions/subs_bills_card.dart';
+import '../widgets/subscriptions/subs_suggestions_sheet.dart';
+import '../widgets/subscriptions_review_sheet.dart';
+import '../core/ui/snackbar_throttle.dart';
+import '../widgets/empty_state_card.dart';
+import '../widgets/shimmer.dart';
+import '../widgets/gmail_backfill_banner.dart';
+import '../widgets/premium/premium_chip.dart';
+import '../core/flags/premium_gate.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 // NEW portfolio module imports (aliased so they don't clash with your old service/model)
 import '../fiinny_assets/modules/portfolio/services/asset_service.dart' as PAssetService;
@@ -121,6 +133,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   Map<String, List<double>> _amountBarsCache = {};
   Map<String, List<int>> _countBarsCache = {};
   int _barsRevision = 0;
+
+  final Map<String, Map<String, double>> _summaryCache = {};
+  int _summaryRevision = 0;
 
 
   // --- Limit logic ---
@@ -285,6 +300,15 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     }
   }
 
+  Future<void> _setGmailStatus(String status, {String? error}) async {
+    final docRef = FirebaseFirestore.instance.collection('users').doc(_userDocId);
+    await docRef.set({
+      'gmailBackfillStatus': status,
+      if (error != null) 'gmailBackfillError': error,
+      'gmailBackfillUpdatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -308,33 +332,35 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     if (already) return;
 
     try {
+      await _setGmailStatus('running');
       await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
       await docRef.set({
         'gmailBackfillDone': true,
         'gmailBackfillUpdatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      await _setGmailStatus('ok');
       await _initDashboard(); // refresh UI
     } catch (e) {
       debugPrint('Gmail backfill error: $e');
+      await _setGmailStatus('error', error: e.toString());
     }
   }
 
   Future<void> _fetchEmailTx() async {
     if (!mounted) return;
+    await _setGmailStatus('running');
     setState(() => _isFetchingEmail = true);
     try {
       await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
       await _initDashboard();
+      await _setGmailStatus('ok');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Fetched Gmail transactions!"), backgroundColor: Colors.green),
-        );
+        SnackThrottle.show(context, "Fetched Gmail transactions!", color: Colors.green);
       }
     } catch (e) {
+      await _setGmailStatus('error', error: e.toString());
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed to fetch email data: $e"), backgroundColor: Colors.red),
-        );
+        SnackThrottle.show(context, "Failed to fetch email data: $e", color: Colors.red);
       }
     } finally {
       if (mounted) setState(() => _isFetchingEmail = false);
@@ -471,20 +497,18 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     final ratio = used / _periodLimit!;
     if (!_warned80 && ratio >= 0.8 && ratio < 1.0) {
       _warned80 = true;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Heads up: You’ve crossed 80% of this period’s spending limit."),
-          backgroundColor: Colors.orange,
-        ),
+      SnackThrottle.show(
+        context,
+        "Heads up: You’ve crossed 80% of this period’s spending limit.",
+        color: Colors.orange,
       );
     }
     if (!_warned100 && ratio >= 1.0) {
       _warned100 = true;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Limit exceeded: You’ve spent over the limit for this period."),
-          backgroundColor: Colors.red,
-        ),
+      SnackThrottle.show(
+        context,
+        "Limit exceeded: You’ve spent over the limit for this period.",
+        color: Colors.red,
       );
     }
   }
@@ -748,6 +772,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
       allExpenses = expenses;
       allIncomes = incomes;
+      _summaryRevision++;
+      _summaryCache.clear();
 
       if (!mounted) return;
       setState(() {
@@ -801,9 +827,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       _recomputeAutopayCount();
     } catch (e) {
       print('[Dashboard] ERROR: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Dashboard error: $e")),
-      );
+      SnackThrottle.show(context, "Dashboard error: $e");
     }
 
     // 🔎 NEW: refresh "new loan detected" badge count
@@ -839,7 +863,52 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     setState(() {});
   }
 
+  double? _suggestedLimitForPeriod() {
+    // Suggest median spend over last 90 days, rounded to nearest 1000.
+    // If period is "This Month", suggest from last 90d; else use current-period spend as hint.
+    // For simplicity and low-cost, compute from allExpenses last 90 days.
+    final now = DateTime.now();
+    final from = now.subtract(const Duration(days: 90));
+    final recent = allExpenses
+        .where((e) => !e.date.isBefore(from))
+        .map((e) => e.amount)
+        .toList()
+      ..sort();
+    if (recent.isEmpty) return null;
+    final med = recent.length.isOdd
+        ? recent[recent.length ~/ 2]
+        : (recent[recent.length ~/ 2 - 1] + recent[recent.length ~/ 2]) / 2.0;
+    final rounded = (med / 1000).round() * 1000;
+    return rounded > 0 ? rounded.toDouble() : null;
+  }
+
+  double _incomeBaseForPresets() {
+    final now = DateTime.now();
+    // current month income
+    final thisMonthIncome = allIncomes
+        .where((t) => t.date.year == now.year && t.date.month == now.month)
+        .fold<double>(0.0, (a, b) => a + b.amount);
+    if (thisMonthIncome > 0) return thisMonthIncome;
+
+    // fallback: last 3 months avg
+    final months = <String, double>{};
+    for (final i in allIncomes) {
+      final key = '${i.date.year}-${i.date.month}';
+      months[key] = (months[key] ?? 0) + i.amount;
+    }
+    if (months.isEmpty) return 0.0;
+    final vals = months.values.toList()..sort();
+    final take = vals.length >= 3 ? vals.sublist(vals.length - 3) : vals;
+    final avg = take.fold<double>(0.0, (a, b) => a + b) / take.length;
+    return avg;
+  }
+
   Future<void> _editLimitDialog() async {
+    final suggested = _suggestedLimitForPeriod();
+    final baseIncome = _incomeBaseForPresets();
+    final p50 = baseIncome > 0 ? ((baseIncome * 0.50) / 1000).round() * 1000 : null;
+    final p30 = baseIncome > 0 ? ((baseIncome * 0.30) / 1000).round() * 1000 : null;
+    final p20 = baseIncome > 0 ? ((baseIncome * 0.20) / 1000).round() * 1000 : null;
     final ctrl = TextEditingController(
       text: _periodLimit != null ? _periodLimit!.toStringAsFixed(0) : '',
     );
@@ -869,9 +938,26 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                 border: OutlineInputBorder(),
               ),
             ),
+            if (p50 != null || p30 != null || p20 != null) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (p50 != null) _presetChip(ctx, '50%', p50, ctrl),
+                  if (p30 != null) _presetChip(ctx, '30%', p30, ctrl),
+                  if (p20 != null) _presetChip(ctx, '20%', p20, ctrl),
+                ],
+              ),
+            ],
           ],
         ),
         actions: [
+          if (suggested != null)
+            TextButton(
+              child: Text("Use suggested (${INR.f(suggested)})"),
+              onPressed: () => Navigator.pop(ctx, suggested),
+            ),
           TextButton(
             child: Text("Remove"),
             onPressed: () => Navigator.pop(ctx, 0.0),
@@ -916,9 +1002,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           _periodLimit = result;
         }
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed to save limit: $e")),
-        );
+        SnackThrottle.show(context, "Failed to save limit: $e");
       }
       if (!mounted) return;
       setState(() => _savingLimit = false);
@@ -966,15 +1050,10 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     final filteredExpenses = _filteredExpensesForPeriod(txPeriod);
     final txSummary = _getTxSummaryForPeriod(txPeriod);
     final netWorth = totalAssets - totalLoan;
-    final totalPlans = _activeSubs + _activeSips;
-    final dueLabel = _cardsDue == 1 ? 'bill' : 'bills';
-    final autopayLabel = _autopayCount == 1 ? 'autopay' : 'autopays';
-    final subsLabel = _activeSubs == 1 ? 'subscription' : 'subscriptions';
-    final sipLabel = _activeSips == 1 ? 'SIP' : 'SIPs';
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      bottomNavigationBar: AdaptiveBanner(adUnitId: AdIds.banner),
+      bottomNavigationBar: AdaptiveBanner(adUnitId: AdIds.banner, userId: widget.userPhone),
       floatingActionButton: _MintFab(
         onRefresh: _initDashboard,
         userPhone: widget.userPhone,
@@ -993,6 +1072,13 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Gmail Link',
+            icon: const Icon(Icons.mark_email_read_outlined, color: Fx.mintDark),
+            onPressed: () {
+              Navigator.pushNamed(context, '/settings/gmail', arguments: widget.userPhone);
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.notifications_active_rounded,
                 color: Fx.mintDark, size: 25),
@@ -1029,15 +1115,11 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                 await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
                 await _initDashboard();
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Fetched Gmail transactions!')),
-                  );
+                  SnackThrottle.show(context, 'Fetched Gmail transactions!', color: Colors.green);
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Email fetch failed: $e')),
-                  );
+                  SnackThrottle.show(context, 'Email fetch failed: $e', color: Colors.red);
                 }
               } finally {
                 if (mounted) setState(() => _isFetchingEmail = false);
@@ -1092,9 +1174,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                   await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
                   await _initDashboard();
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Synced Gmail transactions")),
-                    );
+                    SnackThrottle.show(context, "Synced Gmail transactions", color: Colors.green);
                   }
                 } else {
                   await _fetchEmailTx(); // already shows snackbar
@@ -1102,9 +1182,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               } catch (e, st) {
                 debugPrint('[onRefresh] error: $e\n$st');
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Sync error: $e")),
-                  );
+                  SnackThrottle.show(context, "Sync error: $e", color: Colors.red);
                 }
               }
               // 🔁 NEW: scan for loan suggestions on manual refresh
@@ -1158,9 +1236,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           },
                           child: Stack(
                             children: [
-                              DashboardHeroRing(
+                              HeroTransactionRing(
                                 credit: txSummary["credit"]!,
-                                debit: txSummary["debit"]!,
+                                debit:  txSummary["debit"]!,
                                 period: txPeriod,
                                 onFilterTap: () async {
                                   final result = await showModalBottomSheet<String>(
@@ -1171,12 +1249,11 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                     ),
                                   );
                                   if (result != null && result != txPeriod) {
-                                    if (!mounted) return;
                                     setState(() => txPeriod = result);
                                     await _loadPeriodLimit();
                                     _resetLimitWarnings();
                                     _checkLimitWarnings();
-                                    _recomputeAutopayCount(); // 🔴
+                                    _recomputeAutopayCount();
                                   }
                                 },
                               ),
@@ -1336,6 +1413,28 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          GmailBackfillBanner(
+                            userId: widget.userPhone,
+                            isLinked: _isEmailLinked,
+                            onRetry: _isFetchingEmail
+                                ? null
+                                : () async {
+                                    try {
+                                      setState(() => _isFetchingEmail = true);
+                                      await _setGmailStatus('running');
+                                      await OldGmail.GmailService()
+                                          .fetchAndStoreTransactionsFromGmail(widget.userPhone);
+                                      await _setGmailStatus('ok');
+                                      await _initDashboard();
+                                    } catch (e) {
+                                      await _setGmailStatus('error', error: e.toString());
+                                    } finally {
+                                      if (mounted) {
+                                        setState(() => _isFetchingEmail = false);
+                                      }
+                                    }
+                                  },
+                          ),
                           CrisisAlertBanner(
                             userId: widget.userPhone,
                             totalIncome: totalIncome,
@@ -1350,6 +1449,29 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                             totalLoan: totalLoan,
                             totalAssets: totalAssets,
                           ),
+                          FutureBuilder<bool>(
+                            future: PremiumGate.instance.isPremium(widget.userPhone),
+                            builder: (_, snap) {
+                              final isPro = snap.data == true;
+                              if (isPro) {
+                                return const SizedBox.shrink();
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 8.0),
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: PremiumChip(
+                                    onTap: () => Navigator.pushNamed(
+                                      context,
+                                      '/premium',
+                                      arguments: widget.userPhone,
+                                    ),
+                                    label: 'Unlock deeper insights',
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                           const SizedBox(height: 14),
                           FiinnyBrainDiagnosisCard(
                             userPhone: widget.userPhone,
@@ -1359,188 +1481,156 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           ),
                           const SizedBox(height: 14),
 
-                          Row(
-                            children: [
-                              // ⬇️ Make Loans card tappable
-                              Expanded(
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(16),
-                                    onTap: () async {
-                                      final changed = await Navigator.pushNamed<bool>(
-                                        context,
-                                        '/loans',
-                                        arguments: {'userId': widget.userPhone},
-                                      );
-                                      if (changed == true) {
-                                        await _initDashboard();
-                                      }
-                                    },
-                                    child: LoansSummaryCard(
-                                      userId: widget.userPhone,
-                                      loanCount: loanCount,
-                                      totalLoan: totalLoan,
-
-                                      // 🆕 show detected loans + review handler
-                                      pendingSuggestions: _loanSuggestionsCount,
-                                      onReviewSuggestions: () async {
-                                        if (!mounted) return;
-                                        setState(() => _scanningLoans = true);
-                                        try {
-                                          await _loanDetector.scanAndWrite(
-                                              widget.userPhone,
-                                              daysWindow: 360);
-                                          _loanSuggestionsCount =
-                                          await _loanDetector.pendingCount(
-                                              widget.userPhone);
-                                        } finally {
-                                          if (mounted) setState(() => _scanningLoans = false);
-                                        }
-
-                                        await showModalBottomSheet(
-                                          context: context,
-                                          isScrollControlled: true,
-                                          shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(16)),
-                                          builder: (_) => SizedBox(
-                                            height: MediaQuery.of(context).size.height * 0.70,
-                                            child: LoanSuggestionsSheet(userId: widget.userPhone),
-                                          ),
-                                        );
-
-                                        // refresh badge + totals after sheet actions
-                                        _loanSuggestionsCount =
-                                        await _loanDetector.pendingCount(widget.userPhone);
-                                        final ls = await LoanService()
-                                            .countOpenLoans(widget.userPhone);
-                                        final sum = await LoanService()
-                                            .sumOutstanding(widget.userPhone);
-                                        if (mounted) {
-                                          setState(() {
-                                            loanCount = ls;
-                                            totalLoan = sum;
-                                          });
-                                        }
-                                      },
-                                      onAddLoan: () async {
-                                        final added = await Navigator.pushNamed<bool>(
+                          if (_loading)
+                            Row(children: const [
+                              Expanded(child: ShimmerBox(height: 120)),
+                              SizedBox(width: 10),
+                              Expanded(child: ShimmerBox(height: 120)),
+                            ])
+                          else
+                            Row(
+                              children: [
+                                // ⬇️ Make Loans card tappable
+                                Expanded(
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(16),
+                                      onTap: () async {
+                                        final changed = await Navigator.pushNamed<bool>(
                                           context,
-                                          '/addLoan',
-                                          arguments: widget.userPhone,
+                                          '/loans',
+                                          arguments: {'userId': widget.userPhone},
                                         );
-                                        if (added == true) {
+                                        if (changed == true) {
                                           await _initDashboard();
                                         }
                                       },
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              // ⬇️ Make Assets card tappable
-                              Expanded(
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(16),
-                                    onTap: () async {
-                                      await Navigator.pushNamed(context, '/portfolio');
-                                      await _loadPortfolioTotals();
-                                    },
-                                    child: AssetsSummaryCard(
-                                      userId: widget.userPhone,
-                                      assetCount: assetCount,
-                                      totalAssets: totalAssets,
-                                      onAddAsset: () async {
-                                        await Navigator.pushNamed(context, '/asset-type-picker');
-                                        await _loadPortfolioTotals();
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
+                                      child: LoansSummaryCard(
+                                        userId: widget.userPhone,
+                                        loanCount: loanCount,
+                                        totalLoan: totalLoan,
 
-                          // 🆕 Subscriptions & Bills card (full-width)
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Card(
-                                  elevation: 3,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(18)),
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(18),
-                                    onTap: () => _openSubscriptionsAndBills(context),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(13),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  "Subscriptions & Bills",
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    color: Colors.teal[800],
-                                                    fontSize: 16,
-                                                  ),
-                                                ),
-                                              ),
-                                              const Icon(Icons.receipt_long_rounded,
-                                                  color: Fx.mintDark),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 7),
-                                          Text(
-                                            totalPlans > 0
-                                                ? "$totalPlans active"
-                                                : "No active plans yet",
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 18,
-                                              color: Colors.green[700],
+                                        // 🆕 show detected loans + review handler
+                                        pendingSuggestions: _loanSuggestionsCount,
+                                        onReviewSuggestions: () async {
+                                          if (!mounted) return;
+                                          setState(() => _scanningLoans = true);
+                                          try {
+                                            await _loanDetector.scanAndWrite(
+                                                widget.userPhone,
+                                                daysWindow: 360);
+                                            _loanSuggestionsCount =
+                                                await _loanDetector.pendingCount(
+                                                    widget.userPhone);
+                                          } finally {
+                                            if (mounted) setState(() => _scanningLoans = false);
+                                          }
+
+                                          await showModalBottomSheet(
+                                            context: context,
+                                            isScrollControlled: true,
+                                            shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(16)),
+                                            builder: (_) => SizedBox(
+                                              height: MediaQuery.of(context).size.height * 0.70,
+                                              child: LoanSuggestionsSheet(userId: widget.userPhone),
                                             ),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            "$_cardsDue $dueLabel due soon • $_autopayCount $autopayLabel",
-                                            style: const TextStyle(fontSize: 13),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  "$_activeSubs $subsLabel • $_activeSips $sipLabel",
-                                                  style: const TextStyle(fontSize: 13),
-                                                ),
-                                              ),
-                                              IconButton(
-                                                icon: const Icon(Icons.add_circle,
-                                                    color: Colors.teal),
-                                                tooltip:
-                                                    "Add subscription or bill",
-                                                onPressed: () async {
-                                                  await _openSubscriptionsAndBills(
-                                                      context);
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                        ],
+                                          );
+
+                                          // refresh badge + totals after sheet actions
+                                          _loanSuggestionsCount =
+                                              await _loanDetector.pendingCount(widget.userPhone);
+                                          final ls = await LoanService()
+                                              .countOpenLoans(widget.userPhone);
+                                          final sum = await LoanService()
+                                              .sumOutstanding(widget.userPhone);
+                                          if (mounted) {
+                                            setState(() {
+                                              loanCount = ls;
+                                              totalLoan = sum;
+                                            });
+                                          }
+                                        },
+                                        onAddLoan: () async {
+                                          final added = await Navigator.pushNamed<bool>(
+                                            context,
+                                            '/addLoan',
+                                            arguments: widget.userPhone,
+                                          );
+                                          if (added == true) {
+                                            await _initDashboard();
+                                          }
+                                        },
                                       ),
                                     ),
                                   ),
+                                ),
+                                const SizedBox(width: 10),
+                                // ⬇️ Make Assets card tappable
+                                Expanded(
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(16),
+                                      onTap: () async {
+                                        await Navigator.pushNamed(context, '/portfolio');
+                                        await _loadPortfolioTotals();
+                                      },
+                                      child: AssetsSummaryCard(
+                                        userId: widget.userPhone,
+                                        assetCount: assetCount,
+                                        totalAssets: totalAssets,
+                                        onAddAsset: () async {
+                                          await Navigator.pushNamed(context, '/asset-type-picker');
+                                          await _loadPortfolioTotals();
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          const SizedBox(height: 10),
+
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SubsBillsCard(
+                                  userPhone: widget.userPhone,
+                                  activeCount: _activeSubs + _activeSips,
+                                  overdueCount: _cardsDue,
+                                  monthTotal: _filteredExpensesForPeriod(txPeriod)
+                                      .where((e) => (e.tags ?? const []).contains('autopay') ||
+                                          (e.tags ?? const []).contains('bill'))
+                                      .fold(0.0, (a, b) => a + b.amount),
+                                  nextDue: null,
+                                  onOpen: () => _openSubscriptionsAndBills(context),
+                                  onAdd: () async {
+                                    await showModalBottomSheet(
+                                      context: context,
+                                      isScrollControlled: true,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(16)),
+                                      builder: (_) => SubsSuggestionsSheet(
+                                        userId: widget.userPhone,
+                                        onReview: () async {
+                                          Navigator.pop(context);
+                                          await showModalBottomSheet(
+                                            context: context,
+                                            isScrollControlled: true,
+                                            shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(16)),
+                                            builder: (_) => SizedBox(
+                                              height: MediaQuery.of(context).size.height * 0.8,
+                                              child: SubscriptionsReviewSheet(userId: widget.userPhone),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    );
+                                    await _initDashboard();
+                                  },
                                 ),
                               ),
                             ],
@@ -1588,44 +1678,18 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           ),
 
                           const SizedBox(height: Fx.s16),
-                          CustomDiamondCard(
-                            isDiamondCut: false,
-                            borderRadius: Fx.r24,
-                            glassGradient: [
-                              Colors.white.withOpacity(0.23),
-                              Colors.white.withOpacity(0.09)
-                            ],
-                            child: ListTile(
-                              leading: Icon(Icons.equalizer,
-                                  color: Fx.mintDark, size: 33),
-                              title: Text(
-                                "Net Worth",
-                                style: TextStyle(
-                                  color: Fx.mintDark,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 17,
-                                ),
-                              ),
-                              subtitle: Text(
-                                "₹${netWorth.toStringAsFixed(0)}",
-                                style: TextStyle(
-                                  color: netWorth >= 0
-                                      ? Colors.teal
-                                      : Colors.red,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 19,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: Fx.s18),
+                          NetWorthPanel(totalAssets: totalAssets, totalLoan: totalLoan),
+                          const SizedBox(height: 18),
                           if (goals.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: Fx.s10),
-                              child: Text(
-                                "No goals added yet! Tap to add your first.",
-                                style: TextStyle(color: Colors.teal),
-                              ),
+                            EmptyStateCard(
+                              icon: Icons.flag_rounded,
+                              title: "No goals yet",
+                              subtitle: "Set a saving goal and track progress effortlessly.",
+                              ctaText: "Add your first goal",
+                              onTap: () async {
+                                await Navigator.pushNamed(context, '/goals', arguments: widget.userPhone);
+                                await _initDashboard();
+                              },
                             ),
                           if (insights.isNotEmpty)
                             GestureDetector(
@@ -1641,7 +1705,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                 );
                               },
                               child: InsightFeedCard(
-                                  insights: insights.take(3).toList()),
+                                insights: insights,
+                                userId: widget.userPhone,
+                              ),
                             ),
                           const SizedBox(height: Fx.s18),
                           if (_showFetchButton)
@@ -1680,10 +1746,30 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     );
   }
 
-  // small KPI badge
+  Widget _presetChip(BuildContext ctx, String label, num amount, TextEditingController ctrl) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: () => ctrl.text = amount.toStringAsFixed(0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.teal.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.teal.withOpacity(0.25)),
+        ),
+        child: Text('$label • ₹${amount.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+      ),
+    );
+  }
+
   Widget _kpiBadge(IconData icon, Color color, String title, String value) {
+    final w = MediaQuery.of(context).size.width;
+    final dense = w < 360;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: dense ? 8 : 12,
+        vertical: dense ? 6 : 8,
+      ),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
         color: Colors.white.withOpacity(0.15),
@@ -1692,16 +1778,35 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(width: 6),
-          Text("$title: ", style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w600)),
-          Text(value, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: color)),
+          Icon(icon, color: color, size: dense ? 14 : 16),
+          SizedBox(width: dense ? 4 : 6),
+          Text(
+            "$title: ",
+            style: TextStyle(
+              fontSize: dense ? 11 : 12,
+              color: Colors.black54,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: dense ? 13 : 15,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
         ],
       ),
     );
   }
 
   Map<String, double> _getTxSummaryForPeriod(String period) {
+    final cacheKey = '${_summaryRevision}_$period';
+    if (_summaryCache.containsKey(cacheKey)) {
+      return _summaryCache[cacheKey]!;
+    }
+
     DateTime now = DateTime.now();
     DateTime start;
     DateTime end = now;
@@ -1744,202 +1849,10 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         t.date.isBefore(end))
         .fold(0.0, (a, b) => a + b.amount);
 
-    return {"credit": credit, "debit": debit, "net": credit - debit};
+    final summary = {"credit": credit, "debit": debit, "net": credit - debit};
+    _summaryCache[cacheKey] = summary;
+    return summary;
   }
-}
-
-// --- HERO RING FOR DASHBOARD (no appbar) ---
-class DashboardHeroRing extends StatelessWidget {
-  final double credit;
-  final double debit;
-  final String period;
-  final VoidCallback onFilterTap;
-
-  const DashboardHeroRing({
-    required this.credit,
-    required this.debit,
-    required this.period,
-    required this.onFilterTap,
-    Key? key,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    double maxValue = (credit > debit ? credit : debit);
-    if (maxValue == 0) maxValue = 1.0;
-    final percentCredit = (credit / maxValue).clamp(0.0, 1.0).toDouble();
-    final percentDebit = (debit / maxValue).clamp(0.0, 1.0).toDouble();
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Fx.s8, vertical: Fx.s12),
-      child: SizedBox(
-        height: 200,
-        child: GlassCard(
-          radius: Fx.r36,
-          padding: const EdgeInsets.symmetric(vertical: Fx.s14, horizontal: Fx.s10),
-          child: Row(
-            children: [
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  _AnimatedRing(
-                    percent: percentDebit,
-                    color: Fx.bad,
-                    size: 148,
-                    strokeWidth: 14,
-                  ),
-                  _AnimatedRing(
-                    percent: percentCredit,
-                    color: Fx.good,
-                    size: 112,
-                    strokeWidth: 10,
-                  ),
-                ],
-              ),
-              const SizedBox(width: Fx.s24),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Today Summary",
-                      style: Fx.title,
-                    ),
-                    const SizedBox(height: Fx.s8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                "Credit",
-                                style: Fx.label,
-                              ),
-                              Text(
-                                "₹${credit.toStringAsFixed(0)}",
-                                style: Fx.number.copyWith(color: Fx.good),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: Fx.s12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                "Debit",
-                                style: Fx.label,
-                              ),
-                              Text(
-                                "₹${debit.toStringAsFixed(0)}",
-                                style: Fx.number.copyWith(color: Fx.bad),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 7),
-                    GestureDetector(
-                      onTap: onFilterTap,
-                      child: PillBadge(
-                        period,
-                        color: Fx.mintDark,
-                        icon: Icons.expand_more_rounded,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AnimatedRing extends StatelessWidget {
-  final double percent;
-  final Color color;
-  final double size;
-  final double strokeWidth;
-
-  const _AnimatedRing({
-    required this.percent,
-    required this.color,
-    this.size = 60,
-    this.strokeWidth = 8,
-    Key? key,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: percent),
-      duration: const Duration(milliseconds: 850),
-      curve: Curves.easeOutCubic,
-      builder: (context, val, child) => CustomPaint(
-        painter: _RingPainter(
-          color: color,
-          percent: val,
-          strokeWidth: strokeWidth,
-        ),
-        size: Size(size, size),
-      ),
-    );
-  }
-}
-
-class _RingPainter extends CustomPainter {
-  final Color color;
-  final double percent;
-  final double strokeWidth;
-
-  _RingPainter({
-    required this.color,
-    required this.percent,
-    this.strokeWidth = 8,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Paint bg = Paint()
-      ..color = color.withOpacity(0.11)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-
-    final Paint fg = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-
-    // BG arc (full)
-    canvas.drawArc(
-      Rect.fromCircle(center: size.center(Offset.zero), radius: size.width / 2),
-      0,
-      2 * 3.1415926535,
-      false,
-      bg,
-    );
-    // FG arc (progress)
-    canvas.drawArc(
-      Rect.fromCircle(center: size.center(Offset.zero), radius: size.width / 2),
-      -3.1415926535 / 2,
-      2 * 3.1415926535 * percent,
-      false,
-      fg,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_RingPainter old) =>
-      old.percent != percent || old.color != color || old.strokeWidth != strokeWidth;
 }
 
 class _MintFab extends StatelessWidget {

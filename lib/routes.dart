@@ -21,6 +21,8 @@ import 'screens/insight_feed_screen.dart';
 import 'screens/transaction_count_screen.dart';
 import 'screens/transaction_amount_screen.dart';
 import 'screens/analytics_screen.dart'; // ✅ we’ll instantiate this in onGenerate
+import 'screens/gmail_link_screen.dart';
+import 'screens/premium_paywall.dart';
 
 // ---------- Services for typed args ----------
 import 'services/user_data.dart';
@@ -60,6 +62,10 @@ final Map<String, WidgetBuilder> appRoutes = {
 
   // Settings
   '/settings/notifications': (_) => const NotificationPrefsScreen(),
+  '/settings/gmail': (ctx) {
+    final args = ModalRoute.of(ctx)!.settings.arguments as String;
+    return GmailLinkScreen(userPhone: args);
+  },
 
   // ------- Deeplink targets (kept as safe stubs for now) -------
   '/partner-dashboard': (_) => const _SimpleStubScreen(title: 'Partner Dashboard'),
@@ -129,6 +135,12 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
       }
       if (args is Map<String, dynamic> && args['userPhone'] is String) {
         return MaterialPageRoute(builder: (_) => AnalyticsScreen(userPhone: args['userPhone'] as String));
+      }
+      break;
+
+    case '/premium':
+      if (args is String) {
+        return MaterialPageRoute(builder: (_) => PremiumPaywallScreen(userPhone: args));
       }
       break;
 

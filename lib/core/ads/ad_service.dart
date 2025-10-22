@@ -1,7 +1,7 @@
 // lib/core/ads/ad_service.dart
 import 'dart:async';
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show SynchronousFuture, debugPrint, kIsWeb, kReleaseMode;
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'ad_ids.dart';
 
@@ -11,6 +11,8 @@ const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: true);
 class AdService {
   AdService._();
   static final AdService I = AdService._();
+  static bool _ready = false;
+  static bool get isReady => _ready;
 
   InterstitialAd? _inter;
   RewardedAd? _rewarded;
@@ -44,17 +46,44 @@ class AdService {
   }
 
   static Future<void> initLater() async {
-    if (kDiagBuild && Platform.isIOS) {
-      debugPrint('[AdService] Skipping ads init for diagnostic iOS build.');
-      return;
-    }
+    try {
+      if (kIsWeb) {
+        _ready = false;
+        return;
+      }
+      if (kDiagBuild && Platform.isIOS) {
+        debugPrint('[AdService] Skipping ads init for diagnostic iOS build.');
+        _ready = false;
+        return;
+      }
+      final bannerId = AdIds.banner;
+      final appId = AdIds.appId;
+      final missingIds = bannerId.isEmpty ||
+          appId.isEmpty ||
+          bannerId.contains('xxxx') ||
+          appId.contains('xxxx') ||
+          bannerId.contains('zzzz') ||
+          appId.contains('zzzz') ||
+          bannerId.contains('fill') ||
+          appId.contains('fill');
+      if (Platform.isIOS && missingIds) {
+        debugPrint('[AdService] iOS AdMob IDs missing – skipping init.');
+        _ready = false;
+        return;
+      }
 
-    await AdService.I.init();
+      await AdService.I.init();
+      _ready = AdService.I.isEnabled;
+    } catch (err, stackTrace) {
+      _ready = false;
+      debugPrint('[AdService] initLater failed: $err\n$stackTrace');
+    }
   }
 
   Future<void> _initializeInternal() async {
     if (!_shouldEnableAds()) {
       _adsEnabled = false;
+      _ready = false;
       return;
     }
 
@@ -68,11 +97,13 @@ class AdService {
       );
 
       _adsEnabled = true;
+      _ready = true;
 
       preloadInterstitial();
       preloadRewarded();
     } catch (err, stackTrace) {
       _adsEnabled = false;
+      _ready = false;
       debugPrint('[AdService] Google Mobile Ads init failed: $err\n$stackTrace');
     }
   }

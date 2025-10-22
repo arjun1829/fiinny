@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../../themes/tokens.dart';
 import '../../themes/glass_card.dart';
@@ -58,6 +59,24 @@ class SubsSuggestionsSheet extends StatelessWidget {
                 ],
               ),
             ),
+            if (userId != null)
+              FutureBuilder<QuerySnapshot>(
+                future: FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(userId)
+                    .collection('subscription_suggestions')
+                    .where('status', whereIn: ['pending', null])
+                    .get(),
+                builder: (_, snap) {
+                  if (!snap.hasData) return const SizedBox.shrink();
+                  final n = snap.data!.docs.length;
+                  if (n == 0) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(top: Fx.s12),
+                    child: PillBadge('$n pending suggestion(s)', color: Fx.mintDark, icon: Icons.lightbulb_rounded),
+                  );
+                },
+              ),
             const SizedBox(height: Fx.s16),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,

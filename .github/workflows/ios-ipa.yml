@@ -335,6 +335,30 @@ jobs:
           ls -lah build/ios/ipa || true
           ls -lah build/ios/archive || true
 
+      - name: Upload dSYMs to Crashlytics
+        if: success()
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.IOS_GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
+          FIREBASE_APP_ID_IOS: ${{ secrets.FIREBASE_APP_ID_IOS }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          if [ ! -f ios/Runner/GoogleService-Info.plist ]; then
+            if [ -z "$GOOGLE_SERVICE_INFO_PLIST" ]; then
+              echo "GoogleService-Info.plist secret missing; skipping upload"
+            else
+              echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > ios/Runner/GoogleService-Info.plist
+            fi
+          fi
+          DSYM_ZIP=$(find build/ios/archive -name "*.dSYM.zip" -print -quit)
+          if [ -z "$DSYM_ZIP" ]; then
+            DSYM_ZIP=$(find . -name "*.dSYM.zip" -print -quit)
+          fi
+          if [ -z "$DSYM_ZIP" ]; then
+            echo "No dSYM zip found"; exit 0
+          fi
+          curl -sL https://firebase.tools | bash
+          firebase crashlytics:symbols:upload "$DSYM_ZIP" --app "$FIREBASE_APP_ID_IOS" --token "$FIREBASE_TOKEN"
+
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
