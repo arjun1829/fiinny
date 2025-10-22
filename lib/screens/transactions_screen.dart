@@ -30,7 +30,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   static const double _bannerHeight = 60.0;
 
   final ValueNotifier<bool> _showBottomBanner = ValueNotifier<bool>(true);
-  final SavedViewsStore _savedViews = const SavedViewsStore();
+  late final SavedViewsStore _savedViews;
 
   final List<ExpenseItem> _expenses = [];
   final List<IncomeItem> _incomes = [];
@@ -51,6 +51,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   @override
   void initState() {
     super.initState();
+    _savedViews = SavedViewsStore(userPhone: widget.userPhone);
     _listenToStreams();
   }
 
