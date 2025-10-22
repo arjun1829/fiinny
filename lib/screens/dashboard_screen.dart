@@ -30,6 +30,9 @@ import '../models/activity_event.dart';
 import 'dashboard_activity_screen.dart';
 import '../widgets/transaction_count_card.dart';
 import '../widgets/transaction_amount_card.dart';
+import '../themes/tokens.dart';
+import '../themes/glass_card.dart';
+import '../themes/badge.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 // NEW portfolio module imports (aliased so they don't clash with your old service/model)
 import '../fiinny_assets/modules/portfolio/services/asset_service.dart' as PAssetService;
@@ -115,6 +118,10 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   bool _isFetchingEmail = false;
   SystemRecurringLocalScheduler? _sysNotifs;
 
+  Map<String, List<double>> _amountBarsCache = {};
+  Map<String, List<int>> _countBarsCache = {};
+  int _barsRevision = 0;
+
 
   // --- Limit logic ---
   double? _periodLimit;
@@ -140,7 +147,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initDashboard();
-    _wirePipelines(); // kick off Gmail backfill (if linked)
     SyncCoordinator.instance.onAppStart(widget.userPhone);
     // 🔔 Start system recurring reminders (subs, SIPs, loans, card bills)
     _sysNotifs = SystemRecurringLocalScheduler(userId: widget.userPhone);
@@ -220,6 +226,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           due++;
         }
       }
+      if (!mounted) return;
       setState(() => _cardsDue = due);
     });
   }
@@ -237,6 +244,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   // --- recompute derived autopay count for current period filter
   void _recomputeAutopayCount() {
     final list = _filteredExpensesForPeriod(txPeriod);
+    if (!mounted) return;
     setState(() {
       _autopayCount = list.where((e) => (e.tags ?? const []).contains('autopay')).length;
     });
@@ -249,18 +257,21 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           .doc(widget.userPhone)
           .get();
       if (doc.exists && doc.data()?['name'] != null) {
+        if (!mounted) return;
         setState(() {
           userName = doc.data()!['name'];
           _userEmail = doc.data()!['email'];
           _isEmailLinked = (_userEmail != null && _userEmail!.isNotEmpty);
         });
       } else {
+        if (!mounted) return;
         setState(() {
           userName = "there";
           _isEmailLinked = false;
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         userName = "there";
         _isEmailLinked = false;
@@ -309,6 +320,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   }
 
   Future<void> _fetchEmailTx() async {
+    if (!mounted) return;
     setState(() => _isFetchingEmail = true);
     try {
       await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
@@ -355,6 +367,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       total += a.quantity * ltp;
     }
 
+    if (!mounted) return;
     setState(() {
       assetCount = assets.length;
       totalAssets = total;
@@ -478,55 +491,57 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
   // 2️⃣ --- Bar Data for Amount ---
   List<double> _barDataAmount() {
+    if (_amountBarsCache.containsKey(txPeriod)) {
+      return _amountBarsCache[txPeriod]!;
+    }
+
     final expenses = _filteredExpensesForPeriod(txPeriod);
     final incomes = _filteredIncomesForPeriod(txPeriod);
     final now = DateTime.now();
 
+    List<double> bars;
+
     if (txPeriod == "D" || txPeriod == "Today") {
       // 24h bar
-      List<double> bars = List.filled(24, 0.0);
+      bars = List<double>.filled(24, 0.0);
       for (var e in expenses) {
         bars[e.date.hour] += e.amount;
       }
       for (var i in incomes) {
         bars[i.date.hour] += i.amount;
       }
-      return bars;
     } else if (txPeriod == "W" || txPeriod == "This Week") {
       // 7 days, Mon-Sun
-      List<double> bars = List.filled(7, 0.0);
+      bars = List<double>.filled(7, 0.0);
       for (var e in expenses) {
         bars[e.date.weekday - 1] += e.amount;
       }
       for (var i in incomes) {
         bars[i.date.weekday - 1] += i.amount;
       }
-      return bars;
     } else if (txPeriod == "M" || txPeriod == "This Month") {
       // N days in this month
-      int days = DateTime(now.year, now.month + 1, 0).day;
-      List<double> bars = List.filled(days, 0.0);
+      final days = DateTime(now.year, now.month + 1, 0).day;
+      bars = List<double>.filled(days, 0.0);
       for (var e in expenses) {
         bars[e.date.day - 1] += e.amount;
       }
       for (var i in incomes) {
         bars[i.date.day - 1] += i.amount;
       }
-      return bars;
     } else if (txPeriod == "Y" || txPeriod == "This Year") {
       // 12 months
-      List<double> bars = List.filled(12, 0.0);
+      bars = List<double>.filled(12, 0.0);
       for (var e in expenses) {
         bars[e.date.month - 1] += e.amount;
       }
       for (var i in incomes) {
         bars[i.date.month - 1] += i.amount;
       }
-      return bars;
     } else if (txPeriod == "Last 2 Days") {
       // 2 bars: yesterday & today
-      List<double> bars = List.filled(2, 0.0);
-      DateTime yesterday = now.subtract(const Duration(days: 1));
+      bars = List<double>.filled(2, 0.0);
+      final yesterday = now.subtract(const Duration(days: 1));
       for (var e in expenses) {
         if (_isSameDay(e.date, now)) {
           bars[1] += e.amount;
@@ -541,10 +556,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           bars[0] += i.amount;
         }
       }
-      return bars;
     } else if (txPeriod == "Last 5 Days") {
       // 5 bars: today, yesterday, etc.
-      List<double> bars = List.filled(5, 0.0);
+      bars = List<double>.filled(5, 0.0);
       for (var d = 0; d < 5; d++) {
         final targetDay = now.subtract(Duration(days: 4 - d));
         for (var e in expenses) {
@@ -554,85 +568,93 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           if (_isSameDay(i.date, targetDay)) bars[d] += i.amount;
         }
       }
-      return bars;
     } else if (txPeriod == "All Time") {
       // Each bar = a month (from oldest tx to newest)
-      if (expenses.isEmpty && incomes.isEmpty) return [];
-      // Find min & max month/year
-      DateTime? minDate, maxDate;
-      for (var e in expenses) {
-        if (minDate == null || e.date.isBefore(minDate)) minDate = e.date;
-        if (maxDate == null || e.date.isAfter(maxDate)) maxDate = e.date;
+      if (expenses.isEmpty && incomes.isEmpty) {
+        bars = <double>[];
+      } else {
+        DateTime? minDate, maxDate;
+        for (var e in expenses) {
+          if (minDate == null || e.date.isBefore(minDate)) minDate = e.date;
+          if (maxDate == null || e.date.isAfter(maxDate)) maxDate = e.date;
+        }
+        for (var i in incomes) {
+          if (minDate == null || i.date.isBefore(minDate)) minDate = i.date;
+          if (maxDate == null || i.date.isAfter(maxDate)) maxDate = i.date;
+        }
+        if (minDate == null || maxDate == null) {
+          bars = <double>[];
+        } else {
+          final months =
+              (maxDate.year - minDate.year) * 12 + (maxDate.month - minDate.month) + 1;
+          bars = List<double>.filled(months, 0.0);
+          for (var e in expenses) {
+            final idx = (e.date.year - minDate.year) * 12 +
+                (e.date.month - minDate.month);
+            bars[idx] += e.amount;
+          }
+          for (var i in incomes) {
+            final idx = (i.date.year - minDate.year) * 12 +
+                (i.date.month - minDate.month);
+            bars[idx] += i.amount;
+          }
+        }
       }
-      for (var i in incomes) {
-        if (minDate == null || i.date.isBefore(minDate)) minDate = i.date;
-        if (maxDate == null || i.date.isAfter(maxDate)) maxDate = i.date;
-      }
-      if (minDate == null || maxDate == null) return [];
-      int months = (maxDate.year - minDate.year) * 12 +
-          (maxDate.month - minDate.month) +
-          1;
-      List<double> bars = List.filled(months, 0.0);
-      for (var e in expenses) {
-        int idx = (e.date.year - minDate.year) * 12 +
-            (e.date.month - minDate.month);
-        bars[idx] += e.amount;
-      }
-      for (var i in incomes) {
-        int idx = (i.date.year - minDate.year) * 12 +
-            (i.date.month - minDate.month);
-        bars[idx] += i.amount;
-      }
-      return bars;
+    } else {
+      bars = <double>[];
     }
-    return [];
+
+    _amountBarsCache[txPeriod] = bars;
+    return bars;
   }
 
   List<int> _barDataCount() {
+    if (_countBarsCache.containsKey(txPeriod)) {
+      return _countBarsCache[txPeriod]!;
+    }
+
     final expenses = _filteredExpensesForPeriod(txPeriod);
     final incomes = _filteredIncomesForPeriod(txPeriod);
     final now = DateTime.now();
 
+    List<int> bars;
+
     if (txPeriod == "D" || txPeriod == "Today") {
-      List<int> bars = List.filled(24, 0);
+      bars = List<int>.filled(24, 0);
       for (var e in expenses) {
         bars[e.date.hour] += 1;
       }
       for (var i in incomes) {
         bars[i.date.hour] += 1;
       }
-      return bars;
     } else if (txPeriod == "W" || txPeriod == "This Week") {
-      List<int> bars = List.filled(7, 0);
+      bars = List<int>.filled(7, 0);
       for (var e in expenses) {
         bars[e.date.weekday - 1] += 1;
       }
       for (var i in incomes) {
         bars[i.date.weekday - 1] += 1;
       }
-      return bars;
     } else if (txPeriod == "M" || txPeriod == "This Month") {
-      int days = DateTime(now.year, now.month + 1, 0).day;
-      List<int> bars = List.filled(days, 0);
+      final days = DateTime(now.year, now.month + 1, 0).day;
+      bars = List<int>.filled(days, 0);
       for (var e in expenses) {
         bars[e.date.day - 1] += 1;
       }
       for (var i in incomes) {
         bars[i.date.day - 1] += 1;
       }
-      return bars;
     } else if (txPeriod == "Y" || txPeriod == "This Year") {
-      List<int> bars = List.filled(12, 0);
+      bars = List<int>.filled(12, 0);
       for (var e in expenses) {
         bars[e.date.month - 1] += 1;
       }
       for (var i in incomes) {
         bars[i.date.month - 1] += 1;
       }
-      return bars;
     } else if (txPeriod == "Last 2 Days") {
-      List<int> bars = List.filled(2, 0);
-      DateTime yesterday = now.subtract(const Duration(days: 1));
+      bars = List<int>.filled(2, 0);
+      final yesterday = now.subtract(const Duration(days: 1));
       for (var e in expenses) {
         if (_isSameDay(e.date, now)) {
           bars[1] += 1;
@@ -647,9 +669,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           bars[0] += 1;
         }
       }
-      return bars;
     } else if (txPeriod == "Last 5 Days") {
-      List<int> bars = List.filled(5, 0);
+      bars = List<int>.filled(5, 0);
       for (var d = 0; d < 5; d++) {
         final targetDay = now.subtract(Duration(days: 4 - d));
         for (var e in expenses) {
@@ -659,36 +680,43 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           if (_isSameDay(i.date, targetDay)) bars[d] += 1;
         }
       }
-      return bars;
     } else if (txPeriod == "All Time") {
-      if (expenses.isEmpty && incomes.isEmpty) return [];
-      DateTime? minDate, maxDate;
-      for (var e in expenses) {
-        if (minDate == null || e.date.isBefore(minDate)) minDate = e.date;
-        if (maxDate == null || e.date.isAfter(maxDate)) maxDate = e.date;
+      if (expenses.isEmpty && incomes.isEmpty) {
+        bars = <int>[];
+      } else {
+        DateTime? minDate, maxDate;
+        for (var e in expenses) {
+          if (minDate == null || e.date.isBefore(minDate)) minDate = e.date;
+          if (maxDate == null || e.date.isAfter(maxDate)) maxDate = e.date;
+        }
+        for (var i in incomes) {
+          if (minDate == null || i.date.isBefore(minDate)) minDate = i.date;
+          if (maxDate == null || i.date.isAfter(maxDate)) maxDate = i.date;
+        }
+        if (minDate == null || maxDate == null) {
+          bars = <int>[];
+        } else {
+          final months =
+              (maxDate.year - minDate.year) * 12 + (maxDate.month - minDate.month) + 1;
+          bars = List<int>.filled(months, 0);
+          for (var e in expenses) {
+            final idx = (e.date.year - minDate.year) * 12 +
+                (e.date.month - minDate.month);
+            bars[idx] += 1;
+          }
+          for (var i in incomes) {
+            final idx = (i.date.year - minDate.year) * 12 +
+                (i.date.month - minDate.month);
+            bars[idx] += 1;
+          }
+        }
       }
-      for (var i in incomes) {
-        if (minDate == null || i.date.isBefore(minDate)) minDate = i.date;
-        if (maxDate == null || i.date.isAfter(maxDate)) maxDate = i.date;
-      }
-      if (minDate == null || maxDate == null) return [];
-      int months = (maxDate.year - minDate.year) * 12 +
-          (maxDate.month - minDate.month) +
-          1;
-      List<int> bars = List.filled(months, 0);
-      for (var e in expenses) {
-        int idx = (e.date.year - minDate.year) * 12 +
-            (e.date.month - minDate.month);
-        bars[idx] += 1;
-      }
-      for (var i in incomes) {
-        int idx = (i.date.year - minDate.year) * 12 +
-            (i.date.month - minDate.month);
-        bars[idx] += 1;
-      }
-      return bars;
+    } else {
+      bars = <int>[];
     }
-    return [];
+
+    _countBarsCache[txPeriod] = bars;
+    return bars;
   }
 
   // --- Utility for date comparison ---
@@ -712,6 +740,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   }
 
   Future<void> _initDashboard() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     try {
       final expenses = await _expenseSvc.getExpenses(widget.userPhone);
@@ -719,6 +748,13 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
       allExpenses = expenses;
       allIncomes = incomes;
+
+      if (!mounted) return;
+      setState(() {
+        _barsRevision++;
+        _amountBarsCache.clear();
+        _countBarsCache.clear();
+      });
 
       goals = await GoalService().getGoals(widget.userPhone);
       currentGoal = goals.isNotEmpty ? goals.first : null;
@@ -778,6 +814,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       debugPrint('[Dashboard] loan suggestions count error: $e');
     }
 
+    if (!mounted) return;
     setState(() => _loading = false);
     _checkLimitWarnings();
   }
@@ -798,6 +835,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     } catch (e) {
       _periodLimit = null;
     }
+    if (!mounted) return;
     setState(() {});
   }
 
@@ -856,6 +894,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     );
 
     if (result != null) {
+      if (!mounted) return;
       setState(() => _savingLimit = true);
       try {
         if (result == 0.0) {
@@ -881,6 +920,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           SnackBar(content: Text("Failed to save limit: $e")),
         );
       }
+      if (!mounted) return;
       setState(() => _savingLimit = false);
     }
     _resetLimitWarnings();
@@ -946,7 +986,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         title: Text(
           "Fiinny",
           style: TextStyle(
-            color: Color(0xFF09857a),
+            color: Fx.mintDark,
             fontWeight: FontWeight.bold,
             fontSize: 20,
             letterSpacing: 0.7,
@@ -955,7 +995,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         actions: [
           IconButton(
             icon: const Icon(Icons.notifications_active_rounded,
-                color: Color(0xFF09857a), size: 25),
+                color: Fx.mintDark, size: 25),
             tooltip: 'Notification settings',
             onPressed: () async {
               await NotifPrefsService.ensureDefaultPrefs(); // make sure doc exists
@@ -980,10 +1020,11 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               width: 22, height: 22,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-                : const Icon(Icons.sync_rounded, color: Color(0xFF09857a), size: 24),
+                : const Icon(Icons.sync_rounded, color: Fx.mintDark, size: Fx.s24),
             tooltip: 'Fetch Email Data',
             onPressed: _isFetchingEmail ? null : () async {
-              setState(()=>_isFetchingEmail = true);
+              if (!mounted) return;
+              setState(() => _isFetchingEmail = true);
               try {
                 await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
                 await _initDashboard();
@@ -999,7 +1040,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                   );
                 }
               } finally {
-                if (mounted) setState(()=>_isFetchingEmail=false);
+                if (mounted) setState(() => _isFetchingEmail = false);
               }
             },
           ),
@@ -1009,7 +1050,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               Navigator.pushNamed(context, '/profile', arguments: widget.userPhone);
             },
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              padding: const EdgeInsets.symmetric(horizontal: Fx.s10),
               child: FutureBuilder<DocumentSnapshot>(
                 future: FirebaseFirestore.instance
                     .collection('users')
@@ -1026,7 +1067,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                   }
                   // Show network image if it's a URL, else asset
                   return CircleAvatar(
-                    radius: 20,
+                    radius: Fx.r20,
                     backgroundImage: (avatar!.startsWith('http'))
                         ? NetworkImage(avatar)
                         : AssetImage(avatar) as ImageProvider,
@@ -1071,7 +1112,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                 await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
                 _loanSuggestionsCount =
                 await _loanDetector.pendingCount(widget.userPhone);
-                setState((){}); // update the chip count
+                if (!mounted) return;
+                setState(() {}); // update the chip count
               } catch (e) {
                 debugPrint('[onRefresh] loan scan error: $e');
               }
@@ -1094,13 +1136,13 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         SmartNudgeWidget(userId: widget.userPhone),
                         Padding(
                           padding: const EdgeInsets.only(
-                              left: 20, top: 2, bottom: 8),
+                              left: Fx.s20, top: Fx.s2, bottom: Fx.s8),
                           child: Text(
                             "Welcome, ${userName ?? '...'}",
                             style: const TextStyle(
                               fontSize: 21,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF09857a),
+                              color: Fx.mintDark,
                             ),
                           ),
                         ),
@@ -1129,6 +1171,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                     ),
                                   );
                                   if (result != null && result != txPeriod) {
+                                    if (!mounted) return;
                                     setState(() => txPeriod = result);
                                     await _loadPeriodLimit();
                                     _resetLimitWarnings();
@@ -1187,6 +1230,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           children: [
                             Expanded(
                               child: TransactionCountCard(
+                                key: ValueKey('count|$_barsRevision|$txPeriod'),
                                 count: filteredIncomes.length + filteredExpenses.length,
                                 period: txPeriod,
                                 barData: _barDataCount(),
@@ -1199,6 +1243,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                     ),
                                   );
                                   if (result != null && result != txPeriod) {
+                                    if (!mounted) return;
                                     setState(() => txPeriod = result);
                                     await _loadPeriodLimit();
                                     _resetLimitWarnings();
@@ -1218,6 +1263,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                             const SizedBox(width: 12),
                             Expanded(
                               child: TransactionAmountCard(
+                                key: ValueKey('amount|$_barsRevision|$txPeriod'),
                                 label: "Transaction Amount",
                                 amount: filteredIncomes.fold(0.0, (a, b) => a + b.amount) +
                                     filteredExpenses.fold(0.0, (a, b) => a + b.amount),
@@ -1232,6 +1278,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                     ),
                                   );
                                   if (result != null && result != txPeriod) {
+                                    if (!mounted) return;
                                     setState(() => txPeriod = result);
                                     await _loadPeriodLimit();
                                     _resetLimitWarnings();
@@ -1338,6 +1385,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                       // 🆕 show detected loans + review handler
                                       pendingSuggestions: _loanSuggestionsCount,
                                       onReviewSuggestions: () async {
+                                        if (!mounted) return;
                                         setState(() => _scanningLoans = true);
                                         try {
                                           await _loanDetector.scanAndWrite(
@@ -1447,7 +1495,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                                 ),
                                               ),
                                               const Icon(Icons.receipt_long_rounded,
-                                                  color: Color(0xFF09857a)),
+                                                  color: Fx.mintDark),
                                             ],
                                           ),
                                           const SizedBox(height: 7),
@@ -1539,21 +1587,21 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                             ],
                           ),
 
-                          const SizedBox(height: 16),
+                          const SizedBox(height: Fx.s16),
                           CustomDiamondCard(
                             isDiamondCut: false,
-                            borderRadius: 24,
+                            borderRadius: Fx.r24,
                             glassGradient: [
                               Colors.white.withOpacity(0.23),
                               Colors.white.withOpacity(0.09)
                             ],
                             child: ListTile(
                               leading: Icon(Icons.equalizer,
-                                  color: Color(0xFF09857a), size: 33),
+                                  color: Fx.mintDark, size: 33),
                               title: Text(
                                 "Net Worth",
                                 style: TextStyle(
-                                  color: Color(0xFF09857a),
+                                  color: Fx.mintDark,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 17,
                                 ),
@@ -1570,10 +1618,10 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                               ),
                             ),
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: Fx.s18),
                           if (goals.isEmpty)
                             const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
+                              padding: EdgeInsets.symmetric(vertical: Fx.s10),
                               child: Text(
                                 "No goals added yet! Tap to add your first.",
                                 style: TextStyle(color: Colors.teal),
@@ -1595,14 +1643,14 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                               child: InsightFeedCard(
                                   insights: insights.take(3).toList()),
                             ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: Fx.s18),
                           if (_showFetchButton)
                             if (!_isEmailLinked)
                               Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                padding: const EdgeInsets.symmetric(vertical: Fx.s4),
                                 child: ElevatedButton.icon(
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: Color(0xFF09857a),
+                                    backgroundColor: Fx.mintDark,
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(vertical: 13),
                                     shape: RoundedRectangleBorder(
@@ -1722,129 +1770,93 @@ class DashboardHeroRing extends StatelessWidget {
     final percentCredit = (credit / maxValue).clamp(0.0, 1.0).toDouble();
     final percentDebit = (debit / maxValue).clamp(0.0, 1.0).toDouble();
 
-    return Container(
-      height: 200,
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(36),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.teal.withOpacity(0.10),
-            blurRadius: 18,
-            offset: const Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Stack(
-            alignment: Alignment.center,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Fx.s8, vertical: Fx.s12),
+      child: SizedBox(
+        height: 200,
+        child: GlassCard(
+          radius: Fx.r36,
+          padding: const EdgeInsets.symmetric(vertical: Fx.s14, horizontal: Fx.s10),
+          child: Row(
             children: [
-              _AnimatedRing(
-                percent: percentDebit,
-                color: Colors.red,
-                size: 150,
-                strokeWidth: 15,
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  _AnimatedRing(
+                    percent: percentDebit,
+                    color: Fx.bad,
+                    size: 148,
+                    strokeWidth: 14,
+                  ),
+                  _AnimatedRing(
+                    percent: percentCredit,
+                    color: Fx.good,
+                    size: 112,
+                    strokeWidth: 10,
+                  ),
+                ],
               ),
-              _AnimatedRing(
-                percent: percentCredit,
-                color: Colors.green,
-                size: 120,
-                strokeWidth: 11,
+              const SizedBox(width: Fx.s24),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Today Summary",
+                      style: Fx.title,
+                    ),
+                    const SizedBox(height: Fx.s8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "Credit",
+                                style: Fx.label,
+                              ),
+                              Text(
+                                "₹${credit.toStringAsFixed(0)}",
+                                style: Fx.number.copyWith(color: Fx.good),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: Fx.s12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "Debit",
+                                style: Fx.label,
+                              ),
+                              Text(
+                                "₹${debit.toStringAsFixed(0)}",
+                                style: Fx.number.copyWith(color: Fx.bad),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 7),
+                    GestureDetector(
+                      onTap: onFilterTap,
+                      child: PillBadge(
+                        period,
+                        color: Fx.mintDark,
+                        icon: Icons.expand_more_rounded,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
-          const SizedBox(width: 36),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "Transaction Ring",
-                  style: TextStyle(
-                    color: Color(0xFF09857a),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-                Row(
-                  children: [
-                    Text(
-                      "₹${credit.toStringAsFixed(0)}",
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green,
-                        fontSize: 25,
-                        letterSpacing: 0.1,
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    const Text(
-                      "Credit",
-                      style: TextStyle(
-                        color: Colors.green,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    Text(
-                      "₹${debit.toStringAsFixed(0)}",
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.red,
-                        fontSize: 25,
-                        letterSpacing: 0.1,
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    const Text(
-                      "Debit",
-                      style: TextStyle(
-                        color: Colors.red,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 7),
-                GestureDetector(
-                  onTap: onFilterTap,
-                  child: Container(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          period,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF09857a),
-                            fontSize: 14,
-                          ),
-                        ),
-                        const Icon(Icons.expand_more_rounded,
-                            size: 21, color: Color(0xFF09857a)),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/goal_model.dart';
+import '../themes/tokens.dart';
+import '../themes/glass_card.dart';
+import '../themes/badge.dart';
 
 class SmartInsightCard extends StatelessWidget {
   final double income;
@@ -21,93 +25,82 @@ class SmartInsightCard extends StatelessWidget {
     this.showToday = false,
   }) : super(key: key);
 
-  String getInsight() {
-    // Debug print for rebuilds
-    print('[SmartInsightCard] build: income=$income, expense=$expense, savings=$savings, '
-        'loan=${totalLoan ?? 0}, assets=${totalAssets ?? 0}');
+  static final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
-    // Net Worth Insights (Assets and Loans)
-    if ((totalLoan ?? 0) > 0 || (totalAssets ?? 0) > 0) {
-      double netWorth = (totalAssets ?? 0) - (totalLoan ?? 0);
-      if ((totalLoan ?? 0) > 0 && (totalAssets ?? 0) == 0) {
-        return "You have ₹${(totalLoan ?? 0).toStringAsFixed(0)} in loans. Try to reduce debt and build assets!";
+  String getInsight() {
+    final loans = (totalLoan ?? 0);
+    final assets = (totalAssets ?? 0);
+
+    // Net worth based
+    if (loans > 0 || assets > 0) {
+      final net = assets - loans;
+      if (loans > 0 && assets == 0) {
+        return "You have ${_inr.format(loans)} in loans. Reduce debt and start building assets.";
       }
-      if ((totalAssets ?? 0) > 0 && (totalLoan ?? 0) == 0) {
-        return "Your assets total ₹${(totalAssets ?? 0).toStringAsFixed(0)}. Great, keep building your wealth!";
+      if (assets > 0 && loans == 0) {
+        return "Your assets total ${_inr.format(assets)}. Great—keep compounding!";
       }
-      if (netWorth < 0) {
-        return "Your net worth is negative (₹${netWorth.toStringAsFixed(0)}). Try to pay off your loans and grow your assets. 🔄";
-      } else if (netWorth == 0) {
-        return "Your assets and loans balance each other. Work towards a positive net worth!";
-      } else if (netWorth < 50000) {
-        return "Your net worth is ₹${netWorth.toStringAsFixed(0)}. Keep going! 💪";
-      } else {
-        return "Awesome! Your net worth is ₹${netWorth.toStringAsFixed(0)}. You're building real wealth! 🚀";
+      if (net < 0) {
+        return "Net worth is negative (${_inr.format(net)}). Prioritise paying EMIs and growing assets.";
       }
+      if (net == 0) {
+        return "Assets and loans balance out. Aim for a positive net worth.";
+      }
+      if (net < 50000) {
+        return "Net worth: ${_inr.format(net)}. Keep going 💪";
+      }
+      return "Awesome! Net worth is ${_inr.format(net)} 🚀";
     }
 
-    // General Finance/Spending Insights
+    // General
     if (income == 0 && expense == 0) {
-      return "Add your first transaction to get insights! 🌱";
+      return "Add your first transaction to unlock insights 🌱";
     }
     if (expense > income && income > 0) {
-      return "Uh oh, you spent more than you earned this month. Watch out! 😬";
+      return "You spent more than you earned this month. Tighten the reins.";
     }
-    if (income > 0 && (savings / income) > 0.3) {
-      return "Great job! You’ve saved over 30% of your income. Keep it up! 🚀";
+    if (income > 0 && (savings / income) > 0.30) {
+      return "Great! You saved over 30% of income this month.";
     }
     if (goal != null && goal!.targetAmount > 0 && savings > 0) {
-      double months = ((goal!.targetAmount - goal!.savedAmount) / (savings == 0 ? 1 : savings)).clamp(1, 36);
-      return "At this pace, you'll reach your goal '${goal!.title}' in about ${months.toStringAsFixed(0)} months! 🏆";
+      final remaining = (goal!.targetAmount - goal!.savedAmount).clamp(0, double.infinity);
+      final months = (remaining / (savings == 0 ? 1 : savings)).clamp(1, 36);
+      return "At this pace, you’ll reach '${goal!.title}' in ~${months.toStringAsFixed(0)} months.";
     }
-    return "You’re tracking your finances like a pro! 💪";
+    return "You’re tracking well. Keep logging and reviewing regularly.";
   }
 
   @override
   Widget build(BuildContext context) {
-    print("[SmartInsightCard] Widget rebuild triggered");
-
-    return Card(
-      elevation: 4,
-      color: Theme.of(context).cardColor.withOpacity(0.98),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(18.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.auto_graph_rounded, color: Colors.teal[700], size: 34),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    getInsight(),
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+    return GlassCard(
+      radius: Fx.r24,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.auto_graph_rounded, color: Fx.mintDark, size: 34),
+          const SizedBox(width: Fx.s16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(getInsight(), style: Fx.label.copyWith(fontSize: 16, fontWeight: FontWeight.w700, color: Fx.textStrong)),
+                if (showToday) ...[
+                  const SizedBox(height: Fx.s8),
+                  Row(
+                    children: [
+                      PillBadge("Today", color: Fx.mintDark, icon: Icons.today_rounded),
+                      const SizedBox(width: Fx.s8),
+                      Text(_prettyDate(DateTime.now()), style: Fx.label.copyWith(fontSize: 12)),
+                    ],
                   ),
-                  if (showToday)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(
-                        "Today: ${_prettyDate(DateTime.now())}",
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.teal[600],
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                    ),
                 ],
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  String _prettyDate(DateTime date) {
-    return "${date.day}/${date.month}/${date.year}";
-  }
+  String _prettyDate(DateTime date) => "${date.day}/${date.month}/${date.year}";
 }
