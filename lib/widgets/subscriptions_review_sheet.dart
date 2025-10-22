@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' show QuerySnapshot;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -6,6 +7,7 @@ import '../models/expense_item.dart';
 import '../themes/tokens.dart';
 import '../themes/badge.dart';
 import '../themes/glass_card.dart';
+import '../core/ui/safe_set_state.dart';
 
 class SubscriptionsReviewSheet extends StatefulWidget {
   final String userId;
@@ -26,9 +28,12 @@ class SubscriptionsReviewSheet extends StatefulWidget {
 class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
   bool _loading = true;
   final Map<String, List<ExpenseItem>> _groups = {};
+  final Map<String, Map<String, dynamic>> _precomputedMeta = {};
   final _q = TextEditingController();
   String _sort = 'count_desc'; // count_desc | amount_desc | newest
   static final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+  bool _triedPrecomputed = false;
+  bool _usingPrecomputed = false;
 
   String _keyFor(ExpenseItem e) {
     final meta = (e.toJson()['brainMeta'] as Map?)?.cast<String, dynamic>();
@@ -54,14 +59,62 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
       for (final e in widget.prefetched!) {
         _groups.putIfAbsent(_keyFor(e), () => []).add(e);
       }
-      if (mounted) setState(() => _loading = false);
+      setStateSafe(() => _loading = false);
+      return;
+    }
+    final ok = await _loadFromPrecomputed();
+    if (ok) {
+      setStateSafe(() => _loading = false);
       return;
     }
     await _loadFromDb();
   }
 
+  Future<bool> _loadFromPrecomputed() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .collection('subscription_suggestions')
+          .where('status', whereIn: ['pending', null])
+          .orderBy('updatedAt', descending: true)
+          .limit(300)
+          .get();
+
+      _triedPrecomputed = true;
+      _usingPrecomputed = false;
+      _groups.clear();
+      _precomputedMeta.clear();
+      if (snap.docs.isEmpty) return false;
+
+      for (final d in snap.docs) {
+        final data = d.data() as Map<String, dynamic>;
+        final merchant = (data['merchant'] ?? 'Merchant').toString();
+        final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
+        final key =
+            '${merchant.toLowerCase()}|${((amount / 10).round() * 10)}';
+        _groups.putIfAbsent(key, () => []);
+        _precomputedMeta[key] = {
+          'amount': amount,
+          'count': (data['count'] as num?)?.toInt(),
+          'nextDue': (data['nextDue'] is Timestamp)
+              ? (data['nextDue'] as Timestamp).toDate()
+              : null,
+        };
+      }
+      _usingPrecomputed = _groups.isNotEmpty;
+      return _usingPrecomputed;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _loadFromDb() async {
-    setState(() => _loading = true);
+    _triedPrecomputed = false;
+    _usingPrecomputed = false;
+    _precomputedMeta.clear();
+    _groups.clear();
+    setStateSafe(() => _loading = true);
     final now = DateTime.now();
     final from = DateTime(now.year, now.month, now.day)
         .subtract(Duration(days: widget.daysWindow));
@@ -84,12 +137,13 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
         items.add(ExpenseItem.fromFirestore(d));
       }
       cursor = snap.docs.last;
+      await Future<void>.delayed(const Duration(milliseconds: 1));
     }
 
     for (final e in items) {
       _groups.putIfAbsent(_keyFor(e), () => []).add(e);
     }
-    if (mounted) setState(() => _loading = false);
+    setStateSafe(() => _loading = false);
   }
 
   @override
@@ -98,12 +152,22 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
 
     final entries = _groups.entries.map((e) {
       final merchant = e.key.split('|').first;
-      final amt = e.value.isEmpty ? 0.0 : e.value.first.amount;
-      final count = e.value.length;
-      final newest = e.value
-              .map((x) => x.date)
-              .fold<DateTime?>(null, (m, d) => (m == null || d.isAfter(m)) ? d : m) ??
-          DateTime(2000);
+      final meta = _precomputedMeta[e.key];
+      final amt = meta != null && meta['amount'] != null
+          ? (meta['amount'] as num).toDouble()
+          : (e.value.isEmpty ? 0.0 : e.value.first.amount);
+      final count = meta != null && meta['count'] != null
+          ? (meta['count'] as num).toInt()
+          : e.value.length;
+      DateTime newest;
+      if (meta != null && meta['nextDue'] is DateTime) {
+        newest = meta['nextDue'] as DateTime;
+      } else {
+        newest = e.value
+                .map((x) => x.date)
+                .fold<DateTime?>(null, (m, d) => (m == null || d.isAfter(m)) ? d : m) ??
+            DateTime(2000);
+      }
       return (key: e.key, merchant: merchant, amount: amt, count: count, newest: newest, items: e.value);
     }).toList();
 
@@ -177,6 +241,24 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
                     ),
                   ]),
                   const SizedBox(height: Fx.s10),
+
+                  if (_triedPrecomputed && _usingPrecomputed && _groups.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(children: [
+                        const Icon(Icons.bolt_rounded, color: Colors.amber, size: 18),
+                        const SizedBox(width: 6),
+                        const Expanded(child: Text('Showing precomputed suggestions')),
+                        TextButton(
+                          onPressed: () async {
+                            setStateSafe(() => _loading = true);
+                            await _loadFromDb();
+                            setStateSafe(() => _loading = false);
+                          },
+                          child: const Text('Refresh from raw'),
+                        ),
+                      ]),
+                    ),
 
                   Expanded(
                     child: filtered.isEmpty
