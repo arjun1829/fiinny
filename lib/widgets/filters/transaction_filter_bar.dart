@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../core/filters/saved_views_store.dart';
 import '../../core/filters/subcategory_source.dart';
 import '../../core/filters/transaction_filter.dart';
 
@@ -230,7 +229,14 @@ class _TransactionFilterBarState extends State<TransactionFilterBar> {
   }
 
   Future<void> _loadSavedViews() async {
-    final loader = widget.loadSavedViews ?? SavedViewsStore().loadAll;
+    final loader = widget.loadSavedViews;
+    if (loader == null) {
+      setState(() {
+        _savedViews = const [];
+        _loadingSavedViews = false;
+      });
+      return;
+    }
     setState(() {
       _loadingSavedViews = true;
     });
@@ -463,7 +469,7 @@ class _TransactionFilterBarState extends State<TransactionFilterBar> {
     if (widget.onSaveView != null) {
       return widget.onSaveView!(name, filter);
     }
-    return SavedViewsStore().save(name, filter);
+    return Future.value();
   }
 
   List<_PeriodPreset> _periods() {
@@ -652,10 +658,7 @@ class _TransactionFilterBarState extends State<TransactionFilterBar> {
                 await widget.onSaveView!(name, _filter);
                 await _loadSavedViews();
               }
-            : (name) async {
-                await SavedViewsStore().save(name, _filter);
-                await _loadSavedViews();
-              },
+            : null,
         onRefreshSavedViews: _loadSavedViews,
         onReset: widget.onReset ?? () => _setFilter(TransactionFilter.defaults()),
       ),
