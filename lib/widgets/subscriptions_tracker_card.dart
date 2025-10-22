@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' show WriteBatch;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -8,6 +9,7 @@ import '../brain/cadence_detector.dart';
 import '../themes/tokens.dart';
 import '../themes/glass_card.dart';
 import '../themes/badge.dart';
+import '../core/ui/safe_set_state.dart';
 
 class SubscriptionsTrackerCard extends StatefulWidget {
   final String userPhone;
@@ -127,7 +129,7 @@ class _SubscriptionsTrackerCardState extends State<SubscriptionsTrackerCard> {
 
   Future<void> _runScan() async {
     if (_running) return;
-    setState(() {
+    setStateSafe(() {
       _running = true;
       _done = false;
       _status = 'Starting recurring scan…';
@@ -138,8 +140,23 @@ class _SubscriptionsTrackerCardState extends State<SubscriptionsTrackerCard> {
 
     try {
       HapticFeedback.lightImpact();
+      final metaSnap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userPhone)
+          .collection('meta')
+          .doc('subs_scan')
+          .get();
+      DateTime? prevFrom;
+      if (metaSnap.exists) {
+        final m = metaSnap.data() as Map<String, dynamic>?;
+        final ts = m?['scannedFrom'];
+        if (ts is Timestamp) prevFrom = ts.toDate();
+      }
       final now = DateTime.now();
-      final from = DateTime(now.year, now.month, now.day).subtract(Duration(days: widget.daysWindow));
+      final fallbackFrom = DateTime(now.year, now.month, now.day)
+          .subtract(Duration(days: widget.daysWindow));
+      final from =
+          prevFrom != null && prevFrom.isAfter(fallbackFrom) ? prevFrom : fallbackFrom;
 
       final all = <ExpenseItem>[];
       DocumentSnapshot? cursor;
@@ -160,16 +177,53 @@ class _SubscriptionsTrackerCardState extends State<SubscriptionsTrackerCard> {
           final e = ExpenseItem.fromFirestore(d);
           all.add(e);
           _expCount++; _scanned++;
-          if (mounted) setState((){});
+          setStateSafe(() {});
           await Future.delayed(const Duration(milliseconds: 6));
         }
         cursor = snap.docs.last;
-        if (mounted) setState(() => _status = 'Scanning… $_scanned txns');
+        setStateSafe(() => _status = 'Scanning… $_scanned txns');
+        await Future<void>.delayed(const Duration(milliseconds: 1));
       }
 
       final detected = CadenceDetector.detect(all);
-      if (!mounted) return;
-      setState(() {
+      final db = FirebaseFirestore.instance;
+      final suggCol = db
+          .collection('users')
+          .doc(widget.userPhone)
+          .collection('subscription_suggestions');
+
+      final WriteBatch batch = db.batch();
+      for (final r in detected) {
+        final key =
+            '${r.name.toLowerCase()}|${(r.monthlyAmount / 10).round() * 10}';
+        final doc = suggCol.doc(key);
+        final data = {
+          'merchant': r.name,
+          'amount': r.monthlyAmount,
+          'type': r.type,
+          'nextDue': r.nextDueDate,
+          'status': 'pending',
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+        if (r.occurrences != null) {
+          data['count'] = r.occurrences;
+        }
+        batch.set(doc, data, SetOptions(merge: true));
+      }
+
+      final meta = db
+          .collection('users')
+          .doc(widget.userPhone)
+          .collection('meta')
+          .doc('subs_scan');
+      batch.set(meta, {
+        'lastRunAt': FieldValue.serverTimestamp(),
+        'scannedFrom': Timestamp.fromDate(from),
+      }, SetOptions(merge: true));
+
+      await batch.commit();
+
+      setStateSafe(() {
         _items = detected;
         _status = 'Scan complete.';
         _running = false;
@@ -178,8 +232,7 @@ class _SubscriptionsTrackerCardState extends State<SubscriptionsTrackerCard> {
       });
       HapticFeedback.mediumImpact();
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
+      setStateSafe(() {
         _running = false;
         _done = false;
         _status = 'Error: $e';
