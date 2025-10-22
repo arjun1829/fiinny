@@ -1603,7 +1603,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                   monthTotal: _filteredExpensesForPeriod(txPeriod)
                                       .where((e) => (e.tags ?? const []).contains('autopay') ||
                                           (e.tags ?? const []).contains('bill'))
-                                      .fold(0.0, (a, b) => a + b.amount),
+                                      .fold<double>(0.0, (a, b) => a + b.amount),
                                   nextDue: null,
                                   onOpen: () => _openSubscriptionsAndBills(context),
                                   onAdd: () async {
@@ -1656,7 +1656,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                     child: GoalsSummaryCard(
                                       userId: widget.userPhone,
                                       goalCount: goals.length,
-                                      totalGoalAmount: goals.fold(0.0, (sum, g) => sum + g.targetAmount),
+                                      totalGoalAmount: goals.fold<double>(0.0, (sum, g) => sum + g.targetAmount),
                                       onAddGoal: () async {
                                         final added = await showDialog<bool>(
                                           context: context,
