@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../models/goal_model.dart';
 import '../themes/tokens.dart';
 import '../themes/glass_card.dart';
 import '../themes/badge.dart';
+import '../brain/insight_microcopy.dart';
 
 class SmartInsightCard extends StatelessWidget {
   final double income;
@@ -25,49 +25,26 @@ class SmartInsightCard extends StatelessWidget {
     this.showToday = false,
   }) : super(key: key);
 
-  static final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
-
   String getInsight() {
     final loans = (totalLoan ?? 0);
     final assets = (totalAssets ?? 0);
 
-    // Net worth based
     if (loans > 0 || assets > 0) {
-      final net = assets - loans;
-      if (loans > 0 && assets == 0) {
-        return "You have ${_inr.format(loans)} in loans. Reduce debt and start building assets.";
-      }
-      if (assets > 0 && loans == 0) {
-        return "Your assets total ${_inr.format(assets)}. Great—keep compounding!";
-      }
-      if (net < 0) {
-        return "Net worth is negative (${_inr.format(net)}). Prioritise paying EMIs and growing assets.";
-      }
-      if (net == 0) {
-        return "Assets and loans balance out. Aim for a positive net worth.";
-      }
-      if (net < 50000) {
-        return "Net worth: ${_inr.format(net)}. Keep going 💪";
-      }
-      return "Awesome! Net worth is ${_inr.format(net)} 🚀";
+      return InsightMicrocopy.netWorth(assets: assets, loans: loans);
     }
 
-    // General
-    if (income == 0 && expense == 0) {
-      return "Add your first transaction to unlock insights 🌱";
-    }
-    if (expense > income && income > 0) {
-      return "You spent more than you earned this month. Tighten the reins.";
-    }
-    if (income > 0 && (savings / income) > 0.30) {
-      return "Great! You saved over 30% of income this month.";
-    }
+    final svi = InsightMicrocopy.spendVsIncome(income: income, expense: expense);
+    if (svi.isNotEmpty) return svi;
+
+    final sr = InsightMicrocopy.savingsRate(income: income, savings: savings);
+    if (sr.isNotEmpty) return sr;
+
     if (goal != null && goal!.targetAmount > 0 && savings > 0) {
       final remaining = (goal!.targetAmount - goal!.savedAmount).clamp(0, double.infinity);
-      final months = (remaining / (savings == 0 ? 1 : savings)).clamp(1, 36);
-      return "At this pace, you’ll reach '${goal!.title}' in ~${months.toStringAsFixed(0)} months.";
+      return InsightMicrocopy.goalPace(title: goal!.title, remaining: remaining, monthlySavings: savings);
     }
-    return "You’re tracking well. Keep logging and reviewing regularly.";
+
+    return InsightMicrocopy.fallback();
   }
 
   @override

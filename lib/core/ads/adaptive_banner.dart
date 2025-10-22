@@ -1,6 +1,9 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import '../flags/remote_flags.dart';
 import 'ad_service.dart';
 
 class AdaptiveBanner extends StatefulWidget {
@@ -14,6 +17,7 @@ class AdaptiveBanner extends StatefulWidget {
   /// NEW: Maximum height hint for inline banners (typical 80–120dp).
   /// Ignored when [inline] is false.
   final int? inlineMaxHeight;
+  final String? userId;
 
   const AdaptiveBanner({
     super.key,
@@ -21,6 +25,7 @@ class AdaptiveBanner extends StatefulWidget {
     this.padding = const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
     this.inline = false,
     this.inlineMaxHeight,
+    this.userId,
   });
 
   @override
@@ -98,6 +103,27 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
 
   @override
   Widget build(BuildContext context) {
+    if (!AdService.isReady) {
+      return const SizedBox.shrink();
+    }
+
+    if (Platform.isIOS) {
+      return StreamBuilder<bool>(
+        stream: RemoteFlags.instance.on<bool>('adsEnabledIOS', userId: widget.userId, fallback: false),
+        builder: (_, snap) {
+          final enabled = snap.data ?? false;
+          if (!enabled) {
+            return const SizedBox.shrink();
+          }
+          return _buildBanner();
+        },
+      );
+    }
+
+    return _buildBanner();
+  }
+
+  Widget _buildBanner() {
     if (!AdService.I.isEnabled || !_loaded || _ad == null) {
       return const SizedBox.shrink();
     }
