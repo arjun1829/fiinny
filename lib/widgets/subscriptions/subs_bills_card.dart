@@ -1,6 +1,8 @@
-// lib/widgets/subscriptions/subs_bills_card.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../themes/tokens.dart';
+import '../../themes/glass_card.dart';
+import '../../themes/badge.dart';
 
 class SubsBillsCard extends StatelessWidget {
   final String userPhone;
@@ -8,11 +10,7 @@ class SubsBillsCard extends StatelessWidget {
   final int? overdueCount;
   final double? monthTotal;
   final DateTime? nextDue;
-
-  /// Called when the card is tapped (e.g., navigate to global screen)
   final VoidCallback? onOpen;
-
-  /// Called when the + button is tapped (e.g., open add flow)
   final VoidCallback? onAdd;
 
   const SubsBillsCard({
@@ -26,101 +24,57 @@ class SubsBillsCard extends StatelessWidget {
     this.onAdd,
   }) : super(key: key);
 
+  static final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+
   @override
   Widget build(BuildContext context) {
     final df = DateFormat('d MMM');
     final nextDueStr = nextDue == null ? '--' : df.format(nextDue!);
-    final totalStr = monthTotal == null ? '--' : '₹${monthTotal!.toStringAsFixed(0)}';
-    final activeStr = activeCount?.toString() ?? '--';
-    final overdueStr = overdueCount?.toString() ?? '0';
+    final totalStr = monthTotal == null ? '--' : _inr.format(monthTotal);
+    final activeStr = (activeCount ?? 0).toString();
+    final overdueStr = (overdueCount ?? 0).toString();
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(Fx.r16),
         onTap: onOpen,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade200),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x14000000),
-                blurRadius: 16,
-                offset: Offset(0, 8),
-              ),
-            ],
-          ),
+        child: GlassCard(
+          radius: Fx.r20,
+          padding: const EdgeInsets.all(Fx.s16),
           child: Row(
             children: [
               Container(
-                height: 44,
-                width: 44,
-                decoration: BoxDecoration(
-                  color: Colors.teal.withOpacity(.10),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.receipt_long, color: Colors.teal),
+                height: 44, width: 44,
+                decoration: BoxDecoration(color: Fx.mint.withOpacity(.10), borderRadius: BorderRadius.circular(Fx.r12)),
+                child: const Icon(Icons.receipt_long, color: Fx.mintDark),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: Fx.s12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Subscriptions & Bills',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                        )),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        _chip('Active', activeStr),
-                        _chip('Overdue', overdueStr),
-                        _chip('This month', totalStr),
-                        _chip('Next due', nextDueStr),
-                      ],
-                    ),
+                    Text('Subscriptions & Bills', style: Fx.title),
+                    const SizedBox(height: Fx.s6),
+                    Wrap(spacing: Fx.s8, runSpacing: Fx.s6, children: [
+                      PillBadge('Active: $activeStr', color: Fx.mintDark),
+                      PillBadge('Overdue: $overdueStr', color: overdueStr == '0' ? Fx.mintDark : Fx.bad, icon: Icons.warning_amber_rounded),
+                      PillBadge('This month: $totalStr', color: Fx.mintDark),
+                      PillBadge('Next due: $nextDueStr', color: Fx.mintDark, icon: Icons.calendar_month_rounded),
+                    ]),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: Fx.s8),
               IconButton(
                 tooltip: 'Add',
                 onPressed: onAdd,
-                icon: const Icon(Icons.add_circle_outline),
+                icon: const Icon(Icons.add_circle_outline, color: Fx.mintDark),
               ),
             ],
           ),
         ),
       ),
-    );
-  }
-
-  Widget _chip(String label, String value) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text('$label: ',
-            style: TextStyle(
-              color: Colors.grey.shade800,
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-            )),
-        Text(
-          value,
-          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
-        ),
-      ]),
     );
   }
 }
