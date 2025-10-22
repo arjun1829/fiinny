@@ -1,206 +1,154 @@
-import 'dart:convert';
-
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'transaction_filter.dart';
 
+/// Cloud-backed store for Saved Views (per user).
+/// Collection shape:
+/// users/{userPhone}/saved_views/{id} {
+///   name: string,
+///   payload: map (TransactionFilter serialized),
+///   updatedAt: Timestamp,
+/// }
 class SavedViewsStore {
-  static const _k = 'tx_saved_views_v1';
+  final FirebaseFirestore _db;
+  final String userPhone;
 
+  SavedViewsStore({required this.userPhone, FirebaseFirestore? db})
+      : _db = db ?? FirebaseFirestore.instance;
+
+  CollectionReference<Map<String, dynamic>> get _col =>
+      _db.collection('users').doc(userPhone).collection('saved_views');
+
+  /// Create/update a view with a human name. Name uniqueness enforced by slug id.
   Future<void> save(String name, TransactionFilter f) async {
-    final key = name.trim();
-    if (key.isEmpty) {
-      return;
-    }
-    final prefs = await SharedPreferences.getInstance();
-    final payload = _readPayload(prefs);
-    payload[key] = _toMap(f);
-    await prefs.setString(_k, jsonEncode(payload));
+    final id = _slug(name);
+    final map = _toMap(f);
+    await _col.doc(id).set({
+      'name': name.trim(),
+      'payload': map,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<void> delete(String name) async {
-    final key = name.trim();
-    if (key.isEmpty) {
-      return;
-    }
-    final prefs = await SharedPreferences.getInstance();
-    final payload = _readPayload(prefs);
-    if (payload.remove(key) != null) {
-      if (payload.isEmpty) {
-        await prefs.remove(_k);
-      } else {
-        await prefs.setString(_k, jsonEncode(payload));
-      }
-    }
+    final id = _slug(name);
+    await _col.doc(id).delete();
   }
 
+  /// Loads all saved views for this user, ordered by name (ci).
   Future<List<(String, TransactionFilter)>> loadAll() async {
-    final prefs = await SharedPreferences.getInstance();
-    final payload = _readPayload(prefs);
-    final List<(String, TransactionFilter)> result = [];
-    payload.forEach((key, value) {
-      if (value is Map<String, dynamic>) {
-        result.add((key, _fromMap(value)));
-      } else if (value is Map) {
-        result.add((key, _fromMap(value.cast<String, dynamic>())));
-      } else {
-        result.add((key, TransactionFilter.defaults()));
+    final snap = await _col.get();
+    final out = <(String, TransactionFilter)>[];
+    for (final d in snap.docs) {
+      try {
+        final data = d.data();
+        final name = (data['name'] ?? d.id).toString();
+        final payload = Map<String, dynamic>.from(data['payload'] ?? const {});
+        out.add((name, _fromMap(payload)));
+      } catch (_) {
+        // ignore bad rows
       }
-    });
-    result.sort((a, b) => a.$1.toLowerCase().compareTo(b.$1.toLowerCase()));
-    return result;
-  }
-
-  Map<String, dynamic> _readPayload(SharedPreferences prefs) {
-    final raw = prefs.getString(_k);
-    if (raw == null || raw.isEmpty) {
-      return <String, dynamic>{};
     }
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map) {
-        return decoded.map((key, value) => MapEntry(key.toString(), value));
-      }
-    } catch (_) {}
-    return <String, dynamic>{};
+    out.sort((a, b) => a.$1.toLowerCase().compareTo(b.$1.toLowerCase()));
+    return out;
   }
 
-  Map<String, dynamic> _toMap(TransactionFilter f) {
-    return <String, dynamic>{
-      'type': f.type.name,
-      'from': f.from?.toIso8601String(),
-      'to': f.to?.toIso8601String(),
-      'minAmount': f.minAmount,
-      'maxAmount': f.maxAmount,
-      'text': f.text,
-      'category': f.category,
-      'subcategory': f.subcategory,
-      'instrument': f.instrument,
-      'network': f.network,
-      'issuerBank': f.issuerBank,
-      'last4': f.last4,
-      'counterpartyType': f.counterpartyType,
-      'intl': f.intl,
-      'hasFees': f.hasFees,
-      'billsOnly': f.billsOnly,
-      'withAttachment': f.withAttachment,
-      'subscriptionsOnly': f.subscriptionsOnly,
-      'uncategorizedOnly': f.uncategorizedOnly,
-      'friendPhones': List<String>.of(f.friendPhones),
-      'groupId': f.groupId,
-      'labels': List<String>.of(f.labels),
-      'tags': List<String>.of(f.tags),
-      'merchant': f.merchant,
-      'sort': <String, dynamic>{
-        'field': f.sort.field.name,
-        'dir': f.sort.dir.name,
-      },
-      'groupBy': f.groupBy.name,
+  // ---------- mappers (kept local; TransactionFilter stays clean) ----------
+  Map<String, dynamic> _toMap(TransactionFilter f) => {
+        'type': f.type.name,
+        'from': f.from?.millisecondsSinceEpoch,
+        'to': f.to?.millisecondsSinceEpoch,
+        'minAmount': f.minAmount,
+        'maxAmount': f.maxAmount,
+        'text': f.text,
+        'category': f.category,
+        'subcategory': f.subcategory,
+        'instrument': f.instrument,
+        'network': f.network,
+        'issuerBank': f.issuerBank,
+        'last4': f.last4,
+        'counterpartyType': f.counterpartyType,
+        'intl': f.intl,
+        'hasFees': f.hasFees,
+        'billsOnly': f.billsOnly,
+        'withAttachment': f.withAttachment,
+        'subscriptionsOnly': f.subscriptionsOnly,
+        'uncategorizedOnly': f.uncategorizedOnly,
+        'friendPhones': f.friendPhones,
+        'groupId': f.groupId,
+        'labels': f.labels,
+        'tags': f.tags,
+        'merchant': f.merchant,
+        'sortField': f.sort.field.name,
+        'sortDir': f.sort.dir.name,
+        'groupBy': f.groupBy.name,
+      };
+
+  TransactionFilter _fromMap(Map<String, dynamic> m) {
+    String? _s(String k) => (m[k] is String && (m[k] as String).trim().isNotEmpty) ? m[k] as String : null;
+    List<String> _ls(String k) => (m[k] is List) ? List<String>.from(m[k]) : const [];
+    double? _d(String k) => (m[k] is num) ? (m[k] as num).toDouble() : null;
+    bool? _b(String k) => (m[k] is bool) ? m[k] as bool : null;
+    DateTime? _dt(String k) => (m[k] is num) ? DateTime.fromMillisecondsSinceEpoch((m[k] as num).toInt()) : null;
+
+    final type = switch ((m['type'] ?? 'all') as String) {
+      'expense' => TxType.expense,
+      'income'  => TxType.income,
+      _         => TxType.all,
     };
+    final sortField = switch ((m['sortField'] ?? 'date') as String) {
+      'amount'   => SortField.amount,
+      'merchant' => SortField.merchant,
+      'category' => SortField.category,
+      _          => SortField.date,
+    };
+    final sortDir = ((m['sortDir'] ?? 'desc') as String) == 'asc' ? SortDir.asc : SortDir.desc;
+    final groupBy = switch ((m['groupBy'] ?? 'day') as String) {
+      'none'     => GroupBy.none,
+      'week'     => GroupBy.week,
+      'month'    => GroupBy.month,
+      'merchant' => GroupBy.merchant,
+      'category' => GroupBy.category,
+      _          => GroupBy.day,
+    };
+
+    return TransactionFilter.defaults().copyWith(
+      type: type,
+      from: _dt('from'),
+      to: _dt('to'),
+      minAmount: _d('minAmount'),
+      maxAmount: _d('maxAmount'),
+      text: (m['text'] as String?) ?? '',
+      category: _s('category'),
+      subcategory: _s('subcategory'),
+      instrument: _s('instrument'),
+      network: _s('network'),
+      issuerBank: _s('issuerBank'),
+      last4: _s('last4'),
+      counterpartyType: _s('counterpartyType'),
+      intl: _b('intl'),
+      hasFees: _b('hasFees'),
+      billsOnly: _b('billsOnly'),
+      withAttachment: _b('withAttachment'),
+      subscriptionsOnly: _b('subscriptionsOnly'),
+      uncategorizedOnly: _b('uncategorizedOnly'),
+      friendPhones: _ls('friendPhones'),
+      groupId: _s('groupId'),
+      labels: _ls('labels'),
+      tags: _ls('tags'),
+      merchant: _s('merchant'),
+      sort: SortSpec(sortField, sortDir),
+      groupBy: groupBy,
+    );
   }
 
-  TransactionFilter _fromMap(Map<String, dynamic> map) {
-    TxType parseType(String? value) {
-      return TxType.values.firstWhere(
-        (t) => t.name == value,
-        orElse: () => TxType.all,
-      );
-    }
-
-    SortField parseSortField(String? value) {
-      return SortField.values.firstWhere(
-        (f) => f.name == value,
-        orElse: () => SortField.date,
-      );
-    }
-
-    SortDir parseSortDir(String? value) {
-      return SortDir.values.firstWhere(
-        (d) => d.name == value,
-        orElse: () => SortDir.desc,
-      );
-    }
-
-    GroupBy parseGroup(String? value) {
-      return GroupBy.values.firstWhere(
-        (g) => g.name == value,
-        orElse: () => GroupBy.day,
-      );
-    }
-
-    DateTime? parseDate(dynamic value) {
-      if (value is String && value.isNotEmpty) {
-        return DateTime.tryParse(value);
-      }
-      return null;
-    }
-
-    double? parseDouble(dynamic value) {
-      if (value is num) {
-        return value.toDouble();
-      }
-      if (value is String) {
-        return double.tryParse(value);
-      }
-      return null;
-    }
-
-    bool? parseBool(dynamic value) {
-      if (value is bool) {
-        return value;
-      }
-      if (value is String) {
-        if (value == 'true') return true;
-        if (value == 'false') return false;
-      }
-      return null;
-    }
-
-    List<String> parseList(dynamic value) {
-      if (value is List) {
-        return value.whereType<String>().toList();
-      }
-      if (value is String && value.isNotEmpty) {
-        return <String>[value];
-      }
-      return <String>[];
-    }
-
-    final sortMap = map['sort'];
-    final sortField = sortMap is Map
-        ? parseSortField(sortMap['field'] as String?)
-        : SortField.date;
-    final sortDir = sortMap is Map
-        ? parseSortDir(sortMap['dir'] as String?)
-        : SortDir.desc;
-
-    return TransactionFilter(
-      type: parseType(map['type'] as String?),
-      from: parseDate(map['from']),
-      to: parseDate(map['to']),
-      minAmount: parseDouble(map['minAmount']),
-      maxAmount: parseDouble(map['maxAmount']),
-      text: (map['text'] as String?) ?? '',
-      category: map['category'] as String?,
-      subcategory: map['subcategory'] as String?,
-      instrument: map['instrument'] as String?,
-      network: map['network'] as String?,
-      issuerBank: map['issuerBank'] as String?,
-      last4: map['last4'] as String?,
-      counterpartyType: map['counterpartyType'] as String?,
-      intl: parseBool(map['intl']),
-      hasFees: parseBool(map['hasFees']),
-      billsOnly: parseBool(map['billsOnly']),
-      withAttachment: parseBool(map['withAttachment']),
-      subscriptionsOnly: parseBool(map['subscriptionsOnly']),
-      uncategorizedOnly: parseBool(map['uncategorizedOnly']),
-      friendPhones: parseList(map['friendPhones']),
-      groupId: map['groupId'] as String?,
-      labels: parseList(map['labels']),
-      tags: parseList(map['tags']),
-      merchant: map['merchant'] as String?,
-      sort: SortSpec(sortField, sortDir),
-      groupBy: parseGroup(map['groupBy'] as String?),
-    );
+  /// Slugify name -> document id (lowercase, dash-separated, 1..120 chars)
+  String _slug(String name) {
+    var s = name.trim().toLowerCase();
+    s = s.replaceAll(RegExp(r'[^a-z0-9_-]+'), '-').replaceAll(RegExp(r'-+'), '-');
+    s = s.replaceAll(RegExp(r'^-+|-+$'), '');
+    if (s.isEmpty) s = 'view';
+    if (s.length > 120) s = s.substring(0, 120);
+    return s;
   }
 }
