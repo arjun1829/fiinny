@@ -775,53 +775,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                         txCount: expenses.length,
                       ),
                       const SizedBox(height: 14),
-                      // NEW: Group Recurring entry (like the friend screen)
-                      _glassCard(
-                        child: InkWell(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                // AFTER
-                                builder: (_) => GroupRecurringScreen(
-                                  groupId: widget.group.id,
-                                  currentUserPhone: widget.userId,
-                                  groupName: widget.group.name,
-                                ),
-
-                              ),
-                            );
-                          },
-                          child: Row(
-                            children: [
-                              Container(
-                                height: 40, width: 40,
-                                decoration: BoxDecoration(
-                                  color: Colors.teal.withOpacity(.10),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(Icons.repeat_rounded, color: Colors.teal),
-                              ),
-                              const SizedBox(width: 12),
-                              const Expanded(
-                                child: Text(
-                                  'Recurring',
-                                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                                ),
-                              ),
-                              Text(
-                                'View all',
-                                style: TextStyle(
-                                  color: Colors.teal.shade700,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              const Icon(Icons.chevron_right),
-                            ],
-                          ),
-                        ),
-                      ),
+                      _recurringShortcutCard(),
                       const SizedBox(height: 14),
 
 
@@ -938,6 +892,57 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _recurringShortcutCard() {
+    return _glassCard(
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => GroupRecurringScreen(
+                  groupId: widget.group.id,
+                  currentUserPhone: widget.userId,
+                  groupName: widget.group.name,
+                ),
+              ),
+            );
+          },
+          child: Row(
+            children: [
+              Container(
+                height: 40,
+                width: 40,
+                decoration: BoxDecoration(
+                  color: Colors.teal.withOpacity(.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.repeat_rounded, color: Colors.teal),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Recurring',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+              ),
+              Text(
+                'View all',
+                style: TextStyle(
+                  color: Colors.teal.shade700,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
       ),
     );
   }

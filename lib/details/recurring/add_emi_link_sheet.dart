@@ -5,18 +5,19 @@ import 'package:intl/intl.dart';
 
 import '../../models/loan_model.dart';
 import '../../services/loan_service.dart';
+import '../models/recurring_scope.dart';
 import '../services/recurring_service.dart';
 
 class AddEmiLinkSheet extends StatefulWidget {
-  final String userPhone;
-  final String friendId;
-  final String userId; // used to fetch user's loans
+  final RecurringScope scope;
+  final String currentUserId; // used to fetch user's loans
+  final List<String>? participantUserIds; // group-only context
 
   const AddEmiLinkSheet({
     Key? key,
-    required this.userPhone,
-    required this.friendId,
-    required this.userId,
+    required this.scope,
+    required this.currentUserId,
+    this.participantUserIds,
   }) : super(key: key);
 
   @override
@@ -60,7 +61,7 @@ class _AddEmiLinkSheetState extends State<AddEmiLinkSheet> {
       _error = null;
     });
     try {
-      final list = await _loanSvc.getLoans(widget.userId);
+      final list = await _loanSvc.getLoans(widget.currentUserId);
       _loans = list.where((l) => !l.isClosed).toList();
       _applyFilter(_q.text);
     } catch (e) {
@@ -94,11 +95,23 @@ class _AddEmiLinkSheetState extends State<AddEmiLinkSheet> {
 
   Future<void> _attach(LoanModel loan) async {
     try {
-      await _recurringSvc.attachLoanToFriend(
-        userPhone: widget.userPhone,
-        friendId: widget.friendId,
-        loan: loan,
-      );
+      if (widget.scope.isGroup) {
+        final participants = widget.participantUserIds ?? const <String>[];
+        if (participants.isEmpty) {
+          throw Exception('No participants available for this group.');
+        }
+        await _recurringSvc.attachLoanToGroup(
+          groupId: widget.scope.groupId!,
+          loan: loan,
+          participantUserIds: participants,
+        );
+      } else {
+        await _recurringSvc.attachLoanToFriend(
+          userPhone: widget.scope.userPhone!,
+          friendId: widget.scope.friendId!,
+          loan: loan,
+        );
+      }
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
@@ -117,7 +130,7 @@ class _AddEmiLinkSheetState extends State<AddEmiLinkSheet> {
     final res = await Navigator.pushNamed(
       context,
       '/addLoan',                 // -> lib/screens/add_loan_screen.dart
-      arguments: widget.userId,   // your AddLoanScreen expects userId as argument
+      arguments: widget.currentUserId,   // your AddLoanScreen expects userId as argument
     );
 
     if (!mounted) return;
