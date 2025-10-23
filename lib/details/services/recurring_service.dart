@@ -66,10 +66,31 @@ class RecurringService {
 
   /// Create a recurring item in a group's /groups/{groupId}/recurring/{id}.
   /// Returns the new doc id.
-  Future<String> addToGroup(String groupId, SharedItem item) async {
+  Future<String> addToGroup(
+    String groupId,
+    SharedItem item, {
+    List<String>? participantUserIds,
+  }) async {
     final data = item.toJson();
     data['createdAt'] ??= FieldValue.serverTimestamp();
     data['updatedAt'] = FieldValue.serverTimestamp();
+
+    final participantSet = <String>{};
+    for (final phone in [...?participantUserIds, ...?item.participantUserIds]) {
+      final trimmed = phone.trim();
+      if (trimmed.isNotEmpty) participantSet.add(trimmed);
+    }
+    final participants = participantSet.toList();
+
+    if (participants.isNotEmpty) {
+      final participantsTop = (data['participants'] as Map?)?.cast<String, dynamic>() ?? {};
+      participantsTop['userIds'] = participants;
+      data['participants'] = participantsTop;
+    }
+
+    data['ownerUserId'] ??= item.ownerUserId ?? (participants.isNotEmpty ? participants.first : null);
+    data['groupId'] ??= item.groupId ?? groupId;
+    data['sharing'] ??= item.sharing ?? 'group';
 
     // Normalize rule.anchorDate -> Timestamp
     if (data['rule'] is Map) {
@@ -82,11 +103,6 @@ class RecurringService {
       rule['status'] ??= 'active';
       data['rule'] = rule;
     }
-
-    // Optional top-level mirror helps collectionGroup queries
-    final participantsTop = (data['participants'] as Map?)?.cast<String, dynamic>() ?? {};
-    // Keep any existing userIds; do not overwrite if already supplied
-    data['participants'] = participantsTop;
 
     // Respect provided nextDueAt or compute a safe default
     if (data['nextDueAt'] == null && item.rule.anchorDate != null) {

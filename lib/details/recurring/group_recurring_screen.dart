@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:lifemap/details/models/shared_item.dart';
-import 'package:lifemap/details/models/recurring_scope.dart';
-import 'package:lifemap/details/services/recurring_service.dart';
 import 'package:lifemap/core/notifications/local_notifications.dart';
-import 'package:lifemap/details/recurring/add_group_recurring_sheet.dart';
+import 'package:lifemap/details/models/recurring_scope.dart';
+import 'package:lifemap/details/models/shared_item.dart';
 import 'package:lifemap/details/recurring/add_choice_sheet.dart';
+import 'package:lifemap/details/recurring/add_emi_link_sheet.dart';
+import 'package:lifemap/details/recurring/add_group_recurring_sheet.dart';
+import 'package:lifemap/details/services/recurring_service.dart';
+import 'package:lifemap/services/group_service.dart';
 
 
 class GroupRecurringScreen extends StatefulWidget {
@@ -26,11 +28,44 @@ class GroupRecurringScreen extends StatefulWidget {
 class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
   final _svc = RecurringService();
   late final RecurringScope _scope;
+  final GroupService _groupService = GroupService();
+  List<String> _memberPhones = <String>[];
 
   @override
   void initState() {
     super.initState();
     _scope = RecurringScope.group(widget.groupId);
+    _loadMembers();
+  }
+
+  Future<void> _loadMembers() async {
+    try {
+      final group = await _groupService.getGroupById(widget.groupId);
+      final members = <String>{};
+      final fetched = group?.memberPhones ?? const <String>[];
+      for (final phone in fetched) {
+        final trimmed = phone.trim();
+        if (trimmed.isNotEmpty) members.add(trimmed);
+      }
+
+      final self = widget.currentUserPhone.trim();
+      if (self.isNotEmpty) members.add(self);
+      if (!mounted) return;
+      setState(() => _memberPhones = members.toList());
+    } catch (_) {
+      if (!mounted) return;
+      final fallback = widget.currentUserPhone.trim();
+      setState(() => _memberPhones = fallback.isEmpty ? const [] : [fallback]);
+    }
+  }
+
+  List<String> get _loanParticipants {
+    final set = <String>{};
+    for (final phone in [..._memberPhones, widget.currentUserPhone]) {
+      final trimmed = phone.trim();
+      if (trimmed.isNotEmpty) set.add(trimmed);
+    }
+    return set.toList();
   }
 
   // ---------- Helpers ----------
@@ -60,6 +95,170 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
       if (d == null || nd.isBefore(d)) d = nd;
     }
     return d;
+  }
+
+  Future<void> _openQuickAdd() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => AddChoiceSheet(
+        onPick: (key) async {
+          Navigator.pop(context);
+          await _routeFromChoice(key);
+        },
+      ),
+    );
+  }
+
+  Future<void> _routeFromChoice(String key) async {
+    dynamic res;
+    switch (key) {
+      case 'emi':
+        final participants = _loanParticipants;
+        if (participants.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Add group members before linking a loan.')),
+            );
+          }
+          return;
+        }
+        res = await showModalBottomSheet(
+          context: context,
+          useSafeArea: true,
+          isScrollControlled: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          builder: (_) => AddEmiLinkSheet(
+            scope: _scope,
+            currentUserId: widget.currentUserPhone,
+            participantUserIds: participants,
+          ),
+        );
+        break;
+      case 'custom':
+      case 'reminder':
+        res = await showModalBottomSheet(
+          context: context,
+          useSafeArea: true,
+          isScrollControlled: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          builder: (_) => AddGroupRecurringSheet(
+            groupId: widget.groupId,
+            currentUserPhone: widget.currentUserPhone,
+            typeKey: 'reminder',
+            participantUserIds: _memberPhones,
+          ),
+        );
+        break;
+      case 'subscription':
+      case 'recurring':
+      default:
+        res = await showModalBottomSheet(
+          context: context,
+          useSafeArea: true,
+          isScrollControlled: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          builder: (_) => AddGroupRecurringSheet(
+            groupId: widget.groupId,
+            currentUserPhone: widget.currentUserPhone,
+            typeKey: key == 'subscription' ? 'subscription' : 'recurring',
+            participantUserIds: _memberPhones,
+          ),
+        );
+        break;
+    }
+    await _handleAddResult(res);
+  }
+
+  Future<void> _openAddType(String type) async {
+    if (type == 'reminder') {
+      await _routeFromChoice('reminder');
+    } else {
+      await _routeFromChoice(type);
+    }
+  }
+
+  Future<void> _handleAddResult(dynamic res) async {
+    if (res == null) return;
+    if (!mounted) return;
+    if (res == true || res is SharedItem) {
+      setState(() {});
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Saved')));
+    }
+  }
+
+  Future<void> _addReminderQuick() => _routeFromChoice('reminder');
+
+  Future<void> _closeAllActiveOfType(String type) async {
+    try {
+      final items = await _svc.streamByScope(_scope).first;
+      final toEnd = items.where((x) {
+        final status = x.rule.status;
+        return x.type == type && (status == 'active' || status == 'paused');
+      }).toList();
+
+      for (final item in toEnd) {
+        await _svc.endScope(_scope, item.id);
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Closed ${toEnd.length} $type item(s).')),
+      );
+      setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to close items: $e')),
+      );
+    }
+  }
+
+  Future<void> _editTitle(SharedItem it) async {
+    final controller = TextEditingController(text: it.title ?? '');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Edit item'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(labelText: 'Title'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
+        ],
+      ),
+    );
+
+    if (ok == true) {
+      try {
+        await _svc.patchInGroup(
+          groupId: widget.groupId,
+          itemId: it.id,
+          payload: {'title': controller.text.trim()},
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Updated')));
+        setState(() {});
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed: $e')));
+      }
+    }
   }
 
   // ---------- Item actions (scope variants) ----------
@@ -112,9 +311,18 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
         await _svc.deleteScope(_scope, it.id);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Deleted')));
+        setState(() {});
       } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+        try {
+          await _svc.endScope(_scope, it.id);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Closed')));
+          setState(() {});
+        } catch (e2) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('Failed: $e2')));
+        }
       }
     }
   }
@@ -191,48 +399,7 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.add),
         label: const Text('Add'),
-        onPressed: () async {
-          // Use the same choice sheet as friend screen
-          await showModalBottomSheet<void>(
-            context: context,
-            useSafeArea: true,
-            isScrollControlled: true,
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-            builder: (_) => AddChoiceSheet(
-              onPick: (key) async {
-                Navigator.pop(context); // close sheet
-                if (key == 'emi') {
-                  // (optional) implement attach-to-group later
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Link EMI to group — coming soon')),
-                  );
-                  return;
-                }
-                // recurring | subscription | custom(reminder)
-                final typeKey = (key == 'custom') ? 'reminder' : key;
-                final res = await showModalBottomSheet<bool>(
-                  context: context,
-                  useSafeArea: true,
-                  isScrollControlled: true,
-                  shape: const RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                  ),
-                  builder: (_) => AddGroupRecurringSheet(
-                    groupId: widget.groupId,
-                    currentUserPhone: widget.currentUserPhone,
-                    typeKey: typeKey,
-                  ),
-                );
-                if (res == true && context.mounted) {
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(const SnackBar(content: Text('Saved')));
-                }
-              },
-            ),
-          );
-        },
+        onPressed: _openQuickAdd,
       ),
 
       body: StreamBuilder<List<SharedItem>>(
@@ -338,12 +505,7 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
                       'reminder': _minDue(rem),
                     },
                     onTap: (type) => _openTypeSheet(type),
-                    onAdd: (type) {
-                      // Hook: use your group add flows here
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Add flow for $type (group)')),
-                      );
-                    },
+                    onAdd: (type) async => _openAddType(type),
                   ),
 
                   if (loading) ...[
@@ -393,6 +555,10 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
         onEnd: _end,
         onDelete: _delete,
         onScheduleNext: _scheduleNextLocal,
+        onEditTitle: _editTitle,
+        onAddReminder: _addReminderQuick,
+        onAddType: _openAddType,
+        onCloseAllActiveOfType: _closeAllActiveOfType,
       ),
     );
     if (mounted) setState(() {}); // reflect changes
@@ -584,6 +750,10 @@ class _TypeListSheetGroup extends StatefulWidget {
   final Future<void> Function(SharedItem) onEnd;
   final Future<void> Function(SharedItem) onDelete;
   final Future<void> Function(SharedItem) onScheduleNext;
+  final Future<void> Function(SharedItem) onEditTitle;
+  final Future<void> Function() onAddReminder;
+  final Future<void> Function(String) onAddType;
+  final Future<void> Function(String) onCloseAllActiveOfType;
 
   const _TypeListSheetGroup({
     Key? key,
@@ -597,6 +767,10 @@ class _TypeListSheetGroup extends StatefulWidget {
     required this.onEnd,
     required this.onDelete,
     required this.onScheduleNext,
+    required this.onEditTitle,
+    required this.onAddReminder,
+    required this.onAddType,
+    required this.onCloseAllActiveOfType,
   }) : super(key: key);
 
   @override
@@ -633,12 +807,26 @@ class _TypeListSheetGroupState extends State<_TypeListSheetGroup> {
                 children: [
                   Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
                   const Spacer(),
+                  IconButton(
+                    tooltip: 'Add',
+                    onPressed: () async {
+                      await widget.onAddType(widget.type);
+                      if (mounted) setState(() {});
+                    },
+                    icon: const Icon(Icons.add_circle_outline),
+                  ),
                   PopupMenuButton<String>(
                     tooltip: 'More',
                     onSelected: (v) async {
                       switch (v) {
                         case 'toggle_closed':
                           setState(() => _includeClosed = !_includeClosed);
+                          break;
+                        case 'close_all':
+                          await _confirm(() async {
+                            await widget.onCloseAllActiveOfType(widget.type);
+                          });
+                          if (mounted) setState(() {});
                           break;
                       }
                     },
@@ -648,6 +836,16 @@ class _TypeListSheetGroupState extends State<_TypeListSheetGroup> {
                         child: ListTile(
                           leading: Icon(_includeClosed ? Icons.visibility_off_outlined : Icons.visibility_outlined),
                           title: Text(_includeClosed ? 'Hide closed' : 'Show closed'),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: 'close_all',
+                        child: ListTile(
+                          leading: Icon(Icons.cancel_schedule_send_outlined),
+                          title: Text('Close all active'),
                           dense: true,
                           contentPadding: EdgeInsets.zero,
                         ),
@@ -716,6 +914,8 @@ class _TypeListSheetGroupState extends State<_TypeListSheetGroup> {
                       onEnd: widget.onEnd,
                       onDelete: widget.onDelete,
                       onScheduleNext: widget.onScheduleNext,
+                      onAddReminder: widget.onAddReminder,
+                      onEditTitle: widget.onEditTitle,
                     ),
                   );
                 },
@@ -725,6 +925,21 @@ class _TypeListSheetGroupState extends State<_TypeListSheetGroup> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirm(Future<void> Function() action) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Are you sure?'),
+        content: const Text('This will affect all matching active items.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Yes')),
+        ],
+      ),
+    );
+    if (ok == true) await action();
   }
 }
 
@@ -736,6 +951,8 @@ class _ItemTileGroup extends StatelessWidget {
   final Future<void> Function(SharedItem) onEnd;
   final Future<void> Function(SharedItem) onDelete;
   final Future<void> Function(SharedItem) onScheduleNext;
+  final Future<void> Function() onAddReminder;
+  final Future<void> Function(SharedItem) onEditTitle;
 
   const _ItemTileGroup({
     Key? key,
@@ -746,6 +963,8 @@ class _ItemTileGroup extends StatelessWidget {
     required this.onEnd,
     required this.onDelete,
     required this.onScheduleNext,
+    required this.onAddReminder,
+    required this.onEditTitle,
   }) : super(key: key);
 
   @override
@@ -793,6 +1012,8 @@ class _ItemTileGroup extends StatelessWidget {
                 case 'end':           await onEnd(item); break;
                 case 'delete':        await onDelete(item); break;
                 case 'schedule_next': await onScheduleNext(item); break;
+                case 'reminder':      await onAddReminder(); break;
+                case 'edit':          await onEditTitle(item); break;
               }
             },
             itemBuilder: (ctx) => [
@@ -803,6 +1024,26 @@ class _ItemTileGroup extends StatelessWidget {
                     isPaused ? 'Resume' : 'Pause'),
               if (!isEnded)
                 _mi('end', Icons.cancel_outlined, 'End (close)'),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'edit',
+                child: ListTile(
+                  leading: Icon(Icons.edit_outlined),
+                  title: Text('Edit'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              if (!isReminder)
+                const PopupMenuItem(
+                  value: 'reminder',
+                  child: ListTile(
+                    leading: Icon(Icons.alarm_add_outlined),
+                    title: Text('Add reminder'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
               const PopupMenuDivider(),
               if (!isEnded)
                 _mi('schedule_next', Icons.schedule, 'Schedule next reminder (device)'),
