@@ -14,11 +14,13 @@ class AddGroupRecurringSheet extends StatefulWidget {
   final String currentUserPhone;
   /// 'recurring' | 'subscription' | 'reminder'
   final String typeKey;
+  final List<String> participantUserIds;
   const AddGroupRecurringSheet({
     Key? key,
     required this.groupId,
     required this.currentUserPhone,
     this.typeKey = 'recurring',
+    this.participantUserIds = const <String>[],
   }) : super(key: key);
 
   @override
@@ -81,10 +83,24 @@ class _AddGroupRecurringSheetState extends State<AddGroupRecurringSheet> {
     final now = DateTime.now();
     final title = _title.text.trim();
 
-    // Minimal participants: store creator 100% (group math can ignore this for now)
-    final participants = <ParticipantShare>[
-      ParticipantShare(userId: widget.currentUserPhone, sharePct: 100.0),
-    ];
+    final participantIds = <String>{
+      ...widget.participantUserIds,
+      widget.currentUserPhone,
+    }
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    if (participantIds.isEmpty) {
+      final fallback = widget.currentUserPhone.trim();
+      if (fallback.isNotEmpty) {
+        participantIds.add(fallback);
+      }
+    }
+
+    final participants = participantIds
+        .map((id) => ParticipantShare(userId: id))
+        .toList(growable: false);
 
     final rule = RecurringRule(
       frequency: _freq,
@@ -107,6 +123,10 @@ class _AddGroupRecurringSheetState extends State<AddGroupRecurringSheet> {
       note: _note.text.trim().isEmpty ? null : _note.text.trim(),
       rule: rule,
       nextDueAt: next,
+      participantUserIds: participantIds,
+      ownerUserId: widget.currentUserPhone,
+      groupId: widget.groupId,
+      sharing: 'group',
       meta: {
         'createdIn': 'group',
       },
@@ -114,7 +134,11 @@ class _AddGroupRecurringSheetState extends State<AddGroupRecurringSheet> {
 
     setState(() => _saving = true);
     try {
-      final id = await _svc.addToGroup(widget.groupId, item);
+      final id = await _svc.addToGroup(
+        widget.groupId,
+        item,
+        participantUserIds: participantIds,
+      );
 
       if (_notify) {
         await _svc.setNotifyPrefsGroup(
