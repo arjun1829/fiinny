@@ -251,6 +251,7 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
       ),
       builder: (_) => AddCustomReminderSheet(
         userPhone: widget.userPhone,
+        scope: RecurringScope.friend(widget.userPhone, widget.friendId),
         friendId: widget.friendId,
       ),
     );
