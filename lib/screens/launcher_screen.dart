@@ -7,11 +7,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:lifemap/screens/welcome_screen.dart';
 import 'package:lifemap/screens/onboarding_screen.dart';
 import 'package:lifemap/screens/main_nav_screen.dart';
+import 'package:lifemap/screens/auth_gate.dart';
 
 // Push bootstrap + prefs (push init is orchestrated centrally in main.dart)
 import 'package:lifemap/services/push/push_bootstrap.dart';
 import 'package:lifemap/services/push/notif_prefs_service.dart';
 import 'package:lifemap/services/push/first_surface_gate.dart';
+import 'package:lifemap/services/startup_prefs.dart';
 
 class LauncherScreen extends StatefulWidget {
   const LauncherScreen({Key? key}) : super(key: key);
@@ -24,6 +26,8 @@ class _LauncherScreenState extends State<LauncherScreen> {
   bool _navigated = false;
   StreamSubscription<User?>? _authSub;
   Timer? _watchdog;
+  bool _welcomeSeen = false;
+  bool _prefsReady = false;
 
   @override
   void initState() {
@@ -42,6 +46,10 @@ class _LauncherScreenState extends State<LauncherScreen> {
         }
       });
 
+      _welcomeSeen = await StartupPrefs.hasSeenWelcome();
+      if (!mounted) return;
+      _prefsReady = true;
+
       _startWatchdog();
 
       await _handleAuthState(FirebaseAuth.instance.currentUser);
@@ -54,11 +62,16 @@ class _LauncherScreenState extends State<LauncherScreen> {
   }
 
   Future<void> _handleAuthState(User? user) async {
-    if (!mounted || _navigated) return;
+    if (!mounted || _navigated || !_prefsReady) return;
 
     if (user == null) {
-      debugPrint('[Launcher] No user → WelcomeScreen');
-      _go(const WelcomeScreen());
+      if (_welcomeSeen) {
+        debugPrint('[Launcher] No user (welcome seen) → AuthGate');
+        _go(const AuthGate());
+      } else {
+        debugPrint('[Launcher] No user → WelcomeScreen');
+        _go(const WelcomeScreen());
+      }
       return;
     }
 
@@ -133,8 +146,13 @@ class _LauncherScreenState extends State<LauncherScreen> {
   void _startWatchdog() {
     _watchdog = Timer(const Duration(seconds: 3), () {
       if (!_navigated && mounted) {
-        debugPrint('[Launcher] Watchdog fired → WelcomeScreen');
-        _go(const WelcomeScreen());
+        if (_welcomeSeen) {
+          debugPrint('[Launcher] Watchdog skip (welcome already seen)');
+          FirstSurfaceGate.markReady();
+        } else {
+          debugPrint('[Launcher] Watchdog fired → WelcomeScreen');
+          _go(const WelcomeScreen());
+        }
       }
     });
   }
