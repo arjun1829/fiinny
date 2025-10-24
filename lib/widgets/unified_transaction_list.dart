@@ -39,21 +39,55 @@ class UnifiedTransactionList extends StatefulWidget {
   // Category dropdown options
   final List<String> categoryOptions;
 
-  // ✅ new: tell parent when a modal/sheet/dialog opens/closes (so it can hide the anchored banner)
+  // ✅ tell parent when a modal/sheet/dialog opens/closes (so it can hide the anchored banner)
   final VoidCallback? onBeginModal;
   final VoidCallback? onEndModal;
 
   // Optional persistor
   final Future<void> Function({
-  required String txId,
-  required String newCategory,
-  required dynamic payload,
+    required String txId,
+    required String newCategory,
+    required dynamic payload,
   })? onChangeCategory;
 
   final TransactionFilter? filter;
   final SortSpec? sort;
   final GroupBy? groupBy;
   final void Function(List<Map<String, dynamic>> normalized)? onNormalized;
+
+  // ---------- NEW (all optional, back-compat defaults) ----------
+  /// Override currency symbol (default: ₹)
+  final String? currencySymbol;
+
+  /// Allow/disallow swipe edit/delete (default: true)
+  final bool enableSwipeActions;
+
+  /// Show category dropdown in each row (default: true)
+  final bool showCategoryDropdown;
+
+  /// Open details sheet on tap (default: true)
+  final bool enableDetailsSheet;
+
+  /// Inject inline ad inside each group after Nth row (default: 2 → 3rd row, same as old behavior)
+  final int inlineAdAfterIndex;
+
+  /// Show top banner ad (default: true)
+  final bool showTopBannerAd;
+
+  /// Show bottom banner ad (default: true)
+  final bool showBottomBannerAd;
+
+  /// Increment when user taps "Show More" (default: 10)
+  final int showMoreStep;
+
+  /// Custom empty-state builder; fallback to simple text when null
+  final Widget Function(BuildContext context)? emptyBuilder;
+
+  /// Intercept row tap; return true to mark as handled (no default sheet)
+  final bool Function(Map<String, dynamic> normalized)? onRowTapIntercept;
+
+  /// Enable/disable inline ad injection (default: true)
+  final bool enableInlineAds;
 
   const UnifiedTransactionList({
     Key? key,
@@ -79,6 +113,19 @@ class UnifiedTransactionList extends StatefulWidget {
     this.sort,
     this.groupBy,
     this.onNormalized,
+
+    // NEW optional args (safe defaults)
+    this.currencySymbol,
+    this.enableSwipeActions = true,
+    this.showCategoryDropdown = true,
+    this.enableDetailsSheet = true,
+    this.inlineAdAfterIndex = 2, // same visual position as old i == 2
+    this.showTopBannerAd = true,
+    this.showBottomBannerAd = true,
+    this.showMoreStep = 10,
+    this.emptyBuilder,
+    this.onRowTapIntercept,
+    this.enableInlineAds = true,
   }) : super(key: key);
 
   @override
@@ -97,13 +144,17 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   int shownCount = 10;
   TransactionFilter _activeFilter = TransactionFilter.defaults();
 
-  final NumberFormat _inCurrency =
-  NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 2);
+  late NumberFormat _inCurrency;
 
   @override
   void initState() {
     super.initState();
     shownCount = widget.previewCount;
+    _inCurrency = NumberFormat.currency(
+      locale: 'en_IN',
+      symbol: widget.currencySymbol ?? '₹',
+      decimalDigits: 2,
+    );
     _combine();
   }
 
@@ -121,7 +172,16 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             oldWidget.previewCount != widget.previewCount ||
             oldWidget.filter != widget.filter ||
             oldWidget.sort != widget.sort ||
-            oldWidget.groupBy != widget.groupBy;
+            oldWidget.groupBy != widget.groupBy ||
+            oldWidget.currencySymbol != widget.currencySymbol;
+
+    if (oldWidget.currencySymbol != widget.currencySymbol) {
+      _inCurrency = NumberFormat.currency(
+        locale: 'en_IN',
+        symbol: widget.currencySymbol ?? '₹',
+        decimalDigits: 2,
+      );
+    }
 
     if (changed) {
       _combine();
@@ -170,7 +230,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           return (v.comments as T?);
         case 'labels':
           return (v.labels as T?);
-      // enriched legacy fields
         case 'counterparty':
           return (v.counterparty as T?);
         case 'instrument':
@@ -242,7 +301,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     return (s ?? '').trim();
   }
 
-  // enriched legacy extras
   String? _legacyCounterparty(dynamic item) => _dyn<String>(item, 'counterparty');
   String? _legacyInstrument(dynamic item) => _dyn<String>(item, 'instrument');
   String? _legacyNetwork(dynamic item) => _dyn<String>(item, 'instrumentNetwork');
@@ -273,7 +331,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
   String? _legacyTitle(dynamic item) => _dyn<String>(item, 'title');
 
-  // bill/attachment helpers
   String _billUrlFromUnified(Map<String, dynamic> raw) {
     final a = (raw['billImageUrl'] ?? raw['attachmentUrl']);
     return (a == null) ? '' : a.toString();
@@ -293,7 +350,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     }
   }
 
-  // -------------------- COMBINE --------------------
   void _combine() {
     if (widget.unifiedDocs != null) {
       allTx = _fromUnified(widget.unifiedDocs!);
@@ -321,9 +377,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   }
 
   List<Map<String, dynamic>> _fromLegacy(
-      List<ExpenseItem> expenses,
-      List<IncomeItem> incomes,
-      ) {
+    List<ExpenseItem> expenses,
+    List<IncomeItem> incomes,
+  ) {
     final tx = <Map<String, dynamic>>[];
 
     tx.addAll(expenses.map((e) {
@@ -348,14 +404,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'schemeLogo': null,
         'cardLast4': last4.isEmpty ? null : last4,
         'channel': null,
-        // enriched:
         'instrument': _legacyInstrument(e),
         'network': _legacyNetwork(e),
         'issuerBank': _legacyIssuer(e),
         'counterparty': _legacyCounterparty(e),
         'isInternational': _legacyIsIntl(e),
         'hasFees': _legacyHasFees(e),
-        // legacy tags/labels/title
         'tags': tags.isEmpty ? null : tags,
         'labels': labels,
         'title': (title != null && title.trim().isNotEmpty) ? title.trim() : null,
@@ -383,14 +437,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'schemeLogo': null,
         'cardLast4': null,
         'channel': null,
-        // enriched:
         'instrument': _legacyInstrument(i),
         'network': _legacyNetwork(i),
         'issuerBank': _legacyIssuer(i),
         'counterparty': _legacyCounterparty(i),
         'isInternational': _legacyIsIntl(i),
         'hasFees': _legacyHasFees(i),
-        // tags/labels/title
         'tags': tags.isEmpty ? null : tags,
         'labels': labels,
         'title': (title != null && title.trim().isNotEmpty) ? title.trim() : null,
@@ -411,7 +463,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         if (parsed != null) return parsed;
       }
       final dyn = v as dynamic;
-      if (dyn.toDate != null) return dyn.toDate() as DateTime; // Firestore Timestamp
+      if (dyn.toDate != null) return dyn.toDate() as DateTime;
     } catch (_) {}
     return DateTime.now();
   }
@@ -455,8 +507,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final tx = <Map<String, dynamic>>[];
 
     for (final doc in docs) {
-      final channel = _readString(doc, ['meta', 'channel']); // kept
-      if (channel == 'CreditCardBill') continue; // skip bills list items
+      final channel = _readString(doc, ['meta', 'channel']);
+      if (channel == 'CreditCardBill') continue;
 
       final bool isDebit = (doc['isDebit'] == true);
       final String type = isDebit ? 'expense' : 'income';
@@ -466,7 +518,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           _pick(doc['subcategory']?.toString()) ??
           (isDebit ? 'General' : 'Income');
 
-      // Labels (if present)
       final labelsArr = <String>[];
       final rawLabels = doc['labels'];
       if (rawLabels is List) {
@@ -493,14 +544,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'schemeLogo': _readString(doc, ['badges', 'schemeLogo']),
         'cardLast4': _readString(doc, ['meta', 'cardLast4']),
         'channel': channel,
-        // enriched unified keys (use what parser/source wrote)
         'instrument': _pick(doc['instrument']?.toString()) ?? channel,
         'network': _pick(doc['instrumentNetwork']?.toString()),
         'issuerBank': _pick(doc['issuerBank']?.toString()),
         'counterparty': _pick(doc['counterparty']?.toString()),
         'isInternational': _readBool(doc, 'isInternational'),
         'hasFees': _mapHasFees(doc),
-        // tags/labels/title
         'tags': (() {
           final t = doc['tags'];
           if (t is Map && t['type'] != null) return t['type'].toString();
@@ -515,7 +564,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     return tx;
   }
 
-  // -------------------- GROUPING & FORMATTING --------------------
   String getDateLabel(DateTime date) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -567,7 +615,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     }
   }
 
-  // Asset or URL logo
   Widget _logo(String path, {double w = 22, double h = 22}) {
     if (path.startsWith('http')) {
       return Image.network(path, width: w, height: h, errorBuilder: (_, __, ___) => const SizedBox());
@@ -575,7 +622,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     return Image.asset(path, width: w, height: h);
   }
 
-  // -------------------- DETAILS (with banner-hide hooks) --------------------
   Future<void> _showBillImage(BuildContext context, String imageUrl) async {
     widget.onBeginModal?.call();
     await showDialog(
@@ -600,9 +646,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                       imageUrl,
                       fit: BoxFit.contain,
                       loadingBuilder: (context, child, progress) =>
-                      progress == null ? child : const Center(child: CircularProgressIndicator()),
+                          progress == null ? child : const Center(child: CircularProgressIndicator()),
                       errorBuilder: (context, error, stackTrace) =>
-                      const Center(child: Text("Could not load attachment", style: TextStyle(color: Colors.white))),
+                          const Center(child: Text("Could not load attachment", style: TextStyle(color: Colors.white))),
                     ),
                   ),
                 ),
@@ -623,7 +669,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     widget.onEndModal?.call();
   }
 
-  // ---- UNIFIED DETAILS
   Future<void> _showDetailsScreenFromUnified(Map<String, dynamic> doc, BuildContext context) async {
     widget.onBeginModal?.call();
 
@@ -638,7 +683,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final channel = doc['channel'] as String?;
     final billUrl = (doc['billImageUrl'] ?? doc['attachmentUrl'] ?? '').toString();
 
-    // enriched
     final instrument = (doc['instrument'] ?? channel)?.toString();
     final network = doc['network']?.toString();
     final issuer = doc['issuerBank']?.toString();
@@ -706,14 +750,11 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
                 Text(note),
               ],
-
-              // ✅ Inline ad inside the details sheet
               const SizedBox(height: 16),
               const Text("Sponsored", style: TextStyle(fontSize: 12, color: Colors.black54)),
               const SizedBox(height: 6),
               const AdsBannerSlot(inline: true, inlineMaxHeight: 120, padding: EdgeInsets.zero),
               const SizedBox(height: 12),
-
               if (widget.showBillIcon && billUrl.isNotEmpty)
                 Align(
                   alignment: Alignment.centerLeft,
@@ -764,11 +805,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     ).whenComplete(() => widget.onEndModal?.call());
   }
 
-  // ---- LEGACY DETAILS
   Future<void> _showDetailsScreenLegacy(dynamic item, bool isIncome, BuildContext context) async {
     widget.onBeginModal?.call();
 
-    // enriched
     final counterparty = _legacyCounterparty(item);
     final instrument = _legacyInstrument(item);
     final issuer = _legacyIssuer(item);
@@ -837,14 +876,11 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 const Text("Source:", style: TextStyle(fontWeight: FontWeight.bold)),
                 Text(item.source ?? ''),
               ],
-
-              // ✅ Inline ad inside the details sheet
               const SizedBox(height: 16),
               const Text("Sponsored", style: TextStyle(fontSize: 12, color: Colors.black54)),
               const SizedBox(height: 6),
               const AdsBannerSlot(inline: true, inlineMaxHeight: 120, padding: EdgeInsets.zero),
               const SizedBox(height: 12),
-
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -885,7 +921,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     ).whenComplete(() => widget.onEndModal?.call());
   }
 
-  // -------------------- CATEGORY DROPDOWN --------------------
   Widget _categoryDropdown({
     required String txId,
     required String current,
@@ -903,28 +938,26 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         value: value,
         items: options
             .map((c) => DropdownMenuItem(
-          value: c,
-          child: Text(
-            c,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 15.3,
-              color: Color(0xFF0F1E1C),
-            ),
-          ),
-        ))
+                  value: c,
+                  child: Text(
+                    c,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15.3,
+                      color: Color(0xFF0F1E1C),
+                    ),
+                  ),
+                ))
             .toList(),
         onChanged: (newVal) async {
           if (newVal == null || newVal == value) return;
 
-          // Optimistic UI
           setState(() {
             final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
             if (idx != -1) allTx[idx]['category'] = newVal;
           });
 
-          // Prefer parent handler
           if (widget.onChangeCategory != null) {
             try {
               await widget.onChangeCategory!(
@@ -933,11 +966,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 payload: payload,
               );
               return;
-            } catch (_) {
-              // fall through to revert
-            }
+            } catch (_) {}
           } else {
-            // Default persistence: write category/type to legacy docs
             try {
               if (payload is ExpenseItem) {
                 final e = payload as ExpenseItem;
@@ -950,14 +980,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 await IncomeService().updateIncome(widget.userPhone, updated);
                 return;
               }
-              // unified map -> external handler required
               throw Exception('Unsupported payload for default saver');
-            } catch (_) {
-              // revert below
-            }
+            } catch (_) {}
           }
 
-          // Revert on failure
           setState(() {
             final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
             if (idx != -1) allTx[idx]['category'] = value;
@@ -1007,8 +1033,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     );
   }
 
-  // -------------------- ADS --------------------
-  // Keep your list-level placeholders as-is (non-breaking).
   Widget _adBanner(String placement) {
     return _BannerAdSlot(placement: placement);
   }
@@ -1017,13 +1041,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     return const _InlineAdCard(placement: 'txn_list_inline');
   }
 
-  // -------------------- BUILD --------------------
   @override
   Widget build(BuildContext context) {
     final groupedMap = groupTx(allTx.take(shownCount).toList(), _activeFilter.groupBy);
     final groupedEntries = groupedMap.entries.toList();
 
     if (allTx.isEmpty) {
+      if (widget.emptyBuilder != null) return widget.emptyBuilder!(context);
       return const Padding(
         padding: EdgeInsets.all(16),
         child: Center(child: Text("No transactions found.")),
@@ -1040,7 +1064,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         physics: const NeverScrollableScrollPhysics(),
         itemCount: groupCount + (shownCount < allTx.length ? 1 : 0),
         itemBuilder: (context, idx) {
-          // "Show more" row
           if (idx >= groupCount) {
             return Column(
               children: [
@@ -1049,16 +1072,16 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                     child: const Text("Show More"),
                     onPressed: () {
                       setState(() {
-                        shownCount += 10;
+                        shownCount += widget.showMoreStep;
                       });
                     },
                   ),
                 ),
-                // Bottom banner ad under the list (always visible when reaching the end section)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: _adBanner('txn_list_bottom'),
-                ),
+                if (widget.showBottomBannerAd)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _adBanner('txn_list_bottom'),
+                  ),
               ],
             );
           }
@@ -1068,18 +1091,15 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           final txs = entry.value;
           final dateLabel = _displayGroupLabel(rawLabel);
 
-          // Build rows with the ability to inject an inline ad
           final rows = <Widget>[];
 
-          // ---- Top banner ad only for the first group ----
-          if (idx == 0) {
+          if (idx == 0 && widget.showTopBannerAd) {
             rows.add(Padding(
               padding: const EdgeInsets.only(left: 12, right: 12, top: 10, bottom: 6),
               child: _adBanner('txn_list_top'),
             ));
           }
 
-          // ---- DATE HEADER ----
           if (dateLabel.isNotEmpty)
             rows.add(
               Container(
@@ -1112,7 +1132,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 : const <String>[];
             final double amount = (tx['amount'] is num) ? (tx['amount'] as num).toDouble() : 0.0;
 
-            // unified & enriched extras
             final String? bankLogo = tx['bankLogo'] as String?;
             final String? schemeLogo = tx['schemeLogo'] as String?;
             final String? merchant = (tx['merchant'] as String?)?.trim();
@@ -1126,10 +1145,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             final bool hasFees = (tx['hasFees'] == true);
             final String? tags = (tx['tags'] as String?);
 
-            // legacy raw item
             final raw = tx['raw'];
 
-            // Friend names (legacy only)
             String? friendsStr;
             try {
               if (tx['mode'] == 'legacy' && !isIncome && (raw.friendIds != null) && raw.friendIds.isNotEmpty) {
@@ -1141,7 +1158,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
               friendsStr = null;
             }
 
-            // Line 2: Prefer user title; else "Paid to/From <counterparty>"; else merchant; else note
             final String showLine2 = () {
               if (title != null && title.trim().isNotEmpty) return title.trim();
               if ((counterparty ?? '').toString().trim().isNotEmpty) {
@@ -1155,10 +1171,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             final bool isSelectable = widget.multiSelectEnabled && widget.onSelectTx != null;
             final bool isSelected = isSelectable && widget.selectedIds.contains(id);
 
-            // Which object to send to actions (raw for legacy, whole tx for unified)
             final dynamic payload = tx['mode'] == 'unified' ? tx : raw;
 
-            // bill url (both paths)
             String billUrl = '';
             if (widget.showBillIcon) {
               if (tx['mode'] == 'unified') {
@@ -1169,7 +1183,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
               }
             }
 
-            // Chips
             final chipWidgets = <Widget>[];
             if ((instrument ?? '').isNotEmpty) {
               chipWidgets.add(_chip(instrument!));
@@ -1186,8 +1199,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             rows.add(
               Dismissible(
                 key: ValueKey('dismiss_${id}_${tx.hashCode}_$i'),
-                direction: canSwipe ? DismissDirection.horizontal : DismissDirection.none,
-                background: widget.onEdit != null
+                direction: (canSwipe && widget.enableSwipeActions)
+                    ? DismissDirection.horizontal
+                    : DismissDirection.none,
+                background: (widget.enableSwipeActions && widget.onEdit != null)
                     ? _buildSwipeBackground(
                         alignment: Alignment.centerLeft,
                         icon: Icons.edit,
@@ -1195,7 +1210,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                         color: Colors.blue.withOpacity(0.15),
                       )
                     : const SizedBox(),
-                secondaryBackground: widget.onDelete != null
+                secondaryBackground: (widget.enableSwipeActions && widget.onDelete != null)
                     ? _buildSwipeBackground(
                         alignment: Alignment.centerRight,
                         icon: Icons.delete,
@@ -1229,6 +1244,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                   onTap: isSelectable
                       ? () => widget.onSelectTx!(id, !isSelected)
                       : () {
+                          if (widget.onRowTapIntercept != null) {
+                            final handled = widget.onRowTapIntercept!(tx);
+                            if (handled == true) return;
+                          }
+                          if (!widget.enableDetailsSheet) return;
+
                           if (tx['mode'] == 'unified') {
                             _showDetailsScreenFromUnified(tx, context);
                           } else {
@@ -1272,8 +1293,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                               ),
                             ),
                           ),
-
-                        // Logos + avatar
                         if (bankLogo != null && bankLogo.isNotEmpty) ...[
                           Padding(
                             padding: const EdgeInsets.only(right: 6),
@@ -1295,21 +1314,31 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                             child: _logo(schemeLogo, w: 18, h: 18),
                           ),
                         const SizedBox(width: 8),
-
-                        // MIDDLE
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              SizedBox(
-                                height: 28,
-                                child: _categoryDropdown(
-                                  txId: id,
-                                  current: category,
-                                  isIncome: isIncome,
-                                  payload: payload,
+                              if (widget.showCategoryDropdown)
+                                SizedBox(
+                                  height: 28,
+                                  child: _categoryDropdown(
+                                    txId: id,
+                                    current: category,
+                                    isIncome: isIncome,
+                                    payload: payload,
+                                  ),
+                                )
+                              else
+                                Text(
+                                  category,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15.3,
+                                    color: Color(0xFF0F1E1C),
+                                  ),
                                 ),
-                              ),
                               if (showLine2.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 2.0),
@@ -1461,8 +1490,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
               ),
             );
 
-            // Inject an inline ad after a few rows (e.g., after 3rd item in this section)
-            if (i == 2) {
+            if (widget.enableInlineAds && i == widget.inlineAdAfterIndex) {
               rows.add(
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -1472,7 +1500,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             }
           }
 
-          // Add a subtle spacing between groups; bottom banner is added after the "Show More" section
           rows.add(const SizedBox(height: 4));
 
           return Column(
@@ -1549,24 +1576,24 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     messenger.clearSnackBars();
     messenger
         .showSnackBar(
-          SnackBar(
-            content: const Text('Deleted • UNDO'),
-            action: SnackBarAction(
-              label: 'UNDO',
-              onPressed: () {
-                undone = true;
-                setState(() {
-                  final insertIndex = math.min(index, allTx.length);
-                  allTx.insert(insertIndex, tx);
-                  shownCount = math.min(
-                    math.max(previousShown, insertIndex + 1),
-                    allTx.length,
-                  );
-                });
-              },
-            ),
-          ),
-        )
+      SnackBar(
+        content: const Text('Deleted • UNDO'),
+        action: SnackBarAction(
+          label: 'UNDO',
+          onPressed: () {
+            undone = true;
+            setState(() {
+              final insertIndex = math.min(index, allTx.length);
+              allTx.insert(insertIndex, tx);
+              shownCount = math.min(
+                math.max(previousShown, insertIndex + 1),
+                allTx.length,
+              );
+            });
+          },
+        ),
+      ),
+    )
         .closed
         .then((reason) {
       if (!undone && reason != SnackBarClosedReason.action) {
@@ -1576,14 +1603,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   }
 }
 
-// -------------------- Ad Placeholders (list-level) --------------------
 class _BannerAdSlot extends StatelessWidget {
   final String placement;
   const _BannerAdSlot({required this.placement});
 
   @override
   Widget build(BuildContext context) {
-    // keep as placeholder so nothing breaks in the list itself
     return Container(
       height: 64,
       decoration: BoxDecoration(
