@@ -5,7 +5,19 @@ import 'package:intl/intl.dart';
 import '../../models/expense_item.dart';
 import '../../models/income_item.dart';
 
-enum Period { day, week, month, year, last2, last5, all }
+enum Period { day, week, month, quarter, year, last2, last5, all, custom }
+
+class CustomRange {
+  final DateTime start;
+  final DateTime end;
+
+  const CustomRange(this.start, this.end);
+
+  DateTime get normalizedStart => DateTime(start.year, start.month, start.day);
+
+  DateTime get normalizedEndExclusive =>
+      DateTime(end.year, end.month, end.day).add(const Duration(days: 1));
+}
 
 class SeriesPoint {
   final String x; // label (e.g., 'Mon', 'Jan', '12')
@@ -14,7 +26,7 @@ class SeriesPoint {
 }
 
 class AnalyticsAgg {
-  static DateTimeRange rangeFor(Period p, DateTime now) {
+  static DateTimeRange rangeFor(Period p, DateTime now, {CustomRange? custom}) {
     switch (p) {
       case Period.day:
         final s = DateTime(now.year, now.month, now.day);
@@ -26,6 +38,12 @@ class AnalyticsAgg {
       case Period.month:
         final s = DateTime(now.year, now.month, 1);
         final e = DateTime(now.year, now.month + 1, 1);
+        return DateTimeRange(start: s, end: e);
+      case Period.quarter:
+        final quarter = (now.month - 1) ~/ 3;
+        final startMonth = quarter * 3 + 1;
+        final s = DateTime(now.year, startMonth, 1);
+        final e = DateTime(now.year, startMonth + 3, 1);
         return DateTimeRange(start: s, end: e);
       case Period.year:
         final s = DateTime(now.year, 1, 1);
@@ -43,6 +61,12 @@ class AnalyticsAgg {
         return DateTimeRange(start: start, end: end);
       case Period.all:
         return DateTimeRange(start: DateTime(2000, 1, 1), end: now.add(const Duration(days: 1)));
+      case Period.custom:
+        if (custom == null) {
+          final s = DateTime(now.year, now.month, now.day);
+          return DateTimeRange(start: s, end: s.add(const Duration(days: 1)));
+        }
+        return DateTimeRange(start: custom.normalizedStart, end: custom.normalizedEndExclusive);
     }
   }
 
@@ -67,14 +91,38 @@ class AnalyticsAgg {
   static Map<String, double> byMerchant(List<ExpenseItem> exp) {
     final m = <String, double>{};
     for (final e in exp) {
-      final k = (e.label ?? e.category ?? 'Merchant').trim();
+      final k = _resolveMerchant(e);
       m[k] = (m[k] ?? 0) + e.amount;
     }
     return m;
   }
 
+  static Map<String, double> byExpenseCategorySmart(List<ExpenseItem> exp) {
+    final map = <String, double>{};
+    for (final e in exp) {
+      final key = resolveExpenseCategory(e);
+      map[key] = (map[key] ?? 0) + e.amount;
+    }
+    return map;
+  }
+
+  static Map<String, double> byIncomeCategorySmart(List<IncomeItem> inc) {
+    final map = <String, double>{};
+    for (final i in inc) {
+      final key = resolveIncomeCategory(i);
+      map[key] = (map[key] ?? 0) + i.amount;
+    }
+    return map;
+  }
+
   /// Build x-axis & y series for the chosen period (sum incomes+expenses per bucket).
-  static List<SeriesPoint> amountSeries(Period p, List<ExpenseItem> exp, List<IncomeItem> inc, DateTime now) {
+  static List<SeriesPoint> amountSeries(
+    Period p,
+    List<ExpenseItem> exp,
+    List<IncomeItem> inc,
+    DateTime now, {
+    CustomRange? custom,
+  }) {
     final fmtDay = DateFormat('d');
     final fmtMon = DateFormat('MMM');
     switch (p) {
@@ -108,6 +156,27 @@ class AnalyticsAgg {
         }
         return List.generate(days, (d) =>
             SeriesPoint(fmtDay.format(DateTime(now.year, now.month, d + 1)), bars[d]));
+      case Period.quarter:
+        final quarter = (now.month - 1) ~/ 3;
+        final startMonth = quarter * 3 + 1;
+        final startDate = DateTime(now.year, startMonth, 1);
+        final barsQ = List<double>.filled(3, 0);
+        for (final e in exp) {
+          final idx = (e.date.year - startDate.year) * 12 + (e.date.month - startMonth);
+          if (idx >= 0 && idx < 3) {
+            barsQ[idx] += e.amount;
+          }
+        }
+        for (final i in inc) {
+          final idx = (i.date.year - startDate.year) * 12 + (i.date.month - startMonth);
+          if (idx >= 0 && idx < 3) {
+            barsQ[idx] += i.amount;
+          }
+        }
+        return List.generate(3, (m) {
+          final labelDate = DateTime(startDate.year, startMonth + m, 1);
+          return SeriesPoint(fmtMon.format(labelDate), barsQ[m]);
+        });
       case Period.year:
         final bars = List<double>.filled(12, 0);
         for (final e in exp) {
@@ -187,9 +256,129 @@ class AnalyticsAgg {
           final d = DateTime(minD!.year, minD!.month + m, 1);
           return SeriesPoint(fmtMon.format(d), bars[m]);
         });
+      case Period.custom:
+        if (custom == null) {
+          return const [];
+        }
+        final start = custom.normalizedStart;
+        final end = custom.normalizedEndExclusive;
+        final totalDays = end.difference(start).inDays;
+        if (totalDays <= 0) {
+          return const [];
+        }
+        final bars = List<double>.filled(totalDays, 0);
+        for (final e in exp) {
+          final idx = DateTime(e.date.year, e.date.month, e.date.day)
+              .difference(start)
+              .inDays;
+          if (idx >= 0 && idx < totalDays) {
+            bars[idx] += e.amount;
+          }
+        }
+        for (final i in inc) {
+          final idx = DateTime(i.date.year, i.date.month, i.date.day)
+              .difference(start)
+              .inDays;
+          if (idx >= 0 && idx < totalDays) {
+            bars[idx] += i.amount;
+          }
+        }
+        return List.generate(totalDays, (d) {
+          final day = start.add(Duration(days: d));
+          return SeriesPoint(DateFormat('d MMM').format(day), bars[d]);
+        });
     }
   }
 
   static bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
+
+  static String resolveExpenseCategory(ExpenseItem e) {
+    final rawCategory = (e.category ?? '').trim();
+    if (rawCategory.isNotEmpty) return rawCategory;
+
+    if (e.labels.isNotEmpty) {
+      final label = e.labels.firstWhere(
+        (l) => l.trim().isNotEmpty,
+        orElse: () => '',
+      );
+      if (label.trim().isNotEmpty) return label.trim();
+    }
+
+    final tag = _firstMeaningfulTag(e.tags);
+    if (tag != null) return _humanize(tag);
+
+    final counterpartyType = (e.counterpartyType ?? '').trim();
+    if (counterpartyType.isNotEmpty) return _humanize(counterpartyType.toLowerCase());
+
+    final instrument = (e.instrument ?? '').trim();
+    if (instrument.isNotEmpty) return _humanize(instrument.toLowerCase());
+
+    return 'Uncategorized';
+  }
+
+  static String resolveIncomeCategory(IncomeItem i) {
+    final rawCategory = (i.category ?? '').trim();
+    if (rawCategory.isNotEmpty) return rawCategory;
+
+    if (i.labels.isNotEmpty) {
+      final label = i.labels.firstWhere(
+        (l) => l.trim().isNotEmpty,
+        orElse: () => '',
+      );
+      if (label.trim().isNotEmpty) return label.trim();
+    }
+
+    final tag = _firstMeaningfulTag(i.tags);
+    if (tag != null) return _humanize(tag);
+
+    final counterpartyType = (i.counterpartyType ?? '').trim();
+    if (counterpartyType.isNotEmpty) return _humanize(counterpartyType.toLowerCase());
+
+    final source = (i.source).trim();
+    if (source.isNotEmpty) return _humanize(source.toLowerCase());
+
+    return 'Uncategorized';
+  }
+
+  static String _resolveMerchant(ExpenseItem e) {
+    final counterparty = (e.counterparty ?? '').trim();
+    if (counterparty.isNotEmpty) return counterparty;
+
+    final upi = (e.upiVpa ?? '').trim();
+    if (upi.isNotEmpty) return upi;
+
+    if (e.labels.isNotEmpty) {
+      final label = e.labels.firstWhere(
+        (l) => l.trim().isNotEmpty,
+        orElse: () => '',
+      );
+      if (label.trim().isNotEmpty) return label.trim();
+    }
+
+    final legacyLabel = (e.label ?? '').trim();
+    if (legacyLabel.isNotEmpty) return legacyLabel;
+
+    return (e.category ?? 'Merchant').trim().isNotEmpty
+        ? (e.category ?? 'Merchant').trim()
+        : 'Merchant';
+  }
+
+  static String? _firstMeaningfulTag(List<String>? tags) {
+    if (tags == null) return null;
+    for (final tag in tags) {
+      final trimmed = tag.trim();
+      if (trimmed.isNotEmpty) return trimmed;
+    }
+    return null;
+  }
+
+  static String _humanize(String raw) {
+    final sanitized = raw.replaceAll(RegExp(r'[_\s]+'), ' ').trim();
+    if (sanitized.isEmpty) return 'Uncategorized';
+    final words = sanitized.split(' ');
+    return words
+        .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}')
+        .join(' ');
+  }
 }
