@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../services/recurring_service.dart';
 import '../models/recurring_rule.dart';
+import '../models/recurring_scope.dart';
 import '../models/shared_item.dart';
 import '../../core/notifications/local_notifications.dart';
 
@@ -13,11 +14,15 @@ import '../../services/notification_service.dart';
 
 class AddCustomReminderSheet extends StatefulWidget {
   final String userPhone;
-  final String friendId;
+  final RecurringScope scope;
+  final List<String> participantUserIds;
+  final bool mirrorToFriend;
   const AddCustomReminderSheet({
     Key? key,
     required this.userPhone,
-    required this.friendId,
+    required this.scope,
+    this.participantUserIds = const <String>[],
+    this.mirrorToFriend = true,
   }) : super(key: key);
 
   @override
@@ -48,6 +53,19 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
 
   bool _saving = false;
   final _svc = RecurringService();
+
+  bool get _isGroup => widget.scope.isGroup;
+  String? get _friendId => widget.scope.friendId;
+  String? get _groupId => widget.scope.groupId;
+
+  List<String> get _groupParticipantIds {
+    final ids = <String>{widget.userPhone.trim()};
+    for (final phone in widget.participantUserIds) {
+      final trimmed = phone.trim();
+      if (trimmed.isNotEmpty) ids.add(trimmed);
+    }
+    return ids.where((e) => e.isNotEmpty).toList();
+  }
 
   @override
   void dispose() {
@@ -105,15 +123,21 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
     final now = DateTime.now();
 
     // Build rule based on frequency choice
+    final participants = _isGroup
+        ? _groupParticipantIds
+            .map((id) => ParticipantShare(userId: id))
+            .toList()
+        : [
+            ParticipantShare(userId: widget.userPhone, sharePct: 50.0),
+            ParticipantShare(userId: _friendId!, sharePct: 50.0),
+          ];
+
     final rule = RecurringRule(
       frequency: _freq,
       anchorDate: _firstDue, // respected as first due
       status: 'active',
       amount: 0, // pure reminder
-      participants: [
-        ParticipantShare(userId: widget.userPhone, sharePct: 50.0),
-        ParticipantShare(userId: widget.friendId, sharePct: 50.0),
-      ],
+      participants: participants,
       // For monthly store dueDay (clamped ≤ 28 for Feb safety)
       dueDay: _freq == 'monthly' ? _firstDue.day.clamp(1, 28) : null,
       // For weekly store weekday (1..7)
@@ -135,6 +159,10 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
       title: _title.text.trim(),
       rule: rule,
       nextDueAt: nextDue,
+      participantUserIds: _isGroup ? _groupParticipantIds : null,
+      ownerUserId: widget.userPhone,
+      groupId: _isGroup ? _groupId : null,
+      sharing: _isGroup ? 'group' : null,
     );
 
     setState(() => _saving = true);
@@ -142,33 +170,56 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
       // 0) Make sure the local-notifs pipeline is ready (same as prefs screen)
       await PushService.init(); // idempotent; ensures channels on Android & hooks
 
-      // 1) Create (mirrored)
-      final id = await _svc.add(
-        widget.userPhone,
-        widget.friendId,
-        item,
-        mirrorToFriend: true,
-      );
-
-      // 2) Notify prefs (mirrored)
-      await _svc.setNotifyPrefs(
-        userPhone: widget.userPhone,
-        friendId: widget.friendId,
-        itemId: id,
-        enabled: _notifyEnabled,
-        daysBefore: _daysBefore,
-        timeHHmm: _fmtTime(_time),
-        notifyBoth: _notifyBoth,
-        mirrorToFriend: true,
-      );
-
-      // 3) Schedule local notification for this device (first occurrence only)
-      if (_notifyEnabled) {
-        await _scheduleLocalOnce(
-          id: id,
-          title: item.title?.trim().isEmpty == true ? 'Reminder' : item.title!,
-          due: nextDue,
+      String newId;
+      if (_isGroup) {
+        final ids = _groupParticipantIds;
+        newId = await _svc.addToGroup(
+          _groupId!,
+          item,
+          participantUserIds: ids,
         );
+
+        if (_notifyEnabled) {
+          await _svc.setNotifyPrefsGroup(
+            groupId: _groupId!,
+            itemId: newId,
+            enabled: true,
+            daysBefore: _daysBefore,
+            timeHHmm: _fmtTime(_time),
+          );
+
+          await _scheduleLocalOnce(
+            id: newId,
+            title: item.title?.trim().isEmpty == true ? 'Reminder' : item.title!,
+            due: nextDue,
+          );
+        }
+      } else {
+        newId = await _svc.add(
+          widget.userPhone,
+          _friendId!,
+          item,
+          mirrorToFriend: widget.mirrorToFriend,
+        );
+
+        await _svc.setNotifyPrefs(
+          userPhone: widget.userPhone,
+          friendId: _friendId!,
+          itemId: newId,
+          enabled: _notifyEnabled,
+          daysBefore: _daysBefore,
+          timeHHmm: _fmtTime(_time),
+          notifyBoth: _notifyBoth,
+          mirrorToFriend: widget.mirrorToFriend,
+        );
+
+        if (_notifyEnabled) {
+          await _scheduleLocalOnce(
+            id: newId,
+            title: item.title?.trim().isEmpty == true ? 'Reminder' : item.title!,
+            due: nextDue,
+          );
+        }
       }
 
       if (!mounted) return;
@@ -206,6 +257,13 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
         ? planned
         : now.add(const Duration(minutes: 1));
 
+    final payload = _isGroup && _groupId != null
+        ? 'app://group/${_groupId}/recurring'
+        : 'app://friend/${_friendId}/recurring';
+    final itemId = _isGroup && _groupId != null
+        ? 'group_${_groupId}_$id'
+        : id;
+
     // Try your wrapper first (keeps your existing implementation)
     try {
       try {
@@ -215,12 +273,11 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
       }
 
       await LocalNotifs.scheduleOnce(
-        itemId: id,
+        itemId: itemId,
         title: title,
         fireAt: fireAt,
         body: 'Due on ${_fmtDate(due)}',
-        // If your LocalNotifs adds a payload param later, pass:
-        // payload: 'app://friend/${widget.friendId}/recurring',
+        payload: payload,
       );
 
       if (mounted) {
@@ -243,14 +300,14 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
       await NotificationService().showNotification(
         title: title,
         body: 'Due on ${_fmtDate(due)}',
-        payload: 'app://friend/${widget.friendId}/recurring',
+        payload: payload,
       );
     } else {
       Future.delayed(Duration(milliseconds: ms), () async {
         await NotificationService().showNotification(
           title: title,
           body: 'Due on ${_fmtDate(due)}',
-          payload: 'app://friend/${widget.friendId}/recurring',
+          payload: payload,
         );
       });
     }
@@ -562,17 +619,18 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            CheckboxListTile(
-                              value: _notifyBoth,
-                              onChanged: (v) =>
-                                  setState(() => _notifyBoth = v ?? true),
-                              title: const Text('Notify both participants'),
-                              subtitle: const Text(
-                                  'Sends to you and your friend (recommended)'),
-                              dense: true,
-                              controlAffinity: ListTileControlAffinity.leading,
-                              contentPadding: EdgeInsets.zero,
-                            ),
+                            if (!_isGroup)
+                              CheckboxListTile(
+                                value: _notifyBoth,
+                                onChanged: (v) =>
+                                    setState(() => _notifyBoth = v ?? true),
+                                title: const Text('Notify both participants'),
+                                subtitle: const Text(
+                                    'Sends to you and your friend (recommended)'),
+                                dense: true,
+                                controlAffinity: ListTileControlAffinity.leading,
+                                contentPadding: EdgeInsets.zero,
+                              ),
                           ],
                         ),
                         secondChild: const SizedBox.shrink(),
