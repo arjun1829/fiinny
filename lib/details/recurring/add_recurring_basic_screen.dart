@@ -32,7 +32,7 @@ class AddRecurringBasicScreen extends StatefulWidget {
   final int? initialWeekday; // for weekly (0=Sun..6=Sat)
   final int? initialIntervalDays; // for custom
 
-  const AddRecurringBasicScreen({
+  AddRecurringBasicScreen({
     Key? key,
     required this.userPhone,
     required this.scope,
