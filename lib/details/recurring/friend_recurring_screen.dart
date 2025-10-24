@@ -111,7 +111,7 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
           MaterialPageRoute(
             builder: (_) => AddRecurringBasicScreen(
               userPhone: widget.userPhone,
-              friendId: widget.friendId,
+              scope: RecurringScope.friend(widget.userPhone, widget.friendId),
             ),
           ),
         );
@@ -122,7 +122,7 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
           MaterialPageRoute(
             builder: (_) => AddSubscriptionScreen(
               userPhone: widget.userPhone,
-              friendId: widget.friendId,
+              scope: RecurringScope.friend(widget.userPhone, widget.friendId),
             ),
           ),
         );
@@ -151,7 +151,7 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
           ),
           builder: (_) => AddCustomReminderSheet(
             userPhone: widget.userPhone,
-            friendId: widget.friendId,
+            scope: RecurringScope.friend(widget.userPhone, widget.friendId),
           ),
         );
         break;
@@ -1107,7 +1107,10 @@ class _TypeListSheetState extends State<_TypeListSheet> {
                             MaterialPageRoute(
                               builder: (_) => AddRecurringBasicScreen(
                                 userPhone: widget.userPhone,
-                                friendId: widget.friendId,
+                                scope: RecurringScope.friend(
+                                  widget.userPhone,
+                                  widget.friendId,
+                                ),
                               ),
                             ),
                           );
@@ -1118,7 +1121,10 @@ class _TypeListSheetState extends State<_TypeListSheet> {
                             MaterialPageRoute(
                               builder: (_) => AddSubscriptionScreen(
                                 userPhone: widget.userPhone,
-                                friendId: widget.friendId,
+                                scope: RecurringScope.friend(
+                                  widget.userPhone,
+                                  widget.friendId,
+                                ),
                               ),
                             ),
                           );

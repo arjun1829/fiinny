@@ -12,6 +12,7 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 import '../services/recurring_service.dart';
 import '../models/recurring_rule.dart';
+import '../models/recurring_scope.dart';
 import '../models/shared_item.dart';
 
 // Reminders (reuse your pipeline)
@@ -20,11 +21,15 @@ import '../../services/push/push_service.dart';
 
 class AddSubscriptionScreen extends StatefulWidget {
   final String userPhone;
-  final String friendId;
+  final RecurringScope scope;
+  final List<String> participantUserIds;
+  final bool mirrorToFriend;
   const AddSubscriptionScreen({
     Key? key,
     required this.userPhone,
-    required this.friendId,
+    required this.scope,
+    this.participantUserIds = const <String>[],
+    this.mirrorToFriend = true,
   }) : super(key: key);
 
   @override
@@ -126,6 +131,19 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
 
   final _svc = RecurringService();
 
+  bool get _isGroup => widget.scope.isGroup;
+  String? get _friendId => widget.scope.friendId;
+  String? get _groupId => widget.scope.groupId;
+
+  List<String> get _groupParticipantIds {
+    final ids = <String>{widget.userPhone.trim()};
+    for (final phone in widget.participantUserIds) {
+      final trimmed = phone.trim();
+      if (trimmed.isNotEmpty) ids.add(trimmed);
+    }
+    return ids.where((e) => e.isNotEmpty).toList();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -183,14 +201,20 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     final planned = DateTime(due.year, due.month, due.day, _time.hour, _time.minute)
         .subtract(Duration(days: _daysBefore));
     final fireAt = planned.isAfter(now) ? planned : now.add(const Duration(minutes: 1));
+    final payload = _isGroup && _groupId != null
+        ? 'app://group/${_groupId}/recurring'
+        : 'app://friend/${_friendId}/recurring';
+    final itemId = _isGroup && _groupId != null
+        ? 'group_${_groupId}_$id'
+        : id;
     try {
       await LocalNotifs.init();
       await LocalNotifs.scheduleOnce(
-        itemId: id,
+        itemId: itemId,
         title: title.isEmpty ? 'Reminder' : title,
         fireAt: fireAt,
         body: 'Due on ${_fmtDate(due)}',
-        payload: 'app://friend/${widget.friendId}/recurring',
+        payload: payload,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -201,7 +225,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       await PushService.showLocal(
         title: title.isEmpty ? 'Reminder' : title,
         body: 'Saved — you’ll be reminded before ${_fmtDate(due)}',
-        deeplink: 'app://friend/${widget.friendId}/recurring',
+        deeplink: payload,
       );
     }
   }
@@ -256,7 +280,10 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   Future<String?> _uploadAttachment(String newId) async {
     if (_attachmentBytes == null) return null;
     try {
-      final path = 'users/${widget.userPhone}/friends/${widget.friendId}/recurring_attachments/$newId.jpg';
+      final base = _isGroup && _groupId != null
+          ? 'groups/${_groupId}/recurring_attachments'
+          : 'users/${widget.userPhone}/friends/${_friendId ?? 'unknown'}/recurring_attachments';
+      final path = '$base/$newId.jpg';
       final ref = FirebaseStorage.instance.ref(path);
       await ref.putData(
         _attachmentBytes!,
@@ -277,11 +304,19 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     final day = (_dueDay ?? 1).clamp(1, 28);
     final note = _noteCtrl.text.trim();
 
-    // Build participants based on split
-    final participants = <ParticipantShare>[
-      ParticipantShare(userId: widget.userPhone, sharePct: _split == 'equal' ? 50.0 : _userShare),
-      ParticipantShare(userId: widget.friendId, sharePct: _split == 'equal' ? 50.0 : _friendShare),
-    ];
+    // Build participants based on scope
+    final participants = _isGroup
+        ? _groupParticipantIds
+            .map((id) => ParticipantShare(userId: id))
+            .toList()
+        : <ParticipantShare>[
+            ParticipantShare(
+                userId: widget.userPhone,
+                sharePct: _split == 'equal' ? 50.0 : _userShare),
+            ParticipantShare(
+                userId: _friendId!,
+                sharePct: _split == 'equal' ? 50.0 : _friendShare),
+          ];
 
     final rule = RecurringRule(
       frequency: 'monthly',
@@ -305,6 +340,10 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
         'category': 'subscription',
         'service': _slugFromTitle(_title.text.trim()),
       },
+      participantUserIds: _isGroup ? _groupParticipantIds : null,
+      ownerUserId: widget.userPhone,
+      groupId: _isGroup ? _groupId : null,
+      sharing: _isGroup ? 'group' : null,
     );
 
     setState(() => _saving = true);
@@ -312,46 +351,92 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       // Ensure push stack is ready (idempotent)
       await PushService.init();
 
-      // 1) Create
-      final newId = await _svc.add(widget.userPhone, widget.friendId, item);
+      String newId;
+      if (_isGroup) {
+        final ids = _groupParticipantIds;
+        newId = await _svc.addToGroup(
+          _groupId!,
+          item,
+          participantUserIds: ids,
+        );
 
-      // 2) Upload attachment (optional) then patch doc with URL
-      if (_attachmentBytes != null) {
-        final url = await _uploadAttachment(newId);
-        _uploadedAttachmentUrl = url;
-        if (url != null) {
-          await _svc.patch(
-            widget.userPhone,
-            widget.friendId,
-            newId,
-            {
-              'meta': {
-                'category': 'subscription',
-                'service': _slugFromTitle(_title.text.trim()),
-                'attachmentUrl': url,
+        if (_attachmentBytes != null) {
+          final url = await _uploadAttachment(newId);
+          _uploadedAttachmentUrl = url;
+          if (url != null) {
+            await _svc.patchInGroup(
+              groupId: _groupId!,
+              itemId: newId,
+              payload: {
+                'meta': {
+                  'category': 'subscription',
+                  'service': _slugFromTitle(_title.text.trim()),
+                  'attachmentUrl': url,
+                },
               },
-            },
+            );
+          }
+        }
+
+        if (_notifyEnabled) {
+          await _svc.setNotifyPrefsGroup(
+            groupId: _groupId!,
+            itemId: newId,
+            enabled: true,
+            daysBefore: _daysBefore,
+            timeHHmm: _fmtTime(_time),
+          );
+
+          await _scheduleLocalOnce(
+            id: newId,
+            title: item.title ?? 'Subscription',
+            due: nextDue,
           );
         }
-      }
-
-      // 3) Reminder prefs (+ schedule first local if enabled)
-      if (_notifyEnabled) {
-        await _svc.setNotifyPrefs(
-          userPhone: widget.userPhone,
-          friendId: widget.friendId,
-          itemId: newId,
-          enabled: true,
-          daysBefore: _daysBefore,
-          timeHHmm: _fmtTime(_time),
-          notifyBoth: true,
+      } else {
+        newId = await _svc.add(
+          widget.userPhone,
+          _friendId!,
+          item,
+          mirrorToFriend: widget.mirrorToFriend,
         );
 
-        await _scheduleLocalOnce(
-          id: newId,
-          title: item.title ?? 'Subscription',
-          due: nextDue,
-        );
+        if (_attachmentBytes != null) {
+          final url = await _uploadAttachment(newId);
+          _uploadedAttachmentUrl = url;
+          if (url != null) {
+            await _svc.patch(
+              widget.userPhone,
+              _friendId!,
+              newId,
+              {
+                'meta': {
+                  'category': 'subscription',
+                  'service': _slugFromTitle(_title.text.trim()),
+                  'attachmentUrl': url,
+                },
+              },
+            );
+          }
+        }
+
+        if (_notifyEnabled) {
+          await _svc.setNotifyPrefs(
+            userPhone: widget.userPhone,
+            friendId: _friendId!,
+            itemId: newId,
+            enabled: true,
+            daysBefore: _daysBefore,
+            timeHHmm: _fmtTime(_time),
+            notifyBoth: true,
+          );
+
+          await _scheduleLocalOnce(
+            id: newId,
+            title: item.title ?? 'Subscription',
+            due: nextDue,
+          );
+        }
       }
 
       if (!mounted) return;
@@ -388,8 +473,12 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   @override
   Widget build(BuildContext context) {
     final amt = _parseAmount();
-    final uAmt = amt * ((_split == 'equal' ? 50.0 : _userShare) / 100.0);
-    final fAmt = amt * ((_split == 'equal' ? 50.0 : _friendShare) / 100.0);
+    final uAmt = _isGroup
+        ? 0.0
+        : amt * ((_split == 'equal' ? 50.0 : _userShare) / 100.0);
+    final fAmt = _isGroup
+        ? 0.0
+        : amt * ((_split == 'equal' ? 50.0 : _friendShare) / 100.0);
 
     final filtered = _filteredPresets();
 
@@ -497,56 +586,58 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 ),
               ),
 
-              const SizedBox(height: 12),
-              _sectionTitle('Split'),
-              _glossyCard(
-                child: Column(
-                  children: [
-                    Wrap(
-                      spacing: 10,
-                      children: [
-                        ChoiceChip(
-                          label: const Text('Equal (50/50)'),
-                          selected: _split == 'equal',
-                          onSelected: (_) => setState(() => _split = 'equal'),
-                        ),
-                        ChoiceChip(
-                          label: const Text('Custom'),
-                          selected: _split == 'custom',
-                          onSelected: (_) => setState(() => _split = 'custom'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    AnimatedCrossFade(
-                      duration: const Duration(milliseconds: 200),
-                      crossFadeState: _split == 'custom' ? CrossFadeState.showFirst : CrossFadeState.showSecond,
-                      firstChild: Column(
+              if (!_isGroup) ...[
+                const SizedBox(height: 12),
+                _sectionTitle('Split'),
+                _glossyCard(
+                  child: Column(
+                    children: [
+                      Wrap(
+                        spacing: 10,
                         children: [
-                          _sliderRow(
-                            icon: Icons.person_outline,
-                            label: 'Your share',
-                            value: _userShare,
-                            onChanged: (v) => setState(() => _normalizeSharesFromUser(v)),
+                          ChoiceChip(
+                            label: const Text('Equal (50/50)'),
+                            selected: _split == 'equal',
+                            onSelected: (_) => setState(() => _split = 'equal'),
                           ),
-                          _sliderRow(
-                            icon: Icons.group_outlined,
-                            label: 'Friend share',
-                            value: _friendShare,
-                            onChanged: (v) => setState(() {
-                              _friendShare = v.clamp(0, 100);
-                              _userShare = (100 - _friendShare);
-                            }),
+                          ChoiceChip(
+                            label: const Text('Custom'),
+                            selected: _split == 'custom',
+                            onSelected: (_) => setState(() => _split = 'custom'),
                           ),
                         ],
                       ),
-                      secondChild: const SizedBox.shrink(),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      AnimatedCrossFade(
+                        duration: const Duration(milliseconds: 200),
+                        crossFadeState: _split == 'custom' ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+                        firstChild: Column(
+                          children: [
+                            _sliderRow(
+                              icon: Icons.person_outline,
+                              label: 'Your share',
+                              value: _userShare,
+                              onChanged: (v) => setState(() => _normalizeSharesFromUser(v)),
+                            ),
+                            _sliderRow(
+                              icon: Icons.group_outlined,
+                              label: 'Friend share',
+                              value: _friendShare,
+                              onChanged: (v) => setState(() {
+                                _friendShare = v.clamp(0, 100);
+                                _userShare = (100 - _friendShare);
+                              }),
+                            ),
+                          ],
+                        ),
+                        secondChild: const SizedBox.shrink(),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
 
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
+              ],
               _sectionTitle('Remind me'),
               _glossyCard(
                 child: Column(
@@ -604,10 +695,12 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 child: _Summary(
                   title: _title.text.trim().isEmpty ? '—' : _title.text.trim(),
                   amount: amt,
+                  showShares: !_isGroup,
                   userSharePct: _split == 'equal' ? 50.0 : _userShare,
                   friendSharePct: _split == 'equal' ? 50.0 : _friendShare,
                   userShareAmt: uAmt,
                   friendShareAmt: fAmt,
+                  participantCount: _isGroup ? _groupParticipantIds.length : 2,
                   dueDay: _dueDay,
                 ),
               ),
@@ -827,35 +920,62 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
 class _Summary extends StatelessWidget {
   final String title;
   final double amount;
-  final double userSharePct;
-  final double friendSharePct;
-  final double userShareAmt;
-  final double friendShareAmt;
+  final bool showShares;
+  final double? userSharePct;
+  final double? friendSharePct;
+  final double? userShareAmt;
+  final double? friendShareAmt;
+  final int participantCount;
   final int? dueDay;
 
   const _Summary({
     Key? key,
     required this.title,
     required this.amount,
-    required this.userSharePct,
-    required this.friendSharePct,
-    required this.userShareAmt,
-    required this.friendShareAmt,
+    required this.showShares,
+    this.userSharePct,
+    this.friendSharePct,
+    this.userShareAmt,
+    this.friendShareAmt,
+    this.participantCount = 0,
     required this.dueDay,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    final amountText = amount <= 0
+        ? '—'
+        : '₹ ${amount.toStringAsFixed(amount.truncateToDouble() == amount ? 0 : 2)}';
+
+    final rows = <Widget>[
+      _row('Title', title),
+      _row('Amount', amountText),
+      _row('Billing day', dueDay == null ? '—' : 'Day $dueDay'),
+      const Divider(height: 18),
+    ];
+
+    if (showShares) {
+      rows
+        ..add(_row(
+            'Your share',
+            '${(userSharePct ?? 0).toStringAsFixed(0)}%  •  ₹ '
+                '${(userShareAmt ?? 0).toStringAsFixed(0)}'))
+        ..add(_row(
+            'Friend share',
+            '${(friendSharePct ?? 0).toStringAsFixed(0)}%  •  ₹ '
+                '${(friendShareAmt ?? 0).toStringAsFixed(0)}'));
+    } else {
+      final label = participantCount <= 0
+          ? '—'
+          : participantCount == 1
+              ? '1 member'
+              : '$participantCount members';
+      rows.add(_row('Participants', label));
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _row('Title', title),
-        _row('Amount', amount <= 0 ? '—' : '₹ ${amount.toStringAsFixed(amount.truncateToDouble() == amount ? 0 : 2)}'),
-        _row('Billing day', dueDay == null ? '—' : 'Day $dueDay'),
-        const Divider(height: 18),
-        _row('Your share', '${userSharePct.toStringAsFixed(0)}%  •  ₹ ${userShareAmt.toStringAsFixed(0)}'),
-        _row('Friend share', '${friendSharePct.toStringAsFixed(0)}%  •  ₹ ${friendShareAmt.toStringAsFixed(0)}'),
-      ],
+      children: rows,
     );
   }
 

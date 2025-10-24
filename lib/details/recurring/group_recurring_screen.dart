@@ -3,8 +3,10 @@ import 'package:lifemap/core/notifications/local_notifications.dart';
 import 'package:lifemap/details/models/recurring_scope.dart';
 import 'package:lifemap/details/models/shared_item.dart';
 import 'package:lifemap/details/recurring/add_choice_sheet.dart';
+import 'package:lifemap/details/recurring/add_custom_reminder_sheet.dart';
 import 'package:lifemap/details/recurring/add_emi_link_sheet.dart';
-import 'package:lifemap/details/recurring/add_group_recurring_sheet.dart';
+import 'package:lifemap/details/recurring/add_recurring_basic_screen.dart';
+import 'package:lifemap/details/recurring/add_subscription_screen.dart';
 import 'package:lifemap/details/services/recurring_service.dart';
 import 'package:lifemap/services/group_service.dart';
 
@@ -150,31 +152,42 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
           ),
-          builder: (_) => AddGroupRecurringSheet(
-            groupId: widget.groupId,
-            currentUserPhone: widget.currentUserPhone,
-            typeKey: 'reminder',
+          builder: (_) => AddCustomReminderSheet(
+            userPhone: widget.currentUserPhone,
+            scope: _scope,
             participantUserIds: _memberPhones,
+            mirrorToFriend: false,
           ),
         );
         break;
       case 'subscription':
       case 'recurring':
       default:
-        res = await showModalBottomSheet(
-          context: context,
-          useSafeArea: true,
-          isScrollControlled: true,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          builder: (_) => AddGroupRecurringSheet(
-            groupId: widget.groupId,
-            currentUserPhone: widget.currentUserPhone,
-            typeKey: key == 'subscription' ? 'subscription' : 'recurring',
-            participantUserIds: _memberPhones,
-          ),
-        );
+        if (key == 'subscription') {
+          res = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AddSubscriptionScreen(
+                userPhone: widget.currentUserPhone,
+                scope: _scope,
+                participantUserIds: _memberPhones,
+                mirrorToFriend: false,
+              ),
+            ),
+          );
+        } else {
+          res = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AddRecurringBasicScreen(
+                userPhone: widget.currentUserPhone,
+                scope: _scope,
+                participantUserIds: _memberPhones,
+                mirrorToFriend: false,
+              ),
+            ),
+          );
+        }
         break;
     }
     await _handleAddResult(res);
