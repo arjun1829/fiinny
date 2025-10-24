@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'auth_gate.dart';
 import '../services/notification_service.dart';
+import '../services/startup_prefs.dart';
 
 // ---- Mint colors tuned to match the artwork ----
 const kMintBase = Color(0xFF21B9A3); // lighter mint
@@ -63,6 +64,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   @override
   void initState() {
     super.initState();
+    unawaited(StartupPrefs.markWelcomeSeen());
     _progressCtl = AnimationController(vsync: this, duration: _kAutoInterval);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
