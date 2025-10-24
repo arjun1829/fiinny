@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../services/recurring_service.dart';
 import '../models/shared_item.dart';
 import '../models/recurring_rule.dart';
+import '../models/recurring_scope.dart';
 
 import 'add_choice_sheet.dart';
 import 'add_recurring_basic_screen.dart';
@@ -110,7 +111,7 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
           MaterialPageRoute(
             builder: (_) => AddRecurringBasicScreen(
               userPhone: widget.userPhone,
-              friendId: widget.friendId,
+              scope: RecurringScope.friend(widget.userPhone, widget.friendId),
             ),
           ),
         );
@@ -121,7 +122,7 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
           MaterialPageRoute(
             builder: (_) => AddSubscriptionScreen(
               userPhone: widget.userPhone,
-              friendId: widget.friendId,
+              scope: RecurringScope.friend(widget.userPhone, widget.friendId),
             ),
           ),
         );
@@ -135,9 +136,8 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
             borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
           ),
           builder: (_) => AddEmiLinkSheet(
-            userPhone: widget.userPhone,
-            friendId: widget.friendId,
-            userId: widget.userPhone,
+            scope: RecurringScope.friend(widget.userPhone, widget.friendId),
+            currentUserId: widget.userPhone,
           ),
         );
         break;
@@ -151,7 +151,7 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
           ),
           builder: (_) => AddCustomReminderSheet(
             userPhone: widget.userPhone,
-            friendId: widget.friendId,
+            scope: RecurringScope.friend(widget.userPhone, widget.friendId),
           ),
         );
         break;
@@ -1107,7 +1107,10 @@ class _TypeListSheetState extends State<_TypeListSheet> {
                             MaterialPageRoute(
                               builder: (_) => AddRecurringBasicScreen(
                                 userPhone: widget.userPhone,
-                                friendId: widget.friendId,
+                                scope: RecurringScope.friend(
+                                  widget.userPhone,
+                                  widget.friendId,
+                                ),
                               ),
                             ),
                           );
@@ -1118,7 +1121,10 @@ class _TypeListSheetState extends State<_TypeListSheet> {
                             MaterialPageRoute(
                               builder: (_) => AddSubscriptionScreen(
                                 userPhone: widget.userPhone,
-                                friendId: widget.friendId,
+                                scope: RecurringScope.friend(
+                                  widget.userPhone,
+                                  widget.friendId,
+                                ),
                               ),
                             ),
                           );
@@ -1133,9 +1139,11 @@ class _TypeListSheetState extends State<_TypeListSheet> {
                               BorderRadius.vertical(top: Radius.circular(16)),
                             ),
                             builder: (_) => AddEmiLinkSheet(
-                              userPhone: widget.userPhone,
-                              friendId: widget.friendId,
-                              userId: widget.userPhone,
+                              scope: RecurringScope.friend(
+                                widget.userPhone,
+                                widget.friendId,
+                              ),
+                              currentUserId: widget.userPhone,
                             ),
                           );
                           break;

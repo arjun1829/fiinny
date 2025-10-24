@@ -40,12 +40,31 @@ post_install do |installer|
   end
 
   installer.pods_project.targets.each do |t|
+    t.build_configurations.each do |config|
+      bs = config.build_settings
+      bs['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
+      bs['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'NO'
+
+      defs = Array(bs['GCC_PREPROCESSOR_DEFINITIONS'] || '$(inherited)')
+      defs << '$(inherited)' unless defs.include?('$(inherited)')
+      defs << 'PERMISSION_CONTACTS=1' unless defs.include?('PERMISSION_CONTACTS=1')
+      bs['GCC_PREPROCESSOR_DEFINITIONS'] = defs
+    end
     flutter_additional_ios_build_settings(t)
     t.build_configurations.each(&apply_build_settings)
   end
 
   installer.generated_projects.each do |project|
-    project.build_configurations.each(&apply_build_settings)
+    project.build_configurations.each do |config|
+      bs = config.build_settings
+      bs['IPHONEOS_DEPLOYMENT_TARGET'] = $ios_deployment_target
+      bs['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'NO'
+
+      defs = Array(bs['GCC_PREPROCESSOR_DEFINITIONS'] || '$(inherited)')
+      defs << '$(inherited)' unless defs.include?('$(inherited)')
+      defs << 'PERMISSION_CONTACTS=1' unless defs.include?('PERMISSION_CONTACTS=1')
+      bs['GCC_PREPROCESSOR_DEFINITIONS'] = defs
+    end
   end
 
   # Pods are not code signed; Runner is.
