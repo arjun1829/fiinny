@@ -17,12 +17,14 @@ class AddCustomReminderSheet extends StatefulWidget {
   final RecurringScope scope;
   final List<String> participantUserIds;
   final bool mirrorToFriend;
+  final String? friendId;
   const AddCustomReminderSheet({
     Key? key,
     required this.userPhone,
     required this.scope,
     this.participantUserIds = const <String>[],
     this.mirrorToFriend = true,
+    this.friendId,
   }) : super(key: key);
 
   @override
@@ -55,7 +57,7 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
   final _svc = RecurringService();
 
   bool get _isGroup => widget.scope.isGroup;
-  String? get _friendId => widget.scope.friendId;
+  String? get _friendId => widget.friendId ?? widget.scope.friendId;
   String? get _groupId => widget.scope.groupId;
 
   List<String> get _groupParticipantIds {
