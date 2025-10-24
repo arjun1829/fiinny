@@ -12,7 +12,9 @@ import 'routes.dart';
 
 // First visible screen (keep as our current entry)
 import 'screens/welcome_screen.dart';
+import 'screens/launcher_screen.dart';
 import 'themes/theme_provider.dart';
+import 'services/startup_prefs.dart';
 
 // Toggle from CI: --dart-define=SAFE_MODE=true
 const bool SAFE_MODE = bool.fromEnvironment('SAFE_MODE', defaultValue: false);
@@ -79,8 +81,14 @@ Future<void> _boot(_StartupTracer tracer) async {
     tracer.add('Firebase ❌ $e');
   }
 
-  tracer.add('NAV → WelcomeScreen');
-  _DiagApp.navTo(const WelcomeScreen());
+  final welcomeSeen = await StartupPrefs.hasSeenWelcome();
+  if (welcomeSeen) {
+    tracer.add('NAV → LauncherScreen (welcome skipped)');
+    _DiagApp.navTo(const LauncherScreen());
+  } else {
+    tracer.add('NAV → WelcomeScreen');
+    _DiagApp.navTo(const WelcomeScreen());
+  }
   tracer.add('BOOT done (UI visible)');
 }
 
