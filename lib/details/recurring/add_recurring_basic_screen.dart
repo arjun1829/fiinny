@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../services/recurring_service.dart';
 import '../models/recurring_rule.dart';
+import '../models/recurring_scope.dart';
 import '../models/shared_item.dart';
 
 // Local notifs & push (already in your project)
@@ -19,7 +20,9 @@ import 'package:firebase_storage/firebase_storage.dart';
 
 class AddRecurringBasicScreen extends StatefulWidget {
   final String userPhone;
-  final String friendId;
+  final RecurringScope scope;
+  final List<String> participantUserIds;
+  final bool mirrorToFriend;
 
   /// Optional initial values so this screen is globally usable
   final String? initialTitle;
@@ -32,14 +35,18 @@ class AddRecurringBasicScreen extends StatefulWidget {
   const AddRecurringBasicScreen({
     Key? key,
     required this.userPhone,
-    required this.friendId,
+    required this.scope,
+    this.participantUserIds = const <String>[],
+    this.mirrorToFriend = true,
     this.initialTitle,
     this.initialAmount,
     this.initialFrequency,
     this.initialDueDay,
     this.initialWeekday,
     this.initialIntervalDays,
-  }) : super(key: key);
+  })  : assert(scope.userPhone != null || scope.isGroup,
+            'Recurring scope must include user phone for friend or be group'),
+        super(key: key);
 
   @override
   State<AddRecurringBasicScreen> createState() =>
@@ -82,6 +89,19 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
 
   final _svc = RecurringService();
   bool _saving = false;
+
+  bool get _isGroup => widget.scope.isGroup;
+  String? get _friendId => widget.scope.friendId;
+  String? get _groupId => widget.scope.groupId;
+
+  List<String> get _groupParticipantIds {
+    final ids = <String>{widget.userPhone.trim()};
+    for (final phone in widget.participantUserIds) {
+      final trimmed = phone.trim();
+      if (trimmed.isNotEmpty) ids.add(trimmed);
+    }
+    return ids.where((e) => e.isNotEmpty).toList();
+  }
 
   // ---------- Presets ----------
   // You can mix image assets + glossy icons.
@@ -365,20 +385,26 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
     final planned = DateTime(due.year, due.month, due.day, _time.hour, _time.minute)
         .subtract(Duration(days: _daysBefore));
     final fireAt = planned.isAfter(now) ? planned : now.add(const Duration(minutes: 1));
+    final payload = _isGroup && _groupId != null
+        ? 'app://group/${_groupId}/recurring'
+        : 'app://friend/${_friendId}/recurring';
+    final itemId = _isGroup && _groupId != null
+        ? 'group_${_groupId}_$id'
+        : id;
     try {
       await LocalNotifs.init();
       await LocalNotifs.scheduleOnce(
-        itemId: id,
+        itemId: itemId,
         title: title.isEmpty ? 'Reminder' : title,
         fireAt: fireAt,
         body: 'Due on ${_fmtDate(due)}',
-        payload: 'app://friend/${widget.friendId}/recurring',
+        payload: payload,
       );
     } catch (_) {
       await PushService.showLocal(
         title: title.isEmpty ? 'Reminder' : title,
         body: 'Saved — you’ll be reminded before ${_fmtDate(due)}',
-        deeplink: 'app://friend/${widget.friendId}/recurring',
+        deeplink: payload,
       );
     }
   }
@@ -409,10 +435,13 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
       final toUpload = File(compressed?.path ?? original.path);
       setState(() => _attachedImage = toUpload);
 
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final storagePath = _isGroup && _groupId != null
+          ? 'groups/${_groupId}/recurring/$timestamp.jpg'
+          : 'users/${widget.userPhone}/recurring/${_friendId ?? 'unknown'}/$timestamp.jpg';
+
       // Upload to Firebase Storage
-      final ref = FirebaseStorage.instance.ref().child(
-        'users/${widget.userPhone}/recurring/${widget.friendId}/${DateTime.now().millisecondsSinceEpoch}.jpg',
-      );
+      final ref = FirebaseStorage.instance.ref().child(storagePath);
       final task = await ref.putFile(
         toUpload,
         SettableMetadata(contentType: 'image/jpeg'),
@@ -442,16 +471,20 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
     final amt = _parseAmount();
 
     // Participants
-    final participants = <ParticipantShare>[
-      ParticipantShare(
-        userId: widget.userPhone,
-        sharePct: _split == 'equal' ? 50.0 : _userShare,
-      ),
-      ParticipantShare(
-        userId: widget.friendId,
-        sharePct: _split == 'equal' ? 50.0 : _friendShare,
-      ),
-    ];
+    final participants = _isGroup
+        ? _groupParticipantIds
+            .map((id) => ParticipantShare(userId: id))
+            .toList()
+        : <ParticipantShare>[
+            ParticipantShare(
+              userId: widget.userPhone,
+              sharePct: _split == 'equal' ? 50.0 : _userShare,
+            ),
+            ParticipantShare(
+              userId: _friendId!,
+              sharePct: _split == 'equal' ? 50.0 : _friendShare,
+            ),
+          ];
 
     // Rule
     final rule = RecurringRule(
@@ -481,29 +514,63 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
       },
       rule: rule,
       nextDueAt: nextDue,
+      participantUserIds: _isGroup ? _groupParticipantIds : null,
+      ownerUserId: widget.userPhone,
+      groupId: _isGroup ? _groupId : null,
+      sharing: _isGroup ? 'group' : null,
     );
 
     setState(() => _saving = true);
     try {
       await PushService.init();
 
-      final newId = await _svc.add(widget.userPhone, widget.friendId, item);
+      String newId;
+      if (_isGroup) {
+        final ids = _groupParticipantIds;
+        newId = await _svc.addToGroup(
+          _groupId!,
+          item,
+          participantUserIds: ids,
+        );
 
-      if (_notifyEnabled) {
-        await _svc.setNotifyPrefs(
-          userPhone: widget.userPhone,
-          friendId: widget.friendId,
-          itemId: newId,
-          enabled: true,
-          daysBefore: _daysBefore,
-          timeHHmm: _fmtTime(_time),
-          notifyBoth: true,
+        if (_notifyEnabled) {
+          await _svc.setNotifyPrefsGroup(
+            groupId: _groupId!,
+            itemId: newId,
+            enabled: true,
+            daysBefore: _daysBefore,
+            timeHHmm: _fmtTime(_time),
+          );
+          await _scheduleLocalOnce(
+            id: newId,
+            title: item.title ?? 'Recurring',
+            due: nextDue,
+          );
+        }
+      } else {
+        newId = await _svc.add(
+          widget.userPhone,
+          _friendId!,
+          item,
+          mirrorToFriend: widget.mirrorToFriend,
         );
-        await _scheduleLocalOnce(
-          id: newId,
-          title: item.title ?? 'Recurring',
-          due: nextDue,
-        );
+
+        if (_notifyEnabled) {
+          await _svc.setNotifyPrefs(
+            userPhone: widget.userPhone,
+            friendId: _friendId!,
+            itemId: newId,
+            enabled: true,
+            daysBefore: _daysBefore,
+            timeHHmm: _fmtTime(_time),
+            notifyBoth: true,
+          );
+          await _scheduleLocalOnce(
+            id: newId,
+            title: item.title ?? 'Recurring',
+            due: nextDue,
+          );
+        }
       }
 
       if (!mounted) return;
@@ -522,24 +589,32 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
   @override
   Widget build(BuildContext context) {
     final amt = _parseAmount();
-    final uAmt = amt * ((_split == 'equal' ? 50.0 : _userShare) / 100.0);
-    final fAmt = amt * ((_split == 'equal' ? 50.0 : _friendShare) / 100.0);
+    final uAmt = _isGroup
+        ? 0.0
+        : amt * ((_split == 'equal' ? 50.0 : _userShare) / 100.0);
+    final fAmt = _isGroup
+        ? 0.0
+        : amt * ((_split == 'equal' ? 50.0 : _friendShare) / 100.0);
 
     final sortedPresets = [..._presets]..sort((a, b) => a.priority.compareTo(b.priority));
+
+    final previewParticipants = _isGroup
+        ? _groupParticipantIds.map((id) => ParticipantShare(userId: id)).toList()
+        : [
+            ParticipantShare(
+                userId: widget.userPhone,
+                sharePct: _split == 'equal' ? 50.0 : _userShare),
+            ParticipantShare(
+                userId: _friendId!,
+                sharePct: _split == 'equal' ? 50.0 : _friendShare),
+          ];
 
     final previewRule = RecurringRule(
       frequency: _frequency,
       anchorDate: _pickedCalendarDate ?? DateTime.now(),
       status: 'active',
       amount: amt <= 0 ? 1 : amt,
-      participants: [
-        ParticipantShare(
-            userId: widget.userPhone,
-            sharePct: _split == 'equal' ? 50.0 : _userShare),
-        ParticipantShare(
-            userId: widget.friendId,
-            sharePct: _split == 'equal' ? 50.0 : _friendShare),
-      ],
+      participants: previewParticipants,
       dueDay:
       (_frequency == 'weekly' || _frequency == 'custom') ? null : (_dueDay ?? 1).clamp(1, 28),
       weekday: _frequency == 'weekly' ? (_weekday ?? 0) : null,
@@ -703,58 +778,60 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
               ),
 
               const SizedBox(height: 12),
-              _sectionTitle('Split'),
-              _glossyCard(
-                child: Column(
-                  children: [
-                    Wrap(
-                      spacing: 10,
-                      children: [
-                        ChoiceChip(
-                          label: const Text('Equal (50/50)'),
-                          selected: _split == 'equal',
-                          onSelected: (_) => setState(() => _split = 'equal'),
-                        ),
-                        ChoiceChip(
-                          label: const Text('Custom'),
-                          selected: _split == 'custom',
-                          onSelected: (_) => setState(() => _split = 'custom'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    AnimatedCrossFade(
-                      duration: const Duration(milliseconds: 200),
-                      crossFadeState: _split == 'custom'
-                          ? CrossFadeState.showFirst
-                          : CrossFadeState.showSecond,
-                      firstChild: Column(
+              if (!_isGroup) ...[
+                _sectionTitle('Split'),
+                _glossyCard(
+                  child: Column(
+                    children: [
+                      Wrap(
+                        spacing: 10,
                         children: [
-                          _sliderRow(
-                            icon: Icons.person_outline,
-                            label: 'Your share',
-                            value: _userShare,
-                            onChanged: (v) =>
-                                setState(() => _normalizeFromUser(v)),
+                          ChoiceChip(
+                            label: const Text('Equal (50/50)'),
+                            selected: _split == 'equal',
+                            onSelected: (_) => setState(() => _split = 'equal'),
                           ),
-                          _sliderRow(
-                            icon: Icons.group_outlined,
-                            label: 'Friend share',
-                            value: _friendShare,
-                            onChanged: (v) => setState(() {
-                              _friendShare = v.clamp(0, 100);
-                              _userShare = 100 - _friendShare;
-                            }),
+                          ChoiceChip(
+                            label: const Text('Custom'),
+                            selected: _split == 'custom',
+                            onSelected: (_) => setState(() => _split = 'custom'),
                           ),
                         ],
                       ),
-                      secondChild: const SizedBox.shrink(),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      AnimatedCrossFade(
+                        duration: const Duration(milliseconds: 200),
+                        crossFadeState: _split == 'custom'
+                            ? CrossFadeState.showFirst
+                            : CrossFadeState.showSecond,
+                        firstChild: Column(
+                          children: [
+                            _sliderRow(
+                              icon: Icons.person_outline,
+                              label: 'Your share',
+                              value: _userShare,
+                              onChanged: (v) =>
+                                  setState(() => _normalizeFromUser(v)),
+                            ),
+                            _sliderRow(
+                              icon: Icons.group_outlined,
+                              label: 'Friend share',
+                              value: _friendShare,
+                              onChanged: (v) => setState(() {
+                                _friendShare = v.clamp(0, 100);
+                                _userShare = 100 - _friendShare;
+                              }),
+                            ),
+                          ],
+                        ),
+                        secondChild: const SizedBox.shrink(),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
 
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
+              ],
               _sectionTitle('Notes & attachment'),
               _glossyCard(
                 child: Column(
@@ -866,12 +943,14 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
                       : _frequency == 'custom'
                       ? 'Every ${(_intervalDays ?? 7)} day(s)'
                       : (_dueDay == null ? '—' : 'Day $_dueDay'),
+                  showShares: !_isGroup,
                   userSharePct: _split == 'equal' ? 50.0 : _userShare,
                   friendSharePct: _split == 'equal' ? 50.0 : _friendShare,
                   userAmt: _parseAmount() *
                       ((_split == 'equal' ? 50.0 : _userShare) / 100.0),
                   friendAmt: _parseAmount() *
                       ((_split == 'equal' ? 50.0 : _friendShare) / 100.0),
+                  participantCount: _isGroup ? _groupParticipantIds.length : 2,
                   nextDueAt: nextDuePreview,
                 ),
               ),
@@ -1201,11 +1280,13 @@ class _SummaryCard extends StatelessWidget {
   final String frequency;
   final double amount;
   final String dayOrWeekLabel;
-  final double userSharePct;
-  final double friendSharePct;
-  final double userAmt;
-  final double friendAmt;
   final DateTime nextDueAt;
+  final bool showShares;
+  final double? userSharePct;
+  final double? friendSharePct;
+  final double? userAmt;
+  final double? friendAmt;
+  final int participantCount;
 
   const _SummaryCard({
     Key? key,
@@ -1213,11 +1294,13 @@ class _SummaryCard extends StatelessWidget {
     required this.frequency,
     required this.amount,
     required this.dayOrWeekLabel,
-    required this.userSharePct,
-    required this.friendSharePct,
-    required this.userAmt,
-    required this.friendAmt,
     required this.nextDueAt,
+    required this.showShares,
+    this.userSharePct,
+    this.friendSharePct,
+    this.userAmt,
+    this.friendAmt,
+    this.participantCount = 0,
   }) : super(key: key);
 
   @override
@@ -1225,27 +1308,46 @@ class _SummaryCard extends StatelessWidget {
     String amtFmt(double v) =>
         v <= 0 ? '—' : '₹ ${v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 2)}';
 
+    final rows = <Widget>[
+      _row('Title', title),
+      _row('Amount', amtFmt(amount)),
+      _row('Frequency', frequency.isEmpty
+          ? '—'
+          : frequency[0].toUpperCase() + frequency.substring(1)),
+      _row(
+        frequency == 'weekly'
+            ? 'Weekday'
+            : frequency == 'custom'
+            ? 'Interval'
+            : 'Due day',
+        dayOrWeekLabel,
+      ),
+      _row('Next due', nextDueAt.toIso8601String().substring(0, 10)),
+      const Divider(height: 18),
+    ];
+
+    if (showShares) {
+      rows
+        ..add(_row(
+            'Your share',
+            '${(userSharePct ?? 0).toStringAsFixed(0)}%  •  '
+                '${amtFmt(userAmt ?? 0)}'))
+        ..add(_row(
+            'Friend share',
+            '${(friendSharePct ?? 0).toStringAsFixed(0)}%  •  '
+                '${amtFmt(friendAmt ?? 0)}'));
+    } else {
+      final label = participantCount <= 0
+          ? '—'
+          : participantCount == 1
+              ? '1 member'
+              : '$participantCount members';
+      rows.add(_row('Participants', label));
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _row('Title', title),
-        _row('Amount', amtFmt(amount)),
-        _row('Frequency', frequency[0].toUpperCase() + frequency.substring(1)),
-        _row(
-          frequency == 'weekly'
-              ? 'Weekday'
-              : frequency == 'custom'
-              ? 'Interval'
-              : 'Due day',
-          dayOrWeekLabel,
-        ),
-        _row('Next due', nextDueAt.toIso8601String().substring(0, 10)),
-        const Divider(height: 18),
-        _row('Your share',
-            '${userSharePct.toStringAsFixed(0)}%  •  ${amtFmt(userAmt)}'),
-        _row('Friend share',
-            '${friendSharePct.toStringAsFixed(0)}%  •  ${amtFmt(friendAmt)}'),
-      ],
+      children: rows,
     );
   }
 
