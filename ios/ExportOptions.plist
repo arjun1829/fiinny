@@ -2,38 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>method</key>
-  <string>app-store</string>
-
-  <key>signingStyle</key>
-  <string>manual</string> <!-- 🔧 Use manual if CODE_SIGN_STYLE = Manual -->
-
-  <key>uploadBitcode</key>
-  <false/> <!-- Bitcode deprecated by Apple -->
-
-  <key>stripSwiftSymbols</key>
-  <true/>
-
-  <key>compileBitcode</key>
-  <false/>
-
-  <key>thinning</key>
-  <string>&lt;none&gt;</string> <!-- Keeps all slices -->
-
-  <key>destination</key>
-  <string>export</string>
-
-  <!-- Optional but good to have: -->
-  <key>teamID</key>
-  <string>D9JTVVB85F</string>
-
-  <!-- Optional: Include provisioningProfiles if needed -->
-  <!--
-  <key>provisioningProfiles</key>
-  <dict>
-    <key>com.KaranArjunTechnologies.fiinny</key>
-    <string>Fiinny_Provision_Profile</string>
-  </dict>
-  -->
+  <key>method</key><string>app-store</string>
+  <key>signingStyle</key><string>automatic</string>
+  <key>teamID</key><string>D9JTVVB85F</string>
+  <key>compileBitcode</key><false/>
+  <key>uploadBitcode</key><false/>
+  <key>destination</key><string>export</string>
+  <key>stripSwiftSymbols</key><true/>
 </dict>
 </plist>
