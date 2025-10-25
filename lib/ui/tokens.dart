@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class AppColors {
   // Brand / accents
-  static const mint = Color(0xFF09857A);
+  static const Color mint = Color(0xFF09857A);
   static const mintGlow = Color(0xFF19A08F);
   static const mintSoft = Color(0xFFE7F6F4);
 
