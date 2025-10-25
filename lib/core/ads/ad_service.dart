@@ -75,7 +75,9 @@ class AdService {
     try {
       await MobileAds.instance.initialize();
       await MobileAds.instance.updateRequestConfiguration(
-        const RequestConfiguration(testDeviceIds: <String>[]),
+        RequestConfiguration(
+          testDeviceIds: <String>[],
+        ),
       );
       _adsEnabled = true;
       _ready = true;
