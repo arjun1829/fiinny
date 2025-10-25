@@ -1,6 +1,7 @@
 // lib/screens/subs_bills/subs_bills_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show TextPosition, TextSelection;
 
 import 'package:lifemap/details/models/shared_item.dart';
 import '../../services/subscriptions/subscriptions_service.dart';
@@ -288,6 +289,7 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                           searchOpen: _searchOpen,
                           searchController: _search,
                           searchFocus: _searchFocus,
+                          onClearSearch: _clearSearch,
                           onToggleSearch: () {
                             setState(() {
                               _searchOpen = !_searchOpen;
@@ -299,11 +301,9 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                             });
                           },
                           onAddTap: () => _svc.openAddEntry(context),
-                          onQuickAction: (key) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('$key tapped')),
-                            );
-                          },
+                          onQuickAction: _handleQuickAction,
+                          quickSuggestions: const ['overdue', 'paused', 'subscription', 'emi', 'annual'],
+                          onTapSuggestion: _applySuggestion,
                           typeOptions: [
                             FilterOption(
                                 label: 'All',
@@ -533,7 +533,13 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                       else if (isLoading)
                         _loadingCard()
                       else if (itemsRaw.isEmpty)
-                          _emptyCard(onAdd: () => _svc.openAddEntry(context)),
+                        _emptyCard(onAdd: () => _svc.openAddEntry(context))
+                      else if (itemsFiltered.isEmpty)
+                        _filteredEmptyCard(
+                          hasQuery: q.isNotEmpty,
+                          hasTypeFilter: _type != _TypeFilter.all,
+                          hasStatusFilter: _status != _StatusFilter.all,
+                        ),
                     ],
                   ),
                 );
@@ -546,6 +552,54 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
   }
 
   // ---- helpers ----
+
+  void _clearSearch() {
+    if (_search.text.isEmpty) return;
+    setState(() {
+      _search.clear();
+    });
+  }
+
+  void _resetFilters() {
+    if (_type == _TypeFilter.all && _status == _StatusFilter.all) return;
+    setState(() {
+      _type = _TypeFilter.all;
+      _status = _StatusFilter.all;
+    });
+  }
+
+  void _applySuggestion(String suggestion) {
+    setState(() {
+      _searchOpen = true;
+      _search.text = suggestion;
+      _search.selection = TextSelection.fromPosition(
+        TextPosition(offset: _search.text.length),
+      );
+    });
+    Future.microtask(() => _searchFocus.requestFocus());
+  }
+
+  void _handleQuickAction(String key) {
+    switch (key) {
+      case 'subscription':
+      case 'recurring':
+      case 'reminder':
+      case 'emi':
+        _svc.openAddFromType(context, key);
+        break;
+      case 'review':
+        if (widget.userPhone != null) {
+          _openReviewSheet(isLoans: false);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Link a profile to review pending items.')),
+          );
+        }
+        break;
+      default:
+        _svc.openAddEntry(context);
+    }
+  }
 
   void _openReviewSheet({required bool isLoans}) {
     if (widget.userPhone == null) return;
@@ -600,6 +654,65 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
       ],
     ),
   );
+
+  Widget _filteredEmptyCard({
+    required bool hasQuery,
+    required bool hasTypeFilter,
+    required bool hasStatusFilter,
+  }) {
+    final hasFilters = hasQuery || hasTypeFilter || hasStatusFilter;
+    return GlassCard(
+      showGloss: true,
+      glassGradient: [
+        Colors.white.withOpacity(.26),
+        Colors.white.withOpacity(.10),
+      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            hasFilters
+                ? 'No items match your filters'
+                : 'All clear — nothing scheduled here yet',
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            hasFilters
+                ? 'Tweak the filters or clear the search to reveal more items.'
+                : 'Add a subscription, recurring payment, reminder or EMI to get started.',
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (hasQuery)
+                TextButton.icon(
+                  onPressed: _clearSearch,
+                  icon: const Icon(Icons.backspace_outlined),
+                  label: const Text('Clear search'),
+                  style: TextButton.styleFrom(foregroundColor: AppColors.mint),
+                ),
+              if (hasTypeFilter || hasStatusFilter)
+                TextButton.icon(
+                  onPressed: _resetFilters,
+                  icon: const Icon(Icons.filter_alt_off_rounded),
+                  label: const Text('Reset filters'),
+                  style: TextButton.styleFrom(foregroundColor: AppColors.mint),
+                ),
+              TextButton.icon(
+                onPressed: () => _svc.openAddEntry(context),
+                icon: const Icon(Icons.add),
+                label: const Text('Add new item'),
+                style: TextButton.styleFrom(foregroundColor: AppColors.mint),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _errorCard(Object? err) => GlassCard(
     child: Row(
