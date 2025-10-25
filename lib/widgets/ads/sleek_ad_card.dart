@@ -38,59 +38,61 @@ class _SleekAdCardState extends State<SleekAdCard> {
       },
     );
 
-    if (!_loaded) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      margin: widget.margin,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(widget.radius),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 16,
-            offset: Offset(0, 8),
-          ),
-        ],
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.teal.withOpacity(0.04),
-            Colors.white,
+    return Visibility(
+      visible: _loaded,
+      maintainState: true,
+      maintainAnimation: true,
+      maintainSize: false,
+      child: Container(
+        margin: widget.margin,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(widget.radius),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14000000),
+              blurRadius: 16,
+              offset: Offset(0, 8),
+            ),
           ],
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.teal.withOpacity(0.04),
+              Colors.white,
+            ],
+          ),
         ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Text(
-                'Sponsored',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black54,
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'Sponsored',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black54,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.center,
-              child: banner,
-            ),
-          ],
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.center,
+                child: banner,
+              ),
+            ],
+          ),
         ),
       ),
     );
