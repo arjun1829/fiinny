@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 /// Toggle to force TEST ads even in release (handy for QA/internal builds).
-const bool forceTestAds = false;
+/// Use: --dart-define=FORCE_TEST_ADS=true
+const bool forceTestAds =
+    bool.fromEnvironment('FORCE_TEST_ADS', defaultValue: false);
 
 class AdIds {
   // ---------- REAL App IDs ----------
@@ -20,7 +22,7 @@ class AdIds {
   static const _iosInterReal = 'ca-app-pub-5891610127665684/1651774466';
   static const _iosRewardReal = 'ca-app-pub-5891610127665684/8515531876';
 
-  // ---------- Google TEST IDs (keep) ----------
+  // ---------- Google TEST IDs ----------
   static const _androidAppIdTest = 'ca-app-pub-3940256099942544~3347511713';
   static const _iosAppIdTest = 'ca-app-pub-3940256099942544~1458002511';
   static const _androidBannerTest = 'ca-app-pub-3940256099942544/6300978111';
@@ -58,7 +60,6 @@ class AdIds {
 
   static bool _looksConfigured(String value, {bool isAppId = false}) {
     if (value.isEmpty) return false;
-    // Developers often commit obvious placeholders like "xxxx" or "fill later".
     if (value.contains('xxxx') || value.contains('zzzz') || value.contains('fill')) {
       return false;
     }
