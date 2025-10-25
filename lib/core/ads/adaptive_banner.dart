@@ -11,6 +11,7 @@ class AdaptiveBanner extends StatefulWidget {
   final bool inline;       // use inline adaptive if true
   final int? inlineMaxHeight;
   final String? userId;
+  final void Function(bool isLoaded)? onLoadChanged;
 
   const AdaptiveBanner({
     super.key,
@@ -19,6 +20,7 @@ class AdaptiveBanner extends StatefulWidget {
     this.inline = false,
     this.inlineMaxHeight,
     this.userId,
+    this.onLoadChanged,
   });
 
   @override
@@ -38,7 +40,12 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
   Future<void> _load() async {
     _ad?.dispose();
     _ad = null;
-    _loaded = false;
+    if (mounted) {
+      setState(() => _loaded = false);
+    } else {
+      _loaded = false;
+    }
+    widget.onLoadChanged?.call(false);
 
     if (!AdService.I.isEnabled) return;
 
@@ -54,15 +61,26 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
     } catch (_) {
       size = await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(width);
     }
-    if (size == null) return;
+    if (size == null) {
+      widget.onLoadChanged?.call(false);
+      return;
+    }
 
     final ad = BannerAd(
       adUnitId: widget.adUnitId,
       size: size,
       request: const AdRequest(),
       listener: BannerAdListener(
-        onAdLoaded: (_) { if (mounted) setState(() => _loaded = true); },
-        onAdFailedToLoad: (_, __) { if (mounted) setState(() => _loaded = false); },
+        onAdLoaded: (_) {
+          if (!mounted) return;
+          setState(() => _loaded = true);
+          widget.onLoadChanged?.call(true);
+        },
+        onAdFailedToLoad: (_, __) {
+          if (!mounted) return;
+          setState(() => _loaded = false);
+          widget.onLoadChanged?.call(false);
+        },
       ),
     );
 
