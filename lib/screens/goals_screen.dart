@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../core/ads/ads_shell.dart';
 import '../models/goal_model.dart';
 import '../services/goal_service.dart';
 import '../widgets/add_goal_dialog.dart';
@@ -282,6 +283,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
           if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
+          final bottomInset = context.adsBottomPadding(extra: 24);
           _latest = snap.data ?? [];
           final counts = _counts(_latest);
 
@@ -378,7 +380,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                   )
                 else
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 2, 16, 100),
+                    padding: EdgeInsets.fromLTRB(16, 2, 16, bottomInset),
                     sliver: SliverList.separated(
                       itemCount: list.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 10),

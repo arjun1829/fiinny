@@ -21,8 +21,8 @@ import '../themes/custom_card.dart';
 import '../widgets/animated_mint_background.dart';
 
 // ✅ Ads
-import '../core/ads/ad_slots.dart';
 import '../core/ads/ad_service.dart';
+import '../core/ads/ads_shell.dart';
 
 class ExpensesScreen extends StatefulWidget {
   final String userPhone;
@@ -38,7 +38,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   String _chartType = "Pie";
   String _dataType = "All";
   String _viewMode = 'summary';
-  static const double _bannerH = 60.0;
+  static const double _bannerH = AdsVisibilityScope.bannerHeight;
 
   // Data
   List<ExpenseItem> allExpenses = [];
@@ -66,6 +66,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   DateTime? _searchTo;
   final TextEditingController _searchController = TextEditingController();
   final ValueNotifier<bool> _showBottomBanner = ValueNotifier<bool>(true);
+  AdsVisibilityController? _adsController;
 
   // Subscriptions / Debounce
   StreamSubscription? _expSub, _incSub, _friendSub;
@@ -145,7 +146,23 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     // ignore: discarded_futures
     AdService.initLater();
 
+    _showBottomBanner.addListener(_syncGlobalBannerVisibility);
+
     _listenToData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final controller = AdsVisibilityScope.maybeOf(context);
+    if (!identical(_adsController, controller)) {
+      _adsController = controller;
+      _syncGlobalBannerVisibility();
+    }
+  }
+
+  void _syncGlobalBannerVisibility() {
+    _adsController?.setVisible(_showBottomBanner.value);
   }
 
   @override
@@ -155,6 +172,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     _expSub?.cancel();
     _incSub?.cancel();
     _friendSub?.cancel();
+    _showBottomBanner.removeListener(_syncGlobalBannerVisibility);
     super.dispose();
   }
 
@@ -397,30 +415,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                       const SizedBox(height: 2),
                       Expanded(child: _getCurrentView(context)),
                     ],
-                  ),
-                ),
-              );
-            },
-          ),
-          ValueListenableBuilder<bool>(
-            valueListenable: _showBottomBanner,
-            builder: (context, show, _) {
-              final keyboardUp = MediaQuery.of(context).viewInsets.bottom > 0;
-              if (!show || keyboardUp) return const SizedBox.shrink();
-              return Positioned(
-                left: 8,
-                right: 8,
-                bottom: kBottomNavigationBarHeight + MediaQuery.of(context).padding.bottom + 4,
-                child: SafeArea(
-                  top: false,
-                  bottom: false,
-                  child: SizedBox(
-                    height: _bannerH,
-                    child: const AdsBannerSlot(
-                      inline: false,
-                      padding: EdgeInsets.zero,
-                      alignment: Alignment.center,
-                    ),
                   ),
                 ),
               );
