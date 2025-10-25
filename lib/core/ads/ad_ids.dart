@@ -10,27 +10,27 @@ const bool forceTestAds =
 class AdIds {
   // ---------- REAL App IDs ----------
   static const _androidAppIdReal = 'ca-app-pub-5891610127665684~2144640230';
-  static const _iosAppIdReal = 'ca-app-pub-5891610127665684~7171759721';
+  static const _iosAppIdReal     = 'ca-app-pub-5891610127665684~7171759721';
 
   // ---------- REAL UNIT IDs (ANDROID) ----------
   static const _androidBannerReal = 'ca-app-pub-5891610127665684/1238736762'; // Dashboard_Banner
-  static const _androidInterReal = 'ca-app-pub-5891610127665684/5161685814'; // TxSuccess_Interstitial
+  static const _androidInterReal  = 'ca-app-pub-5891610127665684/5161685814'; // TxSuccess_Interstitial
   static const _androidRewardReal = 'ca-app-pub-5891610127665684/6770265044'; // Insights_Rewarded
 
   // ---------- REAL UNIT IDs (iOS) ----------
   static const _iosBannerReal = 'ca-app-pub-5891610127665684/1649712954';
-  static const _iosInterReal = 'ca-app-pub-5891610127665684/1651774466';
+  static const _iosInterReal  = 'ca-app-pub-5891610127665684/1651774466';
   static const _iosRewardReal = 'ca-app-pub-5891610127665684/8515531876';
 
   // ---------- Google TEST IDs ----------
-  static const _androidAppIdTest = 'ca-app-pub-3940256099942544~3347511713';
-  static const _iosAppIdTest = 'ca-app-pub-3940256099942544~1458002511';
+  static const _androidAppIdTest  = 'ca-app-pub-3940256099942544~3347511713';
+  static const _iosAppIdTest      = 'ca-app-pub-3940256099942544~1458002511';
   static const _androidBannerTest = 'ca-app-pub-3940256099942544/6300978111';
-  static const _iosBannerTest = 'ca-app-pub-3940256099942544/2934735716';
-  static const _androidInterTest = 'ca-app-pub-3940256099942544/1033173712';
-  static const _iosInterTest = 'ca-app-pub-3940256099942544/4411468910';
+  static const _iosBannerTest     = 'ca-app-pub-3940256099942544/2934735716';
+  static const _androidInterTest  = 'ca-app-pub-3940256099942544/1033173712';
+  static const _iosInterTest      = 'ca-app-pub-3940256099942544/4411468910';
   static const _androidRewardTest = 'ca-app-pub-3940256099942544/5224354917';
-  static const _iosRewardTest = 'ca-app-pub-3940256099942544/1712485313';
+  static const _iosRewardTest     = 'ca-app-pub-3940256099942544/1712485313';
 
   // ---------- Switch logic: test in debug, real in release ----------
   static bool get _useReal =>
@@ -60,9 +60,7 @@ class AdIds {
 
   static bool _looksConfigured(String value, {bool isAppId = false}) {
     if (value.isEmpty) return false;
-    if (value.contains('xxxx') || value.contains('zzzz') || value.contains('fill')) {
-      return false;
-    }
+    if (value.contains('xxxx') || value.contains('zzzz') || value.contains('fill')) return false;
     final pattern = isAppId
         ? RegExp(r'^ca-app-pub-\d{16}~\d{10}$')
         : RegExp(r'^ca-app-pub-\d{16}/\d{10}$');
