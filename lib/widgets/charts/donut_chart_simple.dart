@@ -47,8 +47,13 @@ class DonutChartSimple extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final total = data.fold<double>(0, (a, b) => a + b.value);
-    if (total <= 0) {
+    final slices = <DonutSlice>[
+      for (final s in data)
+        if (s.value.isFinite && s.value > 0) s,
+    ];
+
+    final total = slices.fold<double>(0, (a, b) => a + b.value);
+    if (!total.isFinite || total <= 0 || slices.isEmpty) {
       return SizedBox(
         width: size,
         height: size,
@@ -59,7 +64,7 @@ class DonutChartSimple extends StatelessWidget {
     // Precompute arcs (start, sweep) with a minimum sweep so tiny slices are visible.
     // Then re-normalize so the sum of sweeps never exceeds 360° (prevents the “solid ring” bug).
     const double minFrac = 0.02; // 2% of the circle
-    final arcs = _computeArcsNormalized(data, total, minFrac);
+    final arcs = _computeArcsNormalized(slices, total, minFrac);
 
     final colors = palette ??
         <Color>[
@@ -99,7 +104,7 @@ class DonutChartSimple extends StatelessWidget {
                 for (int i = 0; i < arcs.length; i++) {
                   final s = arcs[i];
                   if (aFromTop >= acc && aFromTop < acc + s.sweep) {
-                    onSliceTap?.call(i, data[i]);
+                    onSliceTap?.call(i, slices[i]);
                     break;
                   }
                   acc += s.sweep;
@@ -110,7 +115,7 @@ class DonutChartSimple extends StatelessWidget {
           children: [
             CustomPaint(
               painter: _DonutPainter(
-                data: data,
+                data: slices,
                 arcs: arcs,
                 thickness: thickness,
                 colors: colors,

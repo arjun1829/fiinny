@@ -77,6 +77,13 @@ class HeroSummary extends StatefulWidget {
   State<HeroSummary> createState() => _HeroSummaryState();
 }
 
+class _QuickAction {
+  final String key;
+  final IconData icon;
+  final String label;
+  const _QuickAction(this.key, this.icon, this.label);
+}
+
 class _HeroSummaryState extends State<HeroSummary> {
   @override
   Widget build(BuildContext context) {
@@ -197,6 +204,11 @@ class _HeroSummaryState extends State<HeroSummary> {
 
                 // ---------- KPI chips ----------
                 _kpiChipsRow(on, onSoft),
+
+                if (widget.onQuickAction != null) ...[
+                  const SizedBox(height: 10),
+                  _quickActions(widget.onQuickAction!),
+                ],
 
                 // ---------- Search + filters (collapsible) ----------
                 AnimatedHeightFade(
@@ -322,6 +334,32 @@ class _HeroSummaryState extends State<HeroSummary> {
       );
       return wrap;
     });
+  }
+
+  Widget _quickActions(void Function(String action) onTap) {
+    final actions = <_QuickAction>[
+      const _QuickAction('subscription', Icons.subscriptions_rounded, 'Add subscription'),
+      const _QuickAction('recurring', Icons.repeat_rounded, 'Add recurring'),
+      const _QuickAction('reminder', Icons.alarm_add_rounded, 'Add reminder'),
+      const _QuickAction('emi', Icons.account_balance_rounded, 'Link loan / EMI'),
+      const _QuickAction('review', Icons.library_add_check_rounded, 'Review pending'),
+    ];
+
+    return Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      children: actions
+          .map(
+            (a) => ActionChip(
+              avatar: Icon(a.icon, size: 18, color: AppColors.mint),
+              backgroundColor: AppColors.mint.withOpacity(.10),
+              label: Text(a.label, style: const TextStyle(fontWeight: FontWeight.w700)),
+              onPressed: () => onTap(a.key),
+              shape: const StadiumBorder(),
+            ),
+          )
+          .toList(),
+    );
   }
 
   // ---------- Search field ----------
