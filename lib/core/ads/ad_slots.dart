@@ -1,9 +1,10 @@
 // lib/core/ads/ad_slots.dart
 import 'package:flutter/material.dart';
+
 import 'adaptive_banner.dart';
 import 'ad_ids.dart';
 
-/// Drop-in banner slot (auto-collapses if the ad isn't loaded).
+/// Drop-in banner slot.
 /// Works anchored (bottom bars) or inline (lists/sheets).
 class AdsBannerSlot extends StatelessWidget {
   /// Outer padding around the ad container.
@@ -18,9 +19,8 @@ class AdsBannerSlot extends StatelessWidget {
   /// Horizontal alignment of the ad.
   final Alignment alignment;
 
-  /// Optional background wrapper.
-  final Color? backgroundColor;
-  final BorderRadiusGeometry? borderRadius;
+  /// Notify when the underlying ad load state changes.
+  final void Function(bool isLoaded)? onLoadChanged;
 
   const AdsBannerSlot({
     super.key,
@@ -28,8 +28,7 @@ class AdsBannerSlot extends StatelessWidget {
     this.inline = false,
     this.inlineMaxHeight,
     this.alignment = Alignment.center,
-    this.backgroundColor,
-    this.borderRadius,
+    this.onLoadChanged,
   });
 
   @override
@@ -39,23 +38,19 @@ class AdsBannerSlot extends StatelessWidget {
       padding: EdgeInsets.zero, // outer padding handled here
       inline: inline,
       inlineMaxHeight: inlineMaxHeight,
+      onLoadChanged: onLoadChanged,
     );
 
-    Widget content = Align(alignment: alignment, child: banner);
-
-    if (backgroundColor != null || borderRadius != null) {
-      content = Container(
-        decoration: BoxDecoration(color: backgroundColor, borderRadius: borderRadius),
-        clipBehavior: borderRadius != null ? Clip.antiAlias : Clip.none,
-        child: content,
-      );
-    }
+    final content = Padding(
+      padding: padding,
+      child: Align(alignment: alignment, child: banner),
+    );
 
     // Bottom SafeArea only for anchored banners. Inline slots don't need it.
     return SafeArea(
       top: false,
       bottom: !inline,
-      child: Padding(padding: padding, child: content),
+      child: content,
     );
   }
 }

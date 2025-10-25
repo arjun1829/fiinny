@@ -12,7 +12,7 @@ import '../services/expense_service.dart';
 import '../services/income_service.dart';
 
 // ✅ for inline ads inside the details sheet
-import '../core/ads/ad_slots.dart';
+import '../core/ads/ads_banner_card.dart';
 import '../core/filters/transaction_filter.dart';
 
 class UnifiedTransactionList extends StatefulWidget {
@@ -751,9 +751,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 Text(note),
               ],
               const SizedBox(height: 16),
-              const Text("Sponsored", style: TextStyle(fontSize: 12, color: Colors.black54)),
-              const SizedBox(height: 6),
-              const AdsBannerSlot(inline: true, inlineMaxHeight: 120, padding: EdgeInsets.zero),
+              _inlineAdCard('txn_detail_sheet'),
               const SizedBox(height: 12),
               if (widget.showBillIcon && billUrl.isNotEmpty)
                 Align(
@@ -877,9 +875,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 Text(item.source ?? ''),
               ],
               const SizedBox(height: 16),
-              const Text("Sponsored", style: TextStyle(fontSize: 12, color: Colors.black54)),
-              const SizedBox(height: 6),
-              const AdsBannerSlot(inline: true, inlineMaxHeight: 120, padding: EdgeInsets.zero),
+              _inlineAdCard('txn_detail_sheet_modern'),
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
@@ -1034,11 +1030,51 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   }
 
   Widget _adBanner(String placement) {
-    return _BannerAdSlot(placement: placement);
+    return AdsBannerCard(
+      placement: placement,
+      inline: true,
+      inlineMaxHeight: 120,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      minHeight: 96,
+      placeholder: _adPlaceholderRow(placement),
+    );
   }
 
   Widget _inlineAdCard(String placement) {
-    return const _InlineAdCard(placement: 'txn_list_inline');
+    return AdsBannerCard(
+      placement: placement,
+      inline: true,
+      inlineMaxHeight: 120,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      minHeight: 96,
+      placeholder: _adPlaceholderRow(placement),
+    );
+  }
+
+  Widget _adPlaceholderRow(String placement) {
+    final caption = Theme.of(context).textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF6B7280),
+        );
+
+    final placementLabel = placement.replaceAll('_', ' ');
+
+    return Row(
+      children: [
+        const CircleAvatar(radius: 22, backgroundColor: Color(0xFFE5E7EB)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            'Sponsored • $placementLabel',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: caption,
+          ),
+        ),
+        const SizedBox(width: 8),
+        const Icon(Icons.open_in_new_rounded, color: Color(0xFF9CA3AF)),
+      ],
+    );
   }
 
   @override
@@ -1079,7 +1115,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 ),
                 if (widget.showBottomBannerAd)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.only(bottom: 12),
                     child: _adBanner('txn_list_bottom'),
                   ),
               ],
@@ -1095,7 +1131,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
           if (idx == 0 && widget.showTopBannerAd) {
             rows.add(Padding(
-              padding: const EdgeInsets.only(left: 12, right: 12, top: 10, bottom: 6),
+              padding: const EdgeInsets.only(left: 10, right: 10, top: 10, bottom: 6),
               child: _adBanner('txn_list_top'),
             ));
           }
@@ -1603,59 +1639,5 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   }
 }
 
-class _BannerAdSlot extends StatelessWidget {
-  final String placement;
-  const _BannerAdSlot({required this.placement});
+// Old bespoke ad widgets replaced by reusable [AdsBannerCard].
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 64,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F6F8),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0x14000000)),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        'Ad • $placement',
-        style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF6B7280)),
-      ),
-    );
-  }
-}
-
-class _InlineAdCard extends StatelessWidget {
-  final String placement;
-  const _InlineAdCard({required this.placement});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 92,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7F7FA),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0x11000000)),
-        boxShadow: const [BoxShadow(color: Color(0x0F000000), blurRadius: 8, offset: Offset(0, 3))],
-      ),
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: const [
-          CircleAvatar(radius: 22, backgroundColor: Color(0xFFE5E7EB)),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Sponsored • txn_list_inline',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF6B7280)),
-            ),
-          ),
-          SizedBox(width: 8),
-          Icon(Icons.chevron_right_rounded, color: Color(0xFF9CA3AF)),
-        ],
-      ),
-    );
-  }
-}
