@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/ads/ads_shell.dart';
 import '../models/friend_model.dart';
 import '../models/expense_item.dart';
 import '../services/friend_service.dart';
@@ -154,6 +155,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   @override
   Widget build(BuildContext context) {
     final isGroupMode = widget.groupId != null && widget.groupMembers != null;
+    final bottomPadding = context.adsBottomPadding(extra: 16);
     return Scaffold(
       appBar: AppBar(
         title: const Text("Add Expense"),
@@ -162,7 +164,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, bottomPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

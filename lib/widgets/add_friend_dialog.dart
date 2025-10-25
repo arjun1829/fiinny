@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 
+import '../core/ads/ads_shell.dart';
 import '../services/friend_service.dart';
 import '../utils/firebase_error_mapper.dart';
 import '../utils/permissions_helper.dart';
@@ -261,6 +262,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
   // ------------------------ UI ------------------------
   @override
   Widget build(BuildContext context) {
+    final safeBottom = context.adsBottomPadding();
     // Glassy dialog body
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -288,7 +290,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                 ),
               ],
             ),
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+            padding: EdgeInsets.fromLTRB(20, 18, 20, safeBottom + 14),
             child: Form(
               key: _formKey,
               child: SingleChildScrollView(

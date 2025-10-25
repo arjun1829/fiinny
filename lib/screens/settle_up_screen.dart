@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../core/ads/ads_shell.dart';
 import '../models/group_model.dart';
 import '../models/expense_item.dart';
 import '../models/friend_model.dart';
@@ -150,6 +151,7 @@ class _SettleUpScreenState extends State<SettleUpScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomPadding = context.adsBottomPadding(extra: 22);
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: PreferredSize(
@@ -207,7 +209,7 @@ class _SettleUpScreenState extends State<SettleUpScreen> {
             ),
           )
               : ListView(
-            padding: const EdgeInsets.only(top: 90, bottom: 22),
+            padding: EdgeInsets.only(top: 90, bottom: bottomPadding),
             children: _balances.entries.map((entry) {
               final id = entry.key;
               if (id == widget.userId) return const SizedBox.shrink();

@@ -78,9 +78,6 @@ import '../screens/review_inbox_screen.dart';
 import '../services/review_queue_service.dart';
 import '../models/ingest_draft_model.dart';
 
-// Adds Imports
-import 'package:lifemap/core/ads/adaptive_banner.dart';
-import 'package:lifemap/core/ads/ad_ids.dart';
 import '../core/ads/ad_service.dart';
 
 import '../core/notifications/local_notifications.dart'
@@ -1053,7 +1050,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      bottomNavigationBar: AdaptiveBanner(adUnitId: AdIds.banner, userId: widget.userPhone),
       floatingActionButton: _MintFab(
         onRefresh: _initDashboard,
         userPhone: widget.userPhone,

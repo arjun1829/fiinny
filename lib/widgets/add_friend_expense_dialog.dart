@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../core/ads/ads_shell.dart';
 import '../models/friend_model.dart';
 import '../models/expense_item.dart';
 import '../services/expense_service.dart';
@@ -885,11 +886,12 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
         ),
       ),
       body: SafeArea(
+        bottom: false,
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              padding: EdgeInsets.fromLTRB(16, 8, 16, context.adsBottomPadding(extra: 16)),
               child: Form(
                 key: _formKey,
                 child: Column(

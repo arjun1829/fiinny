@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../core/ads/ads_shell.dart';
 import '../core/analytics/aggregators.dart';
 import '../core/formatters/inr.dart';
 import '../models/expense_item.dart';
@@ -66,6 +67,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
+    final bottomPadding = context.adsBottomPadding(extra: 24);
 
     // Use custom range when set from calendar
     final r = AnalyticsAgg.rangeFor(_period, now, custom: _custom);
@@ -117,7 +119,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               : RefreshIndicator(
             onRefresh: _bootstrap,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              padding: EdgeInsets.fromLTRB(16, 12, 16, bottomPadding),
               children: [
                 // Period chips (no premium)
                 _periodChips(),
