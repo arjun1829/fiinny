@@ -498,7 +498,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     required List<Color> palette,
     required void Function(String label) onSliceTap,
   }) {
-    final donutData = entries.map((e) => DonutSlice(e.key, e.value)).toList();
+    final donutData = entries
+        .where((e) => e.value.isFinite && e.value > 0)
+        .map((e) => DonutSlice(e.key, e.value))
+        .toList();
 
     final legendItems = <Widget>[];
     for (int i = 0; i < donutData.length && i < 12; i++) {
