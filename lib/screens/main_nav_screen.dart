@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
-import 'package:lifemap/widgets/nav/bottom_bar_with_ad.dart';
+import '../widgets/nav/bottom_bar_with_ad.dart';
 import 'dashboard_screen.dart';
 import 'expenses_screen.dart';
 import 'friends_screen.dart';
@@ -212,13 +212,16 @@ class _MainNavScreenState extends State<MainNavScreen>
                           },
                         ),
                       ),
-                  ),
-                ],
-              ),
-              label: const ["Dashboard", "Expenses", "Friends", "Sharing"][i],
-            );
-          }),
+                    ),
+                  ],
+                ),
+                label:
+                    const ["Dashboard", "Expenses", "Friends", "Sharing"][i],
+              );
+            }),
+          ),
         ),
+        showAd: true,
       ),
     );
   }
