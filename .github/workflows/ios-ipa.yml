@@ -90,36 +90,15 @@ jobs:
           flutter clean
           /usr/bin/sed -i '' "s/platform :ios, .*/platform :ios, '16.0'/" ios/Podfile || true
           rm -rf ios/Pods ios/Podfile.lock
-          # IMPORTANT: regenerate ios/Flutter/Generated.xcconfig after clean
           flutter pub get
           test -f ios/Flutter/Generated.xcconfig && echo "✅ Generated.xcconfig present"
 
-      - name: Normalize Podfile quotes (optional)
-        shell: bash
-        run: |
-          set -euxo pipefail
-          python3 - <<'PY'
-          p='ios/Podfile'
-          try:
-              s=open(p,encoding='utf-8',errors='replace').read()
-          except FileNotFoundError:
-              raise SystemExit(0)
-          s=s.replace('“','"').replace('”','"').replace('‘',"\'").replace('’',"\'").replace('—','-')
-          open(p,'w',encoding='utf-8').write(s)
-          print('Normalized quotes in', p)
-          PY
-
-      - name: Strip UTF-8 BOMs from Xcode files (POSIX-safe)
+      - name: Strip UTF-8 BOMs & normalize line endings
         shell: bash
         run: |
           set -euo pipefail
           find ios \( -name '*.pbxproj' -o -name '*.plist' -o -name '*.xcconfig' -o -name '*.storyboard' -o -name '*.xcscheme' -o -name '*.entitlements' -o -name '*.pch' -o -name '*.h' -o -name '*.m' -o -name '*.mm' -o -name '*.swift' -o -name '*.rb' -o -name '*.sh' -o -name '*.txt' -o -name '*.xml' \) -type f -print0 \
           | xargs -0 -n1 perl -0777 -i -pe 'BEGIN { binmode(STDIN); binmode(STDOUT) } s/^\xEF\xBB\xBF//'
-
-      - name: Normalize line endings to LF (avoid CRLF on macOS)
-        shell: bash
-        run: |
-          set -euo pipefail
           find ios \( -name '*.pbxproj' -o -name '*.plist' -o -name '*.xcconfig' -o -name '*.storyboard' -o -name '*.xcscheme' -o -name '*.entitlements' -o -name '*.pch' -o -name '*.h' -o -name '*.m' -o -name '*.mm' -o -name '*.swift' -o -name '*.rb' -o -name '*.sh' -o -name '*.txt' -o -name '*.xml' \) -type f -print0 \
           | xargs -0 -n1 perl -pi -e 's/\r\n/\n/g'
 
@@ -133,7 +112,7 @@ jobs:
           cd ..
 
       - name: Create GoogleService-Info.plist (if secret present)
-        if: env.FIREBASE_IOS_PLIST_BASE64 != ''
+        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 != '' }}
         shell: bash
         run: |
           set -euxo pipefail
@@ -142,7 +121,7 @@ jobs:
           test -s ios/Runner/GoogleService-Info.plist && echo "✅ GoogleService-Info.plist created"
 
       - name: Add Google URL Scheme to Info.plist
-        if: env.FIREBASE_IOS_PLIST_BASE64 != ''
+        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 != '' }}
         shell: bash
         run: |
           set -euxo pipefail
@@ -155,7 +134,6 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleTypeRole string Editor' "$IP"
           /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' "$IP"
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $RID" "$IP"
-      
 
       - name: Create Keychain & Import Certificate
         shell: bash
@@ -200,8 +178,6 @@ jobs:
             sed -i '' "s/PROVISIONING_PROFILE_SPECIFIER = [^;]*;/PROVISIONING_PROFILE_SPECIFIER = ${PROFILE_NAME};/g" "$PBX" || true
           fi
 
-    
-
       - name: Force OFF Swift module interfaces via xcconfig
         shell: bash
         run: |
@@ -225,29 +201,21 @@ jobs:
           mv pubspec.yaml.tmp pubspec.yaml
           echo "Updated version to: $(grep -m1 '^version:' pubspec.yaml)"
 
-      - name: Prepare ExportOptions.plist
+      - name: Prepare ExportOptions.plist (manual signing)
         shell: bash
         run: |
           set -euxo pipefail
           EXPORT_OPTS="ios/ExportOptions.plist"
           test -f "$EXPORT_OPTS" || { echo "Missing $EXPORT_OPTS"; exit 1; }
-          /usr/libexec/PlistBuddy -c "Set :method app-store" "$EXPORT_OPTS" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :method string app-store" "$EXPORT_OPTS"
-          /usr/libexec/PlistBuddy -c "Set :signingStyle automatic" "$EXPORT_OPTS" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :signingStyle string automatic" "$EXPORT_OPTS"
-          if [ -n "${TEAM_ID:-}" ]; then
-            /usr/libexec/PlistBuddy -c "Set :teamID ${TEAM_ID}" "$EXPORT_OPTS" 2>/dev/null || \
-              /usr/libexec/PlistBuddy -c "Add :teamID string ${TEAM_ID}" "$EXPORT_OPTS"
-          fi
-          /usr/libexec/PlistBuddy -c "Set :compileBitcode false" "$EXPORT_OPTS" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :compileBitcode bool false" "$EXPORT_OPTS"
-          /usr/libexec/PlistBuddy -c "Set :uploadBitcode false" "$EXPORT_OPTS" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :uploadBitcode bool false" "$EXPORT_OPTS"
-          /usr/libexec/PlistBuddy -c "Set :destination export" "$EXPORT_OPTS" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :destination string export" "$EXPORT_OPTS"
-          /usr/libexec/PlistBuddy -c "Set :stripSwiftSymbols true" "$EXPORT_OPTS" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :stripSwiftSymbols bool true" "$EXPORT_OPTS"
+          /usr/libexec/PlistBuddy -c "Set :method app-store" "$EXPORT_OPTS" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :method string app-store" "$EXPORT_OPTS"
+          /usr/libexec/PlistBuddy -c "Set :signingStyle manual" "$EXPORT_OPTS" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :signingStyle string manual" "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c "Delete :provisioningProfiles" "$EXPORT_OPTS" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" "$EXPORT_OPTS"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:${BUNDLE_ID} string ${PROFILE_NAME}" "$EXPORT_OPTS"
+          /usr/libexec/PlistBuddy -c "Set :compileBitcode false" "$EXPORT_OPTS" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :compileBitcode bool false" "$EXPORT_OPTS"
+          /usr/libexec/PlistBuddy -c "Set :uploadBitcode false" "$EXPORT_OPTS" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :uploadBitcode bool false" "$EXPORT_OPTS"
+          /usr/libexec/PlistBuddy -c "Set :destination export" "$EXPORT_OPTS" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :destination string export" "$EXPORT_OPTS"
+          /usr/libexec/PlistBuddy -c "Set :stripSwiftSymbols true" "$EXPORT_OPTS" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :stripSwiftSymbols bool true" "$EXPORT_OPTS"
           /usr/libexec/PlistBuddy -c "Delete :signingCertificate" "$EXPORT_OPTS" 2>/dev/null || true
 
       - name: Lint & sanity-check Info.plist
@@ -261,25 +229,23 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName' ios/Runner/Info.plist || true
           /usr/libexec/PlistBuddy -c 'Print :UIMainStoryboardFile' ios/Runner/Info.plist || true
 
-
-
-
       - name: Ensure iOS privacy usage strings
         shell: bash
         run: |
           set -euo pipefail
           IP="ios/Runner/Info.plist"
           add_str() { /usr/libexec/PlistBuddy -c "Delete :$1" "$IP" 2>/dev/null || true; /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$IP"; }
-          add_str NSCameraUsageDescription              "Camera is used to scan receipts and take profile photos."
-          add_str NSMicrophoneUsageDescription          "Microphone may be used while recording videos."
-          add_str NSPhotoLibraryUsageDescription        "Photo library is used to pick images and receipts."
-          add_str NSPhotoLibraryAddUsageDescription     "Photo library is used to save generated images."
-          add_str NSContactsUsageDescription            "Contacts are used to help you connect with people you know."
+          add_str NSCameraUsageDescription "Camera is used to scan receipts and take profile photos."
+          add_str NSMicrophoneUsageDescription "Microphone may be used while recording videos."
+          add_str NSPhotoLibraryUsageDescription "Photo library is used to pick images and receipts."
+          add_str NSPhotoLibraryAddUsageDescription "Photo library is used to save generated images."
+          add_str NSContactsUsageDescription "Contacts are used to help you connect with people you know."
 
       - name: Verify GoogleService-Info.plist presence
-        if: env.FIREBASE_IOS_PLIST_BASE64 != ''
+        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 != '' }}
         shell: bash
         run: |
+          set -euxo pipefail
           test -s ios/Runner/GoogleService-Info.plist || { echo "Missing GoogleService-Info.plist"; exit 1; }
           /usr/libexec/PlistBuddy -c 'Print :GOOGLE_APP_ID' ios/Runner/GoogleService-Info.plist
 
@@ -299,7 +265,7 @@ jobs:
           /usr/bin/sed -i '' "s/BUILD_LIBRARY_FOR_DISTRIBUTION = YES/BUILD_LIBRARY_FOR_DISTRIBUTION = NO/g" "$PBX" || true
 
       - name: Enable Background remote notifications (optional)
-        if: ${{ always() }}
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -309,7 +275,7 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string remote-notification' "$IP"
 
       - name: Sanity check Firebase plist vs Bundle ID
-        if: env.FIREBASE_IOS_PLIST_BASE64 != ''
+        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -318,10 +284,9 @@ jobs:
           echo "Plist BUNDLE_ID: $PLIST_BID"
           echo "Env   BUNDLE_ID: ${BUNDLE_ID}"
           if [ "$PLIST_BID" != "${BUNDLE_ID}" ]; then
-          echo "❌ GoogleService-Info.plist BUNDLE_ID mismatch"; exit 1;
+            echo "❌ GoogleService-Info.plist BUNDLE_ID mismatch"; exit 1;
           fi
           /usr/libexec/PlistBuddy -c 'Print :GOOGLE_APP_ID' ios/Runner/GoogleService-Info.plist >/dev/null
-
 
       - name: Verify build settings
         shell: bash
@@ -342,53 +307,19 @@ jobs:
           ls -lah build/ios/ipa || true
           ls -lah build/ios/archive || true
 
-      - name: Dump export errors (xcresult)
-        if: ${{ failure() }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          BUNDLE=""
-          if compgen -G "build/ios/archive/*/*.xcresult" > /dev/null; then
-            BUNDLE=$(ls -d build/ios/archive/*/*.xcresult | tail -n1)
-          fi
-          if [[ -z "$BUNDLE" ]]; then
-            BUNDLE=$(ls -d /var/folders/*/*/*/flutter_ios_build_temp_dir*/temporary_xcresult_bundle 2>/dev/null | tail -n1 || true)
-          fi
-
-          if [[ -n "$BUNDLE" ]] && command -v xcrun >/dev/null; then
-            echo "---- export errors (xcresult) ----"
-            xcrun xcresulttool get --path "$BUNDLE" --format json | /usr/bin/python3 - <<'PY'
-import json, sys
-j = json.load(sys.stdin)
-def walk(o):
-    if isinstance(o, dict):
-        for k, v in o.items():
-            if k in ("errors","issues","messages","diagnostics") and isinstance(v, list):
-                for m in v:
-                    if isinstance(m, dict):
-                        print(m.get("issueType",""), m.get("message",""))
-            else:
-                walk(v)
-    elif isinstance(o, list):
-        for i in o:
-            walk(i)
-walk(j)
-PY
-          else
-            echo "No xcresult bundle found."
-          fi
-
       - name: Upload dSYMs to Crashlytics
-        if: success()
+        if: ${{ success() }}
         env:
           GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.IOS_GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
           FIREBASE_APP_ID_IOS: ${{ secrets.FIREBASE_APP_ID_IOS }}
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        shell: bash
         run: |
+          set -euxo pipefail
           if [ ! -f ios/Runner/GoogleService-Info.plist ]; then
-            if [ -z "$GOOGLE_SERVICE_INFO_PLIST" ]; then
+            if [ -z "${GOOGLE_SERVICE_INFO_PLIST:-}" ]; then
               echo "GoogleService-Info.plist secret missing; skipping upload"
+              exit 0
             else
               echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > ios/Runner/GoogleService-Info.plist
             fi
@@ -434,16 +365,10 @@ PY
           [[ -n "${APPLE_ISSUER_ID:-}"     ]] || { echo "APPLE_ISSUER_ID is missing"; exit 1; }
           echo "$APPLE_API_KEY_BASE64" | base64 --decode > "AuthKey_${APPLE_KEY_ID}.p8"
           chmod 600 "AuthKey_${APPLE_KEY_ID}.p8"
-          python3 - <<'PY' > api_key.json
-          import os, json
-          kid = os.environ["APPLE_KEY_ID"]
-          iss = os.environ["APPLE_ISSUER_ID"]
-          with open(f"AuthKey_{kid}.p8","r") as f:
-              key = f.read()
-          print(json.dumps({"key_id": kid, "issuer_id": iss, "key": key}))
-          PY
+          python3 -c 'import json,os;kid=os.environ["APPLE_KEY_ID"];iss=os.environ["APPLE_ISSUER_ID"];print(json.dumps({"key_id":kid,"issuer_id":iss,"key":open(f"AuthKey_{kid}.p8").read()}))' > api_key.json
 
       - name: Upload to TestFlight
+        if: ${{ success() }}
         env:
           PILOT_DISABLE_IMPLICIT_TEAM_SELECTION: "true"
         shell: bash
@@ -458,7 +383,7 @@ PY
             --skip_waiting_for_build_processing
 
       - name: Notify Slack (Success)
-        if: success() && env.SLACK_WEBHOOK_URL != ''
+        if: ${{ success() && env.SLACK_WEBHOOK_URL != '' }}
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
@@ -469,7 +394,7 @@ PY
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
 
       - name: Notify Slack (Failure)
-        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        if: ${{ failure() && env.SLACK_WEBHOOK_URL != '' }}
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
