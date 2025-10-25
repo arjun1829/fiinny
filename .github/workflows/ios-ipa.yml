@@ -230,18 +230,25 @@ jobs:
         run: |
           set -euxo pipefail
           EXPORT_OPTS="ios/ExportOptions.plist"
-          cat > "$EXPORT_OPTS" <<'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict/></plist>
-          PLIST
-          /usr/libexec/PlistBuddy -c 'Add :method string app-store' "$EXPORT_OPTS"
-          /usr/libexec/PlistBuddy -c 'Add :signingStyle string manual' "$EXPORT_OPTS"
-          /usr/libexec/PlistBuddy -c "Add :teamID string ${TEAM_ID}" "$EXPORT_OPTS"
-          /usr/libexec/PlistBuddy -c 'Add :provisioningProfiles dict' "$EXPORT_OPTS"
-          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:${BUNDLE_ID} string ${PROFILE_NAME}" "$EXPORT_OPTS"
-          /usr/libexec/PlistBuddy -c 'Add :stripSwiftSymbols bool true' "$EXPORT_OPTS"
-          /usr/libexec/PlistBuddy -c 'Add :compileBitcode bool false' "$EXPORT_OPTS"
+          test -f "$EXPORT_OPTS" || { echo "Missing $EXPORT_OPTS"; exit 1; }
+          /usr/libexec/PlistBuddy -c "Set :method app-store" "$EXPORT_OPTS" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :method string app-store" "$EXPORT_OPTS"
+          /usr/libexec/PlistBuddy -c "Set :signingStyle automatic" "$EXPORT_OPTS" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :signingStyle string automatic" "$EXPORT_OPTS"
+          if [ -n "${TEAM_ID:-}" ]; then
+            /usr/libexec/PlistBuddy -c "Set :teamID ${TEAM_ID}" "$EXPORT_OPTS" 2>/dev/null || \
+              /usr/libexec/PlistBuddy -c "Add :teamID string ${TEAM_ID}" "$EXPORT_OPTS"
+          fi
+          /usr/libexec/PlistBuddy -c "Set :compileBitcode false" "$EXPORT_OPTS" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :compileBitcode bool false" "$EXPORT_OPTS"
+          /usr/libexec/PlistBuddy -c "Set :uploadBitcode false" "$EXPORT_OPTS" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :uploadBitcode bool false" "$EXPORT_OPTS"
+          /usr/libexec/PlistBuddy -c "Set :destination export" "$EXPORT_OPTS" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :destination string export" "$EXPORT_OPTS"
+          /usr/libexec/PlistBuddy -c "Set :stripSwiftSymbols true" "$EXPORT_OPTS" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :stripSwiftSymbols bool true" "$EXPORT_OPTS"
+          /usr/libexec/PlistBuddy -c "Delete :provisioningProfiles" "$EXPORT_OPTS" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Delete :signingCertificate" "$EXPORT_OPTS" 2>/dev/null || true
 
       - name: Lint & sanity-check Info.plist
         shell: bash
@@ -334,6 +341,31 @@ jobs:
             --export-options-plist ios/ExportOptions.plist
           ls -lah build/ios/ipa || true
           ls -lah build/ios/archive || true
+
+      - name: Dump export errors (xcresult)
+        if: failure()
+        run: |
+          set -euo pipefail
+          BUNDLE=$(ls -d build/ios/archive/* | tail -n1)/distribution_ARCHIVE.xcresult 2>/dev/null || \
+          BUNDLE=$(ls -d /var/folders/*/*/*/flutter_ios_build_temp_dir*/temporary_xcresult_bundle 2>/dev/null | tail -n1)
+          if [ -n "${BUNDLE:-}" ] && command -v xcrun >/dev/null; then
+            echo "---- export errors (xcresult) ----"
+            xcrun xcresulttool get --path "$BUNDLE" --format json | python - <<'PY'
+import json,sys
+j=json.load(sys.stdin)
+def walk(o):
+  if isinstance(o,dict):
+    for k,v in o.items():
+      if k in ("errors","issues","messages","diagnostics") and isinstance(v,list):
+        for m in v:
+          if isinstance(m,dict):
+            print(m.get("issueType",""), m.get("message",""))
+      else: walk(v)
+  elif isinstance(o,list):
+    for i in o: walk(i)
+walk(j)
+PY
+          fi
 
       - name: Upload dSYMs to Crashlytics
         if: success()

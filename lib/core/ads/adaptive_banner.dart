@@ -1,21 +1,14 @@
+// lib/core/ads/adaptive_banner.dart
 import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-
 import '../flags/remote_flags.dart';
 import 'ad_service.dart';
 
 class AdaptiveBanner extends StatefulWidget {
   final String adUnitId;
   final EdgeInsets padding;
-
-  /// NEW: Use Google’s inline adaptive banner (taller) instead of anchored.
-  /// Defaults to false to preserve existing behavior.
-  final bool inline;
-
-  /// NEW: Maximum height hint for inline banners (typical 80–120dp).
-  /// Ignored when [inline] is false.
+  final bool inline;       // use inline adaptive if true
   final int? inlineMaxHeight;
   final String? userId;
 
@@ -43,32 +36,24 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
   }
 
   Future<void> _load() async {
-    // Dispose any previous ad when reloading (e.g., on rotation).
     _ad?.dispose();
     _ad = null;
     _loaded = false;
 
-    if (!AdService.I.isEnabled) {
-      return;
-    }
+    if (!AdService.I.isEnabled) return;
 
     final width = MediaQuery.of(context).size.width.truncate();
-
     AdSize? size;
     try {
       if (widget.inline) {
-        // Inline adaptive supports variable heights; we pass a safe max.
         final maxH = (widget.inlineMaxHeight ?? 120).clamp(32, 300);
         size = await AdSize.getInlineAdaptiveBannerAdSize(width, maxH);
       } else {
-        // Original anchored adaptive behavior (default).
         size = await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(width);
       }
     } catch (_) {
-      // Fallback to anchored adaptive if inline isn't supported on some devices.
       size = await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(width);
     }
-
     if (size == null) return;
 
     final ad = BannerAd(
@@ -76,50 +61,38 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
       size: size,
       request: const AdRequest(),
       listener: BannerAdListener(
-        onAdLoaded: (_) {
-          if (!mounted) return;
-          setState(() => _loaded = true);
-        },
-        onAdFailedToLoad: (_, __) {
-          if (!mounted) return;
-          setState(() => _loaded = false);
-        },
+        onAdLoaded: (_) { if (mounted) setState(() => _loaded = true); },
+        onAdFailedToLoad: (_, __) { if (mounted) setState(() => _loaded = false); },
       ),
     );
 
     await ad.load();
-    if (!mounted) {
-      ad.dispose();
-      return;
-    }
+    if (!mounted) { ad.dispose(); return; }
     setState(() => _ad = ad);
   }
 
   @override
-  void dispose() {
-    _ad?.dispose();
-    super.dispose();
-  }
+  void dispose() { _ad?.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
-    if (!AdService.isReady) {
-      return const SizedBox.shrink();
-    }
+    if (!AdService.isReady) return const SizedBox.shrink();
 
     if (Platform.isIOS) {
       return StreamBuilder<bool>(
-        stream: RemoteFlags.instance.on<bool>('adsEnabledIOS', userId: widget.userId, fallback: true),
+        stream: RemoteFlags.instance.on<bool>(
+          'adsEnabledIOS',
+          userId: widget.userId,
+          // fallback TRUE so ads show unless remotely disabled
+          fallback: true,
+        ),
         builder: (_, snap) {
           final enabled = snap.data ?? true;
-          if (!enabled) {
-            return const SizedBox.shrink();
-          }
+          if (!enabled) return const SizedBox.shrink();
           return _buildBanner();
         },
       );
     }
-
     return _buildBanner();
   }
 
