@@ -88,6 +88,85 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
             final end = (qh['end'] as String?) ?? '08:00';
             final tz = (qh['tz'] as String?) ?? 'Asia/Kolkata';
 
+            final sections = [
+              _ChannelSection('Review rhythm', const [
+                _ChannelConfig(
+                  key: 'daily_reminder',
+                  icon: Icons.wb_sunny,
+                  color: Colors.orange,
+                  title: 'Daily reminder',
+                  subtitle: 'Quick nudge to review today’s expenses',
+                ),
+                _ChannelConfig(
+                  key: 'weekly_digest',
+                  icon: Icons.calendar_view_week,
+                  color: Colors.indigo,
+                  title: 'Weekly digest',
+                  subtitle: 'Your week in ₹ + quick review CTA',
+                ),
+                _ChannelConfig(
+                  key: 'monthly_reflection',
+                  icon: Icons.date_range,
+                  color: Colors.teal,
+                  title: 'Monthly reflection',
+                  subtitle: 'Trends & insights you can act on',
+                ),
+              ]),
+              _ChannelSection('Fiinny brain alerts', const [
+                _ChannelConfig(
+                  key: 'brain_insights',
+                  icon: Icons.lightbulb_outline,
+                  color: AppColors.mint,
+                  title: 'Smart insights',
+                  subtitle: 'High-signal nudges from Fiinny Brain',
+                ),
+                _ChannelConfig(
+                  key: 'overspend_alerts',
+                  icon: Icons.warning_amber,
+                  color: Colors.redAccent,
+                  title: 'Overspend alerts',
+                  subtitle: 'Pings when limits are breached',
+                ),
+                _ChannelConfig(
+                  key: 'loan_watch',
+                  icon: Icons.account_balance,
+                  color: Colors.blueGrey,
+                  title: 'Loan & EMI watch',
+                  subtitle: 'Remind you of EMIs, high interest, dues',
+                ),
+                _ChannelConfig(
+                  key: 'goal_milestones',
+                  icon: Icons.flag_outlined,
+                  color: Colors.deepPurple,
+                  title: 'Goal milestones',
+                  subtitle: 'Celebrate wins & warn if a goal slips',
+                ),
+                _ChannelConfig(
+                  key: 'networth_updates',
+                  icon: Icons.trending_up_rounded,
+                  color: Colors.green,
+                  title: 'Net-worth updates',
+                  subtitle: 'Track asset vs liability changes',
+                ),
+              ]),
+              _ChannelSection('Collaboration', const [
+                _ChannelConfig(
+                  key: 'partner_checkins',
+                  icon: Icons.group,
+                  color: Colors.purple,
+                  title: 'Partner check-ins',
+                  subtitle: 'Weekly review with your partner',
+                ),
+                _ChannelConfig(
+                  key: 'settleup_nudges',
+                  icon: Icons.payments,
+                  color: Colors.blueGrey,
+                  title: 'Settle up nudges',
+                  subtitle: 'Remind friends to pay',
+                ),
+              ]),
+            ];
+
             Widget sectionTitle(String text) => Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
               child: Text(
@@ -147,56 +226,19 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                   ),
                 ),
 
-                sectionTitle('Channels'),
-
-                _ChannelTile(
-                  icon: Icons.wb_sunny, color: Colors.orange,
-                  title: 'Daily reminder',
-                  subtitle: 'Quick nudge to review today’s expenses',
-                  value: (channels['daily_reminder'] as bool?) ?? true,
-                  enabled: pushEnabled,
-                  onChanged: (v) => NotifPrefsService.toggleChannel('daily_reminder', v),
-                ),
-                _ChannelTile(
-                  icon: Icons.calendar_view_week, color: Colors.indigo,
-                  title: 'Weekly digest',
-                  subtitle: 'Your week in ₹ + quick review CTA',
-                  value: (channels['weekly_digest'] as bool?) ?? true,
-                  enabled: pushEnabled,
-                  onChanged: (v) => NotifPrefsService.toggleChannel('weekly_digest', v),
-                ),
-                _ChannelTile(
-                  icon: Icons.date_range, color: Colors.teal,
-                  title: 'Monthly reflection',
-                  subtitle: 'Trends & insights you can act on',
-                  value: (channels['monthly_reflection'] as bool?) ?? true,
-                  enabled: pushEnabled,
-                  onChanged: (v) => NotifPrefsService.toggleChannel('monthly_reflection', v),
-                ),
-                _ChannelTile(
-                  icon: Icons.warning_amber, color: Colors.redAccent,
-                  title: 'Overspend alerts',
-                  subtitle: 'Pings when limits are breached',
-                  value: (channels['overspend_alerts'] as bool?) ?? true,
-                  enabled: pushEnabled,
-                  onChanged: (v) => NotifPrefsService.toggleChannel('overspend_alerts', v),
-                ),
-                _ChannelTile(
-                  icon: Icons.group, color: Colors.purple,
-                  title: 'Partner check-ins',
-                  subtitle: 'Weekly review with your partner',
-                  value: (channels['partner_checkins'] as bool?) ?? true,
-                  enabled: pushEnabled,
-                  onChanged: (v) => NotifPrefsService.toggleChannel('partner_checkins', v),
-                ),
-                _ChannelTile(
-                  icon: Icons.payments, color: Colors.blueGrey,
-                  title: 'Settle up nudges',
-                  subtitle: 'Remind friends to pay',
-                  value: (channels['settleup_nudges'] as bool?) ?? true,
-                  enabled: pushEnabled,
-                  onChanged: (v) => NotifPrefsService.toggleChannel('settleup_nudges', v),
-                ),
+                for (var i = 0; i < sections.length; i++) ...[
+                  sectionTitle(sections[i].title),
+                  ...sections[i].configs.map((cfg) => _ChannelTile(
+                        icon: cfg.icon,
+                        color: cfg.color,
+                        title: cfg.title,
+                        subtitle: cfg.subtitle,
+                        value: (channels[cfg.key] as bool?) ?? true,
+                        enabled: pushEnabled,
+                        onChanged: (v) => NotifPrefsService.toggleChannel(cfg.key, v),
+                      )),
+                  if (i != sections.length - 1) const SizedBox(height: 6),
+                ],
 
                 sectionTitle('Quiet hours'),
 
@@ -362,6 +404,27 @@ class _ChannelTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ChannelSection {
+  final String title;
+  final List<_ChannelConfig> configs;
+  const _ChannelSection(this.title, this.configs);
+}
+
+class _ChannelConfig {
+  final String key;
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  const _ChannelConfig({
+    required this.key,
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+  });
 }
 
 class _TimeChip extends StatelessWidget {
