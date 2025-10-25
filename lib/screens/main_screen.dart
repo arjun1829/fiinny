@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../widgets/nav/bottom_bar_with_ad.dart';
 import 'dashboard_screen.dart';
 import 'friends_screen.dart';
 import 'goals_screen.dart';
@@ -34,34 +36,36 @@ class _MainScreenState extends State<MainScreen> {
 
     return Scaffold(
       body: _screens[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: theme.colorScheme.primary,
-        unselectedItemColor: theme.colorScheme.onSurface.withOpacity(0.7),
-        showUnselectedLabels: true,
-        backgroundColor: theme.colorScheme.surface, // Use theme background for nav bar
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard_outlined),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.group_outlined),
-            label: 'Friends',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.flag_outlined),
-            label: 'Goals',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            label: 'Profile',
-          ),
-        ],
-        onTap: (i) {
-          setState(() => _selectedIndex = i);
-        },
+      bottomNavigationBar: BottomBarWithAd(
+        navBar: BottomNavigationBar(
+          currentIndex: _selectedIndex,
+          type: BottomNavigationBarType.fixed,
+          selectedItemColor: theme.colorScheme.primary,
+          unselectedItemColor: theme.colorScheme.onSurface.withOpacity(0.7),
+          showUnselectedLabels: true,
+          backgroundColor: theme.colorScheme.surface, // Use theme background for nav bar
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard_outlined),
+              label: 'Dashboard',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.group_outlined),
+              label: 'Friends',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.flag_outlined),
+              label: 'Goals',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline),
+              label: 'Profile',
+            ),
+          ],
+          onTap: (i) {
+            setState(() => _selectedIndex = i);
+          },
+        ),
       ),
     );
   }

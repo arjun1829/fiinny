@@ -9,6 +9,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'routes.dart';
+import 'core/ads/ad_service.dart';
 import 'core/ads/ads_shell.dart';
 
 // First visible screen (keep as our current entry)
@@ -63,6 +64,7 @@ Future<void> _boot(_StartupTracer tracer) async {
         .timeout(const Duration(seconds: 8));
     tracer.add('Firebase ✅');
     await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+    unawaited(AdService.initLater());
 
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.presentError(details);
