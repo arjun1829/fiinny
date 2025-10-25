@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
+import '../widgets/nav/bottom_bar_with_ad.dart';
 import 'dashboard_screen.dart';
 import 'expenses_screen.dart';
 import 'friends_screen.dart';
@@ -152,64 +153,65 @@ class _MainNavScreenState extends State<MainNavScreen>
             ),
         ],
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border(
-            top: BorderSide(
-              color: Colors.grey.withOpacity(0.13),
-              width: 1.2,
+      bottomNavigationBar: BottomBarWithAd(
+        navBar: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(
+              top: BorderSide(
+                color: Colors.grey.withOpacity(0.13),
+                width: 1.2,
+              ),
             ),
           ),
-        ),
-        child: BottomNavigationBar(
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.transparent,
-          currentIndex: _currentIndex,
-          elevation: 0,
-          selectedItemColor: Theme.of(context).colorScheme.primary,
-          unselectedItemColor: const Color(0xFF535A68),
-          showUnselectedLabels: true,
-          onTap: _onTabTapped,
-          items: List.generate(_iconData.length, (i) {
-            final selected = _currentIndex == i;
-            return BottomNavigationBarItem(
-              icon: Stack(
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOut,
-                    decoration: selected
-                        ? BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .primary
-                          .withOpacity(0.10),
-                    )
-                        : null,
-                    child: SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: AnimatedBuilder(
-                        animation: _shineControllers[i],
-                        builder: (context, child) {
-                          return CustomPaint(
-                            painter: selected
-                                ? ShinePainter(_shineAnimations[i].value)
-                                : null,
-                            child: Icon(
-                              _iconData[i],
-                              size: selected ? 27 : 23,
-                              color: selected
-                                  ? Theme.of(context).colorScheme.primary
-                                  : const Color(0xFF535A68),
-                            ),
-                          );
-                        },
+          child: BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: Colors.transparent,
+            currentIndex: _currentIndex,
+            elevation: 0,
+            selectedItemColor: Theme.of(context).colorScheme.primary,
+            unselectedItemColor: const Color(0xFF535A68),
+            showUnselectedLabels: true,
+            onTap: _onTabTapped,
+            items: List.generate(_iconData.length, (i) {
+              final selected = _currentIndex == i;
+              return BottomNavigationBarItem(
+                icon: Stack(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                      decoration: selected
+                          ? BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withOpacity(0.10),
+                            )
+                          : null,
+                      child: SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: AnimatedBuilder(
+                          animation: _shineControllers[i],
+                          builder: (context, child) {
+                            return CustomPaint(
+                              painter: selected
+                                  ? ShinePainter(_shineAnimations[i].value)
+                                  : null,
+                              child: Icon(
+                                _iconData[i],
+                                size: selected ? 27 : 23,
+                                color: selected
+                                    ? Theme.of(context).colorScheme.primary
+                                    : const Color(0xFF535A68),
+                              ),
+                            );
+                          },
+                        ),
                       ),
-                    ),
                   ),
                 ],
               ),

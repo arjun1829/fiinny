@@ -109,9 +109,9 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
 
     if (Platform.isIOS) {
       return StreamBuilder<bool>(
-        stream: RemoteFlags.instance.on<bool>('adsEnabledIOS', userId: widget.userId, fallback: false),
+        stream: RemoteFlags.instance.on<bool>('adsEnabledIOS', userId: widget.userId, fallback: true),
         builder: (_, snap) {
-          final enabled = snap.data ?? false;
+          final enabled = snap.data ?? true;
           if (!enabled) {
             return const SizedBox.shrink();
           }
