@@ -20,6 +20,7 @@ import '../models/expense_item.dart';
 
 import '../services/expense_service.dart';
 import '../services/friend_service.dart';
+import '../core/ads/ads_shell.dart';
 
 // Use the math helpers via an alias so calls are unambiguous.
 import '../group/group_balance_math.dart' as gbm;
@@ -746,6 +747,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               .getGroupExpensesStream(widget.userId, widget.group.id),
           builder: (context, snapshot) {
             final expenses = snapshot.data ?? [];
+            final safeBottom = context.adsBottomPadding();
 
             // Pairwise math (YOU vs each member), group-only — unified logic
             final pairNet = gbm.pairwiseNetForUser(
@@ -767,7 +769,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                 RefreshIndicator(
                   onRefresh: _fetchMembers,
                   child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, safeBottom + 24),
                     children: [
                       _headerCard(
                         owe: youOwe,
@@ -791,8 +793,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 
                 // ============ CHART ============
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 20),
+                  padding: EdgeInsets.fromLTRB(16, 20, 16, safeBottom + 20),
                   child: GroupChartTab(
                     currentUserPhone: widget.userId,
                     members: _members,
@@ -801,11 +802,18 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                 ),
 
                 // ============ CHAT ============
-                GroupChatTab(
-                  groupId: widget.group.id,
-                  currentUserId: widget.userId,
-                  participants: widget.group.memberPhones,
-                  initialDraft: _pendingChatDraft,
+                SafeArea(
+                  top: false,
+                  bottom: false,
+                  child: Padding(
+                    padding: EdgeInsets.only(bottom: safeBottom),
+                    child: GroupChatTab(
+                      groupId: widget.group.id,
+                      currentUserId: widget.userId,
+                      participants: widget.group.memberPhones,
+                      initialDraft: _pendingChatDraft,
+                    ),
+                  ),
                 ),
               ],
             );

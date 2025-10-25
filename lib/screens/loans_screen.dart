@@ -6,6 +6,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../core/ads/ads_shell.dart';
 import '../models/loan_model.dart';
 import '../services/loan_service.dart';
 
@@ -362,6 +363,7 @@ class _LoansScreenState extends State<LoansScreen> {
     final media = MediaQuery.of(context);
     final safeTop = media.padding.top;
     final heroHeight = 170.0 + safeTop;
+    final bottomInset = context.adsBottomPadding(extra: 24);
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -534,7 +536,7 @@ class _LoansScreenState extends State<LoansScreen> {
                       else
                       // Use SliverList with a builder that inserts separators.
                         SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(16, 2, 16, 110),
+                          padding: EdgeInsets.fromLTRB(16, 2, 16, bottomInset),
                           sliver: SliverList(
                             delegate: SliverChildBuilderDelegate(
                                   (ctx, i) {

@@ -14,7 +14,7 @@ import '../services/income_service.dart';
 import '../widgets/animated_mint_background.dart';
 import '../widgets/filters/transaction_filter_bar.dart';
 import '../widgets/unified_transaction_list.dart';
-import '../core/ads/ad_slots.dart';
+import '../core/ads/ads_shell.dart';
 import 'edit_expense_screen.dart';
 
 class TransactionsScreen extends StatefulWidget {
@@ -27,9 +27,10 @@ class TransactionsScreen extends StatefulWidget {
 }
 
 class _TransactionsScreenState extends State<TransactionsScreen> {
-  static const double _bannerHeight = 60.0;
+  static const double _bannerHeight = AdsVisibilityScope.bannerHeight;
 
   final ValueNotifier<bool> _showBottomBanner = ValueNotifier<bool>(true);
+  AdsVisibilityController? _adsController;
   late final SavedViewsStore _savedViews;
 
   final List<ExpenseItem> _expenses = [];
@@ -53,6 +54,21 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     super.initState();
     _savedViews = SavedViewsStore(userPhone: widget.userPhone);
     _listenToStreams();
+    _showBottomBanner.addListener(_syncGlobalBannerVisibility);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final controller = AdsVisibilityScope.maybeOf(context);
+    if (!identical(_adsController, controller)) {
+      _adsController = controller;
+      _syncGlobalBannerVisibility();
+    }
+  }
+
+  void _syncGlobalBannerVisibility() {
+    _adsController?.setVisible(_showBottomBanner.value);
   }
 
   @override
@@ -60,7 +76,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     _expSub?.cancel();
     _incSub?.cancel();
     _friendSub?.cancel();
-    _showBottomBanner.dispose();
+    _showBottomBanner
+      ..removeListener(_syncGlobalBannerVisibility)
+      ..dispose();
     super.dispose();
   }
 
@@ -410,31 +428,6 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                         },
                       );
                     },
-                  ),
-                ),
-              );
-            },
-          ),
-          ValueListenableBuilder<bool>(
-            valueListenable: _showBottomBanner,
-            builder: (context, show, _) {
-              final keyboardUp = MediaQuery.of(context).viewInsets.bottom > 0;
-              if (!show || keyboardUp) return const SizedBox.shrink();
-              return Positioned(
-                left: 8,
-                right: 8,
-                bottom:
-                    kBottomNavigationBarHeight + MediaQuery.of(context).padding.bottom + 4,
-                child: SafeArea(
-                  top: false,
-                  bottom: false,
-                  child: SizedBox(
-                    height: _bannerHeight,
-                    child: const AdsBannerSlot(
-                      inline: false,
-                      padding: EdgeInsets.zero,
-                      alignment: Alignment.center,
-                    ),
                   ),
                 ),
               );

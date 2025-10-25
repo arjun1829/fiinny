@@ -9,6 +9,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'routes.dart';
+import 'core/ads/ads_shell.dart';
 
 // First visible screen (keep as our current entry)
 import 'screens/welcome_screen.dart';
@@ -25,9 +26,10 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   if (SAFE_MODE) {
-    runApp(const MaterialApp(
+    runApp(MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: SafeModeScreen(),
+      builder: (context, child) => AdsShell(child: child),
+      home: const SafeModeScreen(),
     ));
     return;
   }
@@ -128,6 +130,7 @@ class _DiagAppState extends State<_DiagApp> {
             theme: themeProvider.themeData,
             routes: appRoutes,
             onGenerateRoute: appOnGenerateRoute,
+            builder: (context, child) => AdsShell(child: child),
             home: Stack(
               children: [
                 const Scaffold(

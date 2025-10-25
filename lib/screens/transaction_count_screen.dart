@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/ads/ads_shell.dart';
 import '../services/expense_service.dart';
 import '../services/income_service.dart';
 import '../models/expense_item.dart';
@@ -262,8 +263,9 @@ class _TransactionCountScreenState extends State<TransactionCountScreen> with Si
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
+        bottom: false,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.fromLTRB(20, 20, 20, context.adsBottomPadding(extra: 20)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

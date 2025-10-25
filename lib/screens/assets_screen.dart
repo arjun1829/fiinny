@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../core/ads/ads_shell.dart';
 import '../models/asset_model.dart';
 import '../services/asset_service.dart';
 
@@ -394,6 +395,7 @@ class _AssetsScreenState extends State<AssetsScreen> {
             if (snap.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
+            final bottomInset = context.adsBottomPadding(extra: 24);
             final assets = snap.data ?? [];
 
             // Aggregates
@@ -477,7 +479,7 @@ class _AssetsScreenState extends State<AssetsScreen> {
                     )
                   else
                     SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(16, 2, 16, 110),
+                      padding: EdgeInsets.fromLTRB(16, 2, 16, bottomInset),
                       sliver: SliverList.separated(
                         itemCount: filtered.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 12),

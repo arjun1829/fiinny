@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/ads/ads_shell.dart';
 import '../models/partner_model.dart';
 import '../widgets/weekly_partner_rings_widget.dart';
 import '../widgets/partner_chat_tab.dart';
@@ -346,6 +347,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    final safeBottom = context.adsBottomPadding();
     final avatar = partnerAvatar ?? "assets/images/profile_default.png";
     String dateStr = "${selectedDay.day}/${selectedDay.month}/${selectedDay.year}";
     final bool isChatTab = _tabController.index == 1;
@@ -367,7 +369,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
       ),
       // Rings untouched per your request
       body: ListView(
-        padding: EdgeInsets.zero,
+        padding: EdgeInsets.fromLTRB(0, 0, 0, safeBottom + 16),
         children: [
           // --- Partner Card ---
           Card(
@@ -513,7 +515,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                   const Center(child: Text("No transactions for this day"))
                 else
                   ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(4, 10, 4, 16),
+                    padding: EdgeInsets.fromLTRB(4, 10, 4, safeBottom + 16),
                     itemCount: selTxList.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (ctx, i) {
@@ -540,9 +542,16 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                   ),
 
                 // ---------------- Chat (compact) ----------------
-                PartnerChatTab(
-                  partnerUserId: widget.partner.partnerId,
-                  currentUserId: widget.currentUserId,
+                SafeArea(
+                  top: false,
+                  bottom: false,
+                  child: Padding(
+                    padding: EdgeInsets.only(bottom: safeBottom),
+                    child: PartnerChatTab(
+                      partnerUserId: widget.partner.partnerId,
+                      currentUserId: widget.currentUserId,
+                    ),
+                  ),
                 ),
               ],
             ),

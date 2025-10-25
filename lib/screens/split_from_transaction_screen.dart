@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../core/ads/ads_shell.dart';
 import '../models/expense_item.dart';
 import '../models/friend_model.dart';
 import '../models/group_model.dart';
@@ -38,6 +39,7 @@ class _SplitFromTransactionScreenState extends State<SplitFromTransactionScreen>
     // Sort by date desc
     final expenses = List<ExpenseItem>.from(widget.expenses)
       ..sort((a, b) => b.date.compareTo(a.date));
+    final bottomInset = context.adsBottomPadding(extra: 16);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -242,7 +244,7 @@ class _SplitFromTransactionScreenState extends State<SplitFromTransactionScreen>
                       : null,
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: bottomInset),
             ],
           ),
         ],
