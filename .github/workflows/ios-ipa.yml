@@ -343,28 +343,40 @@ jobs:
           ls -lah build/ios/archive || true
 
       - name: Dump export errors (xcresult)
-        if: failure()
+        if: ${{ failure() }}
+        shell: bash
         run: |
           set -euo pipefail
-          BUNDLE=$(ls -d build/ios/archive/* | tail -n1)/distribution_ARCHIVE.xcresult 2>/dev/null || \
-          BUNDLE=$(ls -d /var/folders/*/*/*/flutter_ios_build_temp_dir*/temporary_xcresult_bundle 2>/dev/null | tail -n1)
-          if [ -n "${BUNDLE:-}" ] && command -v xcrun >/dev/null; then
+
+          BUNDLE=""
+          if compgen -G "build/ios/archive/*/*.xcresult" > /dev/null; then
+            BUNDLE=$(ls -d build/ios/archive/*/*.xcresult | tail -n1)
+          fi
+          if [[ -z "$BUNDLE" ]]; then
+            BUNDLE=$(ls -d /var/folders/*/*/*/flutter_ios_build_temp_dir*/temporary_xcresult_bundle 2>/dev/null | tail -n1 || true)
+          fi
+
+          if [[ -n "$BUNDLE" ]] && command -v xcrun >/dev/null; then
             echo "---- export errors (xcresult) ----"
-            xcrun xcresulttool get --path "$BUNDLE" --format json | python - <<'PY'
-import json,sys
-j=json.load(sys.stdin)
+            xcrun xcresulttool get --path "$BUNDLE" --format json | /usr/bin/python3 - <<'PY'
+import json, sys
+j = json.load(sys.stdin)
 def walk(o):
-  if isinstance(o,dict):
-    for k,v in o.items():
-      if k in ("errors","issues","messages","diagnostics") and isinstance(v,list):
-        for m in v:
-          if isinstance(m,dict):
-            print(m.get("issueType",""), m.get("message",""))
-      else: walk(v)
-  elif isinstance(o,list):
-    for i in o: walk(i)
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k in ("errors","issues","messages","diagnostics") and isinstance(v, list):
+                for m in v:
+                    if isinstance(m, dict):
+                        print(m.get("issueType",""), m.get("message",""))
+            else:
+                walk(v)
+    elif isinstance(o, list):
+        for i in o:
+            walk(i)
 walk(j)
 PY
+          else
+            echo "No xcresult bundle found."
           fi
 
       - name: Upload dSYMs to Crashlytics
