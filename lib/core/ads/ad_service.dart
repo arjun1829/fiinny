@@ -7,11 +7,10 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'ad_ids.dart';
 
 /// Default to false. Enable special diagnostics explicitly with
-/// --dart-define=DIAG_BUILD=true
+/// --dart-define=DIAG_BUILD=true (does not skip iOS init).
 const bool kDiagBuild =
     bool.fromEnvironment('DIAG_BUILD', defaultValue: false);
 
-/// Simple, session-only caps (no SharedPreferences).
 class AdService {
   AdService._();
   static final AdService I = AdService._();
@@ -30,9 +29,7 @@ class AdService {
   bool get isEnabled => _adsEnabled;
 
   Future<void> init() {
-    if (_adsEnabled) {
-      return SynchronousFuture<void>(null);
-    }
+    if (_adsEnabled) return SynchronousFuture<void>(null);
     final pending = _inFlightInit;
     if (pending != null) return pending;
 
@@ -45,23 +42,15 @@ class AdService {
 
   static Future<void> initLater() async {
     try {
-      if (kIsWeb) {
-        _ready = false;
-        return;
-      }
-
-      // No more blanket skip on iOS. Use FORCE_TEST_ADS to force test ids.
+      if (kIsWeb) { _ready = false; return; }
 
       final bannerId = AdIds.banner;
       final appId = AdIds.appId;
       final missingIds = bannerId.isEmpty ||
           appId.isEmpty ||
-          bannerId.contains('xxxx') ||
-          appId.contains('xxxx') ||
-          bannerId.contains('zzzz') ||
-          appId.contains('zzzz') ||
-          bannerId.contains('fill') ||
-          appId.contains('fill');
+          bannerId.contains('xxxx') || appId.contains('xxxx') ||
+          bannerId.contains('zzzz') || appId.contains('zzzz') ||
+          bannerId.contains('fill') || appId.contains('fill');
 
       if (Platform.isIOS && missingIds) {
         debugPrint('[AdService] iOS AdMob IDs missing – skipping init.');
@@ -83,18 +72,13 @@ class AdService {
       _ready = false;
       return;
     }
-
     try {
       await MobileAds.instance.initialize();
       await MobileAds.instance.updateRequestConfiguration(
-        const RequestConfiguration(
-          testDeviceIds: <String>[], // add your device ids if needed
-        ),
+        const RequestConfiguration(testDeviceIds: <String>[]),
       );
-
       _adsEnabled = true;
       _ready = true;
-
       preloadInterstitial();
       preloadRewarded();
     } catch (err, stackTrace) {
@@ -110,10 +94,7 @@ class AdService {
 
     if (!AdIds.hasRealIdsForCurrentPlatform) {
       if (kReleaseMode && !forceTestAds) {
-        debugPrint(
-          '[AdService] Skipping Google Mobile Ads init on '
-          '${Platform.operatingSystem} – real AdMob IDs are not configured.',
-        );
+        debugPrint('[AdService] Skipping Google Mobile Ads init on ${Platform.operatingSystem} – real AdMob IDs are not configured.');
         return false;
       }
       if (Platform.isIOS && AdIds.isUsingTestIds) {
@@ -125,8 +106,7 @@ class AdService {
 
   // ---------- Preload ----------
   void preloadInterstitial() {
-    if (!_adsEnabled) return;
-    if (_inter != null) return;
+    if (!_adsEnabled || _inter != null) return;
     InterstitialAd.load(
       adUnitId: AdIds.interstitial,
       request: const AdRequest(),
@@ -134,28 +114,21 @@ class AdService {
         onAdLoaded: (ad) {
           ad.fullScreenContentCallback = FullScreenContentCallback(
             onAdDismissedFullScreenContent: (ad) {
-              ad.dispose();
-              _inter = null;
-              preloadInterstitial();
+              ad.dispose(); _inter = null; preloadInterstitial();
             },
             onAdFailedToShowFullScreenContent: (ad, err) {
-              ad.dispose();
-              _inter = null;
-              preloadInterstitial();
+              ad.dispose(); _inter = null; preloadInterstitial();
             },
           );
           _inter = ad;
         },
-        onAdFailedToLoad: (_) {
-          _inter = null;
-        },
+        onAdFailedToLoad: (_) => _inter = null,
       ),
     );
   }
 
   void preloadRewarded() {
-    if (!_adsEnabled) return;
-    if (_rewarded != null) return;
+    if (!_adsEnabled || _rewarded != null) return;
     RewardedAd.load(
       adUnitId: AdIds.rewarded,
       request: const AdRequest(),
@@ -163,21 +136,15 @@ class AdService {
         onAdLoaded: (ad) {
           ad.fullScreenContentCallback = FullScreenContentCallback(
             onAdDismissedFullScreenContent: (ad) {
-              ad.dispose();
-              _rewarded = null;
-              preloadRewarded();
+              ad.dispose(); _rewarded = null; preloadRewarded();
             },
             onAdFailedToShowFullScreenContent: (ad, err) {
-              ad.dispose();
-              _rewarded = null;
-              preloadRewarded();
+              ad.dispose(); _rewarded = null; preloadRewarded();
             },
           );
           _rewarded = ad;
         },
-        onAdFailedToLoad: (_) {
-          _rewarded = null;
-        },
+        onAdFailedToLoad: (_) => _rewarded = null,
       ),
     );
   }
@@ -208,10 +175,7 @@ class AdService {
   Future<bool> showRewarded({required void Function(int, String) onReward}) async {
     if (!_adsEnabled) return false;
     final ad = _rewarded;
-    if (ad == null) {
-      preloadRewarded();
-      return false;
-    }
+    if (ad == null) { preloadRewarded(); return false; }
     _rewarded = null;
     bool granted = false;
     await ad.show(onUserEarnedReward: (ad, rewardItem) {

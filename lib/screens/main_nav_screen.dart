@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
-import '../widgets/nav/bottom_bar_with_ad.dart';
+import 'package:lifemap/widgets/nav/bottom_bar_with_ad.dart';
 import 'dashboard_screen.dart';
 import 'expenses_screen.dart';
 import 'friends_screen.dart';
