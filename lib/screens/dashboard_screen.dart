@@ -39,7 +39,7 @@ import '../core/formatters/inr.dart';
 import '../widgets/subscriptions/subs_bills_card.dart';
 import '../widgets/subscriptions/subs_suggestions_sheet.dart';
 import '../widgets/subscriptions_review_sheet.dart';
-import '../widgets/ads/sleek_ad_card.dart';
+import '../core/ads/ads_banner_card.dart';
 import '../core/ui/snackbar_throttle.dart';
 import '../widgets/empty_state_card.dart';
 import '../widgets/shimmer.dart';
@@ -154,6 +154,63 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   int _activeSips = 0;
   int _cardsDue = 0;
   int _autopayCount = 0; // derived from current period
+
+  Widget _buildDashboardAdCard() {
+    return AdsBannerCard(
+      placement: 'dashboard_summary',
+      inline: true,
+      inlineMaxHeight: 120,
+      margin: const EdgeInsets.fromLTRB(18, 8, 18, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      minHeight: 96,
+      backgroundColor: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x14000000),
+          blurRadius: 16,
+          offset: Offset(0, 8),
+        ),
+      ],
+      placeholder: _dashboardAdPlaceholder(),
+    );
+  }
+
+  Widget _dashboardAdPlaceholder() {
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text(
+              'Sponsored',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.black54,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            height: 56,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE5E7EB),
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -1371,8 +1428,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        const SleekAdCard(),
+                        _buildDashboardAdCard(),
 
                         // 🔴 NEW: parser-sourced KPI badges row
                         Padding(
