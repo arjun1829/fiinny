@@ -91,7 +91,7 @@
   <key>NSMicrophoneUsageDescription</key>
   <string>Required only if you record videos (not used by default).</string>
   <key>NSUserTrackingUsageDescription</key>
-  <string>We may use your IDFA to show relevant ads and measure performance.</string>
+  <string>Used to deliver relevant ads and support Fiinny.</string>
   <key>FirebaseCrashlyticsCollectionEnabled</key>
   <true/>
   <key>NSLocationWhenInUseUsageDescription</key>
