@@ -27,10 +27,10 @@
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config">
 
-        <!-- ✅ NEW: AdMob App ID (TEST). Replace with your real App ID before release. -->
+        <!-- Google Mobile Ads SDK App ID -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-5891610127665684~2144640230" />
+            android:value="ca-app-pub-5891610127665684~7171759721" />
 
         <activity
             android:name=".MainActivity"

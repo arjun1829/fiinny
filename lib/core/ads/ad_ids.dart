@@ -9,13 +9,13 @@ const bool forceTestAds =
 
 class AdIds {
   // ---------- REAL App IDs ----------
-  static const _androidAppIdReal = 'ca-app-pub-5891610127665684~2144640230';
+  static const _androidAppIdReal = 'ca-app-pub-5891610127665684~7171759721';
   static const _iosAppIdReal     = 'ca-app-pub-5891610127665684~7171759721';
 
   // ---------- REAL UNIT IDs (ANDROID) ----------
-  static const _androidBannerReal = 'ca-app-pub-5891610127665684/1238736762'; // Dashboard_Banner
-  static const _androidInterReal  = 'ca-app-pub-5891610127665684/5161685814'; // TxSuccess_Interstitial
-  static const _androidRewardReal = 'ca-app-pub-5891610127665684/6770265044'; // Insights_Rewarded
+  static const _androidBannerReal = 'ca-app-pub-5891610127665684/1649712954'; // Dashboard_Banner
+  static const _androidInterReal  = 'ca-app-pub-5891610127665684/1651774466'; // TxSuccess_Interstitial
+  static const _androidRewardReal = 'ca-app-pub-5891610127665684/8515531876'; // Insights_Rewarded
 
   // ---------- REAL UNIT IDs (iOS) ----------
   static const _iosBannerReal = 'ca-app-pub-5891610127665684/1649712954';
