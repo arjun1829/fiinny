@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/notif_prefs_service.dart';
 import '../services/push/push_service.dart';
+import 'package:lifemap/ui/tokens.dart';
 
 // 👇 Ads (your existing infra)
 import 'package:lifemap/core/ads/adaptive_banner.dart';
@@ -112,7 +113,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                   subtitle: 'Trends & insights you can act on',
                 ),
               ]),
-              _ChannelSection('Fiinny brain alerts', const [
+              _ChannelSection('Fiinny brain alerts', [
                 _ChannelConfig(
                   key: 'brain_insights',
                   icon: Icons.lightbulb_outline,
