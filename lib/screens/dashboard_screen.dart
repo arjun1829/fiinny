@@ -39,6 +39,7 @@ import '../core/formatters/inr.dart';
 import '../widgets/subscriptions/subs_bills_card.dart';
 import '../widgets/subscriptions/subs_suggestions_sheet.dart';
 import '../widgets/subscriptions_review_sheet.dart';
+import '../widgets/ads/sleek_ad_card.dart';
 import '../core/ui/snackbar_throttle.dart';
 import '../widgets/empty_state_card.dart';
 import '../widgets/shimmer.dart';
@@ -1371,6 +1372,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           ],
                         ),
                         const SizedBox(height: 8),
+                        const SleekAdCard(),
 
                         // 🔴 NEW: parser-sourced KPI badges row
                         Padding(
