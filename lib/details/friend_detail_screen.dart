@@ -12,6 +12,7 @@ import '../models/expense_item.dart';
 import '../models/group_model.dart';
 import '../services/expense_service.dart';
 import '../services/group_service.dart';
+import '../core/ads/ads_shell.dart';
 
 import '../widgets/add_friend_expense_dialog.dart';
 import '../widgets/settleup_dialog.dart';
@@ -808,6 +809,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
           stream: ExpenseService().getExpensesStream(you),
           builder: (context, snapshot) {
             final all = snapshot.data ?? [];
+            final safeBottom = context.adsBottomPadding();
 
             // Pairwise-only list
             final pairwise = _pairwiseExpenses(you, friendPhone, all);
@@ -829,7 +831,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                     physics: const AlwaysScrollableScrollPhysics(),
                     child: Padding(
                       // 16px sides avoids fractional leftover widths
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, safeBottom + 18),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -1682,7 +1684,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                     physics: const AlwaysScrollableScrollPhysics(),
                     child: Padding(
                       // mirror: 16px sides here too
-                      padding: const EdgeInsets.fromLTRB(16, 22, 16, 22),
+                      padding: EdgeInsets.fromLTRB(16, 22, 16, safeBottom + 22),
                       child: _card(
                         context,
                         padding:

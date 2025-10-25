@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+import '../core/ads/ads_shell.dart';
 import '../models/asset_model.dart';
 import '../services/asset_service.dart';
 
@@ -275,7 +276,7 @@ class _AddAssetScreenState extends State<AddAssetScreen>
   @override
   Widget build(BuildContext context) {
     final body = ListView(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
+      padding: EdgeInsets.fromLTRB(16, 18, 16, context.adsBottomPadding(extra: 28)),
       children: [
         _heroTip("Add Asset / Investment",
             "Pick a type & institution, add value (or qty×avg). We’ll keep it glossy & tidy."),

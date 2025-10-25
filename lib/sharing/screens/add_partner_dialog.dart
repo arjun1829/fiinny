@@ -4,6 +4,7 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:lifemap/utils/firebase_error_mapper.dart';
 import 'package:lifemap/utils/permissions_helper.dart';
 
+import '../../core/ads/ads_shell.dart';
 import '../services/partner_service.dart';
 import '../utils/sharing_permissions.dart';
 
@@ -230,6 +231,7 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final safeBottom = context.adsBottomPadding();
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       backgroundColor: Colors.transparent,
@@ -243,7 +245,7 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
               child: CustomPaint(
                 painter: _GlossPainter(),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, safeBottom + 8),
                   child: SingleChildScrollView(
                     child: Form(
                       key: _formKey,
