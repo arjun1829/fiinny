@@ -15,7 +15,7 @@ import '../themes/tokens.dart';
 import '../widgets/charts/bar_chart_simple.dart';
 import '../widgets/charts/donut_chart_simple.dart';
 import '../widgets/unified_transaction_list.dart';
-import '../core/ads/ad_slots.dart';
+import '../core/ads/ads_banner_card.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   final String userPhone;
@@ -62,6 +62,38 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     } catch (_) {}
     if (!mounted) return;
     setState(() => _loading = false);
+  }
+
+  Widget _analyticsBannerCard() {
+    final bodySmall = Theme.of(context).textTheme.bodySmall;
+    return GlassCard(
+      radius: Fx.r24,
+      child: AdsBannerCard(
+        placement: 'analytics_overview',
+        inline: true,
+        inlineMaxHeight: 90,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+        minHeight: 96,
+        boxShadow: const [],
+        placeholder: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.campaign_rounded, color: Fx.mintDark),
+            const SizedBox(height: 8),
+            const Text(
+              'Sponsored',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Your personalised offers will appear here shortly.',
+              textAlign: TextAlign.center,
+              style: bodySmall?.copyWith(color: Colors.black54),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -144,17 +176,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
                 // Small banner ad under Overview
                 const SizedBox(height: 10),
-                GlassCard(
-                  radius: Fx.r24,
-                  child: const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: AdsBannerSlot(
-                      inline: true,
-                      inlineMaxHeight: 72,
-                      padding: EdgeInsets.zero,
-                    ),
-                  ),
-                ),
+                _analyticsBannerCard(),
 
                 const SizedBox(height: 14),
 
