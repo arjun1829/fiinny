@@ -14,7 +14,6 @@ import '../services/income_service.dart';
 import '../widgets/animated_mint_background.dart';
 import '../widgets/filters/transaction_filter_bar.dart';
 import '../widgets/unified_transaction_list.dart';
-import '../core/ads/ads_shell.dart';
 import 'edit_expense_screen.dart';
 
 class TransactionsScreen extends StatefulWidget {
@@ -27,10 +26,6 @@ class TransactionsScreen extends StatefulWidget {
 }
 
 class _TransactionsScreenState extends State<TransactionsScreen> {
-  static const double _bannerHeight = AdsVisibilityScope.bannerHeight;
-
-  final ValueNotifier<bool> _showBottomBanner = ValueNotifier<bool>(true);
-  AdsVisibilityController? _adsController;
   late final SavedViewsStore _savedViews;
 
   final List<ExpenseItem> _expenses = [];
@@ -54,21 +49,6 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     super.initState();
     _savedViews = SavedViewsStore(userPhone: widget.userPhone);
     _listenToStreams();
-    _showBottomBanner.addListener(_syncGlobalBannerVisibility);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final controller = AdsVisibilityScope.maybeOf(context);
-    if (!identical(_adsController, controller)) {
-      _adsController = controller;
-      _syncGlobalBannerVisibility();
-    }
-  }
-
-  void _syncGlobalBannerVisibility() {
-    _adsController?.setVisible(_showBottomBanner.value);
   }
 
   @override
@@ -76,9 +56,6 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     _expSub?.cancel();
     _incSub?.cancel();
     _friendSub?.cancel();
-    _showBottomBanner
-      ..removeListener(_syncGlobalBannerVisibility)
-      ..dispose();
     super.dispose();
   }
 
@@ -166,20 +143,15 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   Future<void> _handleEdit(dynamic tx) async {
     if (_multiSelectMode) return;
     if (tx is ExpenseItem) {
-      _showBottomBanner.value = false;
-      try {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => EditExpenseScreen(
-              userPhone: widget.userPhone,
-              expense: tx,
-            ),
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => EditExpenseScreen(
+            userPhone: widget.userPhone,
+            expense: tx,
           ),
-        );
-      } finally {
-        _showBottomBanner.value = true;
-      }
+        ),
+      );
     }
   }
 
@@ -354,8 +326,6 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       filterType: filterType,
       filter: _filter,
       groupBy: _filter.groupBy,
-      onBeginModal: () => _showBottomBanner.value = false,
-      onEndModal: () => _showBottomBanner.value = true,
       multiSelectEnabled: _multiSelectMode,
       selectedIds: _selectedTxIds,
       onSelectTx: _handleSelectTx,
@@ -398,40 +368,24 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       body: Stack(
         children: [
           const AnimatedMintBackground(),
-          ValueListenableBuilder<bool>(
-            valueListenable: _showBottomBanner,
-            builder: (context, show, _) {
-              final keyboardUp = MediaQuery.of(context).viewInsets.bottom > 0;
-              final bottomPad = (show && !keyboardUp)
-                  ? _bannerHeight +
-                      kBottomNavigationBarHeight +
-                      MediaQuery.of(context).padding.bottom +
-                      6
-                  : 0.0;
-
-              return SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: bottomPad),
-                  child: OrientationBuilder(
-                    builder: (context, orientation) {
-                      return LayoutBuilder(
-                        builder: (context, constraints) {
-                          return Column(
-                            children: [
-                              _buildHeader(),
-                              if (_multiSelectMode) _buildBulkBar(),
-                              Expanded(
-                                child: _buildFilterAndList(constraints),
-                              ),
-                            ],
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ),
-              );
-            },
+          SafeArea(
+            child: OrientationBuilder(
+              builder: (context, orientation) {
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    return Column(
+                      children: [
+                        _buildHeader(),
+                        if (_multiSelectMode) _buildBulkBar(),
+                        Expanded(
+                          child: _buildFilterAndList(constraints),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),
