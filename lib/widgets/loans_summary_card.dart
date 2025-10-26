@@ -13,6 +13,7 @@ class LoansSummaryCard extends StatelessWidget {
   // NEW (already existed in your file):
   final int pendingSuggestions;               // default 0
   final VoidCallback? onReviewSuggestions;    // open review sheet
+  final VoidCallback? onTap;                  // whole-card tap handler
 
   const LoansSummaryCard({
     required this.userId,
@@ -21,6 +22,7 @@ class LoansSummaryCard extends StatelessWidget {
     required this.onAddLoan,
     this.pendingSuggestions = 0,
     this.onReviewSuggestions,
+    this.onTap,
     Key? key,
   }) : super(key: key);
 
@@ -28,7 +30,7 @@ class LoansSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
+    final Widget contents = GlassCard(
       radius: Fx.r24,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -66,6 +68,19 @@ class LoansSummaryCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+
+    if (onTap == null) return contents;
+
+    final radius = BorderRadius.circular(Fx.r24);
+    return Material(
+      color: Colors.transparent,
+      borderRadius: radius,
+      child: InkWell(
+        borderRadius: radius,
+        onTap: onTap,
+        child: contents,
       ),
     );
   }

@@ -201,6 +201,9 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
       break;
 
     case '/loans':
+      if (args is String && args.isNotEmpty) {
+        return MaterialPageRoute(builder: (_) => LoansScreen(userId: args));
+      }
       if (args is Map<String, dynamic> && args['userId'] is String) {
         return MaterialPageRoute(builder: (_) => LoansScreen(userId: args['userId'] as String));
       }
