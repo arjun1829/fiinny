@@ -97,7 +97,8 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingObserver {
+class _DashboardScreenState extends State<DashboardScreen>
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   bool _loading = true;
   bool _showFetchButton = true;
   double totalIncome = 0.0;
@@ -145,6 +146,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   final _loanDetector = LoanDetectionService();
   int _loanSuggestionsCount = 0;
   bool _scanningLoans = false;
+  late final AnimationController _ringShineController;
+  bool _ringShineVisible = true;
 
   // 🔴 NEW: live counters from Firestore
   StreamSubscription? _subsSub, _sipsSub, _cardsSub;
@@ -214,6 +217,15 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _ringShineController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) {
+          setState(() => _ringShineVisible = false);
+        }
+      });
+    _ringShineController.forward();
     _initDashboard();
     SyncCoordinator.instance.onAppStart(widget.userPhone);
     // 🔔 Start system recurring reminders (subs, SIPs, loans, card bills)
@@ -244,6 +256,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     _sysNotifs?.unbind();
     _sipsSub?.cancel();
     _cardsSub?.cancel();
+    _ringShineController.dispose();
     super.dispose();
   }
 
@@ -324,18 +337,24 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           .collection('users')
           .doc(widget.userPhone)
           .get();
-      if (doc.exists && doc.data()?['name'] != null) {
+      final data = doc.data();
+      if (doc.exists && data?['name'] != null) {
         if (!mounted) return;
         setState(() {
-          userName = doc.data()!['name'];
-          _userEmail = doc.data()!['email'];
+          userName = data!['name'];
+          _userEmail = data['email'];
           _isEmailLinked = (_userEmail != null && _userEmail!.isNotEmpty);
+          final photo = data['photo'] as String?;
+          userAvatar = (photo != null && photo.isNotEmpty)
+              ? photo
+              : "assets/images/profile_default.png";
         });
       } else {
         if (!mounted) return;
         setState(() {
           userName = "there";
           _isEmailLinked = false;
+          userAvatar = "assets/images/profile_default.png";
         });
       }
     } catch (e) {
@@ -343,6 +362,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       setState(() {
         userName = "there";
         _isEmailLinked = false;
+        userAvatar = "assets/images/profile_default.png";
       });
     }
   }
@@ -1657,9 +1677,14 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                               if (isNarrow) {
                                 return Column(
                                   children: [
-                                    loansTile,
-                                    SizedBox(height: spacing),
-                                    assetsTile,
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(child: loansTile),
+                                        SizedBox(width: spacing),
+                                        Expanded(child: assetsTile),
+                                      ],
+                                    ),
                                     SizedBox(height: spacing),
                                     subsTile,
                                   ],
@@ -1862,6 +1887,58 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           ),
         );
         await _initDashboard();
+      },
+    );
+  }
+
+  Widget _wrapRingWithShine(Widget child) {
+    if (!_ringShineVisible) return child;
+    return AnimatedBuilder(
+      animation: _ringShineController,
+      child: child,
+      builder: (context, child) {
+        final t = Curves.easeInOut.transform(_ringShineController.value);
+        return Stack(
+          children: [
+            if (child != null) child,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    var width = constraints.maxWidth;
+                    if (!width.isFinite || width <= 0) {
+                      width = MediaQuery.of(context).size.width - 28; // approximate horizontal padding
+                    }
+                    if (width < 120) width = 120;
+                    final shineWidth = width * 0.45;
+                    final dx = (width + shineWidth) * t - shineWidth;
+                    final opacity = (1 - t).clamp(0.0, 1.0) * 0.55;
+                    return Opacity(
+                      opacity: opacity,
+                      child: Transform.translate(
+                        offset: Offset(dx, 0),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                              colors: [
+                                Colors.white.withOpacity(0.0),
+                                Colors.white.withOpacity(0.75),
+                                Colors.white.withOpacity(0.0),
+                              ],
+                              stops: const [0.0, 0.5, 1.0],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        );
       },
     );
   }
