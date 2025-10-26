@@ -133,7 +133,8 @@ class _MainNavScreenState extends State<MainNavScreen>
   @override
   Widget build(BuildContext context) {
     final phone = _effectivePhone;
-    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final mediaQuery = MediaQuery.of(context);
+    final bottomInset = mediaQuery.padding.bottom;
     final screens = <Widget>[
       DashboardScreen(userPhone: phone),
       ExpensesScreen(userPhone: phone),
@@ -156,7 +157,7 @@ class _MainNavScreenState extends State<MainNavScreen>
       ),
       bottomNavigationBar: BottomBarWithAd(
         navBar: Container(
-          padding: EdgeInsets.fromLTRB(0, 12, 0, bottomInset > 0 ? bottomInset : 12),
+          padding: EdgeInsets.fromLTRB(0, 10, 0, bottomInset),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),

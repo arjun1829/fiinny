@@ -46,6 +46,8 @@ class TransactionAmountCard extends StatelessWidget {
       case "W":
       case "This Week":
         return "This Week";
+      case "Yesterday":
+        return "Yesterday";
       case "M":
       case "This Month":
         return "This Month";
