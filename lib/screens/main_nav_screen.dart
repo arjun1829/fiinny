@@ -134,6 +134,7 @@ class _MainNavScreenState extends State<MainNavScreen>
     final phone = _effectivePhone;
     final mediaQuery = MediaQuery.of(context);
     final bottomInset = mediaQuery.padding.bottom;
+    final navBottomPadding = bottomInset > 0 ? bottomInset : 8.0;
     final screens = <Widget>[
       DashboardScreen(userPhone: phone),
       ExpensesScreen(userPhone: phone),
@@ -155,7 +156,7 @@ class _MainNavScreenState extends State<MainNavScreen>
         ],
       ),
       bottomNavigationBar: Container(
-        padding: EdgeInsets.fromLTRB(0, 10, 0, bottomInset),
+        padding: EdgeInsets.fromLTRB(0, 6, 0, navBottomPadding),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -173,6 +174,8 @@ class _MainNavScreenState extends State<MainNavScreen>
           elevation: 0,
           selectedItemColor: Theme.of(context).colorScheme.primary,
           unselectedItemColor: const Color(0xFF535A68),
+          selectedFontSize: 12,
+          unselectedFontSize: 11,
           showUnselectedLabels: true,
           onTap: _onTabTapped,
           items: List.generate(_iconData.length, (i) {
@@ -193,8 +196,8 @@ class _MainNavScreenState extends State<MainNavScreen>
                           )
                         : null,
                     child: SizedBox(
-                      width: 28,
-                      height: 28,
+                      width: 26,
+                      height: 26,
                       child: AnimatedBuilder(
                         animation: _shineControllers[i],
                         builder: (context, child) {
@@ -204,7 +207,7 @@ class _MainNavScreenState extends State<MainNavScreen>
                                 : null,
                             child: Icon(
                               _iconData[i],
-                              size: selected ? 27 : 23,
+                              size: selected ? 24 : 21,
                               color: selected
                                   ? Theme.of(context).colorScheme.primary
                                   : const Color(0xFF535A68),

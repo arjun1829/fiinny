@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../themes/tokens.dart';
 import '../../themes/glass_card.dart';
-import '../../themes/badge.dart';
 
 class SubsBillsCard extends StatelessWidget {
   final String userPhone;
@@ -45,8 +44,12 @@ class SubsBillsCard extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                height: 44, width: 44,
-                decoration: BoxDecoration(color: Fx.mint.withOpacity(.10), borderRadius: BorderRadius.circular(Fx.r12)),
+                height: 44,
+                width: 44,
+                decoration: BoxDecoration(
+                  color: Fx.mint.withOpacity(.10),
+                  borderRadius: BorderRadius.circular(Fx.r12),
+                ),
                 child: const Icon(Icons.receipt_long, color: Fx.mintDark),
               ),
               const SizedBox(width: Fx.s12),
@@ -54,14 +57,25 @@ class SubsBillsCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Subscriptions & Bills', style: Fx.title),
+                    Text('Subscriptions & Bills', style: Fx.title.copyWith(color: Fx.mintDark)),
                     const SizedBox(height: Fx.s6),
-                    Wrap(spacing: Fx.s8, runSpacing: Fx.s6, children: [
-                      PillBadge('Active: $activeStr', color: Fx.mintDark),
-                      PillBadge('Overdue: $overdueStr', color: overdueStr == '0' ? Fx.mintDark : Fx.bad, icon: Icons.warning_amber_rounded),
-                      PillBadge('This month: $totalStr', color: Fx.mintDark),
-                      PillBadge('Next due: $nextDueStr', color: Fx.mintDark, icon: Icons.calendar_month_rounded),
-                    ]),
+                    Text(
+                      'This month: $totalStr',
+                      style: Fx.number.copyWith(color: Fx.mintDark, fontSize: 20),
+                    ),
+                    const SizedBox(height: Fx.s10),
+                    Wrap(
+                      spacing: Fx.s16,
+                      runSpacing: Fx.s4,
+                      children: [
+                        Text('Active: $activeStr', style: Fx.label),
+                        Text(
+                          'Overdue: $overdueStr',
+                          style: Fx.label.copyWith(color: overdueStr == '0' ? Fx.text : Fx.bad),
+                        ),
+                        Text('Next due: $nextDueStr', style: Fx.label),
+                      ],
+                    ),
                   ],
                 ),
               ),
