@@ -7,14 +7,20 @@ class HeroTransactionRing extends StatelessWidget {
   final double credit;
   final double debit;
   final String period;
+  final String title;
+  final String? subtitle;
   final VoidCallback onFilterTap;
+  final VoidCallback? onTap;
 
   const HeroTransactionRing({
     super.key,
     required this.credit,
     required this.debit,
     required this.period,
+    required this.title,
+    this.subtitle,
     required this.onFilterTap,
+    this.onTap,
   });
 
   @override
@@ -22,80 +28,169 @@ class HeroTransactionRing extends StatelessWidget {
     final maxValue = (credit > debit ? credit : debit);
     final safeMax = maxValue <= 0 ? 1.0 : maxValue;
     final pCredit = (credit / safeMax).clamp(0.0, 1.0);
-    final pDebit  = (debit  / safeMax).clamp(0.0, 1.0);
+    final pDebit = (debit / safeMax).clamp(0.0, 1.0);
+    final isCompact = MediaQuery.of(context).size.width < 360;
+    final radius = BorderRadius.circular(Fx.r28);
 
-    return Container(
-      height: 200,
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      padding: const EdgeInsets.symmetric(vertical: Fx.s14, horizontal: Fx.s10),
-      decoration: BoxDecoration(
-        color: Fx.card,
-        borderRadius: BorderRadius.circular(Fx.r36),
-        boxShadow: Fx.soft,
-      ),
-      child: Row(
-        children: [
-          _Rings(credit: pCredit, debit: pDebit),
-          const SizedBox(width: Fx.s32),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Material(
+      color: Colors.transparent,
+      borderRadius: radius,
+      child: Ink(
+        decoration: BoxDecoration(
+          color: Fx.card,
+          borderRadius: radius,
+          boxShadow: Fx.soft,
+        ),
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isCompact ? Fx.s16 : Fx.s20,
+              vertical: isCompact ? Fx.s16 : Fx.s20,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text("Today Summary", style: Fx.title),
-                const SizedBox(height: Fx.s6),
-                _rowAmount(label: "Credit", amount: credit, color: Fx.good),
-                _rowAmount(label: "Debit",  amount: debit,  color: Fx.bad),
-                const SizedBox(height: Fx.s8),
-                GestureDetector(
-                  onTap: onFilterTap,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: Fx.s14, vertical: Fx.s8),
-                    decoration: BoxDecoration(
-                      color: Fx.mintDark.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(Fx.r12),
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Text(period, style: Fx.label.copyWith(fontWeight: FontWeight.w800, color: Fx.mintDark)),
-                      const Icon(Icons.expand_more_rounded, size: 20, color: Fx.mintDark),
-                    ]),
+                _Rings(
+                  credit: pCredit,
+                  debit: pDebit,
+                  isCompact: isCompact,
+                ),
+                SizedBox(width: isCompact ? Fx.s16 : Fx.s24),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Fx.title.copyWith(
+                          fontSize: isCompact ? 16.5 : 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (subtitle != null && subtitle!.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          subtitle!,
+                          style: Fx.label.copyWith(
+                            fontSize: 12.5,
+                            color: Colors.black.withOpacity(0.55),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                      SizedBox(height: subtitle == null || subtitle!.isEmpty ? Fx.s10 : Fx.s14),
+                      _rowAmount(label: 'Credit', amount: credit, color: Fx.good, compact: isCompact),
+                      const SizedBox(height: 8),
+                      _rowAmount(label: 'Debit', amount: debit, color: Fx.bad, compact: isCompact),
+                      const SizedBox(height: 14),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: GestureDetector(
+                          onTap: onFilterTap,
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: isCompact ? Fx.s12 : Fx.s16,
+                              vertical: Fx.s8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Fx.mintDark.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(Fx.r12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  period,
+                                  style: Fx.label.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: Fx.mintDark,
+                                    fontSize: isCompact ? 12 : 13.5,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.expand_more_rounded, size: 18, color: Fx.mintDark),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _rowAmount({required String label, required double amount, required Color color}) {
-    return Row(children: [
-      Text("₹${amount.toStringAsFixed(0)}",
-          style: Fx.number.copyWith(color: color, fontSize: 24)),
-      const SizedBox(width: Fx.s6),
-      Text(label, style: Fx.label.copyWith(color: color, fontWeight: FontWeight.w700)),
-    ]);
+  Widget _rowAmount({
+    required String label,
+    required double amount,
+    required Color color,
+    required bool compact,
+  }) {
+    return Row(
+      children: [
+        Text(
+          '₹${amount.toStringAsFixed(0)}',
+          style: Fx.number.copyWith(
+            color: color,
+            fontSize: compact ? 22 : 24,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(width: Fx.s6),
+        Text(
+          label,
+          style: Fx.label.copyWith(
+            color: color,
+            fontWeight: FontWeight.w700,
+            fontSize: compact ? 12.5 : 13.5,
+          ),
+        ),
+      ],
+    );
   }
 }
 
 class _Rings extends StatelessWidget {
   final double credit;
   final double debit;
-  const _Rings({required this.credit, required this.debit});
+  final bool isCompact;
+
+  const _Rings({
+    required this.credit,
+    required this.debit,
+    required this.isCompact,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final outerSize = isCompact ? 140.0 : 156.0;
+    final innerSize = isCompact ? 110.0 : 124.0;
+
     return SizedBox(
-      width: 150, height: 150,
+      width: outerSize,
+      height: outerSize,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          _AnimatedArc(percent: debit,  size: 150, stroke: 14, colors: [Fx.bad.withOpacity(.15), Fx.bad]),
-          _AnimatedArc(percent: credit, size: 118, stroke: 10, colors: [Fx.good.withOpacity(.15), Fx.good]),
-          // soft pulse dot at top
-          Positioned(
-            top: 2, child: _PulseDot(color: Fx.mintDark.withOpacity(.85)),
+          _AnimatedArc(
+            percent: debit,
+            size: outerSize,
+            stroke: isCompact ? 12 : 14,
+            colors: [Fx.bad.withOpacity(.15), Fx.bad],
+          ),
+          _AnimatedArc(
+            percent: credit,
+            size: innerSize,
+            stroke: isCompact ? 9 : 10,
+            colors: [Fx.good.withOpacity(.15), Fx.good],
           ),
         ],
       ),
@@ -167,31 +262,4 @@ class _ArcPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ArcPainter old) => old.value != value || old.stroke != stroke || old.colors != colors;
-}
-
-class _PulseDot extends StatefulWidget {
-  final Color color;
-  const _PulseDot({required this.color});
-
-  @override
-  State<_PulseDot> createState() => _PulseDotState();
-}
-class _PulseDotState extends State<_PulseDot> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat();
-  @override void dispose() { _c.dispose(); super.dispose(); }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (_, __) {
-        final t = (math.sin(_c.value * 2 * math.pi) + 1) / 2; // 0..1
-        final s = 8 + 2 * t;
-        return Container(
-          width: s, height: s,
-          decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
-        );
-      },
-    );
-  }
 }
