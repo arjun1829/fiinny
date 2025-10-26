@@ -17,7 +17,6 @@ import '../services/asset_service.dart';
 import '../services/fiinny_brain_service.dart';
 import '../services/notification_service.dart';
 import '../widgets/smart_insights_card.dart';
-import '../widgets/insight_feed_card.dart';
 import '../widgets/smart_nudge_widget.dart';
 import '../widgets/crisis_alert_banner.dart';
 import '../widgets/loans_summary_card.dart';
@@ -1387,36 +1386,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         const SizedBox(height: 10),
                         Padding(
                           padding: horizontalPadding,
-                          child: HeroTransactionRing(
-                            credit: txSummary['credit']!,
-                            debit: txSummary['debit']!,
-                            period: txPeriod,
-                            title: summaryTitle,
-                            subtitle: summarySubtitle,
-                            onFilterTap: () async {
-                              final result = await showModalBottomSheet<String>(
-                                context: context,
-                                builder: (ctx) => TxFilterBar(
-                                  selected: txPeriod,
-                                  onSelect: (period) => Navigator.pop(ctx, period),
-                                ),
-                              );
-                              if (result != null && result != txPeriod) {
-                                await _changePeriod(result);
-                              }
-                            },
-                            onTap: () {
-                              Navigator.pushNamed(
-                                context,
-                                '/tx-day-details',
-                                arguments: widget.userPhone,
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Padding(
-                          padding: horizontalPadding,
                           child: TransactionsSummaryCard(
                             credit: txSummary['credit']!,
                             debit: txSummary['debit']!,
@@ -1581,29 +1550,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           ),
                         ),
                         const SizedBox(height: 10),
-                        if (insights.isNotEmpty) ...[
-                          Padding(
-                            padding: horizontalPadding,
-                            child: GestureDetector(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (ctx) => InsightFeedScreen(
-                                      userId: widget.userPhone,
-                                      userData: _mockUserData,
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: InsightFeedCard(
-                                insights: insights,
-                                userId: widget.userPhone,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                        ],
                         Padding(
                           padding: horizontalPadding,
                           child: FiinnyBrainDiagnosisCard(
