@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 const _periods = [
   "Today",
+  "Yesterday",
   "Last 2 Days",
   "Last 5 Days",
   "This Week",
