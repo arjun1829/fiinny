@@ -3,6 +3,8 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import '../models/expense_item.dart';
 import '../models/income_item.dart';
 import '../models/goal_model.dart';
@@ -18,22 +20,21 @@ import '../widgets/smart_insights_card.dart';
 import '../widgets/insight_feed_card.dart';
 import '../widgets/smart_nudge_widget.dart';
 import '../widgets/crisis_alert_banner.dart';
-import '../themes/custom_card.dart';
 import '../widgets/loans_summary_card.dart';
 import '../widgets/assets_summary_card.dart';
 import '../widgets/tx_filter_bar.dart';
 import '../widgets/transactions_summary_card.dart';
+import '../widgets/hero_transaction_ring.dart';
 import '../services/user_data.dart';
-import '../screens/insight_feed_screen.dart';
 import '../widgets/dashboard_activity_tab.dart';
 import '../models/activity_event.dart';
 import 'dashboard_activity_screen.dart';
+import 'insight_feed_screen.dart';
 import '../widgets/transaction_count_card.dart';
 import '../widgets/transaction_amount_card.dart';
 import '../themes/tokens.dart';
 import '../themes/glass_card.dart';
 import '../themes/badge.dart';
-import '../widgets/hero_transaction_ring.dart';
 import '../widgets/net_worth_panel.dart';
 import '../core/formatters/inr.dart';
 import '../widgets/subscriptions/subs_bills_card.dart';
@@ -44,8 +45,6 @@ import '../core/ui/snackbar_throttle.dart';
 import '../widgets/empty_state_card.dart';
 import '../widgets/shimmer.dart';
 import '../widgets/gmail_backfill_banner.dart';
-import '../widgets/premium/premium_chip.dart';
-import '../core/flags/premium_gate.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 // NEW portfolio module imports (aliased so they don't clash with your old service/model)
 import '../fiinny_assets/modules/portfolio/services/asset_service.dart' as PAssetService;
@@ -71,7 +70,6 @@ import '../widgets/salary_predictor_card.dart';
 import '../brain/loan_detection_service.dart';
 import '../widgets/loan_suggestions_sheet.dart';
 
-import '../widgets/fiinny_brain_diagnosis_card.dart';
 import '../widgets/hidden_charges_review_sheet.dart';
 import '../widgets/forex_findings_sheet.dart';
 
@@ -160,8 +158,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       placement: 'dashboard_summary',
       inline: true,
       inlineMaxHeight: 120,
-      margin: const EdgeInsets.fromLTRB(18, 8, 18, 12),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       minHeight: 96,
       backgroundColor: Colors.white,
       borderRadius: BorderRadius.circular(16),
@@ -457,83 +455,19 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
   // 1️⃣ --- Filtering Helpers ---
   List<ExpenseItem> _filteredExpensesForPeriod(String period) {
-    DateTime now = DateTime.now();
-    if (period == "D" || period == "Today") {
-      return allExpenses
-          .where((e) =>
-      e.date.year == now.year &&
-          e.date.month == now.month &&
-          e.date.day == now.day)
-          .toList();
-    } else if (period == "W" || period == "This Week") {
-      DateTime startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-      DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
-      return allExpenses
-          .where((e) =>
-      e.date.isAfter(startOfWeek.subtract(const Duration(days: 1))) &&
-          e.date.isBefore(endOfWeek.add(const Duration(days: 1))))
-          .toList();
-    } else if (period == "M" || period == "This Month") {
-      return allExpenses
-          .where((e) => e.date.year == now.year && e.date.month == now.month)
-          .toList();
-    } else if (period == "Y" || period == "This Year") {
-      return allExpenses.where((e) => e.date.year == now.year).toList();
-    } else if (period == "Last 2 Days") {
-      DateTime start = now.subtract(const Duration(days: 1));
-      return allExpenses
-          .where((e) => e.date.isAfter(start.subtract(const Duration(days: 1))))
-          .toList();
-    } else if (period == "Last 5 Days") {
-      DateTime start = now.subtract(const Duration(days: 4));
-      return allExpenses
-          .where((e) => e.date.isAfter(start.subtract(const Duration(days: 1))))
-          .toList();
-    } else if (period == "All Time") {
-      return allExpenses;
-    }
-    // fallback (just in case)
-    return allExpenses;
+    final range = _periodRange(period);
+    if (range == null) return allExpenses;
+    return allExpenses
+        .where((e) => !e.date.isBefore(range.start) && e.date.isBefore(range.end))
+        .toList();
   }
 
   List<IncomeItem> _filteredIncomesForPeriod(String period) {
-    DateTime now = DateTime.now();
-    if (period == "D" || period == "Today") {
-      return allIncomes
-          .where((e) =>
-      e.date.year == now.year &&
-          e.date.month == now.month &&
-          e.date.day == now.day)
-          .toList();
-    } else if (period == "W" || period == "This Week") {
-      DateTime startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-      DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
-      return allIncomes
-          .where((e) =>
-      e.date.isAfter(startOfWeek.subtract(const Duration(days: 1))) &&
-          e.date.isBefore(endOfWeek.add(const Duration(days: 1))))
-          .toList();
-    } else if (period == "M" || period == "This Month") {
-      return allIncomes
-          .where((e) => e.date.year == now.year && e.date.month == now.month)
-          .toList();
-    } else if (period == "Y" || period == "This Year") {
-      return allIncomes.where((e) => e.date.year == now.year).toList();
-    } else if (period == "Last 2 Days") {
-      DateTime start = now.subtract(const Duration(days: 1));
-      return allIncomes
-          .where((e) => e.date.isAfter(start.subtract(const Duration(days: 1))))
-          .toList();
-    } else if (period == "Last 5 Days") {
-      DateTime start = now.subtract(const Duration(days: 4));
-      return allIncomes
-          .where((e) => e.date.isAfter(start.subtract(const Duration(days: 1))))
-          .toList();
-    } else if (period == "All Time") {
-      return allIncomes;
-    }
-    // fallback (just in case)
-    return allIncomes;
+    final range = _periodRange(period);
+    if (range == null) return allIncomes;
+    return allIncomes
+        .where((e) => !e.date.isBefore(range.start) && e.date.isBefore(range.end))
+        .toList();
   }
 
   // --- Limit helpers (SPENDING only) ---
@@ -550,21 +484,32 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     if (_periodLimit == null || _periodLimit! <= 0) return;
     final used = periodSpendOnly;
     final ratio = used / _periodLimit!;
+    final friendly = _friendlyPeriodLabel(txPeriod);
     if (!_warned80 && ratio >= 0.8 && ratio < 1.0) {
       _warned80 = true;
+      final message = "You're at 80% of your $friendly spending limit.";
       SnackThrottle.show(
         context,
-        "Heads up: You’ve crossed 80% of this period’s spending limit.",
+        message,
         color: Colors.orange,
       );
+      unawaited(NotificationService().showNotification(
+        title: 'Spending limit alert',
+        body: message,
+      ));
     }
     if (!_warned100 && ratio >= 1.0) {
       _warned100 = true;
+      final message = "You've crossed the $friendly spending limit.";
       SnackThrottle.show(
         context,
-        "Limit exceeded: You’ve spent over the limit for this period.",
+        message,
         color: Colors.red,
       );
+      unawaited(NotificationService().showNotification(
+        title: 'Spending limit alert',
+        body: message,
+      ));
     }
   }
 
@@ -580,7 +525,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
     List<double> bars;
 
-    if (txPeriod == "D" || txPeriod == "Today") {
+    if (txPeriod == "D" || txPeriod == "Today" || txPeriod == "Yesterday") {
       // 24h bar
       bars = List<double>.filled(24, 0.0);
       for (var e in expenses) {
@@ -698,7 +643,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
     List<int> bars;
 
-    if (txPeriod == "D" || txPeriod == "Today") {
+    if (txPeriod == "D" || txPeriod == "Today" || txPeriod == "Yesterday") {
       bars = List<int>.filled(24, 0);
       for (var e in expenses) {
         bars[e.date.hour] += 1;
@@ -918,6 +863,126 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     setState(() {});
   }
 
+  Future<void> _changePeriod(String period) async {
+    if (!mounted) return;
+    setState(() => txPeriod = period);
+    await _loadPeriodLimit();
+    _resetLimitWarnings();
+    _checkLimitWarnings();
+    _recomputeAutopayCount();
+  }
+
+  DateTime _startOfDay(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
+
+  DateTimeRange? _periodRange(String period) {
+    final now = DateTime.now();
+    final todayStart = _startOfDay(now);
+    switch (period) {
+      case 'D':
+      case 'Today':
+        return DateTimeRange(start: todayStart, end: todayStart.add(const Duration(days: 1)));
+      case 'Yesterday':
+        final start = todayStart.subtract(const Duration(days: 1));
+        return DateTimeRange(start: start, end: todayStart);
+      case 'Last 2 Days':
+        final start = todayStart.subtract(const Duration(days: 1));
+        return DateTimeRange(start: start, end: todayStart.add(const Duration(days: 1)));
+      case 'Last 5 Days':
+        final start = todayStart.subtract(const Duration(days: 4));
+        return DateTimeRange(start: start, end: todayStart.add(const Duration(days: 1)));
+      case 'W':
+      case 'This Week':
+        final start = todayStart.subtract(Duration(days: todayStart.weekday - 1));
+        return DateTimeRange(start: start, end: start.add(const Duration(days: 7)));
+      case 'M':
+      case 'This Month':
+        final start = DateTime(now.year, now.month);
+        final end = DateTime(now.year, now.month + 1);
+        return DateTimeRange(start: start, end: end);
+      case 'Y':
+      case 'This Year':
+        final start = DateTime(now.year);
+        final end = DateTime(now.year + 1);
+        return DateTimeRange(start: start, end: end);
+      case 'All Time':
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  String _summaryTitle(String period) {
+    final now = DateTime.now();
+    final todayStart = _startOfDay(now);
+    final dfFull = DateFormat('d MMM yyyy');
+    switch (period) {
+      case 'D':
+      case 'Today':
+        return 'Transactions for today (${dfFull.format(now)})';
+      case 'Yesterday':
+        final y = todayStart.subtract(const Duration(days: 1));
+        return 'Transactions for yesterday (${dfFull.format(y)})';
+      case 'Last 2 Days':
+        final start = todayStart.subtract(const Duration(days: 1));
+        return 'Transactions for last 2 days (${dfFull.format(start)} - ${dfFull.format(now)})';
+      case 'Last 5 Days':
+        final start = todayStart.subtract(const Duration(days: 4));
+        return 'Transactions for last 5 days (${dfFull.format(start)} - ${dfFull.format(now)})';
+      case 'W':
+      case 'This Week':
+        final start = todayStart.subtract(Duration(days: todayStart.weekday - 1));
+        return 'Transactions this week (${dfFull.format(start)} - ${dfFull.format(now)})';
+      case 'M':
+      case 'This Month':
+        final start = DateTime(now.year, now.month);
+        final monthName = DateFormat('MMMM').format(now);
+        return 'Transactions for $monthName (${dfFull.format(start)} - ${dfFull.format(now)})';
+      case 'Y':
+      case 'This Year':
+        final start = DateTime(now.year);
+        return 'Transactions this year (${dfFull.format(start)} - ${dfFull.format(now)})';
+      case 'All Time':
+        return 'Transactions for all time';
+      default:
+        return 'Transactions for $period';
+    }
+  }
+
+  String? _summarySubtitle(String period) {
+    if (period == 'All Time') {
+      final df = DateFormat('d MMM yyyy, hh:mm a');
+      return 'Updated ${df.format(DateTime.now())}';
+    }
+    return null;
+  }
+
+  String _friendlyPeriodLabel(String period) {
+    switch (period) {
+      case 'D':
+      case 'Today':
+        return 'today';
+      case 'Yesterday':
+        return 'yesterday';
+      case 'Last 2 Days':
+        return 'the last 2 days';
+      case 'Last 5 Days':
+        return 'the last 5 days';
+      case 'W':
+      case 'This Week':
+        return 'this week';
+      case 'M':
+      case 'This Month':
+        return 'this month';
+      case 'Y':
+      case 'This Year':
+        return 'this year';
+      case 'All Time':
+        return 'your entire history';
+      default:
+        return period.toLowerCase();
+    }
+  }
+
   double? _suggestedLimitForPeriod() {
     // Suggest median spend over last 90 days, rounded to nearest 1000.
     // If period is "This Month", suggest from last 90d; else use current-period spend as hint.
@@ -967,71 +1032,111 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     final ctrl = TextEditingController(
       text: _periodLimit != null ? _periodLimit!.toStringAsFixed(0) : '',
     );
-    final result = await showDialog<double>(
+    final result = await showModalBottomSheet<double>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text("Set Limit for $txPeriod"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "Set a maximum SPENDING limit for the selected period. You’ll get alerts at 80% and 100% of the limit.\n",
-              style: TextStyle(fontSize: 14, color: Colors.grey[800]),
-            ),
-            TextField(
-              controller: ctrl,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                hintText: "Enter limit amount (₹)",
-                suffixIcon: ctrl.text.isNotEmpty
-                    ? IconButton(
-                  icon: Icon(Icons.clear),
-                  onPressed: () => ctrl.clear(),
-                )
-                    : null,
-                border: OutlineInputBorder(),
-              ),
-            ),
-            if (p50 != null || p30 != null || p20 != null) ...[
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        final bottomInset = MediaQuery.of(ctx).viewInsets.bottom;
+        final theme = Theme.of(ctx);
+        final periodName = _friendlyPeriodLabel(txPeriod);
+        return Padding(
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (p50 != null) _presetChip(ctx, '50%', p50, ctrl),
-                  if (p30 != null) _presetChip(ctx, '30%', p30, ctrl),
-                  if (p20 != null) _presetChip(ctx, '20%', p20, ctrl),
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'Set a spending limit',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Choose how much you want to spend for $periodName. We’ll alert you at 80% and 100% of the limit.',
+                    style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[700]),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: ctrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: InputDecoration(
+                      labelText: 'Limit amount (₹)',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                      suffixIcon: ctrl.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () => ctrl.clear(),
+                            )
+                          : null,
+                    ),
+                  ),
+                  if (p50 != null || p30 != null || p20 != null || suggested != null) ...[
+                    const SizedBox(height: 16),
+                    Text('Quick picks', style: theme.textTheme.labelLarge),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (p50 != null) _presetChip(ctx, '50% of income', p50, ctrl),
+                        if (p30 != null) _presetChip(ctx, '30% of income', p30, ctrl),
+                        if (p20 != null) _presetChip(ctx, '20% of income', p20, ctrl),
+                        if (suggested != null)
+                          ActionChip(
+                            label: Text('Suggested ${INR.f(suggested)}'),
+                            onPressed: () => ctrl.text = suggested.toStringAsFixed(0),
+                          ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, 0.0),
+                        child: const Text('Remove limit'),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, null),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          final entered = double.tryParse(ctrl.text.trim());
+                          if (entered != null && entered > 0) {
+                            Navigator.pop(ctx, entered);
+                          }
+                        },
+                        child: const Text('Save limit'),
+                      ),
+                    ],
+                  ),
                 ],
               ),
-            ],
-          ],
-        ),
-        actions: [
-          if (suggested != null)
-            TextButton(
-              child: Text("Use suggested (${INR.f(suggested)})"),
-              onPressed: () => Navigator.pop(ctx, suggested),
             ),
-          TextButton(
-            child: Text("Remove"),
-            onPressed: () => Navigator.pop(ctx, 0.0),
           ),
-          TextButton(
-            child: Text("Cancel"),
-            onPressed: () => Navigator.pop(ctx, null),
-          ),
-          ElevatedButton(
-            child: Text("Save"),
-            onPressed: () {
-              final entered = double.tryParse(ctrl.text.trim());
-              if (entered != null && entered > 0) {
-                Navigator.pop(ctx, entered);
-              }
-            },
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (result != null) {
@@ -1104,134 +1209,31 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     final filteredIncomes = _filteredIncomesForPeriod(txPeriod);
     final filteredExpenses = _filteredExpensesForPeriod(txPeriod);
     final txSummary = _getTxSummaryForPeriod(txPeriod);
-    final netWorth = totalAssets - totalLoan;
+    final periodTotalAmount = filteredExpenses.fold<double>(0.0, (a, b) => a + b.amount) +
+        filteredIncomes.fold<double>(0.0, (a, b) => a + b.amount);
+
+    final summaryTitle = _summaryTitle(txPeriod);
+    final summarySubtitle = _summarySubtitle(txPeriod);
+
+    const EdgeInsets horizontalPadding = EdgeInsets.symmetric(horizontal: 14);
 
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      floatingActionButton: _MintFab(
-        onRefresh: _initDashboard,
-        userPhone: widget.userPhone,
-      ),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        toolbarHeight: 64,
-        title: Text(
-          "Fiinny",
-          style: TextStyle(
-            color: Fx.mintDark,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-            letterSpacing: 0.7,
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Gmail Link',
-            icon: const Icon(Icons.mark_email_read_outlined, color: Fx.mintDark),
-            onPressed: () {
-              Navigator.pushNamed(context, '/settings/gmail', arguments: widget.userPhone);
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.notifications_active_rounded,
-                color: Fx.mintDark, size: 25),
-            tooltip: 'Notification settings',
-            onPressed: () async {
-              await NotifPrefsService.ensureDefaultPrefs(); // make sure doc exists
-              if (!mounted) return;
-              Navigator.pushNamed(context, '/settings/notifications');
-            },
-          ),
-          IconButton(
-            tooltip: 'Analytics',
-            icon: const Icon(Icons.analytics_outlined),
-            onPressed: () {
-              Navigator.pushNamed(
-                context,
-                '/analytics',
-                arguments: widget.userPhone,
-              );
-            },
-          ),
-          IconButton(
-            icon: _isFetchingEmail
-                ? const SizedBox(
-              width: 22, height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-                : const Icon(Icons.sync_rounded, color: Fx.mintDark, size: Fx.s24),
-            tooltip: 'Fetch Email Data',
-            onPressed: _isFetchingEmail ? null : () async {
-              if (!mounted) return;
-              setState(() => _isFetchingEmail = true);
-              try {
-                await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
-                await _initDashboard();
-                if (mounted) {
-                  SnackThrottle.show(context, 'Fetched Gmail transactions!', color: Colors.green);
-                }
-              } catch (e) {
-                if (mounted) {
-                  SnackThrottle.show(context, 'Email fetch failed: $e', color: Colors.red);
-                }
-              } finally {
-                if (mounted) setState(() => _isFetchingEmail = false);
-              }
-            },
-          ),
-          // 👇 Profile Avatar on right
-          GestureDetector(
-            onTap: () {
-              Navigator.pushNamed(context, '/profile', arguments: widget.userPhone);
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Fx.s10),
-              child: FutureBuilder<DocumentSnapshot>(
-                future: FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(widget.userPhone)
-                    .get(),
-                builder: (context, snap) {
-                  String? avatar = "assets/images/profile_default.png";
-                  if (snap.hasData && snap.data!.data() != null) {
-                    final data = snap.data!.data() as Map<String, dynamic>;
-                    if (data['avatar'] != null &&
-                        data['avatar'].toString().isNotEmpty) {
-                      avatar = data['avatar'];
-                    }
-                  }
-                  // Show network image if it's a URL, else asset
-                  return CircleAvatar(
-                    radius: Fx.r20,
-                    backgroundImage: (avatar!.startsWith('http'))
-                        ? NetworkImage(avatar)
-                        : AssetImage(avatar) as ImageProvider,
-                  );
-                },
-              ),
-            ),
-          ),
-          SizedBox(width: 5),
-        ],
-      ),
+      backgroundColor: Colors.grey[50],
       body: Stack(
         children: [
           const _AnimatedMintBackground(),
-          _loading
-              ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
+          RefreshIndicator(
             onRefresh: () async {
               try {
-                // Gmail fetch (old service)
                 if (_isEmailLinked && (_userEmail?.isNotEmpty ?? false)) {
-                  await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
+                  await OldGmail.GmailService()
+                      .fetchAndStoreTransactionsFromGmail(widget.userPhone);
                   await _initDashboard();
                   if (mounted) {
                     SnackThrottle.show(context, "Synced Gmail transactions", color: Colors.green);
                   }
                 } else {
-                  await _fetchEmailTx(); // already shows snackbar
+                  await _fetchEmailTx();
                 }
               } catch (e, st) {
                 debugPrint('[onRefresh] error: $e\n$st');
@@ -1239,13 +1241,13 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                   SnackThrottle.show(context, "Sync error: $e", color: Colors.red);
                 }
               }
-              // 🔁 NEW: scan for loan suggestions on manual refresh
+
               try {
                 await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
                 _loanSuggestionsCount =
-                await _loanDetector.pendingCount(widget.userPhone);
+                    await _loanDetector.pendingCount(widget.userPhone);
                 if (!mounted) return;
-                setState(() {}); // update the chip count
+                setState(() {});
               } catch (e) {
                 debugPrint('[onRefresh] loan scan error: $e');
               }
@@ -1253,221 +1255,287 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
-                // --- HERO SECTION: NUDGE, HELLO, HERO RING ---
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      0,
-                      MediaQuery.of(context).padding.top + kToolbarHeight,
-                      0,
-                      0,
+                SliverAppBar(
+                  automaticallyImplyLeading: false,
+                  elevation: 0,
+                  backgroundColor: Colors.white.withOpacity(0.96),
+                  toolbarHeight: 56,
+                  pinned: false,
+                  floating: true,
+                  snap: true,
+                  titleSpacing: 16,
+                  title: Text(
+                    'Fiinny',
+                    style: TextStyle(
+                      color: Fx.mintDark,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                      letterSpacing: 0.6,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SmartNudgeWidget(userId: widget.userPhone),
+                  ),
+                  actions: [
+                    IconButton(
+                      tooltip: 'Gmail Link',
+                      icon: const Icon(Icons.mark_email_read_outlined, color: Fx.mintDark),
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/settings/gmail', arguments: widget.userPhone);
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.notifications_active_rounded,
+                          color: Fx.mintDark, size: 25),
+                      tooltip: 'Notification settings',
+                      onPressed: () async {
+                        await NotifPrefsService.ensureDefaultPrefs();
+                        if (!mounted) return;
+                        Navigator.pushNamed(context, '/settings/notifications');
+                      },
+                    ),
+                    IconButton(
+                      tooltip: 'Analytics',
+                      icon: const Icon(Icons.analytics_outlined),
+                      onPressed: () {
+                        Navigator.pushNamed(
+                          context,
+                          '/analytics',
+                          arguments: widget.userPhone,
+                        );
+                      },
+                    ),
+                    IconButton(
+                      icon: _isFetchingEmail
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.sync_rounded, color: Fx.mintDark, size: Fx.s24),
+                      tooltip: 'Fetch Email Data',
+                      onPressed: _isFetchingEmail
+                          ? null
+                          : () async {
+                              if (!mounted) return;
+                              setState(() => _isFetchingEmail = true);
+                              try {
+                                await OldGmail.GmailService()
+                                    .fetchAndStoreTransactionsFromGmail(widget.userPhone);
+                                await _initDashboard();
+                                if (mounted) {
+                                  SnackThrottle.show(context, 'Fetched Gmail transactions!', color: Colors.green);
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  SnackThrottle.show(context, 'Sync error: $e', color: Colors.red);
+                                }
+                              } finally {
+                                if (mounted) setState(() => _isFetchingEmail = false);
+                              }
+                            },
+                    ),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pushNamed(context, '/profile', arguments: widget.userPhone);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: Fx.s10),
+                        child: FutureBuilder<DocumentSnapshot>(
+                          future: FirebaseFirestore.instance
+                              .collection('users')
+                              .doc(widget.userPhone)
+                              .get(),
+                          builder: (context, snap) {
+                            final photo = (snap.data?.data() as Map<String, dynamic>?)?['photo'] as String?;
+                            return CircleAvatar(
+                              radius: 18,
+                              backgroundImage: photo != null && photo.isNotEmpty
+                                  ? NetworkImage(photo)
+                                  : const AssetImage('assets/images/profile_default.png') as ImageProvider,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_loading)
+                  const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.only(bottom: 32),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate([
+                        const SizedBox(height: 10),
                         Padding(
-                          padding: const EdgeInsets.only(
-                              left: Fx.s20, top: Fx.s2, bottom: Fx.s8),
+                          padding: horizontalPadding,
+                          child: SmartNudgeWidget(userId: widget.userPhone),
+                        ),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
                           child: Text(
-                            "Welcome, ${userName ?? '...'}",
+                            'Welcome, ${userName ?? '...'}',
                             style: const TextStyle(
-                              fontSize: 21,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
                               color: Fx.mintDark,
                             ),
                           ),
                         ),
-                        // --- Dashboard Hero Ring With Limit Icon ---
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            Navigator.pushNamed(
-                              context,
-                              '/tx-day-details',
-                              arguments: widget.userPhone,
-                            );
-                          },
-                          child: Stack(
-                            children: [
-                              HeroTransactionRing(
-                                credit: txSummary["credit"]!,
-                                debit:  txSummary["debit"]!,
-                                period: txPeriod,
-                                onFilterTap: () async {
-                                  final result = await showModalBottomSheet<String>(
-                                    context: context,
-                                    builder: (ctx) => TxFilterBar(
-                                      selected: txPeriod,
-                                      onSelect: (period) => Navigator.pop(ctx, period),
-                                    ),
-                                  );
-                                  if (result != null && result != txPeriod) {
-                                    setState(() => txPeriod = result);
-                                    await _loadPeriodLimit();
-                                    _resetLimitWarnings();
-                                    _checkLimitWarnings();
-                                    _recomputeAutopayCount();
-                                  }
-                                },
-                              ),
-                              // Limit icon (top-right)
-                              Positioned(
-                                top: 10,
-                                right: 24,
-                                child: GestureDetector(
-                                  onTap: _savingLimit ? null : _editLimitDialog,
-                                  child: CircleAvatar(
-                                    radius: 16,
-                                    backgroundColor: Colors.teal.withOpacity(0.09),
-                                    child: const Icon(Icons.edit_rounded, size: 17, color: Colors.teal),
-                                  ),
-                                ),
-                              ),
-                              // Show current limit if set
-                              if (_periodLimit != null)
-                                Positioned(
-                                  right: 30,
-                                  bottom: 22,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.teal.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(11),
-                                    ),
-                                    child: Builder(
-                                      builder: (_) {
-                                        final limit = _periodLimit!;
-                                        final used  = periodSpendOnly;
-                                        final pct = limit > 0 ? (used / limit) : 0.0;
-                                        return Text(
-                                          "Limit ₹${limit.toStringAsFixed(0)} • Used ₹${used.toStringAsFixed(0)} (${(pct * 100).toStringAsFixed(0)}%)",
-                                          style: TextStyle(
-                                            color: Colors.teal[900],
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 12,
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        // --- NEW CARDS: Transaction Count & Amount ---
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TransactionCountCard(
-                                key: ValueKey('count|$_barsRevision|$txPeriod'),
-                                count: filteredIncomes.length + filteredExpenses.length,
-                                period: txPeriod,
-                                barData: _barDataCount(),
-                                onFilterTap: () async {
-                                  final result = await showModalBottomSheet<String>(
-                                    context: context,
-                                    builder: (ctx) => TxFilterBar(
-                                      selected: txPeriod,
-                                      onSelect: (period) => Navigator.pop(ctx, period),
-                                    ),
-                                  );
-                                  if (result != null && result != txPeriod) {
-                                    if (!mounted) return;
-                                    setState(() => txPeriod = result);
-                                    await _loadPeriodLimit();
-                                    _resetLimitWarnings();
-                                    _checkLimitWarnings();
-                                    _recomputeAutopayCount(); // 🔴
-                                  }
-                                },
-                                onViewAllTap: () {
-                                  Navigator.pushNamed(
-                                    context,
-                                    '/transactionCount',
-                                    arguments: widget.userPhone,
-                                  );
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TransactionAmountCard(
-                                key: ValueKey('amount|$_barsRevision|$txPeriod'),
-                                label: "Transaction Amount",
-                                amount: filteredIncomes.fold(0.0, (a, b) => a + b.amount) +
-                                    filteredExpenses.fold(0.0, (a, b) => a + b.amount),
-                                period: txPeriod,
-                                barData: _barDataAmount(),
-                                onFilterTap: () async {
-                                  final result = await showModalBottomSheet<String>(
-                                    context: context,
-                                    builder: (ctx) => TxFilterBar(
-                                      selected: txPeriod,
-                                      onSelect: (period) => Navigator.pop(ctx, period),
-                                    ),
-                                  );
-                                  if (result != null && result != txPeriod) {
-                                    if (!mounted) return;
-                                    setState(() => txPeriod = result);
-                                    await _loadPeriodLimit();
-                                    _resetLimitWarnings();
-                                    _checkLimitWarnings();
-                                    _recomputeAutopayCount(); // 🔴
-                                  }
-                                },
-                                onViewAllTap: () {
-                                  Navigator.pushNamed(
-                                    context,
-                                    '/transactionAmount',
-                                    arguments: widget.userPhone,
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                        _buildDashboardAdCard(),
-
-                        // 🔴 NEW: parser-sourced KPI badges row
+                        const SizedBox(height: 10),
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
-                          child: Wrap(
-                            spacing: 8, runSpacing: 8,
+                          padding: horizontalPadding,
+                          child: HeroTransactionRing(
+                            credit: txSummary['credit']!,
+                            debit: txSummary['debit']!,
+                            period: txPeriod,
+                            title: summaryTitle,
+                            subtitle: summarySubtitle,
+                            onFilterTap: () async {
+                              final result = await showModalBottomSheet<String>(
+                                context: context,
+                                builder: (ctx) => TxFilterBar(
+                                  selected: txPeriod,
+                                  onSelect: (period) => Navigator.pop(ctx, period),
+                                ),
+                              );
+                              if (result != null && result != txPeriod) {
+                                await _changePeriod(result);
+                              }
+                            },
+                            onTap: () {
+                              Navigator.pushNamed(
+                                context,
+                                '/tx-day-details',
+                                arguments: widget.userPhone,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: TransactionsSummaryCard(
+                            credit: txSummary['credit']!,
+                            debit: txSummary['debit']!,
+                            net: txSummary['net']!,
+                            period: txPeriod,
+                            title: summaryTitle,
+                            subtitle: summarySubtitle,
+                            onFilterTap: () async {
+                              final result = await showModalBottomSheet<String>(
+                                context: context,
+                                builder: (ctx) => TxFilterBar(
+                                  selected: txPeriod,
+                                  onSelect: (period) => Navigator.pop(ctx, period),
+                                ),
+                              );
+                              if (result != null && result != txPeriod) {
+                                await _changePeriod(result);
+                              }
+                            },
+                            onLimitTap: _savingLimit ? null : () => _editLimitDialog(),
+                            limit: _periodLimit,
+                            used: periodSpendOnly,
+                            savingLimit: _savingLimit,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _kpiBadge(Icons.subscriptions, Colors.purple, "Subscriptions", '$_activeSubs'),
-                              _kpiBadge(Icons.savings, Colors.orange, "SIPs", '$_activeSips'),
-                              _kpiBadge(Icons.credit_card, Colors.redAccent, "Cards Due", '$_cardsDue'),
-                              _kpiBadge(Icons.autorenew, Colors.teal, "Autopay", '$_autopayCount'),
+                              Expanded(
+                                child: SizedBox(
+                                  height: 220,
+                                  child: TransactionCountCard(
+                                    key: ValueKey('count|$_barsRevision|$txPeriod'),
+                                    count: filteredIncomes.length + filteredExpenses.length,
+                                    period: txPeriod,
+                                    barData: _barDataCount(),
+                                    onFilterTap: () async {
+                                      final result = await showModalBottomSheet<String>(
+                                        context: context,
+                                        builder: (ctx) => TxFilterBar(
+                                          selected: txPeriod,
+                                          onSelect: (period) => Navigator.pop(ctx, period),
+                                        ),
+                                      );
+                                      if (result != null && result != txPeriod) {
+                                        await _changePeriod(result);
+                                      }
+                                    },
+                                    onViewAllTap: () {
+                                      Navigator.pushNamed(
+                                        context,
+                                        '/transactionCount',
+                                        arguments: widget.userPhone,
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: SizedBox(
+                                  height: 220,
+                                  child: TransactionAmountCard(
+                                    key: ValueKey('amount|$_barsRevision|$txPeriod'),
+                                    label: 'Transaction Amount',
+                                    amount: periodTotalAmount,
+                                    barData: _barDataAmount(),
+                                    period: txPeriod,
+                                    onFilterTap: () async {
+                                      final result = await showModalBottomSheet<String>(
+                                        context: context,
+                                        builder: (ctx) => TxFilterBar(
+                                          selected: txPeriod,
+                                          onSelect: (period) => Navigator.pop(ctx, period),
+                                        ),
+                                      );
+                                      if (result != null && result != txPeriod) {
+                                        await _changePeriod(result);
+                                      }
+                                    },
+                                    onViewAllTap: () {
+                                      Navigator.pushNamed(
+                                        context,
+                                        '/transactionAmount',
+                                        arguments: widget.userPhone,
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // --- SCROLLABLE MAIN WHITE PANEL ---
-                SliverToBoxAdapter(
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(36)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black12,
-                          blurRadius: 24,
-                          offset: Offset(0, -4),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: _buildDashboardAdCard(),
                         ),
-                      ],
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 38, 18, 90),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          GmailBackfillBanner(
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _kpiBadge(Icons.subscriptions, Colors.purple, 'Subscriptions', '$_activeSubs'),
+                              _kpiBadge(Icons.savings, Colors.orange, 'SIPs', '$_activeSips'),
+                              _kpiBadge(Icons.credit_card, Colors.redAccent, 'Cards Due', '$_cardsDue'),
+                              _kpiBadge(Icons.autorenew, Colors.teal, 'Autopay', '$_autopayCount'),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: GmailBackfillBanner(
                             userId: widget.userPhone,
                             isLinked: _isEmailLinked,
                             onRetry: _isFetchingEmail
@@ -1489,12 +1557,20 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                     }
                                   },
                           ),
-                          CrisisAlertBanner(
+                        ),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: CrisisAlertBanner(
                             userId: widget.userPhone,
                             totalIncome: totalIncome,
                             totalExpense: totalExpense,
                           ),
-                          SmartInsightCard(
+                        ),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: SmartInsightCard(
                             key: ValueKey('$totalLoan|$totalAssets|$totalIncome|$totalExpense|$savings'),
                             income: totalIncome,
                             expense: totalExpense,
@@ -1503,250 +1579,12 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                             totalLoan: totalLoan,
                             totalAssets: totalAssets,
                           ),
-                          FutureBuilder<bool>(
-                            future: PremiumGate.instance.isPremium(widget.userPhone),
-                            builder: (_, snap) {
-                              final isPro = snap.data == true;
-                              if (isPro) {
-                                return const SizedBox.shrink();
-                              }
-                              return Padding(
-                                padding: const EdgeInsets.only(top: 8.0),
-                                child: Align(
-                                  alignment: Alignment.centerRight,
-                                  child: PremiumChip(
-                                    onTap: () => Navigator.pushNamed(
-                                      context,
-                                      '/premium',
-                                      arguments: widget.userPhone,
-                                    ),
-                                    label: 'Unlock deeper insights',
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 14),
-                          FiinnyBrainDiagnosisCard(
-                            userPhone: widget.userPhone,
-                            daysWindow: 180,
-                            initiallyExpanded: false,
-                            salaryEarlyDays: 3,
-                          ),
-                          const SizedBox(height: 14),
-
-                          if (_loading)
-                            Row(children: const [
-                              Expanded(child: ShimmerBox(height: 120)),
-                              SizedBox(width: 10),
-                              Expanded(child: ShimmerBox(height: 120)),
-                            ])
-                          else
-                            Row(
-                              children: [
-                                // ⬇️ Make Loans card tappable
-                                Expanded(
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(16),
-                                      onTap: () async {
-                                        final changed = await Navigator.pushNamed<bool>(
-                                          context,
-                                          '/loans',
-                                          arguments: {'userId': widget.userPhone},
-                                        );
-                                        if (changed == true) {
-                                          await _initDashboard();
-                                        }
-                                      },
-                                      child: LoansSummaryCard(
-                                        userId: widget.userPhone,
-                                        loanCount: loanCount,
-                                        totalLoan: totalLoan,
-
-                                        // 🆕 show detected loans + review handler
-                                        pendingSuggestions: _loanSuggestionsCount,
-                                        onReviewSuggestions: () async {
-                                          if (!mounted) return;
-                                          setState(() => _scanningLoans = true);
-                                          try {
-                                            await _loanDetector.scanAndWrite(
-                                                widget.userPhone,
-                                                daysWindow: 360);
-                                            _loanSuggestionsCount =
-                                                await _loanDetector.pendingCount(
-                                                    widget.userPhone);
-                                          } finally {
-                                            if (mounted) setState(() => _scanningLoans = false);
-                                          }
-
-                                          await showModalBottomSheet(
-                                            context: context,
-                                            isScrollControlled: true,
-                                            shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(16)),
-                                            builder: (_) => SizedBox(
-                                              height: MediaQuery.of(context).size.height * 0.70,
-                                              child: LoanSuggestionsSheet(userId: widget.userPhone),
-                                            ),
-                                          );
-
-                                          // refresh badge + totals after sheet actions
-                                          _loanSuggestionsCount =
-                                              await _loanDetector.pendingCount(widget.userPhone);
-                                          final ls = await LoanService()
-                                              .countOpenLoans(widget.userPhone);
-                                          final sum = await LoanService()
-                                              .sumOutstanding(widget.userPhone);
-                                          if (mounted) {
-                                            setState(() {
-                                              loanCount = ls;
-                                              totalLoan = sum;
-                                            });
-                                          }
-                                        },
-                                        onAddLoan: () async {
-                                          final added = await Navigator.pushNamed<bool>(
-                                            context,
-                                            '/addLoan',
-                                            arguments: widget.userPhone,
-                                          );
-                                          if (added == true) {
-                                            await _initDashboard();
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                // ⬇️ Make Assets card tappable
-                                Expanded(
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(16),
-                                      onTap: () async {
-                                        await Navigator.pushNamed(context, '/portfolio');
-                                        await _loadPortfolioTotals();
-                                      },
-                                      child: AssetsSummaryCard(
-                                        userId: widget.userPhone,
-                                        assetCount: assetCount,
-                                        totalAssets: totalAssets,
-                                        onAddAsset: () async {
-                                          await Navigator.pushNamed(context, '/asset-type-picker');
-                                          await _loadPortfolioTotals();
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          const SizedBox(height: 10),
-
-                          Row(
-                            children: [
-                              Expanded(
-                                child: SubsBillsCard(
-                                  userPhone: widget.userPhone,
-                                  activeCount: _activeSubs + _activeSips,
-                                  overdueCount: _cardsDue,
-                                  monthTotal: _filteredExpensesForPeriod(txPeriod)
-                                      .where((e) => (e.tags ?? const []).contains('autopay') ||
-                                          (e.tags ?? const []).contains('bill'))
-                                      .fold<double>(0.0, (a, b) => a + b.amount),
-                                  nextDue: null,
-                                  onOpen: () => _openSubscriptionsAndBills(context),
-                                  onAdd: () async {
-                                    await showModalBottomSheet(
-                                      context: context,
-                                      isScrollControlled: true,
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(16)),
-                                      builder: (_) => SubsSuggestionsSheet(
-                                        userId: widget.userPhone,
-                                        onReview: () async {
-                                          Navigator.pop(context);
-                                          await showModalBottomSheet(
-                                            context: context,
-                                            isScrollControlled: true,
-                                            shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(16)),
-                                            builder: (_) => SizedBox(
-                                              height: MediaQuery.of(context).size.height * 0.8,
-                                              child: SubscriptionsReviewSheet(userId: widget.userPhone),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    );
-                                    await _initDashboard();
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-
-                          // ⬇️ Goals card
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(16),
-                                    onTap: () async {
-                                      await Navigator.pushNamed(
-                                        context,
-                                        '/goals',
-                                        arguments: widget.userPhone,
-                                      );
-                                      await _initDashboard();
-                                    },
-                                    child: GoalsSummaryCard(
-                                      userId: widget.userPhone,
-                                      goalCount: goals.length,
-                                      totalGoalAmount: goals.fold<double>(0.0, (sum, g) => sum + g.targetAmount),
-                                      onAddGoal: () async {
-                                        final added = await showDialog<bool>(
-                                          context: context,
-                                          builder: (ctx) => AddGoalDialog(
-                                            onAdd: (goal) {
-                                              GoalService().addGoal(widget.userPhone, goal);
-                                            },
-                                          ),
-                                        );
-                                        if (added == true) {
-                                          await _initDashboard();
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: Fx.s16),
-                          NetWorthPanel(totalAssets: totalAssets, totalLoan: totalLoan),
-                          const SizedBox(height: 18),
-                          if (goals.isEmpty)
-                            EmptyStateCard(
-                              icon: Icons.flag_rounded,
-                              title: "No goals yet",
-                              subtitle: "Set a saving goal and track progress effortlessly.",
-                              ctaText: "Add your first goal",
-                              onTap: () async {
-                                await Navigator.pushNamed(context, '/goals', arguments: widget.userPhone);
-                                await _initDashboard();
-                              },
-                            ),
-                          if (insights.isNotEmpty)
-                            GestureDetector(
+                        ),
+                        const SizedBox(height: 10),
+                        if (insights.isNotEmpty) ...[
+                          Padding(
+                            padding: horizontalPadding,
+                            child: GestureDetector(
                               onTap: () {
                                 Navigator.push(
                                   context,
@@ -1763,35 +1601,119 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                 userId: widget.userPhone,
                               ),
                             ),
-                          const SizedBox(height: Fx.s18),
-                          if (_showFetchButton)
-                            if (!_isEmailLinked)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: Fx.s4),
-                                child: ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Fx.mintDark,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 13),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(15),
-                                    ),
-                                    elevation: 8,
-                                  ),
-                                  icon: const Icon(Icons.mail_rounded, color: Colors.white),
-                                  label: const Text(
-                                    "Fetch Email Data",
-                                    style: TextStyle(color: Colors.white, fontSize: 16),
-                                  ),
-                                  onPressed: _fetchEmailTx,
-                                ),
-                              ),
-                          const SizedBox(height: 80),
+                          ),
+                          const SizedBox(height: 10),
                         ],
-                      ),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: FiinnyBrainDiagnosisCard(
+                            userPhone: widget.userPhone,
+                            daysWindow: 180,
+                            initiallyExpanded: false,
+                            salaryEarlyDays: 3,
+                            margin: EdgeInsets.zero,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final isNarrow = constraints.maxWidth < 640;
+                              const double spacing = 12;
+                              Widget wrapTile(Widget child) {
+                                if (isNarrow) return child;
+                                return SizedBox(height: 188, child: child);
+                              }
+                              final loansTile = wrapTile(_buildLoansTile());
+                              final assetsTile = wrapTile(_buildAssetsTile());
+                              final subsTile = isNarrow
+                                  ? _buildSubscriptionsTile()
+                                  : SizedBox(height: 388, child: _buildSubscriptionsTile());
+                              if (isNarrow) {
+                                return Column(
+                                  children: [
+                                    loansTile,
+                                    SizedBox(height: spacing),
+                                    assetsTile,
+                                    SizedBox(height: spacing),
+                                    subsTile,
+                                  ],
+                                );
+                              }
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      children: [
+                                        loansTile,
+                                        SizedBox(height: spacing),
+                                        assetsTile,
+                                      ],
+                                    ),
+                                  ),
+                                  SizedBox(width: spacing),
+                                  Expanded(child: subsTile),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: _buildGoalsTile(),
+                        ),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: NetWorthPanel(totalAssets: totalAssets, totalLoan: totalLoan),
+                        ),
+                        if (goals.isEmpty) ...[
+                        const SizedBox(height: 10),
+                          Padding(
+                            padding: horizontalPadding,
+                            child: EmptyStateCard(
+                              icon: Icons.flag_rounded,
+                              title: 'No goals yet',
+                              subtitle: 'Set a saving goal and track progress effortlessly.',
+                              ctaText: 'Add your first goal',
+                              onTap: () async {
+                                await Navigator.pushNamed(context, '/goals', arguments: widget.userPhone);
+                                await _initDashboard();
+                              },
+                            ),
+                          ),
+                        ],
+                        // Streamline: hide the deep insights card to keep the layout focused
+                        if (_showFetchButton && !_isEmailLinked) ...[
+                          const SizedBox(height: 12),
+                          Padding(
+                            padding: horizontalPadding,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Fx.mintDark,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 13),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                                elevation: 4,
+                              ),
+                              icon: const Icon(Icons.mail_rounded, color: Colors.white),
+                              label: const Text(
+                                'Fetch Email Data',
+                                style: TextStyle(color: Colors.white, fontSize: 15),
+                              ),
+                              onPressed: _fetchEmailTx,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 48),
+                      ]),
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -1799,6 +1721,168 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       ),
     );
   }
+
+
+  Widget _buildLoansTile() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () async {
+          final changed = await Navigator.pushNamed<bool>(
+            context,
+            '/loans',
+            arguments: {'userId': widget.userPhone},
+          );
+          if (changed == true) {
+            await _initDashboard();
+          }
+        },
+        child: LoansSummaryCard(
+          userId: widget.userPhone,
+          loanCount: loanCount,
+          totalLoan: totalLoan,
+          pendingSuggestions: _loanSuggestionsCount,
+          onReviewSuggestions: () async {
+            if (!mounted) return;
+            setState(() => _scanningLoans = true);
+            try {
+              await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
+              _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
+            } finally {
+              if (mounted) setState(() => _scanningLoans = false);
+            }
+
+            await showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              builder: (_) => SizedBox(
+                height: MediaQuery.of(context).size.height * 0.70,
+                child: LoanSuggestionsSheet(userId: widget.userPhone),
+              ),
+            );
+
+            _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
+            final ls = await LoanService().countOpenLoans(widget.userPhone);
+            final sum = await LoanService().sumOutstanding(widget.userPhone);
+            if (mounted) {
+              setState(() {
+                loanCount = ls;
+                totalLoan = sum;
+              });
+            }
+          },
+          onAddLoan: () async {
+            final added = await Navigator.pushNamed<bool>(
+              context,
+              '/addLoan',
+              arguments: widget.userPhone,
+            );
+            if (added == true) {
+              await _initDashboard();
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAssetsTile() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () async {
+          await Navigator.pushNamed(context, '/portfolio');
+          await _loadPortfolioTotals();
+        },
+        child: AssetsSummaryCard(
+          userId: widget.userPhone,
+          assetCount: assetCount,
+          totalAssets: totalAssets,
+          onAddAsset: () async {
+            await Navigator.pushNamed(context, '/asset-type-picker');
+            await _loadPortfolioTotals();
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionsTile() {
+    final autopayTotal = _filteredExpensesForPeriod(txPeriod)
+        .where((e) => (e.tags ?? const []).contains('autopay') || (e.tags ?? const []).contains('bill'))
+        .fold<double>(0.0, (a, b) => a + b.amount);
+
+    return SubsBillsCard(
+      userPhone: widget.userPhone,
+      activeCount: _activeSubs + _activeSips,
+      overdueCount: _cardsDue,
+      monthTotal: autopayTotal,
+      nextDue: null,
+      onOpen: () => _openSubscriptionsAndBills(context),
+      onAdd: () async {
+        await showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          builder: (_) => SubsSuggestionsSheet(
+            userId: widget.userPhone,
+            onReview: () async {
+              Navigator.pop(context);
+              await showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                builder: (_) => SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.8,
+                  child: SubscriptionsReviewSheet(userId: widget.userPhone),
+                ),
+              );
+            },
+          ),
+        );
+        await _initDashboard();
+      },
+    );
+  }
+
+  Widget _buildGoalsTile() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () async {
+          await Navigator.pushNamed(
+            context,
+            '/goals',
+            arguments: widget.userPhone,
+          );
+          await _initDashboard();
+        },
+        child: GoalsSummaryCard(
+          userId: widget.userPhone,
+          goalCount: goals.length,
+          totalGoalAmount: goals.fold<double>(0.0, (sum, g) => sum + g.targetAmount),
+          onAddGoal: () async {
+            final added = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AddGoalDialog(
+                onAdd: (goal) {
+                  GoalService().addGoal(widget.userPhone, goal);
+                },
+              ),
+            );
+            if (added == true) {
+              await _initDashboard();
+            }
+          },
+        ),
+      ),
+    );
+  }
+
 
   Widget _presetChip(BuildContext ctx, String label, num amount, TextEditingController ctrl) {
     return InkWell(
@@ -1861,75 +1945,21 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       return _summaryCache[cacheKey]!;
     }
 
-    DateTime now = DateTime.now();
-    DateTime start;
-    DateTime end = now;
+    final range = _periodRange(period);
+    double credit;
+    double debit;
 
-    if (period == "Today" || period == "D") {
-      start = DateTime(now.year, now.month, now.day);
-      end = start.add(const Duration(days: 1));
-    } else if (period == "This Week" || period == "W") {
-      start = now.subtract(Duration(days: now.weekday - 1));
-      end = start.add(const Duration(days: 7));
-    } else if (period == "This Month" || period == "M") {
-      start = DateTime(now.year, now.month, 1);
-      end = DateTime(now.year, now.month + 1, 1);
-    } else if (period == "This Year" || period == "Y") {
-      start = DateTime(now.year, 1, 1);
-      end = DateTime(now.year + 1, 1, 1);
-    } else if (period == "Last 2 Days") {
-      start = now.subtract(const Duration(days: 1));
-      end = now.add(const Duration(days: 1));
-    } else if (period == "Last 5 Days") {
-      start = now.subtract(const Duration(days: 4));
-      end = now.add(const Duration(days: 1));
-    } else if (period == "All Time") {
-      start = DateTime(2000, 1, 1); // Arbitrary early date
-      end = now.add(const Duration(days: 1));
+    if (range == null) {
+      credit = allIncomes.fold(0.0, (a, b) => a + b.amount);
+      debit = allExpenses.fold(0.0, (a, b) => a + b.amount);
     } else {
-      // Default to today
-      start = DateTime(now.year, now.month, now.day);
-      end = start.add(const Duration(days: 1));
+      credit = _filteredIncomesForPeriod(period).fold(0.0, (a, b) => a + b.amount);
+      debit = _filteredExpensesForPeriod(period).fold(0.0, (a, b) => a + b.amount);
     }
-
-    double credit = allIncomes
-        .where((t) =>
-    t.date.isAfter(start.subtract(const Duration(milliseconds: 1))) &&
-        t.date.isBefore(end))
-        .fold(0.0, (a, b) => a + b.amount);
-    double debit = allExpenses
-        .where((t) =>
-    t.date.isAfter(start.subtract(const Duration(milliseconds: 1))) &&
-        t.date.isBefore(end))
-        .fold(0.0, (a, b) => a + b.amount);
 
     final summary = {"credit": credit, "debit": debit, "net": credit - debit};
     _summaryCache[cacheKey] = summary;
     return summary;
-  }
-}
-
-class _MintFab extends StatelessWidget {
-  final Future<void> Function() onRefresh;
-  final String userPhone;
-  const _MintFab({required this.onRefresh, required this.userPhone, super.key});
-  @override
-  Widget build(BuildContext context) {
-    return FloatingActionButton(
-      heroTag: "dashboard-fab-$userPhone", // unique => avoids Hero collisions
-      tooltip: "Add Transaction",
-      child: const Icon(Icons.add, size: 29),
-      onPressed: () async {
-        final added = await Navigator.pushNamed<bool>(
-          context,
-          '/add',
-          arguments: userPhone,
-        );
-        if (added == true) {
-          await onRefresh();
-        }
-      },
-    );
   }
 }
 

@@ -26,6 +26,7 @@ class FiinnyBrainDiagnosisCard extends StatefulWidget {
   final int daysWindow;
   final bool initiallyExpanded;
   final int salaryEarlyDays;
+  final EdgeInsetsGeometry margin;
 
   const FiinnyBrainDiagnosisCard({
     super.key,
@@ -33,6 +34,7 @@ class FiinnyBrainDiagnosisCard extends StatefulWidget {
     this.daysWindow = 90,
     this.initiallyExpanded = true,
     this.salaryEarlyDays = 3,
+    this.margin = const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
   });
 
   @override
@@ -105,15 +107,13 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
     final anyFindings =
         _hiddenCharges + _subscriptions + _forexHits + _loanSuggestions;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: kElevationToShadow[2],
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    return Card(
+      margin: widget.margin,
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // ---------- Header (overflow-safe) ----------
         Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
           const Icon(Icons.auto_awesome_rounded, color: Colors.teal, size: 22),
@@ -239,7 +239,8 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
 
           if (_done) _congratsBanner(context, anyFindings),
         ],
-      ]),
+        ]),
+      ),
     );
   }
 
