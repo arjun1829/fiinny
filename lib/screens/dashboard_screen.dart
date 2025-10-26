@@ -64,6 +64,7 @@ import '../widgets/fiinny_brain_diagnosis_card.dart';
 import '../widgets/hidden_charges_card.dart';
 import '../widgets/forex_charges_card.dart';
 import '../widgets/salary_predictor_card.dart';
+import '../widgets/premium/premium_chip.dart';
 
 import '../brain/loan_detection_service.dart';
 import '../widgets/loan_suggestions_sheet.dart';
@@ -76,6 +77,7 @@ import '../services/review_queue_service.dart';
 import '../models/ingest_draft_model.dart';
 
 import '../core/ads/ad_service.dart';
+import '../core/flags/premium_gate.dart';
 
 import '../core/notifications/local_notifications.dart'
     show SystemRecurringLocalScheduler;
@@ -1265,7 +1267,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                   automaticallyImplyLeading: false,
                   elevation: 0,
                   backgroundColor: Colors.white.withOpacity(0.96),
-                  toolbarHeight: 56,
+                  toolbarHeight: 48,
                   pinned: false,
                   floating: true,
                   snap: true,
@@ -1275,21 +1277,21 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                     style: TextStyle(
                       color: Fx.mintDark,
                       fontWeight: FontWeight.bold,
-                      fontSize: 20,
-                      letterSpacing: 0.6,
+                      fontSize: 18,
+                      letterSpacing: 0.5,
                     ),
                   ),
                   actions: [
                     IconButton(
                       tooltip: 'Gmail Link',
-                      icon: const Icon(Icons.mark_email_read_outlined, color: Fx.mintDark),
+                      icon: const Icon(Icons.mark_email_read_outlined, color: Fx.mintDark, size: 22),
                       onPressed: () {
                         Navigator.pushNamed(context, '/settings/gmail', arguments: widget.userPhone);
                       },
                     ),
                     IconButton(
                       icon: const Icon(Icons.notifications_active_rounded,
-                          color: Fx.mintDark, size: 25),
+                          color: Fx.mintDark, size: 23),
                       tooltip: 'Notification settings',
                       onPressed: () async {
                         await NotifPrefsService.ensureDefaultPrefs();
@@ -1299,7 +1301,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                     ),
                     IconButton(
                       tooltip: 'Analytics',
-                      icon: const Icon(Icons.analytics_outlined),
+                      icon: const Icon(Icons.analytics_outlined, size: 22),
                       onPressed: () {
                         Navigator.pushNamed(
                           context,
@@ -1315,7 +1317,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                               height: 22,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.sync_rounded, color: Fx.mintDark, size: Fx.s24),
+                          : const Icon(Icons.sync_rounded, color: Fx.mintDark, size: 22),
                       tooltip: 'Fetch Email Data',
                       onPressed: _isFetchingEmail
                           ? null
@@ -1343,7 +1345,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         Navigator.pushNamed(context, '/profile', arguments: widget.userPhone);
                       },
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: Fx.s10),
+                        padding: const EdgeInsets.symmetric(horizontal: Fx.s8),
                         child: FutureBuilder<DocumentSnapshot>(
                           future: FirebaseFirestore.instance
                               .collection('users')
@@ -1352,7 +1354,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           builder: (context, snap) {
                             final photo = (snap.data?.data() as Map<String, dynamic>?)?['photo'] as String?;
                             return CircleAvatar(
-                              radius: 18,
+                              radius: 16,
                               backgroundImage: photo != null && photo.isNotEmpty
                                   ? NetworkImage(photo)
                                   : const AssetImage('assets/images/profile_default.png') as ImageProvider,
@@ -1376,9 +1378,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         const SizedBox(height: 10),
                         Padding(
                           padding: horizontalPadding,
-                          child: SmartNudgeWidget(userId: widget.userPhone),
+                          child: _buildDashboardAdCard(),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 12),
                         Padding(
                           padding: horizontalPadding,
                           child: Text(
@@ -1393,61 +1395,70 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         const SizedBox(height: 10),
                         Padding(
                           padding: horizontalPadding,
-                          child: Stack(
-                            children: [
-                              HeroTransactionRing(
-                                credit: txSummary['credit']!,
-                                debit: txSummary['debit']!,
-                                period: txPeriod,
-                                title: summaryTitle,
-                                subtitle: summarySubtitle,
-                                onFilterTap: () async {
-                                  final result = await showModalBottomSheet<String>(
-                                    context: context,
-                                    builder: (ctx) => TxFilterBar(
-                                      selected: txPeriod,
-                                      onSelect: (period) => Navigator.pop(ctx, period),
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              Navigator.pushNamed(
+                                context,
+                                '/tx-day-details',
+                                arguments: widget.userPhone,
+                              );
+                            },
+                            child: Stack(
+                              children: [
+                                HeroTransactionRing(
+                                  credit: txSummary['credit']!,
+                                  debit: txSummary['debit']!,
+                                  period: txPeriod,
+                                  title: summaryTitle,
+                                  subtitle: summarySubtitle,
+                                  onFilterTap: () async {
+                                    final result = await showModalBottomSheet<String>(
+                                      context: context,
+                                      builder: (ctx) => TxFilterBar(
+                                        selected: txPeriod,
+                                        onSelect: (period) => Navigator.pop(ctx, period),
+                                      ),
+                                    );
+                                    if (result != null && result != txPeriod) {
+                                      await _changePeriod(result);
+                                    }
+                                  },
+                                ),
+                                Positioned(
+                                  top: 10,
+                                  right: 24,
+                                  child: GestureDetector(
+                                    onTap: _savingLimit ? null : _editLimitDialog,
+                                    child: CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor: Colors.teal.withOpacity(0.09),
+                                      child: const Icon(Icons.edit_rounded, size: 17, color: Colors.teal),
                                     ),
-                                  );
-                                  if (result != null && result != txPeriod) {
-                                    await _changePeriod(result);
-                                  }
-                                },
-                                onTap: _savingLimit ? null : _editLimitDialog,
-                              ),
-                              Positioned(
-                                top: 10,
-                                right: 24,
-                                child: GestureDetector(
-                                  onTap: _savingLimit ? null : _editLimitDialog,
-                                  child: CircleAvatar(
-                                    radius: 16,
-                                    backgroundColor: Colors.teal.withOpacity(0.09),
-                                    child: const Icon(Icons.edit_rounded, size: 17, color: Colors.teal),
                                   ),
                                 ),
-                              ),
-                              if (limitUsageText != null)
-                                Positioned(
-                                  right: 30,
-                                  bottom: 22,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.teal.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(11),
-                                    ),
-                                    child: Text(
-                                      limitUsageText,
-                                      style: TextStyle(
-                                        color: Colors.teal[900],
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 12,
+                                if (limitUsageText != null)
+                                  Positioned(
+                                    right: 30,
+                                    bottom: 22,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.teal.withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(11),
+                                      ),
+                                      child: Text(
+                                        limitUsageText,
+                                        style: TextStyle(
+                                          color: Colors.teal[900],
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -1521,10 +1532,10 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                             ],
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 12),
                         Padding(
                           padding: horizontalPadding,
-                          child: _buildDashboardAdCard(),
+                          child: SmartNudgeWidget(userId: widget.userPhone),
                         ),
                         const SizedBox(height: 10),
                         Padding(
@@ -1578,17 +1589,45 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         const SizedBox(height: 10),
                         Padding(
                           padding: horizontalPadding,
-                          child: SmartInsightCard(
-                            key: ValueKey('$totalLoan|$totalAssets|$totalIncome|$totalExpense|$savings'),
-                            income: totalIncome,
-                            expense: totalExpense,
-                            savings: savings,
-                            goal: currentGoal,
-                            totalLoan: totalLoan,
-                            totalAssets: totalAssets,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              SmartInsightCard(
+                                key: ValueKey('$totalLoan|$totalAssets|$totalIncome|$totalExpense|$savings'),
+                                income: totalIncome,
+                                expense: totalExpense,
+                                savings: savings,
+                                goal: currentGoal,
+                                totalLoan: totalLoan,
+                                totalAssets: totalAssets,
+                              ),
+                              FutureBuilder<bool>(
+                                future: PremiumGate.instance.isPremium(widget.userPhone),
+                                builder: (_, snap) {
+                                  final isPro = snap.data == true;
+                                  if (isPro) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 8.0),
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: PremiumChip(
+                                        onTap: () => Navigator.pushNamed(
+                                          context,
+                                          '/premium',
+                                          arguments: widget.userPhone,
+                                        ),
+                                        label: 'Unlock deeper insights',
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 14),
                         Padding(
                           padding: horizontalPadding,
                           child: FiinnyBrainDiagnosisCard(
@@ -1599,7 +1638,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                             margin: EdgeInsets.zero,
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 14),
                         Padding(
                           padding: horizontalPadding,
                           child: LayoutBuilder(
@@ -1709,67 +1748,61 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
 
   Widget _buildLoansTile() {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () async {
-          final changed = await Navigator.pushNamed<bool>(
-            context,
-            '/loans',
-            arguments: {'userId': widget.userPhone},
-          );
-          if (changed == true) {
-            await _initDashboard();
-          }
-        },
-        child: LoansSummaryCard(
-          userId: widget.userPhone,
-          loanCount: loanCount,
-          totalLoan: totalLoan,
-          pendingSuggestions: _loanSuggestionsCount,
-          onReviewSuggestions: () async {
-            if (!mounted) return;
-            setState(() => _scanningLoans = true);
-            try {
-              await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
-              _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
-            } finally {
-              if (mounted) setState(() => _scanningLoans = false);
-            }
+    return LoansSummaryCard(
+      userId: widget.userPhone,
+      loanCount: loanCount,
+      totalLoan: totalLoan,
+      pendingSuggestions: _loanSuggestionsCount,
+      onTap: () async {
+        final changed = await Navigator.pushNamed<bool>(
+          context,
+          '/loans',
+          arguments: {'userId': widget.userPhone},
+        );
+        if (changed == true) {
+          await _initDashboard();
+        }
+      },
+      onReviewSuggestions: () async {
+        if (!mounted) return;
+        setState(() => _scanningLoans = true);
+        try {
+          await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
+          _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
+        } finally {
+          if (mounted) setState(() => _scanningLoans = false);
+        }
 
-            await showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              builder: (_) => SizedBox(
-                height: MediaQuery.of(context).size.height * 0.70,
-                child: LoanSuggestionsSheet(userId: widget.userPhone),
-              ),
-            );
+        await showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          builder: (_) => SizedBox(
+            height: MediaQuery.of(context).size.height * 0.70,
+            child: LoanSuggestionsSheet(userId: widget.userPhone),
+          ),
+        );
 
-            _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
-            final ls = await LoanService().countOpenLoans(widget.userPhone);
-            final sum = await LoanService().sumOutstanding(widget.userPhone);
-            if (mounted) {
-              setState(() {
-                loanCount = ls;
-                totalLoan = sum;
-              });
-            }
-          },
-          onAddLoan: () async {
-            final added = await Navigator.pushNamed<bool>(
-              context,
-              '/addLoan',
-              arguments: widget.userPhone,
-            );
-            if (added == true) {
-              await _initDashboard();
-            }
-          },
-        ),
-      ),
+        _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
+        final ls = await LoanService().countOpenLoans(widget.userPhone);
+        final sum = await LoanService().sumOutstanding(widget.userPhone);
+        if (mounted) {
+          setState(() {
+            loanCount = ls;
+            totalLoan = sum;
+          });
+        }
+      },
+      onAddLoan: () async {
+        final added = await Navigator.pushNamed<bool>(
+          context,
+          '/addLoan',
+          arguments: widget.userPhone,
+        );
+        if (added == true) {
+          await _initDashboard();
+        }
+      },
     );
   }
 
