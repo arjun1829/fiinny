@@ -9,7 +9,6 @@ import '../models/income_item.dart';
 import '../services/expense_service.dart';
 import '../services/income_service.dart';
 import '../widgets/unified_transaction_list.dart';
-import '../widgets/dashboard_hero_ring.dart';
 import '../widgets/animated_mint_background.dart';
 import '../themes/custom_card.dart';
 
@@ -370,16 +369,13 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final periodLabel = DateFormat('EEE, d MMM').format(_selectedDay);
+    final dayCount = _dayExpenses.length + _dayIncomes.length;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text("Transaction details"),
         backgroundColor: Colors.white,
         elevation: 0,
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.pushNamed(context, '/add', arguments: widget.userPhone),
-        child: const Icon(Icons.add),
       ),
       body: Stack(
         children: [
@@ -437,131 +433,109 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                   ),
                 ),
 
-                // weekly 7 mini rings (Mon -> Sun)
                 if (_weekData.isNotEmpty)
-                  SizedBox(
-                    height: 98,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
-                      itemCount: _weekData.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 10),
-                      itemBuilder: (ctx, i) {
-                        final d = _weekData[i]['date'] as DateTime;
-                        final c = (_weekData[i]['credit'] as num).toDouble();
-                        final deb = (_weekData[i]['debit'] as num).toDouble();
-
-                        final isSelected =
-                            d.year == _selectedDay.year &&
-                                d.month == _selectedDay.month &&
-                                d.day == _selectedDay.day;
-
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                    child: Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            SizedBox(
-                              width: 56,
-                              height: 56,
-                              child: Material(
-                                color: isSelected ? Colors.black.withOpacity(.04) : Colors.transparent,
-                                borderRadius: BorderRadius.circular(999),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(999),
-                                  onTap: () {
+                            const Text(
+                              'Pick a day to review',
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: _weekData.map((data) {
+                                final d = data['date'] as DateTime;
+                                final isSelected = d.year == _selectedDay.year &&
+                                    d.month == _selectedDay.month &&
+                                    d.day == _selectedDay.day;
+                                return ChoiceChip(
+                                  label: Text(DateFormat('dd MMM').format(d)),
+                                  selected: isSelected,
+                                  onSelected: (_) {
                                     _selectedDay = d;
                                     _recomputeForDay();
                                   },
-                                  child: Center(
-                                    child: DashboardHeroRing(
-                                      credit: c,
-                                      debit: deb,
-                                      period: "",
-                                      showHeader: false,
-                                      ringSize: 54,
-                                      strokeWidth: 6,
-                                      tappable: false,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              DateFormat('dd/MM').format(d),
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: isSelected ? Colors.black : Colors.grey[700],
-                              ),
+                                );
+                              }).toList(),
                             ),
                           ],
-                        );
-                      },
+                        ),
+                      ),
                     ),
                   ),
 
-                // big ring for the selected day
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: DashboardHeroRing(
-                    credit: _credit,
-                    debit: _debit,
-                    period: periodLabel,
-                    tappable: false,
-                    ringSize: 150,
-                    strokeWidth: 14,
-                  ),
-                ),
-
-                // limit chip
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 4, 18, 6),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.04),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: (_dailyLimit == null)
-                              ? const Text(
-                            "No daily limit set",
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          )
-                              : Builder(
-                            builder: (_) {
-                              final used = _daySpendOnly;
-                              final pct = _dailyLimit! > 0
-                                  ? (used / _dailyLimit! * 100)
-                                  : 0.0;
-                              return Text(
-                                "Limit ₹${_dailyLimit!.toStringAsFixed(0)} • Used ₹${used.toStringAsFixed(0)} (${pct.clamp(0, 100).toStringAsFixed(0)}%)",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: Card(
+                    elevation: 3,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.analytics_outlined, color: Color(0xFF0F766E)),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Transactions on $periodLabel',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                  ),
                                 ),
-                              );
-                            },
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.teal.shade50,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  '$dayCount txs',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF0F766E),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              _statTile('Credit', _credit, Colors.green.shade600, Icons.call_received_rounded),
+                              const SizedBox(width: 12),
+                              _statTile('Debit', _debit, Colors.red.shade500, Icons.call_made_rounded),
+                              const SizedBox(width: 12),
+                              _statTile('Net', _credit - _debit, _credit - _debit >= 0 ? Colors.teal : Colors.red, Icons.equalizer_rounded),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+                          _DailyLimitSummary(
+                            limit: _dailyLimit,
+                            used: _daySpendOnly,
+                            saving: _savingLimit,
+                            onEdit: _editLimitDialog,
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 10),
-                      IconButton(
-                        tooltip: "Edit daily limit",
-                        onPressed: _savingLimit ? null : _editLimitDialog,
-                        icon: _savingLimit
-                            ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Icon(Icons.edit_rounded),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
 
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
 
                 // transactions
                 Padding(
@@ -642,6 +616,146 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
 }
 
 // ---------- helpers ----------
+
+Widget _statTile(String label, double value, Color color, IconData icon) {
+  return Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: color.darken(0.2)),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12.5,
+                  color: color.darken(0.2),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '₹${value.toStringAsFixed(0)}',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: color.darken(0.05),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _DailyLimitSummary extends StatelessWidget {
+  final double? limit;
+  final double used;
+  final bool saving;
+  final VoidCallback onEdit;
+
+  const _DailyLimitSummary({
+    required this.limit,
+    required this.used,
+    required this.onEdit,
+    this.saving = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasLimit = (limit ?? 0) > 0;
+    final limitValue = limit ?? 0;
+    final pct = hasLimit && limitValue > 0
+        ? (used / limitValue).clamp(0.0, 1.0)
+        : 0.0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE9F6F4),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFC6E6DF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(hasLimit ? Icons.flag : Icons.outlined_flag,
+                  color: const Color(0xFF0F766E), size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  hasLimit
+                      ? 'Daily limit ₹${limitValue.toStringAsFixed(0)}'
+                      : 'No daily limit set',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF0F766E),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: saving ? null : onEdit,
+                child: saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2.3),
+                      )
+                    : Text(hasLimit ? 'Edit' : 'Set'),
+              ),
+            ],
+          ),
+          if (hasLimit) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                minHeight: 6,
+                value: pct,
+                backgroundColor: Colors.white,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  pct >= 1 ? Colors.redAccent : const Color(0xFF0F766E),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text(
+                  'Spent ₹${used.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: pct >= 1 ? Colors.redAccent : const Color(0xFF0F766E),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${(pct * 100).clamp(0, 999).toStringAsFixed(0)}% of limit',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black54,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 extension _ColorX on Color {
   Color darken([double amount = .2]) {
     assert(amount >= 0 && amount <= 1);
