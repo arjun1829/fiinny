@@ -1286,10 +1286,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                 SliverAppBar(
                   automaticallyImplyLeading: false,
                   elevation: 0,
-                  backgroundColor: Colors.transparent,
-                  surfaceTintColor: Colors.transparent,
-                  shadowColor: Colors.transparent,
-                  toolbarHeight: 52,
+                  backgroundColor: Colors.white.withOpacity(0.96),
+                  toolbarHeight: 48,
                   pinned: false,
                   floating: true,
                   snap: true,
@@ -1323,7 +1321,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                     IconButton(
                       tooltip: 'Analytics',
-                      icon: Icon(Icons.analytics_outlined, size: 22, color: Fx.mintDark),
+                      icon: const Icon(Icons.analytics_outlined, size: 22),
                       onPressed: () {
                         Navigator.pushNamed(
                           context,
@@ -1368,22 +1366,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                       },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: Fx.s8),
-                        child: CircleAvatar(
-                          radius: 18,
-                          backgroundColor: Colors.white.withOpacity(0.2),
-                          backgroundImage: () {
-                            final avatar = userAvatar;
-                            if (avatar != null && avatar.startsWith('http')) {
-                              return NetworkImage(avatar);
-                            }
-                            if (avatar != null && avatar.isNotEmpty) {
-                              return AssetImage(avatar);
-                            }
-                            return const AssetImage('assets/images/profile_default.png');
-                          }(),
-                          onBackgroundImageError: (_, __) {
-                            if (!mounted) return;
-                            setState(() => userAvatar = 'assets/images/profile_default.png');
+                        child: FutureBuilder<DocumentSnapshot>(
+                          future: FirebaseFirestore.instance
+                              .collection('users')
+                              .doc(widget.userPhone)
+                              .get(),
+                          builder: (context, snap) {
+                            final photo = (snap.data?.data() as Map<String, dynamic>?)?['photo'] as String?;
+                            return CircleAvatar(
+                              radius: 16,
+                              backgroundImage: photo != null && photo.isNotEmpty
+                                  ? NetworkImage(photo)
+                                  : const AssetImage('assets/images/profile_default.png') as ImageProvider,
+                            );
                           },
                         ),
                       ),
@@ -1429,62 +1424,60 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 arguments: widget.userPhone,
                               );
                             },
-                            child: _wrapRingWithShine(
-                              Stack(
-                                children: [
-                                  HeroTransactionRing(
-                                    credit: txSummary['credit']!,
-                                    debit: txSummary['debit']!,
-                                    period: txPeriod,
-                                    title: summaryTitle,
-                                    subtitle: summarySubtitle,
-                                    onFilterTap: () async {
-                                      final result = await showModalBottomSheet<String>(
-                                        context: context,
-                                        builder: (ctx) => TxFilterBar(
-                                          selected: txPeriod,
-                                          onSelect: (period) => Navigator.pop(ctx, period),
-                                        ),
-                                      );
-                                      if (result != null && result != txPeriod) {
-                                        await _changePeriod(result);
-                                      }
-                                    },
+                            child: Stack(
+                              children: [
+                                HeroTransactionRing(
+                                  credit: txSummary['credit']!,
+                                  debit: txSummary['debit']!,
+                                  period: txPeriod,
+                                  title: summaryTitle,
+                                  subtitle: summarySubtitle,
+                                  onFilterTap: () async {
+                                    final result = await showModalBottomSheet<String>(
+                                      context: context,
+                                      builder: (ctx) => TxFilterBar(
+                                        selected: txPeriod,
+                                        onSelect: (period) => Navigator.pop(ctx, period),
+                                      ),
+                                    );
+                                    if (result != null && result != txPeriod) {
+                                      await _changePeriod(result);
+                                    }
+                                  },
+                                ),
+                                Positioned(
+                                  top: 10,
+                                  right: 24,
+                                  child: GestureDetector(
+                                    onTap: _savingLimit ? null : _editLimitDialog,
+                                    child: CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor: Colors.teal.withOpacity(0.09),
+                                      child: const Icon(Icons.edit_rounded, size: 17, color: Colors.teal),
+                                    ),
                                   ),
+                                ),
+                                if (limitUsageText != null)
                                   Positioned(
-                                    top: 10,
-                                    right: 24,
-                                    child: GestureDetector(
-                                      onTap: _savingLimit ? null : _editLimitDialog,
-                                      child: CircleAvatar(
-                                        radius: 16,
-                                        backgroundColor: Colors.teal.withOpacity(0.09),
-                                        child: const Icon(Icons.edit_rounded, size: 17, color: Colors.teal),
+                                    right: 30,
+                                    bottom: 22,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.teal.withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(11),
+                                      ),
+                                      child: Text(
+                                        limitUsageText,
+                                        style: TextStyle(
+                                          color: Colors.teal[900],
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                  if (limitUsageText != null)
-                                    Positioned(
-                                      right: 30,
-                                      bottom: 22,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.teal.withOpacity(0.12),
-                                          borderRadius: BorderRadius.circular(11),
-                                        ),
-                                        child: Text(
-                                          limitUsageText,
-                                          style: TextStyle(
-                                            color: Colors.teal[900],
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
+                              ],
                             ),
                           ),
                         ),
