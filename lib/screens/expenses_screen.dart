@@ -20,10 +20,6 @@ import '../widgets/unified_transaction_list.dart';
 import '../themes/custom_card.dart';
 import '../widgets/animated_mint_background.dart';
 
-// ✅ Ads
-import '../core/ads/ad_service.dart';
-import '../core/ads/ads_shell.dart';
-
 class ExpensesScreen extends StatefulWidget {
   final String userPhone;
   const ExpensesScreen({required this.userPhone, Key? key}) : super(key: key);
@@ -38,7 +34,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   String _chartType = "Pie";
   String _dataType = "All";
   String _viewMode = 'summary';
-  static const double _bannerH = AdsVisibilityScope.bannerHeight;
 
   // Data
   List<ExpenseItem> allExpenses = [];
@@ -65,8 +60,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   DateTime? _searchFrom;
   DateTime? _searchTo;
   final TextEditingController _searchController = TextEditingController();
-  final ValueNotifier<bool> _showBottomBanner = ValueNotifier<bool>(true);
-  AdsVisibilityController? _adsController;
 
   // Subscriptions / Debounce
   StreamSubscription? _expSub, _incSub, _friendSub;
@@ -139,30 +132,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   @override
   void initState() {
     super.initState();
-
-    // ✅ Ensure Google Mobile Ads is initialized for this screen.
-    // Safe to call more than once; AdService guards & reloads creative as needed.
-    // (If you already init at app start, this is still harmless.)
-    // ignore: discarded_futures
-    AdService.initLater();
-
-    _showBottomBanner.addListener(_syncGlobalBannerVisibility);
-
     _listenToData();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final controller = AdsVisibilityScope.maybeOf(context);
-    if (!identical(_adsController, controller)) {
-      _adsController = controller;
-      _syncGlobalBannerVisibility();
-    }
-  }
-
-  void _syncGlobalBannerVisibility() {
-    _adsController?.setVisible(_showBottomBanner.value);
   }
 
   @override
@@ -172,7 +142,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     _expSub?.cancel();
     _incSub?.cancel();
     _friendSub?.cancel();
-    _showBottomBanner.removeListener(_syncGlobalBannerVisibility);
     super.dispose();
   }
 
@@ -318,107 +287,85 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-
-      // ✅ Persistent anchored adaptive banner at bottom of this screen
-      // PATCH 1B: replace bottomNavigationBar
-
       floatingActionButton: _buildFAB(context),
       body: Stack(
         children: [
           const AnimatedMintBackground(),
-          ValueListenableBuilder<bool>(
-            valueListenable: _showBottomBanner,
-            builder: (context, show, _) {
-              final keyboardUp = MediaQuery.of(context).viewInsets.bottom > 0;
-              final bottomPad = (show && !keyboardUp)
-                  ? _bannerH + kBottomNavigationBarHeight + MediaQuery.of(context).padding.bottom + 6
-                  : 0.0;
-
-              return SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: bottomPad),
-                  child: Column(
+          SafeArea(
+            child: Column(
+              children: [
+                // HEADER ROW (unchanged)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 18, 12, 4),
+                  child: Row(
                     children: [
-                      // HEADER ROW (unchanged)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 18, 12, 4),
-                        child: Row(
-                          children: [
-                            const Text(
-                              "Expenses",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 28,
-                                letterSpacing: 0.5,
-                                color: Color(0xFF09857a),
-                              ),
-                            ),
-                            const Spacer(),
-                            IconButton(
-                              icon: const Icon(Icons.swap_horiz_rounded,
-                                  color: Colors.teal, size: 26),
-                              tooltip: 'Transactions',
-                              onPressed: () => Navigator.pushNamed(
-                                context,
-                                '/transactions',
-                                arguments: widget.userPhone,
-                              ),
-                            ),
-                            Tooltip(
-                              message: "Calendar View",
-                              child: IconButton(
-                                icon: Icon(
-                                  Icons.calendar_today,
-                                  color: _viewMode == 'calendar' ? Colors.teal : Colors.grey[500],
-                                  size: 26,
-                                ),
-                                onPressed: () => setState(() => _viewMode = 'calendar'),
-                              ),
-                            ),
-                            Tooltip(
-                              message: "Summary",
-                              child: IconButton(
-                                icon: Icon(
-                                  Icons.dashboard,
-                                  color: _viewMode == 'summary' ? Colors.blueAccent : Colors.grey[500],
-                                  size: 26,
-                                ),
-                                onPressed: () => setState(() => _viewMode = 'summary'),
-                              ),
-                            ),
-                            const SizedBox(width: 2),
-                            Tooltip(
-                              message: "Analytics",
-                              child: IconButton(
-                                icon: const Icon(
-                                  Icons.insights_rounded,
-                                  color: Colors.indigoAccent,
-                                  size: 26,
-                                ),
-                                onPressed: () async {
-                                  _showBottomBanner.value = false;
-                                  try {
-                                    await Navigator.pushNamed(
-                                      context,
-                                      '/analytics',
-                                      arguments: widget.userPhone,
-                                    );
-                                  } finally {
-                                    _showBottomBanner.value = true;
-                                  }
-                                },
-                              ),
-                            ),
-                          ],
+                      const Text(
+                        "Expenses",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 28,
+                          letterSpacing: 0.5,
+                          color: Color(0xFF09857a),
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Expanded(child: _getCurrentView(context)),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.swap_horiz_rounded,
+                            color: Colors.teal, size: 26),
+                        tooltip: 'Transactions',
+                        onPressed: () => Navigator.pushNamed(
+                          context,
+                          '/transactions',
+                          arguments: widget.userPhone,
+                        ),
+                      ),
+                      Tooltip(
+                        message: "Calendar View",
+                        child: IconButton(
+                          icon: Icon(
+                            Icons.calendar_today,
+                            color: _viewMode == 'calendar' ? Colors.teal : Colors.grey[500],
+                            size: 26,
+                          ),
+                          onPressed: () => setState(() => _viewMode = 'calendar'),
+                        ),
+                      ),
+                      Tooltip(
+                        message: "Summary",
+                        child: IconButton(
+                          icon: Icon(
+                            Icons.dashboard,
+                            color: _viewMode == 'summary' ? Colors.blueAccent : Colors.grey[500],
+                            size: 26,
+                          ),
+                          onPressed: () => setState(() => _viewMode = 'summary'),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Tooltip(
+                        message: "Analytics",
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.insights_rounded,
+                            color: Colors.indigoAccent,
+                            size: 26,
+                          ),
+                          onPressed: () async {
+                            await Navigator.pushNamed(
+                              context,
+                              '/analytics',
+                              arguments: widget.userPhone,
+                            );
+                          },
+                        ),
+                      ),
                     ],
                   ),
                 ),
-              );
-            },
+                const SizedBox(height: 2),
+                Expanded(child: _getCurrentView(context)),
+              ],
+            ),
           ),
         ],
       ),
@@ -426,60 +373,48 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   Widget _buildFAB(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: _showBottomBanner,
-      builder: (context, show, _) {
-        final mq = MediaQuery.of(context);
-        final keyboardUp = mq.viewInsets.bottom > 0;
-        final bump = (show && !keyboardUp)
-            ? _bannerH + kBottomNavigationBarHeight + mq.padding.bottom + 6
-            : 0.0;
+    final mq = MediaQuery.of(context);
+    final viewInsets = mq.viewInsets.bottom;
+    final bottomInset = viewInsets > 0 ? viewInsets : mq.padding.bottom;
 
-        return Padding(
-          padding: EdgeInsets.only(bottom: bump),
-          child: SizedBox(
-            height: 66,
-            child: FloatingActionButton.extended(
-              onPressed: () async {
-                _showBottomBanner.value = false;
-                try {
-                  await Navigator.pushNamed(
-                    context,
-                    '/add',
-                    arguments: widget.userPhone,
-                  );
-                } finally {
-                  _showBottomBanner.value = true;
-                }
-              },
-              icon: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(100),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.tealAccent.withOpacity(0.45),
-                      blurRadius: 12,
-                      offset: const Offset(0, 6),
-                    )
-                  ],
-                ),
-                child: const Icon(Icons.add_circle_rounded, size: 30),
-              ),
-              label: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                child: Text(
-                  "",
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                ),
-              ),
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.teal,
-              elevation: 6,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SizedBox(
+        height: 66,
+        child: FloatingActionButton.extended(
+          onPressed: () async {
+            await Navigator.pushNamed(
+              context,
+              '/add',
+              arguments: widget.userPhone,
+            );
+          },
+          icon: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(100),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.tealAccent.withOpacity(0.45),
+                  blurRadius: 12,
+                  offset: const Offset(0, 6),
+                )
+              ],
+            ),
+            child: const Icon(Icons.add_circle_rounded, size: 30),
+          ),
+          label: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+            child: Text(
+              "",
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
             ),
           ),
-        );
-      },
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.teal,
+          elevation: 6,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        ),
+      ),
     );
   }
 
@@ -513,16 +448,11 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             child: InkWell(
               // tap anywhere on the card to open Analytics
               onTap: () async {
-                _showBottomBanner.value = false;
-                try {
-                  await Navigator.pushNamed(
-                    context,
-                    '/analytics',
-                    arguments: widget.userPhone,
-                  );
-                } finally {
-                  _showBottomBanner.value = true;
-                }
+                await Navigator.pushNamed(
+                  context,
+                  '/analytics',
+                  arguments: widget.userPhone,
+                );
               },
 
               borderRadius: BorderRadius.circular(5),
@@ -796,22 +726,17 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             foregroundColor: Colors.black87,
                           ),
                           onPressed: () async {
-                            _showBottomBanner.value = false;
-                            try {
-                              final picked = await showDateRangePicker(
-                                context: context,
-                                firstDate: DateTime(2000),
-                                lastDate: DateTime.now().add(const Duration(days: 1)),
-                              );
-                              if (picked != null) {
-                                setState(() {
-                                  _searchFrom = picked.start;
-                                  _searchTo = picked.end;
-                                });
-                                _recompute();
-                              }
-                            } finally {
-                              _showBottomBanner.value = true;
+                            final picked = await showDateRangePicker(
+                              context: context,
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime.now().add(const Duration(days: 1)),
+                            );
+                            if (picked != null) {
+                              setState(() {
+                                _searchFrom = picked.start;
+                                _searchTo = picked.end;
+                              });
+                              _recompute();
                             }
                           },
 
@@ -890,8 +815,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               showBillIcon: true,
               multiSelectEnabled: _multiSelectMode,
               selectedIds: _selectedTxIds,
-              onBeginModal: () => _showBottomBanner.value = false,
-              onEndModal:   () => _showBottomBanner.value = true,
 
 
               onSelectTx: (txId, selected) {
@@ -905,22 +828,17 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               },
               onEdit: (tx) async {
                 if (_multiSelectMode) return;
-                _showBottomBanner.value = false;
-                try {
-                  if (tx is ExpenseItem) {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EditExpenseScreen(
-                          userPhone: widget.userPhone,
-                          expense: tx,
-                        ),
+                if (tx is ExpenseItem) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditExpenseScreen(
+                        userPhone: widget.userPhone,
+                        expense: tx,
                       ),
-                    );
-                    _recompute();
-                  }
-                } finally {
-                  _showBottomBanner.value = true;
+                    ),
+                  );
+                  _recompute();
                 }
               },
 
@@ -969,23 +887,18 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             color: Colors.teal, size: 24),
                         tooltip: "Pick Date",
                         onPressed: () async {
-                          _showBottomBanner.value = false;
-                          try {
-                            final picked = await showDatePicker(
-                              context: context,
-                              initialDate: _focusedDay,
-                              firstDate: DateTime(2000),
-                              lastDate: DateTime(2100),
-                            );
-                            if (picked != null) {
-                              setState(() {
-                                _selectedDay = picked;
-                                _focusedDay = picked;
-                              });
-                              _updateExpensesForSelectedDay(picked);
-                            }
-                          } finally {
-                            _showBottomBanner.value = true;
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _focusedDay,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) {
+                            setState(() {
+                              _selectedDay = picked;
+                              _focusedDay = picked;
+                            });
+                            _updateExpensesForSelectedDay(picked);
                           }
                         },
 
@@ -1108,8 +1021,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 showBillIcon: true,
                 multiSelectEnabled: _multiSelectMode,
                 selectedIds: _selectedTxIds,
-                onBeginModal: () => _showBottomBanner.value = false,
-                onEndModal:   () => _showBottomBanner.value = true,
 
                 onSelectTx: (txId, selected) {
                   setState(() {
@@ -1122,22 +1033,17 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 },
                 onEdit: (tx) async {
                   if (_multiSelectMode) return;
-                  _showBottomBanner.value = false;
-                  try {
-                    if (tx is ExpenseItem) {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => EditExpenseScreen(
-                            userPhone: widget.userPhone,
-                            expense: tx,
-                          ),
+                  if (tx is ExpenseItem) {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => EditExpenseScreen(
+                          userPhone: widget.userPhone,
+                          expense: tx,
                         ),
-                      );
-                      _recompute();
-                    }
-                  } finally {
-                    _showBottomBanner.value = true;
+                      ),
+                    );
+                    _recompute();
                   }
                 },
 
@@ -1398,8 +1304,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             showBillIcon: true,
             multiSelectEnabled: _multiSelectMode,
             selectedIds: _selectedTxIds,
-            onBeginModal: () => _showBottomBanner.value = false,
-            onEndModal:   () => _showBottomBanner.value = true,
 
             onSelectTx: (txId, selected) {
               setState(() {
@@ -1412,22 +1316,17 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             },
             onEdit: (tx) async {
               if (_multiSelectMode) return;
-              _showBottomBanner.value = false;
-              try {
-                if (tx is ExpenseItem) {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => EditExpenseScreen(
-                        userPhone: widget.userPhone,
-                        expense: tx,
-                      ),
+              if (tx is ExpenseItem) {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EditExpenseScreen(
+                      userPhone: widget.userPhone,
+                      expense: tx,
                     ),
-                  );
-                  _recompute();
-                }
-              } finally {
-                _showBottomBanner.value = true;
+                  ),
+                );
+                _recompute();
               }
             },
 

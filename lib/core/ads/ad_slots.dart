@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'adaptive_banner.dart';
 import 'ad_ids.dart';
 
-/// Drop-in banner slot.
-/// Works anchored (bottom bars) or inline (lists/sheets).
+/// Drop-in banner slot for inline placements.
 class AdsBannerSlot extends StatelessWidget {
   /// Outer padding around the ad container.
   final EdgeInsets padding;
@@ -25,7 +24,7 @@ class AdsBannerSlot extends StatelessWidget {
   const AdsBannerSlot({
     super.key,
     this.padding = const EdgeInsets.only(bottom: 4),
-    this.inline = false,
+    this.inline = true,
     this.inlineMaxHeight,
     this.alignment = Alignment.center,
     this.onLoadChanged,
@@ -41,16 +40,9 @@ class AdsBannerSlot extends StatelessWidget {
       onLoadChanged: onLoadChanged,
     );
 
-    final content = Padding(
+    return Padding(
       padding: padding,
       child: Align(alignment: alignment, child: banner),
-    );
-
-    // Bottom SafeArea only for anchored banners. Inline slots don't need it.
-    return SafeArea(
-      top: false,
-      bottom: !inline,
-      child: content,
     );
   }
 }
