@@ -22,7 +22,6 @@ import '../widgets/crisis_alert_banner.dart';
 import '../widgets/loans_summary_card.dart';
 import '../widgets/assets_summary_card.dart';
 import '../widgets/tx_filter_bar.dart';
-import '../widgets/transactions_summary_card.dart';
 import '../widgets/hero_transaction_ring.dart';
 import '../services/user_data.dart';
 import '../widgets/dashboard_activity_tab.dart';
@@ -914,6 +913,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     final now = DateTime.now();
     final todayStart = _startOfDay(now);
     final dfFull = DateFormat('d MMM yyyy');
+    String formatRange(DateTime start, DateTime end) =>
+        '${dfFull.format(start)} - ${dfFull.format(end)}';
+
     switch (period) {
       case 'D':
       case 'Today':
@@ -923,23 +925,23 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         return 'Transactions for yesterday (${dfFull.format(y)})';
       case 'Last 2 Days':
         final start = todayStart.subtract(const Duration(days: 1));
-        return 'Transactions for last 2 days (${dfFull.format(start)} - ${dfFull.format(now)})';
+        return 'Transactions for last 2 days (${formatRange(start, now)})';
       case 'Last 5 Days':
         final start = todayStart.subtract(const Duration(days: 4));
-        return 'Transactions for last 5 days (${dfFull.format(start)} - ${dfFull.format(now)})';
+        return 'Transactions for last 5 days (${formatRange(start, now)})';
       case 'W':
       case 'This Week':
         final start = todayStart.subtract(Duration(days: todayStart.weekday - 1));
-        return 'Transactions this week (${dfFull.format(start)} - ${dfFull.format(now)})';
+        return 'Transactions for this week (${formatRange(start, now)})';
       case 'M':
       case 'This Month':
         final start = DateTime(now.year, now.month);
         final monthName = DateFormat('MMMM').format(now);
-        return 'Transactions for $monthName (${dfFull.format(start)} - ${dfFull.format(now)})';
+        return 'Transactions for $monthName (${formatRange(start, now)})';
       case 'Y':
       case 'This Year':
         final start = DateTime(now.year);
-        return 'Transactions this year (${dfFull.format(start)} - ${dfFull.format(now)})';
+        return 'Transactions for this year (${formatRange(start, now)})';
       case 'All Time':
         return 'Transactions for all time';
       default:
@@ -1213,6 +1215,11 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
     final summaryTitle = _summaryTitle(txPeriod);
     final summarySubtitle = _summarySubtitle(txPeriod);
+    final periodLimit = _periodLimit;
+    final limitUsageText = periodLimit != null
+        ? 'Limit ₹${periodLimit.toStringAsFixed(0)} • Used ₹${periodSpendOnly.toStringAsFixed(0)} '
+            '(${((periodLimit > 0 ? (periodSpendOnly / periodLimit) : 0.0) * 100).toStringAsFixed(0)}%)'
+        : null;
 
     const EdgeInsets horizontalPadding = EdgeInsets.symmetric(horizontal: 14);
 
@@ -1386,32 +1393,64 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         const SizedBox(height: 10),
                         Padding(
                           padding: horizontalPadding,
-                          child: TransactionsSummaryCard(
-                            credit: txSummary['credit']!,
-                            debit: txSummary['debit']!,
-                            net: txSummary['net']!,
-                            period: txPeriod,
-                            title: summaryTitle,
-                            subtitle: summarySubtitle,
-                            onFilterTap: () async {
-                              final result = await showModalBottomSheet<String>(
-                                context: context,
-                                builder: (ctx) => TxFilterBar(
-                                  selected: txPeriod,
-                                  onSelect: (period) => Navigator.pop(ctx, period),
+                          child: Stack(
+                            children: [
+                              HeroTransactionRing(
+                                credit: txSummary['credit']!,
+                                debit: txSummary['debit']!,
+                                period: txPeriod,
+                                title: summaryTitle,
+                                subtitle: summarySubtitle,
+                                onFilterTap: () async {
+                                  final result = await showModalBottomSheet<String>(
+                                    context: context,
+                                    builder: (ctx) => TxFilterBar(
+                                      selected: txPeriod,
+                                      onSelect: (period) => Navigator.pop(ctx, period),
+                                    ),
+                                  );
+                                  if (result != null && result != txPeriod) {
+                                    await _changePeriod(result);
+                                  }
+                                },
+                                onTap: _savingLimit ? null : _editLimitDialog,
+                              ),
+                              Positioned(
+                                top: 10,
+                                right: 24,
+                                child: GestureDetector(
+                                  onTap: _savingLimit ? null : _editLimitDialog,
+                                  child: CircleAvatar(
+                                    radius: 16,
+                                    backgroundColor: Colors.teal.withOpacity(0.09),
+                                    child: const Icon(Icons.edit_rounded, size: 17, color: Colors.teal),
+                                  ),
                                 ),
-                              );
-                              if (result != null && result != txPeriod) {
-                                await _changePeriod(result);
-                              }
-                            },
-                            onLimitTap: _savingLimit ? null : () => _editLimitDialog(),
-                            limit: _periodLimit,
-                            used: periodSpendOnly,
-                            savingLimit: _savingLimit,
+                              ),
+                              if (limitUsageText != null)
+                                Positioned(
+                                  right: 30,
+                                  bottom: 22,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.teal.withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(11),
+                                    ),
+                                    child: Text(
+                                      limitUsageText,
+                                      style: TextStyle(
+                                        color: Colors.teal[900],
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 4),
                         Padding(
                           padding: horizontalPadding,
                           child: Row(
