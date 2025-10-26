@@ -4,12 +4,11 @@ import '../models/expense_item.dart' as ex;
 import '../models/income_item.dart' as inc;
 
 // Ads (same setup your Expenses screen uses)
-import '../core/ads/ad_slots.dart';   // AdsBannerSlot (works in your screen)
 import '../core/ads/ad_service.dart'; // AdService (init + interstitials)
 
 /// Bottom sheet showing unified detail for ExpenseItem or IncomeItem
 /// - Content scrolls
-/// - Banner ad is ANCHORED at the bottom (like Expenses screen)
+/// - Safe bottom padding keeps actions clear of system UI
 /// - Interstitials are cadenced via AdService
 class TransactionDetailSheet extends StatefulWidget {
   final dynamic tx;            // ex.ExpenseItem or inc.IncomeItem
@@ -36,7 +35,6 @@ class TransactionDetailSheet extends StatefulWidget {
 }
 
 class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
-  static const double _bannerH = 60.0; // same height you use on Expenses
   bool get _isExpense => widget.tx is ex.ExpenseItem;
   bool get _isIncome  => widget.tx is inc.IncomeItem;
 
@@ -185,24 +183,22 @@ class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
     return SafeArea(
-      child: Stack(
-        children: [
-          // Scrollable content with extra bottom padding so the ad never overlaps
-          Padding(
-            padding: EdgeInsets.fromLTRB(16, 12, 16, 8 + _bannerH + bottomInset + 6),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // drag handle
-                  Container(
-                    height: 4, width: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.black12,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    margin: const EdgeInsets.only(bottom: 12),
-                  ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 12, 16, bottomInset + 14),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // drag handle
+              Container(
+                height: 4,
+                width: 40,
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                margin: const EdgeInsets.only(bottom: 12),
+              ),
 
                   // Header
                   Row(
@@ -326,30 +322,9 @@ class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
                         ),
                     ],
                   ),
-                ],
-              ),
-            ),
+            ],
           ),
-
-          // === ANCHORED AD BANNER (identical style to Expenses screen) ===
-          Positioned(
-            left: 8,
-            right: 8,
-            bottom: bottomInset + 4,
-            child: SafeArea(
-              top: false,
-              bottom: false,
-              child: SizedBox(
-                height: _bannerH,
-                child: const AdsBannerSlot(
-                  inline: false,            // anchored adaptive
-                  padding: EdgeInsets.zero,
-                  alignment: Alignment.center,
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

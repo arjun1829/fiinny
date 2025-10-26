@@ -88,31 +88,35 @@ class HeroTransactionRing extends StatelessWidget {
                       const SizedBox(height: 14),
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: GestureDetector(
-                          onTap: onFilterTap,
-                          child: Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: isCompact ? Fx.s12 : Fx.s16,
-                              vertical: Fx.s8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Fx.mintDark.withOpacity(0.08),
-                              borderRadius: BorderRadius.circular(Fx.r12),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  period,
-                                  style: Fx.label.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: Fx.mintDark,
-                                    fontSize: isCompact ? 12 : 13.5,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(Fx.r12),
+                            onTap: onFilterTap,
+                            child: Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: isCompact ? Fx.s12 : Fx.s16,
+                                vertical: Fx.s8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Fx.mintDark.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(Fx.r12),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    period,
+                                    style: Fx.label.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: Fx.mintDark,
+                                      fontSize: isCompact ? 12 : 13.5,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 4),
-                                const Icon(Icons.expand_more_rounded, size: 18, color: Fx.mintDark),
-                              ],
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.expand_more_rounded, size: 18, color: Fx.mintDark),
+                                ],
+                              ),
                             ),
                           ),
                         ),
