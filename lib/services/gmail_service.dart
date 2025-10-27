@@ -23,6 +23,7 @@ import './merchants/merchant_alias_service.dart'; // alias normalize
 import './ingest_filters.dart' as filt;            // ✅ stronger filtering helpers
 import './categorization/category_rules.dart';
 import './recurring/recurring_engine.dart';
+import './user_overrides.dart';
 
 // Merge policy: OFF (for testing), ENRICH (recommended), SILENT (current behavior)
 enum ReconcilePolicy { off, mergeEnrich, mergeSilent }
@@ -584,10 +585,19 @@ class GmailService {
     String finalSubcategory = '';
     double finalConfidence = 0.0;
     String categorySource = 'llm';
-    List<String> rulesTags = const [];
+    final Set<String> labelSet = <String>{};
 
-    bool gotLlm = false;
-    if (AiConfig.llmOn) {
+    bool hasSmartCategory = false;
+
+    final overrideCat = await UserOverrides.getCategoryForMerchant(userId, merchantKey);
+    if (overrideCat != null && overrideCat.isNotEmpty) {
+      finalCategory = overrideCat;
+      finalConfidence = 1.0;
+      categorySource = 'user_override';
+      hasSmartCategory = true;
+    }
+
+    if (!hasSmartCategory && AiConfig.llmOn) {
       try {
         final labels = await TxExtractor.labelUnknown([
           TxRaw(
@@ -605,7 +615,14 @@ class GmailService {
           if (l.category.isNotEmpty) {
             finalCategory = l.category;
             finalConfidence = l.confidence;
-            gotLlm = true;
+            hasSmartCategory = true;
+            categorySource = 'llm';
+          }
+          if (l.subcategory.isNotEmpty) {
+            finalSubcategory = l.subcategory;
+          }
+          if (l.labels.isNotEmpty) {
+            labelSet.addAll(l.labels);
           }
           if (l.merchantNorm.isNotEmpty) {
             merchantNorm = l.merchantNorm;
@@ -617,15 +634,16 @@ class GmailService {
       }
     }
 
-    // Fallback to rules only if LLM didn't produce a label
-    if (!gotLlm) {
+    // Fallback to rules only if we still don't have a category
+    if (!hasSmartCategory) {
       categorySource = 'rules';
       try {
         final cat = CategoryRules.categorizeMerchant(combined, merchantKey);
         finalCategory = cat.category;
         finalSubcategory = cat.subcategory;
         finalConfidence = cat.confidence;
-        rulesTags = cat.tags;
+        labelSet.addAll(cat.tags);
+        hasSmartCategory = true;
       } catch (_) {}
     }
 
@@ -765,6 +783,10 @@ class GmailService {
       );
 
       await expRef.set(e.toJson(), SetOptions(merge: true));
+      final labelsForDoc = labelSet.toList();
+      final combinedTags = <String>{};
+      combinedTags.addAll(e.tags ?? const []);
+      combinedTags.addAll(labelSet);
       await expRef.set({
         'sourceRecord': sourceMeta,
         'merchantKey': merchantKey,
@@ -774,7 +796,8 @@ class GmailService {
         'subcategory': finalSubcategory,
         'categoryConfidence': finalConfidence,
         'categorySource': categorySource,
-        'tags': [...(e.tags ?? const []), ...rulesTags],
+        'tags': combinedTags.toList(),
+        'labels': labelsForDoc,
       }, SetOptions(merge: true));
 
       await expRef.set({
@@ -841,6 +864,10 @@ class GmailService {
       );
 
       await incRef.set(i.toJson(), SetOptions(merge: true));
+      final labelsForDoc = labelSet.toList();
+      final combinedTags = <String>{};
+      combinedTags.addAll(i.tags ?? const []);
+      combinedTags.addAll(labelSet);
       await incRef.set({
         'sourceRecord': sourceMeta,
         'merchantKey': merchantKey,
@@ -850,7 +877,8 @@ class GmailService {
         'subcategory': finalSubcategory,
         'categoryConfidence': finalConfidence,
         'categorySource': categorySource,
-        'tags': [...(i.tags ?? const []), ...rulesTags],
+        'tags': combinedTags.toList(),
+        'labels': labelsForDoc,
       }, SetOptions(merge: true));
 
       await incRef.set({
@@ -1311,7 +1339,19 @@ class GmailService {
     if (RegExp(r'\bsubscription|renew(al)?|membership\b').hasMatch(t)) out.add('subscription');
     if (RegExp(r'\bcharge|surcharge|penalty|late fee\b').hasMatch(t)) out.add('charges');
     if (RegExp(r'\brecharge|prepaid|dth\b').hasMatch(t)) out.add('recharge');
-    if (RegExp(r'\bfuel\b').hasMatch(t)) out.add('fuel');
+    if (RegExp(r'\b(petrol|diesel|fuel|filling\s*station|gas\s*station)\b')
+            .hasMatch(t) ||
+        t.contains('hpcl') ||
+        t.contains('bharat petroleum') ||
+        t.contains('bpcl') ||
+        t.contains('indian oil') ||
+        t.contains('iocl') ||
+        t.contains('shell') ||
+        t.contains('nayara') ||
+        t.contains('jio-bp') ||
+        t.contains('smartdrive')) {
+      out.add('fuel');
+    }
     return out;
   }
 

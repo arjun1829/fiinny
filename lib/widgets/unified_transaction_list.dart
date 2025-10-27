@@ -10,6 +10,7 @@ import '../models/friend_model.dart';
 import '../themes/custom_card.dart';
 import '../services/expense_service.dart';
 import '../services/income_service.dart';
+import '../services/user_overrides.dart';
 
 // ✅ for inline ads inside the details sheet
 import '../core/ads/ads_banner_card.dart';
@@ -105,7 +106,24 @@ class UnifiedTransactionList extends StatefulWidget {
     this.selectedIds = const {},
     this.onSelectTx,
     this.unifiedDocs,
-    this.categoryOptions = const ["General", "Food", "Travel", "Shopping", "Bills", "Rent", "Other"],
+    this.categoryOptions = const [
+      "General",
+      "Fuel",
+      "Groceries",
+      "Food",
+      "Travel",
+      "Shopping",
+      "Bills",
+      "Recharge",
+      "Subscriptions",
+      "Healthcare",
+      "Education",
+      "Entertainment",
+      "Loan EMI",
+      "Fees/Charges",
+      "Income",
+      "Other",
+    ],
     this.onChangeCategory,
     this.onBeginModal,
     this.onEndModal,
@@ -296,6 +314,49 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     return (direct ?? '').toString();
   }
 
+  double _legacyCategoryConfidence(dynamic item) {
+    final direct = _dyn<double>(item, 'categoryConfidence');
+    if (direct != null) return direct;
+    try {
+      final json = (item as dynamic).toJson?.call();
+      if (json is Map<String, dynamic>) {
+        final num? raw = json['categoryConfidence'] as num?;
+        if (raw != null) return raw.toDouble();
+      }
+    } catch (_) {}
+    return 0.0;
+  }
+
+  String _legacyCategorySource(dynamic item) {
+    final direct = _dyn<String>(item, 'categorySource');
+    if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+    try {
+      final json = (item as dynamic).toJson?.call();
+      if (json is Map<String, dynamic>) {
+        final v = json['categorySource'];
+        if (v is String && v.trim().isNotEmpty) return v.trim();
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  String _legacyMerchantKey(dynamic item, String merchant) {
+    final direct = _dyn<String>(item, 'merchantKey');
+    if (direct != null && direct.trim().isNotEmpty) {
+      return direct.trim().toUpperCase();
+    }
+    try {
+      final json = (item as dynamic).toJson?.call();
+      if (json is Map<String, dynamic>) {
+        final mk = json['merchantKey'];
+        if (mk is String && mk.trim().isNotEmpty) {
+          return mk.trim().toUpperCase();
+        }
+      }
+    } catch (_) {}
+    return merchant.trim().isEmpty ? '' : merchant.trim().toUpperCase();
+  }
+
   String _legacyCardLast4(dynamic item) {
     final s = _dyn<String>(item, 'cardLast4');
     return (s ?? '').trim();
@@ -350,6 +411,24 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     }
   }
 
+  Future<void> _saveOverrideIfPossible(String category, Map<String, dynamic> normalized) async {
+    final mk = _normalizedMerchantKey(normalized);
+    if (mk.isEmpty) return;
+    try {
+      await UserOverrides.setCategoryForMerchant(widget.userPhone, mk, category);
+    } catch (_) {}
+  }
+
+  String _normalizedMerchantKey(Map<String, dynamic> tx) {
+    final mk = (tx['merchantKey'] ?? '').toString().trim();
+    if (mk.isNotEmpty) return mk.toUpperCase();
+    final merchant = (tx['merchant'] ?? '').toString().trim();
+    if (merchant.isNotEmpty) return merchant.toUpperCase();
+    final counterparty = (tx['counterparty'] ?? '').toString().trim();
+    if (counterparty.isNotEmpty) return counterparty.toUpperCase();
+    return '';
+  }
+
   void _combine() {
     if (widget.unifiedDocs != null) {
       allTx = _fromUnified(widget.unifiedDocs!);
@@ -389,6 +468,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final last4 = _legacyCardLast4(e);
       final labels = _legacyLabels(e);
       final title = _legacyTitle(e);
+      final double confidence = _legacyCategoryConfidence(e);
+      final String categorySource = _legacyCategorySource(e);
+      final String merchantKey = _legacyMerchantKey(e, merchant);
 
       return {
         'mode': 'legacy',
@@ -412,6 +494,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'hasFees': _legacyHasFees(e),
         'tags': tags.isEmpty ? null : tags,
         'labels': labels,
+        'categoryConfidence': confidence,
+        'categorySource': categorySource,
+        'merchantKey': merchantKey.isEmpty ? null : merchantKey,
         'title': (title != null && title.trim().isNotEmpty) ? title.trim() : null,
       };
     }));
@@ -422,6 +507,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final tags = _legacyTags(i);
       final labels = _legacyLabels(i);
       final title = _legacyTitle(i);
+      final double confidence = _legacyCategoryConfidence(i);
+      final String categorySource = _legacyCategorySource(i);
+      final String merchantKey = _legacyMerchantKey(i, merchant);
 
       return {
         'mode': 'legacy',
@@ -445,6 +533,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'hasFees': _legacyHasFees(i),
         'tags': tags.isEmpty ? null : tags,
         'labels': labels,
+        'categoryConfidence': confidence,
+        'categorySource': categorySource,
+        'merchantKey': merchantKey.isEmpty ? null : merchantKey,
         'title': (title != null && title.trim().isNotEmpty) ? title.trim() : null,
       };
     }));
@@ -529,6 +620,15 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final labels = labelsArr.where((l) => seen.add(l.toLowerCase())).toList();
 
       final title = _pick(doc['title']?.toString());
+      final double categoryConfidence = _asDouble(doc['categoryConfidence']);
+      final String categorySource = (doc['categorySource'] ?? '').toString();
+      final String merchantKey = (() {
+        final mk = _pick(doc['merchantKey']?.toString());
+        if (mk != null && mk.isNotEmpty) return mk.toUpperCase();
+        final merch = _pick(doc['merchant']?.toString());
+        if (merch != null && merch.isNotEmpty) return merch.toUpperCase();
+        return '';
+      })();
 
       tx.add({
         'mode': 'unified',
@@ -557,6 +657,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           return null;
         })(),
         'labels': labels,
+        'categoryConfidence': categoryConfidence,
+        'categorySource': categorySource,
+        'merchantKey': merchantKey.isEmpty ? null : merchantKey,
         'title': title,
       });
     }
@@ -922,6 +1025,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     required String current,
     required bool isIncome,
     required dynamic payload,
+    required Map<String, dynamic> normalized,
   }) {
     final String value = (current.isEmpty ? (isIncome ? "Income" : "General") : current);
     List<String> options = List<String>.from(widget.categoryOptions);
@@ -961,6 +1065,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 newCategory: newVal,
                 payload: payload,
               );
+              await _saveOverrideIfPossible(newVal, normalized);
               return;
             } catch (_) {}
           } else {
@@ -969,11 +1074,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 final e = payload as ExpenseItem;
                 final updated = e.copyWith(type: newVal, category: newVal);
                 await ExpenseService().updateExpense(widget.userPhone, updated);
+                await _saveOverrideIfPossible(newVal, normalized);
                 return;
               } else if (payload is IncomeItem) {
                 final i = payload as IncomeItem;
                 final updated = i.copyWith(type: newVal, category: newVal);
                 await IncomeService().updateIncome(widget.userPhone, updated);
+                await _saveOverrideIfPossible(newVal, normalized);
                 return;
               }
               throw Exception('Unsupported payload for default saver');
@@ -1180,6 +1287,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             final bool isInternational = (tx['isInternational'] == true);
             final bool hasFees = (tx['hasFees'] == true);
             final String? tags = (tx['tags'] as String?);
+            final double categoryConfidence = (tx['categoryConfidence'] is num)
+                ? (tx['categoryConfidence'] as num).toDouble()
+                : 0.0;
+            final String categorySource = (tx['categorySource'] ?? '').toString();
 
             final raw = tx['raw'];
 
@@ -1230,6 +1341,18 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             if (isInternational) chipWidgets.add(_chip("INTL"));
             if (hasFees) chipWidgets.add(_chip("Fees"));
             if ((tags ?? '').isNotEmpty) chipWidgets.add(_chip(tags!));
+            final sourceLabel = () {
+              final s = categorySource.toLowerCase();
+              if (s == 'llm') return 'LLM';
+              if (s == 'rules') return 'Rules';
+              if (s == 'user_override') return 'Manual';
+              if (s.isNotEmpty) return s.toUpperCase();
+              return null;
+            }();
+            if (sourceLabel != null) chipWidgets.add(_chip(sourceLabel));
+            if (categorySource == 'llm' && categoryConfidence > 0 && categoryConfidence < 0.6) {
+              chipWidgets.add(_chip('Review'));
+            }
 
             final canSwipe = widget.onDelete != null || widget.onEdit != null;
             rows.add(
@@ -1362,6 +1485,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                     current: category,
                                     isIncome: isIncome,
                                     payload: payload,
+                                    normalized: tx,
                                   ),
                                 )
                               else
@@ -1389,14 +1513,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                     ),
                                   ),
                                 ),
-                              if (labels.isNotEmpty ||
-                                  (instrument ?? '').isNotEmpty ||
-                                  (channel ?? '').isNotEmpty ||
-                                  (cardLast4 ?? '').isNotEmpty ||
-                                  (network ?? '').isNotEmpty ||
-                                  isInternational ||
-                                  hasFees ||
-                                  (tags ?? '').isNotEmpty)
+                              if (labels.isNotEmpty || chipWidgets.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4.0),
                                   child: Wrap(
