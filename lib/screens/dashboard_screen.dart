@@ -1620,6 +1620,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 goal: currentGoal,
                                 totalLoan: totalLoan,
                                 totalAssets: totalAssets,
+                                insightText: smartInsight,
+                                showToday: txPeriod == 'Today' || txPeriod == 'D',
                               ),
                               FutureBuilder<bool>(
                                 future: PremiumGate.instance.isPremium(widget.userPhone),
