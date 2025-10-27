@@ -13,6 +13,7 @@ class SmartInsightCard extends StatelessWidget {
   final double? totalLoan;      // Pass as 0 if not using loans
   final double? totalAssets;    // Pass as 0 if not using assets
   final bool showToday;
+  final String? insightText;
 
   const SmartInsightCard({
     Key? key,
@@ -23,9 +24,15 @@ class SmartInsightCard extends StatelessWidget {
     this.totalLoan,
     this.totalAssets,
     this.showToday = false,
+    this.insightText,
   }) : super(key: key);
 
   String getInsight() {
+    final preset = insightText?.trim();
+    if (preset != null && preset.isNotEmpty) {
+      return preset;
+    }
+
     final loans = (totalLoan ?? 0);
     final assets = (totalAssets ?? 0);
 
