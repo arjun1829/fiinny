@@ -10,12 +10,19 @@ import 'package:lifemap/ui/glass/glass_card.dart';
 
 class BillsCard extends StatelessWidget {
   final List<SharedItem> top; // raw list; we’ll bucket & sort
+  final List<SharedItem> items; // full list for metrics
   final double totalThisMonth;
   final double paidRatio; // 0..1
   final VoidCallback? onViewAll;
 
   /// Accent override (defaults to AppColors.richOrange, or theme secondary if you switch later).
   final Color? accentColor;
+
+  /// Controls whether the header row is rendered.
+  final bool showHeader;
+
+  /// Controls whether the footer progress indicator is rendered.
+  final bool showProgress;
 
   /// Optional hooks (used by rows + sheet buttons)
   final void Function(SharedItem item)? onOpenItem;
@@ -27,6 +34,7 @@ class BillsCard extends StatelessWidget {
   const BillsCard({
     super.key,
     required this.top,
+    required this.items,
     required this.totalThisMonth,
     required this.paidRatio,
     this.onViewAll,
@@ -36,6 +44,8 @@ class BillsCard extends StatelessWidget {
     this.onManage,
     this.onReminder,
     this.onMarkPaid,
+    this.showHeader = true,
+    this.showProgress = true,
   });
 
   @override
@@ -45,6 +55,12 @@ class BillsCard extends StatelessWidget {
     final buckets = _bucketize(top);
     final isTight = MediaQuery.sizeOf(context).width < 360;
     final safePaid = (paidRatio.isNaN ? 0.0 : paidRatio).clamp(0.0, 1.0);
+
+    final activeCount = items.length;
+    final overdueCount = items
+        .where((e) => e.nextDueAt != null && _isOverdue(e.nextDueAt!))
+        .length;
+    final nextDue = _minDue(items);
 
     return GlassCard(
       radius: 22,
@@ -57,44 +73,75 @@ class BillsCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
-          Semantics(
-            header: true,
-            child: Row(
-              children: [
-                Icon(Icons.receipt_long_rounded, color: tint),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Bills Due This Month',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: tint,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-                if (!isTight)
-                  _pill(
-                    border: tint.withOpacity(.25),
+          if (showHeader) ...[
+            Semantics(
+              header: true,
+              child: Row(
+                children: [
+                  Icon(Icons.receipt_long_rounded, color: tint),
+                  const SizedBox(width: 8),
+                  Expanded(
                     child: Text(
-                      '₹ ${_fmtAmount(totalThisMonth)}',
-                      style: TextStyle(color: dark, fontWeight: FontWeight.w900),
+                      'Bills Due This Month',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: tint,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: onViewAll,
-                  style: TextButton.styleFrom(foregroundColor: tint),
-                  child: Text(isTight ? 'All' : 'View All'),
-                ),
-              ],
+                  if (!isTight)
+                    _Pill(
+                      '₹ ${_fmtAmount(totalThisMonth)}',
+                      borderColor: tint.withOpacity(.25),
+                      textStyle:
+                          TextStyle(color: dark, fontWeight: FontWeight.w900),
+                    ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: onViewAll,
+                    style: TextButton.styleFrom(foregroundColor: tint),
+                    child: Text(isTight ? 'All' : 'View All'),
+                  ),
+                ],
+              ),
             ),
+
+            const SizedBox(height: 10),
+          ] else
+            const SizedBox(height: 4),
+
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _MetricPill(
+                label: 'This month',
+                value: '₹ ${_fmtAmount(totalThisMonth)}',
+                tint: tint,
+              ),
+              _MetricPill(
+                label: 'Active',
+                value: '$activeCount',
+                tint: tint,
+              ),
+              _MetricPill(
+                label: 'Overdue',
+                value: '$overdueCount',
+                tint: overdueCount > 0 ? AppColors.bad : tint,
+                emphasize: overdueCount > 0,
+              ),
+              _MetricPill(
+                label: 'Next due',
+                value: nextDue == null ? '--' : _fmtDate(nextDue),
+                tint: tint,
+              ),
+            ],
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
           // Grouped sections
           for (final b in buckets.entries) ...[
@@ -122,23 +169,23 @@ class BillsCard extends StatelessWidget {
             ],
           ],
 
-          // Footer progress
-          Row(
-            children: [
-              Expanded(
-                child: ProgressTiny(
-                  value: safePaid,
-                  color: tint,
-                  animate: true,
+          if (showProgress)
+            Row(
+              children: [
+                Expanded(
+                  child: ProgressTiny(
+                    value: safePaid,
+                    color: tint,
+                    animate: true,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${(safePaid * 100).round()}% Paid',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
+                const SizedBox(width: 8),
+                Text(
+                  '${(safePaid * 100).round()}% Paid',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -193,18 +240,9 @@ class BillsCard extends StatelessWidget {
                         ),
                       ),
                       if (isOverdue)
-                        Container(
-                          margin: const EdgeInsets.only(left: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(.08),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: Colors.red.withOpacity(.25)),
-                          ),
-                          child: const Text(
-                            'Overdue',
-                            style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800, fontSize: 11.5),
-                          ),
+                        const Padding(
+                          padding: EdgeInsets.only(left: 8),
+                          child: _StatusChip('Overdue', AppColors.bad),
                         ),
                     ]),
                     const SizedBox(height: 2),
@@ -330,16 +368,21 @@ class BillsCard extends StatelessWidget {
     );
   }
 
-  static Widget _pill({required Widget child, Color? border}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: border ?? Colors.black.withOpacity(.18)),
-      ),
-      child: child,
-    );
+  static DateTime? _minDue(List<SharedItem> list) {
+    DateTime? min;
+    for (final e in list) {
+      final due = e.nextDueAt;
+      if (due == null) continue;
+      if (min == null || due.isBefore(min)) {
+        min = due;
+      }
+    }
+    return min;
+  }
+
+  static String _fmtDate(DateTime d) {
+    const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return '${m[d.month - 1]} ${d.day.toString().padLeft(2, '0')}';
   }
 
   Map<String, List<SharedItem>> _bucketize(List<SharedItem> items) {
@@ -395,26 +438,6 @@ class BillsCard extends StatelessWidget {
     return neg ? '-$s' : s;
   }
 
-  static String _fmtDate(DateTime d) {
-    const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return '${m[d.month - 1]} ${d.day.toString().padLeft(2, '0')}';
-  }
-
-  static Widget _chip(String text, Color c, {bool filled = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: filled ? c.withOpacity(.12) : Colors.white,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: c.withOpacity(.25)),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(fontWeight: FontWeight.w800),
-      ),
-    );
-  }
-
   static Widget _kv(String k, String v) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -424,6 +447,137 @@ class BillsCard extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(child: Text(v, style: const TextStyle(fontWeight: FontWeight.w700))),
         ],
+      ),
+    );
+  }
+}
+
+class _MetricPill extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color tint;
+  final bool emphasize;
+
+  const _MetricPill({
+    required this.label,
+    required this.value,
+    required this.tint,
+    this.emphasize = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = emphasize ? tint.withOpacity(.10) : Colors.white;
+    final border = emphasize ? tint.withOpacity(.24) : Colors.black.withOpacity(.08);
+    final textColor = emphasize ? tint : Colors.black.withOpacity(.82);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+        boxShadow: emphasize
+            ? [
+                BoxShadow(
+                  color: tint.withOpacity(.08),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: textColor.withOpacity(.72),
+              fontWeight: FontWeight.w600,
+              letterSpacing: .2,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: textColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  final String text;
+  final Color? backgroundColor;
+  final Color? borderColor;
+  final TextStyle? textStyle;
+
+  const _Pill(
+    this.text, {
+    this.backgroundColor,
+    this.borderColor,
+    this.textStyle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final style = textStyle ??
+        TextStyle(
+          color: Colors.black.withOpacity(.82),
+          fontWeight: FontWeight.w800,
+        );
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: backgroundColor ?? Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor ?? Colors.black.withOpacity(.10)),
+        boxShadow: backgroundColor == null
+            ? [
+                BoxShadow(
+                  color: Colors.black.withOpacity(.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Text(text, style: style),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final String text;
+  final Color base;
+
+  const _StatusChip(this.text, this.base, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: base.withOpacity(.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: base.withOpacity(.22)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: base,
+          fontWeight: FontWeight.w800,
+          fontSize: 11.5,
+        ),
       ),
     );
   }
@@ -578,13 +732,24 @@ class _BillDetailsSheetState extends State<_BillDetailsSheet> {
                                                 spacing: 8,
                                                 crossAxisAlignment: WrapCrossAlignment.center,
                                                 children: [
-                                                  BillsCard._chip('₹ ${BillsCard._fmtAmount(amt)}', tint, filled: true),
+                                                  _Pill(
+                                                    '₹ ${BillsCard._fmtAmount(amt)}',
+                                                    backgroundColor: tint.withOpacity(.10),
+                                                    borderColor: tint.withOpacity(.24),
+                                                    textStyle: TextStyle(
+                                                      color: tint,
+                                                      fontWeight: FontWeight.w800,
+                                                    ),
+                                                  ),
                                                   if (due != null)
                                                     Text(
-                                                      isOverdue ? 'Was due ${BillsCard._fmtDate(due)}' : 'Due ${BillsCard._fmtDate(due)}',
+                                                      isOverdue
+                                                          ? 'Was due ${BillsCard._fmtDate(due)}'
+                                                          : 'Due ${BillsCard._fmtDate(due)}',
                                                       style: const TextStyle(fontSize: 12, color: Colors.black54),
                                                     ),
-                                                  if (isOverdue) BillsCard._chip('Overdue', Colors.red),
+                                                  if (isOverdue)
+                                                    const _StatusChip('Overdue', AppColors.bad),
                                                 ],
                                               ),
                                             ],

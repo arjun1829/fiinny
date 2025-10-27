@@ -1,5 +1,6 @@
 // lib/details/recurring/add_recurring_basic_screen.dart
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -621,6 +622,7 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
       intervalDays: _frequency == 'custom' ? (_intervalDays ?? 7) : null,
     );
     final nextDuePreview = _svc.computeNextDue(previewRule);
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -634,10 +636,13 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
       body: SafeArea(
         child: Form(
           key: _form,
-          child: ListView(
+          child: Scrollbar(
             controller: _scroll,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            children: [
+            thumbVisibility: true,
+            child: ListView(
+              controller: _scroll,
+              padding: EdgeInsets.fromLTRB(16, 12, 16, bottomInset + 24),
+              children: [
               _sectionTitle('Quick pick'),
               _presetGrid(sortedPresets),
 
@@ -977,49 +982,82 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
 
   // Grid that uses image if available, else glossy icon.
   Widget _presetGrid(List<_Preset> items) {
-    return LayoutBuilder(builder: (ctx, c) {
-      final crossCount = (c.maxWidth ~/ 108).clamp(2, 4);
-      return GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: crossCount,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 0.82,
-        ),
-        itemCount: items.length,
-        itemBuilder: (_, i) {
-          final p = items[i];
-          return InkWell(
-            onTap: () => _applyPreset(p),
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              decoration: _cardDecoration(),
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-              child: Column(
-                children: [
-                  _presetAvatar(p),
-                  const SizedBox(height: 8),
-                  Text(
-                    p.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    p.suggestedAmount > 0 ? '₹ ${p.suggestedAmount.toStringAsFixed(0)}' : '—',
-                    style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
-                  ),
-                ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (items.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        const gap = 16.0;
+        final maxWidth = constraints.maxWidth;
+        final columns = math.max(2, math.min(4, (maxWidth / 168).floor()));
+        final tileWidth = (maxWidth - gap * (columns - 1)) / columns;
+
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final p in items)
+              SizedBox(
+                width: tileWidth,
+                child: AspectRatio(
+                  aspectRatio: 0.92,
+                  child: _presetTile(p),
+                ),
               ),
-            ),
-          );
-        },
-      );
-    });
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _presetTile(_Preset p) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _applyPreset(p),
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          decoration: _cardDecoration(),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                height: 48,
+                width: 48,
+                child: Center(child: _presetAvatar(p)),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                p.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0x0F111827),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  p.suggestedAmount > 0
+                      ? '₹ ${p.suggestedAmount.toStringAsFixed(0)}'
+                      : '—',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _presetAvatar(_Preset p) {

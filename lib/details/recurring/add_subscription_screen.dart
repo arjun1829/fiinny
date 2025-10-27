@@ -101,6 +101,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   final _title = TextEditingController();
   final _amount = TextEditingController();
   final _noteCtrl = TextEditingController();
+  final ScrollController _scrollCtrl = ScrollController();
 
   // Jump targets for auto-scroll
   final _detailsKey = GlobalKey();
@@ -156,6 +157,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     _amount.dispose();
     _noteCtrl.dispose();
     _searchCtrl.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
@@ -481,6 +483,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
         : amt * ((_split == 'equal' ? 50.0 : _friendShare) / 100.0);
 
     final filtered = _filteredPresets();
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -494,226 +497,224 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       body: SafeArea(
         child: Form(
           key: _form,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            children: [
-              _searchBar(),
-              const SizedBox(height: 10),
-              _filterChips(),
-              const SizedBox(height: 12),
-
-              _sectionTitle('Pick a service'),
-              _glossyCard(
-                padding: const EdgeInsets.all(10),
-                child: LayoutBuilder(
-                  builder: (ctx, c) {
-                    final crossCount = (c.maxWidth ~/ 110).clamp(2, 4); // tighter grid
-                    return GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: crossCount,
-                        mainAxisSpacing: 10,
-                        crossAxisSpacing: 10,
-                        childAspectRatio: 0.78,
-                      ),
-                      itemCount: filtered.length,
-                      itemBuilder: (_, i) => _presetTile(filtered[i], i),
-                    );
-                  },
-                ),
-              ),
-
-              const SizedBox(height: 14),
-              _sectionTitle('Details'),
-              KeyedSubtree(
-                key: _detailsKey,
-                child: _glossyCard(
-                  child: Column(
-                    children: [
-                      TextFormField(
-                        controller: _title,
-                        decoration: const InputDecoration(
-                          labelText: 'Service name',
-                          prefixIcon: Icon(Icons.subscriptions_outlined),
-                        ),
-                        validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
-                      ),
+          child: Scrollbar(
+            controller: _scrollCtrl,
+            thumbVisibility: true,
+            child: CustomScrollView(
+              controller: _scrollCtrl,
+              slivers: [
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, bottomInset + 24),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      _searchBar(),
                       const SizedBox(height: 10),
-                      TextFormField(
-                        controller: _amount,
-                        decoration: const InputDecoration(
-                          labelText: 'Amount (₹)',
-                          prefixIcon: Icon(Icons.currency_rupee),
-                        ),
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-                        validator: (_) => _parseAmount() <= 0 ? 'Enter a valid amount' : null,
-                        onChanged: (_) => setState(() {}),
+                      _filterChips(),
+                      const SizedBox(height: 12),
+                      _sectionTitle('Pick a service'),
+                      _glossyCard(
+                        padding: const EdgeInsets.all(12),
+                        child: _presetGrid(filtered),
                       ),
-                      const SizedBox(height: 10),
-                      TextFormField(
-                        controller: _noteCtrl,
-                        minLines: 2,
-                        maxLines: 4,
-                        decoration: const InputDecoration(
-                          labelText: 'Notes (optional)',
-                          hintText: 'E.g. 4 screens plan shared with Akash & Riya',
-                          prefixIcon: Icon(Icons.note_alt_outlined),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      _attachmentRow(),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-              _sectionTitle('Billing day'),
-              _glossyCard(
-                child: DropdownButtonFormField<int>(
-                  value: _dueDay,
-                  items: List.generate(28, (i) => i + 1)
-                      .map((d) => DropdownMenuItem(value: d, child: Text('Day $d')))
-                      .toList(),
-                  onChanged: (v) => setState(() => _dueDay = v),
-                  decoration: const InputDecoration(
-                    labelText: 'Choose day (1–28)',
-                    prefixIcon: Icon(Icons.event_outlined),
-                  ),
-                  validator: (v) => v == null ? 'Pick a billing day' : null,
-                ),
-              ),
-
-              if (!_isGroup) ...[
-                const SizedBox(height: 12),
-                _sectionTitle('Split'),
-                _glossyCard(
-                  child: Column(
-                    children: [
-                      Wrap(
-                        spacing: 10,
-                        children: [
-                          ChoiceChip(
-                            label: const Text('Equal (50/50)'),
-                            selected: _split == 'equal',
-                            onSelected: (_) => setState(() => _split = 'equal'),
-                          ),
-                          ChoiceChip(
-                            label: const Text('Custom'),
-                            selected: _split == 'custom',
-                            onSelected: (_) => setState(() => _split = 'custom'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      AnimatedCrossFade(
-                        duration: const Duration(milliseconds: 200),
-                        crossFadeState: _split == 'custom' ? CrossFadeState.showFirst : CrossFadeState.showSecond,
-                        firstChild: Column(
-                          children: [
-                            _sliderRow(
-                              icon: Icons.person_outline,
-                              label: 'Your share',
-                              value: _userShare,
-                              onChanged: (v) => setState(() => _normalizeSharesFromUser(v)),
-                            ),
-                            _sliderRow(
-                              icon: Icons.group_outlined,
-                              label: 'Friend share',
-                              value: _friendShare,
-                              onChanged: (v) => setState(() {
-                                _friendShare = v.clamp(0, 100);
-                                _userShare = (100 - _friendShare);
-                              }),
-                            ),
-                          ],
-                        ),
-                        secondChild: const SizedBox.shrink(),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-              ],
-              _sectionTitle('Remind me'),
-              _glossyCard(
-                child: Column(
-                  children: [
-                    SwitchListTile.adaptive(
-                      value: _notifyEnabled,
-                      onChanged: (v) => setState(() => _notifyEnabled = v),
-                      title: const Text('Enable reminder'),
-                      subtitle: const Text('Get a push before the billing day'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    AnimatedCrossFade(
-                      duration: const Duration(milliseconds: 160),
-                      crossFadeState: _notifyEnabled ? CrossFadeState.showFirst : CrossFadeState.showSecond,
-                      firstChild: Column(
-                        children: [
-                          Row(
+                      const SizedBox(height: 14),
+                      _sectionTitle('Details'),
+                      KeyedSubtree(
+                        key: _detailsKey,
+                        child: _glossyCard(
+                          child: Column(
                             children: [
-                              const Icon(Icons.notifications_active, size: 18),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Slider(
-                                  value: _daysBefore.toDouble(),
-                                  min: 0, max: 7, divisions: 7,
-                                  label: '$_daysBefore day(s) before',
-                                  onChanged: (v) => setState(() => _daysBefore = v.toInt()),
+                              TextFormField(
+                                controller: _title,
+                                decoration: const InputDecoration(
+                                  labelText: 'Service name',
+                                  prefixIcon: Icon(Icons.subscriptions_outlined),
+                                ),
+                                validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                controller: _amount,
+                                decoration: const InputDecoration(
+                                  labelText: 'Amount (₹)',
+                                  prefixIcon: Icon(Icons.currency_rupee),
+                                ),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                                validator: (_) => _parseAmount() <= 0 ? 'Enter a valid amount' : null,
+                                onChanged: (_) => setState(() {}),
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                controller: _noteCtrl,
+                                minLines: 2,
+                                maxLines: 4,
+                                decoration: const InputDecoration(
+                                  labelText: 'Notes (optional)',
+                                  hintText: 'E.g. 4 screens plan shared with Akash & Riya',
+                                  prefixIcon: Icon(Icons.note_alt_outlined),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.access_time),
-                                onPressed: _pickTime,
-                                label: Text(_fmtTime(_time)),
+                              const SizedBox(height: 10),
+                              _attachmentRow(),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _sectionTitle('Billing day'),
+                      _glossyCard(
+                        child: DropdownButtonFormField<int>(
+                          value: _dueDay,
+                          items: List.generate(28, (i) => i + 1)
+                              .map((d) => DropdownMenuItem(value: d, child: Text('Day $d')))
+                              .toList(),
+                          onChanged: (v) => setState(() => _dueDay = v),
+                          decoration: const InputDecoration(
+                            labelText: 'Choose day (1–28)',
+                            prefixIcon: Icon(Icons.event_outlined),
+                          ),
+                          validator: (v) => v == null ? 'Pick a billing day' : null,
+                        ),
+                      ),
+                      if (!_isGroup) ...[
+                        const SizedBox(height: 12),
+                        _sectionTitle('Split'),
+                        _glossyCard(
+                          child: Column(
+                            children: [
+                              Wrap(
+                                spacing: 10,
+                                children: [
+                                  ChoiceChip(
+                                    label: const Text('Equal (50/50)'),
+                                    selected: _split == 'equal',
+                                    onSelected: (_) => setState(() => _split = 'equal'),
+                                  ),
+                                  ChoiceChip(
+                                    label: const Text('Custom'),
+                                    selected: _split == 'custom',
+                                    onSelected: (_) => setState(() => _split = 'custom'),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              AnimatedCrossFade(
+                                duration: const Duration(milliseconds: 200),
+                                crossFadeState: _split == 'custom'
+                                    ? CrossFadeState.showFirst
+                                    : CrossFadeState.showSecond,
+                                firstChild: Column(
+                                  children: [
+                                    _sliderRow(
+                                      icon: Icons.person_outline,
+                                      label: 'Your share',
+                                      value: _userShare,
+                                      onChanged: (v) => setState(() => _normalizeSharesFromUser(v)),
+                                    ),
+                                    _sliderRow(
+                                      icon: Icons.group_outlined,
+                                      label: 'Friend share',
+                                      value: _friendShare,
+                                      onChanged: (v) => setState(() {
+                                        _friendShare = v.clamp(0, 100);
+                                        _userShare = (100 - _friendShare);
+                                      }),
+                                    ),
+                                  ],
+                                ),
+                                secondChild: const SizedBox.shrink(),
                               ),
                             ],
                           ),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Preview: ${_previewText()}',
-                              style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      _sectionTitle('Remind me'),
+                      _glossyCard(
+                        child: Column(
+                          children: [
+                            SwitchListTile.adaptive(
+                              value: _notifyEnabled,
+                              onChanged: (v) => setState(() => _notifyEnabled = v),
+                              title: const Text('Enable reminder'),
+                              subtitle: const Text('Get a push before the billing day'),
+                              contentPadding: EdgeInsets.zero,
                             ),
-                          ),
-                        ],
+                            AnimatedCrossFade(
+                              duration: const Duration(milliseconds: 160),
+                              crossFadeState: _notifyEnabled
+                                  ? CrossFadeState.showFirst
+                                  : CrossFadeState.showSecond,
+                              firstChild: Column(
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.notifications_active, size: 18),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Slider(
+                                          value: _daysBefore.toDouble(),
+                                          min: 0,
+                                          max: 7,
+                                          divisions: 7,
+                                          label: '$_daysBefore day(s) before',
+                                          onChanged: (v) => setState(() => _daysBefore = v.toInt()),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      OutlinedButton.icon(
+                                        icon: const Icon(Icons.access_time),
+                                        onPressed: _pickTime,
+                                        label: Text(_fmtTime(_time)),
+                                      ),
+                                    ],
+                                  ),
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      'Preview: ${_previewText()}',
+                                      style: const TextStyle(fontWeight: FontWeight.w700),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              secondChild: const SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
                       ),
-                      secondChild: const SizedBox.shrink(),
-                    ),
-                  ],
+                      const SizedBox(height: 14),
+                      _sectionTitle('Summary'),
+                      _glossyCard(
+                        child: _Summary(
+                          title: _title.text.trim().isEmpty ? '—' : _title.text.trim(),
+                          amount: amt,
+                          showShares: !_isGroup,
+                          userSharePct: _split == 'equal' ? 50.0 : _userShare,
+                          friendSharePct: _split == 'equal' ? 50.0 : _friendShare,
+                          userShareAmt: uAmt,
+                          friendShareAmt: fAmt,
+                          participantCount: _isGroup ? _groupParticipantIds.length : 2,
+                          dueDay: _dueDay,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        onPressed: _saving ? null : _save,
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.check_rounded),
+                        label: const Text('Save'),
+                      ),
+                    ]),
+                  ),
                 ),
-              ),
-
-              const SizedBox(height: 14),
-              _sectionTitle('Summary'),
-              _glossyCard(
-                child: _Summary(
-                  title: _title.text.trim().isEmpty ? '—' : _title.text.trim(),
-                  amount: amt,
-                  showShares: !_isGroup,
-                  userSharePct: _split == 'equal' ? 50.0 : _userShare,
-                  friendSharePct: _split == 'equal' ? 50.0 : _friendShare,
-                  userShareAmt: uAmt,
-                  friendShareAmt: fAmt,
-                  participantCount: _isGroup ? _groupParticipantIds.length : 2,
-                  dueDay: _dueDay,
-                ),
-              ),
-
-              const SizedBox(height: 18),
-              FilledButton.icon(
-                onPressed: _saving ? null : _save,
-                icon: _saving
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.check_rounded),
-                label: const Text('Save'),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -780,42 +781,95 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     return list;
   }
 
+  Widget _presetGrid(List<_SubPreset> items) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (items.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        const gap = 12.0;
+        final maxWidth = constraints.maxWidth;
+        final columns = math.max(2, math.min(4, (maxWidth / 160).floor()));
+        final tileWidth = (maxWidth - gap * (columns - 1)) / columns;
+
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (var i = 0; i < items.length; i++)
+              SizedBox(
+                width: tileWidth,
+                child: AspectRatio(
+                  aspectRatio: 0.92,
+                  child: _presetTile(items[i], i),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _presetTile(_SubPreset p, int index) {
-    // subtle entry animation
+    final amountText = p.defaultAmount > 0 ? '₹ ${p.defaultAmount}' : '—';
+
     return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.92, end: 1),
-      duration: Duration(milliseconds: 180 + (index % 6) * 30),
+      tween: Tween(begin: 0.94, end: 1),
+      duration: Duration(milliseconds: 200 + (index % 5) * 40),
       curve: Curves.easeOutCubic,
       builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
-      child: InkWell(
-        onTap: () => _pickPreset(p),
-        borderRadius: BorderRadius.circular(14),
-        child: _glossyCard(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // logo
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: Colors.white,
-                backgroundImage: p.logo != null ? NetworkImage(p.logo!) : null,
-                child: p.logo == null
-                    ? const Icon(Icons.apps, size: 20, color: Colors.black54)
-                    : null,
-              ),
-              const SizedBox(height: 8),
-              // title (nowrap to avoid overflow)
-              Text(
-                p.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 4),
-              Text('₹ ${p.defaultAmount}', style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
-            ],
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _pickPreset(p),
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              color: Colors.white,
+              boxShadow: const [
+                BoxShadow(color: Color(0x14000000), blurRadius: 18, offset: Offset(0, 10)),
+              ],
+              border: Border.all(color: const Color(0xFFE9ECEF)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: const Color(0xFFF3F4F6),
+                  backgroundImage: p.logo != null ? NetworkImage(p.logo!) : null,
+                  child: p.logo == null
+                      ? const Icon(Icons.apps, size: 22, color: Colors.black54)
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  p.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0x0F111827),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    amountText,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

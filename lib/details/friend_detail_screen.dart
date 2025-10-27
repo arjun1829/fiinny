@@ -5,13 +5,28 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:characters/characters.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_storage/firebase_storage.dart' as fb_storage;
-import '../details/recurring/friend_recurring_screen.dart';
+import 'package:intl/intl.dart';
+import 'package:lifemap/ui/atoms/brand_avatar.dart';
+import 'package:lifemap/ui/tokens.dart';
+import 'package:lifemap/screens/subs_bills/widgets/brand_avatar_registry.dart';
+
+import 'recurring/friend_recurring_screen.dart';
+import 'recurring/add_choice_sheet.dart';
+import 'recurring/add_recurring_basic_screen.dart';
+import 'recurring/add_subscription_screen.dart';
+import 'recurring/add_emi_link_sheet.dart';
+import 'recurring/add_custom_reminder_sheet.dart';
+import 'models/shared_item.dart';
+import 'models/recurring_scope.dart';
+import 'services/recurring_service.dart';
 
 import '../models/friend_model.dart';
 import '../models/expense_item.dart';
 import '../models/group_model.dart';
+import '../models/loan_model.dart';
 import '../services/expense_service.dart';
 import '../services/group_service.dart';
+import '../services/loan_service.dart';
 import '../core/ads/ads_shell.dart';
 
 import '../widgets/add_friend_expense_dialog.dart';
@@ -53,9 +68,41 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
   String? _friendAvatarUrl;
   String? _friendDisplayName;
 
+  final RecurringService _recurringSvc = RecurringService();
+  final NumberFormat _compactInr =
+      NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+  final DateFormat _dueFormat = DateFormat('d MMM');
+
   String _fmtShort(DateTime dt) {
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     return '${dt.day} ${months[dt.month - 1]}';
+  }
+
+  String _formatDue(DateTime? due) {
+    if (due == null) return 'Due —';
+    return 'Due ${_dueFormat.format(due)}';
+  }
+
+  String _formatShareSummary(SharedItem item) {
+    final total = (item.rule.amount ?? item.amount)?.toDouble();
+    final share = item.amountShareForUser(widget.userPhone);
+    if (share == null) {
+      return 'Your share · -- · —';
+    }
+    final safeShare = share <= 0 ? 0 : share;
+    final pct = total == null || total <= 0
+        ? '--'
+        : _formatPercent((safeShare / total) * 100);
+    final amtLabel = safeShare <= 0 ? '₹0' : _compactInr.format(safeShare);
+    return 'Your share · $pct · $amtLabel';
+  }
+
+  String _formatPercent(double value) {
+    if (value.isNaN) return '--';
+    if (value >= 100) return '100%';
+    if (value >= 10) return '${value.round()}%';
+    if (value <= 0) return '0%';
+    return '${value.toStringAsFixed(1)}%';
   }
 
 
@@ -189,6 +236,395 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     Clipboard.setData(ClipboardData(text: msg));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Context copied — paste in chat')),
+    );
+  }
+
+  void _openRecurringFullScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FriendRecurringScreen(
+          userPhone: widget.userPhone,
+          friendId: widget.friend.phone,
+          friendName: _displayName,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openRecurringAddSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) => AddChoiceSheet(
+        onPick: (key) {
+          Navigator.pop(sheetCtx);
+          Future.microtask(() => _routeRecurringChoice(key));
+        },
+      ),
+    );
+  }
+
+  Future<void> _routeRecurringChoice(String key) async {
+    final scope = RecurringScope.friend(widget.userPhone, widget.friend.phone);
+    dynamic res;
+    switch (key) {
+      case 'recurring':
+        res = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AddRecurringBasicScreen(
+              userPhone: widget.userPhone,
+              scope: scope,
+            ),
+          ),
+        );
+        break;
+      case 'subscription':
+        res = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AddSubscriptionScreen(
+              userPhone: widget.userPhone,
+              scope: scope,
+            ),
+          ),
+        );
+        break;
+      case 'emi':
+        res = await showModalBottomSheet(
+          context: context,
+          useSafeArea: true,
+          isScrollControlled: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          builder: (_) => AddEmiLinkSheet(
+            scope: scope,
+            currentUserId: widget.userPhone,
+          ),
+        );
+        break;
+      case 'custom':
+        res = await showModalBottomSheet(
+          context: context,
+          useSafeArea: true,
+          isScrollControlled: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          builder: (_) => AddCustomReminderSheet(
+            userPhone: widget.userPhone,
+            scope: scope,
+          ),
+        );
+        break;
+    }
+    await _handleRecurringAddResult(res);
+  }
+
+  Future<void> _handleRecurringAddResult(dynamic res) async {
+    if (res == null) return;
+
+    bool changed = false;
+
+    if (res is String) {
+      try {
+        final LoanModel? loan = await LoanService().getById(res);
+        if (loan != null) {
+          await _recurringSvc.attachLoanToFriend(
+            userPhone: widget.userPhone,
+            friendId: widget.friend.phone,
+            loan: loan,
+          );
+          changed = true;
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Couldn't link loan: $e")),
+          );
+        }
+      }
+    } else if (res is SharedItem || res == true) {
+      changed = true;
+    }
+
+    if (!mounted) return;
+    if (changed) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Saved!')),
+      );
+    }
+  }
+
+  Widget _buildRecurringPeekCard() {
+    return _card(
+      context,
+      child: StreamBuilder<List<SharedItem>>(
+        stream: _recurringSvc.streamByFriend(
+          widget.userPhone,
+          widget.friend.phone,
+        ),
+        builder: (context, snapshot) {
+          final loading = snapshot.connectionState == ConnectionState.waiting &&
+              (snapshot.data == null || snapshot.data!.isEmpty);
+          final items = snapshot.data ?? const <SharedItem>[];
+          final top = items.take(3).toList();
+
+          final children = <Widget>[
+            InkWell(
+              onTap: _openRecurringFullScreen,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Container(
+                      height: 40,
+                      width: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.mint.withOpacity(.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.repeat_rounded,
+                          color: AppColors.mint),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Recurring',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _openRecurringFullScreen,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        foregroundColor: AppColors.mint,
+                      ),
+                      child: const Text('View all >',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ];
+
+          if (loading) {
+            children.add(
+              SizedBox(
+                height: 60,
+                child: Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: const CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.mint),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          } else if (items.isEmpty) {
+            children.add(
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      height: 36,
+                      width: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.hourglass_empty,
+                          color: Colors.black54),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'No shared recurring items yet. Start one to split bills effortlessly.',
+                        style: TextStyle(
+                          color: Colors.black.withOpacity(0.65),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          } else {
+            for (int i = 0; i < top.length; i++) {
+              if (i > 0) {
+                children.add(
+                  Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: Colors.black.withOpacity(0.05),
+                  ),
+                );
+              }
+              children.add(_recurringPeekRow(top[i]));
+            }
+            if (items.length > top.length) {
+              final remaining = items.length - top.length;
+              children.add(const SizedBox(height: 8));
+              children.add(
+                Text(
+                  '+$remaining more shared item${remaining == 1 ? '' : 's'}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.black.withOpacity(0.6),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              );
+            }
+          }
+
+          children.add(const SizedBox(height: 12));
+          children.add(
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _openRecurringAddSheet,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: AppColors.mint,
+                ),
+                icon: const Icon(Icons.add_circle_outline, size: 18),
+                label: const Text('Add recurring',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+          );
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _recurringPeekRow(SharedItem item) {
+    final title = item.safeTitle;
+    final brandKey = (item.provider?.isNotEmpty == true)
+        ? item.provider!
+        : title;
+    final asset = BrandAvatarRegistry.assetFor(brandKey);
+    final share = item.amountShareForUser(widget.userPhone);
+    final due = item.nextDueAt;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final isOverdue =
+        due != null && DateTime(due.year, due.month, due.day).isBefore(today);
+    Widget? statusChip;
+    if (isOverdue) {
+      statusChip = const _StatusChip('Overdue', AppColors.bad);
+    }
+    Widget? shareChip;
+    if (share != null) {
+      final safeShare = share <= 0 ? 0 : share;
+      shareChip = _Pill(
+        safeShare <= 0 ? '₹0' : _compactInr.format(safeShare),
+        base: AppColors.mint,
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: SizedBox(
+        height: 60,
+        child: Row(
+          children: [
+            BrandAvatar(
+              assetPath: asset,
+              label: brandKey,
+              size: 44,
+              radius: 12,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatShareSummary(item),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.black.withOpacity(0.65),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (shareChip != null) ...[
+                  shareChip!,
+                  const SizedBox(height: 6),
+                ],
+                if (statusChip != null) ...[
+                  statusChip!,
+                  const SizedBox(height: 6),
+                ],
+                Text(
+                  _formatDue(due),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.black.withOpacity(0.55),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -993,52 +1429,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                           ),
                           const SizedBox(height: 14),
                           // Recurring overview -> full recurring screen
-                          _card(
-                            context,
-                            child: InkWell(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => FriendRecurringScreen(
-                                      userPhone: widget.userPhone,
-                                      friendId: widget.friend.phone,
-                                      friendName: _displayName,
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: Row(
-                                children: [
-                                  Container(
-                                    height: 40,
-                                    width: 40,
-                                    decoration: BoxDecoration(
-                                      color: Colors.teal.withOpacity(.10),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: const Icon(Icons.repeat_rounded, color: Colors.teal),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  const Expanded(
-                                    child: Text(
-                                      "Recurring",
-                                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                                    ),
-                                  ),
-                                  Text(
-                                    "View all",
-                                    style: TextStyle(
-                                      color: Colors.teal.shade700,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  const Icon(Icons.chevron_right),
-                                ],
-                              ),
-                            ),
-                          ),
+                          _buildRecurringPeekCard(),
                           const SizedBox(height: 14),
 
 
@@ -1925,6 +2316,66 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
               style: TextStyle(
                   fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
         ],
+      ),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final String text;
+  final Color base;
+
+  const _StatusChip(this.text, this.base, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: base.withOpacity(.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: base.withOpacity(.22)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: base,
+          fontWeight: FontWeight.w700,
+          fontSize: 11.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  final String text;
+  final Color base;
+  final EdgeInsetsGeometry padding;
+
+  const _Pill(
+    this.text, {
+    this.base = AppColors.mint,
+    this.padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: base.withOpacity(.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: base.withOpacity(.22)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: base,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
       ),
     );
   }
