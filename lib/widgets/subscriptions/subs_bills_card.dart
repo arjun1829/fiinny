@@ -32,6 +32,10 @@ class SubsBillsCard extends StatelessWidget {
     final totalStr = monthTotal == null ? '--' : _inr.format(monthTotal);
     final activeStr = (activeCount ?? 0).toString();
     final overdueStr = (overdueCount ?? 0).toString();
+    final titleStyle = Theme.of(context)
+        .textTheme
+        .titleMedium
+        ?.copyWith(fontWeight: FontWeight.w700, fontSize: 16, color: Fx.mintDark);
 
     return Material(
       color: Colors.transparent,
@@ -57,7 +61,7 @@ class SubsBillsCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Subscriptions & Bills', style: Fx.title.copyWith(color: Fx.mintDark)),
+                    Text('Subscriptions & Bills', style: titleStyle),
                     const SizedBox(height: Fx.s6),
                     Text(
                       'This month: $totalStr',
@@ -80,10 +84,22 @@ class SubsBillsCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: Fx.s8),
-              IconButton(
-                tooltip: 'Add',
+              TextButton.icon(
                 onPressed: onAdd,
-                icon: const Icon(Icons.add_circle_outline, color: Fx.mintDark),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add'),
+                style: TextButton.styleFrom(
+                  backgroundColor: Fx.mint.withOpacity(.12),
+                  foregroundColor: Fx.mintDark,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Fx.s14,
+                    vertical: Fx.s8,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(Fx.r14),
+                  ),
+                  textStyle: Fx.label.copyWith(fontWeight: FontWeight.w800),
+                ),
               ),
             ],
           ),
