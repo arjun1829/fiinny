@@ -125,7 +125,7 @@ class _ReviewPendingSheetState extends State<ReviewPendingSheet> {
                         focusNode: _searchFocus,
                         decoration: InputDecoration(
                           isDense: true,
-                          hintText: 'Search brand / lender…',
+                          hintText: 'Search brand / lender...',
                           prefixIcon: const Icon(Icons.search_rounded),
                           filled: true,
                           fillColor: Colors.white,
@@ -225,10 +225,12 @@ class _ReviewPendingSheetState extends State<ReviewPendingSheet> {
                   // Totals for footer
                   final totalAmt = filtered.fold<double>(0, (s, e) => s + (e.amount ?? 0));
 
+                  final bottomPadding = MediaQuery.of(ctx).viewPadding.bottom + 96;
+
                   return Stack(
                     children: [
                       ListView.separated(
-                        padding: const EdgeInsets.only(bottom: 84), // room for footer
+                        padding: EdgeInsets.only(bottom: bottomPadding),
                         itemCount: filtered.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (_, i) => _row(context, filtered[i], tint),
@@ -257,8 +259,7 @@ class _ReviewPendingSheetState extends State<ReviewPendingSheet> {
                                       Text('${filtered.length} pending',
                                           style: const TextStyle(fontWeight: FontWeight.w900)),
                                       const SizedBox(height: 2),
-                                      Text('Total: ${_inrFmt.format(totalAmt)}',
-                                          style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.w600)),
+                                      _Pill('Total: ${_inrFmt.format(totalAmt)}', base: tint),
                                     ],
                                   ),
                                 ),
@@ -307,17 +308,12 @@ class _ReviewPendingSheetState extends State<ReviewPendingSheet> {
     final subColor = Colors.black54;
     final dueStr = p.nextDue == null ? '—' : _fmtDate(p.nextDue!);
     final amtStr = p.amount == null ? '—' : _inrFmt.format(p.amount);
-    final confStr = p.confidence == null ? null : '${(p.confidence! * 100).toStringAsFixed(0)}%';
-    final source = p.detBy?.toUpperCase();
-
     final isOverdue = p.nextDue != null && _isOverdue(p.nextDue!);
 
-    final line2 = <String>[
-      amtStr,
-      if (p.nextDue != null) (isOverdue ? 'Was due $dueStr' : 'Due $dueStr'),
-      if (source != null && source.isNotEmpty) 'From $source',
-      if (confStr != null) 'Conf $confStr',
-    ].join(' • ');
+    final dueLabel = p.nextDue == null
+        ? '—'
+        : (isOverdue ? 'Was due $dueStr' : 'Due $dueStr');
+    final line2 = '$amtStr • $dueLabel';
 
     final avatarAsset = BrandAvatarRegistry.assetFor(p.title);
 
@@ -349,19 +345,13 @@ class _ReviewPendingSheetState extends State<ReviewPendingSheet> {
                             style: const TextStyle(fontWeight: FontWeight.w800)),
                       ),
                       if (isOverdue)
-                        Container(
-                          margin: const EdgeInsets.only(left: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(.08),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: Colors.red.withOpacity(.25)),
-                          ),
-                          child: const Text('Overdue', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800, fontSize: 11.5)),
+                        const Padding(
+                          padding: EdgeInsets.only(left: 8),
+                          child: _StatusChip('Overdue', AppColors.bad),
                         ),
                     ]),
                     const SizedBox(height: 2),
-                    Text(line2, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: subColor, fontSize: 12)),
+                    Text(line2, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: subColor, fontSize: 12)),
                   ],
                 ),
               ),
@@ -707,6 +697,65 @@ class _ReviewPendingSheetState extends State<ReviewPendingSheet> {
       SnackBar(
         content: Text(msg),
         action: SnackBarAction(label: 'UNDO', onPressed: onUndo),
+      ),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final String text;
+  final Color base;
+
+  const _StatusChip(this.text, this.base, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: base.withOpacity(.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: base.withOpacity(.22)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: base,
+          fontWeight: FontWeight.w800,
+          fontSize: 11.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  final String text;
+  final Color base;
+  final EdgeInsetsGeometry padding;
+
+  const _Pill(
+    this.text, {
+    this.base = AppColors.mint,
+    this.padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: base.withOpacity(.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: base.withOpacity(.22)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: base,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

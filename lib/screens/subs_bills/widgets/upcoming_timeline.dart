@@ -11,6 +11,9 @@ class UpcomingTimeline extends StatefulWidget {
   final List<SharedItem> items; // unfiltered full list
   final int daysWindow;
 
+  /// Optional: triggered when "See all" is tapped.
+  final VoidCallback? onSeeAll;
+
   /// Optional hooks—use these to integrate with your services if you want
   /// to override the built-in sheets.
   final void Function(SharedItem item)? onOpenItem;
@@ -23,6 +26,7 @@ class UpcomingTimeline extends StatefulWidget {
     super.key,
     required this.items,
     this.daysWindow = 10,
+    this.onSeeAll,
     this.onOpenItem,
     this.onPay,
     this.onManage,
@@ -35,101 +39,61 @@ class UpcomingTimeline extends StatefulWidget {
 }
 
 class _UpcomingTimelineState extends State<UpcomingTimeline> {
-  int _selected = 0; // 0=All, then 1..N for each day
+  int _selected = 0; // 0=All, 1=Today, 2=Tomorrow, 3=Week
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final days = List.generate(widget.daysWindow, (i) {
-      final d = now.add(Duration(days: i));
-      return DateTime(d.year, d.month, d.day);
-    });
+    final today = DateTime(now.year, now.month, now.day);
+    final days = List.generate(widget.daysWindow, (i) => today.add(Duration(days: i)));
 
-    // sort once
     final sorted = widget.items
         .where((e) => e.nextDueAt != null)
         .toList()
       ..sort((a, b) => (a.nextDueAt ?? DateTime(2100))
           .compareTo(b.nextDueAt ?? DateTime(2100)));
 
-    // counts per day (for chips)
-    final countsByDay = <int, int>{};
-    for (final e in sorted) {
-      final d = DateTime(e.nextDueAt!.year, e.nextDueAt!.month, e.nextDueAt!.day);
-      final idx = _indexForDay(d, days);
-      if (idx != null) countsByDay[idx] = (countsByDay[idx] ?? 0) + 1;
-    }
-
-    // filter for selected day
-    final filtered = _selected == 0
-        ? sorted
-        : sorted.where((e) {
+    final windowEnd = days.isEmpty ? today : days.last;
+    final inWindow = sorted.where((e) {
       final dd = DateTime(e.nextDueAt!.year, e.nextDueAt!.month, e.nextDueAt!.day);
-      return dd == days[_selected - 1];
+      return !dd.isBefore(today) && !dd.isAfter(windowEnd);
     }).toList();
 
-    final totalUpcoming = sorted.length;
     final overdueCount = sorted.where((e) => _isOverdue(e.nextDueAt!)).length;
+    final totalUpcoming = inWindow.length;
 
-    // === GIANT CARD (tap to open full page) ===
+    final filtered = _filterBySelection(inWindow, today, _selected);
+
+    // === Compact micro-hub ===
     return TonalCard(
       margin: const EdgeInsets.symmetric(horizontal: 2), // breathing room from side panels
       padding: const EdgeInsets.fromLTRB(AppSpacing.l, AppSpacing.l, AppSpacing.l, AppSpacing.l),
       borderRadius: const BorderRadius.all(Radius.circular(22)),
       surface: Colors.white.withOpacity(.96),
-      onTap: () => _openFullPage(context, days, countsByDay, sorted),
+      onTap: widget.onSeeAll ?? () => _openFullPage(context, inWindow, sorted),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
+          // Counters + action
           Row(
             children: [
-              const Icon(Icons.upcoming_rounded, color: AppColors.mint),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Upcoming (10 days)',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.mint,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-              _pill(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.schedule_rounded, size: 14),
-                    const SizedBox(width: 6),
-                    Text(
-                      '$totalUpcoming',
-                      style: const TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                  ],
-                ),
+              _CounterPill(
+                icon: Icons.schedule_rounded,
+                label: '$totalUpcoming upcoming',
+                highlight: totalUpcoming > 0,
               ),
               const SizedBox(width: 8),
-              if (overdueCount > 0)
-                _pill(
-                  borderColor: Colors.red.withOpacity(.28),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.red),
-                      const SizedBox(width: 6),
-                      Text(
-                        '$overdueCount overdue',
-                        style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.red),
-                      ),
-                    ],
-                  ),
-                ),
-              const SizedBox(width: 8),
+              _CounterPill(
+                icon: Icons.warning_amber_rounded,
+                label: '$overdueCount overdue',
+                highlight: overdueCount > 0,
+                iconColor:
+                    overdueCount > 0 ? AppColors.bad : Colors.black.withOpacity(.45),
+              ),
+              const Spacer(),
               TextButton(
-                onPressed: () => _openFullPage(context, days, countsByDay, sorted),
+                onPressed: widget.onSeeAll ??
+                    () => _openFullPage(context, inWindow, sorted),
                 style: TextButton.styleFrom(foregroundColor: AppColors.mint),
                 child: const Text('See all'),
               ),
@@ -138,78 +102,109 @@ class _UpcomingTimelineState extends State<UpcomingTimeline> {
 
           const SizedBox(height: 12),
 
-          // Day chips (scrollable)
-          SizedBox(
-            height: 40,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: days.length + 1,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, idx) {
-                if (idx == 0) {
-                  return _chip(
-                    'All',
-                    _selected == 0,
-                    count: totalUpcoming == 0 ? null : totalUpcoming,
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      setState(() => _selected = 0);
-                    },
-                  );
-                }
-                final d = days[idx - 1];
-                final label = _dayLabel(d, now);
-                final c = countsByDay[idx] ?? 0;
-                return _chip(
-                  label,
-                  _selected == idx,
-                  count: c == 0 ? null : c,
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    setState(() => _selected = idx);
-                  },
-                );
-              },
-            ),
+          // Filter chips
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _FilterChip(
+                label: 'All ($totalUpcoming)',
+                selected: _selected == 0,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _selected = 0);
+                },
+              ),
+              _FilterChip(
+                label: 'Today',
+                selected: _selected == 1,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _selected = 1);
+                },
+              ),
+              _FilterChip(
+                label: 'Tomorrow',
+                selected: _selected == 2,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _selected = 2);
+                },
+              ),
+              _FilterChip(
+                label: 'Week',
+                selected: _selected == 3,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _selected = 3);
+                },
+              ),
+            ],
           ),
 
           const SizedBox(height: 12),
 
           // Content
-          if (sorted.isEmpty)
+          if (inWindow.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 6),
               child: Text('No upcoming items', style: TextStyle(color: Colors.black54)),
             )
-          else if (_selected != 0)
-          // Single-day list
+          else if (_selected == 0)
+            _GroupedByDay(
+              days: days,
+              items: inWindow,
+              rowBuilder: (it) => _row(context, it),
+            )
+          else
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: filtered.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (_, i) => _row(context, filtered[i]),
-            )
-          else
-          // All: grouped by day with mini headers
-            _GroupedByDay(
-              days: days,
-              items: sorted,
-              rowBuilder: (it) => _row(context, it),
             ),
         ],
       ),
     );
   }
 
+  List<SharedItem> _filterBySelection(
+      List<SharedItem> items, DateTime today, int selection) {
+    final tomorrow = today.add(const Duration(days: 1));
+    final weekEnd = today.add(const Duration(days: 6));
+    switch (selection) {
+      case 1:
+        return items
+            .where((e) => _sameDay(e.nextDueAt!, today))
+            .toList(growable: false);
+      case 2:
+        return items
+            .where((e) => _sameDay(e.nextDueAt!, tomorrow))
+            .toList(growable: false);
+      case 3:
+        return items
+            .where((e) {
+              final dd = DateTime(
+                  e.nextDueAt!.year, e.nextDueAt!.month, e.nextDueAt!.day);
+              return !dd.isAfter(weekEnd);
+            })
+            .toList(growable: false);
+      default:
+        return items;
+    }
+  }
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
   // ================= FULL PAGE (bottom sheet) =================
 
   void _openFullPage(
-      BuildContext context,
-      List<DateTime> days,
-      Map<int, int> countsByDay,
-      List<SharedItem> sorted,
-      ) {
+    BuildContext context,
+    List<SharedItem> inWindow,
+    List<SharedItem> sorted,
+  ) {
     HapticFeedback.selectionClick();
     showModalBottomSheet<void>(
       context: context,
@@ -222,17 +217,13 @@ class _UpcomingTimelineState extends State<UpcomingTimeline> {
       ),
       builder: (_) {
         final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
         final controller = ScrollController();
         // compute filtered for current selection inside stateful builder
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
-            List<SharedItem> sheetFiltered() {
-              if (_selected == 0) return sorted;
-              return sorted.where((e) {
-                final d = DateTime(e.nextDueAt!.year, e.nextDueAt!.month, e.nextDueAt!.day);
-                return d == days[_selected - 1];
-              }).toList();
-            }
+            List<SharedItem> sheetFiltered() =>
+                _filterBySelection(inWindow, today, _selected);
 
             return DraggableScrollableSheet(
               expand: false,
@@ -284,42 +275,47 @@ class _UpcomingTimelineState extends State<UpcomingTimeline> {
                             ),
                             const SizedBox(height: 12),
 
-                            // chips (same behavior inside sheet)
-                            SizedBox(
-                              height: 40,
-                              child: ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: days.length + 1,
-                                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                                itemBuilder: (context, idx) {
-                                  if (idx == 0) {
-                                    final total = sorted.length;
-                                    return _chip(
-                                      'All',
-                                      _selected == 0,
-                                      count: total == 0 ? null : total,
-                                      onTap: () {
-                                        HapticFeedback.selectionClick();
-                                        setState(() => _selected = 0);
-                                        setSheetState(() {});
-                                      },
-                                    );
-                                  }
-                                  final d = days[idx - 1];
-                                  final label = _dayLabel(d, now);
-                                  final c = countsByDay[idx] ?? 0;
-                                  return _chip(
-                                    label,
-                                    _selected == idx,
-                                    count: c == 0 ? null : c,
-                                    onTap: () {
-                                      HapticFeedback.selectionClick();
-                                      setState(() => _selected = idx);
-                                      setSheetState(() {});
-                                    },
-                                  );
-                                },
-                              ),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _FilterChip(
+                                  label: 'All (${inWindow.length})',
+                                  selected: _selected == 0,
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    setState(() => _selected = 0);
+                                    setSheetState(() {});
+                                  },
+                                ),
+                                _FilterChip(
+                                  label: 'Today',
+                                  selected: _selected == 1,
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    setState(() => _selected = 1);
+                                    setSheetState(() {});
+                                  },
+                                ),
+                                _FilterChip(
+                                  label: 'Tomorrow',
+                                  selected: _selected == 2,
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    setState(() => _selected = 2);
+                                    setSheetState(() {});
+                                  },
+                                ),
+                                _FilterChip(
+                                  label: 'Week',
+                                  selected: _selected == 3,
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    setState(() => _selected = 3);
+                                    setSheetState(() {});
+                                  },
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -394,18 +390,9 @@ class _UpcomingTimelineState extends State<UpcomingTimeline> {
                           ),
                         ),
                         if (isOverdue)
-                          Container(
-                            margin: const EdgeInsets.only(left: 8),
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(.08),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: Colors.red.withOpacity(.25)),
-                            ),
-                            child: const Text(
-                              'Overdue',
-                              style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800, fontSize: 11.5),
-                            ),
+                          const Padding(
+                            padding: EdgeInsets.only(left: 8),
+                            child: _StatusChip('Overdue', AppColors.bad),
                           ),
                       ],
                     ),
@@ -552,78 +539,16 @@ class _UpcomingTimelineState extends State<UpcomingTimeline> {
     );
   }
 
-  // ---- small atoms ----
-
-  static Widget _pill({required Widget child, Color? borderColor}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: borderColor ?? Colors.black.withOpacity(.14)),
-      ),
-      child: child,
-    );
-  }
-
-  Widget _chip(String text, bool selected,
-      {required VoidCallback onTap, int? count}) {
-    final bg = selected ? AppColors.mint.withOpacity(.16) : Colors.white.withOpacity(.90);
-    final fg = selected ? AppColors.mint.withOpacity(.95) : Colors.black87;
-    final side = selected ? AppColors.mint.withOpacity(.35) : Colors.black12;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          Feedback.forTap(context);
-          onTap();
-        },
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: ShapeDecoration(
-            color: bg,
-            shape: StadiumBorder(side: BorderSide(color: side)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(text, style: TextStyle(fontWeight: FontWeight.w700, color: fg)),
-              if (count != null) ...[
-                const SizedBox(width: 6),
-                _badge(count, fg),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   static Widget _tag(String text, Color c) {
-    return Container(
+    return _Pill(
+      text,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: c.withOpacity(.08),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: c.withOpacity(.18)),
-      ),
-      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: c)),
-    );
-  }
-
-  Widget _badge(int n, Color fg) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: fg.withOpacity(.10),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: fg.withOpacity(.25)),
-      ),
-      child: Text(
-        n.toString(),
-        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: fg),
+      backgroundColor: c.withOpacity(.08),
+      borderColor: c.withOpacity(.18),
+      textStyle: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w800,
+        color: c,
       ),
     );
   }
@@ -635,13 +560,6 @@ class _UpcomingTimelineState extends State<UpcomingTimeline> {
     final d = DateTime(due.year, due.month, due.day);
     final today = DateTime(now.year, now.month, now.day);
     return d.isBefore(today);
-  }
-
-  int? _indexForDay(DateTime d, List<DateTime> days) {
-    for (var i = 0; i < days.length; i++) {
-      if (days[i] == d) return i + 1; // +1 because 0 is "All"
-    }
-    return null;
   }
 
   IconData _iconFor(String? type) {
@@ -678,6 +596,146 @@ class _UpcomingTimelineState extends State<UpcomingTimeline> {
   String _fmtDate(DateTime d) {
     const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     return '${m[d.month - 1]} ${d.day.toString().padLeft(2, '0')}';
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final String text;
+  final Color base;
+
+  const _StatusChip(this.text, this.base, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: base.withOpacity(.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: base.withOpacity(.22)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: base,
+          fontWeight: FontWeight.w800,
+          fontSize: 11.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  final String text;
+  final EdgeInsetsGeometry padding;
+  final Color? backgroundColor;
+  final Color? borderColor;
+  final TextStyle? textStyle;
+
+  const _Pill(
+    this.text, {
+    this.padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    this.backgroundColor,
+    this.borderColor,
+    this.textStyle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: backgroundColor ?? Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor ?? Colors.black.withOpacity(.10)),
+      ),
+      child: Text(text, style: textStyle ?? const TextStyle(fontWeight: FontWeight.w800)),
+    );
+  }
+}
+
+class _CounterPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool highlight;
+  final Color? iconColor;
+
+  const _CounterPill({
+    required this.icon,
+    required this.label,
+    this.highlight = false,
+    this.iconColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final baseColor = iconColor ?? (highlight ? AppColors.mint : Colors.black.withOpacity(.70));
+    final textColor = highlight ? baseColor : Colors.black.withOpacity(.70);
+    final bg = highlight ? baseColor.withOpacity(.10) : Colors.white;
+    final border = highlight ? baseColor.withOpacity(.28) : Colors.black.withOpacity(.08);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: baseColor),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: textColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = selected ? AppColors.mint : Colors.black87;
+    final bg = selected ? AppColors.mint.withOpacity(.12) : Colors.white;
+    final border = selected ? AppColors.mint.withOpacity(.30) : Colors.black.withOpacity(.08);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: ShapeDecoration(
+            color: bg,
+            shape: StadiumBorder(side: BorderSide(color: border)),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(fontWeight: FontWeight.w700, color: fg),
+          ),
+        ),
+      ),
+    );
   }
 }
 
