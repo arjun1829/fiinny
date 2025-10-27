@@ -64,19 +64,19 @@ class _Subs_BgState extends State<_Subs_Bg> with SingleTickerProviderStateMixin 
   @override
   Widget build(BuildContext context) {
     final bool lowGpu = AppPerf.lowGpuMode;
-       if (lowGpu) {
-         // Static background when low-GPU mode is on.
-         return Container(
-           decoration: BoxDecoration(
-             gradient: const LinearGradient(
-               begin: Alignment.topLeft,
-               end: Alignment.bottomRight,
-               colors: [Color(0xFF00D2D3), Color(0xFFFDFBFB)],
-             ),
-           ),
-         );
-       }
-       return AnimatedBuilder(
+    if (lowGpu) {
+      // Static background when low-GPU mode is on.
+      return Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF00D2D3), Color(0xFFFDFBFB)],
+          ),
+        ),
+      );
+    }
+    return AnimatedBuilder(
       animation: _t,
       builder: (_, __) {
         final a = 0.06 + 0.04 * _t.value;
@@ -153,11 +153,11 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final padding = MediaQuery.of(context).padding;
-    final viewInsets = MediaQuery.of(context).viewInsets;
+    final media = MediaQuery.of(context);
+    final viewInsets = media.viewInsets;
+    final viewPadding = media.viewPadding;
 
     return Scaffold(
-      extendBodyBehindAppBar: true,
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -201,9 +201,10 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
       body: Stack(
         children: [
           // Soft gradient background (local; no missing imports)
-          const RepaintBoundary(child: SizedBox.expand(child: _Subs_Bg())),
-          Padding(
-            padding: EdgeInsets.only(top: kToolbarHeight + padding.top + 6),
+          const Positioned.fill(
+            child: RepaintBoundary(child: _Subs_Bg()),
+          ),
+          Positioned.fill(
             child: StreamBuilder<List<SharedItem>>(
               stream: _resolvedStream,
               builder: (context, snap) {
@@ -261,11 +262,10 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                 final emis = _vm.emis(itemsFiltered);
 
                 // Bottom padding that plays nice with keyboard + FAB + safe area
-                final baseBottom = 88.0; // room for FAB + some breathing space
-                final safeBottom = padding.bottom.toDouble();
+                final baseBottom = viewPadding.bottom + 80.0;
                 final kbOpen = viewInsets.bottom > 0;
                 final kbPad = kbOpen ? 12.0 : 0.0;
-                final listBottomPad = baseBottom + safeBottom + kbPad;
+                final listBottomPad = baseBottom + kbPad;
 
                 return RefreshIndicator(
                   onRefresh: () async {
@@ -274,7 +274,7 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                   },
                   child: ListView(
                     controller: _scroll,
-                    padding: EdgeInsets.fromLTRB(16, 6, 16, listBottomPad),
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, listBottomPad),
                     cacheExtent: 300,
                     addAutomaticKeepAlives: false,
                     addRepaintBoundaries: true,
@@ -365,7 +365,7 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                         ),
                       ],
 
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 16),
 
                       // === NEW: Credit Cards (Bills & Spend) ===
                       if (widget.userPhone != null) ...[
@@ -380,16 +380,17 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                           delay: 100,
                           child: _CardsDueSection(userId: widget.userPhone!),
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 16),
                       ],
 
                       // --- Subscriptions ---
                       if ((subs['items'] as List).isNotEmpty) ...[
-                        const _SectionTitle(
-                          icon: Icons.subscriptions_rounded,
-                          label: 'Subscriptions',
-                          color: AppColors.mint,
+                        _SubscriptionsHeader(
+                          amountLabel:
+                              '₹ ${_fmtAmount(subs['monthlyTotal'] as double)} / mo',
+                          onAdd: () => _svc.openAddFromType(context, 'subscription'),
                         ),
+                        const SizedBox(height: 12),
                         _SlideIn(
                           key: _subsKey,
                           direction: AxisDirection.left,
@@ -417,24 +418,36 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                                 }
                               }
                             },
+                            showHeader: false,
                           ),
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 16),
                       ],
 
                       // --- Bills (generic non-card) ---
                       if ((bills['items'] as List).isNotEmpty) ...[
-                        const _SectionTitle(
+                        _OverviewSectionHeader(
                           icon: Icons.receipt_long_rounded,
-                          label: 'Bills Due This Month',
+                          title: 'Bills Due This Month',
+                          color: Colors.black87,
+                          amountLabel:
+                              '₹ ${_fmtAmount(bills['totalThisMonth'] as double)}',
+                          actionLabel: 'View all',
+                          onActionTap: () => _scrollTo(_billsKey),
+                        ),
+                        const SizedBox(height: 12),
+                        _BillsProgressBar(
+                          value: (bills['paidRatio'] as double),
                           color: Colors.black87,
                         ),
+                        const SizedBox(height: 12),
                         _SlideIn(
                           key: _billsKey,
                           direction: AxisDirection.right,
                           delay: 160,
                           child: BillsCard(
                             top: (bills['top'] as List<SharedItem>),
+                            items: (bills['items'] as List<SharedItem>),
                             totalThisMonth: (bills['totalThisMonth'] as double),
                             paidRatio: (bills['paidRatio'] as double),
                             onViewAll: () => _scrollTo(_billsKey),
@@ -460,9 +473,11 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                                 }
                               }
                             },
+                            showHeader: false,
+                            showProgress: false,
                           ),
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 16),
                       ],
 
                       // --- Recurring (non-monthly) ---
@@ -482,7 +497,7 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                             onManage: () => _scrollTo(_recurKey),
                           ),
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 16),
                       ],
 
                       // --- EMIs ---
@@ -503,15 +518,16 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                             onAdd: () => _svc.openAddFromType(context, 'emi'),
                           ),
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 16),
                       ],
 
                       // --- Upcoming (10 days) ---
-                      const _SectionTitle(
+                      const _OverviewSectionHeader(
                         icon: Icons.upcoming_rounded,
-                        label: 'Upcoming (10 days)',
+                        title: 'Upcoming (10 days)',
                         color: AppColors.mint,
                       ),
+                      const SizedBox(height: 12),
                       _SlideIn(
                         direction: AxisDirection.up,
                         delay: 280,
@@ -522,11 +538,17 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                             Colors.white.withOpacity(.10),
                           ],
                           // Keep Upcoming consistent with current filters
-                          child: UpcomingTimeline(items: itemsFiltered, daysWindow: 10),
+                          child: UpcomingTimeline(
+                            items: itemsFiltered,
+                            daysWindow: 10,
+                            onSeeAll: () {
+                              // TODO: wire up Upcoming list route
+                            },
+                          ),
                         ),
                       ),
 
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 16),
 
                       if (hasError)
                         _errorCard(snap.error)
@@ -798,23 +820,7 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                               ),
                             ),
                             if (isOverdue)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withOpacity(.08),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                      color: Colors.red.withOpacity(.25)),
-                                ),
-                                child: const Text(
-                                  'Overdue',
-                                  style: TextStyle(
-                                      color: Colors.red,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 11.5),
-                                ),
-                              ),
+                              const _StatusChip('Overdue', AppColors.bad),
                           ],
                         ),
                         const SizedBox(height: 14),
@@ -903,7 +909,7 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                               ),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 16),
                         // Notes (if any)
                         if ((e.note ?? '').trim().isNotEmpty)
                           TonalCard(
@@ -1028,12 +1034,23 @@ class _CardsDueSection extends StatelessWidget {
             Colors.white.withOpacity(.26),
             Colors.white.withOpacity(.10),
           ],
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
           child: Column(
             children: [
-              ...top.map((c) => _CardRow(c)).toList(),
+              for (int i = 0; i < top.length; i++) ...[
+                if (i > 0)
+                  Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: Colors.white.withOpacity(0.18),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: _CardRow(top[i]),
+                ),
+              ],
               if (items.length > 3) ...[
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
@@ -1049,8 +1066,15 @@ class _CardsDueSection extends StatelessWidget {
                           child: ListView.separated(
                             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                             itemCount: items.length,
-                            separatorBuilder: (_, __) => const Divider(height: 10),
-                            itemBuilder: (_, i) => _CardRow(items[i]),
+                            separatorBuilder: (_, __) => Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: Colors.black.withOpacity(0.08),
+                            ),
+                            itemBuilder: (_, i) => Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: _CardRow(items[i]),
+                            ),
                           ),
                         ),
                       );
@@ -1110,35 +1134,71 @@ class _CardRow extends StatelessWidget {
     final cycStr = c.spendThisCycle != null ? _fmtInr(c.spendThisCycle!) : '—';
 
     final color = c.isOverdue
-        ? Colors.red
-        : (c.isDue ? Colors.orange : AppColors.mint);
+        ? AppColors.bad
+        : (c.isDue ? AppColors.warn : AppColors.mint);
 
-    return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-      leading: CircleAvatar(
-        radius: 16,
-        backgroundColor: color.withOpacity(0.12),
-        child: Icon(Icons.credit_card, size: 18, color: color),
-      ),
-      title: Text(
-        c.label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.w800),
-      ),
-      subtitle: Text(
-        'Due: $dueStr  •  Total: $totalStr  •  Min: $minStr  •  Cycle spend: $cycStr',
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: TextButton(
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Open ${c.label} details')),
-          );
-        },
-        child: const Text('Open'),
+    final secondary =
+        'Due: $dueStr  ·  Total: $totalStr  ·  Min: $minStr  ·  Cycle spend: $cycStr';
+
+    return SizedBox(
+      height: 60,
+      child: Row(
+        children: [
+          Container(
+            height: 44,
+            width: 44,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(Icons.credit_card, size: 20, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  c.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  secondary,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.black.withOpacity(0.65),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          TextButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Open ${c.label} details')),
+              );
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              foregroundColor: color,
+              textStyle: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            child: const Text('Open'),
+          ),
+        ],
       ),
     );
   }
@@ -1158,6 +1218,221 @@ class _CardRow extends StatelessWidget {
 }
 
 // ---------- tiny local widgets (no external deps) ----------
+
+class _StatusChip extends StatelessWidget {
+  final String text;
+  final Color base;
+
+  const _StatusChip(this.text, this.base, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: base.withOpacity(.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: base.withOpacity(.24)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: base,
+          fontWeight: FontWeight.w800,
+          fontSize: 11.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  final String text;
+
+  const _Pill(this.text, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      radius: 999,
+      showGloss: true,
+      glassGradient: [
+        Colors.white.withOpacity(.30),
+        Colors.white.withOpacity(.10),
+      ],
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: Colors.black.withOpacity(.82),
+          fontWeight: FontWeight.w800,
+          letterSpacing: .2,
+        ),
+      ),
+    );
+  }
+}
+
+class _OverviewSectionHeader extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final Color color;
+  final String? amountLabel;
+  final String? actionLabel;
+  final VoidCallback? onActionTap;
+
+  const _OverviewSectionHeader({
+    required this.icon,
+    required this.title,
+    required this.color,
+    this.amountLabel,
+    this.actionLabel,
+    this.onActionTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = TextStyle(
+      fontSize: 16,
+      fontWeight: FontWeight.w900,
+      color: color,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              title,
+              style: textStyle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (amountLabel != null) ...[
+            _Pill(amountLabel!),
+            const SizedBox(width: 8),
+          ],
+          if (onActionTap != null)
+            TextButton(
+              onPressed: onActionTap,
+              style: TextButton.styleFrom(foregroundColor: color),
+              child: Text(actionLabel ?? 'View all'),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SubscriptionsHeader extends StatelessWidget {
+  final String amountLabel;
+  final VoidCallback? onAdd;
+
+  const _SubscriptionsHeader({
+    required this.amountLabel,
+    this.onAdd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = Colors.black.withOpacity(.88);
+    return Row(
+      children: [
+        const Icon(Icons.subscriptions_rounded, color: AppColors.mint),
+        const SizedBox(width: 8),
+        const Text(
+          'Subscriptions',
+          style: TextStyle(
+            color: AppColors.mint,
+            fontWeight: FontWeight.w900,
+            fontSize: 16,
+          ),
+        ),
+        const Spacer(),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.black.withOpacity(.08)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Text(
+            amountLabel,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: textColor,
+              letterSpacing: .2,
+            ),
+          ),
+        ),
+        if (onAdd != null) ...[
+          const SizedBox(width: 12),
+          TextButton(
+            onPressed: onAdd,
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.mint,
+              textStyle: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            child: const Text('+ Add New'),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _BillsProgressBar extends StatelessWidget {
+  final double value;
+  final Color color;
+
+  const _BillsProgressBar({
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final safeValue = (value.isNaN ? 0.0 : value).clamp(0.0, 1.0);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: LinearProgressIndicator(
+                minHeight: 8,
+                value: safeValue,
+                backgroundColor: color.withOpacity(.12),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            '${(safeValue * 100).round()}% Paid',
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+            ),
+            textAlign: TextAlign.right,
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _SectionTitle extends StatelessWidget {
   final IconData icon;

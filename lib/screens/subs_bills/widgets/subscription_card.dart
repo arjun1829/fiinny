@@ -21,6 +21,7 @@ class SubscriptionCard extends StatelessWidget {
   final void Function(SharedItem item)? onReminder;   // after scheduling reminder
   final void Function(SharedItem item)? onMarkPaid;   // after Mark paid
   final void Function()? onAdd;                       // header Add New
+  final bool showHeader;
 
   const SubscriptionCard({
     super.key,
@@ -32,6 +33,7 @@ class SubscriptionCard extends StatelessWidget {
     this.onReminder,
     this.onMarkPaid,
     this.onAdd,
+    this.showHeader = true,
   });
 
   @override
@@ -41,59 +43,53 @@ class SubscriptionCard extends StatelessWidget {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    final isTight = MediaQuery.sizeOf(context).width < 360;
-
     return TonalCard(
       padding: const EdgeInsets.all(AppSpacing.l),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row
-          Row(
-            children: [
-              const Icon(Icons.subscriptions_rounded, color: AppColors.mint),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
+          if (showHeader) ...[
+            Row(
+              children: [
+                const Icon(Icons.subscriptions_rounded, color: AppColors.mint),
+                const SizedBox(width: 8),
+                const Text(
                   'Subscriptions',
                   style: TextStyle(
-                    color: AppColors.mint, // keep title green
+                    color: AppColors.mint,
                     fontWeight: FontWeight.w900,
                     fontSize: 16,
                   ),
                 ),
-              ),
-              _chipPill(
-                child: Text(
-                  '₹ ${_fmtAmount(monthlyTotal)} / mo',
-                  style: TextStyle(
-                    color: darkText,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: .2,
+                const Spacer(),
+                _Pill('₹ ${_fmtAmount(monthlyTotal)} / mo'),
+                const SizedBox(width: 12),
+                if (onAdd != null)
+                  TextButton(
+                    onPressed: onAdd,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.mint,
+                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    child: const Text('+ Add New'),
                   ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ] else if (onAdd != null) ...[
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: onAdd,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.mint,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
                 ),
+                child: const Text('+ Add New'),
               ),
-              const SizedBox(width: 8),
-              if (onAdd != null)
-                (isTight)
-                    ? IconButton(
-                  tooltip: 'Add subscription',
-                  onPressed: onAdd,
-                  icon: Icon(Icons.add, color: darkText),
-                )
-                    : TextButton.icon(
-                  onPressed: onAdd,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Add New'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: darkText,
-                    textStyle:
-                    const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
+            ),
+            const SizedBox(height: 12),
+          ],
 
           // Empty mini-state
           if (top.isEmpty)
@@ -112,109 +108,147 @@ class SubscriptionCard extends StatelessWidget {
   List<Widget> _rows(
       BuildContext context, Color darkText, Color subText, DateTime today) {
     return top.map((e) {
-      final title = e.title ?? 'Subscription';
       final amt = (e.rule.amount ?? 0).toDouble();
       final due = e.nextDueAt;
-      final asset = BrandAvatarRegistry.assetFor(title);
+      final asset = BrandAvatarRegistry.assetFor(e.title ?? 'Subscription');
 
       final bool isOverdue = (due == null)
           ? false
           : DateTime(due.year, due.month, due.day).isBefore(today);
 
+      final merchant = _merchantName(e);
+      final plan = _planName(e, merchant);
+      final statusBadge = _buildStatusBadge(e, isOverdue);
+      final dueLabel = _dueLabelRich(due, isOverdue);
+
       return _InkRow(
         onTap: () => _open(context, e),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const SizedBox(width: 10),
-            // If BrandAvatar supports fallback initials, it will use label automatically.
-            BrandAvatar(assetPath: asset, label: title, size: 40, radius: 12),
-            const SizedBox(width: 12),
-
-            // text block
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // title + overdue chip (if any)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: darkText,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14.5,
-                            height: 1.1,
-                          ),
-                        ),
-                      ),
-                      if (isOverdue)
-                        _chipPill(
-                          color: Colors.red.withOpacity(.08),
-                          borderColor: Colors.red.withOpacity(.25),
-                          child: const Text(
-                            'Overdue',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              BrandAvatar(assetPath: asset, label: merchant, size: 44, radius: 12),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            merchant,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: Colors.red,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 11.5,
+                              color: darkText,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15,
                             ),
                           ),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-
-                  // Wrap avoids overflow on tight widths
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      if (due != null)
-                        Text(
-                          _dueLabel(due, isOverdue),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: subText,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      _chipPill(
-                        child: Text(
-                          '₹ ${_fmtAmount(amt)}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: darkText,
-                            fontSize: 12.5,
-                            letterSpacing: .2,
-                          ),
+                        if (statusBadge != null) statusBadge,
+                      ],
+                    ),
+                    if (plan != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        plan,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: subText,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            dueLabel,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: subText,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        _Pill('₹ ${_fmtAmount(amt)}'),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-
-            // Trailing actions that adapt to width
-            _TrailingActions(
-              isOverdue: isOverdue,
-              onManage: () => _manage(context, e),
-              onMarkPaid: () => _markPaid(context, e),
-              onEdit: () => _edit(context, e),
-              onReminder: () => _reminder(context, e),
-            ),
-
-            const SizedBox(width: 6),
-          ],
+              const SizedBox(width: 12),
+              _RowActions(
+                onManage: () => _manage(context, e),
+                onMarkPaid: () => _markPaid(context, e),
+                onEdit: () => _edit(context, e),
+                onReminder: () => _reminder(context, e),
+              ),
+            ],
+          ),
         ),
       );
     }).toList();
+  }
+
+  String _merchantName(SharedItem e) {
+    final provider = (e.provider ?? '').trim();
+    final title = (e.title ?? '').trim();
+    if (provider.isNotEmpty) return provider;
+    if (title.isNotEmpty) return title;
+    return 'Subscription';
+  }
+
+  String? _planName(SharedItem e, String merchant) {
+    final note = (e.note ?? '').trim();
+    final title = (e.title ?? '').trim();
+    final provider = (e.provider ?? '').trim();
+
+    if (provider.isNotEmpty && title.isNotEmpty &&
+        title.toLowerCase() != provider.toLowerCase()) {
+      return title;
+    }
+    if (note.isNotEmpty && note.toLowerCase() != merchant.toLowerCase()) {
+      return note;
+    }
+    if (provider.isEmpty && title.isNotEmpty &&
+        title.toLowerCase() != merchant.toLowerCase()) {
+      return title;
+    }
+    return null;
+  }
+
+  Widget? _buildStatusBadge(SharedItem e, bool isOverdue) {
+    if (isOverdue) {
+      return const _StatusChip('Overdue', AppColors.bad);
+    }
+    final status = (e.rule.status).toLowerCase();
+    switch (status) {
+      case 'active':
+        return const _StatusChip('Active', AppColors.mint);
+      case 'paused':
+        return const _StatusChip('Paused', AppColors.warn);
+      case 'trial':
+        return const _StatusChip('Trial', AppColors.electricPurple);
+      case 'ended':
+        return const _StatusChip('Ended', AppColors.ink500);
+      default:
+        return null;
+    }
+  }
+
+  String _dueLabelRich(DateTime? due, bool isOverdue) {
+    if (due == null) return 'Due --';
+    final label = _fmtDate(due);
+    return isOverdue ? 'Was due $label' : 'Due $label';
   }
 
   // ---- action plumbing (open sheets; let parent persist after) ----
@@ -539,10 +573,6 @@ class SubscriptionCard extends StatelessWidget {
     return '${months[d.month - 1]} ${d.day.toString().padLeft(2, '0')}';
   }
 
-  static String _dueLabel(DateTime due, bool isOverdue) {
-    final s = _fmtDate(due);
-    return isOverdue ? 'Was due $s' : 'Due $s';
-  }
 }
 
 /// Small helper to get ripple on each row while keeping a stronger border.
@@ -590,16 +620,81 @@ class _MenuRow extends StatelessWidget {
   }
 }
 
-/// Trailing actions that adapt to available width (avoid overflow).
-class _TrailingActions extends StatelessWidget {
-  final bool isOverdue;
+class _StatusChip extends StatelessWidget {
+  final String text;
+  final Color base;
+
+  const _StatusChip(this.text, this.base, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(left: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: base.withOpacity(.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: base.withOpacity(.22)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: base,
+          fontWeight: FontWeight.w800,
+          fontSize: 11.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  final String text;
+  final TextStyle? textStyle;
+  final Color? backgroundColor;
+  final Color? borderColor;
+
+  const _Pill(
+    this.text, {
+    this.textStyle,
+    this.backgroundColor,
+    this.borderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final style = textStyle ??
+        const TextStyle(
+          fontWeight: FontWeight.w800,
+          letterSpacing: .2,
+        );
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: backgroundColor ?? Colors.white.withOpacity(.70),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor ?? Colors.black.withOpacity(.08)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(text, style: style),
+    );
+  }
+}
+
+class _RowActions extends StatelessWidget {
   final VoidCallback onManage;
   final VoidCallback onMarkPaid;
   final VoidCallback onEdit;
   final VoidCallback onReminder;
 
-  const _TrailingActions({
-    required this.isOverdue,
+  const _RowActions({
     required this.onManage,
     required this.onMarkPaid,
     required this.onEdit,
@@ -608,48 +703,23 @@ class _TrailingActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Colors.black.withOpacity(.92);
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final tight = constraints.maxWidth < 160;
-
-        final Widget primaryBtn = isOverdue
-            ? (tight
-            ? IconButton(
-          tooltip: 'Mark paid',
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        TextButton(
           onPressed: onMarkPaid,
-          icon: Icon(Icons.check_circle_outline_rounded, color: dark),
-        )
-            : OutlinedButton(
-          onPressed: onMarkPaid,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: dark,
-            side: BorderSide(color: Colors.black.withOpacity(.18)),
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.mint,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             textStyle: const TextStyle(fontWeight: FontWeight.w800),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            minimumSize: const Size(0, 0),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
           child: const Text('Paid?'),
-        ))
-            : (tight
-            ? IconButton(
-          tooltip: 'Manage',
-          onPressed: onManage,
-          icon: Icon(Icons.tune_rounded, color: dark),
-        )
-            : OutlinedButton(
-          onPressed: onManage,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: dark,
-            side: BorderSide(color: Colors.black.withOpacity(.18)),
-            textStyle: const TextStyle(fontWeight: FontWeight.w800),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-          ),
-          child: const Text('Manage'),
-        ));
-
-        final menu = PopupMenuButton<_SubsAction>(
-          tooltip: 'More',
+        ),
+        PopupMenuButton<_SubsAction>(
+          tooltip: 'More actions',
           onSelected: (value) {
             switch (value) {
               case _SubsAction.edit:
@@ -666,37 +736,28 @@ class _TrailingActions extends StatelessWidget {
                 break;
             }
           },
-          itemBuilder: (context) => [
-            const PopupMenuItem(
+          itemBuilder: (context) => const [
+            PopupMenuItem(
               value: _SubsAction.edit,
               child: _MenuRow(icon: Icons.edit_rounded, label: 'Edit'),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: _SubsAction.manage,
               child: _MenuRow(icon: Icons.tune_rounded, label: 'Manage'),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: _SubsAction.reminder,
               child: _MenuRow(icon: Icons.alarm_add_rounded, label: 'Set reminder'),
             ),
-            if (isOverdue)
-              const PopupMenuItem(
-                value: _SubsAction.paid,
-                child: _MenuRow(icon: Icons.check_circle_outline_rounded, label: 'Mark paid'),
-              ),
+            PopupMenuItem(
+              value: _SubsAction.paid,
+              child:
+                  _MenuRow(icon: Icons.check_circle_outline_rounded, label: 'Mark paid'),
+            ),
           ],
           icon: Icon(Icons.more_vert_rounded, color: Colors.black.withOpacity(.70)),
-        );
-
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            primaryBtn,
-            const SizedBox(width: 6),
-            menu,
-          ],
-        );
-      },
+        ),
+      ],
     );
   }
 }
