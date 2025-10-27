@@ -7,6 +7,7 @@ import 'package:lifemap/details/models/shared_item.dart';
 import 'package:lifemap/details/services/recurring_service.dart';
 import 'package:lifemap/details/models/recurring_scope.dart';
 import 'package:lifemap/details/services/sharing_service.dart';
+import 'package:lifemap/ui/tokens.dart';
 
 import '../../core/notifications/local_notifications.dart';
 // If you don’t have PushService, comment this import & the call sites.
@@ -839,48 +840,89 @@ class SubscriptionsService {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      barrierColor: Colors.black.withOpacity(0.45),
+      backgroundColor: Colors.white.withOpacity(0.98),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.repeat_rounded),
-              title: const Text('Add Recurring'),
-              onTap: () {
-                Navigator.pop(context);
-                openAddFromType(context, 'recurring');
-              },
+      builder: (sheetCtx) {
+        var pad = const EdgeInsets.fromLTRB(16, 20, 16, 16);
+        final bottomInset = MediaQuery.of(sheetCtx).viewPadding.bottom;
+        if (bottomInset > 0) {
+          pad = EdgeInsets.fromLTRB(16, 20, 16, 16 + bottomInset);
+        }
+        Widget tile({
+          required IconData icon,
+          required String title,
+          required VoidCallback onTap,
+          String? subtitle,
+        }) {
+          return ListTile(
+            leading: CircleAvatar(
+              radius: 22,
+              backgroundColor: AppColors.mint.withOpacity(.12),
+              child: Icon(icon, color: AppColors.mint),
             ),
-            ListTile(
-              leading: const Icon(Icons.subscriptions_rounded),
-              title: const Text('Add Subscription'),
-              onTap: () {
-                Navigator.pop(context);
-                openAddFromType(context, 'subscription');
-              },
+            title: Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w800),
             ),
-            ListTile(
-              leading: const Icon(Icons.account_balance_rounded),
-              title: const Text('Link EMI / Loan'),
-              onTap: () {
-                Navigator.pop(context);
-                openAddFromType(context, 'emi');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.alarm_rounded),
-              title: const Text('Add Reminder'),
-              onTap: () {
-                Navigator.pop(context);
-                openAddFromType(context, 'reminder');
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+            subtitle: subtitle == null
+                ? null
+                : Text(subtitle, style: TextStyle(color: Colors.black.withOpacity(0.6))),
+            trailing: const Icon(Icons.chevron_right_rounded, color: Colors.black54),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              onTap();
+            },
+          );
+        }
+
+        return Padding(
+          padding: pad,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(height: 20),
+              tile(
+                icon: Icons.repeat_rounded,
+                title: 'Add Recurring',
+                subtitle: 'Split rent, utilities, retainers',
+                onTap: () => openAddFromType(context, 'recurring'),
+              ),
+              const SizedBox(height: 6),
+              tile(
+                icon: Icons.subscriptions_rounded,
+                title: 'Add Subscription',
+                subtitle: 'Apps, OTT, memberships',
+                onTap: () => openAddFromType(context, 'subscription'),
+              ),
+              const SizedBox(height: 6),
+              tile(
+                icon: Icons.account_balance_rounded,
+                title: 'Link EMI / Loan',
+                subtitle: 'Track repayments automatically',
+                onTap: () => openAddFromType(context, 'emi'),
+              ),
+              const SizedBox(height: 6),
+              tile(
+                icon: Icons.alarm_rounded,
+                title: 'Add Reminder',
+                subtitle: 'Light nudges without amounts',
+                onTap: () => openAddFromType(context, 'reminder'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
