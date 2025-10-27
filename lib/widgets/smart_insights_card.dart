@@ -28,8 +28,13 @@ class SmartInsightCard extends StatelessWidget {
   }) : super(key: key);
 
   String getInsight() {
-    final preset = insightText?.trim();
-    if (preset != null && preset.isNotEmpty) {
+    String? sanitize(String? value) {
+      final trimmed = value?.trim() ?? '';
+      return trimmed.isEmpty ? null : trimmed;
+    }
+
+    final preset = sanitize(insightText);
+    if (preset != null) {
       return preset;
     }
 
@@ -37,27 +42,32 @@ class SmartInsightCard extends StatelessWidget {
     final assets = (totalAssets ?? 0);
 
     if (loans > 0 || assets > 0) {
-      return InsightMicrocopy.netWorth(assets: assets, loans: loans);
+      final copy = sanitize(InsightMicrocopy.netWorth(assets: assets, loans: loans));
+      if (copy != null) {
+        return copy;
+      }
     }
 
-    final svi = InsightMicrocopy.spendVsIncome(income: income, expense: expense);
-    if (svi.isNotEmpty) return svi;
+    final svi = sanitize(InsightMicrocopy.spendVsIncome(income: income, expense: expense));
+    if (svi != null) return svi;
 
-    final sr = InsightMicrocopy.savingsRate(income: income, savings: savings);
-    if (sr.isNotEmpty) return sr;
+    final sr = sanitize(InsightMicrocopy.savingsRate(income: income, savings: savings));
+    if (sr != null) return sr;
 
     if (goal != null && goal!.targetAmount > 0 && savings > 0) {
       final remaining = ((goal!.targetAmount - goal!.savedAmount)
               .clamp(0, double.infinity) as num)
           .toDouble();
-      return InsightMicrocopy.goalPace(
+      final goalCopy = sanitize(InsightMicrocopy.goalPace(
         title: goal!.title,
         remaining: remaining,
         monthlySavings: savings.toDouble(),
-      );
+      ));
+      if (goalCopy != null) return goalCopy;
     }
 
-    return InsightMicrocopy.fallback();
+    return sanitize(InsightMicrocopy.fallback()) ??
+        'No insights yet — add a transaction or link Gmail to unlock insights.';
   }
 
   @override

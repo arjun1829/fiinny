@@ -132,9 +132,6 @@ class _MainNavScreenState extends State<MainNavScreen>
   @override
   Widget build(BuildContext context) {
     final phone = _effectivePhone;
-    final mediaQuery = MediaQuery.of(context);
-    final bottomInset = mediaQuery.padding.bottom;
-    final navBottomPadding = bottomInset > 0 ? bottomInset : 8.0;
     final screens = <Widget>[
       DashboardScreen(userPhone: phone),
       ExpensesScreen(userPhone: phone),
@@ -155,73 +152,84 @@ class _MainNavScreenState extends State<MainNavScreen>
             ),
         ],
       ),
-      bottomNavigationBar: Container(
-        padding: EdgeInsets.fromLTRB(0, 6, 0, navBottomPadding),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border(
-            top: BorderSide(
-              color: Colors.grey.withOpacity(0.13),
-              width: 1.2,
+      bottomNavigationBar: SafeArea(
+        top: false,
+        bottom: true,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(0, 2, 0, 0),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(
+              top: BorderSide(
+                color: Colors.grey.withOpacity(0.13),
+                width: 1.2,
+              ),
             ),
           ),
-        ),
-        child: BottomNavigationBar(
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.transparent,
-          currentIndex: _currentIndex,
-          elevation: 0,
-          selectedItemColor: Theme.of(context).colorScheme.primary,
-          unselectedItemColor: const Color(0xFF535A68),
-          selectedFontSize: 12,
-          unselectedFontSize: 11,
-          showUnselectedLabels: true,
-          onTap: _onTabTapped,
-          items: List.generate(_iconData.length, (i) {
-            final selected = _currentIndex == i;
-            return BottomNavigationBarItem(
-              icon: Stack(
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOut,
-                    decoration: selected
-                        ? BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withOpacity(0.10),
-                          )
-                        : null,
-                    child: SizedBox(
-                      width: 26,
-                      height: 26,
-                      child: AnimatedBuilder(
-                        animation: _shineControllers[i],
-                        builder: (context, child) {
-                          return CustomPaint(
-                            painter: selected
-                                ? ShinePainter(_shineAnimations[i].value)
-                                : null,
-                            child: Icon(
-                              _iconData[i],
-                              size: selected ? 24 : 21,
-                              color: selected
-                                  ? Theme.of(context).colorScheme.primary
-                                  : const Color(0xFF535A68),
-                            ),
-                          );
-                        },
+          child: BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: Colors.transparent,
+            currentIndex: _currentIndex,
+            elevation: 0,
+            selectedItemColor: Theme.of(context).colorScheme.primary,
+            unselectedItemColor: const Color(0xFF535A68),
+            selectedFontSize: 11,
+            unselectedFontSize: 10,
+            selectedLabelStyle: const TextStyle(
+              height: 1.0,
+              fontWeight: FontWeight.w600,
+            ),
+            unselectedLabelStyle: const TextStyle(height: 1.0),
+            selectedIconTheme: const IconThemeData(size: 22),
+            unselectedIconTheme: const IconThemeData(size: 19),
+            showUnselectedLabels: true,
+            onTap: _onTabTapped,
+            items: List.generate(_iconData.length, (i) {
+              final selected = _currentIndex == i;
+              return BottomNavigationBarItem(
+                icon: Stack(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                      decoration: selected
+                          ? BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withOpacity(0.10),
+                            )
+                          : null,
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: AnimatedBuilder(
+                          animation: _shineControllers[i],
+                          builder: (context, child) {
+                            return CustomPaint(
+                              painter: selected
+                                  ? ShinePainter(_shineAnimations[i].value)
+                                  : null,
+                              child: Icon(
+                                _iconData[i],
+                                size: selected ? 22 : 19,
+                                color: selected
+                                    ? Theme.of(context).colorScheme.primary
+                                    : const Color(0xFF535A68),
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              label: const ["Dashboard", "Expenses", "Friends", "Sharing"][i],
-            );
-          }),
+                  ],
+                ),
+                label: const ["Dashboard", "Expenses", "Friends", "Sharing"][i],
+              );
+            }),
+          ),
         ),
       ),
     );
