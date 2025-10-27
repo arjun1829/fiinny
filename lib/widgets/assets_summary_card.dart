@@ -21,6 +21,10 @@ class AssetsSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final titleStyle = Theme.of(context)
+        .textTheme
+        .titleMedium
+        ?.copyWith(fontWeight: FontWeight.w700, fontSize: 16);
     return GlassCard(
       radius: Fx.r24,
       child: Column(
@@ -29,7 +33,7 @@ class AssetsSummaryCard extends StatelessWidget {
           Row(children: [
             const Icon(Icons.savings_rounded, color: Fx.good),
             const SizedBox(width: Fx.s8),
-            Text("Assets", style: Fx.title),
+            Text("Assets", style: titleStyle),
             const Spacer(),
             IconButton(
               icon: const Icon(Icons.add_circle, color: Fx.mintDark),

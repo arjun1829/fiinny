@@ -18,6 +18,10 @@ class NetWorthPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final net = totalAssets - totalLoan;
     final color = net >= 0 ? Fx.good : Fx.bad;
+    final titleStyle = Theme.of(context)
+        .textTheme
+        .titleMedium
+        ?.copyWith(fontWeight: FontWeight.w700, fontSize: 16);
 
     return GlassCard(
       radius: Fx.r24,
@@ -29,7 +33,7 @@ class NetWorthPanel extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Net Worth", style: Fx.title),
+                Text("Net Worth", style: titleStyle),
                 const SizedBox(height: Fx.s2),
                 Text(INR.f(net), style: Fx.number.copyWith(color: color)),
                 const SizedBox(height: Fx.s8),
