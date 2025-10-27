@@ -126,7 +126,10 @@ class CategoryRules {
         String? instrument,          // optional hint: UPI / Credit Card / ...
         List<String> tags = const [],// optional extra tags from parser (e.g., ['international','fee','loan_emi'])
       }) {
-    final t = (text + ' ' + (merchantKey ?? '')).toUpperCase();
+    final combined = (text + ' ' + (merchantKey ?? '')).trim();
+    final t = combined.toUpperCase();
+    final lower = combined.toLowerCase();
+    final merchantUpper = (merchantKey ?? '').toUpperCase();
 
     // 1) Direct brand hits
     for (final k in _brandMap.keys) {
@@ -189,9 +192,32 @@ class CategoryRules {
       return const CategoryGuess('Utilities', 'Bills', 0.75, ['utilities']);
     }
 
-    // Fuel
-    if (_has(t, r'\b(fuel|petrol|diesel|hpcl|bpcl|ioc)\b')) {
-      return const CategoryGuess('Fuel', 'Fuel', 0.8, ['fuel']);
+    // Fuel (petrol/diesel pumps + brand aliases)
+    final fuelHit = RegExp(r'\b(petrol|diesel|fuel|gas\s*station|filling\s*station)\b')
+            .hasMatch(lower) ||
+        lower.contains('hpcl') ||
+        lower.contains('hindustan petroleum') ||
+        lower.contains('bpcl') ||
+        lower.contains('bharat petroleum') ||
+        lower.contains('iocl') ||
+        lower.contains('indian oil') ||
+        lower.contains('shell') ||
+        lower.contains('nayara') ||
+        lower.contains('jio-bp') ||
+        lower.contains('jiobp') ||
+        lower.contains('smartdrive') ||
+        lower.contains('hp pay') ||
+        merchantUpper.contains('HPCL') ||
+        merchantUpper.contains('BPCL') ||
+        merchantUpper.contains('HINDUSTAN PETROLEUM') ||
+        merchantUpper.contains('BHARAT PETROLEUM') ||
+        merchantUpper.contains('IOCL') ||
+        merchantUpper.contains('INDIAN OIL') ||
+        merchantUpper.contains('SHELL') ||
+        merchantUpper.contains('NAYARA') ||
+        merchantUpper.contains('JIO-BP');
+    if (fuelHit) {
+      return const CategoryGuess('Fuel', 'Petrol/Diesel', 0.95, ['fuel', 'transport']);
     }
 
     // Travel / Tickets / Hotels
