@@ -81,6 +81,11 @@ class MerchantAlias {
     RegExp(r'HPCL|HINDUSTAN PETROLEUM', caseSensitive: false): 'HPCL',
     RegExp(r'BPCL|BHARAT PETROLEUM', caseSensitive: false): 'BPCL',
     RegExp(r'IOCL|INDIAN OIL', caseSensitive: false): 'IOCL',
+    RegExp(r'SHELL', caseSensitive: false): 'SHELL',
+    RegExp(r'NAYARA', caseSensitive: false): 'NAYARA ENERGY',
+    RegExp(r'JIO[-\s]?BP|JIOBP', caseSensitive: false): 'JIO-BP',
+    RegExp(r'HP\s*PAY', caseSensitive: false): 'HPCL',
+    RegExp(r'SMARTDRIVE', caseSensitive: false): 'BPCL',
 
     // -------- Entertainment --------
     RegExp(r'BOOKMYSHOW|BIGTREE', caseSensitive: false): 'BOOKMYSHOW',
@@ -201,6 +206,29 @@ class MerchantAlias {
       if (addr.contains('KOTAK')) return 'KOTAK';
       if (addr.contains('YES')) return 'YES';
       return addr;
+    }
+
+    final rawUpper = (raw ?? '').toUpperCase();
+    if (rawUpper.isNotEmpty) {
+      const fuelAliases = <String, String>{
+        'HINDUSTAN PETROLEUM': 'HPCL',
+        'HPCL': 'HPCL',
+        'HP PAY': 'HPCL',
+        'SMARTDRIVE': 'BPCL',
+        'BPCL': 'BPCL',
+        'BHARAT PETROLEUM': 'BPCL',
+        'IOCL': 'INDIAN OIL',
+        'INDIANOIL': 'INDIAN OIL',
+        'INDIAN OIL': 'INDIAN OIL',
+        'SHELL': 'SHELL',
+        'NAYARA': 'NAYARA ENERGY',
+        'NAYARA ENERGY': 'NAYARA ENERGY',
+        'JIO-BP': 'JIO-BP',
+        'JIOBP': 'JIO-BP',
+      };
+      for (final entry in fuelAliases.entries) {
+        if (rawUpper.contains(entry.key)) return entry.value;
+      }
     }
 
     // Give back the best we had

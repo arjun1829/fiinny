@@ -129,12 +129,11 @@ class _HeroSummaryState extends State<HeroSummary> {
                     ),
                     border: Border.all(color: Colors.black.withOpacity(.06)),
                   ),
-                  child: Row(
-                    children: [
-                      // Icon + title
-                      const Icon(Icons.account_balance_wallet_rounded, color: AppColors.mint),
-                      const SizedBox(width: 8),
-                      Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isCompact = constraints.maxWidth < 420;
+
+                      final title = Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -151,42 +150,49 @@ class _HeroSummaryState extends State<HeroSummary> {
                             ),
                           ],
                         ),
-                      ),
+                      );
 
-                      // Month progress ring + Add button
-                      _MonthRing(
-                        value: monthPct,
-                        size: 44,
-                        stroke: 5,
-                        color: AppColors.mint,
-                        label: '${(monthPct * 100).round()}%',
-                      ),
-                      const SizedBox(width: 10),
-                      FilledButton.icon(
-                        onPressed: widget.onAddTap,
-                        icon: const Icon(Icons.add, size: 18, color: Colors.white),
-                        label: const Text('Add'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: mint,
-                          foregroundColor: Colors.white,
-                          textStyle: const TextStyle(fontWeight: FontWeight.w800),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      IconButton(
-                        tooltip: widget.searchOpen ? 'Hide search' : 'Search (/)',
-                        onPressed: _toggleSearchWithFocus,
-                        icon: Icon(
-                          widget.searchOpen ? Icons.expand_less_rounded : Icons.search_rounded,
-                          color: on,
-                        ),
-                      ),
-                      if (widget.trailing != null) ...[
-                        const SizedBox(width: 2),
-                        widget.trailing!,
-                      ],
-                    ],
+                      final headerRow = Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.account_balance_wallet_rounded, color: AppColors.mint),
+                          const SizedBox(width: 8),
+                          title,
+                          if (!isCompact) ...[
+                            const SizedBox(width: 12),
+                            _headerActions(
+                              monthPct: monthPct,
+                              mint: mint,
+                              onColor: on,
+                              trailing: widget.trailing,
+                              compact: false,
+                            ),
+                          ],
+                        ],
+                      );
+
+                      if (!isCompact) {
+                        return headerRow;
+                      }
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          headerRow,
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: _headerActions(
+                              monthPct: monthPct,
+                              mint: mint,
+                              onColor: on,
+                              trailing: widget.trailing,
+                              compact: true,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
 
@@ -264,6 +270,53 @@ class _HeroSummaryState extends State<HeroSummary> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _headerActions({
+    required double monthPct,
+    required Color mint,
+    required Color onColor,
+    required bool compact,
+    required Widget? trailing,
+  }) {
+    final actions = <Widget>[
+      _MonthRing(
+        value: monthPct,
+        size: 44,
+        stroke: 5,
+        color: AppColors.mint,
+        label: '${(monthPct * 100).round()}%',
+      ),
+      FilledButton.icon(
+        onPressed: widget.onAddTap,
+        icon: const Icon(Icons.add, size: 18, color: Colors.white),
+        label: const Text('Add'),
+        style: FilledButton.styleFrom(
+          backgroundColor: mint,
+          foregroundColor: Colors.white,
+          textStyle: const TextStyle(fontWeight: FontWeight.w800),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          minimumSize: const Size(0, 40),
+        ),
+      ),
+      IconButton(
+        tooltip: widget.searchOpen ? 'Hide search' : 'Search (/)',
+        onPressed: _toggleSearchWithFocus,
+        icon: Icon(
+          widget.searchOpen ? Icons.expand_less_rounded : Icons.search_rounded,
+          color: onColor,
+        ),
+      ),
+      if (trailing != null) trailing,
+    ];
+
+    return Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      alignment: compact ? WrapAlignment.end : WrapAlignment.center,
+      children: actions,
     );
   }
 
