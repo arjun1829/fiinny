@@ -36,8 +36,13 @@ import '../themes/badge.dart';
 import '../widgets/net_worth_panel.dart';
 import '../core/formatters/inr.dart';
 import '../widgets/subscriptions/subs_bills_card.dart';
-import '../widgets/subscriptions/subs_suggestions_sheet.dart';
-import '../widgets/subscriptions_review_sheet.dart';
+import '../details/recurring/add_choice_sheet.dart';
+import '../details/recurring/add_recurring_basic_screen.dart';
+import '../details/recurring/add_subscription_screen.dart';
+import '../details/recurring/add_emi_link_sheet.dart';
+import '../details/recurring/add_custom_reminder_sheet.dart';
+import '../details/models/recurring_scope.dart';
+import '../details/models/shared_item.dart';
 import '../core/ads/ads_banner_card.dart';
 import '../core/ui/snackbar_throttle.dart';
 import '../widgets/empty_state_card.dart';
@@ -320,6 +325,112 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
     if (!mounted) return;
     await _initDashboard();
+  }
+
+  Future<void> _openSubsAddQuick(BuildContext context) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) => AddChoiceSheet(
+        onPick: (key) => Navigator.pop(sheetCtx, key),
+      ),
+    );
+
+    if (choice == null) return;
+
+    final handled = await _handleSubsAddChoice(choice);
+    if (!mounted) return;
+    if (handled) {
+      await _initDashboard();
+    }
+  }
+
+  RecurringScope _defaultRecurringScope() =>
+      RecurringScope.friend(widget.userPhone, widget.userPhone);
+
+  Future<bool> _handleSubsAddChoice(String rawKey) async {
+    final key = rawKey == 'custom' ? 'reminder' : rawKey;
+    final scope = _defaultRecurringScope();
+    dynamic res;
+
+    try {
+      switch (key) {
+        case 'recurring':
+          res = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AddRecurringBasicScreen(
+                userPhone: widget.userPhone,
+                scope: scope,
+                mirrorToFriend: false,
+              ),
+            ),
+          );
+          break;
+        case 'subscription':
+          res = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AddSubscriptionScreen(
+                userPhone: widget.userPhone,
+                scope: scope,
+                mirrorToFriend: false,
+              ),
+            ),
+          );
+          break;
+        case 'emi':
+          res = await showModalBottomSheet<bool>(
+            context: context,
+            useSafeArea: true,
+            isScrollControlled: true,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            builder: (_) => AddEmiLinkSheet(
+              scope: scope,
+              currentUserId: widget.userPhone,
+            ),
+          );
+          break;
+        case 'reminder':
+          res = await showModalBottomSheet<SharedItem>(
+            context: context,
+            useSafeArea: true,
+            isScrollControlled: true,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            builder: (_) => AddCustomReminderSheet(
+              userPhone: widget.userPhone,
+              scope: scope,
+              mirrorToFriend: false,
+            ),
+          );
+          break;
+        default:
+          return false;
+      }
+    } catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to open flow: $e')),
+      );
+      return false;
+    }
+
+    if (!mounted || res == null) {
+      return false;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Saved!')),
+    );
+    return true;
   }
 
   // --- recompute derived autopay count for current period filter
@@ -1286,9 +1397,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                 SliverAppBar(
                   automaticallyImplyLeading: false,
                   elevation: 0,
-                  backgroundColor: Colors.white.withOpacity(0.96),
+                  backgroundColor: Colors.transparent,
+                  surfaceTintColor: Colors.transparent,
+                  systemOverlayStyle: SystemUiOverlayStyle.dark,
                   toolbarHeight: 48,
-                  pinned: false,
+                  pinned: true,
                   floating: true,
                   snap: true,
                   titleSpacing: 16,
@@ -1373,11 +1486,23 @@ class _DashboardScreenState extends State<DashboardScreen>
                               .get(),
                           builder: (context, snap) {
                             final photo = (snap.data?.data() as Map<String, dynamic>?)?['photo'] as String?;
-                            return CircleAvatar(
-                              radius: 16,
-                              backgroundImage: photo != null && photo.isNotEmpty
-                                  ? NetworkImage(photo)
-                                  : const AssetImage('assets/images/profile_default.png') as ImageProvider,
+                            final imageProvider = photo != null && photo.isNotEmpty
+                                ? NetworkImage(photo)
+                                : const AssetImage('assets/images/profile_default.png') as ImageProvider;
+                            return Container(
+                              padding: const EdgeInsets.all(1.2),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(.85),
+                                  width: 1,
+                                ),
+                              ),
+                              child: CircleAvatar(
+                                radius: 18,
+                                backgroundColor: Colors.white,
+                                backgroundImage: imageProvider,
+                              ),
                             );
                           },
                         ),
@@ -1395,7 +1520,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     padding: const EdgeInsets.only(bottom: 32),
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 6),
                         Padding(
                           padding: horizontalPadding,
                           child: _buildDashboardAdCard(),
@@ -1431,6 +1556,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   debit: txSummary['debit']!,
                                   period: txPeriod,
                                   title: summaryTitle,
+                                  titleStyle: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
                                   subtitle: summarySubtitle,
                                   onFilterTap: () async {
                                     final result = await showModalBottomSheet<String>(
@@ -1775,83 +1904,99 @@ class _DashboardScreenState extends State<DashboardScreen>
 
 
   Widget _buildLoansTile() {
-    return LoansSummaryCard(
-      userId: widget.userPhone,
-      loanCount: loanCount,
-      totalLoan: totalLoan,
-      pendingSuggestions: _loanSuggestionsCount,
-      onTap: () async {
-        final changed = await Navigator.pushNamed<bool>(
-          context,
-          '/loans',
-          arguments: {'userId': widget.userPhone},
-        );
-        if (changed == true) {
-          await _initDashboard();
-        }
-      },
-      onReviewSuggestions: () async {
-        if (!mounted) return;
-        setState(() => _scanningLoans = true);
-        try {
-          await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
-          _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
-        } finally {
-          if (mounted) setState(() => _scanningLoans = false);
-        }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final card = LoansSummaryCard(
+          userId: widget.userPhone,
+          loanCount: loanCount,
+          totalLoan: totalLoan,
+          pendingSuggestions: _loanSuggestionsCount,
+          onTap: () async {
+            final changed = await Navigator.pushNamed<bool>(
+              context,
+              '/loans',
+              arguments: {'userId': widget.userPhone},
+            );
+            if (changed == true) {
+              await _initDashboard();
+            }
+          },
+          onReviewSuggestions: () async {
+            if (!mounted) return;
+            setState(() => _scanningLoans = true);
+            try {
+              await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
+              _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
+            } finally {
+              if (mounted) setState(() => _scanningLoans = false);
+            }
 
-        await showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          builder: (_) => SizedBox(
-            height: MediaQuery.of(context).size.height * 0.70,
-            child: LoanSuggestionsSheet(userId: widget.userPhone),
-          ),
-        );
+            await showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              builder: (_) => SizedBox(
+                height: MediaQuery.of(context).size.height * 0.70,
+                child: LoanSuggestionsSheet(userId: widget.userPhone),
+              ),
+            );
 
-        _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
-        final ls = await LoanService().countOpenLoans(widget.userPhone);
-        final sum = await LoanService().sumOutstanding(widget.userPhone);
-        if (mounted) {
-          setState(() {
-            loanCount = ls;
-            totalLoan = sum;
-          });
-        }
-      },
-      onAddLoan: () async {
-        final added = await Navigator.pushNamed<bool>(
-          context,
-          '/addLoan',
-          arguments: widget.userPhone,
+            _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
+            final ls = await LoanService().countOpenLoans(widget.userPhone);
+            final sum = await LoanService().sumOutstanding(widget.userPhone);
+            if (mounted) {
+              setState(() {
+                loanCount = ls;
+                totalLoan = sum;
+              });
+            }
+          },
+          onAddLoan: () async {
+            final added = await Navigator.pushNamed<bool>(
+              context,
+              '/addLoan',
+              arguments: widget.userPhone,
+            );
+            if (added == true) {
+              await _initDashboard();
+            }
+          },
         );
-        if (added == true) {
-          await _initDashboard();
+        if (constraints.maxHeight.isFinite) {
+          return SizedBox.expand(child: card);
         }
+        return card;
       },
     );
   }
 
   Widget _buildAssetsTile() {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () async {
-          await Navigator.pushNamed(context, '/portfolio');
-          await _loadPortfolioTotals();
-        },
-        child: AssetsSummaryCard(
-          userId: widget.userPhone,
-          assetCount: assetCount,
-          totalAssets: totalAssets,
-          onAddAsset: () async {
-            await Navigator.pushNamed(context, '/asset-type-picker');
-            await _loadPortfolioTotals();
-          },
-        ),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final card = Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () async {
+              await Navigator.pushNamed(context, '/portfolio');
+              await _loadPortfolioTotals();
+            },
+            child: AssetsSummaryCard(
+              userId: widget.userPhone,
+              assetCount: assetCount,
+              totalAssets: totalAssets,
+              onAddAsset: () async {
+                await Navigator.pushNamed(context, '/asset-type-picker');
+                await _loadPortfolioTotals();
+              },
+            ),
+          ),
+        );
+        if (constraints.maxHeight.isFinite) {
+          return SizedBox.expand(child: card);
+        }
+        return card;
+      },
     );
   }
 
@@ -1867,29 +2012,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       monthTotal: autopayTotal,
       nextDue: null,
       onOpen: () => _openSubscriptionsAndBills(context),
-      onAdd: () async {
-        await showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          builder: (_) => SubsSuggestionsSheet(
-            userId: widget.userPhone,
-            onReview: () async {
-              Navigator.pop(context);
-              await showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                builder: (_) => SizedBox(
-                  height: MediaQuery.of(context).size.height * 0.8,
-                  child: SubscriptionsReviewSheet(userId: widget.userPhone),
-                ),
-              );
-            },
-          ),
-        );
-        await _initDashboard();
-      },
+      onAdd: () => _openSubsAddQuick(context),
     );
   }
 

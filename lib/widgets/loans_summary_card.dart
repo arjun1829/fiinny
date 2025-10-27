@@ -30,6 +30,10 @@ class LoansSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final titleStyle = Theme.of(context)
+        .textTheme
+        .titleMedium
+        ?.copyWith(fontWeight: FontWeight.w700, fontSize: 16);
     final Widget contents = GlassCard(
       radius: Fx.r24,
       child: Column(
@@ -38,7 +42,7 @@ class LoansSummaryCard extends StatelessWidget {
           Row(children: [
             const Icon(Icons.account_balance_rounded, color: Fx.bad),
             const SizedBox(width: Fx.s8),
-            Text("Loans", style: Fx.title),
+            Text("Loans", style: titleStyle),
             const SizedBox(width: Fx.s8),
             if (pendingSuggestions > 0)
               InkWell(

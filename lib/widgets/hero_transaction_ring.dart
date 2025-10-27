@@ -11,6 +11,7 @@ class HeroTransactionRing extends StatelessWidget {
   final String? subtitle;
   final VoidCallback onFilterTap;
   final VoidCallback? onTap;
+  final TextStyle? titleStyle;
 
   const HeroTransactionRing({
     super.key,
@@ -21,6 +22,7 @@ class HeroTransactionRing extends StatelessWidget {
     this.subtitle,
     required this.onFilterTap,
     this.onTap,
+    this.titleStyle,
   });
 
   @override
@@ -31,6 +33,11 @@ class HeroTransactionRing extends StatelessWidget {
     final pDebit = (debit / safeMax).clamp(0.0, 1.0);
     final isCompact = MediaQuery.of(context).size.width < 360;
     final radius = BorderRadius.circular(Fx.r28);
+    final defaultTitleStyle = Fx.title.copyWith(
+      fontSize: isCompact ? 16.5 : 18,
+      fontWeight: FontWeight.w700,
+    );
+    final resolvedTitleStyle = titleStyle ?? defaultTitleStyle;
 
     return Material(
       color: Colors.transparent,
@@ -65,10 +72,7 @@ class HeroTransactionRing extends StatelessWidget {
                     children: [
                       Text(
                         title,
-                        style: Fx.title.copyWith(
-                          fontSize: isCompact ? 16.5 : 18,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: resolvedTitleStyle,
                       ),
                       if (subtitle != null && subtitle!.isNotEmpty) ...[
                         const SizedBox(height: 6),
