@@ -975,7 +975,8 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   // ------ UI atoms ------
