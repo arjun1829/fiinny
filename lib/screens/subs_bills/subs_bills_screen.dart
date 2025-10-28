@@ -5,6 +5,11 @@ import 'package:flutter/services.dart' show TextPosition, TextSelection;
 
 import 'package:lifemap/details/models/shared_item.dart';
 import '../../services/subscriptions/subscriptions_service.dart';
+import 'package:lifemap/details/services/subscriptions_service.dart'
+    as user_subs;
+import 'package:lifemap/details/subs_bills/add_subs_custom_reminder_sheet.dart'
+    show AddSubsCustomReminderSheet, ReminderSelection;
+import 'package:lifemap/details/subs_bills/add_subs_hub_sheet.dart';
 import 'package:lifemap/details/shared/partner_capabilities.dart';
 
 // visual tokens/components
@@ -112,6 +117,7 @@ class _Subs_BgState extends State<_Subs_Bg> with SingleTickerProviderStateMixin 
 
 class _SubsBillsScreenState extends State<SubsBillsScreen> {
   late final SubscriptionsService _svc;
+  late final user_subs.UserSubscriptionsService _userSubsService;
   late final SubsBillsViewModel _vm;
   final _locallyPaid = <String>{}; // local hide after “Paid?” (optimistic)
 
@@ -145,12 +151,27 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
       defaultParticipantUserIds: widget.participantUserIds,
       defaultMirrorToFriend: widget.mirrorToFriend,
     );
+    _userSubsService = user_subs.UserSubscriptionsService();
     _vm = SubsBillsViewModel(_svc);
 
-    _resolvedStream = widget.source ??
-        (widget.userPhone != null
-            ? _svc.watchUnified(widget.userPhone!)
-            : _svc.safeEmptyStream);
+    Stream<List<SharedItem>> resolved;
+    if (widget.source != null) {
+      resolved = widget.source!;
+    } else if (widget.userPhone != null) {
+      resolved = _svc.watchUnified(widget.userPhone!);
+    } else {
+      resolved = _svc.safeEmptyStream;
+    }
+
+    if (widget.source == null &&
+        widget.userPhone != null &&
+        widget.friendId == null &&
+        widget.groupId == null) {
+      final personal = _userSubsService.watchAsSharedItems(widget.userPhone!);
+      resolved = _combineSharedStreams(resolved, personal);
+    }
+
+    _resolvedStream = resolved;
 
     // debounce typing — avoid rebuild per keystroke
     _search.addListener(() {
@@ -434,14 +455,14 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                             monthlyTotal: subs['monthlyTotal'] as double,
                             onAdd: () => _svc.openAddFromType(context, 'subscription'),
                             onOpen: (item) => _openDebitSheet(context, item),
-                            onEdit: (item) => _svc.openEdit(context, item),
-                            onManage: (item) => _svc.openManage(context, item),
-                            onReminder: (item) => _svc.openReminder(context, item),
+                            onEdit: _handleEdit,
+                            onManage: _handleManage,
+                            onReminder: _handleReminder,
                             onMarkPaid: (item) async {
                               _locallyPaid.add(item.id);
                               if (mounted) setState(() {});
                               try {
-                                await _svc.markPaid(context, item);
+                                await _handleMarkPaid(item);
                               } catch (err) {
                                 _locallyPaid.remove(item.id);
                                 if (mounted) {
@@ -490,13 +511,13 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                               ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(content: Text('Pay ${e.title ?? 'bill'}')));
                             },
-                            onManage: (e) => _svc.openManage(context, e),
-                            onReminder: (e) => _svc.openReminder(context, e),
+                            onManage: _handleManage,
+                            onReminder: _handleReminder,
                             onMarkPaid: (e) async {
                               _locallyPaid.add(e.id);
                               if (mounted) setState(() {});
                               try {
-                                await _svc.markPaid(context, e);
+                                await _handleMarkPaid(e);
                               } catch (err) {
                                 _locallyPaid.remove(e.id);
                                 if (mounted) {
@@ -667,6 +688,48 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
   }
 
   void _openAddEntry() {
+    final userPhone = widget.userPhone;
+    final isPersonalContext =
+        userPhone != null && widget.friendId == null && widget.groupId == null;
+    if (isPersonalContext) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => AddSubsHubSheet(
+          userPhone: userPhone!,
+          service: _userSubsService,
+          onCreated: () {
+            final messenger = ScaffoldMessenger.maybeOf(context);
+            messenger?.showSnackBar(
+              const SnackBar(content: Text('Saved to Subscriptions & Bills.')),
+            );
+          },
+          onOpenLegacy: () => _svc.openAddEntry(
+            context,
+            capabilities: widget.partnerCapabilities,
+            userPhone: widget.userPhone,
+            friendId: widget.friendId,
+            friendName: widget.friendName,
+            groupId: widget.groupId,
+            participantUserIds: widget.participantUserIds,
+            mirrorToFriend: widget.mirrorToFriend,
+          ),
+          onLinkToEmi: () => _svc.openAddFromType(
+            context,
+            'emi',
+            userPhone: widget.userPhone,
+            friendId: widget.friendId,
+            friendName: widget.friendName,
+            groupId: widget.groupId,
+            participantUserIds: widget.participantUserIds,
+            mirrorToFriend: widget.mirrorToFriend,
+          ),
+        ),
+      );
+      return;
+    }
+
     _svc.openAddEntry(
       context,
       capabilities: widget.partnerCapabilities,
@@ -700,6 +763,189 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
       curve: Curves.easeOutCubic,
       alignment: .08,
     );
+  }
+
+  Stream<List<SharedItem>> _combineSharedStreams(
+    Stream<List<SharedItem>> a,
+    Stream<List<SharedItem>> b,
+  ) {
+    List<SharedItem> latestA = const [];
+    List<SharedItem> latestB = const [];
+    final controller = StreamController<List<SharedItem>>.broadcast();
+
+    void emit() {
+      final combined = <SharedItem>[...latestA, ...latestB];
+      combined.sort((x, y) {
+        final ax = x.nextDueAt?.millisecondsSinceEpoch ?? 0;
+        final ay = y.nextDueAt?.millisecondsSinceEpoch ?? 0;
+        return ax.compareTo(ay);
+      });
+      controller.add(combined);
+    }
+
+    final subA = a.listen(
+      (data) {
+        latestA = data;
+        emit();
+      },
+      onError: controller.addError,
+    );
+
+    final subB = b.listen(
+      (data) {
+        latestB = data;
+        emit();
+      },
+      onError: controller.addError,
+    );
+
+    controller.onCancel = () {
+      subA.cancel();
+      subB.cancel();
+    };
+
+    return controller.stream;
+  }
+
+  bool _isUserSubscription(SharedItem item) =>
+      widget.userPhone != null &&
+      _userSubsService.isUserSubscription(item);
+
+  String? _timeOfDayToString(TimeOfDay? time) {
+    if (time == null) return null;
+    final h = time.hour.toString().padLeft(2, '0');
+    final m = time.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  TimeOfDay? _timeOfDayFromString(String? value) {
+    if (value == null || value.isEmpty) return null;
+    final parts = value.split(':');
+    if (parts.length != 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    return TimeOfDay(hour: h.clamp(0, 23), minute: m.clamp(0, 59));
+  }
+
+  Future<void> _handleMarkPaid(SharedItem item) async {
+    if (_isUserSubscription(item) && widget.userPhone != null) {
+      await _userSubsService.markPaid(
+        userPhone: widget.userPhone!,
+        item: item,
+      );
+      return;
+    }
+    await _svc.markPaid(context, item);
+  }
+
+  Future<void> _handleReminder(SharedItem item) async {
+    if (!_isUserSubscription(item) || widget.userPhone == null) {
+      _svc.openReminder(context, item);
+      return;
+    }
+
+    final currentDays = item.notify?['daysBefore'] as int?;
+    final currentTime = _timeOfDayFromString(item.notify?['time'] as String?);
+    final result = await showModalBottomSheet<ReminderSelection>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => AddSubsCustomReminderSheet(
+        initial: ReminderSelection(
+          daysBefore: currentDays,
+          timeOfDay: currentTime,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (result != null) {
+      await _userSubsService.setReminder(
+        userPhone: widget.userPhone!,
+        item: item,
+        daysBefore: result.daysBefore,
+        time: _timeOfDayToString(result.timeOfDay),
+      );
+    }
+  }
+
+  Future<void> _handleManage(SharedItem item) async {
+    if (!_isUserSubscription(item) || widget.userPhone == null) {
+      _svc.openManage(context, item);
+      return;
+    }
+
+    final userPhone = widget.userPhone!;
+    final isPaused = (item.rule.status ?? 'active') == 'paused';
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(isPaused
+                  ? Icons.play_arrow_rounded
+                  : Icons.pause_rounded),
+              title: Text(isPaused ? 'Resume' : 'Pause'),
+              onTap: () => Navigator.pop(sheetContext, 'toggle'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_forever_rounded),
+              title: const Text('Delete'),
+              onTap: () => Navigator.pop(sheetContext, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+
+    if (action == 'toggle') {
+      if (isPaused) {
+        await _userSubsService.resume(userPhone: userPhone, item: item);
+      } else {
+        await _userSubsService.pause(userPhone: userPhone, item: item);
+      }
+    } else if (action == 'delete') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Delete entry?'),
+          content: Text(
+              'Remove ${item.title ?? 'this entry'} from your subscriptions?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return;
+      if (confirmed == true) {
+        await _userSubsService.deleteSubscription(
+          userPhone: userPhone,
+          item: item,
+        );
+      }
+    }
+  }
+
+  void _handleEdit(SharedItem item) {
+    if (_isUserSubscription(item)) {
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text('Editing coming soon. Use delete + add to revise.'),
+        ),
+      );
+      return;
+    }
+    _svc.openEdit(context, item);
   }
 
   Widget _loadingCard() => const GlassCard(
