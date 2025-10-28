@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
+import '../core/notifications/local_notifications.dart';
+
 const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: true);
 
 class NotificationService {
@@ -91,4 +93,24 @@ class NotificationService {
   }
 
   static FlutterLocalNotificationsPlugin get plugin => _plugin;
+
+  Future<void> scheduleAt({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime when,
+    String? payload,
+  }) async {
+    await LocalNotifs.scheduleOnce(
+      itemId: id.toString(),
+      title: title,
+      fireAt: when,
+      body: body,
+      payload: payload,
+    );
+  }
+
+  Future<void> cancel(int id) async {
+    await LocalNotifs.cancelForItem(id.toString());
+  }
 }
