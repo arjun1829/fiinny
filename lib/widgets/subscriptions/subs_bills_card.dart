@@ -96,7 +96,7 @@ class SubsBillsCard extends StatelessWidget {
                     vertical: Fx.s8,
                   ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(Fx.r14),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                   textStyle: Fx.label.copyWith(fontWeight: FontWeight.w800),
                 ),
