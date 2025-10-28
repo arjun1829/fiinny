@@ -449,26 +449,21 @@ class _DashboardScreenState extends State<DashboardScreen>
           .doc(widget.userPhone)
           .get();
       final data = doc.data();
-      if (doc.exists && data?['name'] != null) {
-        if (!mounted) return;
-        setState(() {
-          userName = data!['name'];
-          _userEmail = data['email'];
-          _isEmailLinked = (_userEmail != null && _userEmail!.isNotEmpty);
-          final photo = data['photo'] as String?;
-          userAvatar = (photo != null && photo.isNotEmpty)
-              ? photo
-              : "assets/images/profile_default.png";
-        });
-      } else {
-        if (!mounted) return;
-        setState(() {
-          userName = "there";
-          _isEmailLinked = false;
-          userAvatar = "assets/images/profile_default.png";
-        });
-      }
-    } catch (e) {
+
+      final name = (data?['name'] as String?)?.trim();
+      final photo = (data?['photo'] as String?)?.trim();
+      final avatar = (data?['avatar'] as String?)?.trim();
+
+      if (!mounted) return;
+      setState(() {
+        userName = (name?.isNotEmpty ?? false) ? name : "there";
+        _userEmail = data?['email'];
+        _isEmailLinked = (_userEmail != null && _userEmail!.isNotEmpty);
+
+        final url = (photo != null && photo.isNotEmpty) ? photo : (avatar ?? "");
+        userAvatar = url.isNotEmpty ? url : "assets/images/profile_default.png";
+      });
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         userName = "there";
@@ -1355,6 +1350,11 @@ class _DashboardScreenState extends State<DashboardScreen>
         : null;
 
     const EdgeInsets horizontalPadding = EdgeInsets.symmetric(horizontal: 14);
+    final String avatarValue = userAvatar ?? 'assets/images/profile_default.png';
+    final bool isNetworkAvatar = avatarValue.startsWith('http');
+    final ImageProvider<Object> avatarImage = isNetworkAvatar
+        ? NetworkImage(avatarValue)
+        : AssetImage(avatarValue) as ImageProvider<Object>;
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -1401,9 +1401,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                   surfaceTintColor: Colors.transparent,
                   systemOverlayStyle: SystemUiOverlayStyle.dark,
                   toolbarHeight: 48,
-                  pinned: true,
+                  pinned: false,
                   floating: true,
                   snap: true,
+                  scrolledUnderElevation: 0,
                   titleSpacing: 16,
                   title: Text(
                     'Fiinny',
@@ -1478,33 +1479,43 @@ class _DashboardScreenState extends State<DashboardScreen>
                         Navigator.pushNamed(context, '/profile', arguments: widget.userPhone);
                       },
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: Fx.s8),
-                        child: FutureBuilder<DocumentSnapshot>(
-                          future: FirebaseFirestore.instance
-                              .collection('users')
-                              .doc(widget.userPhone)
-                              .get(),
-                          builder: (context, snap) {
-                            final photo = (snap.data?.data() as Map<String, dynamic>?)?['photo'] as String?;
-                            final imageProvider = photo != null && photo.isNotEmpty
-                                ? NetworkImage(photo)
-                                : const AssetImage('assets/images/profile_default.png') as ImageProvider;
-                            return Container(
-                              padding: const EdgeInsets.all(1.2),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(.85),
-                                  width: 1,
-                                ),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Container(
+                          padding: const EdgeInsets.all(1.2),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.black.withOpacity(.10),
+                              width: 1,
+                            ),
+                          ),
+                          child: CircleAvatar(
+                            radius: 18,
+                            backgroundColor: Colors.white,
+                            child: ClipOval(
+                              child: Image(
+                                width: 36,
+                                height: 36,
+                                fit: BoxFit.cover,
+                                image: avatarImage,
+                                errorBuilder: (_, __, ___) {
+                                  if (isNetworkAvatar) {
+                                    return Image.asset(
+                                      'assets/images/profile_default.png',
+                                      width: 36,
+                                      height: 36,
+                                      fit: BoxFit.cover,
+                                    );
+                                  }
+                                  return const Icon(
+                                    Icons.person,
+                                    size: 20,
+                                    color: Colors.black54,
+                                  );
+                                },
                               ),
-                              child: CircleAvatar(
-                                radius: 18,
-                                backgroundColor: Colors.white,
-                                backgroundImage: imageProvider,
-                              ),
-                            );
-                          },
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -1738,44 +1749,52 @@ class _DashboardScreenState extends State<DashboardScreen>
                         const SizedBox(height: 10),
                         Padding(
                           padding: horizontalPadding,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              SmartInsightCard(
-                                key: ValueKey('$totalLoan|$totalAssets|$totalIncome|$totalExpense|$savings'),
-                                income: totalIncome,
-                                expense: totalExpense,
-                                savings: savings,
-                                goal: currentGoal,
-                                totalLoan: totalLoan,
-                                totalAssets: totalAssets,
-                                insightText: smartInsight,
-                                showToday: txPeriod == 'Today' || txPeriod == 'D',
-                              ),
-                              FutureBuilder<bool>(
-                                future: PremiumGate.instance.isPremium(widget.userPhone),
-                                builder: (_, snap) {
-                                  final isPro = snap.data == true;
-                                  if (isPro) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  return Padding(
-                                    padding: const EdgeInsets.only(top: 8.0),
-                                    child: Align(
-                                      alignment: Alignment.centerRight,
-                                      child: PremiumChip(
-                                        onTap: () => Navigator.pushNamed(
-                                          context,
-                                          '/premium',
-                                          arguments: widget.userPhone,
+                          child: Builder(
+                            builder: (_) {
+                              final insightText = smartInsight.trim().isEmpty
+                                  ? 'We\'ll start showing insights as your data builds up.'
+                                  : smartInsight;
+
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  SmartInsightCard(
+                                    key: ValueKey('smart|$_summaryRevision|$txPeriod'),
+                                    income: totalIncome,
+                                    expense: totalExpense,
+                                    savings: savings,
+                                    goal: currentGoal,
+                                    totalLoan: totalLoan,
+                                    totalAssets: totalAssets,
+                                    insightText: insightText,
+                                    showToday: true,
+                                  ),
+                                  FutureBuilder<bool>(
+                                    future: PremiumGate.instance.isPremium(widget.userPhone),
+                                    builder: (_, snap) {
+                                      final isPro = snap.data == true;
+                                      if (isPro) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      return Padding(
+                                        padding: const EdgeInsets.only(top: 8.0),
+                                        child: Align(
+                                          alignment: Alignment.centerRight,
+                                          child: PremiumChip(
+                                            onTap: () => Navigator.pushNamed(
+                                              context,
+                                              '/premium',
+                                              arguments: widget.userPhone,
+                                            ),
+                                            label: 'Unlock deeper insights',
+                                          ),
                                         ),
-                                        label: 'Unlock deeper insights',
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
+                                      );
+                                    },
+                                  ),
+                                ],
+                              );
+                            },
                           ),
                         ),
                         const SizedBox(height: 14),

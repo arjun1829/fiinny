@@ -192,7 +192,13 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _svc.openAddEntry(context),
+        onPressed: () {
+          if (widget.userPhone != null) {
+            _svc.openQuickAddForSubs(context, userId: widget.userPhone!);
+          } else {
+            _svc.openAddEntry(context);
+          }
+        },
         icon: const Icon(Icons.add),
         label: const Text('Add'),
         backgroundColor: AppColors.mint,

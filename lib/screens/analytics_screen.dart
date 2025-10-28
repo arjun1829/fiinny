@@ -523,15 +523,39 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     required void Function(String label) onSliceTap,
   }) {
     final donutData = entries
-        .where((e) => e.value.isFinite && e.value > 0)
-        .map((e) => DonutSlice(e.key, e.value))
+        .where((e) => e.value.isFinite && e.value != 0)
+        .map((e) => DonutSlice(e.key, e.value.abs()))
         .toList();
+
+    if (donutData.isEmpty) {
+      return GlassCard(
+        radius: Fx.r24,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionHeader(title, Icons.pie_chart_rounded),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 14),
+              child: Text(
+                'No data to chart for this period.',
+                style: Fx.label.copyWith(color: Fx.text.withOpacity(.8)),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     final legendItems = <Widget>[];
     for (int i = 0; i < donutData.length && i < 12; i++) {
       final s = donutData[i];
-      legendItems.add(_pillWithDot('${s.label}: ${INR.c(s.value)}',
-          dot: palette[i % palette.length]));
+      legendItems.add(
+        _pillWithDot(
+          '${s.label}: ${INR.c(s.value)}',
+          dot: palette[i % palette.length],
+        ),
+      );
     }
 
     return GlassCard(
@@ -541,15 +565,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         children: [
           _sectionHeader(title, Icons.pie_chart_rounded),
           const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.center,
-            child: DonutChartSimple(
-              data: donutData,
-              size: 210,
-              thickness: 22,
-              showCenter: true,
-              palette: palette,
-              onSliceTap: (_, s) => onSliceTap(s.label),
+          Center(
+            child: SizedBox(
+              width: 210,
+              height: 210,
+              child: DonutChartSimple(
+                data: donutData,
+                size: 210,
+                thickness: 22,
+                showCenter: true,
+                palette: palette,
+                onSliceTap: (_, s) => onSliceTap(s.label),
+              ),
             ),
           ),
           const SizedBox(height: 8),
