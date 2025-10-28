@@ -8,6 +8,13 @@ class CategorySheet extends StatefulWidget {
   final String typeKey; // recurring|subscription|emi|reminder
   final List<SharedItem> items;
   final void Function(bool changed) onAction;
+  final SubscriptionsService service;
+  final String? userPhone;
+  final String? friendId;
+  final String? friendName;
+  final String? groupId;
+  final List<String> participantUserIds;
+  final bool mirrorToFriend;
 
   const CategorySheet({
     Key? key,
@@ -15,14 +22,22 @@ class CategorySheet extends StatefulWidget {
     required this.typeKey,
     required this.items,
     required this.onAction,
-  }) : super(key: key);
+    SubscriptionsService? service,
+    this.userPhone,
+    this.friendId,
+    this.friendName,
+    this.groupId,
+    this.participantUserIds = const <String>[],
+    this.mirrorToFriend = true,
+  })  : service = service ?? SubscriptionsService(),
+        super(key: key);
 
   @override
   State<CategorySheet> createState() => _CategorySheetState();
 }
 
 class _CategorySheetState extends State<CategorySheet> {
-  final _svc = SubscriptionsService();
+  SubscriptionsService get _svc => widget.service;
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +69,16 @@ class _CategorySheetState extends State<CategorySheet> {
                   const Spacer(),
                   IconButton(
                     tooltip: 'Add',
-                    onPressed: () => _svc.openAddFromType(context, widget.typeKey),
+                    onPressed: () => _svc.openAddFromType(
+                      context,
+                      widget.typeKey,
+                      userPhone: widget.userPhone,
+                      friendId: widget.friendId,
+                      friendName: widget.friendName,
+                      groupId: widget.groupId,
+                      participantUserIds: widget.participantUserIds,
+                      mirrorToFriend: widget.mirrorToFriend,
+                    ),
                     icon: const Icon(Icons.add),
                   ),
                   PopupMenuButton<String>(
@@ -95,12 +119,13 @@ class _CategorySheetState extends State<CategorySheet> {
                       child: Text('No active ${widget.typeKey} items', style: TextStyle(color: Colors.grey.shade600)),
                     ),
                   ...active.map((e) => ItemTile(
-                    item: e,
-                    onChanged: (changed) {
-                      if (changed && mounted) setState(() {});
-                      widget.onAction(changed);
-                    },
-                  )),
+                        item: e,
+                        service: _svc,
+                        onChanged: (changed) {
+                          if (changed && mounted) setState(() {});
+                          widget.onAction(changed);
+                        },
+                      )),
                   if (closed.isNotEmpty) ...[
                     Padding(
                       padding: const EdgeInsets.only(top: 12, bottom: 6),
@@ -113,12 +138,13 @@ class _CategorySheetState extends State<CategorySheet> {
                       ),
                     ),
                     ...closed.map((e) => ItemTile(
-                      item: e,
-                      onChanged: (changed) {
-                        if (changed && mounted) setState(() {});
-                        widget.onAction(changed);
-                      },
-                    )),
+                          item: e,
+                          service: _svc,
+                          onChanged: (changed) {
+                            if (changed && mounted) setState(() {});
+                            widget.onAction(changed);
+                          },
+                        )),
                   ],
                   const SizedBox(height: 12),
                 ],

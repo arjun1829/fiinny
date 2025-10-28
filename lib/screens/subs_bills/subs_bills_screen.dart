@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show TextPosition, TextSelection;
 
 import 'package:lifemap/details/models/shared_item.dart';
 import '../../services/subscriptions/subscriptions_service.dart';
+import 'package:lifemap/details/shared/partner_capabilities.dart';
 
 // visual tokens/components
 import 'package:lifemap/ui/tokens.dart';
@@ -29,11 +30,23 @@ import 'review_pending_sheet.dart';
 class SubsBillsScreen extends StatefulWidget {
   final String? userPhone;
   final Stream<List<SharedItem>>? source;
+  final String? friendId;
+  final String? friendName;
+  final String? groupId;
+  final List<String> participantUserIds;
+  final bool mirrorToFriend;
+  final PartnerCapabilities? partnerCapabilities;
 
   const SubsBillsScreen({
     Key? key,
     this.userPhone,
     this.source,
+    this.friendId,
+    this.friendName,
+    this.groupId,
+    this.participantUserIds = const <String>[],
+    this.mirrorToFriend = true,
+    this.partnerCapabilities,
   }) : super(key: key);
 
   @override
@@ -125,7 +138,13 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
   @override
   void initState() {
     super.initState();
-    _svc = SubscriptionsService();
+    _svc = SubscriptionsService(
+      defaultUserPhone: widget.userPhone,
+      defaultFriendId: widget.friendId,
+      defaultGroupId: widget.groupId,
+      defaultParticipantUserIds: widget.participantUserIds,
+      defaultMirrorToFriend: widget.mirrorToFriend,
+    );
     _vm = SubsBillsViewModel(_svc);
 
     _resolvedStream = widget.source ??
@@ -194,9 +213,18 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           if (widget.userPhone != null) {
-            _svc.openQuickAddForSubs(context, userId: widget.userPhone!);
+            _svc.openQuickAddForSubs(
+              context,
+              userId: widget.userPhone!,
+              friendId: widget.friendId,
+              friendName: widget.friendName,
+              groupId: widget.groupId,
+              participantUserIds: widget.participantUserIds,
+              mirrorToFriend: widget.mirrorToFriend,
+              capabilities: widget.partnerCapabilities,
+            );
           } else {
-            _svc.openAddEntry(context);
+            _openAddEntry();
           }
         },
         icon: const Icon(Icons.add),
@@ -306,7 +334,7 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                               }
                             });
                           },
-                          onAddTap: () => _svc.openAddEntry(context),
+                          onAddTap: _openAddEntry,
                           onQuickAction: _handleQuickAction,
                           quickSuggestions: const ['overdue', 'paused', 'subscription', 'emi', 'annual'],
                           onTapSuggestion: _applySuggestion,
@@ -561,7 +589,7 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                       else if (isLoading)
                         _loadingCard()
                       else if (itemsRaw.isEmpty)
-                        _emptyCard(onAdd: () => _svc.openAddEntry(context))
+                        _emptyCard(onAdd: _openAddEntry)
                       else if (itemsFiltered.isEmpty)
                         _filteredEmptyCard(
                           hasQuery: q.isNotEmpty,
@@ -613,7 +641,16 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
       case 'recurring':
       case 'reminder':
       case 'emi':
-        _svc.openAddFromType(context, key);
+        _svc.openAddFromType(
+          context,
+          key,
+          userPhone: widget.userPhone,
+          friendId: widget.friendId,
+          friendName: widget.friendName,
+          groupId: widget.groupId,
+          participantUserIds: widget.participantUserIds,
+          mirrorToFriend: widget.mirrorToFriend,
+        );
         break;
       case 'review':
         if (widget.userPhone != null) {
@@ -625,8 +662,21 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
         }
         break;
       default:
-        _svc.openAddEntry(context);
+        _openAddEntry();
     }
+  }
+
+  void _openAddEntry() {
+    _svc.openAddEntry(
+      context,
+      capabilities: widget.partnerCapabilities,
+      userPhone: widget.userPhone,
+      friendId: widget.friendId,
+      friendName: widget.friendName,
+      groupId: widget.groupId,
+      participantUserIds: widget.participantUserIds,
+      mirrorToFriend: widget.mirrorToFriend,
+    );
   }
 
   void _openReviewSheet({required bool isLoans}) {
@@ -730,7 +780,7 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                   style: TextButton.styleFrom(foregroundColor: AppColors.mint),
                 ),
               TextButton.icon(
-                onPressed: () => _svc.openAddEntry(context),
+                onPressed: _openAddEntry,
                 icon: const Icon(Icons.add),
                 label: const Text('Add new item'),
                 style: TextButton.styleFrom(foregroundColor: AppColors.mint),
