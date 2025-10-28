@@ -7,12 +7,14 @@ import 'package:lifemap/details/models/shared_item.dart';
 import 'package:lifemap/details/services/recurring_service.dart';
 import 'package:lifemap/details/models/recurring_scope.dart';
 import 'package:lifemap/details/services/sharing_service.dart';
-import 'package:lifemap/ui/tokens.dart';
 
 import '../../core/notifications/local_notifications.dart';
 // If you don’t have PushService, comment this import & the call sites.
 import '../push/push_service.dart';
 import '../../models/suggestion.dart';
+
+// 👇 NEW: reuse the same choices sheet but with custom options (adds "Card").
+import '../../details/recurring/add_choice_sheet.dart';
 
 /// Aggregate KPIs for "Subscriptions & Bills".
 class SubsBillsKpis {
@@ -64,13 +66,10 @@ class SubsBillsSectionInfo {
 }
 
 /// Adapter around RecurringService + SharingService for the Subscriptions & Bills UX.
-/// - Works for **friend mirrors** and **groups** transparently.
-/// - Provides UI hooks (openEdit/openManage/etc) and share helpers.
 class SubscriptionsService {
   final RecurringService _svc;
   final SharingService _share;
 
-  /// Optional defaults so caller can omit scope params.
   final String? defaultUserPhone;  // current user
   final String? defaultFriendId;   // current “friend chat”/context
   final String? defaultGroupId;    // current group context
@@ -84,10 +83,8 @@ class SubscriptionsService {
   })  : _svc = svc ?? RecurringService(),
         _share = share ?? SharingService();
 
-  /// 🔁 Where to mirror, if RecurringService lacks a direct create/upsert.
   static const String kUnifiedColl = 'recurring_items';
 
-  /// Safe empty stream so UI never breaks when aggregate stream isn't wired yet.
   Stream<List<SharedItem>> get safeEmptyStream =>
       Stream<List<SharedItem>>.value(const []);
 
@@ -95,11 +92,8 @@ class SubscriptionsService {
   // Streams
   // ---------------------------------------------------------------------------
 
-  /// ✅ Unified live stream across **all** recurring docs that include this user
-  /// in `participants.userIds` (works for friends & groups).
   Stream<List<SharedItem>> watchUnified(String userPhone) {
     final s = _resolveUnifiedStream(userPhone) ?? safeEmptyStream;
-
     return s.map((items) {
       final list = [...items];
       list.sort((a, b) {
@@ -111,16 +105,12 @@ class SubscriptionsService {
     });
   }
 
-  /// Watch only the friend-scope items for this pair (shortcut).
   Stream<List<SharedItem>> watchFriend(String userPhone, String friendId) {
     return _svc.streamByFriend(userPhone, friendId);
   }
 
-  // (Group-scope specific stream isn’t required because watchUnified covers it,
-  // but you can add one later in RecurringService if you want a direct group stream.)
-
   // ---------------------------------------------------------------------------
-  // UI hooks (stubs; wire to your routing/sheets as needed)
+  // UI hooks (stubs; existing)
   // ---------------------------------------------------------------------------
 
   void openDetails(BuildContext context, SharedItem item) {
@@ -139,22 +129,19 @@ class SubscriptionsService {
     _snack(context, 'Set reminder for ${item.title ?? 'subscription'}');
   }
 
-  /// UI-friendly optimistic "mark paid".
   Future<void> markPaid(BuildContext context, SharedItem item) async {
     _snack(context, 'Marked paid: ${item.title ?? 'subscription'}');
     await markPaidServer(item).catchError((_) {});
   }
 
   // ---------------------------------------------------------------------------
-  // Share helpers (friend / group / invite)
+  // Share helpers (existing)
   // ---------------------------------------------------------------------------
 
-  /// Share an existing item (by id) from the current friend scope to another friend.
-  /// If you need to share from a group scope or a different pair, pass `source`.
   Future<String?> shareItemToFriend({
     required String itemId,
-    String? ownerUserPhone, // defaultUserPhone used if null
-    String? targetFriendId, // defaultFriendId used if null
+    String? ownerUserPhone,
+    String? targetFriendId,
     RecurringScope? source,
   }) async {
     final owner = ownerUserPhone ?? defaultUserPhone;
@@ -175,10 +162,9 @@ class SubscriptionsService {
     );
   }
 
-  /// Share an existing item (by id) to a group.
   Future<String?> shareItemToGroup({
     required String itemId,
-    String? groupId, // defaultGroupId used if null
+    String? groupId,
     RecurringScope? source,
   }) async {
     final gid = groupId ?? defaultGroupId;
@@ -196,7 +182,6 @@ class SubscriptionsService {
     );
   }
 
-  /// Create a deep link to share an item (acceptor will get a friend mirror).
   Future<String> createInviteLink({
     required String itemId,
     String? inviterUserPhone,
@@ -219,7 +204,6 @@ class SubscriptionsService {
     );
   }
 
-  /// Accept a friend invite (token) as the `acceptorUserPhone`.
   Future<String?> acceptInvite({
     required String token,
     required String acceptorUserPhone,
@@ -231,7 +215,7 @@ class SubscriptionsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Refresh hook (best-effort calls against RecurringService)
+  // Refresh hook (best-effort)
   // ---------------------------------------------------------------------------
 
   Future<void> pokeRefresh([String? userPhone, String? friendId]) async {
@@ -244,7 +228,7 @@ class SubscriptionsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Firestore-side confirm/reject flows (existing auto-detection UX)
+  // Confirm/Reject (existing)
   // ---------------------------------------------------------------------------
 
   Future<void> confirmSubscription({
@@ -349,7 +333,6 @@ class SubscriptionsService {
     await pokeRefresh(defaultUserPhone, defaultFriendId);
   }
 
-  /// Small helper to display a **Review (n)** chip without wiring streams manually.
   Stream<int> pendingCount({required String userId, required bool isLoans}) {
     final col = FirebaseFirestore.instance.collection('users').doc(userId)
         .collection(isLoans ? 'loans' : 'subscriptions');
@@ -359,7 +342,7 @@ class SubscriptionsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Unified upsert helpers (fallback store; optional)
+  // Unified upsert helpers (existing)
   // ---------------------------------------------------------------------------
 
   Future<void> upsertUnifiedFromSubscription({
@@ -437,7 +420,7 @@ class SubscriptionsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Dynamic fallback to RecurringService stream methods
+  // Dynamic stream resolver (existing)
   // ---------------------------------------------------------------------------
 
   Stream<List<SharedItem>>? _resolveUnifiedStream(String userPhone) {
@@ -454,10 +437,9 @@ class SubscriptionsService {
     };
 
     for (final entry in labeled.entries) {
-      final name = entry.key;
       final stream = entry.value;
       if (stream != null) {
-        debugPrint('[SubsBills] using RecurringService.$name(userPhone)');
+        debugPrint('[SubsBills] using RecurringService.${entry.key}(userPhone)');
         return stream;
       }
     }
@@ -476,7 +458,7 @@ class SubscriptionsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Formatting helpers
+  // Formatting helpers (existing)
   // ---------------------------------------------------------------------------
 
   String formatInr(num? n) {
@@ -598,7 +580,7 @@ class SubscriptionsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Server-side actions (back-compat; uses RecurringService dynamically)
+  // Server-side actions (existing)
   // ---------------------------------------------------------------------------
 
   bool _resolveIds(
@@ -748,7 +730,6 @@ class SubscriptionsService {
     }
   }
 
-  /// Schedules a local one-off notification at 9:00 on/before the next due date.
   Future<bool> scheduleNextLocal(
       SharedItem it, [
         String? userPhone,
@@ -786,7 +767,6 @@ class SubscriptionsService {
     }
   }
 
-  /// Sends a local push-like nudge (requires PushService).
   Future<bool> nudgeNow(
       SharedItem it, [
         String? userPhone,
@@ -832,7 +812,7 @@ class SubscriptionsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Add flows (safe hooks)
+  // Add flows (existing)
   // ---------------------------------------------------------------------------
 
   Future<void> openAddEntry(BuildContext context) async {
@@ -840,89 +820,48 @@ class SubscriptionsService {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      barrierColor: Colors.black.withOpacity(0.45),
-      backgroundColor: Colors.white.withOpacity(0.98),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (sheetCtx) {
-        var pad = const EdgeInsets.fromLTRB(16, 20, 16, 16);
-        final bottomInset = MediaQuery.of(sheetCtx).viewPadding.bottom;
-        if (bottomInset > 0) {
-          pad = EdgeInsets.fromLTRB(16, 20, 16, 16 + bottomInset);
-        }
-        Widget tile({
-          required IconData icon,
-          required String title,
-          required VoidCallback onTap,
-          String? subtitle,
-        }) {
-          return ListTile(
-            leading: CircleAvatar(
-              radius: 22,
-              backgroundColor: AppColors.mint.withOpacity(.12),
-              child: Icon(icon, color: AppColors.mint),
+      builder: (_) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.repeat_rounded),
+              title: const Text('Add Recurring'),
+              onTap: () {
+                Navigator.pop(context);
+                openAddFromType(context, 'recurring');
+              },
             ),
-            title: Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.w800),
+            ListTile(
+              leading: const Icon(Icons.subscriptions_rounded),
+              title: const Text('Add Subscription'),
+              onTap: () {
+                Navigator.pop(context);
+                openAddFromType(context, 'subscription');
+              },
             ),
-            subtitle: subtitle == null
-                ? null
-                : Text(subtitle, style: TextStyle(color: Colors.black.withOpacity(0.6))),
-            trailing: const Icon(Icons.chevron_right_rounded, color: Colors.black54),
-            onTap: () {
-              Navigator.pop(sheetCtx);
-              onTap();
-            },
-          );
-        }
-
-        return Padding(
-          padding: pad,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 72,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-              const SizedBox(height: 20),
-              tile(
-                icon: Icons.repeat_rounded,
-                title: 'Add Recurring',
-                subtitle: 'Split rent, utilities, retainers',
-                onTap: () => openAddFromType(context, 'recurring'),
-              ),
-              const SizedBox(height: 6),
-              tile(
-                icon: Icons.subscriptions_rounded,
-                title: 'Add Subscription',
-                subtitle: 'Apps, OTT, memberships',
-                onTap: () => openAddFromType(context, 'subscription'),
-              ),
-              const SizedBox(height: 6),
-              tile(
-                icon: Icons.account_balance_rounded,
-                title: 'Link EMI / Loan',
-                subtitle: 'Track repayments automatically',
-                onTap: () => openAddFromType(context, 'emi'),
-              ),
-              const SizedBox(height: 6),
-              tile(
-                icon: Icons.alarm_rounded,
-                title: 'Add Reminder',
-                subtitle: 'Light nudges without amounts',
-                onTap: () => openAddFromType(context, 'reminder'),
-              ),
-            ],
-          ),
-        );
-      },
+            ListTile(
+              leading: const Icon(Icons.account_balance_rounded),
+              title: const Text('Link EMI / Loan'),
+              onTap: () {
+                Navigator.pop(context);
+                openAddFromType(context, 'emi');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.alarm_rounded),
+              title: const Text('Add Reminder'),
+              onTap: () {
+                Navigator.pop(context);
+                openAddFromType(context, 'reminder');
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
     );
   }
 
@@ -939,7 +878,263 @@ class SubscriptionsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Notification helpers
+  // NEW: Quick add sheet for Subs/Bills (adds "Card")
+  // ---------------------------------------------------------------------------
+
+  Future<void> openQuickAddForSubs(
+    BuildContext context, {
+    required String userId,
+  }) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => AddChoiceSheet(
+        title: 'Add to Subs & Bills',
+        onPick: (v) => Navigator.pop(_, v),
+        options: const [
+          AddChoice(
+            icon: Icons.repeat_rounded,
+            title: 'Recurring bill',
+            subtitle: 'Monthly / weekly — amount + due day',
+            value: 'recurring',
+          ),
+          AddChoice(
+            icon: Icons.subscriptions_rounded,
+            title: 'Subscription',
+            subtitle: 'Apps, OTT, gym — billing day',
+            value: 'subscription',
+          ),
+          AddChoice(
+            icon: Icons.account_balance_rounded,
+            title: 'EMI / Loan',
+            subtitle: 'Link an existing loan as recurring EMI',
+            value: 'emi',
+          ),
+          AddChoice(
+            icon: Icons.alarm_rounded,
+            title: 'Custom reminder',
+            subtitle: 'Light reminder with cadence',
+            value: 'reminder',
+          ),
+          AddChoice(
+            icon: Icons.credit_card_rounded,
+            title: 'Card',
+            subtitle: 'Credit card & billing cycle',
+            value: 'card',
+          ),
+        ],
+      ),
+    );
+
+    if (choice == null) return;
+
+    if (choice == 'card') {
+      await openAddCard(context, userId: userId);
+    } else {
+      await openAddFromType(context, choice);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // NEW: Add Card (simple sheet) -> users/<id>/cards/<doc>
+  // ---------------------------------------------------------------------------
+
+  Future<void> openAddCard(
+    BuildContext context, {
+    required String userId,
+  }) async {
+    final issuer = TextEditingController();
+    final last4 = TextEditingController();
+    final billingDay = TextEditingController();
+    final statementDay = TextEditingController();
+    final limitCtrl = TextEditingController();
+
+    Future<bool> save(bool autopay) async {
+      final iss = issuer.text.trim();
+      final l4 = last4.text.trim();
+      final bDay = int.tryParse(billingDay.text.trim());
+      final sDay = statementDay.text.trim().isEmpty
+          ? null
+          : int.tryParse(statementDay.text.trim());
+      final limit = limitCtrl.text.trim().isEmpty
+          ? null
+          : double.tryParse(limitCtrl.text.trim());
+
+      if (iss.isEmpty || l4.length != 4 || bDay == null || bDay < 1 || bDay > 31) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter issuer, last 4 digits (4) and billing day (1–31).')),
+        );
+        return false;
+      }
+
+      final due = _nextDueDate(bDay);
+
+      final db = FirebaseFirestore.instance;
+      final ref = db.collection('users').doc(userId).collection('cards').doc();
+
+      await ref.set({
+        'issuer': iss,
+        'last4': l4,
+        'billingDay': bDay,
+        if (sDay != null) 'statementDay': sDay,
+        if (limit != null) 'creditLimit': limit,
+        'autopay': autopay,
+        'status': 'ok',
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastBill': {
+          'dueDate': Timestamp.fromDate(due),
+          'totalDue': 0.0,
+          'minDue': 0.0,
+        },
+        'spendThisCycle': 0.0,
+      }, SetOptions(merge: true));
+      return true;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        final pad = MediaQuery.of(sheetContext).viewInsets.bottom;
+        bool autopay = false;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + pad),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      height: 4,
+                      width: 42,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                    Row(
+                      children: const [
+                        Icon(Icons.credit_card_rounded, color: Colors.teal),
+                        SizedBox(width: 8),
+                        Text(
+                          'Add Card',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: issuer,
+                      decoration: const InputDecoration(
+                        labelText: 'Issuer / Bank',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: last4,
+                      maxLength: 4,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Last 4 digits',
+                        counterText: '',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: billingDay,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Billing day (1–31)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: statementDay,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Statement close day (optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: limitCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Credit limit (optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Autopay on due date'),
+                      value: autopay,
+                      onChanged: (v) => setState(() => autopay = v),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(sheetContext, null),
+                          child: const Text('Cancel'),
+                        ),
+                        const Spacer(),
+                        FilledButton.icon(
+                          onPressed: () async {
+                            final ok = await save(autopay);
+                            if (ok && sheetContext.mounted) {
+                              Navigator.pop(sheetContext, true);
+                            }
+                          },
+                          icon: const Icon(Icons.save_rounded),
+                          label: const Text('Save'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  DateTime _nextDueDate(int day) {
+    final now = DateTime.now();
+    final lastThisMonth = DateTime(now.year, now.month + 1, 0).day;
+    final safeDay = day.clamp(1, lastThisMonth);
+    final candidate = DateTime(now.year, now.month, safeDay);
+
+    final today = DateTime(now.year, now.month, now.day);
+    if (!candidate.isBefore(today)) {
+      return candidate;
+    }
+    final lastNextMonth = DateTime(now.year, now.month + 2, 0).day;
+    final safeNext = day.clamp(1, lastNextMonth);
+    return DateTime(now.year, now.month + 1, safeNext);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Notification helpers (existing)
   // ---------------------------------------------------------------------------
 
   String _notifTitle(SharedItem it) {
@@ -961,7 +1156,7 @@ class SubscriptionsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Business helpers
+  // Business helpers (existing)
   // ---------------------------------------------------------------------------
 
   static bool computeOverdue({
@@ -980,7 +1175,7 @@ class SubscriptionsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Internals
+  // Internals (existing)
   // ---------------------------------------------------------------------------
 
   double _toDouble(dynamic v) {

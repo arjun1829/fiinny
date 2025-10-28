@@ -1,19 +1,78 @@
 import 'package:flutter/material.dart';
 
+/// Public config object so other screens (like Subs/Bills) can pass custom options.
+class AddChoice {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  /// The value returned via `onPick(value)`.
+  final String value;
+
+  const AddChoice({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+  });
+}
+
 class AddChoiceSheet extends StatelessWidget {
   final void Function(String key) onPick;
-  const AddChoiceSheet({Key? key, required this.onPick}) : super(key: key);
+
+  /// Optional: override the default 4 choices with your own list.
+  /// If null, the classic Recurring 4 options are shown (back-compat).
+  final List<AddChoice>? options;
+
+  /// Optional small title row at the top (e.g. "Add to Subs & Bills")
+  final String? title;
+
+  /// Accent for avatar/icon ring (defaults to teal)
+  final Color accent;
+
+  const AddChoiceSheet({
+    Key? key,
+    required this.onPick,
+    this.options,
+    this.title,
+    this.accent = Colors.teal,
+  }) : super(key: key);
+
+  List<AddChoice> get _defaultRecurringChoices => const [
+        AddChoice(
+          icon: Icons.repeat_rounded,
+          title: 'Recurring bill',
+          subtitle: 'Monthly / weekly — amount + due day',
+          value: 'recurring',
+        ),
+        AddChoice(
+          icon: Icons.subscriptions_rounded,
+          title: 'Subscription',
+          subtitle: 'Apps, OTT, gym — billing day',
+          value: 'subscription',
+        ),
+        AddChoice(
+          icon: Icons.account_balance_rounded,
+          title: 'EMI / Loan',
+          subtitle: 'Link an existing loan as recurring EMI',
+          value: 'emi',
+        ),
+        AddChoice(
+          icon: Icons.alarm_rounded,
+          title: 'Custom reminder',
+          subtitle: 'Light reminder with cadence',
+          value: 'custom',
+        ),
+      ];
 
   @override
   Widget build(BuildContext context) {
-    Widget card({
-      required IconData icon,
-      required String title,
-      required String subtitle,
-      required String pick,
-    }) {
+    final opts = options ?? _defaultRecurringChoices;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+
+    Widget card(AddChoice c) {
       return InkWell(
-        onTap: () => onPick(pick),
+        onTap: () => onPick(c.value),
         borderRadius: BorderRadius.circular(14),
         child: Container(
           padding: const EdgeInsets.all(14),
@@ -26,17 +85,29 @@ class AddChoiceSheet extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 22,
-                backgroundColor: Colors.teal.withOpacity(.1),
-                child: Icon(icon, color: Colors.teal),
+                backgroundColor: accent.withOpacity(.10),
+                child: Icon(c.icon, color: accent),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                    Text(
+                      c.title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    Text(subtitle, style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600)),
+                    Text(
+                      c.subtitle,
+                      style: TextStyle(
+                        color: Colors.grey[700],
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -48,41 +119,42 @@ class AddChoiceSheet extends StatelessWidget {
     }
 
     return SafeArea(
-      minimum: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(height: 4, width: 42, margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(99))),
-          card(
-            icon: Icons.repeat_rounded,
-            title: 'Recurring bill',
-            subtitle: 'Monthly / weekly — amount + due day',
-            pick: 'recurring',
-          ),
-          const SizedBox(height: 10),
-          card(
-            icon: Icons.subscriptions_rounded,
-            title: 'Subscription',
-            subtitle: 'Apps, OTT, gym — billing day',
-            pick: 'subscription',
-          ),
-          const SizedBox(height: 10),
-          card(
-            icon: Icons.account_balance_rounded,
-            title: 'EMI / Loan',
-            subtitle: 'Link an existing loan as recurring EMI',
-            pick: 'emi',
-          ),
-          const SizedBox(height: 10),
-          card(
-            icon: Icons.alarm_rounded,
-            title: 'Custom reminder',
-            subtitle: 'Light reminder with cadence',
-            pick: 'custom',
-          ),
-          const SizedBox(height: 8),
-        ],
+      minimum: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomPad),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 4,
+              width: 42,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            if (title != null) ...[
+              Row(
+                children: [
+                  Icon(Icons.add_circle_outline, size: 18, color: accent),
+                  const SizedBox(width: 6),
+                  Text(
+                    title!,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
+            for (int i = 0; i < opts.length; i++) ...[
+              card(opts[i]),
+              if (i != opts.length - 1) const SizedBox(height: 10),
+            ],
+          ],
+        ),
       ),
     );
   }
