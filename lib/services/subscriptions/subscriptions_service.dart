@@ -13,13 +13,8 @@ import '../../core/notifications/local_notifications.dart';
 import '../push/push_service.dart';
 import '../../models/suggestion.dart';
 
-// 👇 Subs & Bills-specific add flows with custom options (adds "Card").
-import 'package:lifemap/screens/subs_bills/add_flow/add_choice_sheet.dart';
-import 'package:lifemap/screens/subs_bills/add_flow/add_recurring_basic_screen.dart';
-import 'package:lifemap/screens/subs_bills/add_flow/add_subscription_screen.dart';
-import 'package:lifemap/screens/subs_bills/add_flow/add_custom_reminder_sheet.dart';
-import 'package:lifemap/screens/subs_bills/add_flow/add_emi_link_sheet.dart';
-import '../../details/shared/partner_capabilities.dart';
+// 👇 NEW: reuse the same choices sheet but with custom options (adds "Card").
+import '../../details/recurring/add_choice_sheet.dart';
 
 /// Aggregate KPIs for "Subscriptions & Bills".
 class SubsBillsKpis {
@@ -78,8 +73,6 @@ class SubscriptionsService {
   final String? defaultUserPhone;  // current user
   final String? defaultFriendId;   // current “friend chat”/context
   final String? defaultGroupId;    // current group context
-  final List<String> defaultParticipantUserIds;
-  final bool defaultMirrorToFriend;
 
   SubscriptionsService({
     RecurringService? svc,
@@ -87,12 +80,8 @@ class SubscriptionsService {
     this.defaultUserPhone,
     this.defaultFriendId,
     this.defaultGroupId,
-    List<String>? defaultParticipantUserIds,
-    this.defaultMirrorToFriend = true,
   })  : _svc = svc ?? RecurringService(),
-        _share = share ?? SharingService(),
-        defaultParticipantUserIds =
-            List<String>.unmodifiable(defaultParticipantUserIds ?? const <String>[]);
+        _share = share ?? SharingService();
 
   static const String kUnifiedColl = 'recurring_items';
 
@@ -826,20 +815,7 @@ class SubscriptionsService {
   // Add flows (existing)
   // ---------------------------------------------------------------------------
 
-  Future<void> openAddEntry(
-    BuildContext context, {
-    PartnerCapabilities? capabilities,
-    RecurringScope? scope,
-    String? userPhone,
-    String? friendId,
-    String? friendName,
-    String? groupId,
-    List<String>? participantUserIds,
-    bool? mirrorToFriend,
-  }) async {
-    final options = _quickAddChoices(capabilities: capabilities)
-      ..removeWhere((choice) => choice.value == 'card');
-
+  Future<void> openAddEntry(BuildContext context) async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -847,125 +823,52 @@ class SubscriptionsService {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) => SubsBillsAddChoiceSheet(
-        onPick: (key) {
-          Navigator.pop(context);
-          Future.microtask(() => openAddFromType(
-                context,
-                key,
-                scope: scope,
-                userPhone: userPhone,
-                friendId: friendId,
-                friendName: friendName,
-                groupId: groupId,
-                participantUserIds: participantUserIds,
-                mirrorToFriend: mirrorToFriend,
-              ));
-        },
-        options: options,
+      builder: (_) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.repeat_rounded),
+              title: const Text('Add Recurring'),
+              onTap: () {
+                Navigator.pop(context);
+                openAddFromType(context, 'recurring');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.subscriptions_rounded),
+              title: const Text('Add Subscription'),
+              onTap: () {
+                Navigator.pop(context);
+                openAddFromType(context, 'subscription');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.account_balance_rounded),
+              title: const Text('Link EMI / Loan'),
+              onTap: () {
+                Navigator.pop(context);
+                openAddFromType(context, 'emi');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.alarm_rounded),
+              title: const Text('Add Reminder'),
+              onTap: () {
+                Navigator.pop(context);
+                openAddFromType(context, 'reminder');
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
 
-  Future<void> openAddFromType(
-    BuildContext context,
-    String typeKey, {
-    RecurringScope? scope,
-    String? userPhone,
-    String? friendId,
-    String? friendName,
-    String? groupId,
-    List<String>? participantUserIds,
-    bool? mirrorToFriend,
-  }) async {
-    final resolved = _resolveAddContext(
-      scope: scope,
-      userPhone: userPhone,
-      friendId: friendId,
-      groupId: groupId,
-      participantUserIds: participantUserIds,
-      mirrorToFriend: mirrorToFriend,
+  Future<void> openAddFromType(BuildContext context, String typeKey) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Open add flow for $typeKey')),
     );
-
-    if (resolved == null || resolved.userPhone == null) {
-      _snack(context, 'Add is unavailable. Link a partner or choose a group first.');
-      return;
-    }
-
-    dynamic res;
-    switch (typeKey) {
-      case 'recurring':
-        res = await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => SubsBillsAddRecurringBasicScreen(
-              userPhone: resolved.userPhone!,
-              scope: resolved.scope,
-              participantUserIds: resolved.participantUserIds,
-              mirrorToFriend: resolved.mirrorToFriend,
-            ),
-          ),
-        );
-        break;
-      case 'subscription':
-        res = await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => SubsBillsAddSubscriptionScreen(
-              userPhone: resolved.userPhone!,
-              scope: resolved.scope,
-              participantUserIds: resolved.participantUserIds,
-              mirrorToFriend: resolved.mirrorToFriend,
-            ),
-          ),
-        );
-        break;
-      case 'emi':
-        res = await showModalBottomSheet(
-          context: context,
-          useSafeArea: true,
-          isScrollControlled: true,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          builder: (_) => SubsBillsAddEmiLinkSheet(
-            scope: resolved.scope,
-            currentUserId: resolved.userPhone!,
-            participantUserIds: resolved.scope.isGroup
-                ? resolved.participantUserIds
-                : null,
-          ),
-        );
-        break;
-      case 'reminder':
-      case 'custom':
-        res = await showModalBottomSheet(
-          context: context,
-          useSafeArea: true,
-          isScrollControlled: true,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          builder: (_) => SubsBillsAddCustomReminderSheet(
-            userPhone: resolved.userPhone!,
-            scope: resolved.scope,
-            participantUserIds: resolved.participantUserIds,
-            mirrorToFriend: resolved.mirrorToFriend,
-            friendId: resolved.friendId,
-          ),
-        );
-        break;
-      case 'card':
-        await openAddCard(context, userId: resolved.userPhone!);
-        return;
-      default:
-        _snack(context, 'Unsupported option: $typeKey');
-        return;
-    }
-
-    if (await _handleAddResult(context, res)) {
-      await pokeRefresh(resolved.userPhone, resolved.friendId);
-    }
   }
 
   Future<void> createFromSuggestion(BuildContext context, Suggestion s) async {
@@ -981,12 +884,6 @@ class SubscriptionsService {
   Future<void> openQuickAddForSubs(
     BuildContext context, {
     required String userId,
-    String? friendId,
-    String? friendName,
-    String? groupId,
-    List<String>? participantUserIds,
-    bool? mirrorToFriend,
-    PartnerCapabilities? capabilities,
   }) async {
     final choice = await showModalBottomSheet<String>(
       context: context,
@@ -995,10 +892,41 @@ class SubscriptionsService {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) => SubsBillsAddChoiceSheet(
+      builder: (_) => AddChoiceSheet(
         title: 'Add to Subs & Bills',
         onPick: (v) => Navigator.pop(_, v),
-        options: _quickAddChoices(capabilities: capabilities),
+        options: const [
+          AddChoice(
+            icon: Icons.repeat_rounded,
+            title: 'Recurring bill',
+            subtitle: 'Monthly / weekly — amount + due day',
+            value: 'recurring',
+          ),
+          AddChoice(
+            icon: Icons.subscriptions_rounded,
+            title: 'Subscription',
+            subtitle: 'Apps, OTT, gym — billing day',
+            value: 'subscription',
+          ),
+          AddChoice(
+            icon: Icons.account_balance_rounded,
+            title: 'EMI / Loan',
+            subtitle: 'Link an existing loan as recurring EMI',
+            value: 'emi',
+          ),
+          AddChoice(
+            icon: Icons.alarm_rounded,
+            title: 'Custom reminder',
+            subtitle: 'Light reminder with cadence',
+            value: 'reminder',
+          ),
+          AddChoice(
+            icon: Icons.credit_card_rounded,
+            title: 'Card',
+            subtitle: 'Credit card & billing cycle',
+            value: 'card',
+          ),
+        ],
       ),
     );
 
@@ -1007,150 +935,9 @@ class SubscriptionsService {
     if (choice == 'card') {
       await openAddCard(context, userId: userId);
     } else {
-      await openAddFromType(
-        context,
-        choice,
-        userPhone: userId,
-        friendId: friendId,
-        friendName: friendName,
-        groupId: groupId,
-        participantUserIds: participantUserIds,
-        mirrorToFriend: mirrorToFriend,
-      );
+      await openAddFromType(context, choice);
     }
   }
-
-  List<SubsBillsAddChoice> _quickAddChoices({PartnerCapabilities? capabilities}) {
-    final list = <SubsBillsAddChoice>[
-      const SubsBillsAddChoice(
-        icon: Icons.repeat_rounded,
-        title: 'Recurring bill',
-        subtitle: 'Monthly / weekly — amount + due day',
-        value: 'recurring',
-      ),
-      const SubsBillsAddChoice(
-        icon: Icons.subscriptions_rounded,
-        title: 'Subscription',
-        subtitle: 'Apps, OTT, gym — billing day',
-        value: 'subscription',
-      ),
-      const SubsBillsAddChoice(
-        icon: Icons.account_balance_rounded,
-        title: 'EMI / Loan',
-        subtitle: 'Link an existing loan as recurring EMI',
-        value: 'emi',
-      ),
-      const SubsBillsAddChoice(
-        icon: Icons.alarm_rounded,
-        title: 'Custom reminder',
-        subtitle: 'Light reminder with cadence',
-        value: 'reminder',
-      ),
-      const SubsBillsAddChoice(
-        icon: Icons.credit_card_rounded,
-        title: 'Card',
-        subtitle: 'Credit card & billing cycle',
-        value: 'card',
-      ),
-    ];
-
-    if (capabilities == null) return list;
-
-    return list.where((c) {
-      switch (c.value) {
-        case 'recurring':
-          return capabilities.recurring || capabilities.subscriptions;
-        case 'subscription':
-          return capabilities.subscriptions;
-        case 'emi':
-          return capabilities.emis;
-        case 'reminder':
-          return true;
-        case 'card':
-          return true;
-        default:
-          return true;
-      }
-    }).toList(growable: false);
-  }
-
-  _AddContext? _resolveAddContext({
-    RecurringScope? scope,
-    String? userPhone,
-    String? friendId,
-    String? groupId,
-    List<String>? participantUserIds,
-    bool? mirrorToFriend,
-  }) {
-    if (scope != null) {
-      if (scope.isGroup) {
-        final gid = scope.groupId;
-        if (gid == null) return null;
-        return _AddContext.group(
-          scope: scope,
-          userPhone: userPhone ?? defaultUserPhone,
-          groupId: gid,
-          participantUserIds:
-              participantUserIds ?? defaultParticipantUserIds,
-        );
-      }
-      final u = scope.userPhone;
-      final f = scope.friendId;
-      if (u == null || f == null) return null;
-      return _AddContext.friend(
-        scope: scope,
-        userPhone: u,
-        friendId: f,
-        mirrorToFriend: mirrorToFriend ?? defaultMirrorToFriend,
-        participantUserIds:
-            participantUserIds ?? defaultParticipantUserIds,
-      );
-    }
-
-    final gid = groupId ?? defaultGroupId;
-    if (gid != null) {
-      return _AddContext.group(
-        scope: RecurringScope.group(gid),
-        userPhone: userPhone ?? defaultUserPhone,
-        groupId: gid,
-        participantUserIds:
-            participantUserIds ?? defaultParticipantUserIds,
-      );
-    }
-
-    final u = userPhone ?? defaultUserPhone;
-    final f = friendId ?? defaultFriendId;
-    if (u == null || f == null) return null;
-
-    return _AddContext.friend(
-      scope: RecurringScope.friend(u, f),
-      userPhone: u,
-      friendId: f,
-      mirrorToFriend: mirrorToFriend ?? defaultMirrorToFriend,
-      participantUserIds:
-          participantUserIds ?? defaultParticipantUserIds,
-    );
-  }
-
-  Future<bool> _handleAddResult(BuildContext context, dynamic res) async {
-    if (res == null) return false;
-    bool changed = false;
-    if (res is bool) {
-      changed = res;
-    } else if (res is SharedItem) {
-      changed = true;
-    } else if (res is String) {
-      changed = res.trim().isNotEmpty;
-    }
-
-    if (changed) {
-      _snack(context, 'Saved!');
-    }
-    return changed;
-  }
-
-  // Lightweight container to share computed add context.
-  _AddContext? get _defaultAddContext => _resolveAddContext();
 
   // ---------------------------------------------------------------------------
   // NEW: Add Card (simple sheet) -> users/<id>/cards/<doc>
@@ -1423,54 +1210,5 @@ class SubscriptionsService {
 
   void _snack(BuildContext context, String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-}
-
-class _AddContext {
-  final RecurringScope scope;
-  final String? userPhone;
-  final String? friendId;
-  final String? groupId;
-  final List<String> participantUserIds;
-  final bool mirrorToFriend;
-
-  const _AddContext._({
-    required this.scope,
-    required this.userPhone,
-    this.friendId,
-    this.groupId,
-    required this.participantUserIds,
-    required this.mirrorToFriend,
-  });
-
-  factory _AddContext.friend({
-    required RecurringScope scope,
-    required String userPhone,
-    required String friendId,
-    required List<String> participantUserIds,
-    required bool mirrorToFriend,
-  }) {
-    return _AddContext._(
-      scope: scope,
-      userPhone: userPhone,
-      friendId: friendId,
-      participantUserIds: participantUserIds,
-      mirrorToFriend: mirrorToFriend,
-    );
-  }
-
-  factory _AddContext.group({
-    required RecurringScope scope,
-    required String? userPhone,
-    required String groupId,
-    required List<String> participantUserIds,
-  }) {
-    return _AddContext._(
-      scope: scope,
-      userPhone: userPhone,
-      groupId: groupId,
-      participantUserIds: participantUserIds,
-      mirrorToFriend: false,
-    );
   }
 }

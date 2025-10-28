@@ -5,11 +5,10 @@ import '../../../services/subscriptions/subscriptions_service.dart';
 class ItemTile extends StatelessWidget {
   final SharedItem item;
   final void Function(bool changed) onChanged;
-  final SubscriptionsService service;
 
-  ItemTile({Key? key, required this.item, required this.onChanged, SubscriptionsService? service})
-      : service = service ?? SubscriptionsService(),
-        super(key: key);
+  ItemTile({Key? key, required this.item, required this.onChanged}) : super(key: key);
+
+  final _svc = SubscriptionsService();
 
   @override
   Widget build(BuildContext context) {
@@ -46,28 +45,28 @@ class ItemTile extends StatelessWidget {
             bool changed = false;
             switch (v) {
               case 'paid':
-                changed = await service.markPaid(item);
+                changed = await _svc.markPaid(item);
                 break;
               case 'pause':
-                changed = await service.togglePause(item);
+                changed = await _svc.togglePause(item);
                 break;
               case 'end':
-                changed = await service.end(item);
+                changed = await _svc.end(item);
                 break;
               case 'edit':
-                changed = await service.quickEditTitle(context, item);
+                changed = await _svc.quickEditTitle(context, item);
                 break;
               case 'delete':
-                changed = await service.deleteOrEnd(item);
+                changed = await _svc.deleteOrEnd(item);
                 break;
               case 'reminder':
-                changed = await service.addQuickReminder(context, item);
+                changed = await _svc.addQuickReminder(context, item);
                 break;
               case 'schedule_next':
-                changed = await service.scheduleNextLocal(item);
+                changed = await _svc.scheduleNextLocal(item);
                 break;
               case 'nudge_now':
-                changed = await service.nudgeNow(item);
+                changed = await _svc.nudgeNow(item);
                 break;
             }
             onChanged(changed);
