@@ -23,10 +23,12 @@ import '../widgets/loans_summary_card.dart';
 import '../widgets/assets_summary_card.dart';
 import '../widgets/tx_filter_bar.dart';
 import '../widgets/hero_transaction_ring.dart';
+import '../widgets/dashboard/credit_cards_summary_card.dart';
 import '../services/user_data.dart';
 import '../widgets/dashboard_activity_tab.dart';
 import '../models/activity_event.dart';
 import 'dashboard_activity_screen.dart';
+import 'credit_card_details_screen.dart';
 import 'insight_feed_screen.dart';
 import '../widgets/transaction_count_card.dart';
 import '../widgets/transaction_amount_card.dart';
@@ -290,8 +292,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
 
     _cardsSub = db
-        .collection('users').doc(widget.userPhone)
-        .collection('cards')
+        .collection('users')
+        .doc(widget.userPhone)
+        .collection('credit_cards')
         .snapshots()
         .listen((snap) {
       if (!mounted) return;
@@ -299,17 +302,32 @@ class _DashboardScreenState extends State<DashboardScreen>
       final now = DateTime.now();
       for (final d in snap.docs) {
         final data = d.data();
-        final status = (data['status'] ?? '').toString().toLowerCase();
-        final lastBill = data['lastBill'] as Map<String, dynamic>?;
+        final status =
+            (data['currentCycleStatus'] ?? data['status'] ?? '').toString().toLowerCase();
+        final dueField = data['currentCycleDueDate'] ?? data['dueDate'];
         DateTime? dueDate;
-        if (lastBill != null && lastBill['dueDate'] is Timestamp) {
-          dueDate = (lastBill['dueDate'] as Timestamp).toDate();
+        if (dueField is Timestamp) {
+          dueDate = dueField.toDate();
+        } else if (dueField is DateTime) {
+          dueDate = dueField;
+        } else if (dueField is String) {
+          dueDate = DateTime.tryParse(dueField);
         }
-        if (status == 'due') {
+
+        if (status == 'paid') {
+          continue;
+        }
+
+        if (status == 'overdue') {
           due++;
-        } else if (dueDate != null && !now.isBefore(dueDate)) {
-          // if dueDate is today/past and status not set, still count as due
-          due++;
+          continue;
+        }
+
+        if (dueDate != null) {
+          final diff = dueDate.difference(now).inDays;
+          if (!now.isBefore(dueDate) || diff <= 7) {
+            due++;
+          }
         }
       }
       if (!mounted) return;
@@ -1709,6 +1727,20 @@ class _DashboardScreenState extends State<DashboardScreen>
                               _kpiBadge(Icons.credit_card, Colors.redAccent, 'Cards Due', '$_cardsDue'),
                               _kpiBadge(Icons.autorenew, Colors.teal, 'Autopay', '$_autopayCount'),
                             ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: CreditCardsSummaryCard(
+                            userId: widget.userPhone,
+                            onOpen: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => CreditCardDetailsScreen(
+                                  userId: widget.userPhone,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 10),
