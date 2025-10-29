@@ -63,10 +63,12 @@ class _CardDetailScreenState extends State<CardDetailScreen>
   Widget build(BuildContext context) {
     final df = DateFormat('d MMM yyyy');
 
-    final total = _latest?.totalDue ?? widget.card.totalDue;
-    final paid =
-        _latest?.paidAmount ?? (widget.card.isPaid ? widget.card.totalDue : 0);
-    final progress = total <= 0 ? 1.0 : (paid / total).clamp(0, 1);
+    final double total = _latest?.totalDue ?? widget.card.totalDue;
+    final double paid =
+        _latest?.paidAmount ?? (widget.card.isPaid ? widget.card.totalDue : 0.0);
+    final double progress = total <= 0
+        ? 1.0
+        : ((paid / total).clamp(0.0, 1.0) as double);
     final overdue = widget.card.isOverdue;
     final chipText = overdue
         ? 'Overdue by ${DateTime.now().difference(widget.card.dueDate).inDays}d'
