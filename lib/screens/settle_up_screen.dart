@@ -6,6 +6,7 @@ import '../models/expense_item.dart';
 import '../models/friend_model.dart';
 import '../services/expense_service.dart';
 import '../services/friend_service.dart';
+import '../core/ads/ads_banner_card.dart';
 
 const Color tiffanyBlue = Color(0xFF81e6d9);
 const Color mintGreen = Color(0xFFb9f5d8);
@@ -25,6 +26,7 @@ class _SettleUpScreenState extends State<SettleUpScreen> {
   Map<String, double> _balances = {};
   Map<String, FriendModel> _friends = {};
   bool _loading = true;
+  bool _bulkSettling = false;
 
   @override
   void initState() {
@@ -149,6 +151,71 @@ class _SettleUpScreenState extends State<SettleUpScreen> {
     }
   }
 
+  Future<void> _settleAllOutstanding() async {
+    final entries = _balances.entries
+        .where((entry) => entry.key != widget.userId && entry.value.abs() > 0.009)
+        .toList();
+
+    if (entries.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Everyone is already settled!')),
+      );
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Settle with all friends?'),
+        content: Text('This will record ${entries.length} settlement${entries.length == 1 ? '' : 's'} '
+            'so everyone’s balances drop to zero.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Settle all')),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _bulkSettling = true);
+
+    try {
+      for (final entry in entries) {
+        final friendId = entry.key;
+        final amount = entry.value.abs();
+        if (amount <= 0) continue;
+        final youOwe = entry.value < 0;
+        final payer = youOwe ? widget.userId : friendId;
+        final counterparty = youOwe ? friendId : widget.userId;
+
+        await ExpenseService().addGroupSettlement(
+          payer,
+          widget.group.id,
+          counterparty,
+          amount,
+          note: 'Settlement (${widget.group.name})',
+        );
+      }
+
+      await _initData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Recorded settlements for ${entries.length} friend${entries.length == 1 ? '' : 's'}'),
+          backgroundColor: mintGreen,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to settle all: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _bulkSettling = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottomPadding = context.adsBottomPadding(extra: 22);
@@ -201,16 +268,43 @@ class _SettleUpScreenState extends State<SettleUpScreen> {
           _AnimatedMintBackground(),
           _loading
               ? const Center(child: CircularProgressIndicator())
-              : _balances.isEmpty
-              ? Center(
-            child: Text(
-              "No balances to settle!",
-              style: TextStyle(fontSize: 19, color: deepTeal, fontWeight: FontWeight.w500),
-            ),
-          )
-              : ListView(
+          : _balances.isEmpty
+          ? Center(
+        child: Text(
+          "No balances to settle!",
+          style: TextStyle(fontSize: 19, color: deepTeal, fontWeight: FontWeight.w500),
+        ),
+      )
+          : ListView(
             padding: EdgeInsets.only(top: 90, bottom: bottomPadding),
-            children: _balances.entries.map((entry) {
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                child: ElevatedButton.icon(
+                  onPressed: _bulkSettling ? null : _settleAllOutstanding,
+                  icon: _bulkSettling
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.task_alt_rounded),
+                  label: Text(_bulkSettling ? 'Settling…' : 'Settle all friends'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: deepTeal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                child: AdsBannerCard(
+                  placement: 'settle_up_inline_banner',
+                  inline: true,
+                  inlineMaxHeight: 100,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  minHeight: 76,
+                ),
+              ),
+              ..._balances.entries.map((entry) {
               final id = entry.key;
               if (id == widget.userId) return const SizedBox.shrink();
               final bal = entry.value;

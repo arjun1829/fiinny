@@ -66,48 +66,73 @@ class GroupSettingsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 18, 12, 24),
+      child: Column(
         children: [
-          _GlassHeaderCard(
-            name: group.name,
-            memberCount: members.length,
-            avatarUrl: group.avatarUrl,
-            onRename: () => _rename(context),
-            onChangePhoto: () => _changePhoto(context),
-          ),
-
-          const SizedBox(height: 18),
-          _SectionLabel('Members'),
-
-          _GlassActionButton(
-            icon: Icons.group_add_rounded,
-            title: 'Add members',
-            subtitle: 'Review list, then add from contacts',
-            onTap: () => _openAddMembersFlow(context),
-          ),
-          _GlassActionButton(
-            icon: Icons.person_remove_alt_1_rounded,
-            title: 'Remove members',
-            onTap: () => _removeMembers(context),
-          ),
-
-          const SizedBox(height: 18),
-          _SectionLabel('Danger zone'),
-
-          _GlassActionButton(
-            icon: Icons.exit_to_app_rounded,
-            title: 'Leave group',
-            danger: true,
-            onTap: () => _leaveGroup(context),
-          ),
-          if (_isCreator)
-            _GlassActionButton(
-              icon: Icons.delete_forever_rounded,
-              title: 'Delete group',
-              danger: true,
-              onTap: () => _deleteGroup(context),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 6, 12, 4),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                  onPressed: () => Navigator.of(context).maybePop(),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Group settings',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const SizedBox(width: 48),
+              ],
             ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 24),
+              children: [
+                _GlassHeaderCard(
+                  name: group.name,
+                  memberCount: members.length,
+                  avatarUrl: group.avatarUrl,
+                  onRename: () => _rename(context),
+                  onChangePhoto: () => _changePhoto(context),
+                ),
+
+                const SizedBox(height: 18),
+                _SectionLabel('Members'),
+
+                _GlassActionButton(
+                  icon: Icons.group_add_rounded,
+                  title: 'Add members',
+                  subtitle: 'Review list, then add from contacts',
+                  onTap: () => _openAddMembersFlow(context),
+                ),
+                _GlassActionButton(
+                  icon: Icons.person_remove_alt_1_rounded,
+                  title: 'Remove members',
+                  onTap: () => _removeMembers(context),
+                ),
+
+                const SizedBox(height: 18),
+                _SectionLabel('Danger zone'),
+
+                _GlassActionButton(
+                  icon: Icons.exit_to_app_rounded,
+                  title: 'Leave group',
+                  danger: true,
+                  onTap: () => _leaveGroup(context),
+                ),
+                if (_isCreator)
+                  _GlassActionButton(
+                    icon: Icons.delete_forever_rounded,
+                    title: 'Delete group',
+                    danger: true,
+                    onTap: () => _deleteGroup(context),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -763,7 +788,7 @@ class _ContactsPickerSheet extends StatefulWidget {
 class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
   final TextEditingController _search = TextEditingController();
   List<Contact> _contacts = [];
-  final Set<String> _selectedPhones = {};
+  final Map<String, String> _selectedPhones = {};
   bool _loading = true;
 
   @override
@@ -852,7 +877,8 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
                     final c = filtered[i];
                     final phone = _firstPhone(c);
                     final normalized = _normalizePhone(phone ?? '');
-                    final isSel = _selectedPhones.contains(normalized);
+                    final isSel = _selectedPhones.containsKey(normalized);
+                    final displayName = c.displayName.trim();
                     return ListTile(
                       leading: CircleAvatar(
                         child: Text(
@@ -866,7 +892,10 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
                         onChanged: (v) {
                           setState(() {
                             if (v == true) {
-                              if (normalized.isNotEmpty) _selectedPhones.add(normalized);
+                              if (normalized.isNotEmpty) {
+                                _selectedPhones[normalized] =
+                                    displayName.isNotEmpty ? displayName : normalized;
+                              }
                             } else {
                               _selectedPhones.remove(normalized);
                             }
@@ -878,7 +907,10 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
                           if (isSel) {
                             _selectedPhones.remove(normalized);
                           } else {
-                            if (normalized.isNotEmpty) _selectedPhones.add(normalized);
+                            if (normalized.isNotEmpty) {
+                              _selectedPhones[normalized] =
+                                  displayName.isNotEmpty ? displayName : normalized;
+                            }
                           }
                         });
                       },
@@ -929,10 +961,15 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
 
   Future<void> _commitAdd() async {
     // Write to group's memberPhones array
-    final phones = _selectedPhones.where((p) => p.isNotEmpty).toList();
-    if (phones.isEmpty) return;
+    final entries = _selectedPhones.entries.where((e) => e.key.isNotEmpty).toList();
+    if (entries.isEmpty) return;
+    final phones = entries.map((e) => e.key).toList();
+    final names = {
+      for (final e in entries)
+        e.key: e.value.trim().isEmpty ? e.key : e.value.trim(),
+    };
     try {
-      await GroupService().addMembers(widget.groupId, phones);
+      await GroupService().addMembers(widget.groupId, phones, displayNames: names);
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {

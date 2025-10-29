@@ -20,7 +20,9 @@ import '../models/expense_item.dart';
 
 import '../services/expense_service.dart';
 import '../services/friend_service.dart';
+import '../core/ads/ads_banner_card.dart';
 import '../core/ads/ads_shell.dart';
+import '../screens/edit_expense_screen.dart';
 
 // Use the math helpers via an alias so calls are unambiguous.
 import '../group/group_balance_math.dart' as gbm;
@@ -87,11 +89,13 @@ class GroupDetailScreen extends StatefulWidget {
 class _GroupDetailScreenState extends State<GroupDetailScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late GroupModel _group;
 
   List<FriendModel> _members = [];
   FriendModel? _creator;
   bool _loadingMembers = true;
   bool _balancesExpanded = true; // or false if you want it collapsed by default
+  Map<String, String> _memberDisplayNames = {};
   List<Map<String, dynamic>> get _shareFaces => _members
             .map((m) => {
                     'id': m.phone,
@@ -285,28 +289,44 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this); // Overview / Chart / Chat
+    _group = widget.group;
     _fetchMembers();
   }
 
   Future<void> _fetchMembers() async {
     setState(() => _loadingMembers = true);
+    final latest = await GroupService().getGroupById(_group.id);
+    final activeGroup = latest ?? _group;
+    final displayNames = Map<String, String>.from(activeGroup.memberDisplayNames ?? {});
     final friends = <FriendModel>[];
+    FriendModel? creator;
 
-    for (final phone in widget.group.memberPhones) {
-      final f = await FriendService().getFriendByPhone(widget.userId, phone);
-      if (f != null) {
-        friends.add(f);
-        if (phone == widget.group.createdBy) _creator = f;
-      } else {
-        final placeholder = FriendModel(phone: phone, name: phone, avatar: "👤");
-        friends.add(placeholder);
-        if (phone == widget.group.createdBy) _creator = placeholder;
+    for (final phone in activeGroup.memberPhones) {
+      final fetched = await FriendService().getFriendByPhone(widget.userId, phone);
+      if (fetched != null) {
+        friends.add(fetched);
+        if (phone == activeGroup.createdBy) creator = fetched;
+        continue;
       }
+
+      final fallbackName = displayNames[phone]?.trim();
+      final placeholder = FriendModel(
+        phone: phone,
+        name: (fallbackName != null && fallbackName.isNotEmpty)
+            ? fallbackName
+            : _maskPhoneForDisplay(phone),
+        avatar: "👤",
+      );
+      friends.add(placeholder);
+      if (phone == activeGroup.createdBy) creator = placeholder;
     }
 
     if (!mounted) return;
     setState(() {
+      _group = activeGroup;
+      _memberDisplayNames = displayNames;
       _members = friends;
+      _creator = creator;
       _loadingMembers = false;
     });
   }
@@ -319,7 +339,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         userPhone: widget.userId,
         userName: "You",
         userAvatar: null,
-        group: widget.group,
+        group: _group,
         allFriends: _members,
       ),
     );
@@ -332,19 +352,19 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       builder: (_) => SettleUpDialog(
         userPhone: widget.userId,
         friends: _members,
-        groups: [widget.group],
-        initialGroup: widget.group,
+        groups: [_group],
+        initialGroup: _group,
       ),
     );
     if (result == true && mounted) setState(() {});
   }
 
   Future<void> _openRemind(List<ExpenseItem> groupExpenses) async {
-    final participants = widget.group.memberPhones;
+    final participants = _group.memberPhones;
     final sent = await showDialog<bool>(
       context: context,
       builder: (_) => GroupReminderDialog(
-        groupId: widget.group.id,
+        groupId: _group.id,
         currentUserPhone: widget.userId,
         participantPhones: participants,
         groupExpenses: groupExpenses,
@@ -366,9 +386,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => GroupSettingsSheet(
-        group: widget.group,
+        group: _group,
         currentUserPhone: widget.userId,
         members: _members,
+        onChanged: () async {
+          await _fetchMembers();
+        },
       ),
     );
     if (changed == true && mounted) {
@@ -425,6 +448,20 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     }
 
     await batch.commit();
+  }
+
+  Future<void> _openEditExpense(ExpenseItem e) async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EditExpenseScreen(
+          userPhone: widget.userId,
+          expense: e,
+        ),
+      ),
+    );
+    if (updated == true && mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _confirmDelete(ExpenseItem e) async {
@@ -664,8 +701,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   label: const Text('Edit'),
                   onPressed: () {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context)
-                        .showSnackBar(const SnackBar(content: Text('Edit coming soon')));
+                    Future.delayed(
+                      Duration.zero,
+                      () => _openEditExpense(e),
+                    );
                   },
                 ),
                 const SizedBox(width: 8),
@@ -715,7 +754,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: Text(widget.group.name),
+          title: Text(_group.name),
           backgroundColor: Colors.white,
           elevation: 2,
           actions: [
@@ -744,7 +783,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             ? const Center(child: CircularProgressIndicator())
             : StreamBuilder<List<ExpenseItem>>(
           stream: ExpenseService()
-              .getGroupExpensesStream(widget.userId, widget.group.id),
+              .getGroupExpensesStream(widget.userId, _group.id),
           builder: (context, snapshot) {
             final expenses = snapshot.data ?? [];
             final safeBottom = context.adsBottomPadding();
@@ -753,7 +792,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             final pairNet = gbm.pairwiseNetForUser(
               expenses,
               widget.userId,
-              onlyGroupId: widget.group.id,
+              onlyGroupId: _group.id,
             );
 
             double owedToYou = 0, youOwe = 0;
@@ -775,6 +814,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                         owe: youOwe,
                         owed: owedToYou,
                         txCount: expenses.length,
+                      ),
+                      const SizedBox(height: 12),
+                      AdsBannerCard(
+                        placement: 'group_detail_summary_banner',
+                        inline: true,
+                        inlineMaxHeight: 120,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        minHeight: 92,
                       ),
                       const SizedBox(height: 14),
                       _recurringShortcutCard(),
@@ -808,9 +855,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   child: Padding(
                     padding: EdgeInsets.only(bottom: safeBottom),
                     child: GroupChatTab(
-                      groupId: widget.group.id,
+                      groupId: _group.id,
                       currentUserId: widget.userId,
-                      participants: widget.group.memberPhones,
+                      participants: _group.memberPhones,
                       initialDraft: _pendingChatDraft,
                     ),
                   ),
@@ -829,8 +876,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     required double owed,
     required int txCount,
   }) {
-    final createdByYou = widget.group.createdBy == widget.userId;
-    final creatorLabel = _nameFor(widget.group.createdBy);
+    final createdByYou = _group.createdBy == widget.userId;
+    final creatorLabel = _nameFor(_group.createdBy);
 
 
     final net = owed - owe;
@@ -849,7 +896,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.group.name,
+                Text(_group.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -914,9 +961,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => GroupRecurringScreen(
-                  groupId: widget.group.id,
+                  groupId: _group.id,
                   currentUserPhone: widget.userId,
-                  groupName: widget.group.name,
+                  groupName: _group.name,
                 ),
               ),
             );
@@ -1172,6 +1219,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       const SizedBox(height: 8),
     ];
 
+    int inserted = 0;
     for (final e in sorted) {
       final section = _friendlyDateLabel(e.date);
       if (section != lastSection) {
@@ -1193,6 +1241,20 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         ));
       }
       children.add(_activityCard(e));
+      inserted++;
+      if (inserted % 5 == 0) {
+        final slot = inserted ~/ 5;
+        children.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: AdsBannerCard(
+            placement: 'group_detail_activity_$slot',
+            inline: true,
+            inlineMaxHeight: 120,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            minHeight: 88,
+          ),
+        ));
+      }
     }
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: children);
@@ -1540,8 +1602,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   label: const Text('Edit'),
                   onPressed: () {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context)
-                        .showSnackBar(const SnackBar(content: Text('Edit coming soon')));
+                    Future.delayed(
+                      Duration.zero,
+                      () => _openEditExpense(e),
+                    );
                   },
                 ),
                 const SizedBox(width: 8),
@@ -1610,7 +1674,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   }
 
   Widget _groupAvatar() {
-    final url = widget.group.avatarUrl;
+    final url = _group.avatarUrl;
     if (url != null && url.isNotEmpty) {
       return CircleAvatar(radius: 28, backgroundImage: NetworkImage(url));
     }
@@ -2349,12 +2413,34 @@ class _GroupChatTabState extends State<GroupChatTab> {
                 return const Center(child: Text("No messages yet."));
               }
 
+              const chatAdEvery = 20;
+              final blockSize = chatAdEvery + 1;
+              final adCount = chatAdEvery > 0 ? docs.length ~/ chatAdEvery : 0;
+              final totalItems = docs.length + adCount;
+
               return ListView.builder(
                 controller: _scrollController,
                 reverse: true,
-                itemCount: docs.length,
+                itemCount: totalItems,
                 itemBuilder: (context, i) {
-                  final d = docs[i];
+                  final isAdSlot = chatAdEvery > 0 && blockSize > 0 && (i + 1) % blockSize == 0;
+                  if (isAdSlot) {
+                    final slot = (i + 1) ~/ blockSize;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      child: AdsBannerCard(
+                        placement: 'group_chat_midroll_$slot',
+                        inline: true,
+                        inlineMaxHeight: 100,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        minHeight: 72,
+                      ),
+                    );
+                  }
+
+                  final adsBefore = chatAdEvery > 0 ? (i + 1) ~/ blockSize : 0;
+                  final messageIndex = i - adsBefore;
+                  final d = docs[messageIndex];
                   final data = d.data();
                   final isMe = data['from'] == widget.currentUserId;
                   final msg = (data['message'] ?? '') as String;
