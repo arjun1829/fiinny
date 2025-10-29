@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 class PartnerTransactionList extends StatefulWidget {
   final String partnerUserId; // phone-based docId (kept name to avoid breaking callers)
@@ -128,27 +129,25 @@ class _PartnerTransactionListState extends State<PartnerTransactionList> {
             );
           }
 
-          // Build grouped list by day label
-          String dayLabel(DateTime d) => "${d.day}/${d.month}/${d.year}";
           final tiles = <Widget>[];
           String? currentHeader;
-
           for (final data in txns) {
             final dt = (data['date'] is Timestamp)
                 ? (data['date'] as Timestamp).toDate()
                 : (data['date'] is DateTime ? data['date'] as DateTime : null);
 
-            final header = dt != null ? dayLabel(DateTime(dt.year, dt.month, dt.day)) : "Unknown date";
+            final header = dt != null ? _readableHeader(dt) : 'Unknown date';
 
             if (currentHeader != header) {
               currentHeader = header;
               tiles.add(
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
                   child: Text(
                     currentHeader,
                     style: TextStyle(
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
                       color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
@@ -160,30 +159,19 @@ class _PartnerTransactionListState extends State<PartnerTransactionList> {
             final isDebit = kind == 'debit';
             final amountNum = (data['amount'] is num) ? (data['amount'] as num).toDouble() : 0.0;
             final type = (data['type'] as String?) ?? (isDebit ? 'Expense' : 'Income');
-            final note = (data['note'] as String?) ?? '';
+            final note = (data['note'] as String?)?.trim() ?? '';
+            final timeLabel = dt != null ? DateFormat('HH:mm').format(dt) : '';
 
             tiles.add(
-              ListTile(
-                leading: Icon(
-                  isDebit ? Icons.remove_circle : Icons.add_circle,
-                  color: isDebit ? Colors.red : Colors.green,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: _SharingUnifiedTile(
+                  isIncome: !isDebit,
+                  amount: amountNum,
+                  category: type,
+                  note: note,
+                  time: timeLabel,
                 ),
-                title: Text(
-                  type,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  note.isNotEmpty ? note : (dt != null ? "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}" : ""),
-                  maxLines: 2,
-                ),
-                trailing: Text(
-                  "₹${amountNum.toStringAsFixed(0)}",
-                  style: TextStyle(
-                    color: isDebit ? Colors.red : Colors.green,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                isThreeLine: note.isNotEmpty,
               ),
             );
           }
@@ -192,6 +180,148 @@ class _PartnerTransactionListState extends State<PartnerTransactionList> {
             children: tiles,
           );
         },
+      ),
+    );
+  }
+
+  String _readableHeader(DateTime date) {
+    final today = DateTime.now();
+    final justDate = DateTime(date.year, date.month, date.day);
+    final todayDate = DateTime(today.year, today.month, today.day);
+    if (justDate == todayDate) return 'Today';
+    if (justDate == todayDate.subtract(const Duration(days: 1))) return 'Yesterday';
+    return DateFormat('d MMM, yyyy').format(date);
+  }
+}
+
+class _SharingUnifiedTile extends StatelessWidget {
+  final bool isIncome;
+  final double amount;
+  final String category;
+  final String note;
+  final String time;
+
+  const _SharingUnifiedTile({
+    required this.isIncome,
+    required this.amount,
+    required this.category,
+    required this.note,
+    required this.time,
+  });
+
+  Color get _side => isIncome ? const Color(0xFF1DB954) : const Color(0xFFE53935);
+  Color get _iconBg => isIncome ? const Color(0x221DB954) : const Color(0x22E53935);
+  IconData get _icon => isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
+
+  String _money(double v) => '₹${v.toStringAsFixed(0)}';
+
+  @override
+  Widget build(BuildContext context) {
+    final textPrimary = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87;
+    final textMuted = Colors.black.withOpacity(.55);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: null,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.white, Colors.white.withOpacity(.96)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.black.withOpacity(.05)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(.05),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 6,
+                height: 68,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [_side.withOpacity(.95), _side.withOpacity(.7)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(18),
+                    bottomLeft: Radius.circular(18),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                width: 44,
+                height: 44,
+                margin: const EdgeInsets.only(left: 2),
+                decoration: BoxDecoration(
+                  color: _iconBg,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(_icon, color: _side),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _money(amount),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 17.5,
+                                fontWeight: FontWeight.w900,
+                                color: isIncome ? _side : const Color(0xFFB71C1C),
+                                letterSpacing: .2,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (time.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.withOpacity(.14),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(time, style: TextStyle(fontSize: 11.5, color: textMuted)),
+                            ),
+                          const SizedBox(width: 8),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        note.isNotEmpty ? '$category  •  $note' : category,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

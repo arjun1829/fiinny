@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'package:lifemap/core/ads/ads_banner_card.dart';
+
 import '../models/partner_model.dart';
 import '../services/partner_service.dart';
 import '../widgets/sharing_hero_card.dart';
@@ -252,6 +254,19 @@ class _SharingScreenState extends State<SharingScreen> {
     );
   }
 
+  Widget _buildPartnerAd(int batchIndex) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 18),
+      child: AdsBannerCard(
+        placement: 'sharing_partner_batch_$batchIndex',
+        inline: true,
+        inlineMaxHeight: 110,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        minHeight: 88,
+      ),
+    );
+  }
+
   // ---- Incoming (to me) requests ----
   Widget _buildIncomingPendingSection() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -459,13 +474,16 @@ class _SharingScreenState extends State<SharingScreen> {
                     if (snapshot.hasData && snapshot.data!.isNotEmpty) {
                       int i = 0;
                       for (final partner in snapshot.data!.where((p) => p.status == 'active')) {
-                        partnerCards.add(_buildPartnerCard(partner, i));
-                        i++;
-                      }
-                    } else if (snapshot.connectionState == ConnectionState.done &&
-                        (snapshot.data == null || snapshot.data!.isEmpty)) {
-                      partnerCards.add(
-                        AnimatedSlideFade(
+                    partnerCards.add(_buildPartnerCard(partner, i));
+                    i++;
+                    if (i % 2 == 0) {
+                      partnerCards.add(_buildPartnerAd(i ~/ 2));
+                    }
+                  }
+                } else if (snapshot.connectionState == ConnectionState.done &&
+                    (snapshot.data == null || snapshot.data!.isEmpty)) {
+                  partnerCards.add(
+                    AnimatedSlideFade(
                           delayMilliseconds: 280,
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 60),

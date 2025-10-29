@@ -53,38 +53,50 @@ class SharingHeroRing extends StatelessWidget {
     return Semantics(
       label:
           'Sharing ring. Credit ₹${safeCredit.toStringAsFixed(0)}, Debit ₹${safeDebit.toStringAsFixed(0)}',
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            _AnimatedRing(
-              percent: percentDebit,
-              color: debitColor,
-              size: size,
-              strokeWidth: outerStroke,
-              duration: animationDuration,
-              curve: animationCurve,
-            ),
-            _AnimatedRing(
-              percent: percentCredit,
-              color: creditColor,
-              size: size * 0.77, // inner ring
-              strokeWidth: innerStroke,
-              duration: animationDuration,
-              curve: animationCurve,
-            ),
-            if (showCenterDot)
-              Container(
-                width: size * 0.06,
-                height: size * 0.06,
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.08),
-                  shape: BoxShape.circle,
-                ),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.75, end: 1.0),
+        curve: Curves.easeOutBack,
+        duration: const Duration(milliseconds: 520),
+        builder: (context, scale, child) {
+          final opacity = ((scale - 0.65) / 0.35).clamp(0.0, 1.0);
+          return Transform.scale(
+            scale: scale,
+            child: Opacity(opacity: opacity, child: child),
+          );
+        },
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              _AnimatedRing(
+                percent: percentDebit,
+                color: debitColor,
+                size: size,
+                strokeWidth: outerStroke,
+                duration: animationDuration,
+                curve: animationCurve,
               ),
-          ],
+              _AnimatedRing(
+                percent: percentCredit,
+                color: creditColor,
+                size: size * 0.77, // inner ring
+                strokeWidth: innerStroke,
+                duration: animationDuration,
+                curve: animationCurve,
+              ),
+              if (showCenterDot)
+                Container(
+                  width: size * 0.06,
+                  height: size * 0.06,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.08),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
