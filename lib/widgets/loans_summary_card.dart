@@ -34,7 +34,8 @@ class LoansSummaryCard extends StatelessWidget {
         .textTheme
         .titleMedium
         ?.copyWith(fontWeight: FontWeight.w700, fontSize: 16);
-    final Widget contents = GlassCard(
+    final Widget cardBody = GlassCard(
+      padding: const EdgeInsets.all(13),
       radius: Fx.r24,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -58,7 +59,14 @@ class LoansSummaryCard extends StatelessWidget {
             ),
           ]),
           const SizedBox(height: Fx.s6),
-          Text(_inr.format(totalLoan), style: Fx.number.copyWith(color: Fx.bad)),
+          Text(
+            _inr.format(totalLoan),
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Fx.bad,
+            ),
+          ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -75,16 +83,21 @@ class LoansSummaryCard extends StatelessWidget {
       ),
     );
 
-    if (onTap == null) return contents;
+    if (onTap == null) {
+      return SizedBox(width: double.infinity, child: cardBody);
+    }
 
     final radius = BorderRadius.circular(Fx.r24);
-    return Material(
-      color: Colors.transparent,
-      borderRadius: radius,
-      child: InkWell(
+    return SizedBox(
+      width: double.infinity,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: radius,
-        onTap: onTap,
-        child: contents,
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          child: cardBody,
+        ),
       ),
     );
   }

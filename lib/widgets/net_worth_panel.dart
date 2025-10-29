@@ -23,28 +23,43 @@ class NetWorthPanel extends StatelessWidget {
         .titleMedium
         ?.copyWith(fontWeight: FontWeight.w700, fontSize: 16);
 
-    return GlassCard(
-      radius: Fx.r24,
-      child: Row(
-        children: [
-          Icon(Icons.equalizer, color: Fx.mintDark, size: 30),
-          const SizedBox(width: Fx.s12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text("Net Worth", style: titleStyle),
-                const SizedBox(height: Fx.s2),
-                Text(INR.f(net), style: Fx.number.copyWith(color: color)),
-                const SizedBox(height: Fx.s8),
-                Wrap(spacing: Fx.s8, runSpacing: Fx.s6, children: [
-                  _pill("Assets", INR.f(totalAssets), Fx.good, Icons.savings_rounded),
-                  _pill("Loans", INR.f(totalLoan), Fx.bad, Icons.account_balance_rounded),
-                ]),
-              ],
+    return SizedBox(
+      width: double.infinity,
+      child: GlassCard(
+        radius: Fx.r24,
+        padding: const EdgeInsets.all(13),
+        child: Row(
+          children: [
+            const Icon(Icons.equalizer, color: Fx.mintDark, size: 30),
+            const SizedBox(width: Fx.s12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Net Worth", style: titleStyle),
+                  const SizedBox(height: Fx.s2),
+                  Text(
+                    INR.f(net),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(height: Fx.s8),
+                  Wrap(
+                    spacing: Fx.s8,
+                    runSpacing: Fx.s6,
+                    children: [
+                      _pill("Assets", INR.f(totalAssets), Fx.good, Icons.savings_rounded),
+                      _pill("Loans", INR.f(totalLoan), Fx.bad, Icons.account_balance_rounded),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -59,7 +74,7 @@ class NetWorthPanel extends StatelessWidget {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(i, size: 14, color: c),
           const SizedBox(width: Fx.s6),
-          Text("$t: $v", style: TextStyle(color: c, fontWeight: FontWeight.w700, fontSize: 12)),
+          Text("$t: $v", style: Fx.label.copyWith(color: c, fontSize: 13)),
         ]),
       );
 }
