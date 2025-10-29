@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
 
+import 'package:lifemap/core/ads/ads_banner_card.dart';
+
 class PartnerChatTab extends StatefulWidget {
   final String partnerUserId; // phone-based id
   final String currentUserId; // phone-based id
@@ -668,12 +670,34 @@ class _PartnerChatTabState extends State<PartnerChatTab> {
                 return const Center(child: Text("No messages yet."));
               }
 
+              const chatAdEvery = 20;
+              final blockSize = chatAdEvery + 1;
+              final adCount = chatAdEvery > 0 ? docs.length ~/ chatAdEvery : 0;
+              final totalItems = docs.length + adCount;
+
               return ListView.builder(
                 controller: _scrollController,
                 reverse: true,
-                itemCount: docs.length,
+                itemCount: totalItems,
                 itemBuilder: (context, i) {
-                  final d = docs[i];
+                  final isAdSlot = chatAdEvery > 0 && blockSize > 0 && (i + 1) % blockSize == 0;
+                  if (isAdSlot) {
+                    final slot = (i + 1) ~/ blockSize;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      child: AdsBannerCard(
+                        placement: 'friend_chat_midroll_$slot',
+                        inline: true,
+                        inlineMaxHeight: 100,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        minHeight: 72,
+                      ),
+                    );
+                  }
+
+                  final adsBefore = chatAdEvery > 0 ? (i + 1) ~/ blockSize : 0;
+                  final messageIndex = i - adsBefore;
+                  final d = docs[messageIndex];
                   final data = d.data();
                   final isMe = data['from'] == widget.currentUserId;
                   final msg = (data['message'] ?? '') as String;

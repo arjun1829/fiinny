@@ -286,16 +286,13 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
   }
 
   Future<void> _scrollTo(GlobalKey key) async {
-    await Future.delayed(const Duration(milliseconds: 60));
+    await Future.delayed(const Duration(milliseconds: 16));
     final ctx = key.currentContext;
     if (ctx == null) return;
-    final box = ctx.findRenderObject() as RenderBox?;
-    if (box == null) return;
-    final y =
-        box.localToGlobal(Offset.zero, ancestor: context.findRenderObject()).dy;
-    await _scroll.animateTo(
-      _scroll.offset + y - 96,
-      duration: const Duration(milliseconds: 260),
+    await Scrollable.ensureVisible(
+      ctx,
+      alignment: 0,
+      duration: const Duration(milliseconds: 280),
       curve: Curves.easeOutCubic,
     );
   }
@@ -322,7 +319,7 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
         _intervalDays = null;
       }
     });
-    _scrollTo(_detailsKey);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollTo(_detailsKey));
   }
 
   // Calendar helper
@@ -643,12 +640,12 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
               controller: _scroll,
               padding: EdgeInsets.fromLTRB(16, 12, 16, bottomInset + 24),
               children: [
-              _sectionTitle('Quick pick'),
-              _presetGrid(sortedPresets),
+                _sectionTitle('Quick pick'),
+                _presetGrid(sortedPresets),
 
-              const SizedBox(height: 14),
-              _sectionTitle('Details', key: _detailsKey),
-              _glossyCard(
+                const SizedBox(height: 14),
+                _sectionTitle('Details', key: _detailsKey),
+                _glossyCard(
                 child: Column(
                   children: [
                     TextFormField(

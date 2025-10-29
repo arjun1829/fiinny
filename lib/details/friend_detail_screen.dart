@@ -27,7 +27,9 @@ import '../models/loan_model.dart';
 import '../services/expense_service.dart';
 import '../services/group_service.dart';
 import '../services/loan_service.dart';
+import '../core/ads/ads_banner_card.dart';
 import '../core/ads/ads_shell.dart';
+import '../screens/edit_expense_screen.dart';
 
 import '../widgets/add_friend_expense_dialog.dart';
 import '../widgets/settleup_dialog.dart';
@@ -158,20 +160,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     try { addList((e as dynamic).photos); }        catch (_) {}
 
     // 2) Single string fields
-    for (final f in [
-      'attachmentUrl','receiptUrl','fileUrl','imageUrl','photoUrl'
-    ]) {
-      try {
-        final s = (e as dynamic).__noSuchMethod__ == null ? null : null; // noop to keep analyzer calm
-      } catch (_) {}
-      try {
-        final s = (e as dynamic).toJson?.call();
-        // handled below in toJson block
-      } catch (_) {}
-      try {
-        final s = (e as dynamic).$f; // won't compile; keep explicit below
-      } catch (_) {}
-    }
     try { addOne((e as dynamic).attachmentUrl); } catch (_) {}
     try { addOne((e as dynamic).receiptUrl);    } catch (_) {}
     try { addOne((e as dynamic).fileUrl);       } catch (_) {}
@@ -907,8 +895,10 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                       label: const Text('Edit'),
                       onPressed: () {
                         Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Edit coming soon')));
+                        Future.delayed(
+                          Duration.zero,
+                          () => _editEntry(e),
+                        );
                       },
                     ),
                     const SizedBox(width: 8),
@@ -991,6 +981,83 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     } catch (_) {/* fallback to FriendModel */}
   }
 
+  Future<void> _handleEditFriend() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Edit display name'),
+                onTap: () => Navigator.pop(ctx, 'edit'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.travel_explore_outlined),
+                title: const Text('Search web'),
+                onTap: () => Navigator.pop(ctx, 'search'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.copy_outlined),
+                title: const Text('Copy phone number'),
+                onTap: () => Navigator.pop(ctx, 'copy'),
+              ),
+              const SizedBox(height: 4),
+            ],
+          ),
+        );
+      },
+    );
+
+    switch (action) {
+      case 'edit':
+        final controller = TextEditingController(text: _displayName);
+        final name = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Edit Name'),
+            content: TextField(controller: controller, autofocus: true),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+        );
+        if (name != null && name.isNotEmpty) {
+          setState(() => _friendDisplayName = name);
+        }
+        break;
+      case 'search':
+        final query = _displayName.trim().isNotEmpty ? _displayName.trim() : widget.friend.phone;
+        final searchUrl = Uri.parse('https://www.google.com/search?q=${Uri.encodeComponent(query)}');
+        if (!await launchUrl(searchUrl, mode: LaunchMode.externalApplication)) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open search')),
+          );
+        }
+        break;
+      case 'copy':
+        await Clipboard.setData(ClipboardData(text: widget.friend.phone));
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Phone number copied')),
+        );
+        break;
+      default:
+        break;
+    }
+  }
+
   Future<void> _refreshAll() async {
     await _loadFriendProfile();
     if (mounted) setState(() {});
@@ -1068,16 +1135,29 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
       }
     }
 
-    youOwe = double.parse(youOwe.toStringAsFixed(2));
-    owedToYou = double.parse(owedToYou.toStringAsFixed(2));
-    final net = double.parse((owedToYou - youOwe).toStringAsFixed(2));
+    double round2(double value) => double.parse(value.toStringAsFixed(2));
+    bool isSettled(double owed, double owe) => (owed - owe).abs() < 0.01;
+
+    youOwe = round2(youOwe);
+    owedToYou = round2(owedToYou);
+    double net = round2(owedToYou - youOwe);
+
+    if (isSettled(owedToYou, youOwe)) {
+      youOwe = 0.0;
+      owedToYou = 0.0;
+      net = 0.0;
+    }
 
     final buckets = <String, _BucketTotals>{};
     final allB = {...oweByBucket.keys, ...owedByBucket.keys};
     for (final b in allB) {
-      final owe = double.parse((oweByBucket[b] ?? 0.0).toStringAsFixed(2));
-      final owed = double.parse((owedByBucket[b] ?? 0.0).toStringAsFixed(2));
-      buckets[b] = _BucketTotals(owe: owe, owed: owed);
+      final owe = round2(oweByBucket[b] ?? 0.0);
+      final owed = round2(owedByBucket[b] ?? 0.0);
+      if (isSettled(owed, owe)) {
+        buckets[b] = const _BucketTotals(owe: 0.0, owed: 0.0);
+      } else {
+        buckets[b] = _BucketTotals(owe: owe, owed: owed);
+      }
     }
 
     return (_Totals(owe: youOwe, owed: owedToYou, net: net), buckets);
@@ -1162,6 +1242,20 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     );
   }
 
+  Future<void> _editEntry(ExpenseItem e) async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EditExpenseScreen(
+          userPhone: widget.userPhone,
+          expense: e,
+        ),
+      ),
+    );
+    if (updated == true && mounted) {
+      setState(() {});
+    }
+  }
+
   Future<void> _deleteEntry(ExpenseItem e) async {
     try {
       await ExpenseService().deleteExpense(widget.userPhone, e.id);
@@ -1200,29 +1294,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
           actions: [
             IconButton(
               icon: const Icon(Icons.edit),
-              onPressed: () async {
-                final controller = TextEditingController(text: _displayName);
-                final name = await showDialog<String>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text("Edit Name"),
-                    content: TextField(controller: controller, autofocus: true),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: const Text("Cancel")),
-                      ElevatedButton(
-                        onPressed: () =>
-                            Navigator.pop(ctx, controller.text.trim()),
-                        child: const Text("Save"),
-                      ),
-                    ],
-                  ),
-                );
-                if (name != null && name.isNotEmpty) {
-                  setState(() => _friendDisplayName = name);
-                }
-              },
+              onPressed: _handleEditFriend,
               tooltip: "Edit friend",
             ),
           ],
@@ -1426,6 +1498,14 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                 ),
                               ],
                             ),
+                          ),
+                          const SizedBox(height: 12),
+                          AdsBannerCard(
+                            placement: 'friend_detail_summary_banner',
+                            inline: true,
+                            inlineMaxHeight: 120,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            minHeight: 92,
                           ),
                           const SizedBox(height: 14),
                           // Recurring overview -> full recurring screen
@@ -1710,17 +1790,37 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                       for (final g in groups) g.id: g.name
                                     };
 
-                                    return ListView.separated(
-                                      itemCount: pairwise.length,
+                                    const int historyAdEvery = 5;
+                                    final int blockSize = historyAdEvery + 1;
+                                    final int adCount = historyAdEvery > 0
+                                        ? pairwise.length ~/ historyAdEvery
+                                        : 0;
+                                    final int totalItems = pairwise.length + adCount;
+
+                                    return ListView.builder(
+                                      itemCount: totalItems,
                                       shrinkWrap: true,
-                                      physics:
-                                      const NeverScrollableScrollPhysics(),
-                                      separatorBuilder: (_, __) =>
-                                      const Divider(
-                                          height: 12,
-                                          color: Colors.transparent),
-                                      itemBuilder: (_, i) {
-                                        final ex = pairwise[i];
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      itemBuilder: (_, idx) {
+                                        final bool isAdSlot = historyAdEvery > 0 && blockSize > 0 &&
+                                            (idx + 1) % blockSize == 0;
+                                        if (isAdSlot) {
+                                          final slot = (idx + 1) ~/ blockSize;
+                                          return Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 6),
+                                            child: AdsBannerCard(
+                                              placement: 'friend_detail_history_$slot',
+                                              inline: true,
+                                              inlineMaxHeight: 120,
+                                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                              minHeight: 88,
+                                            ),
+                                          );
+                                        }
+
+                                        final adsBefore = historyAdEvery > 0 ? (idx + 1) ~/ blockSize : 0;
+                                        final dataIndex = idx - adsBefore;
+                                        final ex = pairwise[dataIndex];
                                         final isSettlement =
                                         _isSettlement(ex);
                                         final title = isSettlement
@@ -1807,19 +1907,23 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                                 .width *
                                                 0.55;
 
-                                        return InkWell(
-                                          onTap: () =>
-                                              _showExpenseDetailsFriend(
-                                                  context, ex),
-                                          onLongPress: () =>
-                                              _deleteEntry(ex),
-                                          child: Padding(
-                                            // precise symmetric padding avoids sub-pixel overflow
-                                            padding: const EdgeInsets
-                                                .symmetric(
-                                                horizontal: 0,
-                                                vertical: 6),
-                                            child: Row(
+                                        final topGap = dataIndex == 0 ? 0.0 : 12.0;
+
+                                        return Padding(
+                                          padding: EdgeInsets.only(top: topGap),
+                                          child: InkWell(
+                                            onTap: () =>
+                                                _showExpenseDetailsFriend(
+                                                    context, ex),
+                                            onLongPress: () =>
+                                                _deleteEntry(ex),
+                                            child: Padding(
+                                              // precise symmetric padding avoids sub-pixel overflow
+                                              padding: const EdgeInsets
+                                                  .symmetric(
+                                                  horizontal: 0,
+                                                  vertical: 6),
+                                              child: Row(
                                               crossAxisAlignment:
                                               CrossAxisAlignment.center,
                                               children: [

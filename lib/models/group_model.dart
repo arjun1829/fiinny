@@ -5,6 +5,7 @@ class GroupModel {
   final String name;
   final List<String> memberPhones; // Unique: phone numbers of all members
   final Map<String, String>? memberAvatars; // phone -> avatarUrl or emoji/initial
+  final Map<String, String>? memberDisplayNames; // phone -> contact display name (optional)
   final String createdBy; // phone (not UID)
   final DateTime createdAt;
   final String? avatarUrl;
@@ -17,6 +18,7 @@ class GroupModel {
     required this.createdAt,
     this.avatarUrl,
     this.memberAvatars,
+    this.memberDisplayNames,
   });
 
   /// Use to guarantee group always contains creator phone in memberPhones
@@ -28,6 +30,7 @@ class GroupModel {
     required DateTime createdAt,
     String? avatarUrl,
     Map<String, String>? memberAvatars,
+    Map<String, String>? memberDisplayNames,
   }) {
     final members = Set<String>.from(memberPhones);
     members.add(createdBy);
@@ -39,6 +42,7 @@ class GroupModel {
       createdAt: createdAt,
       avatarUrl: avatarUrl,
       memberAvatars: memberAvatars,
+      memberDisplayNames: memberDisplayNames,
     );
   }
 
@@ -50,6 +54,7 @@ class GroupModel {
     'createdAt': Timestamp.fromDate(createdAt),
     if (avatarUrl != null) 'avatarUrl': avatarUrl,
     if (memberAvatars != null) 'memberAvatars': memberAvatars,
+    if (memberDisplayNames != null) 'memberDisplayNames': memberDisplayNames,
   };
 
   factory GroupModel.fromJson(Map<String, dynamic> json) {
@@ -61,6 +66,9 @@ class GroupModel {
     final memberAvatars = json['memberAvatars'] != null
         ? Map<String, String>.from(json['memberAvatars'])
         : null;
+    final memberDisplayNames = json['memberDisplayNames'] != null
+        ? Map<String, String>.from(json['memberDisplayNames'])
+        : null;
 
     return GroupModel(
       id: json['id'] ?? '',
@@ -70,6 +78,7 @@ class GroupModel {
       createdAt: parseDate(json['createdAt']),
       avatarUrl: json['avatarUrl'],
       memberAvatars: memberAvatars,
+      memberDisplayNames: memberDisplayNames,
     );
   }
 
@@ -83,6 +92,9 @@ class GroupModel {
     final memberAvatars = data['memberAvatars'] != null
         ? Map<String, String>.from(data['memberAvatars'])
         : null;
+    final memberDisplayNames = data['memberDisplayNames'] != null
+        ? Map<String, String>.from(data['memberDisplayNames'])
+        : null;
 
     return GroupModel(
       id: doc.id,
@@ -92,6 +104,7 @@ class GroupModel {
       createdAt: parseDate(data['createdAt']),
       avatarUrl: data['avatarUrl'],
       memberAvatars: memberAvatars,
+      memberDisplayNames: memberDisplayNames,
     );
   }
 

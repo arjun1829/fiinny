@@ -42,6 +42,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
 
   // ------------------------ Contacts picker (searchable) ------------------------
   Future<void> _importFromContacts() async {
+    final accent = Colors.black87;
     setState(() => _error = null);
     setState(() {
       _loadingContacts = true;
@@ -127,15 +128,15 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           child: Row(
-                            children: const [
-                              Icon(Icons.contacts_rounded, color: Color(0xFF09857a)),
-                              SizedBox(width: 8),
+                            children: [
+                              Icon(Icons.contacts_rounded, color: accent),
+                              const SizedBox(width: 8),
                               Text(
                                 "Pick a contact",
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
-                                  color: Color(0xFF09857a),
+                                  color: accent,
                                 ),
                               ),
                             ],
@@ -146,14 +147,14 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           child: Container(
                             decoration: BoxDecoration(
-                              color: const Color(0xFF09857a).withOpacity(0.06),
+                              color: accent.withOpacity(0.06),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(color: Colors.grey.shade200),
                             ),
                             padding: const EdgeInsets.symmetric(horizontal: 10),
                             child: Row(
                               children: [
-                                const Icon(Icons.search_rounded, size: 20, color: Color(0xFF09857a)),
+                                Icon(Icons.search_rounded, size: 20, color: accent),
                                 const SizedBox(width: 6),
                                 Expanded(
                                   child: TextField(
@@ -192,7 +193,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                               return ListTile(
                                 leading: CircleAvatar(
                                   radius: 20,
-                                  backgroundColor: const Color(0xFF09857a).withOpacity(0.10),
+                                  backgroundColor: accent.withOpacity(0.10),
                                   child: Text(initial, style: const TextStyle(fontWeight: FontWeight.w700)),
                                 ),
                                 title: Text(display, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -263,6 +264,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
   @override
   Widget build(BuildContext context) {
     final safeBottom = context.adsBottomPadding();
+    final accent = Colors.black87;
     // Glassy dialog body
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -303,20 +305,20 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF09857a).withOpacity(.10),
+                            color: accent.withOpacity(.10),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Icon(Icons.person_add_alt_1_rounded,
-                              color: Color(0xFF09857a)),
+                          child: Icon(Icons.person_add_alt_1_rounded,
+                              color: accent),
                         ),
                         const SizedBox(width: 10),
-                        const Expanded(
+                        Expanded(
                           child: Text(
                             "Add Friend",
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
-                              color: Color(0xFF096A63),
+                              color: accent,
                             ),
                           ),
                         ),
@@ -338,8 +340,8 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                         label: Text(_loadingContacts ? "Loading contacts…" : "Add from Contacts"),
                         onPressed: _loading || _loadingContacts ? null : _importFromContacts,
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF09857a),
-                          side: BorderSide(color: const Color(0xFF09857a).withOpacity(0.35)),
+                          foregroundColor: accent,
+                          side: BorderSide(color: accent.withOpacity(0.35)),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
@@ -439,7 +441,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                           icon: const Icon(Icons.check_rounded),
                           label: const Text("Add"),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF09857a),
+                            backgroundColor: accent,
                             foregroundColor: Colors.white,
                             elevation: 6,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -464,11 +466,11 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
       labelText: label,
       prefixIcon: icon != null ? Icon(icon) : null,
       filled: true,
-      fillColor: const Color(0xFF09857a).withOpacity(0.06),
+      fillColor: Colors.black87.withOpacity(0.06),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade300)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade300)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF09857a))),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Colors.black87)),
     );
   }
 }
@@ -495,11 +497,11 @@ class _GlassField extends StatelessWidget {
         labelText: label,
         prefixIcon: Icon(icon),
         filled: true,
-        fillColor: const Color(0xFF09857a).withOpacity(0.06),
+        fillColor: Colors.black87.withOpacity(0.06),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade300)),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade300)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF09857a))),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Colors.black87)),
       ),
       validator: validator,
     );
