@@ -83,6 +83,19 @@ class SmartInsightCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final copy = _resolveInsight();
 
+    assert(() {
+      String? period;
+      final currentKey = key;
+      if (currentKey is ValueKey<String>) {
+        final parts = currentKey.value.split('|');
+        if (parts.length >= 3) {
+          period = parts[2];
+        }
+      }
+      debugPrint('[SmartInsightCard] rendered${period != null ? ' for $period' : ''}');
+      return true;
+    }());
+
     return GlassCard(
       radius: Fx.r24,
       child: Padding(
@@ -98,6 +111,8 @@ class SmartInsightCard extends StatelessWidget {
                 children: [
                   Text(
                     copy,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
                     style: Fx.label.copyWith(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
