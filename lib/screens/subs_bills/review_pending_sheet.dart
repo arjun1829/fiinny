@@ -75,9 +75,20 @@ class _ReviewPendingSheetState extends State<ReviewPendingSheet> {
     final tint  = widget.isLoans ? AppColors.teal : AppColors.mint;
 
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-        child: Column(
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              tint.withOpacity(.08),
+              Colors.white,
+            ],
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+          child: Column(
           children: [
             // drag handle
             Container(height: 4, width: 42,
@@ -180,18 +191,20 @@ class _ReviewPendingSheetState extends State<ReviewPendingSheet> {
                   }
                   if (!snap.hasData) {
                     return const Center(
-                      child: SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+                      child: SizedBox(
+                        height: 24,
+                        width: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                     );
                   }
 
-                  // Build list models
                   final allDocs = snap.data!.docs;
                   final items = allDocs
                       .map((d) => _Pending.fromDoc(d, widget.isLoans))
                       .whereType<_Pending>()
                       .toList();
 
-                  // Filter: search + hiConf
                   final q = _search.text.trim().toLowerCase();
                   final filtered = items.where((x) {
                     if (_hiConfOnly && (x.confidence == null || x.confidence! < .70)) return false;
@@ -200,95 +213,170 @@ class _ReviewPendingSheetState extends State<ReviewPendingSheet> {
                         (x.detBy?.toLowerCase().contains(q) ?? false);
                   }).toList();
 
-                  // Sort
                   filtered.sort((a, b) {
                     switch (_sortKey) {
                       case 'amount':
                         final ad = (a.amount ?? 0);
                         final bd = (b.amount ?? 0);
-                        return bd.compareTo(ad); // high → low
+                        return bd.compareTo(ad);
                       case 'due':
                         final ad = a.nextDue ?? DateTime(2100);
                         final bd = b.nextDue ?? DateTime(2100);
-                        return ad.compareTo(bd); // soonest first
-                      default: // created
+                        return ad.compareTo(bd);
+                      default:
                         final ad = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
                         final bd = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-                        return bd.compareTo(ad); // newest first
+                        return bd.compareTo(ad);
                     }
                   });
 
+                  final totalAmt = filtered.fold<double>(0, (s, e) => s + (e.amount ?? 0));
+                  final hiConfCount =
+                      filtered.where((x) => x.confidence != null && x.confidence! >= .70).length;
+                  final overdueCount =
+                      filtered.where((x) => x.nextDue != null && _isOverdue(x.nextDue!)).length;
+                  final now = DateTime.now();
+                  final dueSoonCount = filtered.where((x) {
+                    if (x.nextDue == null) return false;
+                    if (_isOverdue(x.nextDue!)) return false;
+                    return x.nextDue!.difference(now).inDays <= 7;
+                  }).length;
+
+                  final summaryCard = _ReviewSummaryCard(
+                    tint: tint,
+                    formatter: _inrFmt,
+                    pending: filtered.length,
+                    totalAmount: totalAmt,
+                    hiConf: hiConfCount,
+                    overdue: overdueCount,
+                    dueSoon: dueSoonCount,
+                    isLoans: widget.isLoans,
+                  );
+
                   if (filtered.isEmpty) {
-                    return _centerText('All set! Nothing to review.');
+                    return Column(
+                      children: [
+                        summaryCard,
+                        const SizedBox(height: 20),
+                        Expanded(child: _EmptyReviewState(tint: tint)),
+                      ],
+                    );
                   }
 
-                  // Totals for footer
-                  final totalAmt = filtered.fold<double>(0, (s, e) => s + (e.amount ?? 0));
+                  final bottomPadding = MediaQuery.of(ctx).viewPadding.bottom + 140;
 
-                  final bottomPadding = MediaQuery.of(ctx).viewPadding.bottom + 96;
-
-                  return Stack(
+                  return Column(
                     children: [
-                      ListView.separated(
-                        padding: EdgeInsets.only(bottom: bottomPadding),
-                        itemCount: filtered.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (_, i) => _row(context, filtered[i], tint),
-                      ),
-
-                      // Sticky footer
-                      Positioned(
-                        left: 0, right: 0, bottom: 0,
-                        child: SafeArea(
-                          top: false,
-                          child: GlassCard(
-                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                            glassGradient: [
-                              Colors.white.withOpacity(.32),
-                              Colors.white.withOpacity(.16),
-                            ],
-                            borderOpacityOverride: .14,
-                            child: Row(
-                              children: [
-                                // Summary
-                                Expanded(
+                      summaryCard,
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: Stack(
+                          children: [
+                            ListView.separated(
+                              padding: EdgeInsets.only(bottom: bottomPadding),
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 12),
+                              itemBuilder: (_, i) => _row(context, filtered[i], tint),
+                            ),
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: SafeArea(
+                                top: false,
+                                child: GlassCard(
+                                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                                  glassGradient: [
+                                    Colors.white.withOpacity(.92),
+                                    tint.withOpacity(.12),
+                                  ],
+                                  borderOpacityOverride: .12,
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Text('${filtered.length} pending',
-                                          style: const TextStyle(fontWeight: FontWeight.w900)),
-                                      const SizedBox(height: 2),
-                                      _Pill('Total: ${_inrFmt.format(totalAmt)}', base: tint),
+                                      Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Container(
+                                            height: 36,
+                                            width: 36,
+                                            decoration: BoxDecoration(
+                                              color: tint.withOpacity(.12),
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: Icon(Icons.fact_check_rounded, color: tint),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                const Text(
+                                                  'Bulk actions',
+                                                  style: TextStyle(fontWeight: FontWeight.w900),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  '${filtered.length} item${filtered.length == 1 ? '' : 's'} visible',
+                                                  style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Wrap(
+                                        spacing: 12,
+                                        runSpacing: 12,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        alignment: WrapAlignment.spaceBetween,
+                                        children: [
+                                          _Pill('Total: ${_inrFmt.format(totalAmt)}', base: tint),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              OutlinedButton.icon(
+                                                onPressed: _busyAll ? null : () => _rejectAll(filtered),
+                                                icon: const Icon(Icons.close_rounded, size: 18),
+                                                label: const Text('Reject all'),
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor: Colors.black87,
+                                                  side: BorderSide(color: Colors.black.withOpacity(.18)),
+                                                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              FilledButton.icon(
+                                                onPressed: _busyAll ? null : () => _confirmAll(filtered),
+                                                icon: _busyAll
+                                                    ? const SizedBox(
+                                                        height: 16,
+                                                        width: 16,
+                                                        child: CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                          color: Colors.white,
+                                                        ),
+                                                      )
+                                                    : const Icon(Icons.check_circle_rounded, size: 18),
+                                                label: const Text('Confirm all'),
+                                                style: FilledButton.styleFrom(
+                                                  backgroundColor: tint,
+                                                  foregroundColor: Colors.white,
+                                                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
                                     ],
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                // Reject all
-                                OutlinedButton.icon(
-                                  onPressed: _busyAll ? null : () => _rejectAll(filtered),
-                                  icon: const Icon(Icons.close_rounded, size: 18),
-                                  label: const Text('Reject all'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.black87,
-                                    side: BorderSide(color: Colors.black.withOpacity(.18)),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                // Confirm all
-                                FilledButton.icon(
-                                  onPressed: _busyAll ? null : () => _confirmAll(filtered),
-                                  icon: _busyAll
-                                      ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                      : const Icon(Icons.check_circle_rounded, size: 18),
-                                  label: const Text('Confirm all'),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: tint, foregroundColor: Colors.white,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
+                          ],
                         ),
                       ),
                     ],
@@ -305,7 +393,6 @@ class _ReviewPendingSheetState extends State<ReviewPendingSheet> {
   // ---------- Row ----------
 
   Widget _row(BuildContext context, _Pending p, Color tint) {
-    final subColor = Colors.black54;
     final dueStr = p.nextDue == null ? '—' : _fmtDate(p.nextDue!);
     final amtStr = p.amount == null ? '—' : _inrFmt.format(p.amount);
     final isOverdue = p.nextDue != null && _isOverdue(p.nextDue!);
@@ -313,90 +400,161 @@ class _ReviewPendingSheetState extends State<ReviewPendingSheet> {
     final dueLabel = p.nextDue == null
         ? '—'
         : (isOverdue ? 'Was due $dueStr' : 'Due $dueStr');
-    final line2 = '$amtStr • $dueLabel';
-
     final avatarAsset = BrandAvatarRegistry.assetFor(p.title);
 
-    final tile = Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: () => _edit(context, p.id, p.raw, isLoans: widget.isLoans),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.black.withOpacity(.12)),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
+    final metaChips = <Widget>[
+      _MetaChip(
+        icon: Icons.currency_rupee_rounded,
+        text: amtStr,
+        color: tint,
+        filled: true,
+      ),
+      _MetaChip(
+        icon: Icons.event,
+        text: dueLabel,
+        color: isOverdue ? AppColors.bad : tint,
+        textColor: isOverdue ? AppColors.bad : tint,
+        filled: !isOverdue,
+      ),
+    ];
+
+    if (p.detBy != null && p.detBy!.isNotEmpty) {
+      metaChips.add(
+        _MetaChip(
+          icon: Icons.auto_awesome,
+          text: p.detBy!,
+          color: Colors.black45,
+          textColor: Colors.black87,
+        ),
+      );
+    }
+
+    final tile = GlassCard(
+      onTap: () => _edit(context, p.id, p.raw, isLoans: widget.isLoans),
+      padding: const EdgeInsets.fromLTRB(14, 14, 16, 16),
+      radius: 20,
+      glassGradient: [
+        Colors.white.withOpacity(.95),
+        Colors.white.withOpacity(.78),
+      ],
+      borderOpacityOverride: .10,
+      showShadow: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              BrandAvatar(assetPath: avatarAsset, label: p.title, size: 36, radius: 10),
-              const SizedBox(width: 10),
+              BrandAvatar(assetPath: avatarAsset, label: p.title, size: 40, radius: 12),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(children: [
-                      Expanded(
-                        child: Text(p.title,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            p.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w800)),
-                      ),
-                      if (isOverdue)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 8),
-                          child: _StatusChip('Overdue', AppColors.bad),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15,
+                            ),
+                          ),
                         ),
-                    ]),
-                    const SizedBox(height: 2),
-                    Text(line2, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: subColor, fontSize: 12)),
+                        if (isOverdue)
+                          const Padding(
+                            padding: EdgeInsets.only(left: 8),
+                            child: _StatusChip('Overdue', AppColors.bad),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: metaChips,
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              // Primary action + menu
-              OutlinedButton(
-                onPressed: () => _confirmOne(context, p.id),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: tint,
-                  side: BorderSide(color: tint.withOpacity(.40)),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                ),
-                child: const Text('Confirm'),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: p.confidence != null
+                    ? _ConfidenceMeter(value: p.confidence!, tint: tint)
+                    : const Text(
+                        'Auto-detected from your accounts',
+                        style: TextStyle(fontSize: 11, color: Colors.black54),
+                      ),
               ),
+              const SizedBox(width: 12),
+              FilledButton.icon(
+                onPressed: () => _confirmOne(context, p.id),
+                icon: const Icon(Icons.check_rounded, size: 18),
+                label: const Text('Confirm'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: tint,
+                  foregroundColor: Colors.white,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              const SizedBox(width: 6),
               PopupMenuButton<String>(
                 tooltip: 'More',
                 onSelected: (v) {
                   switch (v) {
-                    case 'edit': _edit(context, p.id, p.raw, isLoans: widget.isLoans); break;
-                    case 'reject': _rejectOne(context, p.id); break;
+                    case 'edit':
+                      _edit(context, p.id, p.raw, isLoans: widget.isLoans);
+                      break;
+                    case 'reject':
+                      _rejectOne(context, p.id);
+                      break;
                   }
                 },
                 itemBuilder: (_) => [
-                  const PopupMenuItem(value: 'edit',   child: _MenuRow(icon: Icons.edit_rounded, label: 'Edit')),
-                  PopupMenuItem(value: 'reject', child: _MenuRow(icon: Icons.close_rounded, label: 'Not a ${widget.isLoans ? "loan" : "subscription"}')),
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: _MenuRow(icon: Icons.edit_rounded, label: 'Edit'),
+                  ),
+                  PopupMenuItem(
+                    value: 'reject',
+                    child: _MenuRow(
+                      icon: Icons.close_rounded,
+                      label: 'Not a ${widget.isLoans ? 'loan' : 'subscription'}',
+                    ),
+                  ),
                 ],
-                icon: Icon(Icons.more_vert_rounded, color: Colors.black.withOpacity(.70)),
+                icon: Icon(Icons.more_horiz_rounded, color: Colors.black.withOpacity(.70)),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
 
     return Dismissible(
       key: ValueKey('pending-${p.id}'),
-      background: _swipeBg(Icons.check_circle_outline_rounded, 'Confirm', Colors.green),
-      secondaryBackground: _swipeBg(Icons.close_rounded, 'Not ${widget.isLoans ? "loan" : "subscription"}', Colors.red),
+      background:
+          _swipeBg(Icons.check_circle_outline_rounded, 'Confirm', Colors.green),
+      secondaryBackground: _swipeBg(
+        Icons.close_rounded,
+        'Not ${widget.isLoans ? 'loan' : 'subscription'}',
+        Colors.red,
+      ),
       confirmDismiss: (dir) async {
         if (dir == DismissDirection.startToEnd) {
           await _confirmOne(context, p.id);
         } else {
           await _rejectOne(context, p.id);
         }
-        return false; // keep row; Stream will update if it drops
+        return false;
       },
       child: tile,
     );
@@ -756,6 +914,293 @@ class _Pill extends StatelessWidget {
           color: base,
           fontWeight: FontWeight.w700,
         ),
+      ),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color color;
+  final Color? textColor;
+  final bool filled;
+
+  const _MetaChip({
+    required this.icon,
+    required this.text,
+    required this.color,
+    this.textColor,
+    this.filled = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = textColor ?? color;
+    final bg = filled ? color.withOpacity(.14) : Colors.white;
+    final border = color.withOpacity(filled ? .32 : .18);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: fg),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: fg,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConfidenceMeter extends StatelessWidget {
+  final double value;
+  final Color tint;
+
+  const _ConfidenceMeter({
+    required this.value,
+    required this.tint,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final safeValue = value.clamp(0.0, 1.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Confidence',
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black54),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  minHeight: 6,
+                  value: safeValue,
+                  color: tint,
+                  backgroundColor: tint.withOpacity(.12),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              '${(safeValue * 100).round()}%',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: tint,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ReviewSummaryCard extends StatelessWidget {
+  final Color tint;
+  final NumberFormat formatter;
+  final int pending;
+  final double totalAmount;
+  final int hiConf;
+  final int overdue;
+  final int dueSoon;
+  final bool isLoans;
+
+  const _ReviewSummaryCard({
+    required this.tint,
+    required this.formatter,
+    required this.pending,
+    required this.totalAmount,
+    required this.hiConf,
+    required this.overdue,
+    required this.dueSoon,
+    required this.isLoans,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final title = isLoans ? 'Loans & EMIs' : 'Subscriptions';
+    return GlassCard(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      radius: 22,
+      glassGradient: [
+        Colors.white.withOpacity(.96),
+        tint.withOpacity(.10),
+      ],
+      borderOpacityOverride: .14,
+      showShadow: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                height: 40,
+                width: 40,
+                decoration: BoxDecoration(
+                  color: tint.withOpacity(.16),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  isLoans ? Icons.account_balance_rounded : Icons.subscriptions_rounded,
+                  color: tint,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$pending pending',
+                      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$title need your confirmation',
+                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _SummaryMetric(
+                icon: Icons.currency_rupee,
+                label: 'Total amount',
+                value: formatter.format(totalAmount),
+                tint: tint,
+                emphasize: true,
+              ),
+              _SummaryMetric(
+                icon: Icons.verified_rounded,
+                label: 'High confidence',
+                value: '$hiConf',
+                tint: AppColors.teal,
+              ),
+              _SummaryMetric(
+                icon: Icons.priority_high_rounded,
+                label: 'Overdue',
+                value: '$overdue',
+                tint: AppColors.bad,
+              ),
+              _SummaryMetric(
+                icon: Icons.upcoming_rounded,
+                label: 'Due soon (≤7d)',
+                value: '$dueSoon',
+                tint: tint,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryMetric extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color tint;
+  final bool emphasize;
+
+  const _SummaryMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.tint,
+    this.emphasize = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: tint.withOpacity(.12),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: tint.withOpacity(.24)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: tint),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black54),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: emphasize ? 18 : 16,
+              color: tint,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyReviewState extends StatelessWidget {
+  final Color tint;
+
+  const _EmptyReviewState({
+    required this.tint,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.celebration_rounded, size: 42, color: tint),
+          const SizedBox(height: 12),
+          const Text(
+            'All caught up!',
+            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'We’ll let you know when we detect something new.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+        ],
       ),
     );
   }
