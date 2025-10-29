@@ -25,31 +25,42 @@ class AssetsSummaryCard extends StatelessWidget {
         .textTheme
         .titleMedium
         ?.copyWith(fontWeight: FontWeight.w700, fontSize: 16);
-    return GlassCard(
-      radius: Fx.r24,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            const Icon(Icons.savings_rounded, color: Fx.good),
-            const SizedBox(width: Fx.s8),
-            Text("Assets", style: titleStyle),
-            const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.add_circle, color: Fx.mintDark),
-              tooltip: "Add Asset",
-              onPressed: onAddAsset,
+    return SizedBox(
+      width: double.infinity,
+      child: GlassCard(
+        padding: const EdgeInsets.all(13),
+        radius: Fx.r24,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.savings_rounded, color: Fx.good),
+              const SizedBox(width: Fx.s8),
+              Text("Assets", style: titleStyle),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.add_circle, color: Fx.mintDark),
+                tooltip: "Add Asset",
+                onPressed: onAddAsset,
+              ),
+            ]),
+            const SizedBox(height: Fx.s6),
+            Text(
+              _inr.format(totalAssets),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Fx.good,
+              ),
             ),
-          ]),
-          const SizedBox(height: Fx.s6),
-          Text(_inr.format(totalAssets), style: Fx.number.copyWith(color: Fx.good)),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text("$assetCount items", style: Fx.label),
-            ],
-          ),
-        ],
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("$assetCount items", style: Fx.label),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
