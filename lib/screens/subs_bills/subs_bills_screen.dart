@@ -14,6 +14,7 @@ import 'package:lifemap/details/shared/partner_capabilities.dart';
 
 // visual tokens/components
 import 'package:lifemap/ui/tokens.dart';
+import 'package:lifemap/themes/tokens.dart';
 import 'package:lifemap/ui/glass/glass_card.dart';
 import 'package:lifemap/ui/tonal/tonal_card.dart';
 
@@ -984,9 +985,20 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
         const SizedBox(height: 8),
         TextButton.icon(
           onPressed: onAdd,
-          icon: const Icon(Icons.add),
+          icon: const Icon(Icons.add, size: 18),
           label: const Text('Add first one'),
-          style: TextButton.styleFrom(foregroundColor: AppColors.mint),
+          style: TextButton.styleFrom(
+            backgroundColor: Fx.mint.withOpacity(.12),
+            foregroundColor: Fx.mintDark,
+            padding: const EdgeInsets.symmetric(
+              horizontal: Fx.s14,
+              vertical: Fx.s8,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            textStyle: Fx.label.copyWith(fontWeight: FontWeight.w800),
+          ),
         ),
       ],
     ),
@@ -1040,9 +1052,20 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                 ),
               TextButton.icon(
                 onPressed: _openAddEntry,
-                icon: const Icon(Icons.add),
+                icon: const Icon(Icons.add, size: 18),
                 label: const Text('Add new item'),
-                style: TextButton.styleFrom(foregroundColor: AppColors.mint),
+                style: TextButton.styleFrom(
+                  backgroundColor: Fx.mint.withOpacity(.12),
+                  foregroundColor: Fx.mintDark,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Fx.s14,
+                    vertical: Fx.s8,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  textStyle: Fx.label.copyWith(fontWeight: FontWeight.w800),
+                ),
               ),
             ],
           ),
@@ -1693,13 +1716,22 @@ class _SubscriptionsHeader extends StatelessWidget {
         ),
         if (onAdd != null) ...[
           const SizedBox(width: 12),
-          TextButton(
+          TextButton.icon(
             onPressed: onAdd,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add'),
             style: TextButton.styleFrom(
-              foregroundColor: AppColors.mint,
-              textStyle: const TextStyle(fontWeight: FontWeight.w800),
+              backgroundColor: Fx.mint.withOpacity(.12),
+              foregroundColor: Fx.mintDark,
+              padding: const EdgeInsets.symmetric(
+                horizontal: Fx.s14,
+                vertical: Fx.s8,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              textStyle: Fx.label.copyWith(fontWeight: FontWeight.w800),
             ),
-            child: const Text('+ Add New'),
           ),
         ],
       ],
@@ -1821,12 +1853,9 @@ class _MintAddButton extends StatelessWidget {
       label: Text(label),
       style: TextButton.styleFrom(
         padding: padding,
-        backgroundColor: AppColors.mint.withOpacity(.12),
-        foregroundColor: AppColors.mint,
-        textStyle: TextStyle(
-          fontWeight: FontWeight.w800,
-          fontSize: compact ? 13 : 15,
-        ),
+        backgroundColor: Fx.mint.withOpacity(.12),
+        foregroundColor: Fx.mintDark,
+        textStyle: Fx.label.copyWith(fontWeight: FontWeight.w800),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radius),
         ),
@@ -1839,7 +1868,7 @@ class _MintAddButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(radius),
           boxShadow: [
             BoxShadow(
-              color: AppColors.mint.withOpacity(.18),
+              color: Fx.mint.withOpacity(.18),
               blurRadius: 24,
               offset: const Offset(0, 14),
             ),

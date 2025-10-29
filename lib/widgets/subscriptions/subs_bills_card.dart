@@ -37,71 +37,79 @@ class SubsBillsCard extends StatelessWidget {
         .titleMedium
         ?.copyWith(fontWeight: FontWeight.w700, fontSize: 16, color: Fx.mintDark);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(Fx.r16),
-        onTap: onOpen,
-        child: GlassCard(
-          radius: Fx.r20,
-          padding: const EdgeInsets.all(Fx.s16),
-          child: Row(
-            children: [
-              Container(
-                height: 44,
-                width: 44,
-                decoration: BoxDecoration(
-                  color: Fx.mint.withOpacity(.10),
-                  borderRadius: BorderRadius.circular(Fx.r12),
+    final radius = BorderRadius.circular(Fx.r24);
+    return SizedBox(
+      width: double.infinity,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onOpen,
+          child: GlassCard(
+            radius: Fx.r24,
+            padding: const EdgeInsets.all(13),
+            child: Row(
+              children: [
+                Container(
+                  height: 44,
+                  width: 44,
+                  decoration: BoxDecoration(
+                    color: Fx.mint.withOpacity(.10),
+                    borderRadius: BorderRadius.circular(Fx.r12),
+                  ),
+                  child: const Icon(Icons.receipt_long, color: Fx.mintDark),
                 ),
-                child: const Icon(Icons.receipt_long, color: Fx.mintDark),
-              ),
-              const SizedBox(width: Fx.s12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Subscriptions & Bills', style: titleStyle),
-                    const SizedBox(height: Fx.s6),
-                    Text(
-                      'This month: $totalStr',
-                      style: Fx.number.copyWith(color: Fx.mintDark, fontSize: 20),
-                    ),
-                    const SizedBox(height: Fx.s10),
-                    Wrap(
-                      spacing: Fx.s16,
-                      runSpacing: Fx.s4,
-                      children: [
-                        Text('Active: $activeStr', style: Fx.label),
-                        Text(
-                          'Overdue: $overdueStr',
-                          style: Fx.label.copyWith(color: overdueStr == '0' ? Fx.text : Fx.bad),
+                const SizedBox(width: Fx.s12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Subscriptions & Bills', style: titleStyle),
+                      const SizedBox(height: Fx.s6),
+                      Text(
+                        'This month: $totalStr',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Fx.mintDark,
                         ),
-                        Text('Next due: $nextDueStr', style: Fx.label),
-                      ],
+                      ),
+                      const SizedBox(height: Fx.s10),
+                      Wrap(
+                        spacing: Fx.s16,
+                        runSpacing: Fx.s4,
+                        children: [
+                          Text('Active: $activeStr', style: Fx.label),
+                          Text(
+                            'Overdue: $overdueStr',
+                            style: Fx.label.copyWith(color: overdueStr == '0' ? Fx.text : Fx.bad),
+                          ),
+                          Text('Next due: $nextDueStr', style: Fx.label),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: Fx.s8),
+                TextButton.icon(
+                  onPressed: onAdd,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Add'),
+                  style: TextButton.styleFrom(
+                    backgroundColor: Fx.mint.withOpacity(.12),
+                    foregroundColor: Fx.mintDark,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Fx.s14,
+                      vertical: Fx.s8,
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: Fx.s8),
-              TextButton.icon(
-                onPressed: onAdd,
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Add'),
-                style: TextButton.styleFrom(
-                  backgroundColor: Fx.mint.withOpacity(.12),
-                  foregroundColor: Fx.mintDark,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: Fx.s14,
-                    vertical: Fx.s8,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    textStyle: Fx.label.copyWith(fontWeight: FontWeight.w800),
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  textStyle: Fx.label.copyWith(fontWeight: FontWeight.w800),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

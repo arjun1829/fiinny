@@ -38,6 +38,7 @@ import '../themes/badge.dart';
 import '../widgets/net_worth_panel.dart';
 import '../core/formatters/inr.dart';
 import '../widgets/subscriptions/subs_bills_card.dart';
+import 'loans_screen.dart';
 import '../details/recurring/add_choice_sheet.dart';
 import '../details/recurring/add_recurring_basic_screen.dart';
 import '../details/recurring/add_subscription_screen.dart';
@@ -1963,10 +1964,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           totalLoan: totalLoan,
           pendingSuggestions: _loanSuggestionsCount,
           onTap: () async {
-            final changed = await Navigator.pushNamed<bool>(
-              context,
-              '/loans',
-              arguments: {'userId': widget.userPhone},
+            final changed = await Navigator.of(context).push<bool>(
+              MaterialPageRoute(
+                builder: (_) => LoansScreen(userId: widget.userPhone),
+              ),
             );
             if (changed == true) {
               await _initDashboard();
