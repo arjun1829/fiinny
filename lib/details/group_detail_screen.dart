@@ -20,6 +20,7 @@ import '../models/expense_item.dart';
 
 import '../services/expense_service.dart';
 import '../services/friend_service.dart';
+import '../services/group_service.dart';
 import '../core/ads/ads_banner_card.dart';
 import '../core/ads/ads_shell.dart';
 import '../screens/edit_expense_screen.dart';
