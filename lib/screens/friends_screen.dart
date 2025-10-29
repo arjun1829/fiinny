@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'package:characters/characters.dart';
+import 'package:lifemap/core/ads/ads_banner_card.dart';
+import 'package:lifemap/core/ads/ads_shell.dart';
 import 'package:lifemap/models/friend_model.dart';
 import 'package:lifemap/models/group_model.dart';
 import 'package:lifemap/models/expense_item.dart';
+import 'package:lifemap/group/group_balance_math.dart' show computeSplits;
+import 'package:intl/intl.dart';
 
 import 'package:lifemap/services/friend_service.dart';
 import 'package:lifemap/services/group_service.dart';
-import 'package:lifemap/services/activity_service.dart';
 import 'package:lifemap/services/expense_service.dart';
 
-import 'package:lifemap/widgets/activity_feed_widget.dart';
 import 'package:lifemap/widgets/add_friend_dialog.dart';
 import 'package:lifemap/widgets/add_group_dialog.dart';
 import 'package:lifemap/widgets/settleup_dialog.dart';
@@ -1078,12 +1081,13 @@ class AllTab extends StatelessWidget {
                             ? "Overall, you are owed ₹${net.toStringAsFixed(0)}"
                             : "Overall, you owe ₹${(-net).toStringAsFixed(0)}";
 
-                        return Padding(
+                        final header = Padding(
                           padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
                           child: Container(
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
-                                begin: Alignment.topLeft, end: Alignment.bottomRight,
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
                                 colors: [Color(0xFFF6FBF9), Color(0xFFE9F4F1)],
                               ),
                               borderRadius: BorderRadius.circular(14),
@@ -1107,7 +1111,8 @@ class AllTab extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 6),
                                   Wrap(
-                                    spacing: 6, runSpacing: 6,
+                                    spacing: 6,
+                                    runSpacing: 6,
                                     children: [
                                       if (direction == Direction.owedToYou)
                                         const _TinyPill(icon: Icons.arrow_downward_rounded, text: 'Owes you'),
@@ -1126,6 +1131,22 @@ class AllTab extends StatelessWidget {
                               onTap: onOpenFilters,
                             ),
                           ),
+                        );
+
+                        final adCard = Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          child: AdsBannerCard(
+                            placement: 'friends_summary_header',
+                            inline: true,
+                            inlineMaxHeight: 110,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            minHeight: 88,
+                          ),
+                        );
+
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [header, adCard],
                         );
 
                       }
@@ -1489,12 +1510,397 @@ class ActivityTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<ActivityItem>>(
-      stream: ActivityService().streamUserActivity(userPhone),
-      builder: (context, snapshot) {
-        final activities = snapshot.data ?? [];
-        return ActivityFeedWidget(activities: activities);
+    return StreamBuilder<List<ExpenseItem>>(
+      stream: ExpenseService().getExpensesStream(userPhone),
+      builder: (context, expenseSnap) {
+        final expenses = expenseSnap.data ?? [];
+        return StreamBuilder<List<FriendModel>>(
+          stream: FriendService().streamFriends(userPhone),
+          builder: (context, friendSnap) {
+            final friends = friendSnap.data ?? [];
+            return StreamBuilder<List<GroupModel>>(
+              stream: GroupService().streamGroups(userPhone),
+              builder: (context, groupSnap) {
+                final groups = groupSnap.data ?? [];
+                return _ActivityTabBody(
+                  userPhone: userPhone,
+                  expenses: expenses,
+                  friends: friends,
+                  groups: groups,
+                );
+              },
+            );
+          },
+        );
       },
+    );
+  }
+}
+
+class _ActivityTabBody extends StatelessWidget {
+  final String userPhone;
+  final List<ExpenseItem> expenses;
+  final List<FriendModel> friends;
+  final List<GroupModel> groups;
+
+  const _ActivityTabBody({
+    required this.userPhone,
+    required this.expenses,
+    required this.friends,
+    required this.groups,
+  });
+
+  Map<String, FriendModel> get _friendMap => {for (final f in friends) f.phone: f};
+  Map<String, GroupModel> get _groupMap => {for (final g in groups) g.id: g};
+
+  String _nameFor(String phone) {
+    if (phone == userPhone) return 'You';
+    final friend = _friendMap[phone];
+    if (friend != null && friend.name.isNotEmpty) return friend.name;
+    final digits = phone.replaceAll(RegExp(r'\D'), '');
+    if (digits.length >= 4) {
+      return 'Member (${digits.substring(digits.length - 4)})';
+    }
+    return phone.isNotEmpty ? phone : 'Member';
+  }
+
+  double _impactFor(ExpenseItem e) {
+    final splits = computeSplits(e);
+    if (e.payerId == userPhone) {
+      double others = 0;
+      splits.forEach((id, amount) {
+        if (id != e.payerId) others += amount;
+      });
+      return others;
+    }
+    return -(splits[userPhone] ?? 0);
+  }
+
+  String _friendlyDate(DateTime dt) => DateFormat('d MMM yyyy').format(dt);
+
+  Widget _sectionCard({required String title, required Widget child}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF8FEFB), Color(0xFFEAF4F1)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE1EFEB)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x14000000), blurRadius: 16, offset: Offset(0, 8)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(title,
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _historyTile(ExpenseItem e) {
+    final isSettlement = _isSettlement(e);
+    final title = isSettlement
+        ? 'Settlement'
+        : (e.label?.isNotEmpty == true
+            ? e.label!
+            : (e.category?.isNotEmpty == true ? e.category! : 'Expense'));
+    final impact = _impactFor(e);
+    final amountColor = impact >= 0 ? Colors.green.shade700 : Colors.redAccent;
+    final amountText = '₹${e.amount.toStringAsFixed(2)}';
+    final impactLabel = impact >= 0
+        ? 'You’re owed ₹${impact.toStringAsFixed(2)}'
+        : 'You owe ₹${(-impact).toStringAsFixed(2)}';
+
+    final splits = computeSplits(e);
+    final participants = splits.keys
+        .where((id) => id != userPhone)
+        .map(_nameFor)
+        .toList();
+    final groupName = (e.groupId != null && e.groupId!.isNotEmpty)
+        ? (_groupMap[e.groupId!]?.name ?? 'Group')
+        : null;
+    final payer = _nameFor(e.payerId);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            height: 40,
+            width: 40,
+            decoration: BoxDecoration(
+              color: (isSettlement ? Colors.teal : Colors.indigo).withOpacity(0.10),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              isSettlement ? Icons.handshake : Icons.receipt_long_rounded,
+              color: isSettlement ? Colors.teal : Colors.indigo,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.calendar_today_rounded, size: 12, color: Colors.black54),
+                        const SizedBox(width: 4),
+                        Text(_friendlyDate(e.date),
+                            style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                      ],
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.swap_horiz, size: 12, color: Colors.black54),
+                        const SizedBox(width: 4),
+                        Text('Paid by $payer',
+                            style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                      ],
+                    ),
+                    if (groupName != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.blueGrey.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          groupName,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                  ],
+                ),
+                if (participants.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: participants.take(4).map((name) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(name,
+                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: amountColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(amountText,
+                    style: TextStyle(fontWeight: FontWeight.w800, color: amountColor)),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                impactLabel,
+                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.black87),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _groupActivityTile(ExpenseItem e) {
+    final groupName = (e.groupId != null && e.groupId!.isNotEmpty)
+        ? (_groupMap[e.groupId!]?.name ?? 'Group')
+        : 'Group';
+    final impact = _impactFor(e);
+    final impactBg = (impact >= 0 ? Colors.green : Colors.red).withOpacity(.12);
+    final impactFg = impact >= 0 ? Colors.green.shade700 : Colors.redAccent;
+    final impactLabel = impact >= 0
+        ? 'You’re owed ₹${impact.toStringAsFixed(0)}'
+        : 'You owe ₹${(-impact).toStringAsFixed(0)}';
+
+    final splits = computeSplits(e);
+    final preview = splits.keys.where((id) => id != userPhone).map(_nameFor).take(3).toList();
+
+    final title = e.label?.isNotEmpty == true
+        ? e.label!
+        : (e.category?.isNotEmpty == true ? e.category! : 'Expense');
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.88),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(.6)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x16000000), blurRadius: 14, offset: Offset(0, 8)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: Colors.teal.withOpacity(.12),
+                child: Text(groupName.characters.first.toUpperCase()),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                    const SizedBox(height: 4),
+                    Text(groupName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withOpacity(.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text('₹${e.amount.toStringAsFixed(0)}',
+                    style: TextStyle(fontWeight: FontWeight.w800, color: Colors.teal.shade900)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (preview.isNotEmpty)
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: preview.map((name) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey.withOpacity(.10),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(name,
+                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                );
+              }).toList(),
+            ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: impactBg,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(impactLabel,
+                style: TextStyle(fontWeight: FontWeight.w700, color: impactFg)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSharedHistory() {
+    final sorted = [...expenses]..sort((a, b) => b.date.compareTo(a.date));
+    if (sorted.isEmpty) {
+      return const Text('No shared history yet.',
+          style: TextStyle(fontSize: 13, color: Colors.black54));
+    }
+    final items = sorted.take(40).toList();
+    return Column(
+      children: [
+        for (int i = 0; i < items.length; i++) ...[
+          if (i > 0) const SizedBox(height: 12),
+          _historyTile(items[i]),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildGroupActivity() {
+    final grouped = expenses
+        .where((e) => e.groupId != null && e.groupId!.isNotEmpty)
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+    if (grouped.isEmpty) {
+      return const Text('No group activity recorded yet.',
+          style: TextStyle(fontSize: 13, color: Colors.black54));
+    }
+    return Column(
+      children: [
+        for (int i = 0; i < grouped.length && i < 40; i++) ...[
+          if (i > 0) const SizedBox(height: 12),
+          _groupActivityTile(grouped[i]),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _refresh() async {
+    await ExpenseService().getExpenses(userPhone);
+    await FriendService().getAllFriendsForUser(userPhone);
+    await GroupService().fetchUserGroups(userPhone);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final safeBottom = context.adsBottomPadding(extra: 16);
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, safeBottom),
+        children: [
+          _sectionCard(title: 'Shared History', child: _buildSharedHistory()),
+          _sectionCard(title: 'Recent Group Activity', child: _buildGroupActivity()),
+        ],
+      ),
     );
   }
 }
@@ -1694,7 +2100,7 @@ class _GlassyChatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: item.onTap,

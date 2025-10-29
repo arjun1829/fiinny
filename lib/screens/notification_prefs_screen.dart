@@ -21,6 +21,7 @@ class NotificationPrefsScreen extends StatefulWidget {
 
 class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
   static const Color _accent = Color(0xFF159E8A);
+  bool _pushBusy = false;
 
   Future<TimeOfDay?> _pickTime(BuildContext context, String hhmm) async {
     final parts = hhmm.split(':');
@@ -32,6 +33,31 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
   }
 
   String _fmt(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  Future<void> _handlePushToggle(BuildContext context, bool value) async {
+    if (_pushBusy) return;
+    setState(() => _pushBusy = true);
+
+    try {
+      if (value) {
+        final allowed = await PushService.ensurePermissions();
+        if (!allowed) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Notifications are disabled. Enable them in system settings to continue.')),
+            );
+          }
+          await NotifPrefsService.setPushEnabled(false);
+          return;
+        }
+        await PushService.init();
+      }
+
+      await NotifPrefsService.setPushEnabled(value);
+    } finally {
+      if (mounted) setState(() => _pushBusy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -211,8 +237,11 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                     activeColor: _accent,
                     title: const Text('Enable push notifications', style: TextStyle(color: Colors.black87)),
                     subtitle: const Text('You can still see the in-app bell feed anytime.', style: TextStyle(color: Colors.black54)),
+                    secondary: _pushBusy
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2))
+                        : null,
                     value: pushEnabled,
-                    onChanged: (v) => NotifPrefsService.setPushEnabled(v),
+                    onChanged: _pushBusy ? null : (v) => _handlePushToggle(context, v),
                   ),
                 ),
 

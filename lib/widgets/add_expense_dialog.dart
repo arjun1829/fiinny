@@ -6,6 +6,7 @@ import '../models/expense_item.dart';
 import '../models/friend_model.dart';
 import '../models/group_model.dart';
 import '../services/expense_service.dart';
+import '../core/ads/ads_banner_card.dart';
 
 /// Palette (aligned with your app look)
 const Color _kBg = Color(0xFFF8FAF9);
@@ -689,6 +690,17 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                     ),
 
                     // Footer controls
+                    const SizedBox(height: 12),
+                    AdsBannerCard(
+                      placement: 'add_expense_inline_banner',
+                      inline: true,
+                      inlineMaxHeight: 100,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      minHeight: 70,
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x12000000), blurRadius: 12, offset: Offset(0, 6)),
+                      ],
+                    ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
