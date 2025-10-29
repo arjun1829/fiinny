@@ -308,31 +308,26 @@ jobs:
           ls -lah build/ios/archive || true
 
       - name: Upload dSYMs to Crashlytics
-        if: ${{ success() }}
-        env:
-          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.IOS_GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
-          FIREBASE_APP_ID_IOS: ${{ secrets.FIREBASE_APP_ID_IOS }}
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-        shell: bash
+        if: success()
         run: |
           set -euxo pipefail
-          if [ ! -f ios/Runner/GoogleService-Info.plist ]; then
-            if [ -z "${GOOGLE_SERVICE_INFO_PLIST:-}" ]; then
-              echo "GoogleService-Info.plist secret missing; skipping upload"
-              exit 0
-            else
-              echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > ios/Runner/GoogleService-Info.plist
+          # Ensure CocoaPods installed so upload-symbols exists
+          if [ ! -f ios/Pods/FirebaseCrashlytics/upload-symbols ]; then
+            if ! (cd ios && pod install --repo-update); then
+              echo "::warning::pod install failed; dSYM upload may be skipped"
             fi
           fi
-          DSYM_ZIP=$(find build/ios/archive -name "*.dSYM.zip" -print -quit)
-          if [ -z "$DSYM_ZIP" ]; then
-            DSYM_ZIP=$(find . -name "*.dSYM.zip" -print -quit)
-          fi
-          if [ -z "$DSYM_ZIP" ]; then
-            echo "No dSYM zip found"; exit 0
-          fi
-          curl -sL https://firebase.tools | bash
-          firebase crashlytics:symbols:upload "$DSYM_ZIP" --app "$FIREBASE_APP_ID_IOS" --token "$FIREBASE_TOKEN"
+          GSP_PATH="ios/Runner/GoogleService-Info.plist" \
+          ARCHIVE_DIR="build/ios/archive/Runner.xcarchive" \
+          bash scripts/upload_dsyms.sh
+
+      - name: Archive dSYMs as artifact (optional backfill)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsym-${{ GITHUB_RUN_NUMBER }}
+          path: build/ios/archive/Runner.xcarchive/dSYMs/**/*.dSYM
+          if-no-files-found: ignore
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
