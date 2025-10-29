@@ -1377,169 +1377,173 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
+      extendBodyBehindAppBar: true,
       body: Stack(
         children: [
           const _AnimatedMintBackground(),
-          RefreshIndicator(
-            onRefresh: () async {
-              try {
-                if (_isEmailLinked && (_userEmail?.isNotEmpty ?? false)) {
-                  await OldGmail.GmailService()
-                      .fetchAndStoreTransactionsFromGmail(widget.userPhone);
-                  await _initDashboard();
-                  if (mounted) {
-                    SnackThrottle.show(context, "Synced Gmail transactions", color: Colors.green);
+          SafeArea(
+            top: true,
+            bottom: false,
+            child: RefreshIndicator(
+              onRefresh: () async {
+                try {
+                  if (_isEmailLinked && (_userEmail?.isNotEmpty ?? false)) {
+                    await OldGmail.GmailService()
+                        .fetchAndStoreTransactionsFromGmail(widget.userPhone);
+                    await _initDashboard();
+                    if (mounted) {
+                      SnackThrottle.show(context, "Synced Gmail transactions", color: Colors.green);
+                    }
+                  } else {
+                    await _fetchEmailTx();
                   }
-                } else {
-                  await _fetchEmailTx();
+                } catch (e, st) {
+                  debugPrint('[onRefresh] error: $e\n$st');
+                  if (mounted) {
+                    SnackThrottle.show(context, "Sync error: $e", color: Colors.red);
+                  }
                 }
-              } catch (e, st) {
-                debugPrint('[onRefresh] error: $e\n$st');
-                if (mounted) {
-                  SnackThrottle.show(context, "Sync error: $e", color: Colors.red);
-                }
-              }
 
-              try {
-                await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
-                _loanSuggestionsCount =
-                    await _loanDetector.pendingCount(widget.userPhone);
-                if (!mounted) return;
-                setState(() {});
-              } catch (e) {
-                debugPrint('[onRefresh] loan scan error: $e');
-              }
-            },
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverAppBar(
-                  automaticallyImplyLeading: false,
-                  elevation: 0,
-                  backgroundColor: Colors.transparent,
-                  surfaceTintColor: Colors.transparent,
-                  systemOverlayStyle: SystemUiOverlayStyle.dark,
-                  toolbarHeight: 48,
-                  pinned: false,
-                  floating: true,
-                  snap: true,
-                  scrolledUnderElevation: 0,
-                  titleSpacing: 16,
-                  title: Text(
-                    'Fiinny',
-                    style: TextStyle(
-                      color: Fx.mintDark,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                      letterSpacing: 0.5,
+                try {
+                  await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
+                  _loanSuggestionsCount =
+                      await _loanDetector.pendingCount(widget.userPhone);
+                  if (!mounted) return;
+                  setState(() {});
+                } catch (e) {
+                  debugPrint('[onRefresh] loan scan error: $e');
+                }
+              },
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverAppBar(
+                    automaticallyImplyLeading: false,
+                    elevation: 0,
+                    backgroundColor: Colors.transparent,
+                    surfaceTintColor: Colors.transparent,
+                    systemOverlayStyle: SystemUiOverlayStyle.dark,
+                    toolbarHeight: 48,
+                    pinned: false,
+                    floating: true,
+                    snap: true,
+                    scrolledUnderElevation: 0,
+                    titleSpacing: 16,
+                    title: Text(
+                      'Fiinny',
+                      style: TextStyle(
+                        color: Fx.mintDark,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        letterSpacing: 0.5,
+                      ),
                     ),
-                  ),
-                  actions: [
-                    IconButton(
-                      tooltip: 'Gmail Link',
-                      icon: const Icon(Icons.mark_email_read_outlined, color: Fx.mintDark, size: 22),
-                      onPressed: () {
-                        Navigator.pushNamed(context, '/settings/gmail', arguments: widget.userPhone);
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.notifications_active_rounded,
-                          color: Fx.mintDark, size: 23),
-                      tooltip: 'Notification settings',
-                      onPressed: () async {
-                        await NotifPrefsService.ensureDefaultPrefs();
-                        if (!mounted) return;
-                        Navigator.pushNamed(context, '/settings/notifications');
-                      },
-                    ),
-                    IconButton(
-                      tooltip: 'Analytics',
-                      icon: const Icon(Icons.analytics_outlined, size: 22),
-                      onPressed: () {
-                        Navigator.pushNamed(
-                          context,
-                          '/analytics',
-                          arguments: widget.userPhone,
-                        );
-                      },
-                    ),
-                    IconButton(
-                      icon: _isFetchingEmail
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.sync_rounded, color: Fx.mintDark, size: 22),
-                      tooltip: 'Fetch Email Data',
-                      onPressed: _isFetchingEmail
-                          ? null
-                          : () async {
-                              if (!mounted) return;
-                              setState(() => _isFetchingEmail = true);
-                              try {
-                                await OldGmail.GmailService()
-                                    .fetchAndStoreTransactionsFromGmail(widget.userPhone);
-                                await _initDashboard();
-                                if (mounted) {
-                                  SnackThrottle.show(context, 'Fetched Gmail transactions!', color: Colors.green);
-                                }
-                              } catch (e) {
-                                if (mounted) {
-                                  SnackThrottle.show(context, 'Sync error: $e', color: Colors.red);
-                                }
-                              } finally {
-                                if (mounted) setState(() => _isFetchingEmail = false);
-                              }
-                            },
-                    ),
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.pushNamed(context, '/profile', arguments: widget.userPhone);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Container(
-                          padding: const EdgeInsets.all(1.2),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.black.withOpacity(.10),
-                              width: 1,
-                            ),
-                          ),
-                          child: CircleAvatar(
-                            radius: 18,
-                            backgroundColor: Colors.white,
-                            child: ClipOval(
-                              child: Image(
-                                width: 36,
-                                height: 36,
-                                fit: BoxFit.cover,
-                                image: avatarImage,
-                                errorBuilder: (_, __, ___) {
-                                  if (isNetworkAvatar) {
-                                    return Image.asset(
-                                      'assets/images/profile_default.png',
-                                      width: 36,
-                                      height: 36,
-                                      fit: BoxFit.cover,
-                                    );
+                    actions: [
+                      IconButton(
+                        tooltip: 'Gmail Link',
+                        icon: const Icon(Icons.mark_email_read_outlined, color: Fx.mintDark, size: 22),
+                        onPressed: () {
+                          Navigator.pushNamed(context, '/settings/gmail', arguments: widget.userPhone);
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.notifications_active_rounded,
+                            color: Fx.mintDark, size: 23),
+                        tooltip: 'Notification settings',
+                        onPressed: () async {
+                          await NotifPrefsService.ensureDefaultPrefs();
+                          if (!mounted) return;
+                          Navigator.pushNamed(context, '/settings/notifications');
+                        },
+                      ),
+                      IconButton(
+                        tooltip: 'Analytics',
+                        icon: const Icon(Icons.analytics_outlined, size: 22),
+                        onPressed: () {
+                          Navigator.pushNamed(
+                            context,
+                            '/analytics',
+                            arguments: widget.userPhone,
+                          );
+                        },
+                      ),
+                      IconButton(
+                        icon: _isFetchingEmail
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.sync_rounded, color: Fx.mintDark, size: 22),
+                        tooltip: 'Fetch Email Data',
+                        onPressed: _isFetchingEmail
+                            ? null
+                            : () async {
+                                if (!mounted) return;
+                                setState(() => _isFetchingEmail = true);
+                                try {
+                                  await OldGmail.GmailService()
+                                      .fetchAndStoreTransactionsFromGmail(widget.userPhone);
+                                  await _initDashboard();
+                                  if (mounted) {
+                                    SnackThrottle.show(context, 'Fetched Gmail transactions!', color: Colors.green);
                                   }
-                                  return const Icon(
-                                    Icons.person,
-                                    size: 20,
-                                    color: Colors.black54,
-                                  );
-                                },
+                                } catch (e) {
+                                  if (mounted) {
+                                    SnackThrottle.show(context, 'Sync error: $e', color: Colors.red);
+                                  }
+                                } finally {
+                                  if (mounted) setState(() => _isFetchingEmail = false);
+                                }
+                              },
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pushNamed(context, '/profile', arguments: widget.userPhone);
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Container(
+                            padding: const EdgeInsets.all(1.2),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.black.withOpacity(.10),
+                                width: 1,
+                              ),
+                            ),
+                            child: CircleAvatar(
+                              radius: 18,
+                              backgroundColor: Colors.white,
+                              child: ClipOval(
+                                child: Image(
+                                  width: 36,
+                                  height: 36,
+                                  fit: BoxFit.cover,
+                                  image: avatarImage,
+                                  errorBuilder: (_, __, ___) {
+                                    if (isNetworkAvatar) {
+                                      return Image.asset(
+                                        'assets/images/profile_default.png',
+                                        width: 36,
+                                        height: 36,
+                                        fit: BoxFit.cover,
+                                      );
+                                    }
+                                    return const Icon(
+                                      Icons.person,
+                                      size: 20,
+                                      color: Colors.black54,
+                                    );
+                                  },
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
                 if (_loading)
                   const SliverFillRemaining(
                     hasScrollBody: false,
@@ -1640,7 +1644,24 @@ class _DashboardScreenState extends State<DashboardScreen>
                             ),
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: SmartInsightCard(
+                            key: ValueKey('smart|$_summaryRevision|$txPeriod|top'),
+                            income: totalIncome,
+                            expense: totalExpense,
+                            savings: savings,
+                            goal: currentGoal,
+                            totalLoan: totalLoan,
+                            totalAssets: totalAssets,
+                            insightText: smartInsight.trim().isEmpty
+                                ? null
+                                : smartInsight.trim(),
+                            showToday: true,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
                         Padding(
                           padding: horizontalPadding,
                           child: Row(
@@ -1782,50 +1803,26 @@ class _DashboardScreenState extends State<DashboardScreen>
                         const SizedBox(height: 10),
                         Padding(
                           padding: horizontalPadding,
-                          child: Builder(
-                            builder: (_) {
-                              final insightText = smartInsight.trim().isEmpty
-                                  ? 'We\'ll start showing insights as your data builds up.'
-                                  : smartInsight;
-
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  SmartInsightCard(
-                                    key: ValueKey('smart|$_summaryRevision|$txPeriod'),
-                                    income: totalIncome,
-                                    expense: totalExpense,
-                                    savings: savings,
-                                    goal: currentGoal,
-                                    totalLoan: totalLoan,
-                                    totalAssets: totalAssets,
-                                    insightText: insightText,
-                                    showToday: true,
+                          child: FutureBuilder<bool>(
+                            future: PremiumGate.instance.isPremium(widget.userPhone),
+                            builder: (_, snap) {
+                              final isPro = snap.data == true;
+                              if (isPro) {
+                                return const SizedBox.shrink();
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 8.0),
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: PremiumChip(
+                                    onTap: () => Navigator.pushNamed(
+                                      context,
+                                      '/premium',
+                                      arguments: widget.userPhone,
+                                    ),
+                                    label: 'Unlock deeper insights',
                                   ),
-                                  FutureBuilder<bool>(
-                                    future: PremiumGate.instance.isPremium(widget.userPhone),
-                                    builder: (_, snap) {
-                                      final isPro = snap.data == true;
-                                      if (isPro) {
-                                        return const SizedBox.shrink();
-                                      }
-                                      return Padding(
-                                        padding: const EdgeInsets.only(top: 8.0),
-                                        child: Align(
-                                          alignment: Alignment.centerRight,
-                                          child: PremiumChip(
-                                            onTap: () => Navigator.pushNamed(
-                                              context,
-                                              '/premium',
-                                              arguments: widget.userPhone,
-                                            ),
-                                            label: 'Unlock deeper insights',
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ],
+                                ),
                               );
                             },
                           ),
@@ -1946,7 +1943,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ]),
                     ),
                   ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
