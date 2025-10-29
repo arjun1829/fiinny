@@ -312,14 +312,10 @@ jobs:
 
       - name: Upload dSYMs to Crashlytics
         if: success()
+        shell: bash
         run: |
           set -euxo pipefail
-          # Ensure CocoaPods installed so upload-symbols exists
-          if [ ! -f ios/Pods/FirebaseCrashlytics/upload-symbols ]; then
-            if ! (cd ios && pod install --repo-update); then
-              echo "::warning::pod install failed; dSYM upload may be skipped"
-            fi
-          fi
+          cd ios && pod install --repo-update && cd ..
           GSP_PATH="ios/Runner/GoogleService-Info.plist" \
           ARCHIVE_DIR="build/ios/archive/Runner.xcarchive" \
           bash scripts/upload_dsyms.sh
