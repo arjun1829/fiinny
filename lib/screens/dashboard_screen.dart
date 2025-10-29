@@ -1544,11 +1544,30 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ],
                   ),
-                if (_loading)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(child: CircularProgressIndicator()),
-                  )
+                  // 🔹 Put SmartInsightCard right at the top (only when not loading)
+                  if (!_loading)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+                        child: SmartInsightCard(
+                          key: ValueKey('smart|$_summaryRevision|$txPeriod|top'),
+                          income: totalIncome,
+                          expense: totalExpense,
+                          savings: savings,
+                          goal: currentGoal,
+                          totalLoan: totalLoan,
+                          totalAssets: totalAssets,
+                          // Pass null to let the widget auto-generate copy if your string is empty
+                          insightText: smartInsight.trim().isEmpty ? null : smartInsight.trim(),
+                          showToday: true,
+                        ),
+                      ),
+                    ),
+                  if (_loading)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(child: CircularProgressIndicator()),
+                    )
                 else
                   SliverPadding(
                     padding: const EdgeInsets.only(bottom: 32),
@@ -1568,12 +1587,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
                               color: Fx.mintDark,
-                            ),
-                          ),
                         ),
-                        const SizedBox(height: 10),
-                        Padding(
-                          padding: horizontalPadding,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Padding(
+                      padding: horizontalPadding,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
@@ -1641,26 +1660,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     ),
                                   ),
                               ],
-                            ),
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        Padding(
-                          padding: horizontalPadding,
-                          child: SmartInsightCard(
-                            key: ValueKey('smart|$_summaryRevision|$txPeriod|top'),
-                            income: totalIncome,
-                            expense: totalExpense,
-                            savings: savings,
-                            goal: currentGoal,
-                            totalLoan: totalLoan,
-                            totalAssets: totalAssets,
-                            insightText: smartInsight.trim().isEmpty
-                                ? null
-                                : smartInsight.trim(),
-                            showToday: true,
-                          ),
-                        ),
+                      ),
                         const SizedBox(height: 12),
                         Padding(
                           padding: horizontalPadding,
