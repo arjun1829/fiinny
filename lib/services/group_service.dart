@@ -37,6 +37,7 @@ class GroupService {
     required String createdBy, // should be phone of creator
     String? avatarUrl,
     Map<String, String>? memberAvatars,
+    Map<String, String>? memberDisplayNames,
   }) async {
     final now = DateTime.now();
     final allMembers = Set<String>.from(memberPhones)..add(createdBy);
@@ -51,6 +52,7 @@ class GroupService {
       createdAt: now,
       avatarUrl: avatarUrl,
       memberAvatars: memberAvatars,
+      memberDisplayNames: memberDisplayNames,
     );
     final batch = _firestore.batch();
     batch.set(docRef, group.toJson());
@@ -103,15 +105,30 @@ class GroupService {
   }
 
   /// Add members to a group (updates all relevant places)
-  Future<void> addMembers(String groupId, List<String> newMemberPhones) async {
+  Future<void> addMembers(
+    String groupId,
+    List<String> newMemberPhones, {
+    Map<String, String>? displayNames,
+  }) async {
     if (newMemberPhones.isEmpty) return;
 
     final uniqueMembers = newMemberPhones.toSet().toList();
 
     // Update global collection
-    await globalGroups.doc(groupId).update({
+    final updates = <String, dynamic>{
       'memberPhones': FieldValue.arrayUnion(uniqueMembers),
-    });
+    };
+
+    if (displayNames != null && displayNames.isNotEmpty) {
+      for (final entry in displayNames.entries) {
+        final phone = entry.key.trim();
+        final name = entry.value.trim();
+        if (phone.isEmpty || name.isEmpty) continue;
+        updates['memberDisplayNames.$phone'] = name;
+      }
+    }
+
+    await globalGroups.doc(groupId).update(updates);
 
     // Fetch group and mirror for each new member (for notifications/offline)
     final group = await getGroupById(groupId);
