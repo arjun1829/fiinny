@@ -1,5 +1,8 @@
 name: iOS IPA (Flutter export + ASC upload)
 
+env:
+  BUILD_NUMBER: ${{ github.run_number }}
+
 on:
   workflow_dispatch:
   push:
@@ -197,7 +200,7 @@ jobs:
         run: |
           set -euxo pipefail
           base_version="$(grep -m1 '^version:' pubspec.yaml | cut -d ':' -f2 | xargs | cut -d '+' -f1)"
-          perl -0777 -pe "s/^version:\\s*[^\\r\\n]+/version: ${base_version}+${GITHUB_RUN_NUMBER}/m" pubspec.yaml > pubspec.yaml.tmp
+          perl -0777 -pe "s/^version:\\s*[^\\r\\n]+/version: ${base_version}+$BUILD_NUMBER/m" pubspec.yaml > pubspec.yaml.tmp
           mv pubspec.yaml.tmp pubspec.yaml
           echo "Updated version to: $(grep -m1 '^version:' pubspec.yaml)"
 
@@ -302,7 +305,7 @@ jobs:
         run: |
           set -euxo pipefail
           flutter build ipa --release \
-            --build-number "${GITHUB_RUN_NUMBER}" \
+            --build-number "$BUILD_NUMBER" \
             --export-options-plist ios/ExportOptions.plist
           ls -lah build/ios/ipa || true
           ls -lah build/ios/archive || true
@@ -325,7 +328,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dsym-${{ GITHUB_RUN_NUMBER }}
+          name: dsym-${{ env.BUILD_NUMBER }}
           path: build/ios/archive/Runner.xcarchive/dSYMs/**/*.dSYM
           if-no-files-found: ignore
 
