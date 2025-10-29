@@ -288,16 +288,19 @@ class _HeroSummaryState extends State<HeroSummary> {
         color: AppColors.mint,
         label: '${(monthPct * 100).round()}%',
       ),
-      FilledButton.icon(
+      TextButton.icon(
         onPressed: widget.onAddTap,
-        icon: const Icon(Icons.add, size: 18, color: Colors.white),
+        icon: const Icon(Icons.add, size: 18),
         label: const Text('Add'),
-        style: FilledButton.styleFrom(
-          backgroundColor: mint,
-          foregroundColor: Colors.white,
+        style: TextButton.styleFrom(
+          backgroundColor: mint.withOpacity(.12),
+          foregroundColor: mint,
           textStyle: const TextStyle(fontWeight: FontWeight.w800),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           minimumSize: const Size(0, 40),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
       ),
       IconButton(

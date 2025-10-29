@@ -225,33 +225,28 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                 onOpenLoans: () => _openReviewSheet(isLoans: true),
               ),
             ),
-          const Padding(
-            padding: EdgeInsets.only(right: 12),
-            child: Icon(Icons.notifications_none_rounded, color: AppColors.mint),
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: _MintAddButton(
+              compact: true,
+              onTap: _onTapPrimaryAdd,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Notifications',
+            onPressed: () {},
+            icon: const Icon(Icons.notifications_none_rounded,
+                color: AppColors.mint),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          if (widget.userPhone != null) {
-            _svc.openQuickAddForSubs(
-              context,
-              userId: widget.userPhone!,
-              friendId: widget.friendId,
-              friendName: widget.friendName,
-              groupId: widget.groupId,
-              participantUserIds: widget.participantUserIds,
-              mirrorToFriend: widget.mirrorToFriend,
-              capabilities: widget.partnerCapabilities,
-            );
-          } else {
-            _openAddEntry();
-          }
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Add'),
-        backgroundColor: AppColors.mint,
-        foregroundColor: Colors.white,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: _MintAddButton(
+          onTap: _onTapPrimaryAdd,
+          showShadow: true,
+        ),
       ),
       body: Stack(
         children: [
@@ -317,7 +312,7 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
                 final emis = _vm.emis(itemsFiltered);
 
                 // Bottom padding that plays nice with keyboard + FAB + safe area
-                final baseBottom = viewPadding.bottom + 80.0;
+                final baseBottom = viewPadding.bottom + 110.0;
                 final kbOpen = viewInsets.bottom > 0;
                 final kbPad = kbOpen ? 12.0 : 0.0;
                 final listBottomPad = baseBottom + kbPad;
@@ -685,6 +680,24 @@ class _SubsBillsScreenState extends State<SubsBillsScreen> {
       default:
         _openAddEntry();
     }
+  }
+
+  void _onTapPrimaryAdd() {
+    if (widget.userPhone != null) {
+      _svc.openQuickAddForSubs(
+        context,
+        userId: widget.userPhone!,
+        friendId: widget.friendId,
+        friendName: widget.friendName,
+        groupId: widget.groupId,
+        participantUserIds: widget.participantUserIds,
+        mirrorToFriend: widget.mirrorToFriend,
+        capabilities: widget.partnerCapabilities,
+      );
+      return;
+    }
+
+    _openAddEntry();
   }
 
   void _openAddEntry() {
@@ -1780,6 +1793,66 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
+class _MintAddButton extends StatelessWidget {
+  final VoidCallback onTap;
+  final bool compact;
+  final bool showShadow;
+  final String label;
+  final IconData icon;
+
+  const _MintAddButton({
+    required this.onTap,
+    this.compact = false,
+    this.showShadow = false,
+    this.label = 'Add',
+    this.icon = Icons.add,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = compact ? 16.0 : 20.0;
+    final padding = compact
+        ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+        : const EdgeInsets.symmetric(horizontal: 20, vertical: 14);
+
+    Widget button = TextButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: compact ? 18 : 20),
+      label: Text(label),
+      style: TextButton.styleFrom(
+        padding: padding,
+        backgroundColor: AppColors.mint.withOpacity(.12),
+        foregroundColor: AppColors.mint,
+        textStyle: TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: compact ? 13 : 15,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radius),
+        ),
+      ),
+    );
+
+    if (showShadow) {
+      button = DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(radius),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.mint.withOpacity(.18),
+              blurRadius: 24,
+              offset: const Offset(0, 14),
+            ),
+          ],
+        ),
+        child: button,
+      );
+    }
+
+    return button;
+  }
+}
+
 /// Compact inline row with two review chips.
 class _InlineReviewRow extends StatelessWidget {
   final String userId;
@@ -1793,12 +1866,171 @@ class _InlineReviewRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _ReviewChip(userId: userId, isLoans: false, onTap: onOpenSubs),
-        const SizedBox(width: 8),
-        _ReviewChip(userId: userId, isLoans: true, onTap: onOpenLoans),
-      ],
+    final svc = SubscriptionsService();
+
+    return StreamBuilder<int>(
+      stream: svc.pendingCount(userId: userId, isLoans: false),
+      builder: (_, subsSnap) {
+        final subsCount = subsSnap.data ?? 0;
+        return StreamBuilder<int>(
+          stream: svc.pendingCount(userId: userId, isLoans: true),
+          builder: (_, loansSnap) {
+            final loansCount = loansSnap.data ?? 0;
+            if (subsCount == 0 && loansCount == 0) {
+              return const SizedBox.shrink();
+            }
+
+            return GlassCard(
+              glassGradient: [
+                AppColors.mintSoft.withOpacity(.95),
+                Colors.white.withOpacity(.80),
+              ],
+              borderOpacityOverride: .14,
+              showShadow: false,
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        height: 38,
+                        width: 38,
+                        decoration: BoxDecoration(
+                          color: AppColors.mint.withOpacity(.14),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.rate_review_rounded,
+                          color: AppColors.mint,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            Text(
+                              'Review pending',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 15,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Confirm items we auto-detected for you',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      if (subsCount > 0)
+                        _ReviewCalloutChip(
+                          label: 'Subscriptions',
+                          count: subsCount,
+                          color: AppColors.mint,
+                          onTap: onOpenSubs,
+                        ),
+                      if (loansCount > 0)
+                        _ReviewCalloutChip(
+                          label: 'Loans & EMIs',
+                          count: loansCount,
+                          color: AppColors.teal,
+                          onTap: onOpenLoans,
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ReviewCalloutChip extends StatelessWidget {
+  final String label;
+  final int count;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ReviewCalloutChip({
+    required this.label,
+    required this.count,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withOpacity(.12),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: color.withOpacity(.28)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$count',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Tap to review',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.black54,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 10),
+            Icon(Icons.chevron_right_rounded, color: color),
+          ],
+        ),
+      ),
     );
   }
 }
