@@ -1907,25 +1907,18 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                                 .width *
                                                 0.55;
 
-                                        final topGap = dataIndex == 0 ? 0.0 : 12.0;
-
                                         return Padding(
-                                          padding: EdgeInsets.only(top: topGap),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 8),
                                           child: InkWell(
                                             onTap: () =>
                                                 _showExpenseDetailsFriend(
                                                     context, ex),
                                             onLongPress: () =>
                                                 _deleteEntry(ex),
-                                            child: Padding(
-                                              // precise symmetric padding avoids sub-pixel overflow
-                                              padding: const EdgeInsets
-                                                  .symmetric(
-                                                  horizontal: 0,
-                                                  vertical: 6),
-                                              child: Row(
+                                            child: Row(
                                               crossAxisAlignment:
-                                              CrossAxisAlignment.center,
+                                                  CrossAxisAlignment.center,
                                               children: [
                                                 // leading
                                                 Container(
