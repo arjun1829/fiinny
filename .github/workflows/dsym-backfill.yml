@@ -1,0 +1,162 @@
+name: dSYM Backfill (App Store Connect)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "App version (e.g., 1.0.0)"
+        required: true
+      build_number:
+        description: "Build number (e.g., 193)"
+        required: true
+
+jobs:
+  backfill:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check App Store Connect secrets
+        id: prereq
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          missing=0
+          if [[ -z "${ASC_KEY_ID}" ]]; then
+            echo "::warning::ASC_KEY_ID secret is missing."
+            missing=1
+          fi
+          if [[ -z "${ASC_ISSUER_ID}" ]]; then
+            echo "::warning::ASC_ISSUER_ID secret is missing."
+            missing=1
+          fi
+          if [[ -z "${ASC_KEY_P8_BASE64}" ]]; then
+            echo "::warning::ASC_KEY_P8_BASE64 secret is missing."
+            missing=1
+          fi
+          if [[ $missing -eq 0 ]]; then
+            echo "continue=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Required App Store Connect secrets missing. Skipping download/upload steps."
+            echo "continue=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Ruby (for fastlane)
+        if: steps.prereq.outputs.continue == 'true'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: Install fastlane & CocoaPods
+        if: steps.prereq.outputs.continue == 'true'
+        run: |
+          set -euo pipefail
+          gem install fastlane -N
+          gem install cocoapods -N
+
+      - name: Prepare ASC API key
+        if: steps.prereq.outputs.continue == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          KEY_PATH="AuthKey_${ASC_KEY_ID}.p8"
+          echo "Writing API key to $KEY_PATH"
+          echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "ASC_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Install CocoaPods (Crashlytics uploader)
+        if: steps.prereq.outputs.continue == 'true'
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          if ! pod install --repo-update; then
+            echo "::warning::pod install failed; Crashlytics upload may be skipped"
+          fi
+
+      - name: Download dSYMs from App Store Connect
+        if: steps.prereq.outputs.continue == 'true'
+        id: fetch
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_PATH: ${{ env.ASC_KEY_PATH }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ASC_KEY_PATH}" ]]; then
+            echo "::warning::ASC key path not set. Skipping download."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p asc_dsyms asc_unzipped
+          echo "Requesting dSYMs for version='${{ inputs.version }}' build='${{ inputs.build_number }}'"
+          if ! fastlane run download_dsyms \
+            api_key_path:"${ASC_KEY_PATH}" \
+            api_key_id:"${ASC_KEY_ID}" \
+            api_key_issuer_id:"${ASC_ISSUER_ID}" \
+            app_identifier:"com.KaranArjunTechnologies.fiinny" \
+            version:"${{ inputs.version }}" \
+            build_number:"${{ inputs.build_number }}" \
+            output_directory:"./asc_dsyms"; then
+            echo "::warning::fastlane download_dsyms failed."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mapfile -t ZIPS < <(find asc_dsyms -name '*.zip' -print || true)
+          if (( ${#ZIPS[@]} == 0 )); then
+            echo "::warning::No dSYM zips were downloaded."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for z in "${ZIPS[@]}"; do
+            echo "Unzipping $(basename "$z")"
+            unzip -q "$z" -d asc_unzipped || echo "::warning::Failed to unzip $z"
+          done
+          mapfile -t DSYMS < <(find asc_unzipped -type d -name '*.dSYM' -print || true)
+          if (( ${#DSYMS[@]} == 0 )); then
+            echo "::warning::No .dSYM bundles found after unzip."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "dsym_dir=asc_unzipped" >> "$GITHUB_OUTPUT"
+
+      - name: Upload dSYMs to Crashlytics
+        if: steps.prereq.outputs.continue == 'true' && steps.fetch.outputs.found == 'true'
+        env:
+          DSYM_DIR: ${{ steps.fetch.outputs.dsym_dir }}
+        run: |
+          set -euo pipefail
+          UPLOADER="ios/Pods/FirebaseCrashlytics/upload-symbols"
+          GSP_PATH="ios/Runner/GoogleService-Info.plist"
+          if [[ ! -f "$UPLOADER" ]]; then
+            echo "::warning::upload-symbols not found at $UPLOADER. Skipping upload."
+            exit 0
+          fi
+          if [[ ! -f "$GSP_PATH" ]]; then
+            echo "::warning::GoogleService-Info.plist missing at $GSP_PATH. Skipping upload."
+            exit 0
+          fi
+          mapfile -t DSYMS < <(find "$DSYM_DIR" -type d -name '*.dSYM' -print || true)
+          if (( ${#DSYMS[@]} == 0 )); then
+            echo "::warning::No .dSYM bundles available for upload."
+            exit 0
+          fi
+          for d in "${DSYMS[@]}"; do
+            echo "Uploading $(basename "$d")"
+            bash "$UPLOADER" -gsp "$GSP_PATH" -p ios "$d" || echo "::warning::Upload failed for $d (continuing)"
+          done
+
+      - name: Upload dSYMs artifact (record)
+        if: steps.fetch.outputs.found == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsym-backfill-${{ inputs.version }}-${{ inputs.build_number }}
+          path: ${{ steps.fetch.outputs.dsym_dir }}/**/*.dSYM
+          if-no-files-found: ignore

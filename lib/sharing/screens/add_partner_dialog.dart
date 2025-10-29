@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:characters/characters.dart';
 import 'package:lifemap/utils/firebase_error_mapper.dart';
 import 'package:lifemap/utils/permissions_helper.dart';
 
@@ -21,6 +24,7 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
   final _formKey = GlobalKey<FormState>();
 
   String? _relation;
+  bool _loadingContacts = false;
 
   // We now only share Transactions (tx). Everything else false.
   // Kept as a field to avoid changing PartnerService API.
@@ -111,56 +115,77 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
   // Contacts picker
   // ----------------------------
   Future<void> _pickFromContacts() async {
+    setState(() {
+      _loadingContacts = true;
+      _errorMsg = null;
+    });
+
     final result = await getContactsWithPermission();
     if (!mounted) return;
 
+    setState(() {
+      _loadingContacts = false;
+    });
+
     if (result.permanentlyDenied) {
       await showContactsPermissionSettingsDialog(context);
+      setState(() {
+        _errorMsg = 'Contacts permission denied';
+      });
       return;
     }
 
     if (!result.granted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Contacts permission denied')),
-      );
+      setState(() {
+        _errorMsg = 'Contacts permission denied';
+      });
       return;
     }
 
     if (result.hasError) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to load contacts')),
-      );
+      setState(() {
+        _errorMsg = 'Failed to load contacts';
+      });
       return;
     }
 
     if (result.contacts.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No contacts with phone numbers found')),
-      );
+      setState(() {
+        _errorMsg = 'No contacts with phone numbers found';
+      });
       return;
     }
 
-    await showModalBottomSheet(
+    final contacts = result.contacts.where((c) => c.phones.isNotEmpty).toList();
+    if (contacts.isEmpty) {
+      setState(() {
+        _errorMsg = 'No contacts with phone numbers found';
+      });
+      return;
+    }
+
+    final accent = Colors.black87;
+    final Contact? picked = await showModalBottomSheet<Contact?>(
       context: context,
       isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => _ContactsSheet(
-        contacts: result.contacts,
-        onPick: (name, rawPhone) async {
-          final formatted = await _formatToE164(rawPhone);
-          if (!mounted) return;
-          setState(() {
-            _identifierController.text = formatted;
-            _errorMsg = null;
-          });
-          Navigator.pop(ctx);
-        },
-      ),
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return _ContactPickerSheet(
+          contacts: contacts,
+          accent: accent,
+        );
+      },
     );
+
+    if (picked != null) {
+      final raw = picked.phones.isNotEmpty ? picked.phones.first.number : '';
+      final formatted = await _formatToE164(raw);
+      if (!mounted) return;
+      setState(() {
+        _identifierController.text = formatted;
+        _errorMsg = null;
+      });
+    }
   }
 
   // Basic formatter toward E.164: strips spaces/dashes and prefixes default code if missing.
@@ -278,15 +303,24 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
                           // Top: Add from contacts
                           SizedBox(
                             width: double.infinity,
-                            child: ElevatedButton.icon(
-                              icon: const Icon(Icons.contacts),
-                              label: const Text('Add from Contacts'),
-                              style: ElevatedButton.styleFrom(
-                                elevation: 0,
+                            child: OutlinedButton.icon(
+                              icon: _loadingContacts
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.contacts_rounded),
+                              label: Text(
+                                _loadingContacts ? 'Loading contacts…' : 'Add from Contacts',
+                              ),
+                              style: OutlinedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                side: BorderSide(color: Theme.of(context).colorScheme.primary.withOpacity(0.35)),
+                                foregroundColor: Theme.of(context).colorScheme.primary,
                               ),
-                              onPressed: _pickFromContacts,
+                              onPressed: _loading || _loadingContacts ? null : _pickFromContacts,
                             ),
                           ),
 
@@ -337,7 +371,13 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
 
                           if (_errorMsg != null) ...[
                             const SizedBox(height: 12),
-                            Text(_errorMsg!, style: const TextStyle(color: Colors.red)),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                _errorMsg!,
+                                style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+                              ),
+                            ),
                           ],
 
                           const SizedBox(height: 12),
@@ -440,127 +480,180 @@ class _InlineDivider extends StatelessWidget {
   }
 }
 
-// -----------------------------------------
-// Bottom sheet widget to list & search contacts
-// -----------------------------------------
-class _ContactsSheet extends StatefulWidget {
+class _ContactPickerSheet extends StatefulWidget {
   final List<Contact> contacts;
-  final void Function(String name, String phone) onPick;
+  final Color accent;
 
-  const _ContactsSheet({
-    Key? key,
+  const _ContactPickerSheet({
     required this.contacts,
-    required this.onPick,
-  }) : super(key: key);
+    required this.accent,
+  });
 
   @override
-  State<_ContactsSheet> createState() => _ContactsSheetState();
+  State<_ContactPickerSheet> createState() => _ContactPickerSheetState();
 }
 
-class _ContactsSheetState extends State<_ContactsSheet> {
+class _ContactPickerSheetState extends State<_ContactPickerSheet> {
   final TextEditingController _search = TextEditingController();
-  late List<Contact> _filtered;
-  Timer? _debounce;
+  late final List<Contact> _withPhones = widget.contacts
+      .where((c) => c.phones.isNotEmpty)
+      .toList(growable: false);
+  late List<Contact> _filtered = List<Contact>.from(_withPhones);
 
   @override
   void initState() {
     super.initState();
-    _filtered = widget.contacts;
     _search.addListener(_onSearch);
   }
 
   @override
   void dispose() {
     _search.removeListener(_onSearch);
-    _debounce?.cancel();
     _search.dispose();
     super.dispose();
   }
 
   void _onSearch() {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 250), () {
-      final q = _search.text.toLowerCase().trim();
-      if (q.isEmpty) {
-        setState(() => _filtered = widget.contacts);
-        return;
-      }
-      setState(() {
-        _filtered = widget.contacts.where((c) {
-          final name = c.displayName.toLowerCase();
-          final matchesName = name.contains(q);
-          final matchesPhone = c.phones.any(
-                (p) => p.number.replaceAll(RegExp(r'\s+'), '').contains(q),
-          );
-          return matchesName || matchesPhone;
-        }).toList();
-      });
+    final query = _search.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      setState(() => _filtered = List<Contact>.from(_withPhones));
+      return;
+    }
+
+    setState(() {
+      _filtered = _withPhones.where((c) {
+        final name = c.displayName.toLowerCase();
+        final phone = c.phones.isNotEmpty
+            ? c.phones.first.number.replaceAll(RegExp(r'\s+'), '')
+            : '';
+        return name.contains(query) || phone.contains(query.replaceAll(RegExp(r'\s+'), ''));
+      }).toList();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // Flatten to one row per phone for smoother scrolling
-    final entries = <Map<String, String>>[
-      for (final c in _filtered)
-        for (final p in c.phones)
-          {
-            'name': c.displayName.isEmpty ? 'Unknown' : c.displayName,
-            'phone': p.number,
-          }
-    ];
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: Column(
-        children: [
-          Container(
-            width: 44,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade400,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          TextField(
-            controller: _search,
-            decoration: InputDecoration(
-              hintText: 'Search contacts',
-              prefixIcon: const Icon(Icons.search),
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade300),
+    final accent = widget.accent;
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.85,
+      minChildSize: 0.55,
+      maxChildSize: 0.95,
+      builder: (context, scrollController) {
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withOpacity(0.95),
+                    Colors.white.withOpacity(0.88),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+                border: Border.all(color: Colors.white.withOpacity(0.6)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x1F000000),
+                    blurRadius: 20,
+                    offset: Offset(0, -6),
+                  ),
+                ],
               ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.2),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.contacts_rounded, color: accent),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Pick a contact',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: accent.withOpacity(0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Row(
+                        children: [
+                          Icon(Icons.search_rounded, size: 20, color: accent),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: TextField(
+                              controller: _search,
+                              decoration: const InputDecoration(
+                                hintText: 'Search contacts…',
+                                border: InputBorder.none,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: _filtered.isEmpty
+                        ? const Center(child: Text('No contacts found'))
+                        : ListView.separated(
+                            controller: scrollController,
+                            itemCount: _filtered.length,
+                            separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                            itemBuilder: (context, index) {
+                              final contact = _filtered[index];
+                              final name = contact.displayName.isEmpty ? 'Unknown' : contact.displayName;
+                              final phone = contact.phones.isNotEmpty ? contact.phones.first.number : '';
+                              final initial = name.isNotEmpty ? name.characters.first.toUpperCase() : '👤';
+                              return ListTile(
+                                leading: CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: accent.withOpacity(0.10),
+                                  child: Text(
+                                    initial,
+                                    style: const TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                subtitle: Text(phone, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                onTap: () => Navigator.pop(context, contact),
+                              );
+                            },
+                          ),
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: entries.isEmpty
-                ? const Center(child: Text('No contacts found'))
-                : ListView.separated(
-              itemCount: entries.length,
-              separatorBuilder: (_, __) => const Divider(height: 0),
-              itemBuilder: (_, i) {
-                final e = entries[i];
-                return ListTile(
-                  leading: const CircleAvatar(child: Icon(Icons.person)),
-                  title: Text(e['name']!),
-                  subtitle: Text(e['phone']!),
-                  onTap: () => widget.onPick(e['name']!, e['phone']!),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
