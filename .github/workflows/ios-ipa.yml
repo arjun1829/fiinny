@@ -29,18 +29,51 @@ jobs:
       - name: Flutter deps
         run: flutter pub get
 
-      - name: Install signing assets
+      - name: Preflight signing secrets
         shell: bash
+        env:
+          P12_B64: ${{ secrets.IOS_CERT_P12_BASE64 }}
+          P12_PASS: ${{ secrets.IOS_CERT_PASSWORD }}
+          PROV_B64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          [[ -n "$P12_B64" ]] || { echo "❌ Missing IOS_CERT_P12_BASE64"; exit 1; }
+          [[ -n "$P12_PASS" ]] || { echo "❌ Missing IOS_CERT_PASSWORD"; exit 1; }
+          [[ -n "$PROV_B64" ]] || { echo "❌ Missing IOS_PROVISIONING_PROFILE_BASE64"; exit 1; }
+          echo "✅ Secrets present (not printing values)."
+
+      - name: Install signing assets (safe)
+        shell: bash
+        env:
+          P12_B64: ${{ secrets.IOS_CERT_P12_BASE64 }}
+          P12_PASS: ${{ secrets.IOS_CERT_PASSWORD }}
+          PROV_B64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
         run: |
           set -euxo pipefail
-          echo "${{ secrets.IOS_CERT_P12_BASE64 }}" | base64 --decode > signing.p12
-          security create-keychain -p "" build.keychain
-          security import signing.p12 -k ~/Library/Keychains/build.keychain -P "${{ secrets.IOS_CERT_PASSWORD }}" -T /usr/bin/codesign
-          security list-keychains -s ~/Library/Keychains/build.keychain
-          security default-keychain -s ~/Library/Keychains/build.keychain
-          security unlock-keychain -p "" ~/Library/Keychains/build.keychain
+          CERT="$RUNNER_TEMP/signing.p12"
+          PROV="$RUNNER_TEMP/AppStore.mobileprovision"
+          echo -n "$P12_B64" | base64 -D > "$CERT"
+          echo -n "$PROV_B64" | base64 -D > "$PROV"
+          test -s "$CERT"
+          test -s "$PROV"
+
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASS="$(openssl rand -hex 12)"
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+
+          # Import .p12 and allow codesign
+          security import "$CERT" -k "$KEYCHAIN" -P "$P12_PASS" -T /usr/bin/codesign -f pkcs12
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASS" "$KEYCHAIN"
+
+          # Make this keychain the only one searched for this job
+          security list-keychains -s "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+
+          # Install provisioning profile
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          echo "${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/AppStore.mobileprovision
+          cp "$PROV" ~/Library/MobileDevice/Provisioning\ Profiles/
 
       - name: Bump build number
         shell: bash
