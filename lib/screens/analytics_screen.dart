@@ -522,71 +522,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     required List<Color> palette,
     required void Function(String label) onSliceTap,
   }) {
-    final donutData = entries
-        .where((e) => e.value.isFinite && e.value != 0)
-        .map((e) => DonutSlice(e.key, e.value.abs()))
-        .toList();
-
-    if (donutData.isEmpty) {
-      return GlassCard(
-        radius: Fx.r24,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _sectionHeader(title, Icons.pie_chart_rounded),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 14),
-              child: Text(
-                'No data to chart for this period.',
-                style: Fx.label.copyWith(color: Fx.text.withOpacity(.8)),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final legendItems = <Widget>[];
-    for (int i = 0; i < donutData.length && i < 12; i++) {
-      final s = donutData[i];
-      legendItems.add(
-        _pillWithDot(
-          '${s.label}: ${INR.c(s.value)}',
-          dot: palette[i % palette.length],
-        ),
-      );
-    }
-
-    return GlassCard(
-      radius: Fx.r24,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionHeader(title, Icons.pie_chart_rounded),
-          const SizedBox(height: 8),
-          Center(
-            child: SizedBox(
-              width: 210,
-              height: 210,
-              child: DonutChartSimple(
-                data: donutData,
-                size: 210,
-                thickness: 22,
-                showCenter: true,
-                palette: palette,
-                onSliceTap: (_, s) => onSliceTap(s.label),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: legendItems,
-          ),
-        ],
-      ),
+    return _AnalyticsDonutCard(
+      header: _sectionHeader(title, Icons.pie_chart_rounded),
+      entries: entries,
+      palette: palette,
+      onSliceTap: onSliceTap,
     );
   }
 
@@ -884,25 +824,236 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 }
 
 // ---------- legend pill ----------
-Widget _pillWithDot(String label, {Color? dot}) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-    decoration: BoxDecoration(
-      color: Fx.mintDark.withOpacity(.12),
+Widget _pillWithDot(
+  String label, {
+  Color? dot,
+  bool selected = false,
+  VoidCallback? onTap,
+}) {
+  final bg = selected ? Fx.mintDark.withOpacity(.18) : Fx.mintDark.withOpacity(.12);
+  final border = selected ? Fx.mintDark.withOpacity(.45) : Fx.mintDark.withOpacity(.25);
+  final textColor = selected ? Fx.mintDark : Fx.text;
+
+  return Material(
+    color: Colors.transparent,
+    child: InkWell(
+      onTap: onTap,
       borderRadius: BorderRadius.circular(999),
-      border: Border.all(color: Fx.mintDark.withOpacity(.25)),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (dot != null) ...[
-          Container(width: 8, height: 8, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
-          const SizedBox(width: 6),
-        ],
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (dot != null) ...[
+              Container(width: 8, height: 8, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              label,
+              style: TextStyle(fontWeight: FontWeight.w600, color: textColor),
+            ),
+          ],
+        ),
+      ),
     ),
   );
+}
+
+class _AnalyticsDonutCard extends StatefulWidget {
+  final Widget header;
+  final List<MapEntry<String, double>> entries;
+  final List<Color> palette;
+  final void Function(String label) onSliceTap;
+
+  const _AnalyticsDonutCard({
+    required this.header,
+    required this.entries,
+    required this.palette,
+    required this.onSliceTap,
+  });
+
+  @override
+  State<_AnalyticsDonutCard> createState() => _AnalyticsDonutCardState();
+}
+
+class _AnalyticsDonutCardState extends State<_AnalyticsDonutCard> {
+  int? _selected;
+
+  void _handleSliceTap(int index, DonutSlice slice) {
+    widget.onSliceTap(slice.label);
+    setState(() => _selected = index);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final donutData = widget.entries
+        .where((e) => e.value.isFinite && e.value != 0)
+        .map((e) => DonutSlice(e.key, e.value.abs()))
+        .toList();
+
+    if (donutData.isEmpty) {
+      return GlassCard(
+        radius: Fx.r24,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            widget.header,
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 14),
+              child: Text(
+                'No data to chart for this period.',
+                style: Fx.label.copyWith(color: Fx.text.withOpacity(.8)),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final total = donutData.fold<double>(0, (sum, slice) => sum + slice.value);
+    var selectedIndex = _selected;
+    if (selectedIndex != null && selectedIndex >= donutData.length) {
+      selectedIndex = null;
+    }
+
+    final legendItems = <Widget>[];
+    for (int i = 0; i < donutData.length && i < 12; i++) {
+      final slice = donutData[i];
+      final percent = total <= 0 ? 0.0 : (slice.value / total * 100);
+      final percentText = percent >= 10 ? percent.toStringAsFixed(0) : percent.toStringAsFixed(1);
+      final label = '${slice.label}: ${INR.c(slice.value)} • $percentText%';
+      legendItems.add(
+        _pillWithDot(
+          label,
+          dot: widget.palette[i % widget.palette.length],
+          selected: selectedIndex == i,
+          onTap: () => _handleSliceTap(i, slice),
+        ),
+      );
+    }
+
+    final bars = <Widget>[];
+    for (int i = 0; i < donutData.length && i < 6; i++) {
+      final slice = donutData[i];
+      final percent = total <= 0 ? 0.0 : (slice.value / total);
+      bars.add(
+        _CategoryBar(
+          label: slice.label,
+          amount: slice.value,
+          color: widget.palette[i % widget.palette.length],
+          fraction: percent,
+          onTap: () => _handleSliceTap(i, slice),
+        ),
+      );
+    }
+
+    return GlassCard(
+      radius: Fx.r24,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          widget.header,
+          const SizedBox(height: 8),
+          Center(
+            child: SizedBox(
+              width: 210,
+              height: 210,
+              child: DonutChartSimple(
+                data: donutData,
+                size: 210,
+                thickness: 22,
+                showCenter: true,
+                palette: widget.palette,
+                selectedIndex: selectedIndex,
+                onSliceTap: (_, slice) => _handleSliceTap(_, slice),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: legendItems,
+          ),
+          if (bars.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            ...bars,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CategoryBar extends StatelessWidget {
+  final String label;
+  final double amount;
+  final Color color;
+  final double fraction;
+  final VoidCallback onTap;
+
+  const _CategoryBar({
+    required this.label,
+    required this.amount,
+    required this.color,
+    required this.fraction,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = (fraction * 100).clamp(0, 100);
+    final percentText = percent >= 10 ? percent.toStringAsFixed(0) : percent.toStringAsFixed(1);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: Fx.label.copyWith(fontWeight: FontWeight.w700),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(INR.c(amount), style: Fx.number.copyWith(color: Fx.text)),
+                    const SizedBox(width: 8),
+                    Text('$percentText%', style: Fx.label.copyWith(color: Fx.text.withOpacity(.75))),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: fraction.clamp(0, 1),
+                    minHeight: 8,
+                    backgroundColor: color.withOpacity(.15),
+                    valueColor: AlwaysStoppedAnimation<Color>(color),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ================================================
