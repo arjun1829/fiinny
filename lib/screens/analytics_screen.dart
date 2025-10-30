@@ -109,7 +109,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     final totalExp = AnalyticsAgg.sumAmount(exp, (e) => e.amount);
     final totalInc = AnalyticsAgg.sumAmount(inc, (i) => i.amount);
-    final savings  = totalInc - totalExp;
+    final savings = totalInc - totalExp;
 
     final seriesKey = '$_rev|$_period|series|${_custom?.start}-${_custom?.end}';
     final series = _seriesCache[seriesKey] ??=
@@ -201,10 +201,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         onDayLongPress: (day, amt) {
                           final date = DateTime(now.year, now.month, day);
                           final start = DateTime(date.year, date.month, date.day);
-                          final end   = start.add(const Duration(days: 1));
-                          final rr    = DateTimeRange(start: start, end: end);
-                          final expD  = _allExp.where((e) => !e.date.isBefore(rr.start) && e.date.isBefore(rr.end)).toList();
-                          final incD  = _allInc.where((i) => !i.date.isBefore(rr.start) && i.date.isBefore(rr.end)).toList();
+                          final end = start.add(const Duration(days: 1));
+                          final rr = DateTimeRange(start: start, end: end);
+                          final expD = _allExp.where((e) => !e.date.isBefore(rr.start) && e.date.isBefore(rr.end)).toList();
+                          final incD = _allInc.where((i) => !i.date.isBefore(rr.start) && i.date.isBefore(rr.end)).toList();
                           _openUnifiedSheet(
                             title: 'Transactions • ${DateFormat('d MMM').format(date)}',
                             exp: expD,
@@ -516,6 +516,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   // ---------- donut card helper (bigger ring + palette + taps) ----------
+  /// Builds a donut chart section with consistent styling.
   Widget _donutCard({
     required String title,
     required List<MapEntry<String, double>> entries,
