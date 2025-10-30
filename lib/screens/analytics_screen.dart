@@ -598,7 +598,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     // Count transactions per merchant in the current filtered list
     final Map<String, int> countMap = {};
     for (final e in srcExp) {
-      final key = ((e.counterparty ?? e.upiVpa ?? e.label ?? '').trim());
+      final raw = (e.counterparty ?? e.upiVpa ?? e.label ?? '').trim();
+      if (raw.isEmpty) continue;
+      final key = AnalyticsAgg.displayMerchantKey(raw);
       if (key.isEmpty) continue;
       countMap[key] = (countMap[key] ?? 0) + 1;
     }
@@ -772,10 +774,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   void _openMerchantSheet(String merchant, List<ExpenseItem> srcExp) {
-    final mLower = merchant.toLowerCase();
+    final target = merchant.toLowerCase();
     final matched = srcExp.where((e) {
-      final k = (e.counterparty ?? e.upiVpa ?? e.label ?? '').trim().toLowerCase();
-      return k == mLower;
+      final raw = (e.counterparty ?? e.upiVpa ?? e.label ?? '').trim();
+      if (raw.isEmpty) return false;
+      final key = AnalyticsAgg.displayMerchantKey(raw).toLowerCase();
+      return key == target;
     }).toList();
 
     _openUnifiedSheet(title: 'Merchant • $merchant', exp: matched, inc: const []);
