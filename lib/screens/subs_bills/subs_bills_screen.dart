@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show TextPosition, TextSelection;
 import 'package:lifemap/details/models/shared_item.dart';
 import '../../services/cards/card_due_notifier.dart';
 import '../../services/credit_card_service.dart';
+import '../../models/credit_card_model.dart';
 import '../../services/notification_service.dart';
 import '../../services/subscriptions/subscriptions_service.dart';
 import 'package:lifemap/details/services/subscriptions_service.dart'
@@ -2075,7 +2076,7 @@ class _CardShowcase extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                _MiniBadge(
+                _MiniInfoBadge(
                   icon: card.autopayEnabled
                       ? Icons.bolt_rounded
                       : Icons.alarm_rounded,
@@ -2183,11 +2184,11 @@ class _CardShowcase extends StatelessWidget {
   }
 }
 
-class _MiniBadge extends StatelessWidget {
+class _MiniInfoBadge extends StatelessWidget {
   final IconData icon;
   final String label;
 
-  const _MiniBadge({
+  const _MiniInfoBadge({
     required this.icon,
     required this.label,
     super.key,
