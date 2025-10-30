@@ -1,6 +1,7 @@
 // lib/widgets/charts/donut_chart_simple.dart
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // listEquals
 
 import '../../core/formatters/inr.dart';
 import '../../themes/tokens.dart';
@@ -11,27 +12,14 @@ class DonutSlice {
   const DonutSlice(this.label, this.value);
 }
 
-/// Simple, pretty donut with optional interactivity:
-/// - `onSliceTap` to handle taps on slices (e.g., open drill-down sheets)
-/// - `selectedIndex` to visually highlight a slice
-/// - `palette` to keep colors in sync with external legends
+/// Simple donut with optional slice tap + selected highlight.
 class DonutChartSimple extends StatelessWidget {
   final List<DonutSlice> data;
   final double size;
-
-  /// Ring thickness (px)
   final double thickness;
-
-  /// Show center total (₹) + caption
   final bool showCenter;
-
-  /// Optional custom colors (use to match legend order exactly)
   final List<Color>? palette;
-
-  /// Optional highlighted slice index
   final int? selectedIndex;
-
-  /// Optional tap callback: (index, slice)
   final void Function(int index, DonutSlice slice)? onSliceTap;
 
   const DonutChartSimple({
@@ -47,27 +35,30 @@ class DonutChartSimple extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final slices = <DonutSlice>[
+    final slices = [
       for (final s in data)
         if (s.value.isFinite && s.value > 0) s,
     ];
-
     final total = slices.fold<double>(0, (a, b) => a + b.value);
+
     if (!total.isFinite || total <= 0 || slices.isEmpty) {
+      // Ensure fallback is ALWAYS readable
+      final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: Fx.text.withOpacity(.8),
+          );
       return SizedBox(
         width: size,
         height: size,
-        child: Center(child: Text('No data', style: Fx.label)),
+        child: Center(child: Text('No data', style: style)),
       );
     }
 
-    // Precompute arcs (start, sweep) with a minimum sweep so tiny slices are visible.
-    // Then re-normalize so the sum of sweeps never exceeds 360° (prevents the “solid ring” bug).
-    const double minFrac = 0.02; // 2% of the circle
+    const double minFrac = 0.02; // ensure tiny slices are visible
     final arcs = _computeArcsNormalized(slices, total, minFrac);
 
     final colors = palette ??
-        <Color>[
+        const <Color>[
           Fx.mintDark,
           Fx.good,
           Fx.warn,
@@ -77,6 +68,9 @@ class DonutChartSimple extends StatelessWidget {
           Colors.cyan,
           Colors.brown,
         ];
+
+    // Pre-calc values list so painter can deep-compare for repaints
+    final values = List<double>.unmodifiable(slices.map((e) => e.value));
 
     return SizedBox(
       width: size,
@@ -115,25 +109,21 @@ class DonutChartSimple extends StatelessWidget {
           children: [
             CustomPaint(
               painter: _DonutPainter(
-                data: slices,
                 arcs: arcs,
                 thickness: thickness,
                 colors: colors,
                 selectedIndex: selectedIndex,
+                values: values, // <- for shouldRepaint
               ),
             ),
             if (showCenter)
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    INR.c(total),
-                    style: Fx.number.copyWith(fontSize: 16),
-                  ),
+                  Text(INR.c(total), style: Fx.number.copyWith(fontSize: 16)),
                   Text(
                     'total',
-                    style:
-                        Fx.label.copyWith(fontSize: 11, color: Fx.text.withOpacity(.70)),
+                    style: Fx.label.copyWith(fontSize: 11, color: Fx.text.withOpacity(.70)),
                   ),
                 ],
               ),
@@ -143,29 +133,23 @@ class DonutChartSimple extends StatelessWidget {
     );
   }
 
-  /// Computes arcs with a minimum visible size for tiny slices and then
-  /// re-normalizes the sweeps so the total is <= 360°.
-  List<_Arc> _computeArcsNormalized(
-      List<DonutSlice> data, double total, double minFrac) {
+  /// Compute arcs with a minimum visible sweep; then normalize to <= 360° total.
+  List<_Arc> _computeArcsNormalized(List<DonutSlice> data, double total, double minFrac) {
     final minSweep = 2 * math.pi * minFrac;
 
     // 1) initial sweeps with minimum enforced
     final sweeps = <double>[];
     for (final s in data) {
-      if (s.value <= 0) {
-        sweeps.add(0);
-        continue;
-      }
       var sw = 2 * math.pi * (s.value / total);
       if (sw < minSweep) sw = minSweep;
       sweeps.add(sw);
     }
 
-    // 2) normalize if we overshoot 360°
+    // 2) normalize if overshoot
     final sum = sweeps.fold<double>(0, (a, b) => a + b);
     final scale = sum > 2 * math.pi ? (2 * math.pi) / sum : 1.0;
 
-    // 3) build arcs sequentially from top (-90°)
+    // 3) build arcs from -90°
     double start = -math.pi / 2;
     final arcs = <_Arc>[];
     for (final sw in sweeps) {
@@ -184,18 +168,18 @@ class _Arc {
 }
 
 class _DonutPainter extends CustomPainter {
-  final List<DonutSlice> data;
   final List<_Arc> arcs;
   final double thickness;
   final List<Color> colors;
   final int? selectedIndex;
+  final List<double> values; // deep compare hook
 
   const _DonutPainter({
-    required this.data,
     required this.arcs,
     required this.thickness,
     required this.colors,
     required this.selectedIndex,
+    required this.values,
   });
 
   @override
@@ -203,16 +187,15 @@ class _DonutPainter extends CustomPainter {
     final center = s.center(Offset.zero);
     final rOuter = math.min(s.width, s.height) / 2;
 
-    // Subtle ring background
+    // Slightly stronger bg track so it’s visible on light cards
     final bg = Paint()
       ..isAntiAlias = true
       ..style = PaintingStyle.stroke
       ..strokeWidth = thickness
-      ..color = Colors.black12.withOpacity(.08);
+      ..color = Colors.black.withOpacity(.12);
     c.drawCircle(center, rOuter - thickness / 2, bg);
 
-    // Slices
-    for (int i = 0; i < data.length; i++) {
+    for (int i = 0; i < arcs.length; i++) {
       final arc = arcs[i];
       if (arc.sweep <= 0) continue;
 
@@ -222,7 +205,7 @@ class _DonutPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
         ..strokeWidth = isSel ? thickness + 6 : thickness
-        ..color = colors[i % colors.length].withOpacity(isSel ? 1.0 : .90);
+        ..color = colors[i % colors.length].withOpacity(isSel ? 1.0 : .95);
 
       c.drawArc(
         Rect.fromCircle(center: center, radius: rOuter - thickness / 2),
@@ -236,10 +219,18 @@ class _DonutPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DonutPainter old) {
-    return old.thickness != thickness ||
-        old.selectedIndex != selectedIndex ||
-        old.data != data ||
-        old.colors != colors ||
-        old.arcs.length != arcs.length;
+    if (old.thickness != thickness) return true;
+    if (old.selectedIndex != selectedIndex) return true;
+    if (!listEquals(old.values, values)) return true;
+    if (old.arcs.length != arcs.length) return true;
+    // Also compare arc geometry when lengths match
+    for (int i = 0; i < arcs.length; i++) {
+      if (old.arcs[i].start != arcs[i].start || old.arcs[i].sweep != arcs[i].sweep) {
+        return true;
+      }
+    }
+    if (!listEquals(old.colors, colors)) return true;
+    return false;
+    // (If you want to force repaints while debugging, just return true.)
   }
 }
