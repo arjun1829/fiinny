@@ -832,9 +832,9 @@ Widget _pillWithDot(
   bool selected = false,
   VoidCallback? onTap,
 }) {
-  final bg = selected ? Fx.mintDark.withOpacity(.18) : Fx.mintDark.withOpacity(.12);
-  final border = selected ? Fx.mintDark.withOpacity(.45) : Fx.mintDark.withOpacity(.25);
-  final textColor = selected ? Fx.mintDark : Fx.text;
+  final Color bg = selected ? Fx.mintDark.withOpacity(.18) : Fx.mintDark.withOpacity(.12);
+  final Color border = selected ? Fx.mintDark.withOpacity(.45) : Fx.mintDark.withOpacity(.25);
+  final Color textColor = selected ? Fx.mintDark : Fx.text;
 
   return Material(
     color: Colors.transparent,
