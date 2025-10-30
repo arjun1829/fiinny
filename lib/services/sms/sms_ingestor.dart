@@ -41,6 +41,7 @@ class SmsIngestor {
   static const bool USE_SERVICE_WRITES = false;  // write via Firestore by default
   static const bool AUTO_POST_TXNS = true;       // create expenses/incomes immediately
   static const bool WRITE_BILL_AS_EXPENSE = false; // keep false to avoid double-counting
+  static const int INITIAL_HISTORY_DAYS = 120;
   static const ReconcilePolicy RECONCILE_POLICY = ReconcilePolicy.mergeEnrich;
   String _billDocId({
     required String? bank,
@@ -269,7 +270,7 @@ class SmsIngestor {
 
   Future<void> initialBackfill({
     required String userPhone,
-    int newerThanDays = 1000,
+    int newerThanDays = INITIAL_HISTORY_DAYS,
   }) async {
     if (!_isAndroid) {
       _log('skip SMS backfill (not Android)');
@@ -381,10 +382,10 @@ class SmsIngestor {
       } else if (last is DateTime) {
         since = last.subtract(Duration(hours: overlap));
       } else {
-        since = now.subtract(const Duration(days: 1000));
+        since = now.subtract(Duration(days: INITIAL_HISTORY_DAYS));
       }
     } catch (_) {
-      since = now.subtract(const Duration(days: 1000));
+      since = now.subtract(Duration(days: INITIAL_HISTORY_DAYS));
     }
 
     final msgs = await telephony.getInboxSms(

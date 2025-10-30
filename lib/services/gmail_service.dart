@@ -34,6 +34,7 @@ class GmailService {
   static const bool AUTO_POST_TXNS = true;      // create expenses/incomes immediately
   static const bool USE_SERVICE_WRITES = false; // write via Firestore set(merge)
   static const int DEFAULT_OVERLAP_HOURS = 24;
+  static const int INITIAL_HISTORY_DAYS = 120;
   static const ReconcilePolicy RECONCILE_POLICY = ReconcilePolicy.mergeEnrich;
   bool _looksLikeCardBillPayment(String text, {String? bank, String? last4}) {
     final u = text.toUpperCase();
@@ -280,7 +281,7 @@ class GmailService {
   // ── Legacy compat: keep old entry point alive ──────────────────────────────
   Future<void> fetchAndStoreTransactionsFromGmail(
       String userId, {
-        int newerThanDays = 1000,
+        int newerThanDays = INITIAL_HISTORY_DAYS,
         int maxResults = 300,
       }) async {
     final st = await IngestStateService.instance.get(userId);
@@ -305,7 +306,7 @@ class GmailService {
 
   Future<void> initialBackfill({
     required String userId,
-    int newerThanDays = 1000,
+    int newerThanDays = INITIAL_HISTORY_DAYS,
     int pageSize = 500,
   }) async {
     await IngestStateService.instance.ensureCutoff(userId);
@@ -321,7 +322,7 @@ class GmailService {
     required String userId,
     int overlapHours = DEFAULT_OVERLAP_HOURS,
     int pageSize = 300,
-    int fallbackDaysIfNoWatermark = 1000,
+    int fallbackDaysIfNoWatermark = INITIAL_HISTORY_DAYS,
   }) async {
     final st = await IngestStateService.instance.get(userId);
     final now = DateTime.now();
