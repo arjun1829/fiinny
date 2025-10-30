@@ -22,20 +22,28 @@ class AnimatedMintBackground extends StatelessWidget {
     final c1 = AppColors.mint.withOpacity(0.10 * intensity);
     final c2 = Colors.white.withOpacity(0.65);
 
-    final decorated = (double stop) => DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: RadialGradient(
-          colors: [c0, c1, c2],
-          radius: 1.2,
-          center: Alignment.topLeft,
-          stops: const [0.0, 0.55, 1.0],
+    const coverageStop = 0.60; // mint wash should span ~60% of the viewport
+    const entryOvershoot = 0.03; // subtle breathing room during the intro tween
+    const radius = 1.35; // larger radius so the radial wash reaches further down
+
+    DecoratedBox decorated(double midStop) {
+      final effectiveStop = midStop.clamp(0.0, 1.0).toDouble();
+
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: RadialGradient(
+            colors: [c0, c1, c2],
+            radius: radius,
+            center: Alignment.topLeft,
+            stops: [0.0, effectiveStop, 1.0],
+          ),
         ),
-      ),
-    );
+      );
+    }
 
     if (!shouldAnimate) {
       // Static (one paint) for cheap first frame
-      return IgnorePointer(child: decorated(1.0));
+      return IgnorePointer(child: decorated(coverageStop));
     }
 
     // Gentle one-shot entrance; wrapper avoids hit-testing & repaint churn.
@@ -44,17 +52,13 @@ class AnimatedMintBackground extends StatelessWidget {
         tween: Tween(begin: 0.85, end: 1.0),
         duration: AppAnim.slow,
         curve: Curves.easeOutQuad,
-        builder: (_, value, __) => DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              colors: [c0, c1, c2],
-              radius: 1.2,
-              center: Alignment.topLeft,
-              // move the middle stop slightly for a subtle “breath”
-              stops: [0.0, 0.52 + (value - 0.85) * 0.4, 1.0],
-            ),
-          ),
-        ),
+        builder: (_, value, __) {
+          final double t = ((value - 0.85) / 0.15).clamp(0.0, 1.0).toDouble();
+          // Start slightly under the target coverage so the wash eases in.
+          final double midStop = (coverageStop - entryOvershoot) + t * entryOvershoot;
+
+          return decorated(midStop);
+        },
       ),
     );
   }
