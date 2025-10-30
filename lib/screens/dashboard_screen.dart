@@ -1544,30 +1544,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ],
                   ),
-                  // 🔹 Put SmartInsightCard right at the top (only when not loading)
-                  if (!_loading)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
-                        child: SmartInsightCard(
-                          key: ValueKey('smart|$_summaryRevision|$txPeriod|top'),
-                          income: totalIncome,
-                          expense: totalExpense,
-                          savings: savings,
-                          goal: currentGoal,
-                          totalLoan: totalLoan,
-                          totalAssets: totalAssets,
-                          // Pass null to let the widget auto-generate copy if your string is empty
-                          insightText: smartInsight.trim().isEmpty ? null : smartInsight.trim(),
-                          showToday: true,
-                        ),
-                      ),
-                    ),
-                  if (_loading)
-                    const SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(child: CircularProgressIndicator()),
-                    )
+                if (_loading)
+                  const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: CircularProgressIndicator()),
+                  )
                 else
                   SliverPadding(
                     padding: const EdgeInsets.only(bottom: 32),
@@ -1802,6 +1783,21 @@ class _DashboardScreenState extends State<DashboardScreen>
                             totalExpense: totalExpense,
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: SmartInsightCard(
+                            key: ValueKey('smart|$_summaryRevision|$txPeriod|body'),
+                            income: totalIncome,
+                            expense: totalExpense,
+                            savings: savings,
+                            goal: currentGoal,
+                            totalLoan: totalLoan,
+                            totalAssets: totalAssets,
+                            insightText: smartInsight.trim().isEmpty ? null : smartInsight.trim(),
+                            showToday: true,
+                          ),
+                        ),
                         const SizedBox(height: 10),
                         Padding(
                           padding: horizontalPadding,
@@ -1827,17 +1823,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 ),
                               );
                             },
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Padding(
-                          padding: horizontalPadding,
-                          child: FiinnyBrainDiagnosisCard(
-                            userPhone: widget.userPhone,
-                            daysWindow: 180,
-                            initiallyExpanded: false,
-                            salaryEarlyDays: 3,
-                            margin: EdgeInsets.zero,
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -1902,7 +1887,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           child: NetWorthPanel(totalAssets: totalAssets, totalLoan: totalLoan),
                         ),
                         if (goals.isEmpty) ...[
-                        const SizedBox(height: 10),
+                          const SizedBox(height: 10),
                           Padding(
                             padding: horizontalPadding,
                             child: EmptyStateCard(
@@ -1917,7 +1902,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                             ),
                           ),
                         ],
-                        // Streamline: hide the deep insights card to keep the layout focused
                         if (_showFetchButton && !_isEmailLinked) ...[
                           const SizedBox(height: 12),
                           Padding(
@@ -1941,6 +1925,20 @@ class _DashboardScreenState extends State<DashboardScreen>
                             ),
                           ),
                         ],
+                        const SizedBox(height: 18),
+                        Padding(
+                          padding: horizontalPadding,
+                          // Always surface the full Fiinny Brain insights stack
+                          // after the rest of the dashboard so it is visible,
+                          // even when earlier sections are collapsed or gated.
+                          child: FiinnyBrainDiagnosisCard(
+                            userPhone: widget.userPhone,
+                            daysWindow: 180,
+                            initiallyExpanded: false,
+                            salaryEarlyDays: 3,
+                            margin: EdgeInsets.zero,
+                          ),
+                        ),
                         const SizedBox(height: 48),
                       ]),
                     ),
