@@ -1304,30 +1304,34 @@ class _ChipsRow extends StatelessWidget {
       );
     }
 
-    return Row(
-      children: [
-        const Text('Sort', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black54)),
-        const SizedBox(width: 8),
-        chip('Created', 'created'),
-        chip('Next due', 'due'),
-        chip('Amount', 'amount'),
-        const SizedBox(width: 12),
-        const Text('Filter', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black54)),
-        const SizedBox(width: 8),
-        FilterChip(
-          selected: hiConfOnly,
-          showCheckmark: false,
-          label: const Text('High confidence'),
-          onSelected: (_) => onToggleHiConf(),
-          side: BorderSide(color: (hiConfOnly ? tint : Colors.black.withOpacity(.12))),
-          backgroundColor: const Color(0x0F000000),
-          selectedColor: tint.withOpacity(.16),
-          labelStyle: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: hiConfOnly ? tint : Colors.black87,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: EdgeInsets.zero,
+      child: Row(
+        children: [
+          const Text('Sort', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black54)),
+          const SizedBox(width: 8),
+          chip('Created', 'created'),
+          chip('Next due', 'due'),
+          chip('Amount', 'amount'),
+          const SizedBox(width: 12),
+          const Text('Filter', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black54)),
+          const SizedBox(width: 8),
+          FilterChip(
+            selected: hiConfOnly,
+            showCheckmark: false,
+            label: const Text('High confidence'),
+            onSelected: (_) => onToggleHiConf(),
+            side: BorderSide(color: (hiConfOnly ? tint : Colors.black.withOpacity(.12))),
+            backgroundColor: const Color(0x0F000000),
+            selectedColor: tint.withOpacity(.16),
+            labelStyle: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: hiConfOnly ? tint : Colors.black87,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
