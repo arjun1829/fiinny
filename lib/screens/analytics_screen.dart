@@ -960,18 +960,13 @@ class _AnalyticsDonutCardState extends State<_AnalyticsDonutCard> {
           widget.header,
           const SizedBox(height: 8),
           Center(
-            child: SizedBox(
-              width: 210,
-              height: 210,
-              child: DonutChartSimple(
-                data: donutData,
-                size: 210,
-                thickness: 22,
-                showCenter: true,
-                palette: widget.palette,
-                selectedIndex: selectedIndex,
-                onSliceTap: (_, slice) => _handleSliceTap(_, slice),
-              ),
+            child: DonutChartSimple(
+              data: donutData,
+              size: 210,
+              thickness: 22,
+              palette: widget.palette,
+              selectedIndex: selectedIndex,
+              onSliceTap: (index, slice) => _handleSliceTap(index, slice),
             ),
           ),
           const SizedBox(height: 12),
