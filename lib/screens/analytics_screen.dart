@@ -826,6 +826,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 }
 
 // ---------- legend pill ----------
+/// Builds a pill-shaped legend label used alongside donut chart slices.
 Widget _pillWithDot(
   String label, {
   Color? dot,
@@ -835,17 +836,18 @@ Widget _pillWithDot(
   final Color bg = selected ? Fx.mintDark.withOpacity(.18) : Fx.mintDark.withOpacity(.12);
   final Color border = selected ? Fx.mintDark.withOpacity(.45) : Fx.mintDark.withOpacity(.25);
   final Color textColor = selected ? Fx.mintDark : Fx.text;
+  final borderRadius = BorderRadius.circular(999);
 
   return Material(
     color: Colors.transparent,
     child: InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
+      borderRadius: borderRadius,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: borderRadius,
           border: Border.all(color: border),
         ),
         child: Row(
@@ -1247,6 +1249,8 @@ class _MiniCalendarHeatmap extends StatelessWidget {
         : amountsByDay.values.reduce((a, b) => a > b ? a : b);
 
     final compact = NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+    final today = DateTime.now();
+    final base = Fx.mintDark;
 
     return GridView.builder(
       shrinkWrap: true,
@@ -1264,10 +1268,8 @@ class _MiniCalendarHeatmap extends StatelessWidget {
 
         final amt = amountsByDay[dayNum] ?? 0.0;
         final t = (maxVal <= 0) ? 0.0 : (amt / maxVal).clamp(0.0, 1.0);
-        final base = Fx.mintDark;
         final fill = base.withOpacity(0.12 + t * 0.32);
 
-        final today = DateTime.now();
         final isToday = (today.year == month.year && today.month == month.month && today.day == dayNum);
 
         final cell = Container(
