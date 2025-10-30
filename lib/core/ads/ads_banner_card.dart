@@ -1,5 +1,6 @@
 // lib/core/ads/ads_banner_card.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'ad_slots.dart';
 
@@ -76,12 +77,28 @@ class _AdsBannerCardState extends State<AdsBannerCard> {
   bool _loaded = false;
 
   void _handleLoad(bool loaded) {
-    if (mounted && _loaded != loaded) {
-      setState(() => _loaded = loaded);
-    } else {
+    if (!mounted) {
       _loaded = loaded;
+      return;
     }
-    widget.onLoadChanged?.call(loaded);
+
+    void updateState() {
+      if (!mounted) return;
+      if (_loaded != loaded) {
+        setState(() => _loaded = loaded);
+      } else {
+        _loaded = loaded;
+      }
+      widget.onLoadChanged?.call(loaded);
+    }
+
+    final scheduler = SchedulerBinding.instance;
+    if (scheduler.schedulerPhase == SchedulerPhase.idle ||
+        scheduler.schedulerPhase == SchedulerPhase.postFrameCallbacks) {
+      updateState();
+    } else {
+      scheduler.addPostFrameCallback((_) => updateState());
+    }
   }
 
   @override

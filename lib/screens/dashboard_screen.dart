@@ -17,6 +17,7 @@ import '../services/asset_service.dart';
 import '../services/fiinny_brain_service.dart';
 import '../services/notification_service.dart';
 import '../widgets/smart_insights_card.dart';
+import '../widgets/insight_feed_card.dart';
 import '../widgets/smart_nudge_widget.dart';
 import '../widgets/crisis_alert_banner.dart';
 import '../widgets/loans_summary_card.dart';
@@ -121,7 +122,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   String txPeriod = "Today"; // D, W, M, Y, etc.
   List<ExpenseItem> allExpenses = [];
   List<IncomeItem> allIncomes = [];
-  late UserData _mockUserData;
+  UserData? _insightUserData;
   String? userName; // will be fetched from Firestore
   bool _isEmailLinked = false;
   String? _userEmail;
@@ -146,6 +147,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _warned100 = false;
   final _expenseSvc = ExpenseService();
   final _incomeSvc  = IncomeService();
+  final _assetSvc   = AssetService();
 
   final _loanDetector = LoanDetectionService();
   int _loanSuggestionsCount = 0;
@@ -455,6 +457,58 @@ class _DashboardScreenState extends State<DashboardScreen>
     setState(() {
       _autopayCount = list.where((e) => (e.tags ?? const []).contains('autopay')).length;
     });
+  }
+
+  void _openInsightFeed() {
+    final data = _insightUserData;
+    if (data == null) return;
+    Navigator.pushNamed(
+      context,
+      '/insights',
+      arguments: {
+        'userId': widget.userPhone,
+        'userData': data,
+      },
+    );
+  }
+
+  Widget _buildInsightFeedSection(EdgeInsets horizontalPadding) {
+    final data = _insightUserData;
+    if (data == null) return const SizedBox.shrink();
+
+    if (insights.isEmpty) {
+      return Padding(
+        padding: horizontalPadding,
+        child: EmptyStateCard(
+          icon: Icons.psychology_alt_rounded,
+          title: 'Fiinny Brain is warming up',
+          subtitle: 'Add a few more transactions or fetch Gmail data to unlock personalised insights.',
+          ctaText: 'Open Insights',
+          onTap: _openInsightFeed,
+        ),
+      );
+    }
+
+    return Padding(
+      padding: horizontalPadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InsightFeedCard(
+            insights: insights,
+            userId: widget.userPhone,
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _openInsightFeed,
+              icon: const Icon(Icons.open_in_new_rounded),
+              label: const Text('View all insights'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _fetchUserName() async {
@@ -911,55 +965,62 @@ class _DashboardScreenState extends State<DashboardScreen>
       final expenses = await _expenseSvc.getExpenses(widget.userPhone);
       final incomes  = await _incomeSvc.getIncomes(widget.userPhone);
 
-      allExpenses = expenses;
-      allIncomes = incomes;
-      _summaryRevision++;
-      _summaryCache.clear();
-
-      if (!mounted) return;
-      setState(() {
-        _barsRevision++;
-        _amountBarsCache.clear();
-        _countBarsCache.clear();
-      });
-
-      goals = await GoalService().getGoals(widget.userPhone);
-      currentGoal = goals.isNotEmpty ? goals.first : null;
-
+      final goalsList = await GoalService().getGoals(widget.userPhone);
       final loanService = LoanService();
+      final loans = await loanService.getLoans(widget.userPhone);
+      final assetsForInsights = await _assetSvc.getAssets(widget.userPhone);
 
-      // ⬇️ Updated to new LoanService API
-      loanCount = await loanService.countOpenLoans(widget.userPhone);
-      totalLoan = await loanService.sumOutstanding(widget.userPhone);
+      final openLoans = loans.where((l) => !(l.isClosed ?? false)).toList();
+      final openLoanTotal = openLoans.fold<double>(0.0, (sum, loan) => sum + loan.amount);
 
       // ⬇️ NEW: compute assets from the Portfolio module store
       await _loadPortfolioTotals();
 
-      totalIncome = incomes
-          .where((t) =>
-      t.date.month == DateTime.now().month &&
-          t.date.year == DateTime.now().year)
+      final now = DateTime.now();
+      final newTotalIncome = incomes
+          .where((t) => t.date.month == now.month && t.date.year == now.year)
           .fold(0.0, (a, b) => a + b.amount);
-
-      totalExpense = expenses
-          .where((t) =>
-      t.date.month == DateTime.now().month &&
-          t.date.year == DateTime.now().year)
+      final newTotalExpense = expenses
+          .where((t) => t.date.month == now.month && t.date.year == now.year)
           .fold(0.0, (a, b) => a + b.amount);
+      final newSavings = newTotalIncome - newTotalExpense;
 
-      savings = totalIncome - totalExpense;
-      _showFetchButton = incomes.isEmpty && expenses.isEmpty;
-      _generateSmartInsight();
-
-      _mockUserData = UserData(
-        incomes: allIncomes,
-        expenses: allExpenses,
-        goals: goals,
-        loans: [],
-        assets: [],
+      final userData = await FiinnyBrainService.createFromLiveData(
+        widget.userPhone,
+        incomes: incomes,
+        expenses: expenses,
+        goals: goalsList,
+        loans: loans,
+        assets: assetsForInsights,
       );
-      insights = FiinnyBrainService.generateInsights(_mockUserData,
-          userId: widget.userPhone);
+      final generatedInsights =
+          FiinnyBrainService.generateInsights(userData, userId: widget.userPhone);
+
+      if (!mounted) return;
+      setState(() {
+        allExpenses = expenses;
+        allIncomes = incomes;
+        _summaryRevision++;
+        _summaryCache.clear();
+        _barsRevision++;
+        _amountBarsCache.clear();
+        _countBarsCache.clear();
+
+        goals = goalsList;
+        currentGoal = goalsList.isNotEmpty ? goalsList.first : null;
+        loanCount = openLoans.length;
+        totalLoan = openLoanTotal;
+
+        totalIncome = newTotalIncome;
+        totalExpense = newTotalExpense;
+        savings = newSavings;
+        _showFetchButton = incomes.isEmpty && expenses.isEmpty;
+
+        _insightUserData = userData;
+        insights = generatedInsights;
+
+        _generateSmartInsight();
+      });
 
       // Fetch current limit for this period
       await _loadPeriodLimit();
@@ -974,7 +1035,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     // 🔎 NEW: refresh "new loan detected" badge count
     try {
       _loanSuggestionsCount =
-      await _loanDetector.pendingCount(widget.userPhone);
+          await _loanDetector.pendingCount(widget.userPhone);
     } catch (e) {
       debugPrint('[Dashboard] loan suggestions count error: $e');
     }
@@ -1766,8 +1827,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                             showToday: true,
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 12),
+                        if (_insightUserData != null) ...[
+                          _buildInsightFeedSection(horizontalPadding),
+                          const SizedBox(height: 14),
+                        ] else
+                          const SizedBox(height: 14),
                         Padding(
                           padding: horizontalPadding,
                           child: LayoutBuilder(

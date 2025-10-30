@@ -106,7 +106,7 @@
 
   <!-- AdMob iOS App ID -->
   <key>GADApplicationIdentifier</key>
-  <string>ca-app-pub-5891610127665684~7171759721</string>
+  <string>ca-app-pub-5891610127665684~2144640230</string>
 
   <!-- (TEMP, only if you hit http:// dev endpoints—remove later) -->
   <!--
