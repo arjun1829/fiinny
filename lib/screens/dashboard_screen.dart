@@ -23,12 +23,10 @@ import '../widgets/loans_summary_card.dart';
 import '../widgets/assets_summary_card.dart';
 import '../widgets/tx_filter_bar.dart';
 import '../widgets/hero_transaction_ring.dart';
-import '../widgets/dashboard/credit_cards_summary_card.dart';
 import '../services/user_data.dart';
 import '../widgets/dashboard_activity_tab.dart';
 import '../models/activity_event.dart';
 import 'dashboard_activity_screen.dart';
-import 'credit_card_details_screen.dart';
 import 'insight_feed_screen.dart';
 import '../widgets/transaction_count_card.dart';
 import '../widgets/transaction_amount_card.dart';
@@ -72,7 +70,6 @@ import '../widgets/fiinny_brain_diagnosis_card.dart';
 import '../widgets/hidden_charges_card.dart';
 import '../widgets/forex_charges_card.dart';
 import '../widgets/salary_predictor_card.dart';
-import '../widgets/premium/premium_chip.dart';
 
 import '../brain/loan_detection_service.dart';
 import '../widgets/loan_suggestions_sheet.dart';
@@ -85,7 +82,6 @@ import '../services/review_queue_service.dart';
 import '../models/ingest_draft_model.dart';
 
 import '../core/ads/ad_service.dart';
-import '../core/flags/premium_gate.dart';
 
 import '../core/notifications/local_notifications.dart'
     show SystemRecurringLocalScheduler;
@@ -1723,34 +1719,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                         const SizedBox(height: 10),
                         Padding(
                           padding: horizontalPadding,
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              _kpiBadge(Icons.subscriptions, Colors.purple, 'Subscriptions', '$_activeSubs'),
-                              _kpiBadge(Icons.savings, Colors.orange, 'SIPs', '$_activeSips'),
-                              _kpiBadge(Icons.credit_card, Colors.redAccent, 'Cards Due', '$_cardsDue'),
-                              _kpiBadge(Icons.autorenew, Colors.teal, 'Autopay', '$_autopayCount'),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Padding(
-                          padding: horizontalPadding,
-                          child: CreditCardsSummaryCard(
-                            userId: widget.userPhone,
-                            onOpen: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => CreditCardDetailsScreen(
-                                  userId: widget.userPhone,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Padding(
-                          padding: horizontalPadding,
                           child: GmailBackfillBanner(
                             userId: widget.userPhone,
                             isLinked: _isEmailLinked,
@@ -1799,32 +1767,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ),
                         const SizedBox(height: 10),
-                        Padding(
-                          padding: horizontalPadding,
-                          child: FutureBuilder<bool>(
-                            future: PremiumGate.instance.isPremium(widget.userPhone),
-                            builder: (_, snap) {
-                              final isPro = snap.data == true;
-                              if (isPro) {
-                                return const SizedBox.shrink();
-                              }
-                              return Padding(
-                                padding: const EdgeInsets.only(top: 8.0),
-                                child: Align(
-                                  alignment: Alignment.centerRight,
-                                  child: PremiumChip(
-                                    onTap: () => Navigator.pushNamed(
-                                      context,
-                                      '/premium',
-                                      arguments: widget.userPhone,
-                                    ),
-                                    label: 'Unlock deeper insights',
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
                         const SizedBox(height: 14),
                         Padding(
                           padding: horizontalPadding,
@@ -2166,45 +2108,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           border: Border.all(color: Colors.teal.withOpacity(0.25)),
         ),
         child: Text('$label • ₹${amount.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.w700)),
-      ),
-    );
-  }
-
-  Widget _kpiBadge(IconData icon, Color color, String title, String value) {
-    final w = MediaQuery.of(context).size.width;
-    final dense = w < 360;
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: dense ? 8 : 12,
-        vertical: dense ? 6 : 8,
-      ),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: Colors.white.withOpacity(0.15),
-        border: Border.all(color: Colors.white.withOpacity(0.15)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: dense ? 14 : 16),
-          SizedBox(width: dense ? 4 : 6),
-          Text(
-            "$title: ",
-            style: TextStyle(
-              fontSize: dense ? 11 : 12,
-              color: Colors.black54,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: dense ? 13 : 15,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
       ),
     );
   }
