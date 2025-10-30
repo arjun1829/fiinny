@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:provider/provider.dart';
@@ -86,7 +87,19 @@ Future<void> _boot(_StartupTracer tracer) async {
   }
 
   final welcomeSeen = await StartupPrefs.hasSeenWelcome();
-  if (welcomeSeen) {
+  var skipWelcome = welcomeSeen;
+
+  if (!skipWelcome) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null) {
+      skipWelcome = true;
+      tracer.add(
+          'Welcome flag missing but user ${currentUser.uid} already signed in → skip');
+      unawaited(StartupPrefs.markWelcomeSeen());
+    }
+  }
+
+  if (skipWelcome) {
     tracer.add('NAV → LauncherScreen (welcome skipped)');
     _DiagApp.navTo(const LauncherScreen());
   } else {

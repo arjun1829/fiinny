@@ -253,10 +253,14 @@ class _ArcPainter extends CustomPainter {
     canvas.drawArc(Rect.fromCircle(center: center, radius: r), 0, 2*math.pi, false, bg);
 
     final sweep = 2 * math.pi * value;
+    if (sweep <= 0) {
+      return;
+    }
+
     final rect = Rect.fromCircle(center: center, radius: r);
     final gradient = SweepGradient(
-      startAngle: -math.pi/2,
-      endAngle: -math.pi/2 + sweep,
+      startAngle: -math.pi / 2,
+      endAngle: -math.pi / 2 + sweep,
       colors: [colors.first, colors.last],
     );
     final fg = Paint()
@@ -265,7 +269,7 @@ class _ArcPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..shader = gradient.createShader(rect);
 
-    canvas.drawArc(rect, -math.pi/2, sweep, false, fg);
+    canvas.drawArc(rect, -math.pi / 2, sweep, false, fg);
   }
 
   @override

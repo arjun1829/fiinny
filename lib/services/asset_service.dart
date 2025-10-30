@@ -8,14 +8,36 @@ class AssetService {
   // Get all assets for a user
   // -------------------------
   Future<List<AssetModel>> getAssets(String userId) async {
-    final snap = await _collection
-        .where('userId', isEqualTo: userId)
-        .orderBy('createdAt', descending: true)
-        .get();
+    try {
+      final snap = await _collection
+          .where('userId', isEqualTo: userId)
+          .orderBy('createdAt', descending: true)
+          .get();
 
-    return snap.docs
-        .map((doc) => AssetModel.fromJson(doc.data(), doc.id))
-        .toList();
+      return snap.docs
+          .map((doc) => AssetModel.fromJson(doc.data(), doc.id))
+          .toList();
+    } on FirebaseException catch (e) {
+      final needsIndex =
+          e.code == 'failed-precondition' || (e.message?.contains('requires an index') ?? false);
+      if (!needsIndex) rethrow;
+
+      final snap = await _collection
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      final assets = snap.docs
+          .map((doc) => AssetModel.fromJson(doc.data(), doc.id))
+          .toList();
+
+      assets.sort((a, b) {
+        final aCreated = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bCreated = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bCreated.compareTo(aCreated);
+      });
+
+      return assets;
+    }
   }
 
   // -------------------------
@@ -86,15 +108,40 @@ class AssetService {
   // Get recent assets (for dashboard)
   // -------------------------
   Future<List<AssetModel>> getRecentAssets(String userId, {int limit = 5}) async {
-    final snap = await _collection
-        .where('userId', isEqualTo: userId)
-        .orderBy('createdAt', descending: true)
-        .limit(limit)
-        .get();
+    try {
+      final snap = await _collection
+          .where('userId', isEqualTo: userId)
+          .orderBy('createdAt', descending: true)
+          .limit(limit)
+          .get();
 
-    return snap.docs
-        .map((doc) => AssetModel.fromJson(doc.data(), doc.id))
-        .toList();
+      return snap.docs
+          .map((doc) => AssetModel.fromJson(doc.data(), doc.id))
+          .toList();
+    } on FirebaseException catch (e) {
+      final needsIndex =
+          e.code == 'failed-precondition' || (e.message?.contains('requires an index') ?? false);
+      if (!needsIndex) rethrow;
+
+      final snap = await _collection
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      final assets = snap.docs
+          .map((doc) => AssetModel.fromJson(doc.data(), doc.id))
+          .toList();
+
+      assets.sort((a, b) {
+        final aCreated = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bCreated = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bCreated.compareTo(aCreated);
+      });
+
+      if (assets.length > limit) {
+        return assets.sublist(0, limit);
+      }
+      return assets;
+    }
   }
 
   // -------------------------
