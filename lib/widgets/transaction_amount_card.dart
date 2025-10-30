@@ -70,7 +70,7 @@ class TransactionAmountCard extends StatelessWidget {
         elevation: 4,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -107,7 +107,7 @@ class TransactionAmountCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Text(
                 "₹${amount.toStringAsFixed(0)}",
                 style: const TextStyle(
@@ -116,10 +116,10 @@ class TransactionAmountCard extends StatelessWidget {
                   color: Colors.blueAccent,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               // --- BAR CHART ---
               SizedBox(
-                height: 52,
+                height: 48,
                 width: double.infinity,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
@@ -154,9 +154,8 @@ class TransactionAmountCard extends StatelessWidget {
                 ),
               ),
               // --- TIME LABELS ---
-              // --- TIME LABELS ---
               Padding(
-                padding: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.only(top: 2),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final totalBarWidth = barData.length * 13.0;

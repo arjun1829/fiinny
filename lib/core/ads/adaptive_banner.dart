@@ -1,6 +1,8 @@
 // lib/core/ads/adaptive_banner.dart
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../flags/remote_flags.dart';
 import 'ad_service.dart';
@@ -58,35 +60,71 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
       } else {
         size = await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(width);
       }
-    } catch (_) {
-      size = await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(width);
+    } on MissingPluginException catch (err, stack) {
+      _reportAdFailure('adaptive size (missing plugin)', err, stack);
+      return;
+    } on PlatformException catch (err, stack) {
+      _reportAdFailure('adaptive size', err, stack);
+      try {
+        size = await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(width);
+      } on Exception catch (fallbackErr, fallbackStack) {
+        _reportAdFailure('fallback adaptive size', fallbackErr, fallbackStack);
+        return;
+      }
+    } catch (err, stack) {
+      _reportAdFailure('adaptive size', err, stack);
+      return;
     }
+
     if (size == null) {
       widget.onLoadChanged?.call(false);
       return;
     }
 
-    final ad = BannerAd(
-      adUnitId: widget.adUnitId,
-      size: size,
-      request: const AdRequest(),
-      listener: BannerAdListener(
-        onAdLoaded: (_) {
-          if (!mounted) return;
-          setState(() => _loaded = true);
-          widget.onLoadChanged?.call(true);
-        },
-        onAdFailedToLoad: (_, __) {
-          if (!mounted) return;
-          setState(() => _loaded = false);
-          widget.onLoadChanged?.call(false);
-        },
-      ),
-    );
+    BannerAd? ad;
+    try {
+      ad = BannerAd(
+        adUnitId: widget.adUnitId,
+        size: size,
+        request: const AdRequest(),
+        listener: BannerAdListener(
+          onAdLoaded: (_) {
+            if (!mounted) return;
+            setState(() => _loaded = true);
+            widget.onLoadChanged?.call(true);
+          },
+          onAdFailedToLoad: (_, __) {
+            if (!mounted) return;
+            setState(() => _loaded = false);
+            widget.onLoadChanged?.call(false);
+          },
+        ),
+      );
+      await ad.load();
+    } on MissingPluginException catch (err, stack) {
+      _reportAdFailure('load banner (missing plugin)', err, stack);
+      ad?.dispose();
+      return;
+    } on PlatformException catch (err, stack) {
+      _reportAdFailure('load banner', err, stack);
+      ad?.dispose();
+      return;
+    } catch (err, stack) {
+      _reportAdFailure('load banner', err, stack);
+      ad?.dispose();
+      return;
+    }
 
-    await ad.load();
-    if (!mounted) { ad.dispose(); return; }
+    if (!mounted) {
+      ad.dispose();
+      return;
+    }
     setState(() => _ad = ad);
+  }
+
+  void _reportAdFailure(String context, Object error, StackTrace stackTrace) {
+    widget.onLoadChanged?.call(false);
+    debugPrint('[AdaptiveBanner] Failed to $context: $error\n$stackTrace');
   }
 
   @override
