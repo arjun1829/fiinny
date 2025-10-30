@@ -2,6 +2,7 @@
 import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -1186,7 +1187,7 @@ class _SparkPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SparkPainter old) => old.v != v;
+  bool shouldRepaint(covariant _SparkPainter old) => !listEquals(old.v, v);
 }
 
 // ==================================================
