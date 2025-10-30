@@ -521,14 +521,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     required List<MapEntry<String, double>> entries,
     required List<Color> palette,
     required void Function(String label) onSliceTap,
-  }) {
-    return _AnalyticsDonutCard(
-      header: _sectionHeader(title, Icons.pie_chart_rounded),
-      entries: entries,
-      palette: palette,
-      onSliceTap: onSliceTap,
-    );
-  }
+  }) => _AnalyticsDonutCard(
+        header: _sectionHeader(title, Icons.pie_chart_rounded),
+        entries: entries,
+        palette: palette,
+        onSliceTap: onSliceTap,
+      );
 
   // ---------- Top merchants as compact chips (amount + tx count) ----------
   List<Widget> _topMerchants(
