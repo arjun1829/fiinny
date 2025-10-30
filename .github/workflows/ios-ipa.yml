@@ -32,22 +32,22 @@ jobs:
       - name: Preflight signing secrets
         shell: bash
         env:
-          P12_B64: ${{ secrets.IOS_CERT_P12_BASE64 }}
-          P12_PASS: ${{ secrets.IOS_CERT_PASSWORD }}
-          PROV_B64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          P12_B64: ${{ secrets.IOS_CERT_P12_BASE64 != '' && secrets.IOS_CERT_P12_BASE64 || secrets.P12_BASE64 }}
+          P12_PASS: ${{ secrets.IOS_CERT_PASSWORD != '' && secrets.IOS_CERT_PASSWORD || secrets.P12_PASSWORD }}
+          PROV_B64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 != '' && secrets.IOS_PROVISIONING_PROFILE_BASE64 || secrets.PROVISIONING_PROFILE_BASE64 }}
         run: |
           set -euo pipefail
-          [[ -n "$P12_B64" ]] || { echo "❌ Missing IOS_CERT_P12_BASE64"; exit 1; }
-          [[ -n "$P12_PASS" ]] || { echo "❌ Missing IOS_CERT_PASSWORD"; exit 1; }
-          [[ -n "$PROV_B64" ]] || { echo "❌ Missing IOS_PROVISIONING_PROFILE_BASE64"; exit 1; }
-          echo "✅ Secrets present (not printing values)."
+          [[ -n "$P12_B64" ]] || { echo "❌ Missing p12 base64 (IOS_CERT_P12_BASE64 or P12_BASE64)"; exit 1; }
+          [[ -n "$P12_PASS" ]] || { echo "❌ Missing p12 password (IOS_CERT_PASSWORD or P12_PASSWORD)"; exit 1; }
+          [[ -n "$PROV_B64" ]] || { echo "❌ Missing provisioning profile (IOS_PROVISIONING_PROFILE_BASE64 or PROVISIONING_PROFILE_BASE64)"; exit 1; }
+          echo "✅ Secrets present (masked)."
 
       - name: Install signing assets (safe)
         shell: bash
         env:
-          P12_B64: ${{ secrets.IOS_CERT_P12_BASE64 }}
-          P12_PASS: ${{ secrets.IOS_CERT_PASSWORD }}
-          PROV_B64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          P12_B64: ${{ secrets.IOS_CERT_P12_BASE64 != '' && secrets.IOS_CERT_P12_BASE64 || secrets.P12_BASE64 }}
+          P12_PASS: ${{ secrets.IOS_CERT_PASSWORD != '' && secrets.IOS_CERT_PASSWORD || secrets.P12_PASSWORD }}
+          PROV_B64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 != '' && secrets.IOS_PROVISIONING_PROFILE_BASE64 || secrets.PROVISIONING_PROFILE_BASE64 }}
         run: |
           set -euxo pipefail
           CERT="$RUNNER_TEMP/signing.p12"
@@ -93,17 +93,21 @@ jobs:
 
       - name: Prepare App Store Connect key
         shell: bash
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID != '' && secrets.ASC_KEY_ID || secrets.APPLE_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID != '' && secrets.ASC_ISSUER_ID || secrets.APPLE_ISSUER_ID }}
+          ASC_PRIVATE_KEY_BASE64: ${{ secrets.ASC_PRIVATE_KEY_BASE64 != '' && secrets.ASC_PRIVATE_KEY_BASE64 || secrets.APPLE_API_KEY_BASE64 }}
         run: |
           set -euxo pipefail
           mkdir -p ~/.appstoreconnect/private_keys
-          echo "${{ secrets.ASC_PRIVATE_KEY_BASE64 }}" | base64 --decode > ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+          echo -n "$ASC_PRIVATE_KEY_BASE64" | base64 -D > ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
           ls -l ~/.appstoreconnect/private_keys
 
       - name: Upload to TestFlight (App Store Connect)
         shell: bash
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID != '' && secrets.ASC_KEY_ID || secrets.APPLE_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID != '' && secrets.ASC_ISSUER_ID || secrets.APPLE_ISSUER_ID }}
         run: |
           set -euxo pipefail
           IPA="build/ios/ipa/Runner.ipa"
