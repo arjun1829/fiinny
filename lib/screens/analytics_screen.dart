@@ -1,4 +1,7 @@
 // lib/screens/analytics_screen.dart
+import 'dart:math' as math;
+
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -960,13 +963,79 @@ class _AnalyticsDonutCardState extends State<_AnalyticsDonutCard> {
           widget.header,
           const SizedBox(height: 8),
           Center(
-            child: DonutChartSimple(
-              data: donutData,
-              size: 210,
-              thickness: 22,
-              palette: widget.palette,
-              selectedIndex: selectedIndex,
-              onSliceTap: (index, slice) => _handleSliceTap(index, slice),
+            child: SizedBox(
+              width: 210,
+              height: 210,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final size = math.min(constraints.maxWidth, constraints.maxHeight);
+                  final outerRadius = size / 2 - 8;
+                  const ringThickness = 22.0;
+                  final centerSpace = (outerRadius - ringThickness).clamp(0.0, outerRadius);
+
+                  final sections = <PieChartSectionData>[];
+                  for (int i = 0; i < donutData.length; i++) {
+                    final slice = donutData[i];
+                    final color = widget.palette[i % widget.palette.length];
+                    final isSelected = selectedIndex == i;
+                    sections.add(
+                      PieChartSectionData(
+                        value: slice.value,
+                        color: color,
+                        title: '',
+                        radius: outerRadius + (isSelected ? 6 : 0),
+                        showTitle: false,
+                      ),
+                    );
+                  }
+
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      PieChart(
+                        PieChartData(
+                          sections: sections,
+                          sectionsSpace: 2,
+                          startDegreeOffset: -90,
+                          centerSpaceRadius: centerSpace,
+                          borderData: FlBorderData(show: false),
+                          pieTouchData: PieTouchData(
+                            touchCallback: (event, response) {
+                              if (!event.isInterestedForInteractions || response == null || response.touchedSection == null) {
+                                if (_selected != null) {
+                                  setState(() => _selected = null);
+                                }
+                                return;
+                              }
+
+                              final index = response.touchedSection!.touchedSectionIndex;
+                              if (index == null || index < 0 || index >= donutData.length) {
+                                return;
+                              }
+                              _handleSliceTap(index, donutData[index]);
+                            },
+                          ),
+                        ),
+                        swapAnimationDuration: const Duration(milliseconds: 400),
+                        swapAnimationCurve: Curves.easeOutCubic,
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            INR.c(total),
+                            style: Fx.number.copyWith(fontSize: 16),
+                          ),
+                          Text(
+                            'total',
+                            style: Fx.label.copyWith(fontSize: 11, color: Fx.text.withOpacity(.70)),
+                          ),
+                        ],
+                      )
+                    ],
+                  );
+                },
+              ),
             ),
           ),
           const SizedBox(height: 12),
