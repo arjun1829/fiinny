@@ -64,7 +64,7 @@ android {
     }
 
     signingConfigs {
-        if (keystoreProperties.isNotEmpty) {
+        if (keystoreProperties.isNotEmpty()) {
             create("release") {
                 val storeFilePath = keystoreProperties["storeFile"] as String?
                     ?: throw GradleException("storeFile missing from key.properties")
