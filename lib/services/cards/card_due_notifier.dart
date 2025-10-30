@@ -50,6 +50,26 @@ class CardDueNotifier {
         );
       }
 
+      final statementDate = cycle.statementDate;
+      if (statementDate.isAfter(now)) {
+        final statementKey = _notifId('${card.id}_${cycle.id}_STATEMENT');
+        final statementTime = DateTime(
+          statementDate.year,
+          statementDate.month,
+          statementDate.day,
+          9,
+        );
+        await _notifs.cancel(statementKey);
+        await _notifs.scheduleAt(
+          id: statementKey,
+          title: '${card.bankName} statement ready',
+          body:
+              'Statement for ${card.bankName} • ${card.last4Digits} is ready. Bill due ${_formatDate(cycle.dueDate)}.',
+          when: statementTime,
+          payload: 'card:${card.id}|cycle:${cycle.id}|statement',
+        );
+      }
+
       if (now.isAfter(cycle.dueDate)) {
         for (var k = 1; k <= 3; k++) {
           final date = DateTime.now().add(Duration(days: k));
@@ -74,6 +94,7 @@ class CardDueNotifier {
       '${cardId}_${cycleId}_D7',
       '${cardId}_${cycleId}_D3',
       '${cardId}_${cycleId}_D1',
+      '${cardId}_${cycleId}_STATEMENT',
       '${cardId}_${cycleId}_OVERDUE_1',
       '${cardId}_${cycleId}_OVERDUE_2',
       '${cardId}_${cycleId}_OVERDUE_3',
