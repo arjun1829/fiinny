@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:ui';
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -87,6 +88,8 @@ import '../core/ads/ad_service.dart';
 import '../core/notifications/local_notifications.dart'
     show SystemRecurringLocalScheduler;
 
+import '../services/sms/sms_permission_helper.dart';
+
 
 // --- Helper getters for dynamic model ---
 DateTime getTxDate(dynamic tx) =>
@@ -161,6 +164,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   int _activeSips = 0;
   int _cardsDue = 0;
   int _autopayCount = 0; // derived from current period
+  bool? _hasSmsPermission = SmsPermissionHelper.lastKnownStatus;
+  bool _requestingSmsPermission = false;
+
+  bool get _isAndroidPlatform => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  bool get _showSmsPermissionBanner => _isAndroidPlatform && (_hasSmsPermission == false);
 
   Widget _buildDashboardAdCard() {
     return AdsBannerCard(
@@ -219,10 +227,129 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  void _onSmsPermissionStatusChanged() {
+    if (!_isAndroidPlatform || !mounted) return;
+    setState(() {
+      _hasSmsPermission = SmsPermissionHelper.permissionStatus.value;
+    });
+  }
+
+  Future<void> _updateSmsPermission({required bool requestPrompt}) async {
+    if (!_isAndroidPlatform || _requestingSmsPermission) return;
+
+    setState(() => _requestingSmsPermission = true);
+    final bool granted = requestPrompt
+        ? await SmsPermissionHelper.ensurePermissions()
+        : await SmsPermissionHelper.hasPermissions();
+
+    if (!mounted) return;
+
+    setState(() => _requestingSmsPermission = false);
+
+    if (granted) {
+      SyncCoordinator.instance.onAppStop();
+      await SyncCoordinator.instance.onAppStart(widget.userPhone);
+      if (mounted) {
+        SnackThrottle.show(context, 'SMS sync enabled!', color: Colors.green);
+      }
+    } else if (requestPrompt) {
+      SnackThrottle.show(
+        context,
+        'Please allow SMS access so we can keep your spends up to date.',
+        color: Colors.orange,
+      );
+    } else {
+      SnackThrottle.show(
+        context,
+        'SMS permission is still disabled. Enable it from Settings to sync messages.',
+        color: Colors.orange,
+      );
+    }
+  }
+
+  Widget _buildSmsPermissionBanner() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14000000),
+              blurRadius: 16,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.sms_failed_outlined, color: Colors.red.shade400, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Turn on SMS sync',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Fx.mintDark,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Allow SMS access so we can automatically read bank alerts and keep your dashboard fresh.',
+              style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed:
+                    _requestingSmsPermission ? null : () => _updateSmsPermission(requestPrompt: true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Fx.mintDark,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: _requestingSmsPermission
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+                      )
+                    : const Text('Enable SMS sync'),
+              ),
+            ),
+            TextButton(
+              onPressed:
+                  _requestingSmsPermission ? null : () => _updateSmsPermission(requestPrompt: false),
+              child: const Text('Already enabled? Refresh status'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    SmsPermissionHelper.permissionStatus.addListener(_onSmsPermissionStatusChanged);
+    if (_isAndroidPlatform) {
+      _hasSmsPermission = SmsPermissionHelper.permissionStatus.value ?? SmsPermissionHelper.lastKnownStatus;
+    } else {
+      _hasSmsPermission = null;
+    }
     _ringShineController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
@@ -263,6 +390,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _sipsSub?.cancel();
     _cardsSub?.cancel();
     _ringShineController.dispose();
+    SmsPermissionHelper.permissionStatus.removeListener(_onSmsPermissionStatusChanged);
     super.dispose();
   }
 
@@ -1950,6 +2078,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ]),
                     ),
                   ),
+                  if (_showSmsPermissionBanner)
+                    SliverToBoxAdapter(
+                      child: _buildSmsPermissionBanner(),
+                    ),
                 ],
               ),
             ),
