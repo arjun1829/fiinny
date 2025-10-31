@@ -540,6 +540,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               ),
               const SizedBox(height: 8),
               Expanded(child: _trendChartWithAxis(series, safeLabels)),
+              Expanded(
+                child: BarChartSimple(
+                  data: List.generate(series.length,
+                      (i) => SeriesPoint(safeLabels[i], series[i])),
+                  showGrid: true,
+                  yTickCount: 5,
+                  targetXTicks: 7,
+                  showValues: false,
+                  showYLabels: true,
+                ),
+              ),
             ],
           ),
         ),
