@@ -115,7 +115,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     final seriesKey = '$_rev|$_period|series|${_custom?.start}-${_custom?.end}';
     final series = _seriesCache[seriesKey] ??=
-        AnalyticsAgg.amountSeries(_period, exp, inc, now, custom: _custom);
+        AnalyticsAgg.amountSeries(_period, exp, inc, now, _custom);
 
     // Robust category rollups (smart resolvers)
     final catKey = '$_rev|$_period|expCat|${_custom?.start}-${_custom?.end}';
