@@ -15,7 +15,7 @@ import '../services/income_service.dart';
 import '../themes/glass_card.dart';
 import '../themes/tokens.dart';
 import '../widgets/charts/bar_chart_simple.dart';
-import '../widgets/charts/donut_chart_simple.dart';
+import '../widgets/charts/pie_chart_glossy.dart';
 import '../widgets/unified_transaction_list.dart';
 import 'edit_expense_screen.dart';
 
@@ -136,6 +136,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     // Sparkline series reacts to the current filter/period
     final spark = _sparkForPeriod(_period, exp, now, custom: _custom);
+    final sparkLabels =
+        _sparkLabelsForPeriod(_period, spark, now, custom: _custom);
 
     // Calendar heatmap uses current month overview (tap -> set custom day)
     final calData = _monthExpenseMap(_allExp, now);
@@ -175,6 +177,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           title: _period == Period.custom
                               ? 'Trend • Custom'
                               : 'Trend • ${_period.name.toUpperCase()}',
+                          labels: sparkLabels,
                         ),
                       ),
 
@@ -410,72 +413,64 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return GlassCard(
       radius: Fx.r24,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Left: numbers & counts
-          Expanded(
-            flex: 2,
+          Text('Overview', style: Fx.title),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _statRow('Total Income', INR.f(income), Fx.good,
+                    Icons.south_west_rounded),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _statRow('Total Expense', INR.f(expense), Fx.bad,
+                    Icons.north_east_rounded),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.brightness_1_rounded, size: 10, color: Fx.warn),
+              const SizedBox(width: 6),
+              Text('Total Savings  ', style: Fx.label),
+              Text(INR.f(savings),
+                  style: Fx.number.copyWith(color: Fx.text)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Tx ${NumberFormat.decimalPattern().format(txCount)} '
+            '• Exp # ${NumberFormat.decimalPattern().format(expCount)} '
+            '• Inc # ${NumberFormat.decimalPattern().format(incCount)}',
+            style: Fx.label.copyWith(color: Fx.text.withOpacity(.85)),
+          ),
+          const SizedBox(height: 14),
+          GestureDetector(
+            onTap: onTapSpark,
+            behavior: HitTestBehavior.opaque,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Overview', style: Fx.title),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _statRow('Total Income', INR.f(income), Fx.good,
-                          Icons.south_west_rounded),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _statRow('Total Expense', INR.f(expense), Fx.bad,
-                          Icons.north_east_rounded),
-                    ),
-                  ],
+                SizedBox(
+                  height: 66,
+                  child: _SparklineSimple(values: spark),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(Icons.brightness_1_rounded,
-                        size: 10, color: Fx.warn),
-                    const SizedBox(width: 6),
-                    Text('Total Savings  ', style: Fx.label),
-                    Text(INR.f(savings),
-                        style: Fx.number.copyWith(color: Fx.text)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Tx ${NumberFormat.decimalPattern().format(txCount)} '
-                  '• Exp # ${NumberFormat.decimalPattern().format(expCount)} '
-                  '• Inc # ${NumberFormat.decimalPattern().format(incCount)}',
-                  style: Fx.label.copyWith(color: Fx.text.withOpacity(.85)),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    'Tap graph to expand',
+                    style: Fx.label.copyWith(
+                      fontSize: 11,
+                      color: Fx.text.withOpacity(.75),
+                    ),
+                  ),
                 ),
               ],
-            ),
-          ),
-
-          // Right: sparkline (tappable)
-          Expanded(
-            flex: 1,
-            child: GestureDetector(
-              onTap: onTapSpark,
-              behavior: HitTestBehavior.opaque,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  SizedBox(
-                      width: 120,
-                      height: 60,
-                      child: _SparklineSimple(values: spark)),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Tap graph to expand',
-                    style: Fx.label
-                        .copyWith(fontSize: 11, color: Fx.text.withOpacity(.75)),
-                  ),
-                ],
-              ),
             ),
           ),
         ],
@@ -502,7 +497,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   // ---------- Trend popup (axes/grid using BarChartSimple) ----------
-  void _showTrendPopup(List<double> series, {required String title}) {
+  void _showTrendPopup(
+    List<double> series, {
+    required String title,
+    List<String>? labels,
+  }) {
+    final safeLabels = (labels != null && labels.length == series.length)
+        ? labels
+        : List.generate(series.length, (i) => '${i + 1}');
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -531,12 +533,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               const SizedBox(height: 8),
               Expanded(
                 child: BarChartSimple(
-                  data: List.generate(
-                      series.length, (i) => SeriesPoint('${i + 1}', series[i])),
+                  data: List.generate(series.length,
+                      (i) => SeriesPoint(safeLabels[i], series[i])),
                   showGrid: true,
                   yTickCount: 5,
                   targetXTicks: 7,
                   showValues: false,
+                  showYLabels: true,
                 ),
               ),
             ],
@@ -661,7 +664,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  // keep legend colors in sync with DonutChartSimple painter palette
+  // keep legend colors in sync with PieChartGlossy painter palette
   List<Color> _legendPalette() => const [
         Fx.mintDark,
         Fx.good,
@@ -771,6 +774,71 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   // ---------- Helpers for sparkline & calendar ----------
+  List<String> _sparkLabelsForPeriod(
+    Period p,
+    List<double> data,
+    DateTime now, {
+    CustomRange? custom,
+  }) {
+    if (data.isEmpty) return const [];
+
+    final shortMonth = DateFormat('MMM');
+    final shortDay = DateFormat('d MMM');
+
+    switch (p) {
+      case Period.day:
+        return List<String>.generate(
+          data.length,
+          (i) => '${i.toString().padLeft(2, '0')}h',
+        );
+      case Period.week:
+        const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        return List<String>.generate(
+          data.length,
+          (i) => names[i % names.length],
+        );
+      case Period.month:
+        return List<String>.generate(
+          data.length,
+          (i) => '${i + 1}',
+        );
+      case Period.quarter:
+        final qStartMonth = ((now.month - 1) ~/ 3) * 3 + 1;
+        return List<String>.generate(data.length, (i) {
+          final monthDate = DateTime(now.year, qStartMonth + i, 1);
+          return shortMonth.format(monthDate);
+        });
+      case Period.year:
+        return List<String>.generate(data.length, (i) {
+          final monthDate = DateTime(now.year, i + 1, 1);
+          return shortMonth.format(monthDate);
+        });
+      case Period.last2:
+        return [
+          shortDay.format(now.subtract(const Duration(days: 1))),
+          shortDay.format(now),
+        ];
+      case Period.last5:
+        return List<String>.generate(data.length, (i) {
+          final target = now.subtract(Duration(days: data.length - 1 - i));
+          return shortDay.format(target);
+        });
+      case Period.all:
+        return List<String>.generate(data.length, (i) {
+          final monthDate = DateTime(now.year, i + 1, 1);
+          return shortMonth.format(monthDate);
+        });
+      case Period.custom:
+        if (custom == null) {
+          return List<String>.generate(data.length, (i) => '${i + 1}');
+        }
+        return List<String>.generate(data.length, (i) {
+          final day = custom.start.add(Duration(days: i));
+          return shortDay.format(day);
+        });
+    }
+  }
+
   List<double> _sparkForPeriod(Period p, List<ExpenseItem> exp, DateTime now,
       {CustomRange? custom}) {
     switch (p) {
@@ -1053,10 +1121,9 @@ class _AnalyticsDonutCardState extends State<_AnalyticsDonutCard> {
             child: SizedBox(
               width: 210,
               height: 210,
-              child: DonutChartSimple(
+              child: PieChartGlossy(
                 data: donutData,
                 size: 210,
-                thickness: 22,
                 showCenter: true,
                 palette: widget.palette,
                 selectedIndex: selectedIndex,
