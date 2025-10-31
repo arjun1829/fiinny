@@ -38,13 +38,13 @@ class BarChartSimple extends StatelessWidget {
 
   // ---------------- NEW (optional) ----------------
 
-  /// If provided, use this as chart max (helpful to align multiple charts)
+  /// If provided, use this as chart max (helpful to align multiple charts).
   final double? maxYOverride;
 
   /// Show Y-axis labels on the left (uses nice scaling). Requires [showGrid]=true for best look.
   final bool showYLabels;
 
-  /// Format Y labels. Defaults to compact INR-style if null.
+  /// Optional override for formatting Y labels (used when [showYLabels] is true).
   final String Function(double value)? yLabelFormatter;
 
   /// Fraction of each bar column to occupy (0.1 .. 1.0). 0.66 looks neat.
@@ -93,7 +93,8 @@ class BarChartSimple extends StatelessWidget {
     final baseMaxY = hasOverride ? maxYOverride!.abs() : rawMax;
 
     // Nice scale for grid/labels
-    final _NiceScale scale = _niceScale(baseMaxY, math.max(2, yTickCount));
+    final int effectiveYTicks = math.max(1, yTickCount);
+    final _NiceScale scale = _niceScale(baseMaxY, math.max(2, effectiveYTicks));
     final maxY = hasOverride ? baseMaxY : scale.niceMax; // use nice max unless caller fixed
 
     return SizedBox(
@@ -106,7 +107,7 @@ class BarChartSimple extends StatelessWidget {
             const double xLabelSpace = 24.0;
 
             // Reserve left gutter if we draw Y labels
-            final double yLabelGutter = showYLabels ? 44.0 : 0.0;
+            final double yLabelGutter = (showYLabels && effectiveYTicks > 0) ? 44.0 : 0.0;
 
             final double drawH = (c.maxHeight - xLabelSpace).clamp(0.0, double.infinity);
 
@@ -133,7 +134,7 @@ class BarChartSimple extends StatelessWidget {
                     bottom: xLabelSpace,
                     child: CustomPaint(
                       painter: _GridPainter(
-                        bands: yTickCount,
+                        bands: effectiveYTicks,
                         color: Fx.mintDark.withOpacity(.10),
                         strokeWidth: 1,
                       ),
@@ -141,11 +142,11 @@ class BarChartSimple extends StatelessWidget {
                   ),
 
                 // Optional Y labels
-                if (showYLabels && yTickCount > 0)
-                  ...List.generate(yTickCount + 1, (i) {
-                    final t = i / yTickCount; // 0..1
+                if (showYLabels && effectiveYTicks > 0)
+                  ...List.generate(effectiveYTicks + 1, (i) {
+                    final t = i / effectiveYTicks; // 0..1
                     final y = (drawH) - (drawH * t);
-                    final value = hasOverride ? (maxY / yTickCount) * i : scale.tick * i;
+                    final value = hasOverride ? (maxY / effectiveYTicks) * i : scale.tick * i;
                     return Positioned(
                       left: 0,
                       top: y - 8, // small vertical center
