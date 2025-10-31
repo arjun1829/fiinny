@@ -75,6 +75,11 @@ class _LauncherScreenState extends State<LauncherScreen> {
       return;
     }
 
+    if (!_welcomeSeen) {
+      _welcomeSeen = true;
+      unawaited(StartupPrefs.markWelcomeSeen());
+    }
+
     // small delay for smoother splash when we already have a session
     await Future.delayed(const Duration(milliseconds: 150));
 
@@ -146,8 +151,9 @@ class _LauncherScreenState extends State<LauncherScreen> {
   void _startWatchdog() {
     _watchdog = Timer(const Duration(seconds: 3), () {
       if (!_navigated && mounted) {
-        if (_welcomeSeen) {
-          debugPrint('[Launcher] Watchdog skip (welcome already seen)');
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (_welcomeSeen || currentUser != null) {
+          debugPrint('[Launcher] Watchdog skip (session ready)');
           FirstSurfaceGate.markReady();
         } else {
           debugPrint('[Launcher] Watchdog fired → WelcomeScreen');

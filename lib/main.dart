@@ -13,8 +13,6 @@ import 'routes.dart';
 import 'core/ads/ad_service.dart';
 import 'core/ads/ads_shell.dart';
 
-// First visible screen (keep as our current entry)
-import 'screens/welcome_screen.dart';
 import 'screens/launcher_screen.dart';
 import 'themes/theme_provider.dart';
 import 'services/startup_prefs.dart';
@@ -99,13 +97,10 @@ Future<void> _boot(_StartupTracer tracer) async {
     }
   }
 
-  if (skipWelcome) {
-    tracer.add('NAV → LauncherScreen (welcome skipped)');
-    _DiagApp.navTo(const LauncherScreen());
-  } else {
-    tracer.add('NAV → WelcomeScreen');
-    _DiagApp.navTo(const WelcomeScreen());
-  }
+  tracer.add(skipWelcome
+      ? 'NAV → LauncherScreen (welcome skipped)'
+      : 'NAV → LauncherScreen (welcome pending)');
+  _DiagApp.navTo(const LauncherScreen());
   tracer.add('BOOT done (UI visible)');
 }
 
