@@ -200,60 +200,57 @@ class _PiePainter extends CustomPainter {
       final isSelected = (selectedIndex != null && i == selectedIndex);
       final fillColor = _tint(base, isSelected ? .12 : .0);
 
-      final path = Path()
-        ..moveTo(center.dx, center.dy)
-        ..arcTo(rect, arc.start, arc.sweep, false)
-        ..close();
-
       final paint = Paint()
         ..isAntiAlias = true
         ..style = PaintingStyle.fill
         ..color = fillColor;
 
-      canvas.drawPath(path, paint);
+      canvas.drawArc(rect, arc.start, arc.sweep, true, paint);
 
-      if (isSelected) {
-        final outline = Paint()
-          ..isAntiAlias = true
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 3
-          ..color = Colors.white.withOpacity(.85);
-        canvas.drawPath(path, outline);
-      }
+      final border = Paint()
+        ..isAntiAlias = true
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = isSelected ? 3 : 1.2
+        ..color = Colors.white.withOpacity(isSelected ? .9 : .65);
+      canvas.drawArc(rect, arc.start, arc.sweep, true, border);
     }
+
+    final clipPath = Path()..addOval(rect);
 
     // Add glossy overlay on the top half of the pie.
     final glossPaint = Paint()
       ..isAntiAlias = true
+      ..style = PaintingStyle.fill
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          Colors.white.withOpacity(.48),
+          Colors.white.withOpacity(.32),
           Colors.white.withOpacity(.08),
           Colors.transparent,
         ],
         stops: const [0.0, 0.45, 1.0],
-      ).createShader(rect)
-      ..blendMode = BlendMode.softLight;
-    canvas.saveLayer(rect, Paint());
-    canvas.drawPath(Path()..addOval(rect), glossPaint);
+      ).createShader(rect);
+    canvas.save();
+    canvas.clipPath(clipPath);
+    canvas.drawRect(rect, glossPaint);
     canvas.restore();
 
     final sparklePaint = Paint()
       ..isAntiAlias = true
+      ..style = PaintingStyle.fill
       ..shader = RadialGradient(
         center: const Alignment(0, -0.65),
         radius: 0.6,
         colors: [
-          Colors.white.withOpacity(.22),
-          Colors.white.withOpacity(.08),
+          Colors.white.withOpacity(.18),
+          Colors.white.withOpacity(.06),
           Colors.transparent,
         ],
-      ).createShader(rect)
-      ..blendMode = BlendMode.lighten;
-    canvas.saveLayer(rect, Paint());
-    canvas.drawPath(Path()..addOval(rect), sparklePaint);
+      ).createShader(rect);
+    canvas.save();
+    canvas.clipPath(clipPath);
+    canvas.drawRect(rect, sparklePaint);
     canvas.restore();
   }
 
