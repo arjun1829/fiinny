@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 class TransactionCountCard extends StatelessWidget {
+  final String label;
   final int count;
   final List<int> barData;
   final String period; // e.g. "D", "W", "M", "Y", or filter label
@@ -10,6 +11,7 @@ class TransactionCountCard extends StatelessWidget {
 
   const TransactionCountCard({
     Key? key,
+    this.label = 'Transaction Count',
     required this.count,
     required this.barData,
     required this.period,
@@ -76,9 +78,9 @@ class TransactionCountCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // --- LABEL ---
-              const Text(
-                'Transaction Count',
-                style: TextStyle(
+              Text(
+                label,
+                style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
                   color: Color(0xFF09857a),
@@ -103,7 +105,7 @@ class TransactionCountCard extends StatelessWidget {
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.teal.withOpacity(0.13),
+                        color: Colors.blue.withOpacity(0.13),
                       ),
                       child: const Icon(Icons.filter_list_rounded, color: Color(0xFF09857a), size: 19),
                     ),
@@ -122,19 +124,17 @@ class TransactionCountCard extends StatelessWidget {
                     ),
                   ),
                 ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               // --- BIG COUNT ---
-              Center(
-                child: Text(
-                  count.toString(),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 27,
-                    color: Colors.black87,
-                  ),
+              Text(
+                count.toString(),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 27,
+                  color: Colors.blueAccent,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               // --- BAR CHART (SCROLLABLE) ---
               SizedBox(
                 height: 52,
@@ -160,7 +160,7 @@ class TransactionCountCard extends StatelessWidget {
                               margin: const EdgeInsets.symmetric(horizontal: 0.5),
                               height: barHeight,
                               decoration: BoxDecoration(
-                                color: barHeight > 0 ? Colors.teal[400] : Colors.teal[100],
+                                color: barHeight > 0 ? Colors.blue[400] : Colors.blue[100],
                                 borderRadius: BorderRadius.circular(4),
                               ),
                             );
@@ -173,7 +173,7 @@ class TransactionCountCard extends StatelessWidget {
               ),
               // --- TIME LABELS (SCROLLABLE) ---
               Padding(
-                padding: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.only(top: 2),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final totalBarWidth = barData.length * 13.0;
@@ -193,17 +193,17 @@ class TransactionCountCard extends StatelessWidget {
                               alignment: Alignment.center,
                               child: label.isNotEmpty
                                   ? Text(
-                                label,
-                                style: TextStyle(
-                                  color: Colors.teal[700],
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w500,
-                                  height: 1.0,
-                                ),
-                                textAlign: TextAlign.center,
-                                overflow: TextOverflow.visible,
-                                softWrap: false,
-                              )
+                                      label,
+                                      style: TextStyle(
+                                        color: Colors.blue[700],
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.0,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      overflow: TextOverflow.visible,
+                                      softWrap: false,
+                                    )
                                   : const SizedBox.shrink(),
                             );
                           }),
