@@ -1,14 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.KaranArjunTechnologies.lifemap">
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.KaranArjunTechnologies.lifemap"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+    <uses-sdk
+        android:minSdkVersion="21"
+        android:targetSdkVersion="34" />
 
     <!-- Contacts (existing) -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.WRITE_CONTACTS" />
 
-    <!-- SMS ingestion -->
-    <uses-permission android:name="android.permission.READ_SMS" />
-    <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
 
     <!-- Storage (scoped for <=32) -->
     <uses-permission
@@ -28,10 +34,11 @@
 
     <application
         android:label="Fiinny"
-        android:name="${applicationName}"
+        android:name="io.flutter.embedding.android.FlutterApplication"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
-        android:networkSecurityConfig="@xml/network_security_config">
+        android:networkSecurityConfig="@xml/network_security_config"
+        tools:targetApi="24">
 
         <!-- Google Mobile Ads SDK App ID -->
         <meta-data
