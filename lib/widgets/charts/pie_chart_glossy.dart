@@ -1,7 +1,8 @@
-// lib/widgets/charts/donut_chart_simple.dart
+// lib/widgets/charts/pie_chart_glossy.dart
 import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // listEquals
 
 import '../../core/formatters/inr.dart';
 import '../../themes/tokens.dart';
@@ -12,21 +13,19 @@ class DonutSlice {
   const DonutSlice(this.label, this.value);
 }
 
-/// Simple donut with optional slice tap + selected highlight.
-class DonutChartSimple extends StatelessWidget {
+/// Radial pie chart with tap interaction + subtle glossy highlight.
+class PieChartGlossy extends StatelessWidget {
   final List<DonutSlice> data;
   final double size;
-  final double thickness;
   final bool showCenter;
   final List<Color>? palette;
   final int? selectedIndex;
   final void Function(int index, DonutSlice slice)? onSliceTap;
 
-  const DonutChartSimple({
+  const PieChartGlossy({
     super.key,
     required this.data,
-    this.size = 160,
-    this.thickness = 18,
+    this.size = 200,
     this.showCenter = true,
     this.palette,
     this.selectedIndex,
@@ -42,7 +41,6 @@ class DonutChartSimple extends StatelessWidget {
     final total = slices.fold<double>(0, (a, b) => a + b.value);
 
     if (!total.isFinite || total <= 0 || slices.isEmpty) {
-      // Ensure fallback is ALWAYS readable
       final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
             fontWeight: FontWeight.w600,
             color: Fx.text.withOpacity(.8),
@@ -69,7 +67,6 @@ class DonutChartSimple extends StatelessWidget {
           Colors.brown,
         ];
 
-    // Pre-calc values list so painter can deep-compare for repaints
     final values = List<double>.unmodifiable(slices.map((e) => e.value));
 
     return SizedBox(
@@ -83,11 +80,10 @@ class DonutChartSimple extends StatelessWidget {
                 final local = details.localPosition;
                 final center = Offset(size / 2, size / 2);
                 final rOuter = math.min(size, size) / 2;
-                final rInner = rOuter - thickness;
 
                 final v = local - center;
                 final dist = v.distance;
-                if (dist < rInner || dist > rOuter) return;
+                if (dist > rOuter) return;
 
                 double ang = math.atan2(v.dy, v.dx);
                 ang = (ang + 2 * math.pi) % (2 * math.pi);
@@ -108,24 +104,38 @@ class DonutChartSimple extends StatelessWidget {
           alignment: Alignment.center,
           children: [
             CustomPaint(
-              painter: _DonutPainter(
+              painter: _PiePainter(
                 arcs: arcs,
-                thickness: thickness,
                 colors: colors,
                 selectedIndex: selectedIndex,
-                values: values, // <- for shouldRepaint
+                values: values,
               ),
             ),
             if (showCenter)
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(INR.c(total), style: Fx.number.copyWith(fontSize: 16)),
-                  Text(
-                    'total',
-                    style: Fx.label.copyWith(fontSize: 11, color: Fx.text.withOpacity(.70)),
-                  ),
-                ],
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.white.withOpacity(.72),
+                  boxShadow: const [
+                    BoxShadow(
+                      blurRadius: 12,
+                      color: Colors.black26,
+                      offset: Offset(0, 4),
+                    )
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(INR.c(total), style: Fx.number.copyWith(fontSize: 16)),
+                    Text(
+                      'total',
+                      style:
+                          Fx.label.copyWith(fontSize: 11, color: Fx.text.withOpacity(.70)),
+                    ),
+                  ],
+                ),
               ),
           ],
         ),
@@ -133,11 +143,9 @@ class DonutChartSimple extends StatelessWidget {
     );
   }
 
-  /// Compute arcs with a minimum visible sweep; then normalize to <= 360° total.
   List<_Arc> _computeArcsNormalized(List<DonutSlice> data, double total, double minFrac) {
     final minSweep = 2 * math.pi * minFrac;
 
-    // 1) initial sweeps with minimum enforced
     final sweeps = <double>[];
     for (final s in data) {
       var sw = 2 * math.pi * (s.value / total);
@@ -145,11 +153,9 @@ class DonutChartSimple extends StatelessWidget {
       sweeps.add(sw);
     }
 
-    // 2) normalize if overshoot
     final sum = sweeps.fold<double>(0, (a, b) => a + b);
     final scale = sum > 2 * math.pi ? (2 * math.pi) / sum : 1.0;
 
-    // 3) build arcs from -90°
     double start = -math.pi / 2;
     final arcs = <_Arc>[];
     for (final sw in sweeps) {
@@ -167,70 +173,108 @@ class _Arc {
   const _Arc({required this.start, required this.sweep});
 }
 
-class _DonutPainter extends CustomPainter {
+class _PiePainter extends CustomPainter {
   final List<_Arc> arcs;
-  final double thickness;
   final List<Color> colors;
   final int? selectedIndex;
-  final List<double> values; // deep compare hook
+  final List<double> values;
 
-  const _DonutPainter({
+  const _PiePainter({
     required this.arcs,
-    required this.thickness,
     required this.colors,
     required this.selectedIndex,
     required this.values,
   });
 
   @override
-  void paint(Canvas c, Size s) {
-    final center = s.center(Offset.zero);
-    final rOuter = math.min(s.width, s.height) / 2;
-
-    // Slightly stronger bg track so it’s visible on light cards
-    final bg = Paint()
-      ..isAntiAlias = true
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = thickness
-      ..color = Colors.black.withOpacity(.12);
-    c.drawCircle(center, rOuter - thickness / 2, bg);
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = math.min(size.width, size.height) / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
 
     for (int i = 0; i < arcs.length; i++) {
       final arc = arcs[i];
       if (arc.sweep <= 0) continue;
 
-      final isSel = (selectedIndex != null && i == selectedIndex);
-      final p = Paint()
-        ..isAntiAlias = true
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeWidth = isSel ? thickness + 6 : thickness
-        ..color = colors[i % colors.length].withOpacity(isSel ? 1.0 : .95);
+      final base = colors[i % colors.length];
+      final isSelected = (selectedIndex != null && i == selectedIndex);
+      final fillColor = _tint(base, isSelected ? .12 : .0);
 
-      c.drawArc(
-        Rect.fromCircle(center: center, radius: rOuter - thickness / 2),
-        arc.start,
-        arc.sweep,
-        false,
-        p,
-      );
+      final path = Path()
+        ..moveTo(center.dx, center.dy)
+        ..arcTo(rect, arc.start, arc.sweep, false)
+        ..close();
+
+      final paint = Paint()
+        ..isAntiAlias = true
+        ..style = PaintingStyle.fill
+        ..color = fillColor;
+
+      canvas.drawPath(path, paint);
+
+      if (isSelected) {
+        final outline = Paint()
+          ..isAntiAlias = true
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..color = Colors.white.withOpacity(.85);
+        canvas.drawPath(path, outline);
+      }
     }
+
+    // Add glossy overlay on the top half of the pie.
+    final glossPaint = Paint()
+      ..isAntiAlias = true
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Colors.white.withOpacity(.48),
+          Colors.white.withOpacity(.08),
+          Colors.transparent,
+        ],
+        stops: const [0.0, 0.45, 1.0],
+      ).createShader(rect)
+      ..blendMode = BlendMode.softLight;
+    canvas.saveLayer(rect, Paint());
+    canvas.drawPath(Path()..addOval(rect), glossPaint);
+    canvas.restore();
+
+    final sparklePaint = Paint()
+      ..isAntiAlias = true
+      ..shader = RadialGradient(
+        center: const Alignment(0, -0.65),
+        radius: 0.6,
+        colors: [
+          Colors.white.withOpacity(.22),
+          Colors.white.withOpacity(.08),
+          Colors.transparent,
+        ],
+      ).createShader(rect)
+      ..blendMode = BlendMode.lighten;
+    canvas.saveLayer(rect, Paint());
+    canvas.drawPath(Path()..addOval(rect), sparklePaint);
+    canvas.restore();
   }
 
   @override
-  bool shouldRepaint(covariant _DonutPainter old) {
-    if (old.thickness != thickness) return true;
-    if (old.selectedIndex != selectedIndex) return true;
-    if (!listEquals(old.values, values)) return true;
-    if (old.arcs.length != arcs.length) return true;
-    // Also compare arc geometry when lengths match
+  bool shouldRepaint(covariant _PiePainter oldDelegate) {
+    if (oldDelegate.selectedIndex != selectedIndex) return true;
+    if (!listEquals(oldDelegate.values, values)) return true;
+    if (oldDelegate.arcs.length != arcs.length) return true;
     for (int i = 0; i < arcs.length; i++) {
-      if (old.arcs[i].start != arcs[i].start || old.arcs[i].sweep != arcs[i].sweep) {
+      if (oldDelegate.arcs[i].start != arcs[i].start ||
+          oldDelegate.arcs[i].sweep != arcs[i].sweep) {
         return true;
       }
     }
-    if (!listEquals(old.colors, colors)) return true;
+    if (!listEquals(oldDelegate.colors, colors)) return true;
     return false;
-    // (If you want to force repaints while debugging, just return true.)
+  }
+
+  Color _tint(Color color, double amount) {
+    final hsl = HSLColor.fromColor(color);
+    final light = (hsl.lightness + amount).clamp(0.0, 1.0);
+    return hsl.withLightness(light).toColor();
   }
 }
