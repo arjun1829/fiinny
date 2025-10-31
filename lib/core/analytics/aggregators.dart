@@ -208,9 +208,9 @@ class AnalyticsAgg {
     Period p,
     List<ExpenseItem> exp,
     List<IncomeItem> _inc,
-    DateTime now, {
+    DateTime now, [
     CustomRange? custom,
-  }) {
+  ]) {
     List<SeriesPoint> mk(List<double> vals, String Function(int) labelOf) =>
         List.generate(vals.length, (i) => SeriesPoint(labelOf(i), vals[i]));
 
