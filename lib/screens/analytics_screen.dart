@@ -1136,6 +1136,23 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         }
 
         final maxH = MediaQuery.of(context).size.height * 0.75;
+        final subtitleLines = <String>[
+          DateFormat('EEE, d MMM • h:mm a').format(r.date),
+        ];
+        final category = r.category?.toString().trim();
+        if (category != null && category.isNotEmpty) {
+          subtitleLines.add(category);
+        }
+        if (ex?.groupId != null && ex!.groupId.toString().trim().isNotEmpty) {
+          subtitleLines.add('Group: ${ex.groupId}');
+        }
+        if (friendsStr.isNotEmpty) {
+          subtitleLines.add('With: $friendsStr');
+        }
+        if (inc?.source != null && inc!.source.toString().trim().isNotEmpty) {
+          subtitleLines.add('Source: ${inc.source}');
+        }
+
         return ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxH),
           child: SingleChildScrollView(
@@ -1146,16 +1163,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ListTile(
                   title: Text(isIncome ? "Income" : "Expense",
                       style: TextStyle(color: color, fontWeight: FontWeight.bold)),
-                  subtitle: Text(
-                    "${DateFormat('EEE, d MMM • h:mm a').format(r.date)}
-${r.category}"
-                        "${(ex?.groupId != null && ex!.groupId.toString().trim().isNotEmpty) ? "
-Group: ${ex.groupId}" : ""}"
-                        "${friendsStr.isNotEmpty ? "
-With: $friendsStr" : ""}"
-                        "${(inc?.source != null && inc!.source.toString().trim().isNotEmpty) ? "
-Source: ${inc.source}" : ""}",
-                  ),
+                  subtitle: Text(subtitleLines.join('\n')),
                   trailing: Text(_inr2.format(r.amount), style: TextStyle(color: color, fontWeight: FontWeight.w700)),
                 ),
                 if ((r.label ?? '').toString().trim().isNotEmpty || r.note.trim().isNotEmpty)
