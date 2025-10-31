@@ -513,6 +513,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final safeLabels = (labels != null && labels.length == series.length)
         ? labels
         : List.generate(series.length, (i) => '${i + 1}');
+    final total = series.fold<double>(0, (sum, value) => sum + value);
+    final peak = series.isEmpty
+        ? 0.0
+        : series.reduce((a, b) => a > b ? a : b);
+    final avg = series.isEmpty ? 0.0 : total / series.length;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -539,22 +544,109 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ],
               ),
               const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Daily expense trend',
+                  style: Fx.label.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: Fx.text.withOpacity(.85),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
               Expanded(child: _trendChartWithAxis(series, safeLabels)),
-              Expanded(
-                child: BarChartSimple(
-                  data: List.generate(series.length,
-                      (i) => SeriesPoint(safeLabels[i], series[i])),
-                  showGrid: true,
-                  yTickCount: 5,
-                  targetXTicks: 7,
-                  showValues: false,
-                  showYLabels: true,
+              const SizedBox(height: 16),
+              _trendStatsRow(total: total, avg: avg, peak: peak),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'These bars show only expenses for the selected period. '
+                  'Income insights live in the Income analytics tab.',
+                  style: Fx.label.copyWith(
+                    fontSize: 12,
+                    color: Fx.text.withOpacity(.65),
+                  ),
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _trendStatsRow({
+    required double total,
+    required double avg,
+    required double peak,
+  }) {
+    final labelStyle = Fx.label.copyWith(color: Fx.text.withOpacity(.65));
+    final valueStyle = Fx.number.copyWith(fontWeight: FontWeight.w700);
+    final surface = Theme.of(context).colorScheme.surface;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: surface.withOpacity(.8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: _trendStatTile(
+                label: 'Total',
+                value: INR.f(total),
+                labelStyle: labelStyle,
+                valueStyle: valueStyle,
+              ),
+            ),
+            Container(
+              width: 1,
+              height: 36,
+              color: Fx.text.withOpacity(.08),
+            ),
+            Expanded(
+              child: _trendStatTile(
+                label: 'Average',
+                value: INR.f(avg),
+                labelStyle: labelStyle,
+                valueStyle: valueStyle,
+              ),
+            ),
+            Container(
+              width: 1,
+              height: 36,
+              color: Fx.text.withOpacity(.08),
+            ),
+            Expanded(
+              child: _trendStatTile(
+                label: 'Highest day',
+                value: INR.f(peak),
+                labelStyle: labelStyle,
+                valueStyle: valueStyle,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _trendStatTile({
+    required String label,
+    required String value,
+    required TextStyle labelStyle,
+    required TextStyle valueStyle,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: labelStyle),
+        const SizedBox(height: 4),
+        Text(value, style: valueStyle),
+      ],
     );
   }
 
