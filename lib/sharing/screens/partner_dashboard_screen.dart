@@ -348,7 +348,9 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
   @override
   Widget build(BuildContext context) {
     final safeBottom = context.adsBottomPadding();
-    final avatar = partnerAvatar ?? "assets/images/profile_default.png";
+    final avatar = (partnerAvatar != null && partnerAvatar!.isNotEmpty)
+        ? partnerAvatar!
+        : "assets/images/profile_default.png";
     String dateStr = "${selectedDay.day}/${selectedDay.month}/${selectedDay.year}";
     final bool isChatTab = _tabController.index == 1;
 
@@ -906,7 +908,9 @@ class _PartnerChatFullScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final avatar = partnerAvatar ?? "assets/images/profile_default.png";
+    final avatar = (partnerAvatar != null && partnerAvatar!.isNotEmpty)
+        ? partnerAvatar!
+        : "assets/images/profile_default.png";
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
