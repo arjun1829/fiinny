@@ -1,5 +1,7 @@
 // ignore_for_file: prefer_final_fields, library_private_types_in_public_api
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -18,6 +20,12 @@ import '../widgets/charts/bar_chart_simple.dart';
 import '../widgets/charts/pie_chart_glossy.dart';
 import '../widgets/unified_transaction_list.dart';
 import 'edit_expense_screen.dart';
+
+class _TrendAxisScale {
+  final double maxY;
+  final double tick;
+  const _TrendAxisScale(this.maxY, this.tick);
+}
 
 class AnalyticsScreen extends StatefulWidget {
   final String userPhone;
@@ -531,6 +539,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ],
               ),
               const SizedBox(height: 8),
+              Expanded(child: _trendChartWithAxis(series, safeLabels)),
               Expanded(
                 child: BarChartSimple(
                   data: List.generate(series.length,
@@ -547,6 +556,134 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ),
       ),
     );
+  }
+
+  Widget _trendChartWithAxis(List<double> series, List<String> labels) {
+    const int yTicks = 5;
+    const double leftGutter = 52;
+    const double topPadding = 12;
+    const double bottomPadding = 28;
+
+    final _TrendAxisScale scale = _trendAxisScale(series, yTicks);
+
+    final List<String> effectiveLabels = (labels.length == series.length)
+        ? labels
+        : List.generate(series.length, (i) => i < labels.length ? labels[i] : '${i + 1}');
+
+    final List<SeriesPoint> points = List.generate(
+      series.length,
+      (i) => SeriesPoint(effectiveLabels[i], series[i]),
+    );
+
+    final axisValues = List<double>.generate(
+      yTicks + 1,
+      (i) => (scale.maxY / yTicks) * i,
+    ).reversed.toList();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Stack(
+          children: [
+            Positioned(
+              left: leftGutter,
+              right: 0,
+              top: 0,
+              bottom: 0,
+              child: BarChartSimple(
+                data: points,
+                showGrid: true,
+                yTickCount: yTicks,
+                targetXTicks: 7,
+                showValues: false,
+                maxYOverride: scale.maxY,
+                padding: const EdgeInsets.fromLTRB(12, topPadding, 12, bottomPadding),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              top: topPadding,
+              bottom: bottomPadding,
+              width: leftGutter - 8,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (final value in axisValues)
+                    Text(
+                      _formatTrendAxisValue(value, scale.tick),
+                      style: Fx.label.copyWith(
+                        fontSize: 10,
+                        color: Fx.text.withOpacity(.75),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  static _TrendAxisScale _trendAxisScale(List<double> series, int tickCount) {
+    double rawMax = 0;
+    for (final value in series) {
+      if (value.isFinite && value > rawMax) {
+        rawMax = value;
+      }
+    }
+
+    final double baseMax = rawMax > 0 ? rawMax : 1.0;
+    final double tick = _trendNiceNum(baseMax / tickCount, true);
+    final double niceMax = _trendNiceNum(tick * tickCount, false);
+    return _TrendAxisScale(niceMax, tick);
+  }
+
+  static double _trendNiceNum(double range, bool round) {
+    final double safeRange = (range.isFinite && range > 0) ? range : 1.0;
+    final double exponent = (math.log(safeRange) / math.ln10).floorToDouble();
+    final double expv = math.pow(10, exponent).toDouble();
+    final double f = safeRange / expv;
+    double nf;
+    if (round) {
+      if (f < 1.5) {
+        nf = 1;
+      } else if (f < 3) {
+        nf = 2;
+      } else if (f < 7) {
+        nf = 5;
+      } else {
+        nf = 10;
+      }
+    } else {
+      if (f <= 1) {
+        nf = 1;
+      } else if (f <= 2) {
+        nf = 2;
+      } else if (f <= 5) {
+        nf = 5;
+      } else {
+        nf = 10;
+      }
+    }
+    return nf * expv;
+  }
+
+  static String _formatTrendAxisValue(double value, double tick) {
+    if (tick >= 1) {
+      return NumberFormat.compactCurrency(
+        locale: 'en_IN',
+        symbol: '₹',
+        decimalDigits: 0,
+      ).format(value);
+    }
+
+    final int decimals = tick >= 0.1 ? 1 : 2;
+    return NumberFormat.currency(
+      locale: 'en_IN',
+      symbol: '₹',
+      decimalDigits: decimals,
+    ).format(value);
   }
 
   // ---------- donut card helper (bigger ring + palette + taps) ----------
