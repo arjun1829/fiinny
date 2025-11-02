@@ -26,6 +26,7 @@ import '../models/group_model.dart';
 import '../models/loan_model.dart';
 import '../services/expense_service.dart';
 import '../services/group_service.dart';
+import '../core/flags/fx_flags.dart';
 import '../services/loan_service.dart';
 import '../core/ads/ads_banner_card.dart';
 import '../core/ads/ads_shell.dart';
@@ -35,6 +36,8 @@ import '../widgets/add_friend_expense_dialog.dart';
 import '../widgets/settleup_dialog.dart';
 import '../widgets/expense_list_widget.dart';
 import '../widgets/simple_bar_chart_widget.dart';
+import '../settleup_v2/index.dart';
+import 'analytics/friend_analytics_tab.dart';
 import 'dart:math' as math;
 
 // Chat tab
@@ -211,7 +214,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _loadFriendProfile();
   }
 
@@ -1063,106 +1066,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     if (mounted) setState(() {});
   }
 
-  // ======================= PAIRWISE LOGIC =======================
-  bool _isSettlement(ExpenseItem e) {
-    final t = (e.type).toLowerCase();
-    final lbl = (e.label ?? '').toLowerCase();
-    if (t.contains('settle') || lbl.contains('settle')) return true;
-    if ((e.friendIds.length == 1) &&
-        (e.customSplits == null || e.customSplits!.isEmpty)) {
-      return e.isBill == true;
-    }
-    return false;
-  }
-
-  bool _isPairwiseBetween(ExpenseItem e, String you, String friend) {
-    if (_isSettlement(e)) {
-      final recips = e.friendIds;
-      return (e.payerId == you && recips.contains(friend)) ||
-          (e.payerId == friend && recips.contains(you));
-    }
-    final splits = computeSplits(e);
-    final youPaid_friendIn = (e.payerId == you) && splits.containsKey(friend);
-    final friendPaid_youIn = (e.payerId == friend) && splits.containsKey(you);
-    return youPaid_friendIn || friendPaid_youIn;
-  }
-
-  List<ExpenseItem> _pairwiseExpenses(
-      String you, String friend, List<ExpenseItem> all) {
-    final list =
-    all.where((e) => _isPairwiseBetween(e, you, friend)).toList();
-    list.sort((a, b) => b.date.compareTo(a.date));
-    return list;
-  }
-
-  (_Totals totals, Map<String, _BucketTotals> byBucket) _computePairwiseTotals(
-      String you,
-      String friend,
-      List<ExpenseItem> pairwise,
-      ) {
-    double youOwe = 0.0; // you owe friend
-    double owedToYou = 0.0; // friend owes you
-    final oweByBucket = <String, double>{};
-    final owedByBucket = <String, double>{};
-
-    String bucketId(String? groupId) =>
-        (groupId == null || groupId.isEmpty) ? '__none__' : groupId;
-
-    for (final e in pairwise) {
-      final b = bucketId(e.groupId);
-
-      if (_isSettlement(e)) {
-        if (e.payerId == you) {
-          owedToYou += e.amount;
-          owedByBucket[b] = (owedByBucket[b] ?? 0) + e.amount;
-        } else if (e.payerId == friend) {
-          youOwe += e.amount;
-          oweByBucket[b] = (oweByBucket[b] ?? 0) + e.amount;
-        }
-        continue;
-      }
-
-      final splits = computeSplits(e);
-      final yourShare = splits[you] ?? 0.0;
-      final theirShare = splits[friend] ?? 0.0;
-
-      if (e.payerId == you) {
-        owedToYou += theirShare;
-        owedByBucket[b] = (owedByBucket[b] ?? 0) + theirShare;
-      } else if (e.payerId == friend) {
-        youOwe += yourShare;
-        oweByBucket[b] = (oweByBucket[b] ?? 0) + yourShare;
-      }
-    }
-
-    double round2(double value) => double.parse(value.toStringAsFixed(2));
-    bool isSettled(double owed, double owe) => (owed - owe).abs() < 0.01;
-
-    youOwe = round2(youOwe);
-    owedToYou = round2(owedToYou);
-    double net = round2(owedToYou - youOwe);
-
-    if (isSettled(owedToYou, youOwe)) {
-      youOwe = 0.0;
-      owedToYou = 0.0;
-      net = 0.0;
-    }
-
-    final buckets = <String, _BucketTotals>{};
-    final allB = {...oweByBucket.keys, ...owedByBucket.keys};
-    for (final b in allB) {
-      final owe = round2(oweByBucket[b] ?? 0.0);
-      final owed = round2(owedByBucket[b] ?? 0.0);
-      if (isSettled(owed, owe)) {
-        buckets[b] = const _BucketTotals(owe: 0.0, owed: 0.0);
-      } else {
-        buckets[b] = _BucketTotals(owe: owe, owed: owed);
-      }
-    }
-
-    return (_Totals(owe: youOwe, owed: owedToYou, net: net), buckets);
-  }
-
   // ======================= UI HELPERS =======================
   BoxDecoration _cardDeco(BuildContext context) {
     return BoxDecoration(
@@ -1218,7 +1121,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     if (result == true) setState(() {});
   }
 
-  void _openSettleUp() async {
+  Future<void> _openLegacySettleUpDialog() async {
     final result = await showDialog(
       context: context,
       builder: (_) => SettleUpDialog(
@@ -1228,7 +1131,39 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
         initialFriend: widget.friend,
       ),
     );
-    if (result == true) setState(() {});
+    if (result == true && mounted) setState(() {});
+  }
+
+  void _openSettleUp() async {
+    if (!FxFlags.settleUpV2) {
+      await _openLegacySettleUpDialog();
+      return;
+    }
+
+    try {
+      final friendAvatar =
+          (_friendAvatarUrl?.isNotEmpty == true) ? _friendAvatarUrl : null;
+      final settled = await SettleUpFlowV2Launcher.openForFriend(
+        context: context,
+        currentUserPhone: widget.userPhone,
+        friend: widget.friend,
+        friendDisplayName: _displayName,
+        friendAvatarUrl: friendAvatar,
+        friendSubtitle: widget.friend.phone,
+      );
+
+      if (settled == null) {
+        await _openLegacySettleUpDialog();
+      } else if (settled && mounted) {
+        setState(() {});
+      }
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to open Settle Up: $err')),
+      );
+      await _openLegacySettleUpDialog();
+    }
   }
 
   void _remind() async {
@@ -1309,7 +1244,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
             tabs: const [
               Tab(text: "History"),
               Tab(text: "Chart"),
-              Tab(text: "Chat")
+              Tab(text: "Analytics"),
+              Tab(text: "Chat"),
             ],
           ),
         ),
@@ -1320,11 +1256,13 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
             final safeBottom = context.adsBottomPadding();
 
             // Pairwise-only list
-            final pairwise = _pairwiseExpenses(you, friendPhone, all);
+            final pairwise = pairwiseExpenses(you, friendPhone, all);
 
             // Totals + per-group breakdown (pairwise only)
-            final (totals, buckets) =
-            _computePairwiseTotals(you, friendPhone, pairwise);
+            final breakdown =
+                computePairwiseBreakdown(you, friendPhone, pairwise);
+            final totals = breakdown.totals;
+            final buckets = breakdown.buckets;
             final totalOwe = totals.owe;
             final totalOwed = totals.owed;
             final net = totals.net;
@@ -1822,7 +1760,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                         final dataIndex = idx - adsBefore;
                                         final ex = pairwise[dataIndex];
                                         final isSettlement =
-                                        _isSettlement(ex);
+                                        isSettlementLike(ex);
                                         final title = isSettlement
                                             ? "Settlement"
                                             : (ex.label?.isNotEmpty == true
@@ -2304,7 +2242,17 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                   ),
                 ),
 
-                // ------------------ 3) CHAT ------------------
+                // ------------------ 3) ANALYTICS ------------------
+                RefreshIndicator(
+                  onRefresh: _refreshAll,
+                  child: FriendAnalyticsTab(
+                    expenses: pairwise,
+                    currentUserPhone: widget.userPhone,
+                    friend: widget.friend,
+                  ),
+                ),
+
+                // ------------------ 4) CHAT ------------------
                 SafeArea(
                   top: false,
                   child: PartnerChatTab(
@@ -2476,18 +2424,4 @@ class _Pill extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Totals {
-  final double owe; // you owe friend
-  final double owed; // friend owes you
-  final double net; // owed - owe
-  const _Totals({required this.owe, required this.owed, required this.net});
-}
-
-class _BucketTotals {
-  final double owe; // you owe friend
-  final double owed; // friend owes you
-  double get net => owed - owe;
-  const _BucketTotals({required this.owe, required this.owed});
 }
