@@ -891,7 +891,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                     TextButton.icon(
                       icon: const Icon(Icons.delete, color: Colors.red, size: 21),
                       label: const Text("Delete"),
-                      onPressed: () {
+                      onPressed: () async {
+                        final confirmed = await _confirmDeleteTransaction(
+                          context,
+                          doc,
+                          triggerAnchoredCallbacks: false,
+                        );
+                        if (!confirmed) return;
                         Navigator.pop(context);
                         widget.onDelete?.call(doc);
                       },
@@ -1005,7 +1011,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                     TextButton.icon(
                       icon: const Icon(Icons.delete, color: Colors.red, size: 21),
                       label: const Text("Delete"),
-                      onPressed: () {
+                      onPressed: () async {
+                        final confirmed = await _confirmDeleteTransaction(
+                          context,
+                          item,
+                          triggerAnchoredCallbacks: false,
+                        );
+                        if (!confirmed) return;
                         Navigator.pop(context);
                         widget.onDelete?.call(item);
                       },
@@ -1385,7 +1397,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                     return false;
                   }
                   if (direction == DismissDirection.endToStart) {
-                    return widget.onDelete != null;
+                    if (widget.onDelete == null) return false;
+                    return _confirmDeleteTransaction(context, payload);
                   }
                   return false;
                 },
@@ -1630,7 +1643,11 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                     icon: const Icon(Icons.delete, size: 18, color: Colors.red),
                                     tooltip: 'Delete',
                                     visualDensity: VisualDensity.compact,
-                                    onPressed: () => widget.onDelete?.call(payload),
+                                    onPressed: () async {
+                                      if (widget.onDelete == null) return;
+                                      final confirmed = await _confirmDeleteTransaction(context, payload);
+                                      if (confirmed) widget.onDelete!(payload);
+                                    },
                                   ),
                               ],
                             ),
@@ -1674,6 +1691,99 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
+  }
+
+  String? _resolveDeleteLabel(dynamic payload) {
+    String? normalize(String? value) {
+      if (value == null) return null;
+      final trimmed = value.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    }
+
+    if (payload is ExpenseItem) {
+      return normalize(payload.title) ??
+          normalize(payload.label) ??
+          normalize(payload.counterparty) ??
+          normalize(payload.note);
+    }
+    if (payload is IncomeItem) {
+      return normalize(payload.title) ??
+          normalize(payload.label) ??
+          normalize(payload.source) ??
+          normalize(payload.note);
+    }
+    if (payload is Map<String, dynamic>) {
+      for (final key in ['title', 'label', 'counterparty', 'merchant', 'note', 'description']) {
+        final value = payload[key];
+        if (value is String) {
+          final normalized = normalize(value);
+          if (normalized != null) return normalized;
+        }
+      }
+      final raw = payload['raw'];
+      final fallback = _resolveDeleteLabel(raw);
+      if (fallback != null) return fallback;
+    }
+    return null;
+  }
+
+  Future<bool> _confirmDeleteTransaction(
+    BuildContext context,
+    dynamic payload, {
+    bool triggerAnchoredCallbacks = true,
+  }) async {
+    final theme = Theme.of(context);
+    final isIncomePayload = payload is IncomeItem ||
+        (payload is Map<String, dynamic> &&
+            ((payload['type']?.toString().toLowerCase() == 'income') ||
+                (payload['isIncome'] == true)));
+    final isExpensePayload = payload is ExpenseItem ||
+        (payload is Map<String, dynamic> &&
+            ((payload['type']?.toString().toLowerCase() == 'expense') ||
+                (payload['isIncome'] == false)));
+
+    final typeLabel = isIncomePayload
+        ? 'income'
+        : isExpensePayload
+            ? 'expense'
+            : 'transaction';
+    final title = 'Delete ${typeLabel == 'transaction' ? 'transaction' : typeLabel}?';
+    final fallbackSubject = isIncomePayload
+        ? 'this income transaction'
+        : isExpensePayload
+            ? 'this expense transaction'
+            : 'this transaction';
+    final target = _resolveDeleteLabel(payload);
+    final message = target != null
+        ? 'Are you sure you want to delete "$target"? This cannot be undone.'
+        : 'Are you sure you want to delete $fallbackSubject? This cannot be undone.';
+
+    if (triggerAnchoredCallbacks) widget.onBeginModal?.call();
+    bool confirmed = false;
+    try {
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      );
+      confirmed = result ?? false;
+    } finally {
+      if (triggerAnchoredCallbacks) widget.onEndModal?.call();
+    }
+    return confirmed;
   }
 
   Widget _buildSwipeBackground({

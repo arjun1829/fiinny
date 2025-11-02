@@ -1,5 +1,6 @@
 // lib/services/sms/sms_permission_helper.dart
 import 'package:flutter/foundation.dart' show TargetPlatform, ValueNotifier, defaultTargetPlatform, kIsWeb;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:telephony/telephony.dart';
 
 /// Simple helper for checking & requesting SMS permissions
@@ -31,11 +32,8 @@ class SmsPermissionHelper {
     final telephony = _ensureTelephony();
     if (telephony == null) return false;
 
-    final granted = await _callPermissionGetter(
-      () => telephony.requestSmsPermissions,
-    ) || await _callPermissionGetter(
-      () => telephony.requestPhoneAndSmsPermissions,
-    );
+    final status = await Permission.sms.status;
+    final granted = status.isGranted || status.isLimited;
 
     _publish(granted);
     return granted;
@@ -46,15 +44,28 @@ class SmsPermissionHelper {
     final telephony = _ensureTelephony();
     if (telephony == null) return false;
 
-    var granted = await _callPermissionGetter(
-      () => telephony.requestPhoneAndSmsPermissions,
-      askPhonePermission: true,
-    );
+    PermissionStatus status = await Permission.sms.status;
+    if (status.isPermanentlyDenied) {
+      _publish(false);
+      return false;
+    }
+
+    bool granted = status.isGranted || status.isLimited;
+
+    if (!granted) {
+      status = await Permission.sms.request();
+      granted = status.isGranted || status.isLimited;
+    }
 
     if (!granted) {
       granted = await _callPermissionGetter(
         () => telephony.requestSmsPermissions,
-        askPhonePermission: true,
+      );
+    }
+
+    if (!granted) {
+      granted = await _callPermissionGetter(
+        () => telephony.requestPhoneAndSmsPermissions,
       );
     }
 
