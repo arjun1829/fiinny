@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 
+import '../constants/expense_categories.dart';
 import '../models/expense_item.dart';
 import '../models/income_item.dart';
 import '../services/expense_service.dart';
@@ -63,6 +64,8 @@ class _DarkPillButton extends StatelessWidget {
   }
 }
 
+enum _SplitAddOption { friend, group }
+
 
 
 class _AddTransactionScreenState extends State<AddTransactionScreen> {
@@ -96,10 +99,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   List<String> _labels = const ["Rent", "Groceries", "Office", "Goa Trip", "Birthday"];
   String? _selectedLabel;
 
-  final _expenseCategories = const [
-    'General','Food','Travel','Shopping','Bills','Entertainment','Health','Groceries','Rent','Utilities','Other'
-  ];
-  final _incomeCategories  = const ['General','Salary','Freelance','Gift','Investment','Other'];
+  final List<String> _expenseCategories = kExpenseCategories;
+  final List<String> _incomeCategories  = kIncomeCategories;
 
   int _step = 0;
   bool _saving = false;
@@ -889,6 +890,37 @@ class _StepDetails extends StatelessWidget {
     final showSplit = type == 'debit';
     final hasSplitTarget = (friendId ?? '').isNotEmpty || (groupId ?? '').isNotEmpty;
 
+    Future<void> _showAddMenu() async {
+      final action = await showModalBottomSheet<_SplitAddOption>(
+        context: context,
+        builder: (sheetContext) {
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.person_add_alt_1_rounded),
+                  title: const Text('Add Friend'),
+                  onTap: () => Navigator.of(sheetContext).pop(_SplitAddOption.friend),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.group_add_rounded),
+                  title: const Text('Create Group'),
+                  onTap: () => Navigator.of(sheetContext).pop(_SplitAddOption.group),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (action == _SplitAddOption.friend) {
+        onAddFriend();
+      } else if (action == _SplitAddOption.group) {
+        onCreateGroup();
+      }
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       child: Column(
@@ -986,14 +1018,9 @@ class _StepDetails extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 _DarkPillButton(
-                  onPressed: onAddFriend,
+                  onPressed: _showAddMenu,
                   icon: Icons.person_add_alt_1_rounded,
                   label: 'Add Friend',
-                ),
-                _DarkPillButton(
-                  onPressed: onCreateGroup,
-                  icon: Icons.group_add_rounded,
-                  label: 'Create Group',
                 ),
                 if (hasSplitTarget)
                   Chip(

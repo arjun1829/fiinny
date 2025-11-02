@@ -11,7 +11,7 @@ class SeriesPoint {
   const SeriesPoint(this.x, this.y);
 }
 
-enum Period { day, week, month, quarter, year, last2, last5, all, custom }
+enum Period { day, week, month, lastMonth, quarter, year, last2, last5, all, custom }
 
 class CustomRange {
   final DateTime start;
@@ -35,6 +35,10 @@ class AnalyticsAgg {
         final start = DateTime(now.year, now.month, 1);
         final end = DateTime(now.year, now.month + 1, 0);
         return DateTimeRange(start: start, end: end);
+      case Period.lastMonth:
+        final prevStart = DateTime(now.year, now.month - 1, 1);
+        final prevEnd = DateTime(prevStart.year, prevStart.month + 1, 0);
+        return DateTimeRange(start: prevStart, end: prevEnd);
       case Period.quarter:
         final qStartMonth = ((now.month - 1) ~/ 3) * 3 + 1;
         final start = DateTime(now.year, qStartMonth, 1);
@@ -228,6 +232,16 @@ class AnalyticsAgg {
         final v = List<double>.filled(days, 0);
         for (final e in exp) v[e.date.day - 1] += e.amount;
         return mk(v, (i) => '${i + 1}');
+      case Period.lastMonth:
+        final prevStart = DateTime(now.year, now.month - 1, 1);
+        final daysPrev = DateTime(prevStart.year, prevStart.month + 1, 0).day;
+        final vPrev = List<double>.filled(daysPrev, 0);
+        for (final e in exp) {
+          if (e.date.year == prevStart.year && e.date.month == prevStart.month) {
+            vPrev[e.date.day - 1] += e.amount;
+          }
+        }
+        return mk(vPrev, (i) => '${i + 1}');
       case Period.quarter:
         final qStartMonth = ((now.month - 1) ~/ 3) * 3 + 1;
         final v = List<double>.filled(3, 0);

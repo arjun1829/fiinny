@@ -60,6 +60,7 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
 
   // forex totals
   double _intlSpendInr = 0;
+  final Map<String, double> _intlSpendByCurrency = {};
   double _forexFeesInr = 0;
 
   // salary prediction
@@ -98,6 +99,54 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
   void initState() {
     super.initState();
     _expanded = widget.initiallyExpanded;
+  }
+
+  String _formatForexSummary() {
+    final parts = <String>[];
+
+    if (_intlSpendByCurrency.isNotEmpty) {
+      final entries = _intlSpendByCurrency.entries.toList()
+        ..sort((a, b) => a.key.compareTo(b.key));
+      final formatted = entries
+          .map((entry) => '${_currencySymbol(entry.key)}${_fmt(entry.value)} ${entry.key}')
+          .join(' • ');
+      parts.add(formatted);
+    }
+
+    if (_intlSpendInr > 0) {
+      parts.add('~₹${_fmt(_intlSpendInr)} settled');
+    }
+
+    if (_forexFeesInr > 0) {
+      parts.add('₹${_fmt(_forexFeesInr)} fees');
+    }
+
+    return parts.isEmpty ? 'No intl spend' : parts.join(' • ');
+  }
+
+  String _currencySymbol(String code) {
+    switch (code.toUpperCase()) {
+      case 'USD':
+        return 'USD ';
+      case 'EUR':
+        return 'EUR ';
+      case 'GBP':
+        return 'GBP ';
+      case 'AUD':
+        return 'AUD ';
+      case 'CAD':
+        return 'CAD ';
+      case 'SGD':
+        return 'SGD ';
+      case 'AED':
+        return 'AED ';
+      case 'SAR':
+        return 'SAR ';
+      case 'JPY':
+        return 'JPY ';
+      default:
+        return '${code.toUpperCase()} ';
+    }
   }
 
   // =============================== UI ===============================
@@ -399,9 +448,7 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
 
     // Forex / international
     if (!showOnlyFindings || _forexHits > 0) {
-      final value = _forexHits == 0
-          ? 'No intl spend'
-          : '₹${_fmt(_intlSpendInr)} with ₹${_fmt(_forexFeesInr)} fees';
+      final value = _forexHits == 0 ? 'No intl spend' : _formatForexSummary();
       tiles.add(_FindingTile(
         color: Colors.teal,
         icon: Icons.public_rounded,
@@ -719,6 +766,7 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
       _loanSuggestions = 0;
       _intlSpendInr = 0;
       _forexFeesInr = 0;
+      _intlSpendByCurrency.clear();
       _avgSalary = 0;
       _salaryHits = 0;
       _medianDays = 30;
@@ -933,6 +981,7 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
     int intlCount = 0;
     double spendInr = 0;
     double feeInr = 0;
+    _intlSpendByCurrency.clear();
 
     while (true) {
       if (_cancelRequested) break;
@@ -966,11 +1015,37 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
           _fxFeeItems.add(e);
         }
 
+        var hasInrFromNote = false;
         final inrM = reInrDebit.firstMatch(lower);
         if (inrM != null) {
           final inrStr = inrM.group(3)!.replaceAll(',', '');
           final val = double.tryParse(inrStr);
-          if (val != null) spendInr += val;
+          if (val != null) {
+            spendInr += val;
+            hasInrFromNote = true;
+          }
+        }
+
+        final fx = e.fx;
+        if (fx != null && fx.isNotEmpty) {
+          final currency = (fx['currency'] as String?)?.toUpperCase();
+          final amount = (fx['amount'] as num?)?.toDouble();
+          final inrEquiv = (fx['inrAmount'] as num?)?.toDouble();
+          final rate = (fx['rate'] as num?)?.toDouble();
+
+          if (currency != null && amount != null) {
+            _intlSpendByCurrency[currency] =
+                (_intlSpendByCurrency[currency] ?? 0) + amount;
+          }
+
+          if (!hasInrFromNote) {
+            final converted = inrEquiv ??
+                ((amount != null && rate != null) ? amount * rate : null);
+            if (converted != null) {
+              spendInr += converted;
+              hasInrFromNote = true;
+            }
+          }
         }
 
         if (looksFee) {
@@ -1117,6 +1192,7 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
       'forex': {
         'intlSpendInr': _intlSpendInr,
         'feesInr': _forexFeesInr,
+        'currencies': Map.of(_intlSpendByCurrency),
       },
       'salary': {
         'hits': _salaryHits,

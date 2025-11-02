@@ -168,6 +168,11 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         final start = DateTime(now.year, now.month, 1);
         final end = DateTime(now.year, now.month + 1, 0);
         return (start: start, end: end);
+      case 'Last Month':
+      case 'LM':
+        final prevStart = DateTime(now.year, now.month - 1, 1);
+        final prevEnd = DateTime(prevStart.year, prevStart.month + 1, 0);
+        return (start: prevStart, end: prevEnd);
       case 'Quarter':
       case 'Q':
         final q = ((now.month - 1) ~/ 3) + 1;
@@ -527,22 +532,28 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   IconButton(
                     icon: const Icon(Icons.delete_forever, color: Colors.red),
                     tooltip: "Delete Selected",
-                    onPressed: _selectedTxIds.isEmpty ? null : () async {
-                      // Expenses
-                      for (final tx in filteredExpenses.where((e) => _selectedTxIds.contains(e.id))) {
-                        await ExpenseService().deleteExpense(widget.userPhone, tx.id);
-                      }
-                      // Incomes
-                      for (final inc in filteredIncomes.where((i) => _selectedTxIds.contains(i.id))) {
-                        await IncomeService().deleteIncome(widget.userPhone, inc.id);
-                      }
+                    onPressed: _selectedTxIds.isEmpty
+                        ? null
+                        : () async {
+                            final confirmed = await _confirmBulkDelete(_selectedTxIds.length);
+                            if (!confirmed) return;
 
-                      setState(() {
-                        _selectedTxIds.clear();
-                        _multiSelectMode = false;
-                      });
-                    },
+                            for (final tx in filteredExpenses.where(
+                              (e) => _selectedTxIds.contains(e.id),
+                            )) {
+                              await ExpenseService().deleteExpense(widget.userPhone, tx.id);
+                            }
+                            for (final inc in filteredIncomes.where(
+                              (i) => _selectedTxIds.contains(i.id),
+                            )) {
+                              await IncomeService().deleteIncome(widget.userPhone, inc.id);
+                            }
 
+                            setState(() {
+                              _selectedTxIds.clear();
+                              _multiSelectMode = false;
+                            });
+                          },
                   ),
                   IconButton(
                     icon: const Icon(Icons.close_rounded),
@@ -759,7 +770,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
                     const SizedBox(height: 8),
 
-                    // Row: Preset filter chips (Day / Yesterday / 2D / Week / Month / Quarter / Year / All)
+                    // Row: Preset filter chips (Day / Yesterday / 2D / Week / Month / Last Month / Quarter / Year / All)
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
@@ -784,6 +795,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                           chip('2D', '2D'),
                           chip('Week', 'Week'),
                           chip('Month', 'Month'),
+                          chip('Last Month', 'Last Month'),
                           chip('Quarter', 'Quarter'),
                           chip('Year', 'Year'),
                           chip('All', 'All'),
@@ -853,8 +865,21 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 }
                 _recompute();
               },
-              onSplit: (tx) {
-                // TODO: Implement split logic for all
+              onSplit: (tx) async {
+                if (_multiSelectMode) return;
+                if (tx is ExpenseItem) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditExpenseScreen(
+                        userPhone: widget.userPhone,
+                        expense: tx,
+                        initialStep: 1,
+                      ),
+                    ),
+                  );
+                  _recompute();
+                }
               },
             ),
           ),
@@ -1055,8 +1080,21 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     _recompute();
                   }
                 },
-                onSplit: (tx) {
-                  // TODO: Implement split logic for all
+                onSplit: (tx) async {
+                  if (_multiSelectMode) return;
+                  if (tx is ExpenseItem) {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => EditExpenseScreen(
+                          userPhone: widget.userPhone,
+                          expense: tx,
+                          initialStep: 1,
+                        ),
+                      ),
+                    );
+                    _recompute();
+                  }
                 },
               ),
             ),
@@ -1341,8 +1379,21 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               }
               _recompute();
             },
-            onSplit: (tx) {
-              // TODO: Implement split logic for all
+            onSplit: (tx) async {
+              if (_multiSelectMode) return;
+              if (tx is ExpenseItem) {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EditExpenseScreen(
+                      userPhone: widget.userPhone,
+                      expense: tx,
+                      initialStep: 1,
+                    ),
+                  ),
+                );
+                _recompute();
+              }
             },
           ),
         ),
@@ -1606,6 +1657,31 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           (i) => i.amount,
     );
     return byCategory.keys.toList();
+  }
+
+  Future<bool> _confirmBulkDelete(int count) async {
+    final theme = Theme.of(context);
+    final plural = count == 1 ? '' : 's';
+    final subject = 'delete $count selected transaction$plural';
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete transactions?'),
+        content: Text('Are you sure you want to $subject? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   Future<String?> _showLabelDialog() async {

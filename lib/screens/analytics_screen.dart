@@ -355,6 +355,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       ('D', Period.day),
       ('W', Period.week),
       ('M', Period.month),
+      ('Last Month', Period.lastMonth),
       ('Q', Period.quarter),
       ('Y', Period.year),
       ('2D', Period.last2),
@@ -1031,6 +1032,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           data.length,
           (i) => '${i + 1}',
         );
+      case Period.lastMonth:
+        return List<String>.generate(
+          data.length,
+          (i) => '${i + 1}',
+        );
       case Period.quarter:
         final qStartMonth = ((now.month - 1) ~/ 3) * 3 + 1;
         return List<String>.generate(data.length, (i) {
@@ -1084,6 +1090,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         final v = List<double>.filled(days, 0);
         for (final e in exp) v[e.date.day - 1] += e.amount;
         return v;
+      case Period.lastMonth:
+        final prevStart = DateTime(now.year, now.month - 1, 1);
+        final prevDays = DateTime(prevStart.year, prevStart.month + 1, 0).day;
+        final vPrev = List<double>.filled(prevDays, 0);
+        for (final e in exp) {
+          if (e.date.year == prevStart.year && e.date.month == prevStart.month) {
+            vPrev[e.date.day - 1] += e.amount;
+          }
+        }
+        return vPrev;
       case Period.quarter:
         final qStartMonth = ((now.month - 1) ~/ 3) * 3 + 1;
         final buckets = List<double>.filled(3, 0);

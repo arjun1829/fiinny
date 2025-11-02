@@ -628,7 +628,20 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                         }
                         _recomputeForDay();
                       },
-                      onSplit: (tx) {},
+                      onSplit: (tx) async {
+                        if (tx is ExpenseItem) {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => EditExpenseScreen(
+                                userPhone: widget.userPhone,
+                                expense: tx,
+                                initialStep: 1,
+                              ),
+                            ),
+                          );
+                          _recomputeForDay();
+                        }
+                      },
                     ),
                   ),
                 ),
