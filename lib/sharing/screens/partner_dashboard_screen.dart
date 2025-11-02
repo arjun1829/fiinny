@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/ads/ads_banner_card.dart';
 import '../../core/ads/ads_shell.dart';
 import '../models/partner_model.dart';
 import '../widgets/weekly_partner_rings_widget.dart';
@@ -444,6 +445,14 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                 ],
               ),
             ),
+          ),
+          const AdsBannerCard(
+            placement: 'partner_dashboard_summary',
+            inline: true,
+            inlineMaxHeight: 120,
+            margin: EdgeInsets.fromLTRB(18, 16, 18, 4),
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            minHeight: 92,
           ),
 
           // --- Last 8 Days Rings (unchanged) ---
