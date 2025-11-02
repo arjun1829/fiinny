@@ -2,6 +2,7 @@
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../flags/remote_flags.dart';
@@ -32,6 +33,8 @@ class AdaptiveBanner extends StatefulWidget {
 class _AdaptiveBannerState extends State<AdaptiveBanner> {
   BannerAd? _ad;
   bool _loaded = false;
+  bool _isLoading = false;
+  bool _needsReload = false;
 
   @override
   void didChangeDependencies() {
@@ -39,7 +42,24 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
     _load();
   }
 
+  @override
+  void didUpdateWidget(covariant AdaptiveBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.adUnitId != widget.adUnitId ||
+        oldWidget.inline != widget.inline ||
+        oldWidget.inlineMaxHeight != widget.inlineMaxHeight) {
+      _load();
+    }
+  }
+
   Future<void> _load() async {
+    if (_isLoading) {
+      _needsReload = true;
+      return;
+    }
+    _isLoading = true;
+    _needsReload = false;
+
     _ad?.dispose();
     _ad = null;
     if (mounted) {
@@ -49,7 +69,23 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
     }
     widget.onLoadChanged?.call(false);
 
-    if (!AdService.I.isEnabled) return;
+    if (!AdService.I.isEnabled) {
+      try {
+        await AdService.initLater();
+      } catch (err, stack) {
+        _reportAdFailure('initialize ads', err, stack);
+      }
+
+      if (!mounted) {
+        _completeLoad();
+        return;
+      }
+
+      if (!AdService.I.isEnabled) {
+        _completeLoad();
+        return;
+      }
+    }
 
     final width = MediaQuery.of(context).size.width.truncate();
     AdSize? size;
@@ -62,6 +98,7 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
       }
     } on MissingPluginException catch (err, stack) {
       _reportAdFailure('adaptive size (missing plugin)', err, stack);
+      _completeLoad();
       return;
     } on PlatformException catch (err, stack) {
       _reportAdFailure('adaptive size', err, stack);
@@ -69,57 +106,106 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
         size = await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(width);
       } on Exception catch (fallbackErr, fallbackStack) {
         _reportAdFailure('fallback adaptive size', fallbackErr, fallbackStack);
+        _completeLoad();
         return;
       }
     } catch (err, stack) {
       _reportAdFailure('adaptive size', err, stack);
+      _completeLoad();
       return;
     }
 
     if (size == null) {
       widget.onLoadChanged?.call(false);
+      _completeLoad();
       return;
     }
 
-    BannerAd? ad;
+    BannerAd? banner;
+    var bannerDisposed = false;
     try {
-      ad = BannerAd(
+      banner = BannerAd(
         adUnitId: widget.adUnitId,
         size: size,
         request: const AdRequest(),
         listener: BannerAdListener(
-          onAdLoaded: (_) {
-            if (!mounted) return;
-            setState(() => _loaded = true);
+          onAdLoaded: (ad) {
+            if (!mounted) {
+              ad.dispose();
+              bannerDisposed = true;
+              return;
+            }
+            setState(() {
+              _ad = ad as BannerAd;
+              _loaded = true;
+            });
             widget.onLoadChanged?.call(true);
           },
-          onAdFailedToLoad: (_, __) {
+          onAdFailedToLoad: (ad, error) {
+            ad.dispose();
+            bannerDisposed = true;
             if (!mounted) return;
-            setState(() => _loaded = false);
+            setState(() {
+              _loaded = false;
+              _ad = null;
+            });
             widget.onLoadChanged?.call(false);
+            debugPrint('[AdaptiveBanner] Banner failed to load: $error');
           },
         ),
       );
-      await ad.load();
+      await banner.load();
     } on MissingPluginException catch (err, stack) {
       _reportAdFailure('load banner (missing plugin)', err, stack);
-      ad?.dispose();
+      banner?.dispose();
+      _completeLoad();
       return;
     } on PlatformException catch (err, stack) {
       _reportAdFailure('load banner', err, stack);
-      ad?.dispose();
+      banner?.dispose();
+      _completeLoad();
       return;
     } catch (err, stack) {
       _reportAdFailure('load banner', err, stack);
-      ad?.dispose();
+      banner?.dispose();
+      bannerDisposed = true;
+      _completeLoad();
       return;
     }
 
     if (!mounted) {
-      ad.dispose();
+      if (banner != null && !bannerDisposed) {
+        banner.dispose();
+        bannerDisposed = true;
+      }
+      _completeLoad();
       return;
     }
-    setState(() => _ad = ad);
+
+    if (!_loaded) {
+      if (banner != null && !bannerDisposed) {
+        banner.dispose();
+        bannerDisposed = true;
+      }
+      _completeLoad();
+      return;
+    }
+
+    // When the ad successfully loads, the listener already copied the instance
+    // into [_ad]. Ensure we keep the reference alive if it wasn't captured yet.
+    _ad ??= banner;
+    _completeLoad();
+  }
+
+  void _completeLoad() {
+    final shouldReload = _needsReload;
+    _isLoading = false;
+    _needsReload = false;
+    if (shouldReload && mounted) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _load();
+      });
+    }
   }
 
   void _reportAdFailure(String context, Object error, StackTrace stackTrace) {
