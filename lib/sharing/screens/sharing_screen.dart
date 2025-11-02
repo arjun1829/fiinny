@@ -267,6 +267,17 @@ class _SharingScreenState extends State<SharingScreen> {
     );
   }
 
+  Widget _buildHeaderAd() {
+    return const AdsBannerCard(
+      placement: 'sharing_screen_header',
+      inline: true,
+      inlineMaxHeight: 120,
+      margin: EdgeInsets.fromLTRB(14, 0, 14, 18),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      minHeight: 92,
+    );
+  }
+
   // ---- Incoming (to me) requests ----
   Widget _buildIncomingPendingSection() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -466,6 +477,9 @@ class _SharingScreenState extends State<SharingScreen> {
                     // 1) My Card
                     partnerCards.add(_buildMyCard());
 
+                    // Header ad placement (always visible when ads enabled)
+                    partnerCards.add(_buildHeaderAd());
+
                     // 2) Incoming + Sent requests (from partner_requests)
                     partnerCards.add(_buildIncomingPendingSection());
                     partnerCards.add(_buildSentPendingSection());
@@ -473,17 +487,18 @@ class _SharingScreenState extends State<SharingScreen> {
                     // 3) Active partners
                     if (snapshot.hasData && snapshot.data!.isNotEmpty) {
                       int i = 0;
-                      for (final partner in snapshot.data!.where((p) => p.status == 'active')) {
-                    partnerCards.add(_buildPartnerCard(partner, i));
-                    i++;
-                    if (i % 2 == 0) {
-                      partnerCards.add(_buildPartnerAd(i ~/ 2));
-                    }
-                  }
-                } else if (snapshot.connectionState == ConnectionState.done &&
-                    (snapshot.data == null || snapshot.data!.isEmpty)) {
-                  partnerCards.add(
-                    AnimatedSlideFade(
+                      for (final partner
+                          in snapshot.data!.where((p) => p.status == 'active')) {
+                        partnerCards.add(_buildPartnerCard(partner, i));
+                        i++;
+                        if (i % 2 == 0) {
+                          partnerCards.add(_buildPartnerAd(i ~/ 2));
+                        }
+                      }
+                    } else if (snapshot.connectionState == ConnectionState.done &&
+                        (snapshot.data == null || snapshot.data!.isEmpty)) {
+                      partnerCards.add(
+                        AnimatedSlideFade(
                           delayMilliseconds: 280,
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 60),
