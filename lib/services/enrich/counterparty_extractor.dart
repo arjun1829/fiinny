@@ -7,9 +7,18 @@ class Counterparty {
 }
 
 class CounterpartyExtractor {
-  static final _reTo = RegExp(r'\b(?:to|at|towards|paid to)\b\s*([A-Za-z0-9&.\'\-\s]+)', caseSensitive: false);
-  static final _reFrom = RegExp(r'\b(?:from|by)\b\s*([A-Za-z0-9&.\'\-\s]+)', caseSensitive: false);
-  static final _reBenef = RegExp(r'(?:Beneficiary|Payee)\s*[:\-]\s*([A-Za-z0-9&.\'\-\s]+)', caseSensitive: false);
+  static final _reTo = RegExp(
+    r"\b(?:to|at|towards|paid to)\b\s*([-A-Za-z0-9&.'\s]+)",
+    caseSensitive: false,
+  );
+  static final _reFrom = RegExp(
+    r"\b(?:from|by)\b\s*([-A-Za-z0-9&.'\s]+)",
+    caseSensitive: false,
+  );
+  static final _reBenef = RegExp(
+    r"(?:Beneficiary|Payee)\s*[:\-]\s*([-A-Za-z0-9&.'\s]+)",
+    caseSensitive: false,
+  );
   static final _reVpa = RegExp(r'([a-z0-9.\-_]+@[a-z]{2,})', caseSensitive: false);
   static final _reBank = RegExp(r'\b(HDFC|ICICI|SBI|AXIS|KOTAK|YES|IDFC|IDBI|PNB|CANARA|INDUSIND)\b', caseSensitive: false);
 
