@@ -20,14 +20,42 @@ class SleekAdCard extends StatefulWidget {
 
 class _SleekAdCardState extends State<SleekAdCard> {
   bool _loaded = false;
+  int _bannerGeneration = 0;
+  bool _initializationRequested = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ensureAdInitialization();
+  }
+
+  void _ensureAdInitialization() {
+    if (_initializationRequested) return;
+    if (AdService.isReady && AdService.I.isEnabled) return;
+    _initializationRequested = true;
+    AdService.initLater().whenComplete(() {
+      if (!mounted) return;
+      _initializationRequested = false;
+      if (AdService.isReady && AdService.I.isEnabled) {
+        setState(() {
+          _loaded = false;
+          _bannerGeneration++;
+        });
+      } else {
+        setState(() => _loaded = false);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     if (!AdService.isReady || !AdService.I.isEnabled) {
+      _ensureAdInitialization();
       return const SizedBox.shrink();
     }
 
     final banner = AdaptiveBanner(
+      key: ValueKey(_bannerGeneration),
       adUnitId: AdIds.banner,
       inline: true,
       inlineMaxHeight: 120,
