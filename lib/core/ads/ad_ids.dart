@@ -1,6 +1,5 @@
 // lib/core/ads/ad_ids.dart
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 
 /// Toggle to force TEST ads even in release (handy for QA/internal builds).
 /// Use: --dart-define=FORCE_TEST_ADS=true
@@ -32,9 +31,12 @@ class AdIds {
   static const _androidRewardTest = 'ca-app-pub-3940256099942544/5224354917';
   static const _iosRewardTest     = 'ca-app-pub-3940256099942544/1712485313';
 
-  // ---------- Switch logic: test in debug, real in release ----------
-  static bool get _useReal =>
-      kReleaseMode && !forceTestAds && _hasRealIdsForCurrentPlatform;
+  // ---------- Switch logic: prefer real identifiers whenever configured ----------
+  static bool get _useReal {
+    if (forceTestAds) return false;
+    if (!_hasRealIdsForCurrentPlatform) return false;
+    return true;
+  }
 
   /// Whether production AdMob identifiers are present for the current platform.
   static bool get hasRealIdsForCurrentPlatform => _hasRealIdsForCurrentPlatform;
