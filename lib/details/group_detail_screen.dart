@@ -38,6 +38,10 @@ import '../widgets/add_group_expense_dialog.dart';
 import '../widgets/settleup_dialog.dart';
 import 'package:lifemap/ui/comp/share_badge.dart';
 
+import '../core/flags/fx_flags.dart';
+import '../settleup_v2/index.dart';
+import 'analytics/group_analytics_tab.dart';
+
 import '../details/recurring/group_recurring_screen.dart';
 
 // put this near the top of the file, after imports
@@ -289,7 +293,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this); // Overview / Chart / Chat
+    _tabController = TabController(length: 4, vsync: this); // Overview / Chart / Analytics / Chat
     _group = widget.group;
     _fetchMembers();
   }
@@ -347,7 +351,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     if (result == true && mounted) setState(() {});
   }
 
-  Future<void> _openSettleUp() async {
+  Future<void> _openLegacySettleDialog() async {
     final result = await showDialog(
       context: context,
       builder: (_) => SettleUpDialog(
@@ -358,6 +362,35 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       ),
     );
     if (result == true && mounted) setState(() {});
+  }
+
+  Future<void> _openSettleUp() async {
+    if (!FxFlags.settleUpV2) {
+      await _openLegacySettleDialog();
+      return;
+    }
+
+    try {
+      final settled = await SettleUpFlowV2Launcher.openForGroup(
+        context: context,
+        currentUserPhone: widget.userId,
+        group: _group,
+        membersOverride: _members,
+        memberDisplayNames: _memberDisplayNames,
+      );
+
+      if (settled == null) {
+        await _openLegacySettleDialog();
+      } else if (settled && mounted) {
+        setState(() {});
+      }
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to open Settle Up: $err')),
+      );
+      await _openLegacySettleDialog();
+    }
   }
 
   Future<void> _openRemind(List<ExpenseItem> groupExpenses) async {
@@ -776,6 +809,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             tabs: const [
               Tab(text: 'Overview'),
               Tab(text: 'Chart'),
+              Tab(text: 'Analytics'),
               Tab(text: 'Chat'),
             ],
           ),
@@ -846,6 +880,18 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                     currentUserPhone: widget.userId,
                     members: _members,
                     expenses: expenses,
+                  ),
+                ),
+
+                // ============ ANALYTICS ============
+                RefreshIndicator(
+                  onRefresh: _fetchMembers,
+                  child: GroupAnalyticsTab(
+                    expenses: expenses,
+                    currentUserPhone: widget.userId,
+                    group: _group,
+                    members: _members,
+                    memberDisplayNames: _memberDisplayNames,
                   ),
                 ),
 
