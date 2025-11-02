@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:characters/characters.dart';
 import 'package:lifemap/core/ads/ads_banner_card.dart';
 import 'package:lifemap/core/ads/ads_shell.dart';
+import 'package:lifemap/core/flags/fx_flags.dart';
 import 'package:lifemap/models/friend_model.dart';
 import 'package:lifemap/models/group_model.dart';
 import 'package:lifemap/models/expense_item.dart';
@@ -18,6 +19,7 @@ import 'package:lifemap/widgets/add_friend_dialog.dart';
 import 'package:lifemap/widgets/add_group_dialog.dart';
 import 'package:lifemap/widgets/settleup_dialog.dart';
 import 'package:lifemap/widgets/split_summary_widget.dart';
+import 'package:lifemap/settleup_v2/index.dart';
 
 import 'package:lifemap/details/friend_detail_screen.dart';
 import 'package:lifemap/details/group_detail_screen.dart';
@@ -139,6 +141,97 @@ class _FriendsScreenState extends State<FriendsScreen>
 
   Future<List<GroupModel>> _fetchAllGroups() async {
     return await GroupService().streamGroups(widget.userPhone).first;
+  }
+
+  Future<void> _openLegacySettleDialog({
+    List<FriendModel>? friends,
+    List<GroupModel>? groups,
+    FriendModel? initialFriend,
+    GroupModel? initialGroup,
+  }) async {
+    final resolvedFriends = friends ?? await _fetchAllFriends();
+    final resolvedGroups = groups ?? await _fetchAllGroups();
+    final result = await showDialog(
+      context: context,
+      builder: (_) => SettleUpDialog(
+        userPhone: widget.userPhone,
+        friends: resolvedFriends,
+        groups: resolvedGroups,
+        initialFriend: initialFriend,
+        initialGroup: initialGroup,
+      ),
+    );
+    if (result == true && mounted) setState(() {});
+  }
+
+  Future<void> _launchSettleForFriend(FriendModel friend) async {
+    if (!FxFlags.settleUpV2) {
+      await _openLegacySettleDialog(
+        friends: [friend],
+        groups: const [],
+        initialFriend: friend,
+      );
+      return;
+    }
+
+    final avatar = friend.avatar.startsWith('http') ? friend.avatar : null;
+    try {
+      final settled = await SettleUpFlowV2Launcher.openForFriend(
+        context: context,
+        currentUserPhone: widget.userPhone,
+        friend: friend,
+        friendDisplayName: friend.name,
+        friendAvatarUrl: avatar,
+        friendSubtitle: friend.phone,
+      );
+
+      if (settled == null) {
+        await _openLegacySettleDialog(
+          friends: [friend],
+          groups: const [],
+          initialFriend: friend,
+        );
+      } else if (settled && mounted) {
+        setState(() {});
+      }
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to open Settle Up: $err')),
+      );
+      await _openLegacySettleDialog(
+        friends: [friend],
+        groups: const [],
+        initialFriend: friend,
+      );
+    }
+  }
+
+  Future<void> _launchSettleForGroup(GroupModel group) async {
+    if (!FxFlags.settleUpV2) {
+      await _openLegacySettleDialog(initialGroup: group);
+      return;
+    }
+
+    try {
+      final settled = await SettleUpFlowV2Launcher.openForGroup(
+        context: context,
+        currentUserPhone: widget.userPhone,
+        group: group,
+      );
+
+      if (settled == null) {
+        await _openLegacySettleDialog(initialGroup: group);
+      } else if (settled && mounted) {
+        setState(() {});
+      }
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to open Settle Up: $err')),
+      );
+      await _openLegacySettleDialog(initialGroup: group);
+    }
   }
 
   void _toggleSearch() {
@@ -430,18 +523,9 @@ class _FriendsScreenState extends State<FriendsScreen>
                               icon: const Icon(Icons.handshake_rounded),
                               label: const Text('Settle Up'),
                               onPressed: () async {
-                                final allFriends = await _fetchAllFriends();
-                                final allGroups  = await _fetchAllGroups();
                                 if (!mounted) return;
                                 Navigator.pop(context);
-                                await showDialog(
-                                  context: context,
-                                  builder: (_) => SettleUpDialog(
-                                    userPhone: widget.userPhone,
-                                    friends: allFriends,
-                                    groups: allGroups,
-                                  ),
-                                );
+                                await _openLegacySettleDialog();
                               },
                             ),
                           ),
@@ -490,14 +574,7 @@ class _FriendsScreenState extends State<FriendsScreen>
           onPickFriend: (friend) async {
             Navigator.pop(context);
             if (forSettle) {
-              await showDialog(
-                context: context,
-                builder: (_) => SettleUpDialog(
-                  userPhone: widget.userPhone,
-                  friends: [friend],
-                  groups: const [],
-                ),
-              );
+              await _launchSettleForFriend(friend);
             } else {
               final ok = await Navigator.push<bool>(
                 context,
@@ -516,14 +593,7 @@ class _FriendsScreenState extends State<FriendsScreen>
           onPickGroup: (group) async {
             Navigator.pop(context);
             if (forSettle) {
-              await showDialog(
-                context: context,
-                builder: (_) => SettleUpDialog(
-                  userPhone: widget.userPhone,
-                  friends: const [],
-                  groups: [group],
-                ),
-              );
+              await _launchSettleForGroup(group);
             } else {
               final ok = await Navigator.push<bool>(
                 context,
@@ -920,14 +990,7 @@ class AllTab extends StatelessWidget {
                       if (ok == true && context.mounted) {}
                     },
                     onSettle: () async {
-                      await showDialog(
-                        context: context,
-                        builder: (_) => SettleUpDialog(
-                          userPhone: userPhone,
-                          friends: [f],
-                          groups: const [],
-                        ),
-                      );
+                      await _launchSettleForFriend(f);
                     },
                     openDetails: () => Navigator.push(
                       context,
@@ -1032,14 +1095,7 @@ class AllTab extends StatelessWidget {
                       if (ok == true && context.mounted) {}
                     },
                     onSettle: () async {
-                      await showDialog(
-                        context: context,
-                        builder: (_) => SettleUpDialog(
-                          userPhone: userPhone,
-                          friends: const [],
-                          groups: [g],
-                        ),
-                      );
+                      await _launchSettleForGroup(g);
                     },
                     openDetails: () => Navigator.push(
                       context,
@@ -1283,14 +1339,7 @@ class FriendsTab extends StatelessWidget {
                   );
                 },
                 onSettle: () async {
-                  await showDialog(
-                    context: context,
-                    builder: (_) => SettleUpDialog(
-                      userPhone: userPhone,
-                      friends: [f],
-                      groups: const [],
-                    ),
-                  );
+                  await _launchSettleForFriend(f);
                 },
                 openDetails: () => Navigator.push(
                   context,
@@ -1453,14 +1502,7 @@ class GroupsTab extends StatelessWidget {
                       );
                     },
                     onSettle: () async {
-                      await showDialog(
-                        context: context,
-                        builder: (_) => SettleUpDialog(
-                          userPhone: userPhone,
-                          friends: const [],
-                          groups: [g],
-                        ),
-                      );
+                      await _launchSettleForGroup(g);
                     },
                     openDetails: () => Navigator.push(
                       context,
