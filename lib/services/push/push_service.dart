@@ -9,6 +9,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:lifemap/main.dart' show rootNavigatorKey;
 import 'package:lifemap/services/push/first_surface_gate.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 final FlutterLocalNotificationsPlugin _fln = FlutterLocalNotificationsPlugin();
 
@@ -177,10 +178,40 @@ class PushService {
   }
 
   /// Ask for notification permission where relevant.
-  /// - iOS: prompts user
-  /// - Android: runtime permission handled by OS (manifest) on 13+, nothing to do here
+  /// - Android: prompt for POST_NOTIFICATIONS on 13+
+  /// - iOS: prompts user via Firebase Messaging
   static Future<bool> ensurePermissions() async {
-    if (!Platform.isIOS) return true;
+    if (Platform.isAndroid) {
+      try {
+        final status = await Permission.notification.status;
+        if (status.isGranted || status.isLimited) {
+          _lastKnownPermissionStatus = true;
+          return true;
+        }
+
+        if (status.isPermanentlyDenied) {
+          _lastKnownPermissionStatus = false;
+          return false;
+        }
+
+        final result = await Permission.notification.request();
+        final granted = result.isGranted || result.isLimited;
+        _lastKnownPermissionStatus = granted;
+        return granted;
+      } catch (e) {
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('[PushService] Android notification permission error: $e');
+        }
+        _lastKnownPermissionStatus = false;
+        return false;
+      }
+    }
+
+    if (!Platform.isIOS) {
+      _lastKnownPermissionStatus = true;
+      return true;
+    }
 
     await FirstSurfaceGate.waitUntilReady(timeout: const Duration(seconds: 5));
 

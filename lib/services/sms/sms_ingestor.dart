@@ -10,6 +10,8 @@ import '../income_service.dart';
 import '../../models/expense_item.dart';
 import '../../models/income_item.dart';
 
+import '../enrich/counterparty_extractor.dart';
+
 import '../../config/app_config.dart';
 import '../ai/tx_extractor.dart';
 
@@ -647,18 +649,25 @@ class SmsIngestor {
       } catch (_) {}
     }
 
+    final extractedCounterparty = direction == 'debit'
+        ? CounterpartyExtractor.extractForDebit(body)
+        : CounterpartyExtractor.extractForCredit(body);
+
     final counterparty = _deriveCounterparty(
       merchantNorm: merchantNorm,
       upiVpa: upiVpa,
       last4: last4,
       bank: bank,
       address: address,
+      extracted: extractedCounterparty,
+      direction: direction,
     );
     final counterpartyType = _deriveCounterpartyType(
       merchantNorm: merchantNorm,
       upiVpa: upiVpa,
       instrument: instrument,
       direction: direction,
+      extracted: extractedCounterparty,
     );
 
     // Source record with enrichment
@@ -1245,18 +1254,66 @@ class SmsIngestor {
     return null;
   }
 
+  void _appendUnique(List<String> parts, String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return;
+    final lower = trimmed.toLowerCase();
+    if (parts.any((p) => p.toLowerCase() == lower)) return;
+    parts.add(trimmed);
+  }
+
+  String? _accountToken(String? bank, String? last4) {
+    if (last4 == null || last4.trim().isEmpty) return null;
+    final digits = last4.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return null;
+    final normalized = digits.length <= 4
+        ? digits.padLeft(4, '0')
+        : digits.substring(digits.length - 4);
+    final prefix = (bank != null && bank.trim().isNotEmpty)
+        ? '${bank.trim().toUpperCase()} A/c'
+        : 'A/c';
+    return '$prefix …$normalized';
+  }
+
   String _deriveCounterparty({
     required String merchantNorm,
     required String? upiVpa,
     required String? last4,
     required String? bank,
     required String? address,
+    Counterparty? extracted,
+    required String direction,
   }) {
-    if (merchantNorm.isNotEmpty) return merchantNorm;
-    if (upiVpa != null && upiVpa.trim().isNotEmpty) return upiVpa.trim().toUpperCase();
-    if (last4 != null && last4.isNotEmpty) return 'CARD $last4';
-    if (bank != null) return bank;
-    return (address ?? 'UNKNOWN').toUpperCase();
+    final parts = <String>[];
+
+    if (extracted != null && extracted.name.trim().isNotEmpty) {
+      _appendUnique(parts, extracted.name.trim());
+    }
+    if (merchantNorm.isNotEmpty) {
+      _appendUnique(parts, merchantNorm);
+    }
+    if (upiVpa != null && upiVpa.trim().isNotEmpty) {
+      _appendUnique(parts, upiVpa.trim().toUpperCase());
+    }
+
+    final account = _accountToken(bank, last4);
+    if (account != null) {
+      _appendUnique(parts, account);
+    } else if (bank != null && bank.trim().isNotEmpty) {
+      _appendUnique(parts, bank.trim().toUpperCase());
+    }
+
+    if (parts.isEmpty) {
+      if (last4 != null && last4.trim().isNotEmpty) {
+        _appendUnique(parts, _accountToken(null, last4) ?? 'A/c …${last4.trim()}');
+      } else if (address != null && address.trim().isNotEmpty) {
+        _appendUnique(parts, address.trim().toUpperCase());
+      } else {
+        _appendUnique(parts, direction == 'credit' ? 'SENDER' : 'RECIPIENT');
+      }
+    }
+
+    return parts.join(' • ');
   }
 
   String _deriveCounterpartyType({
@@ -1264,8 +1321,15 @@ class SmsIngestor {
     required String? upiVpa,
     required String? instrument,
     required String direction,
+    Counterparty? extracted,
   }) {
     if (upiVpa != null && upiVpa.isNotEmpty) return 'UPI_P2P';
+    if (extracted != null) {
+      final type = extracted.type.toLowerCase();
+      if (type == 'merchant') return 'MERCHANT';
+      if (type == 'person') return direction == 'credit' ? 'SENDER' : 'RECIPIENT';
+      if (type == 'bank') return 'BANK';
+    }
     if (merchantNorm.isNotEmpty) return 'MERCHANT';
     if (instrument != null && instrument.toUpperCase().contains('CARD')) return 'MERCHANT';
     return direction == 'credit' ? 'SENDER' : 'RECIPIENT';
