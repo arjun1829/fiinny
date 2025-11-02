@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+
+import '../constants/expense_categories.dart';
 import '../core/ads/ads_shell.dart';
-import '../models/friend_model.dart';
 import '../models/expense_item.dart';
-import '../services/friend_service.dart';
+import '../models/friend_model.dart';
 import '../services/expense_service.dart';
+import '../services/friend_service.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   final String userId;
@@ -34,14 +36,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   bool _loading = true;
   bool _submitting = false;
 
-  final List<String> _categories = [
-    "General",
-    "Food",
-    "Travel",
-    "Shopping",
-    "Bills",
-    "Other"
-  ];
+  final List<String> _categories = kExpenseCategories;
 
   // --- New: Local label list for this user session ---
   List<String> _labels = [

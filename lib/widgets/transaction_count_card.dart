@@ -51,6 +51,8 @@ class TransactionCountCard extends StatelessWidget {
       case "M":
       case "This Month":
         return "This Month";
+      case "Last Month":
+        return "Last Month";
       case "Y":
       case "This Year":
         return "This Year";
@@ -73,7 +75,7 @@ class TransactionCountCard extends StatelessWidget {
         elevation: 4,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -137,7 +139,7 @@ class TransactionCountCard extends StatelessWidget {
               const SizedBox(height: 6),
               // --- BAR CHART (SCROLLABLE) ---
               SizedBox(
-                height: 52,
+                height: 48,
                 width: double.infinity,
                 child: LayoutBuilder(
                   builder: (context, constraints) {

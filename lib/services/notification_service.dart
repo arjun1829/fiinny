@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../core/notifications/local_notifications.dart';
 
@@ -17,6 +18,21 @@ class NotificationService {
   NotificationService._internal();
 
   static Future<void> requestPermissionLight() async {
+    if (Platform.isAndroid) {
+      try {
+        final status = await Permission.notification.status;
+        if (!status.isGranted && !status.isLimited) {
+          final result = await Permission.notification.request();
+          if (!result.isGranted && !result.isLimited) {
+            return;
+          }
+        }
+      } catch (err, stack) {
+        debugPrint('[NotificationService] Android notification permission check failed: $err\n$stack');
+      }
+      return;
+    }
+
     if (!Platform.isIOS) return;
     try {
       await FirebaseMessaging.instance.requestPermission(

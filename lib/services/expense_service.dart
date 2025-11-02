@@ -140,15 +140,75 @@ class ExpenseService {
 
   /// Update an expense for user and all mirrored friends
   Future<void> updateExpense(String userPhone, ExpenseItem expense) async {
-    await getExpensesCollection(userPhone).doc(expense.id).update(expense.toJson());
-    for (String friendPhone in expense.friendIds) {
-      if (friendPhone != userPhone) {
-        await getExpensesCollection(friendPhone).doc(expense.id).update(expense.toJson());
+    final userDoc = getExpensesCollection(userPhone).doc(expense.id);
+    final previousParticipants = <String>{};
+    String? previousGroupId;
+
+    try {
+      final snapshot = await userDoc.get();
+      final data = snapshot.data();
+      if (data != null) {
+        final rawFriends = data['friendIds'];
+        if (rawFriends is Iterable) {
+          previousParticipants
+              .addAll(rawFriends.map((e) => e.toString()).where((e) => e.isNotEmpty));
+        }
+        final rawSplits = data['customSplits'];
+        if (rawSplits is Map) {
+          previousParticipants
+              .addAll(rawSplits.keys.map((e) => e.toString()).where((e) => e.isNotEmpty));
+        }
+        final rawGroup = data['groupId'];
+        if (rawGroup is String && rawGroup.isNotEmpty) {
+          previousGroupId = rawGroup;
+        }
+      }
+    } catch (_) {}
+
+    previousParticipants.remove(userPhone);
+
+    final currentParticipants = <String>{}
+      ..addAll(expense.friendIds.where((phone) => phone.isNotEmpty))
+      ..addAll((expense.customSplits?.keys ?? const <String>[]) 
+          .map((e) => e.toString())
+          .where((phone) => phone.isNotEmpty));
+    currentParticipants.remove(userPhone);
+
+    final batch = _firestore.batch();
+    batch.set(userDoc, expense.toJson());
+
+    if (expense.customSplits != null && expense.customSplits!.isNotEmpty) {
+      expense.customSplits!.forEach((phone, amount) {
+        if (phone == userPhone || phone.trim().isEmpty) return;
+        final mirrorDoc = getExpensesCollection(phone).doc(expense.id);
+        final mirror = expense.copyWith(
+          amount: amount,
+          friendIds: [userPhone],
+        );
+        batch.set(mirrorDoc, mirror.toJson());
+      });
+    } else {
+      for (final phone in currentParticipants) {
+        if (phone == userPhone) continue;
+        final mirrorDoc = getExpensesCollection(phone).doc(expense.id);
+        batch.set(mirrorDoc, expense.toJson());
       }
     }
-    if (expense.groupId != null) {
-      await _groupExpenses.doc(expense.id).set(expense.toJson(), SetOptions(merge: true));
+
+    for (final phone in previousParticipants.difference(currentParticipants)) {
+      if (phone.isEmpty) continue;
+      batch.delete(getExpensesCollection(phone).doc(expense.id));
     }
+
+    final groupId = expense.groupId;
+    final groupDoc = _groupExpenses.doc(expense.id);
+    if (groupId != null && groupId.isNotEmpty) {
+      batch.set(groupDoc, expense.toJson());
+    } else if (previousGroupId != null && previousGroupId.isNotEmpty) {
+      batch.delete(groupDoc);
+    }
+
+    await batch.commit();
   }
 
   /// Delete expense everywhere

@@ -1,10 +1,17 @@
 // lib/screens/edit_expense_screen.dart
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
+
+import '../constants/expense_categories.dart';
 import '../models/expense_item.dart';
 import '../models/friend_model.dart';
+import '../models/group_model.dart';
 import '../services/expense_service.dart';
 import '../services/friend_service.dart';
+import '../services/group_service.dart';
+import '../widgets/add_friend_dialog.dart';
+import '../widgets/add_group_dialog.dart';
 
 /// Shared palette (matches add screens)
 const Color kBg = Color(0xFFF8FAF9);
@@ -16,10 +23,12 @@ const Color kLine = Color(0x14000000);
 class EditExpenseScreen extends StatefulWidget {
   final String userPhone;
   final ExpenseItem expense;
+  final int initialStep;
 
   const EditExpenseScreen({
     required this.userPhone,
     required this.expense,
+    this.initialStep = 0,
     Key? key,
   }) : super(key: key);
 
@@ -28,7 +37,7 @@ class EditExpenseScreen extends StatefulWidget {
 }
 
 class _EditExpenseScreenState extends State<EditExpenseScreen> {
-  final _pg = PageController();
+  late final PageController _pg;
   int _step = 0;
   bool _loading = true;
   bool _saving = false;
@@ -42,14 +51,16 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
   late String _category;
   late String? _selectedPayerPhone;
   late List<String> _selectedFriendPhones;
+  String? _selectedGroupId;
+
+  List<String> _cachedFriendSelection = [];
 
   // Friends
   List<FriendModel> _friends = [];
+  List<GroupModel> _groups = [];
 
-  // Categories (kept close to your original)
-  final List<String> _categories = const [
-    "General", "Food", "Travel", "Shopping", "Bills", "Other"
-  ];
+  // Shared category options used across add/edit flows
+  final List<String> _categories = kExpenseCategories;
 
   // Labels
   List<String> _labels = ["Goa Trip", "Birthday", "Office", "Emergency", "Rent"];
@@ -58,13 +69,24 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
   @override
   void initState() {
     super.initState();
+    final requestedStep = widget.initialStep;
+    if (requestedStep <= 0) {
+      _step = 0;
+    } else if (requestedStep >= 2) {
+      _step = 2;
+    } else {
+      _step = requestedStep;
+    }
+    _pg = PageController(initialPage: _step);
     _amountCtrl = TextEditingController(text: widget.expense.amount.toStringAsFixed(2));
     _noteCtrl = TextEditingController(text: widget.expense.note);
     _labelCtrl = TextEditingController(text: widget.expense.label ?? "");
     _date = widget.expense.date;
     _category = widget.expense.type;
     _selectedPayerPhone = widget.expense.payerId;
+    _selectedGroupId = widget.expense.groupId;
     _selectedFriendPhones = List<String>.from(widget.expense.friendIds);
+    _cachedFriendSelection = List<String>.from(_selectedFriendPhones);
 
     // Init labels: bring existing label to dropdown list if not present
     if ((widget.expense.label ?? '').isNotEmpty &&
@@ -73,14 +95,206 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       _selectedLabel = widget.expense.label!;
     }
 
-    _loadFriends();
+    _loadInitialData();
   }
 
-  Future<void> _loadFriends() async {
+  Future<void> _loadInitialData() async {
+    await Future.wait([
+      _reloadFriends(),
+      _reloadGroups(),
+    ]);
+    if (!mounted) return;
+    setState(() => _loading = false);
+  }
+
+  Future<void> _reloadFriends({bool autoSelectNew = false}) async {
+    final previous = _friends.map((f) => f.phone).toSet();
+    List<FriendModel> friends = [];
     try {
-      _friends = await FriendService().streamFriends(widget.userPhone).first;
+      friends = await FriendService().streamFriends(widget.userPhone).first;
     } catch (_) {}
-    if (mounted) setState(() => _loading = false);
+    if (!mounted) return;
+    setState(() {
+      _friends = friends;
+      final available = friends.map((f) => f.phone).toSet();
+      _selectedFriendPhones.retainWhere((phone) => available.contains(phone));
+      if (autoSelectNew) {
+        final next = friends.map((f) => f.phone).toSet();
+        final newlyAdded = next.difference(previous);
+        if (newlyAdded.isNotEmpty) {
+          final phone = newlyAdded.firstWhere((p) => p.isNotEmpty,
+              orElse: () => '');
+          if (phone.isNotEmpty) {
+            if ((_selectedGroupId ?? '').isNotEmpty) {
+              if (!_cachedFriendSelection.contains(phone)) {
+                _cachedFriendSelection = List<String>.from(_cachedFriendSelection)
+                  ..add(phone);
+              }
+            } else {
+              if (!_selectedFriendPhones.contains(phone)) {
+                _selectedFriendPhones.add(phone);
+              }
+              _cachedFriendSelection = List<String>.from(_selectedFriendPhones);
+            }
+          }
+        }
+      }
+      if ((_selectedGroupId ?? '').isEmpty) {
+        _cachedFriendSelection = List<String>.from(_selectedFriendPhones);
+      }
+    });
+  }
+
+  Future<void> _reloadGroups({bool autoSelectNew = false}) async {
+    final previousIds = _groups.map((g) => g.id).toSet();
+    List<GroupModel> groups = [];
+    try {
+      groups = await GroupService().fetchUserGroups(widget.userPhone);
+    } catch (_) {}
+    if (!mounted) return;
+
+    String? newSelection;
+    if (autoSelectNew) {
+      final nextIds = groups.map((g) => g.id).toSet();
+      final diff = nextIds.difference(previousIds);
+      if (diff.isNotEmpty) {
+        final candidate = diff.firstWhere((id) => id.isNotEmpty,
+            orElse: () => '');
+        if (candidate.isNotEmpty) {
+          newSelection = candidate;
+        }
+      }
+    }
+
+    setState(() {
+      _groups = groups;
+      if (_selectedGroupId != null && _selectedGroupId!.isNotEmpty) {
+        final stillExists = groups.any((g) => g.id == _selectedGroupId);
+        if (!stillExists) {
+          _selectedGroupId = null;
+        }
+      }
+    });
+
+    if (newSelection != null && mounted) {
+      _onGroupChanged(newSelection);
+    }
+  }
+
+  Future<void> _openAddFriend() async {
+    FocusScope.of(context).unfocus();
+    final base = Theme.of(context);
+    final blacky = base.copyWith(
+      colorScheme: base.colorScheme.copyWith(
+        primary: kText,
+        secondary: kText,
+        surface: Colors.white,
+      ),
+      textButtonTheme:
+          TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: kText)),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: kText,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+      checkboxTheme: const CheckboxThemeData(
+        fillColor: MaterialStatePropertyAll(kText),
+        checkColor: MaterialStatePropertyAll(Colors.white),
+      ),
+      radioTheme: const RadioThemeData(
+        fillColor: MaterialStatePropertyAll(kText),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: MaterialStateProperty.resolveWith((_) => kText),
+        trackColor: MaterialStateProperty.resolveWith((_) => kText.withOpacity(0.25)),
+      ),
+    );
+
+    final added = await showDialog<bool>(
+      context: context,
+      builder: (_) => Theme(
+        data: blacky,
+        child: AddFriendDialog(userPhone: widget.userPhone),
+      ),
+    );
+
+    if (added == true) {
+      await _reloadFriends(autoSelectNew: true);
+    }
+  }
+
+  Future<void> _openCreateGroup() async {
+    FocusScope.of(context).unfocus();
+    final base = Theme.of(context);
+    final blacky = base.copyWith(
+      colorScheme: base.colorScheme.copyWith(
+        primary: kText,
+        secondary: kText,
+        surface: Colors.white,
+      ),
+      textButtonTheme:
+          TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: kText)),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: kText,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+      checkboxTheme: const CheckboxThemeData(
+        fillColor: MaterialStatePropertyAll(kText),
+        checkColor: MaterialStatePropertyAll(Colors.white),
+      ),
+      radioTheme: const RadioThemeData(
+        fillColor: MaterialStatePropertyAll(kText),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: MaterialStateProperty.resolveWith((_) => kText),
+        trackColor: MaterialStateProperty.resolveWith((_) => kText.withOpacity(0.25)),
+      ),
+    );
+
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (_) => Theme(
+        data: blacky,
+        child: AddGroupDialog(
+          userPhone: widget.userPhone,
+          allFriends: _friends,
+        ),
+      ),
+    );
+
+    if (created == true) {
+      await _reloadGroups(autoSelectNew: true);
+    }
+  }
+
+  void _onGroupChanged(String? value) {
+    setState(() {
+      final normalized = (value == null || value.isEmpty) ? null : value;
+      final wasGroup = (_selectedGroupId ?? '').isNotEmpty;
+      _selectedGroupId = normalized;
+      final nowGroup = (_selectedGroupId ?? '').isNotEmpty;
+      if (nowGroup) {
+        _cachedFriendSelection = List<String>.from(_selectedFriendPhones);
+        _selectedFriendPhones.clear();
+      } else if (wasGroup && _selectedFriendPhones.isEmpty &&
+          _cachedFriendSelection.isNotEmpty) {
+        _selectedFriendPhones = List<String>.from(_cachedFriendSelection);
+        _cachedFriendSelection = List<String>.from(_selectedFriendPhones);
+      }
+    });
+  }
+
+  String _groupNameForId(String? groupId) {
+    if (groupId == null || groupId.isEmpty) return '';
+    for (final g in _groups) {
+      if (g.id == groupId) return g.name;
+    }
+    return '';
   }
 
   @override
@@ -128,16 +342,28 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
     setState(() => _saving = true);
     try {
+      final normalizedFriends = _selectedFriendPhones
+          .where((phone) => phone.trim().isNotEmpty && phone != widget.userPhone)
+          .toSet()
+          .toList();
+      final groupId = (_selectedGroupId ?? '').isNotEmpty ? _selectedGroupId : null;
+      final friendIds = groupId != null ? <String>[] : normalizedFriends;
+      final settledFriends = groupId != null
+          ? widget.expense.settledFriendIds
+          : widget.expense.settledFriendIds
+              .where((id) => normalizedFriends.contains(id))
+              .toList();
+
       final updated = ExpenseItem(
         id: widget.expense.id,
         type: _category,
         amount: double.parse(_amountCtrl.text.trim()),
         note: _noteCtrl.text.trim(),
         date: _date,
-        friendIds: _selectedFriendPhones,
+        friendIds: friendIds,
         payerId: _selectedPayerPhone!,
-        groupId: widget.expense.groupId,
-        settledFriendIds: widget.expense.settledFriendIds,
+        groupId: groupId,
+        settledFriendIds: settledFriends,
         customSplits: widget.expense.customSplits,
         label: label,
       );
@@ -251,14 +477,24 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                         } else {
                           _selectedFriendPhones.remove(phone);
                         }
+                        if ((_selectedGroupId ?? '').isEmpty) {
+                          _cachedFriendSelection =
+                              List<String>.from(_selectedFriendPhones);
+                        }
                       });
                     },
-                    isGroupExpense: (widget.expense.groupId ?? '').isNotEmpty,
+                    groups: _groups,
+                    selectedGroupId: _selectedGroupId,
+                    onGroup: (value) => _onGroupChanged(value),
+                    onAddFriend: _openAddFriend,
+                    onCreateGroup: _openCreateGroup,
                     labels: _labels,
                     selectedLabel: _selectedLabel,
                     onLabelSelect: (v) => setState(() {
                       _selectedLabel = v;
-                      _labelCtrl.clear();
+                      if (v != null) {
+                        _labelCtrl.clear();
+                      }
                     }),
                     labelCtrl: _labelCtrl,
                     onNext: _next,
@@ -271,9 +507,11 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                     date: _date,
                     note: _noteCtrl.text.trim(),
                     payerName: _selectedPayerPhone != null ? _nameForPhone(_selectedPayerPhone!) : '',
-                    splitNames: _selectedFriendPhones.map(_nameForPhone).toList(),
+                    splitNames: (_selectedGroupId ?? '').isNotEmpty
+                        ? const []
+                        : _selectedFriendPhones.map(_nameForPhone).toList(),
                     label: _labelCtrl.text.trim().isNotEmpty ? _labelCtrl.text.trim() : (_selectedLabel ?? ''),
-                    isGroupExpense: (widget.expense.groupId ?? '').isNotEmpty,
+                    groupName: _groupNameForId(_selectedGroupId),
                     onBack: _back,
                     onSave: _save,
                     saving: _saving,
@@ -391,8 +629,11 @@ class _StepPeople extends StatelessWidget {
   final List<FriendModel> friends;
   final List<String> selectedFriends;
   final void Function(String phone, bool selected) onToggleFriend;
-
-  final bool isGroupExpense;
+  final List<GroupModel> groups;
+  final String? selectedGroupId;
+  final ValueChanged<String?> onGroup;
+  final VoidCallback onAddFriend;
+  final VoidCallback onCreateGroup;
 
   final List<String> labels;
   final String? selectedLabel;
@@ -410,7 +651,11 @@ class _StepPeople extends StatelessWidget {
     required this.friends,
     required this.selectedFriends,
     required this.onToggleFriend,
-    required this.isGroupExpense,
+    required this.groups,
+    required this.selectedGroupId,
+    required this.onGroup,
+    required this.onAddFriend,
+    required this.onCreateGroup,
     required this.labels,
     required this.selectedLabel,
     required this.onLabelSelect,
@@ -432,6 +677,13 @@ class _StepPeople extends StatelessWidget {
         !payers.any((p) => p['phone'] == payerPhone)) {
       payers.add({'phone': payerPhone!, 'name': payerPhone!, 'avatar': '👤'});
     }
+
+    final hasGroup = selectedGroupId != null && selectedGroupId!.isNotEmpty;
+    final dropdownValue = hasGroup &&
+            groups.any((g) => g.id == selectedGroupId)
+        ? selectedGroupId
+        : null;
+    final groupSelected = dropdownValue != null;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -462,17 +714,64 @@ class _StepPeople extends StatelessWidget {
           ),
           const SizedBox(height: 18),
 
+          const _H2('Group (optional)'),
+          const SizedBox(height: 8),
+          _Box(
+            child: DropdownButtonFormField<String?>(
+              value: dropdownValue,
+              isExpanded: true,
+              decoration: _inputDec(),
+              items: <DropdownMenuItem<String?>>[
+                const DropdownMenuItem<String?>(value: null, child: Text('No group')),
+                ...groups.map(
+                  (g) => DropdownMenuItem<String?>(value: g.id, child: Text(g.name)),
+                ),
+              ],
+              onChanged: saving ? null : onGroup,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: saving ? null : onAddFriend,
+                icon: const Icon(Icons.person_add_alt_1_rounded, color: kPrimary),
+                label: const Text('Add Friend'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kPrimary,
+                  side: const BorderSide(color: kPrimary),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: saving ? null : onCreateGroup,
+                icon: const Icon(Icons.group_add_rounded, color: kPrimary),
+                label: const Text('Create Group'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kPrimary,
+                  side: const BorderSide(color: kPrimary),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+
           const _H2('Split With'),
           const SizedBox(height: 8),
-          if (isGroupExpense) ...[
+          if (groupSelected) ...[
             _GlassCard(
               child: ListTile(
                 leading: const Icon(Icons.groups_2_rounded, color: kPrimary),
                 title: const Text(
-                  "This expense belongs to a group",
+                  "This expense is linked to a group",
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
-                subtitle: const Text("Edit split in the group expense screen"),
+                subtitle: const Text("Pick 'No group' above to manage friends manually."),
               ),
             ),
           ] else ...[
@@ -509,7 +808,7 @@ class _StepPeople extends StatelessWidget {
             children: [
               Expanded(
                 child: _Box(
-                  child: DropdownButtonFormField<String>(
+                  child: DropdownButtonFormField<String?>(
                     value: selectedLabel,
                     isExpanded: true,
                     decoration: _inputDec().copyWith(
@@ -517,8 +816,10 @@ class _StepPeople extends StatelessWidget {
                       prefixIcon: const Icon(Icons.label_important, color: kPrimary),
                     ),
                     items: [
-                      const DropdownMenuItem(value: null, child: Text('No label')),
-                      ...labels.map((l) => DropdownMenuItem(value: l, child: Text(l))),
+                      const DropdownMenuItem<String?>(value: null, child: Text('No label')),
+                      ...labels.map(
+                        (l) => DropdownMenuItem<String?>(value: l, child: Text(l)),
+                      ),
                     ],
                     onChanged: saving ? null : (v) {
                       onLabelSelect(v);
@@ -570,7 +871,7 @@ class _StepReview extends StatelessWidget {
   final String payerName;
   final List<String> splitNames;
   final String label;
-  final bool isGroupExpense;
+  final String groupName;
   final VoidCallback onBack;
   final VoidCallback onSave;
   final bool saving;
@@ -583,7 +884,7 @@ class _StepReview extends StatelessWidget {
     required this.payerName,
     required this.splitNames,
     required this.label,
-    required this.isGroupExpense,
+    required this.groupName,
     required this.onBack,
     required this.onSave,
     required this.saving,
@@ -597,10 +898,11 @@ class _StepReview extends StatelessWidget {
       _KV('Date', "${date.toLocal()}".split(' ')[0]),
       if (note.isNotEmpty) _KV('Note', note),
       if (payerName.isNotEmpty) _KV('Payer', payerName),
-      if (isGroupExpense)
-        const _KV('Split', 'Managed in group')
-      else
-        _KV('Split With', splitNames.isNotEmpty ? splitNames.join(', ') : '—'),
+      if (groupName.isNotEmpty) _KV('Group', groupName),
+      if (splitNames.isNotEmpty)
+        _KV('Split With', splitNames.join(', '))
+      else if (groupName.isEmpty)
+        const _KV('Split With', '—'),
       if (label.isNotEmpty) _KV('Label', label),
     ];
 

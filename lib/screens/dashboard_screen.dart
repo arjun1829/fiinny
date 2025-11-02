@@ -1793,38 +1793,47 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     }
                                   },
                                 ),
-                                Positioned(
-                                  top: 10,
-                                  right: 24,
-                                  child: GestureDetector(
-                                    onTap: _savingLimit ? null : _editLimitDialog,
-                                    child: CircleAvatar(
-                                      radius: 16,
-                                      backgroundColor: Colors.teal.withOpacity(0.09),
-                                      child: const Icon(Icons.edit_rounded, size: 17, color: Colors.teal),
+                                Positioned.fill(
+                                  child: Align(
+                                    alignment: Alignment.bottomRight,
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(right: 20, bottom: 18),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (limitUsageText != null)
+                                            Container(
+                                              constraints: const BoxConstraints(maxWidth: 180),
+                                              margin: const EdgeInsets.only(bottom: 12),
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: Colors.teal.withOpacity(0.12),
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              child: Text(
+                                                limitUsageText,
+                                                textAlign: TextAlign.right,
+                                                style: TextStyle(
+                                                  color: Colors.teal[900],
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ),
+                                          GestureDetector(
+                                            onTap: _savingLimit ? null : _editLimitDialog,
+                                            child: CircleAvatar(
+                                              radius: 16,
+                                              backgroundColor: Colors.teal.withOpacity(0.09),
+                                              child: const Icon(Icons.edit_rounded, size: 17, color: Colors.teal),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
-                                if (limitUsageText != null)
-                                  Positioned(
-                                    right: 30,
-                                    bottom: 22,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.teal.withOpacity(0.12),
-                                        borderRadius: BorderRadius.circular(11),
-                                      ),
-                                      child: Text(
-                                        limitUsageText,
-                                        style: TextStyle(
-                                          color: Colors.teal[900],
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
                               ],
                           ),
                         ),
