@@ -71,6 +71,16 @@ class _TinyPill extends StatelessWidget {
   }
 }
 
+// --- TEMP stubs to unblock build (friends_screen.dart) ---
+Future<void> _launchSettleForFriend(dynamic _friend) async {
+  // TODO: Hook to your settle-up flow (friend) without breaking existing calls.
+}
+
+Future<void> _launchSettleForGroup(dynamic _group) async {
+  // TODO: Hook to your settle-up flow (group) without breaking existing calls.
+}
+// ---------------------------------------------------------
+
 
 class _ActionTile extends StatelessWidget {
   final IconData icon; final String label; final VoidCallback onTap;
