@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:provider/provider.dart';
+import 'package:workmanager/workmanager.dart';
 import 'firebase_options.dart';
 import 'routes.dart';
 import 'core/ads/ad_service.dart';
@@ -16,14 +17,45 @@ import 'core/ads/ads_shell.dart';
 import 'screens/launcher_screen.dart';
 import 'themes/theme_provider.dart';
 import 'services/startup_prefs.dart';
+import 'services/sms/sms_ingestor.dart';
 
 // Toggle from CI: --dart-define=SAFE_MODE=true
 const bool SAFE_MODE = bool.fromEnvironment('SAFE_MODE', defaultValue: false);
 const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: true);
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
+void smsBackgroundDispatcher() {
+  Workmanager().executeTask((task, inputData) async {
+    WidgetsFlutterBinding.ensureInitialized();
+    try {
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    } catch (_) {}
+    SmsIngestor.instance.init();
+    final phone = inputData?['userPhone'] as String?;
+    if (phone != null && phone.isNotEmpty) {
+      try {
+        await SmsIngestor.instance.syncDelta(
+          userPhone: phone,
+          lookbackHours: 48,
+        );
+      } catch (e) {
+        debugPrint('[Workmanager] smsSync48h error: $e');
+      }
+    }
+    return Future.value(true);
+  });
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    try {
+      await Workmanager().initialize(smsBackgroundDispatcher, isInDebugMode: false);
+    } catch (e) {
+      debugPrint('Workmanager init failed: $e');
+    }
+  }
 
   if (SAFE_MODE) {
     runApp(MaterialApp(
