@@ -4,7 +4,7 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:telephony/telephony.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:workmanager/workmanager.dart';
+import 'package:workmanager/workmanager.dart' as wm;
 
 import '../expense_service.dart';
 import '../income_service.dart';
@@ -365,19 +365,19 @@ class SmsIngestor {
     if (_scheduledTaskId == taskId) return;
     if (_scheduledTaskId != null && _scheduledTaskId != taskId) {
       try {
-        await Workmanager().cancelByUniqueName(_scheduledTaskId!);
+        await wm.Workmanager().cancelByUniqueName(_scheduledTaskId!);
       } catch (_) {}
     }
     try {
-      await Workmanager().registerPeriodicTask(
+      await wm.Workmanager().registerPeriodicTask(
         taskId,
         'smsSync48h',
         frequency: const Duration(hours: 24),
         existingWorkPolicy:
-            _scheduledTaskId == null ? ExistingWorkPolicy.keep : ExistingWorkPolicy.replace,
+            _scheduledTaskId == null ? wm.ExistingWorkPolicy.keep : wm.ExistingWorkPolicy.replace,
         inputData: {'userPhone': userPhone},
-        constraints: const Constraints(networkType: NetworkType.not_required),
-        backoffPolicy: BackoffPolicy.exponential,
+        constraints: wm.Constraints(networkType: wm.NetworkType.not_required),
+        backoffPolicy: wm.BackoffPolicy.exponential,
       );
       _scheduledTaskId = taskId;
       _log('scheduled daily 48h SMS sync');
