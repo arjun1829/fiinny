@@ -4,6 +4,7 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:telephony/telephony.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:workmanager/workmanager.dart';
 
 import '../expense_service.dart';
 import '../income_service.dart';
@@ -120,6 +121,7 @@ class SmsIngestor {
   final ExpenseService _expense = ExpenseService();
   final IncomeService _income = IncomeService();
   final IngestIndexService _index = IngestIndexService();
+  String? _scheduledTaskId;
 
   bool get _isAndroid => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
@@ -356,6 +358,34 @@ class SmsIngestor {
     }
   }
 
+  Future<void> scheduleDaily48hSync(String userPhone) async {
+    if (!_isAndroid) return;
+    final sanitized = userPhone.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+    final taskId = 'sms-sync-48h-${sanitized.isEmpty ? 'user' : sanitized}';
+    if (_scheduledTaskId == taskId) return;
+    if (_scheduledTaskId != null && _scheduledTaskId != taskId) {
+      try {
+        await Workmanager().cancelByUniqueName(_scheduledTaskId!);
+      } catch (_) {}
+    }
+    try {
+      await Workmanager().registerPeriodicTask(
+        taskId,
+        'smsSync48h',
+        frequency: const Duration(hours: 24),
+        existingWorkPolicy:
+            _scheduledTaskId == null ? ExistingWorkPolicy.keep : ExistingWorkPolicy.replace,
+        inputData: {'userPhone': userPhone},
+        constraints: const Constraints(networkType: NetworkType.not_required),
+        backoffPolicy: BackoffPolicy.exponential,
+      );
+      _scheduledTaskId = taskId;
+      _log('scheduled daily 48h SMS sync');
+    } catch (e) {
+      _log('workmanager schedule failed: $e');
+    }
+  }
+
   Future<void> syncDelta({
     required String userPhone,
     int? overlapHours,
@@ -536,8 +566,12 @@ class SmsIngestor {
 
     // Regular debit/credit detection
     final direction = _inferDirection(body); // 'debit' | 'credit' | null
-    // Minimal parsing: amount (₹ or FX)
-    final amountInr = fx == null ? _extractAmountInr(body) : null;
+    // Prefer txn amount cues; keep legacy extractor as final fallback
+    final amountInr = fx == null
+        ? (_extractTxnAmount(body, direction: direction) ?? _extractAmountInr(body))
+        : null;
+    final postBal = _extractPostTxnBalance(body);
+    _log('parsed amount=${amountInr ?? -1} postBalance=${postBal ?? -1} dir=$direction');
     final amount = amountInr ?? fx?['amount'] as double?;
     if (amount == null || amount <= 0) {
       _log('no valid amount; skip');
@@ -661,6 +695,7 @@ class SmsIngestor {
       address: address,
       extracted: extractedCounterparty,
       direction: direction,
+      body: body,
     );
     final counterpartyType = _deriveCounterpartyType(
       merchantNorm: merchantNorm,
@@ -687,6 +722,7 @@ class SmsIngestor {
       'when': Timestamp.fromDate(DateTime.now()),
       if (fx != null) 'fxOriginal': fx,
       if (fees.isNotEmpty) 'feesDetected': fees,
+      if (postBal != null) 'postBalanceInr': postBal,
     };
 
     // Cross-source reconcile (avoid duplicate if Gmail created it)
@@ -948,6 +984,116 @@ class SmsIngestor {
     return p;
   }
 
+  // Prefer transaction amount near debit/credit cues, ignoring balance references.
+  double? _extractTxnAmount(String text, {String? direction}) {
+    if (text.isEmpty) return null;
+
+    final body = text;
+    final amountPattern = RegExp(
+      r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\.[0-9]{1,2})?)',
+      caseSensitive: false,
+    );
+    final balanceCue = RegExp(
+      r'(A/?c\.?\s*Bal(?:ance)?|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance|\bBal\b)',
+      caseSensitive: false,
+    );
+    final creditCues = RegExp(
+      r'(has\s*been\s*credited|credited\s*(?:by|with)?|received|rcvd|deposit(?:ed)?|salary|refund|reversal)',
+      caseSensitive: false,
+    );
+    final debitCues = RegExp(
+      r'(debit(?:ed)?|spent|paid|payment|withdrawn|withdrawal|pos|upi|imps|neft|rtgs|purchase|txn|transaction)',
+      caseSensitive: false,
+    );
+
+    Iterable<RegExpMatch> cueMatches;
+    final dir = direction?.toLowerCase();
+    if (dir == 'credit') {
+      cueMatches = creditCues.allMatches(body);
+    } else if (dir == 'debit') {
+      cueMatches = debitCues.allMatches(body);
+    } else {
+      final combined = <RegExpMatch>[];
+      combined.addAll(creditCues.allMatches(body));
+      combined.addAll(debitCues.allMatches(body));
+      combined.sort((a, b) => a.start.compareTo(b.start));
+      cueMatches = combined;
+    }
+
+    bool _hasBalanceCueNear(int absoluteIndex) {
+      final lookStart = absoluteIndex - 25;
+      final start = lookStart < 0 ? 0 : lookStart;
+      if (absoluteIndex <= start) return false;
+      final snippet = body.substring(start, absoluteIndex);
+      return balanceCue.hasMatch(snippet);
+    }
+
+    double? _parseAmount(RegExpMatch match) {
+      var number = match.group(1) ?? '';
+      if (number.isEmpty) {
+        number = match.group(0) ?? '';
+      }
+      number = number.replaceAll(',', '');
+      number = number.replaceAll(RegExp(r'[^0-9\.]'), '');
+      if (number.isEmpty) return null;
+      final value = double.tryParse(number);
+      if (value == null || value <= 0) return null;
+      return value;
+    }
+
+    double? _firstAmountAfter(int start, int window) {
+      if (start >= body.length) return null;
+      final end = start + window;
+      final endClamped = end > body.length ? body.length : end;
+      final slice = body.substring(start, endClamped);
+      for (final match in amountPattern.allMatches(slice)) {
+        final absolute = start + match.start;
+        if (_hasBalanceCueNear(absolute)) continue;
+        final value = _parseAmount(match);
+        if (value != null) return value;
+      }
+      return null;
+    }
+
+    for (final cue in cueMatches) {
+      final value = _firstAmountAfter(cue.end, 80);
+      if (value != null) return value;
+    }
+
+    for (final match in amountPattern.allMatches(body)) {
+      final absolute = match.start;
+      if (_hasBalanceCueNear(absolute)) continue;
+      final value = _parseAmount(match);
+      if (value != null) return value;
+    }
+
+    return null;
+  }
+
+  // Capture post-transaction balance references (A/c Bal, Available Balance, etc.).
+  double? _extractPostTxnBalance(String text) {
+    if (text.isEmpty) return null;
+    final balancePattern = RegExp(
+      r'(?:A/?c\.?\s*Bal(?:ance)?|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance)'
+      r'\s*(?:is|:)?\s*(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\.[0-9]{1,2})?)(?:\s*(?:CR|DR))?',
+      caseSensitive: false,
+    );
+
+    for (final match in balancePattern.allMatches(text)) {
+      var number = match.group(1) ?? '';
+      if (number.isEmpty) continue;
+      number = number.replaceAll(',', '');
+      number = number.replaceAll(RegExp(r'[^0-9\.]'), '');
+      if (number.isEmpty) continue;
+      final value = double.tryParse(number);
+      if (value != null && value > 0) {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
   // INR amount like: ₹1,234.50 / INR 1234 / Rs 1,234 / rs.250
   double? _extractAmountInr(String text) {
     final patterns = <RegExp>[
@@ -995,6 +1141,22 @@ class SmsIngestor {
   // infer debit/credit from common cues
   String? _inferDirection(String body) {
     final lower = body.toLowerCase();
+    final strongCreditRx =
+        RegExp(r'has\s*been\s*credited|credited\s*(?:by|with)', caseSensitive: false);
+    final strongDebitRx =
+        RegExp(r'has\s*been\s*debited|debited\s*(?:by|for)', caseSensitive: false);
+    final strongCreditMatch = strongCreditRx.firstMatch(lower);
+    final strongDebitMatch = strongDebitRx.firstMatch(lower);
+
+    if (strongCreditMatch != null &&
+        (strongDebitMatch == null || strongCreditMatch.start <= strongDebitMatch.start)) {
+      return 'credit';
+    }
+    if (strongDebitMatch != null &&
+        (strongCreditMatch == null || strongDebitMatch.start < strongCreditMatch.start)) {
+      return 'debit';
+    }
+
     final isDR = RegExp(r'\bdr\b').hasMatch(lower);
     final isCR = RegExp(r'\bcr\b').hasMatch(lower);
     final debit = RegExp(
@@ -1009,10 +1171,20 @@ class SmsIngestor {
     if ((debit || isDR) && !(credit || isCR)) return 'debit';
     if ((credit || isCR) && !(debit || isDR)) return 'credit';
 
-    // both seen: pick first occurrence
-    final dIdx = RegExp(r'debit|spent|purchase|paid|payment|dr|auto[-\s]?debit|autopay|nach|mandate', caseSensitive: false).firstMatch(lower)?.start ?? -1;
-    final cIdx = RegExp(r'credit|received|rcvd|deposit|salary|refund|cr', caseSensitive: false).firstMatch(lower)?.start ?? -1;
+    final dIdx = RegExp(
+            r'debit|spent|purchase|paid|payment|dr|auto[-\s]?debit|autopay|nach|mandate',
+            caseSensitive: false)
+        .firstMatch(lower)
+        ?.start ??
+        -1;
+    final cIdx = RegExp(r'credit|received|rcvd|deposit|salary|refund|cr', caseSensitive: false)
+            .firstMatch(lower)
+            ?.start ??
+        -1;
     if (dIdx >= 0 && cIdx >= 0) return dIdx < cIdx ? 'debit' : 'credit';
+
+    if (strongCreditMatch != null) return 'credit';
+    if (strongDebitMatch != null) return 'debit';
     return null;
   }
 
@@ -1283,6 +1455,7 @@ class SmsIngestor {
     required String? address,
     Counterparty? extracted,
     required String direction,
+    required String body,
   }) {
     final parts = <String>[];
 
@@ -1301,6 +1474,21 @@ class SmsIngestor {
       _appendUnique(parts, account);
     } else if (bank != null && bank.trim().isNotEmpty) {
       _appendUnique(parts, bank.trim().toUpperCase());
+    }
+
+    if (direction == 'credit') {
+      final match = RegExp(r'\bfrom\s+([A-Za-z0-9 .&\-\(\)/]{3,40})', caseSensitive: false)
+          .firstMatch(body);
+      if (match != null) {
+        final raw = match.group(1) ?? '';
+        var cleaned = raw.split(RegExp(r'[\.;\n]')).first.trim();
+        if (cleaned.toLowerCase().startsWith('your ')) {
+          cleaned = '';
+        }
+        if (cleaned.isNotEmpty) {
+          _appendUnique(parts, cleaned);
+        }
+      }
     }
 
     if (parts.isEmpty) {
