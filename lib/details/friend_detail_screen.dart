@@ -1089,16 +1089,199 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     );
   }
 
-  Widget _buildAvatar() {
+  Widget _friendSummaryCard({
+    required double owe,
+    required double owed,
+    required int txCount,
+    required int bucketCount,
+  }) {
+    final theme = Theme.of(context);
+    final Color mint = theme.colorScheme.primary;
+    final Color danger = theme.colorScheme.error;
+    final Color neutral =
+        theme.textTheme.bodySmall?.color?.withOpacity(0.7) ?? Colors.grey.shade600;
+    final double net = owed - owe;
+    const duration = Duration(milliseconds: 180);
+
+    Color netColor;
+    IconData netIcon;
+    String netLabel;
+    if (net > 0.01) {
+      netColor = mint;
+      netIcon = Icons.trending_up_rounded;
+      netLabel = '+ ₹${net.toStringAsFixed(2)}';
+    } else if (net < -0.01) {
+      netColor = danger;
+      netIcon = Icons.trending_down_rounded;
+      netLabel = '- ₹${(-net).toStringAsFixed(2)}';
+    } else {
+      netColor = neutral;
+      netIcon = Icons.check_circle_rounded;
+      netLabel = 'Settled';
+    }
+
+    final bool allSettled = owe.abs() < 0.01 && owed.abs() < 0.01;
+    final subtitleParts = <String>[];
+    if (widget.friend.phone.isNotEmpty) {
+      subtitleParts.add(widget.friend.phone);
+    }
+    final email = widget.friend.email;
+    if (email != null && email.isNotEmpty) {
+      subtitleParts.add(email);
+    }
+    final subtitle = subtitleParts.join(' • ');
+
+    final baseColor = theme.cardColor;
+    final bool isDark = theme.brightness == Brightness.dark;
+
+    return AnimatedContainer(
+      duration: duration,
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark ? Colors.white10 : Colors.grey.shade200,
+        ),
+        gradient: LinearGradient(
+          colors: [
+            baseColor.withOpacity(isDark ? 0.92 : 0.98),
+            baseColor.withOpacity(isDark ? 0.88 : 0.94),
+            mint.withOpacity(0.06),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildAvatar(radius: 24),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                          ) ??
+                          const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                    ),
+                    if (subtitle.isNotEmpty)
+                      Text(
+                        subtitle,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: neutral,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              AnimatedContainer(
+                duration: duration,
+                decoration: BoxDecoration(
+                  color: netColor.withOpacity(netLabel == 'Settled' ? 0.14 : 0.16),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: netColor.withOpacity(0.4)),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(netIcon, size: 18, color: netColor),
+                    const SizedBox(width: 6),
+                    AnimatedSwitcher(
+                      duration: duration,
+                      child: Text(
+                        netLabel,
+                        key: ValueKey(netLabel),
+                        style: TextStyle(
+                          color: netColor,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _AmountChip(
+                icon: Icons.call_made_rounded,
+                color: owe > 0.01 ? danger : neutral,
+                label: owe > 0.01
+                    ? 'You owe ₹${owe.toStringAsFixed(2)}'
+                    : 'You owe ₹0.00',
+              ),
+              _AmountChip(
+                icon: Icons.call_received_rounded,
+                color: owed > 0.01 ? mint : neutral,
+                label: owed > 0.01
+                    ? 'Owes you ₹${owed.toStringAsFixed(2)}'
+                    : 'No dues for you',
+              ),
+              if (allSettled)
+                const _SettledBadge(),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            children: [
+              _SummaryStat(
+                icon: Icons.receipt_long_rounded,
+                label: 'Transactions',
+                value: '$txCount',
+              ),
+              _SummaryStat(
+                icon: Icons.layers_rounded,
+                label: 'Shared groups',
+                value: '$bucketCount',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar({double radius = 36}) {
     final url =
-    (_friendAvatarUrl?.isNotEmpty == true) ? _friendAvatarUrl! : widget.friend.avatar;
+        (_friendAvatarUrl?.isNotEmpty == true) ? _friendAvatarUrl! : widget.friend.avatar;
     if (url.isNotEmpty && url.startsWith('http')) {
-      return CircleAvatar(radius: 36, backgroundImage: NetworkImage(url));
+      return CircleAvatar(radius: radius, backgroundImage: NetworkImage(url));
     }
     final initial =
-    widget.friend.name.isNotEmpty ? widget.friend.name[0].toUpperCase() : '👤';
+        widget.friend.name.isNotEmpty ? widget.friend.name[0].toUpperCase() : '👤';
     return CircleAvatar(
-        radius: 36, child: Text(initial, style: const TextStyle(fontSize: 28)));
+      radius: radius,
+      child: Text(
+        initial,
+        style: TextStyle(fontSize: radius * 1.4, fontWeight: FontWeight.w700),
+      ),
+    );
   }
 
   String get _displayName =>
@@ -1281,161 +1464,12 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          // Header card
-                          _card(
-                            context,
-                            padding:
-                            const EdgeInsets.fromLTRB(16, 16, 16, 18),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                _buildAvatar(),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        _displayName,
-                                        style: TextStyle(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.teal.shade900,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      if (widget.friend.phone.isNotEmpty)
-                                        Text(
-                                          widget.friend.phone,
-                                          style: const TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.black87),
-                                        ),
-                                      const SizedBox(height: 10),
-                                      Wrap(
-                                        spacing: 10,
-                                        runSpacing: 8,
-                                        crossAxisAlignment:
-                                        WrapCrossAlignment.center,
-                                        children: [
-                                          // Net pill
-                                          Container(
-                                            padding: const EdgeInsets
-                                                .symmetric(
-                                                horizontal: 10,
-                                                vertical: 6),
-                                            decoration: BoxDecoration(
-                                              color: (net >= 0
-                                                  ? Colors.green
-                                                  : Colors.redAccent)
-                                                  .withOpacity(0.12),
-                                              borderRadius:
-                                              BorderRadius.circular(999),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize:
-                                              MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  net >= 0
-                                                      ? Icons
-                                                      .trending_up_rounded
-                                                      : Icons
-                                                      .trending_down_rounded,
-                                                  size: 16,
-                                                  color: net >= 0
-                                                      ? Colors.green
-                                                      : Colors.redAccent,
-                                                ),
-                                                const SizedBox(width: 6),
-                                                Text(
-                                                  "${net >= 0 ? '+' : '-'} ₹${net.abs().toStringAsFixed(2)}",
-                                                  style: TextStyle(
-                                                    color: net >= 0
-                                                        ? Colors.green
-                                                        : Colors.redAccent,
-                                                    fontWeight:
-                                                    FontWeight.w800,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          // You owe
-                                          Row(
-                                            mainAxisSize:
-                                            MainAxisSize.min,
-                                            children: [
-                                              const Text("You Owe: ",
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                      FontWeight.bold,
-                                                      color:
-                                                      Colors.black87)),
-                                              FittedBox(
-                                                child: Text(
-                                                  "₹${totalOwe.toStringAsFixed(2)}",
-                                                  style: const TextStyle(
-                                                      color:
-                                                      Colors.redAccent,
-                                                      fontWeight:
-                                                      FontWeight.w700),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          // Owes you
-                                          Row(
-                                            mainAxisSize:
-                                            MainAxisSize.min,
-                                            children: [
-                                              const Text("Owes You: ",
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                      FontWeight.bold,
-                                                      color:
-                                                      Colors.black87)),
-                                              FittedBox(
-                                                child: Text(
-                                                  "₹${totalOwed.toStringAsFixed(2)}",
-                                                  style: TextStyle(
-                                                      color: Colors
-                                                          .teal.shade700,
-                                                      fontWeight:
-                                                      FontWeight.w700),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          // total pairwise transactions
-                                          Row(
-                                            mainAxisSize:
-                                            MainAxisSize.min,
-                                            children: [
-                                              const Text("Transactions: ",
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                      FontWeight.bold,
-                                                      color:
-                                                      Colors.black87)),
-                                              Text(
-                                                "${pairwise.length}",
-                                                style: const TextStyle(
-                                                    color: Colors.indigo,
-                                                    fontWeight:
-                                                    FontWeight.w700),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                          // UX: Premium friend summary card (UI-only)
+                          _friendSummaryCard(
+                            owe: totalOwe,
+                            owed: totalOwed,
+                            txCount: pairwise.length,
+                            bucketCount: buckets.length,
                           ),
                           const SizedBox(height: 12),
                           AdsBannerCard(
@@ -2388,6 +2422,298 @@ class _StatusChip extends StatelessWidget {
           fontWeight: FontWeight.w700,
           fontSize: 11.5,
         ),
+      ),
+    );
+  }
+}
+
+class _AmountChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _AmountChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveColor = color;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: effectiveColor.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: effectiveColor.withOpacity(0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: effectiveColor),
+          const SizedBox(width: 6),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 160),
+            child: Text(
+              label,
+              key: ValueKey(label),
+              style: TextStyle(
+                color: effectiveColor,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryStat extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _SummaryStat({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bg = theme.colorScheme.primary.withOpacity(
+      theme.brightness == Brightness.dark ? 0.18 : 0.12,
+    );
+    final textColor =
+        theme.textTheme.bodyMedium?.color ?? (theme.brightness == Brightness.dark
+            ? Colors.white
+            : Colors.black87);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                      color: textColor.withOpacity(0.7),
+                      fontWeight: FontWeight.w600,
+                    ) ??
+                    TextStyle(
+                      fontSize: 12,
+                      color: textColor.withOpacity(0.7),
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              Text(
+                value,
+                style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: textColor,
+                    ) ??
+                    TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: textColor,
+                    ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettledBadge extends StatelessWidget {
+  const _SettledBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle_rounded, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(
+            'All settled',
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AmountChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _AmountChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveColor = color;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: effectiveColor.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: effectiveColor.withOpacity(0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: effectiveColor),
+          const SizedBox(width: 6),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 160),
+            child: Text(
+              label,
+              key: ValueKey(label),
+              style: TextStyle(
+                color: effectiveColor,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryStat extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _SummaryStat({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bg = theme.colorScheme.primary.withOpacity(
+      theme.brightness == Brightness.dark ? 0.18 : 0.12,
+    );
+    final textColor =
+        theme.textTheme.bodyMedium?.color ?? (theme.brightness == Brightness.dark
+            ? Colors.white
+            : Colors.black87);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                      color: textColor.withOpacity(0.7),
+                      fontWeight: FontWeight.w600,
+                    ) ??
+                    TextStyle(
+                      fontSize: 12,
+                      color: textColor.withOpacity(0.7),
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              Text(
+                value,
+                style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: textColor,
+                    ) ??
+                    TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: textColor,
+                    ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettledBadge extends StatelessWidget {
+  const _SettledBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle_rounded, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(
+            'All settled',
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -23,7 +23,7 @@ class ConfirmMarkReceivedDialog extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Are you sure $friendName has paid you outside Fiinny?',
+              'Are you sure you received $amountText outside Fiinny?',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
@@ -31,7 +31,7 @@ class ConfirmMarkReceivedDialog extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.m),
             Text(
-              'If you have received $amountText from $friendName outside Fiinny, you can mark this as received.\n\nNo transfer will happen due to this action.',
+              '$friendName will see this as settled in Fiinny. No money movement will happen due to this action.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Colors.white.withOpacity(.72),
                     height: 1.4,
