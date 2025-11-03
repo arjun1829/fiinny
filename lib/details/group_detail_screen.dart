@@ -927,72 +927,179 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     final creatorLabel = _nameFor(_group.createdBy);
 
 
-    final net = owed - owe;
-    final netColor = net >= 0 ? Colors.teal.shade800 : Colors.orange.shade800;
-    final netText =
-    net >= 0 ? "Net +₹${net.toStringAsFixed(0)}" : "Net -₹${(-net).toStringAsFixed(0)}";
+    final theme = Theme.of(context);
+    final Color mint = theme.colorScheme.primary;
+    final Color danger = theme.colorScheme.error;
+    final Color neutral =
+        theme.textTheme.bodySmall?.color?.withOpacity(0.7) ?? Colors.grey.shade600;
+    final double net = owed - owe;
+    const duration = Duration(milliseconds: 180);
 
-    return _glassCard(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+    Color netColor;
+    IconData netIcon;
+    String netLabel;
+    if (net > 0.01) {
+      netColor = mint;
+      netIcon = Icons.trending_up_rounded;
+      netLabel = '+ ₹${net.toStringAsFixed(2)}';
+    } else if (net < -0.01) {
+      netColor = danger;
+      netIcon = Icons.trending_down_rounded;
+      netLabel = '- ₹${(-net).toStringAsFixed(2)}';
+    } else {
+      netColor = neutral;
+      netIcon = Icons.check_circle_rounded;
+      netLabel = 'Settled';
+    }
+
+    final bool allSettled = owe.abs() < 0.01 && owed.abs() < 0.01;
+    final creatorDisplay = createdByYou ? 'You' : creatorLabel;
+    final subtitle =
+        "Created by $creatorDisplay • ${_members.length} members • $txCount transactions";
+
+    final baseColor = theme.cardColor;
+    final bool isDark = theme.brightness == Brightness.dark;
+
+    return AnimatedContainer(
+      duration: duration,
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark ? Colors.white10 : Colors.white.withOpacity(0.65),
+        ),
+        gradient: LinearGradient(
+          colors: [
+            baseColor.withOpacity(isDark ? 0.92 : 0.98),
+            baseColor.withOpacity(isDark ? 0.88 : 0.94),
+            mint.withOpacity(0.06),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _groupAvatar(),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_group.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.teal.shade900)),
-                const SizedBox(height: 6),
-                Text(
-                  "Created by $creatorLabel   •   ${_members.length} members   •   $txCount transactions",
-                  style: TextStyle(color: Colors.grey.shade900),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _groupAvatar(radius: 26),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _chip(
-                      bg: owed > 0 ? Colors.green.withOpacity(.12) : Colors.grey.withOpacity(.12),
-                      fg: owed > 0 ? Colors.green.shade700 : Colors.grey.shade700,
-                      icon: Icons.call_received_rounded,
-                      text: owed > 0 ? "Owed to you ₹${owed.toStringAsFixed(0)}" : "No one owes you",
+                    Text(
+                      _group.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                          ) ??
+                          const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
                     ),
-                    _chip(
-                      bg: owe > 0 ? Colors.red.withOpacity(.12) : Colors.grey.withOpacity(.12),
-                      fg: owe > 0 ? Colors.redAccent : Colors.grey.shade700,
-                      icon: Icons.call_made_rounded,
-                      text: owe > 0 ? "You owe ₹${owe.toStringAsFixed(0)}" : "You owe none",
-                    ),
-                    _chip(
-                      bg: net >= 0 ? Colors.teal.withOpacity(.12) : Colors.orange.withOpacity(.12),
-                      fg: netColor,
-                      icon: Icons.balance_rounded,
-                      text: netText,
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                            color: neutral,
+                            fontWeight: FontWeight.w600,
+                          ) ??
+                          TextStyle(color: neutral, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
-              const SizedBox(height: 10),
-                              // Facepile: show who’s in the group (tappable → open settings/members)
-                              Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: ShareBadge(
-                                      participants: _shareFaces,
-                                      dense: true,
-                                      onTap: _openSettings,
-                                    ),
-                              ),
-              ],
-            ),
+              ),
+              AnimatedContainer(
+                duration: duration,
+                decoration: BoxDecoration(
+                  color: netColor.withOpacity(netLabel == 'Settled' ? 0.14 : 0.16),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: netColor.withOpacity(0.4)),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(netIcon, size: 18, color: netColor),
+                    const SizedBox(width: 6),
+                    AnimatedSwitcher(
+                      duration: duration,
+                      child: Text(
+                        'Net $netLabel',
+                        key: ValueKey(netLabel),
+                        style: TextStyle(
+                          color: netColor,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _AmountChip(
+                icon: Icons.call_received_rounded,
+                color: owed > 0.01 ? mint : neutral,
+                label: owed > 0.01
+                    ? 'Owed to you ₹${owed.toStringAsFixed(2)}'
+                    : 'No one owes you',
+              ),
+              _AmountChip(
+                icon: Icons.call_made_rounded,
+                color: owe > 0.01 ? danger : neutral,
+                label: owe > 0.01
+                    ? 'You owe ₹${owe.toStringAsFixed(2)}'
+                    : 'You owe ₹0.00',
+              ),
+              if (allSettled)
+                const _SettledBadge(),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            children: [
+              _SummaryStat(
+                icon: Icons.receipt_long_rounded,
+                label: 'Transactions',
+                value: '$txCount',
+              ),
+              _SummaryStat(
+                icon: Icons.groups_rounded,
+                label: 'Members',
+                value: '${_members.length}',
+              ),
+            ],
+          ),
+          if (_shareFaces.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ShareBadge(
+                participants: _shareFaces,
+                dense: true,
+                onTap: _openSettings,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1699,7 +1806,154 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
   }
 
-  // SINGLE version of _chip (avoid duplicates)
+  // Summary helpers for premium header UI
+class _AmountChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _AmountChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveColor = color;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: effectiveColor.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: effectiveColor.withOpacity(0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: effectiveColor),
+          const SizedBox(width: 6),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 160),
+            child: Text(
+              label,
+              key: ValueKey(label),
+              style: TextStyle(
+                color: effectiveColor,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryStat extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _SummaryStat({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bg = theme.colorScheme.primary.withOpacity(
+      theme.brightness == Brightness.dark ? 0.18 : 0.12,
+    );
+    final textColor =
+        theme.textTheme.bodyMedium?.color ?? (theme.brightness == Brightness.dark
+            ? Colors.white
+            : Colors.black87);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                      color: textColor.withOpacity(0.7),
+                      fontWeight: FontWeight.w600,
+                    ) ??
+                    TextStyle(
+                      fontSize: 12,
+                      color: textColor.withOpacity(0.7),
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              Text(
+                value,
+                style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: textColor,
+                    ) ??
+                    TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: textColor,
+                    ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettledBadge extends StatelessWidget {
+  const _SettledBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle_rounded, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(
+            'All settled',
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+  // Legacy helper for other chips
   Widget _chip({
     required Color bg,
     required Color fg,
@@ -1720,14 +1974,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
   }
 
-  Widget _groupAvatar() {
+  Widget _groupAvatar({double radius = 28}) {
     final url = _group.avatarUrl;
     if (url != null && url.isNotEmpty) {
-      return CircleAvatar(radius: 28, backgroundImage: NetworkImage(url));
+      return CircleAvatar(radius: radius, backgroundImage: NetworkImage(url));
     }
-    return const CircleAvatar(
-      radius: 28,
-      child: Icon(Icons.groups_rounded, size: 28),
+    return CircleAvatar(
+      radius: radius,
+      child: Icon(Icons.groups_rounded, size: radius),
     );
   }
 }

@@ -39,6 +39,7 @@ dependencies:
   # Notifications & Scheduling
   flutter_local_notifications: ^19.4.2
   timezone: ^0.10.0
+  workmanager: ^0.5.2
 
   # UI & Animations
   google_fonts: ^6.1.0

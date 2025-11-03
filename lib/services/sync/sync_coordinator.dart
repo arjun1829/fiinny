@@ -65,6 +65,8 @@ class SyncCoordinator {
         await SmsIngestor.instance.startRealtime(userPhone: userPhone);
         _smsRealtimeStarted = true;
       }
+
+      await SmsIngestor.instance.scheduleDaily48hSync(userPhone);
     } catch (e, st) {
       debugPrint('[SyncCoordinator] SMS pipeline error: $e\n$st');
     }

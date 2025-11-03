@@ -429,11 +429,18 @@ class GmailService {
     if (combined.isEmpty) return null;
 
     // ── Early skips & special routing (safe) ─────────────────────────────────
-// Peek first for direction+amount so we don't drop real txns by mistake.
-    final _peekFx = _extractFx(combined);
-    final _peekAmt = _peekFx == null ? _extractAnyInr(combined) : (_peekFx['amount'] as double?);
-    final _peekDir = _inferDirection(combined); // 'debit'|'credit'|null
-    final _looksTxn = (_peekDir != null && (_peekAmt != null && _peekAmt > 0));
+    final direction = _inferDirection(combined); // 'debit'|'credit'|null
+    final amountFx = _extractFx(combined);
+    final amountInr = amountFx == null
+        ? (_extractTxnAmount(combined, direction: direction) ?? _extractAnyInr(combined))
+        : null;
+    final amount = amountInr ?? amountFx?['amount'] as double?;
+    final postBal = _extractPostTxnBalance(combined);
+    final _looksTxn = (direction != null && (amount != null && amount > 0));
+
+    if (amountInr != null || postBal != null) {
+      _log('parsed amountInr=${amountInr ?? -1} postBalance=${postBal ?? -1} dir=${direction ?? '-'} msg=${msg.id ?? '-'}');
+    }
 
 // Drop newsletters/promos ONLY if they do NOT look like a transaction.
     if (filt.isLikelyNewsletter(listId, fromHdr) && !_looksTxn) {
@@ -471,9 +478,6 @@ class GmailService {
     final instrument = _inferInstrument(combined);
     final network = _inferCardNetwork(combined);
     final isIntl = _looksInternational(combined);
-    final amountFx = _extractFx(combined);
-    final amountInr = amountFx == null ? _extractAnyInr(combined) : null;
-    final amount = amountInr ?? amountFx?['amount'] as double?;
     final fees = _extractFees(combined);
     final upiSender = _extractUpiSenderName(combined);
 
@@ -564,7 +568,6 @@ class GmailService {
 
 
     // Otherwise, proceed with normal debit/credit
-    final direction = _inferDirection(combined); // 'debit' | 'credit' | null
     if (direction == null) return null;
     if (amount == null || amount <= 0) return null;
 
@@ -678,6 +681,7 @@ class GmailService {
       if (amountFx != null) 'fxOriginal': amountFx,
       if (fees.isNotEmpty) 'feesDetected': fees,
       'instrument': instrument,
+      if (postBal != null) 'postBalanceInr': postBal,
     };
 
     String? existingDocId;
@@ -719,6 +723,7 @@ class GmailService {
             'emailDomain': emailDomain,
             'txKey': key,
             'when': Timestamp.fromDate(DateTime.now()),
+            if (postBal != null) 'postBalanceInr': postBal,
           },
 
           // optional breadcrumbs
@@ -743,6 +748,8 @@ class GmailService {
       last4: last4,
       bank: bank,
       domain: emailDomain,
+      rawText: combined,
+      direction: direction,
     );
     final cptyType = _deriveCounterpartyType(
       merchantNorm: merchantNorm,
@@ -1069,6 +1076,112 @@ class GmailService {
     return re.firstMatch(text)?.group(1);
   }
 
+  double? _extractTxnAmount(String text, {String? direction}) {
+    if (text.isEmpty) return null;
+    final amountPatterns = <RegExp>[
+      RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\.\d{1,2})?)',
+          caseSensitive: false),
+      RegExp(r'\bamount\s+of\s+([0-9][\d,]*(?:\.\d{1,2})?)', caseSensitive: false),
+    ];
+    final balanceCue = RegExp(
+      r'(A/?c\.?\s*Bal|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance|\bBal(?:ance)?\b)',
+      caseSensitive: false,
+    );
+    final creditCues = RegExp(
+      r'(has\s*been\s*credited|credited\s*(?:by|with)?|received|rcvd|deposit(?:ed)?|salary|refund|reversal)',
+      caseSensitive: false,
+    );
+    final debitCues = RegExp(
+      r'(has\s*been\s*debited|debited|spent|paid|payment|withdrawn|withdrawal|pos|upi|imps|neft|rtgs|purchase|txn|transaction)',
+      caseSensitive: false,
+    );
+
+    Iterable<RegExpMatch> cueMatches;
+    final dir = direction?.toLowerCase();
+    if (dir == 'credit') {
+      cueMatches = creditCues.allMatches(text);
+    } else if (dir == 'debit') {
+      cueMatches = debitCues.allMatches(text);
+    } else {
+      final merged = <RegExpMatch>[
+        ...creditCues.allMatches(text),
+        ...debitCues.allMatches(text),
+      ]..sort((a, b) => a.start.compareTo(b.start));
+      cueMatches = merged;
+    }
+
+    double? firstNonBalanceAfter(int start, int window) {
+      final end = math.min(text.length, start + window);
+      if (start >= end) return null;
+      final windowText = text.substring(start, end);
+      double? best;
+      var bestIndex = 1 << 30;
+      for (final rx in amountPatterns) {
+        for (final m in rx.allMatches(windowText)) {
+          final absoluteStart = start + m.start;
+          final lookbackStart = math.max(0, absoluteStart - 25);
+          final lookback = text.substring(lookbackStart, absoluteStart);
+          if (balanceCue.hasMatch(lookback)) continue;
+          final numStr = (m.group(1) ?? '').replaceAll(',', '');
+          final value = double.tryParse(numStr);
+          if (value != null && value > 0 && absoluteStart < bestIndex) {
+            bestIndex = absoluteStart;
+            best = value;
+          }
+        }
+      }
+      return best;
+    }
+
+    for (final cue in cueMatches) {
+      final v = firstNonBalanceAfter(cue.end, 80);
+      if (v != null) return v;
+    }
+
+    double? fallback;
+    var fallbackIdx = 1 << 30;
+    for (final rx in amountPatterns) {
+      for (final m in rx.allMatches(text)) {
+        final absoluteStart = m.start;
+        final lookbackStart = math.max(0, absoluteStart - 25);
+        final lookback = text.substring(lookbackStart, absoluteStart);
+        if (balanceCue.hasMatch(lookback)) continue;
+        final numStr = (m.group(1) ?? '').replaceAll(',', '');
+        final value = double.tryParse(numStr);
+        if (value != null && value > 0 && absoluteStart < fallbackIdx) {
+          fallbackIdx = absoluteStart;
+          fallback = value;
+        }
+      }
+    }
+    return fallback;
+  }
+
+  double? _extractPostTxnBalance(String text) {
+    if (text.isEmpty) return null;
+    final patterns = <RegExp>[
+      RegExp(
+        r'(?:A/?c\.?\s*Bal(?:\.|\s*is)?|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance)\s*(?:is\s*)?(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\.\d{1,2})?)',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'\b(?:balance|bal)\s*(?:is|:)?\s*(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\.\d{1,2})?)',
+        caseSensitive: false,
+      ),
+    ];
+    for (final rx in patterns) {
+      final match = rx.firstMatch(text);
+      if (match != null) {
+        final numStr = (match.group(1) ?? '').replaceAll(',', '');
+        final value = double.tryParse(numStr);
+        if (value != null && value > 0) {
+          return value;
+        }
+      }
+    }
+    return null;
+  }
+
   double? _extractAnyInr(String text) {
     final rxs = <RegExp>[
       RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\.\d{1,2})?)',
@@ -1114,11 +1227,17 @@ class GmailService {
   // infer debit/credit from common cues — ignores "credit card/debit card" noise & treats autopay as debit.
   // infer debit/credit from common cues (ignore "credit card"/"debit card" noise, treat autopay as debit)
   String? _inferDirection(String body) {
+    final lower = body.toLowerCase();
     // strip card type tokens so "credit" inside "credit card" doesn't influence direction
-    final cleaned = body
-        .replaceAll(RegExp(r'\bcredit\s+card\b', caseSensitive: false), '')
-        .replaceAll(RegExp(r'\bdebit\s+card\b', caseSensitive: false), '')
-        .toLowerCase();
+    final cleaned = lower
+        .replaceAll(RegExp(r'\bcredit\s+card\b'), '')
+        .replaceAll(RegExp(r'\bdebit\s+card\b'), '');
+
+    final strongCredit = RegExp(r'has\s*been\s*credited|credited\s*(?:by|with)').hasMatch(lower);
+    final strongDebit = RegExp(r'has\s*been\s*debited|debited\s*(?:by|for)').hasMatch(lower);
+
+    if (strongCredit && !strongDebit) return 'credit';
+    if (strongDebit && !strongCredit) return 'debit';
 
     final isDR = RegExp(r'\bdr\b').hasMatch(cleaned);
     final isCR = RegExp(r'\bcr\b').hasMatch(cleaned);
@@ -1284,8 +1403,20 @@ class GmailService {
     required String? last4,
     required String? bank,
     required String? domain,
+    required String rawText,
+    required String direction,
   }) {
     if (merchantNorm.isNotEmpty) return merchantNorm;
+    if (direction == 'credit') {
+      final fromMatch = RegExp(r'\bfrom\s+([A-Za-z0-9 .&\-\(\)]{3,40})', caseSensitive: false)
+          .firstMatch(rawText);
+      if (fromMatch != null) {
+        final candidate = fromMatch.group(1)?.trim();
+        if (candidate != null && candidate.isNotEmpty) {
+          return candidate.toUpperCase();
+        }
+      }
+    }
     if (upiVpa != null && upiVpa.trim().isNotEmpty) return upiVpa.trim().toUpperCase();
     if (last4 != null && last4.isNotEmpty) return 'CARD $last4';
     if (bank != null) return bank;
