@@ -24,6 +24,7 @@ const bool SAFE_MODE = bool.fromEnvironment('SAFE_MODE', defaultValue: false);
 const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: true);
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
+@pragma('vm:entry-point')
 void smsBackgroundDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     WidgetsFlutterBinding.ensureInitialized();
@@ -51,7 +52,7 @@ void main() async {
 
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
     try {
-      await Workmanager().initialize(smsBackgroundDispatcher, isInDebugMode: false);
+      await Workmanager().initialize(smsBackgroundDispatcher);
     } catch (e) {
       debugPrint('Workmanager init failed: $e');
     }
