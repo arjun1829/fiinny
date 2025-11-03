@@ -1806,7 +1806,40 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
   }
 
-  // Summary helpers for premium header UI
+  // Legacy helper for other chips
+  Widget _chip({
+    required Color bg,
+    required Color fg,
+    required IconData icon,
+    required String text,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: fg),
+          const SizedBox(width: 6),
+          Text(text, style: TextStyle(color: fg, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
+  Widget _groupAvatar({double radius = 28}) {
+    final url = _group.avatarUrl;
+    if (url != null && url.isNotEmpty) {
+      return CircleAvatar(radius: radius, backgroundImage: NetworkImage(url));
+    }
+    return CircleAvatar(
+      radius: radius,
+      child: Icon(Icons.groups_rounded, size: radius),
+    );
+  }
+}
+
+// Summary helpers for premium header UI
 class _AmountChip extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1949,39 +1982,6 @@ class _SettledBadge extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-  // Legacy helper for other chips
-  Widget _chip({
-    required Color bg,
-    required Color fg,
-    required IconData icon,
-    required String text,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: fg),
-          const SizedBox(width: 6),
-          Text(text, style: TextStyle(color: fg, fontWeight: FontWeight.w700)),
-        ],
-      ),
-    );
-  }
-
-  Widget _groupAvatar({double radius = 28}) {
-    final url = _group.avatarUrl;
-    if (url != null && url.isNotEmpty) {
-      return CircleAvatar(radius: radius, backgroundImage: NetworkImage(url));
-    }
-    return CircleAvatar(
-      radius: radius,
-      child: Icon(Icons.groups_rounded, size: radius),
     );
   }
 }
