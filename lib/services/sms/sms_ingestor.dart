@@ -373,14 +373,12 @@ class SmsIngestor {
         taskId,
         'smsSync48h',
         frequency: const Duration(hours: 24),
-        existingWorkPolicy: _scheduledTaskId == null
+            existingWorkPolicy: _scheduledTaskId == null
             ? wm.ExistingPeriodicWorkPolicy.keep
             : wm.ExistingPeriodicWorkPolicy.replace,
-        inputData: {'userPhone': userPhone},
-        constraints: const wm.Constraints(
-          networkType: wm.NetworkType.notRequired,
-        ),
-        backoffPolicy: wm.BackoffPolicy.exponential,
+            inputData: {'userPhone': userPhone},
+        constraints: wm.Constraints(networkType: wm.NetworkType.notRequired,),
+            backoffPolicy: wm.BackoffPolicy.exponential,
       );
       _scheduledTaskId = taskId;
       _log('scheduled daily 48h SMS sync');
