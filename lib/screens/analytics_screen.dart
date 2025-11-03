@@ -1072,6 +1072,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           final day = custom.start.add(Duration(days: i));
           return shortDay.format(day);
         });
+      default:
+        throw UnimplementedError('Unhandled period $p');
     }
   }
 
@@ -1153,6 +1155,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           if (d >= 0 && d < n) v[d] += e.amount;
         }
         return v;
+      default:
+        throw UnimplementedError('Unhandled period $p');
     }
   }
 
