@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 
 import '../models/expense_item.dart';
 import '../models/friend_model.dart';
@@ -66,16 +67,20 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   String? _error;
   bool _showSuccess = false;
 
+  final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
+  String _fmt(num v) => _inr.format(v);
+
   double get _enteredAmt => double.tryParse(_amountCtrl.text.trim()) ?? 0.0;
   bool get _isValidAmount =>
       _enteredAmt > 0 &&
       (_maxAmount == 0 || _enteredAmt <= _maxAmount + 0.005) &&
       _selectedFriend != null;
 
-  String _ctaLabel() =>
-      _payerIsMe
-          ? "MARK ₹${_enteredAmt.toStringAsFixed(2)} AS PAID"
-          : "MARK ₹${_enteredAmt.toStringAsFixed(2)} AS RECEIVED";
+  String _ctaLabelFull() =>
+      _payerIsMe ? "MARK ${_fmt(_enteredAmt)} AS PAID" : "MARK ${_fmt(_enteredAmt)} AS RECEIVED";
+
+  String _ctaLabelCompact() =>
+      _payerIsMe ? "PAID ${_fmt(_enteredAmt)}" : "RECEIVED ${_fmt(_enteredAmt)}";
 
   Color get _mint => Colors.teal.shade700;
 
@@ -256,7 +261,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
         friendIds: [otherId],
         customSplits: null,
         groupId: _selectedGroup?.id, // nullable for non-group
-        isBill: true,                // keep if other UI relies on this flag
+        isBill: false, // settlements are not bills
       );
 
       await ExpenseService().addExpenseWithSync(widget.userPhone, settlementItem);
@@ -509,11 +514,14 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
 
     final outstanding = _maxAmount;
-    final netSubtitle = (_direction < 0)
-        ? 'You owe: ₹${outstanding.toStringAsFixed(2)}'
-        : (_direction > 0)
-            ? 'You get back: ₹${outstanding.toStringAsFixed(2)}'
-            : 'Nothing outstanding';
+    final netSubtitle = (_direction == 0)
+        ? 'All settled'
+        : (_direction < 0)
+            ? "You'll pay ${_fmt(outstanding)}"
+            : "You'll receive ${_fmt(outstanding)}";
+
+    final fullLabel = (_direction == 0) ? 'SETTLED' : _ctaLabelFull();
+    final compactLabel = (_direction == 0) ? 'SETTLED' : _ctaLabelCompact();
 
     Widget friendSummaryCard() {
       final friend = _selectedFriend;
@@ -988,17 +996,19 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                   child: _SummaryBar(
                     enabled: _isValidAmount && !_submitting,
                     busy: _submitting,
-                    label: _ctaLabel(),
+                    label: fullLabel,
+                    compactLabel: compactLabel,
                     subtitle: netSubtitle,
                     accent: primary,
                     onPressed: () async {
+                      FocusScope.of(context).unfocus();
                       final ok = await showDialog<bool>(
                         context: context,
                         builder: (_) => AlertDialog(
                           title: Text(
                             _payerIsMe
-                                ? 'Are you sure you PAID ₹${_enteredAmt.toStringAsFixed(2)}?'
-                                : 'Are you sure you RECEIVED ₹${_enteredAmt.toStringAsFixed(2)}?'
+                                ? 'Are you sure you PAID ${_fmt(_enteredAmt)}?'
+                                : 'Are you sure you RECEIVED ${_fmt(_enteredAmt)}?'
                           ),
                           content: const Text(
                             'If this happened outside Fiinny, you can mark it here.\nNo transfer will happen due to this action.',
@@ -1063,6 +1073,7 @@ class _SummaryBar extends StatelessWidget {
   final String subtitle;
   final Color accent;
   final VoidCallback onPressed;
+  final String? compactLabel;
 
   const _SummaryBar({
     required this.enabled,
@@ -1071,63 +1082,98 @@ class _SummaryBar extends StatelessWidget {
     required this.subtitle,
     required this.accent,
     required this.onPressed,
+    this.compactLabel,
   });
 
   @override
   Widget build(BuildContext context) {
-    // UX: Sticky CTA with safety copy that mirrors PhonePe confirmation tone.
     return SafeArea(
       top: false,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(.08), blurRadius: 10)],
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
+      child: LayoutBuilder(
+        builder: (ctx, c) {
+          final textScale = MediaQuery.of(ctx).textScaleFactor;
+          final isCompact = c.maxWidth < 360 || label.length > 26 || textScale > 1.15;
+
+          Widget buildCopy() => Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     subtitle,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    softWrap: false,
                     overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     'No money will be transferred',
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                 ],
-              ),
+              );
+
+          Widget buildButton(String text, {bool fullWidth = false}) => SizedBox(
+                width: fullWidth ? double.infinity : null,
+                child: ElevatedButton(
+                  onPressed: enabled ? onPressed : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: enabled ? accent : accent.withOpacity(0.4),
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(0, 44),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: busy
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
+              );
+
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            padding: const RangeValues(12, 10).toString().isEmpty
+                ? const EdgeInsets.symmetric(horizontal: 12, vertical: 10)
+                : const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(.08), blurRadius: 10)],
+              border: Border.all(color: Colors.grey.shade200),
             ),
-            const SizedBox(width: 12),
-            ElevatedButton(
-              onPressed: enabled ? onPressed : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: enabled ? accent : accent.withOpacity(0.4),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              child: busy
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            child: isCompact
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      buildCopy(),
+                      const SizedBox(height: 8),
+                      buildButton(compactLabel ?? label, fullWidth: true),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Expanded(child: buildCopy()),
+                      const SizedBox(width: 12),
+                      Flexible(
+                        fit: FlexFit.loose,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minWidth: 140, maxWidth: 260),
+                          child: buildButton(label),
+                        ),
                       ),
-                    )
-                  : Text(label, overflow: TextOverflow.ellipsis),
-            ),
-          ],
-        ),
+                    ],
+                  ),
+          );
+        },
       ),
     );
   }
