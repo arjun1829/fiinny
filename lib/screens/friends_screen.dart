@@ -11,6 +11,7 @@ import 'package:lifemap/models/expense_item.dart';
 import 'package:lifemap/group/group_balance_math.dart' show computeSplits;
 import 'package:intl/intl.dart';
 
+import 'package:lifemap/services/contact_name_service.dart';
 import 'package:lifemap/services/friend_service.dart';
 import 'package:lifemap/services/group_service.dart';
 import 'package:lifemap/services/expense_service.dart';
@@ -105,6 +106,9 @@ class _FriendsScreenState extends State<FriendsScreen>
   bool get _filtersActive => _direction != Direction.all || _openOnly;
 
 
+  final ContactNameService _contactNames = ContactNameService.instance;
+
+
 
   // filters
   bool _openOnly = false;
@@ -116,6 +120,11 @@ class _FriendsScreenState extends State<FriendsScreen>
   late final AnimationController _searchAnim;
   late final Animation<double> _searchSlide;
   Direction _direction = Direction.all;
+
+  void _onContactNamesChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
 
   // What direction of balances to show
 
@@ -133,10 +142,12 @@ class _FriendsScreenState extends State<FriendsScreen>
     _searchAnim =
         AnimationController(vsync: this, duration: const Duration(milliseconds: 220));
     _searchSlide = CurvedAnimation(parent: _searchAnim, curve: Curves.easeOutCubic);
+    _contactNames.addListener(_onContactNamesChanged);
   }
 
   @override
   void dispose() {
+    _contactNames.removeListener(_onContactNamesChanged);
     _tabController.dispose();
     _searchCtrl.dispose();
     _searchAnim.dispose();
@@ -184,13 +195,14 @@ class _FriendsScreenState extends State<FriendsScreen>
       return;
     }
 
+    final displayName = _bestFriendDisplayName(_contactNames, friend);
     final avatar = friend.avatar.startsWith('http') ? friend.avatar : null;
     try {
       final settled = await SettleUpFlowV2Launcher.openForFriend(
         context: context,
         currentUserPhone: widget.userPhone,
         friend: friend,
-        friendDisplayName: friend.name,
+        friendDisplayName: displayName,
         friendAvatarUrl: avatar,
         friendSubtitle: friend.phone,
       );
@@ -581,6 +593,7 @@ class _FriendsScreenState extends State<FriendsScreen>
           friends: allFriends,
           groups: allGroups,
           userPhone: widget.userPhone,
+          contactNames: _contactNames,
           onPickFriend: (friend) async {
             Navigator.pop(context);
             if (forSettle) {
@@ -754,6 +767,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                   query: _query,
                   direction: _direction,
                   onOpenFilters: _openFilterSheet,
+                  contactNames: _contactNames,
 
                 ),
                 FriendsTab(
@@ -761,6 +775,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                   openOnly: _openOnly,
                   query: _query,
                   direction: _direction,
+                  contactNames: _contactNames,
 
                 ),
                 GroupsTab(
@@ -769,7 +784,10 @@ class _FriendsScreenState extends State<FriendsScreen>
                   query: _query,
                   direction: _direction,
                 ),
-                ActivityTab(userPhone: widget.userPhone),
+                ActivityTab(
+                  userPhone: widget.userPhone,
+                  contactNames: _contactNames,
+                ),
               ],
             ),
           ),
@@ -874,6 +892,19 @@ _OverallTotals _computeOverallTotals(
 }
 
 
+String _bestFriendDisplayName(
+    ContactNameService contactNames, FriendModel friend) {
+  final fallback = friend.name.isNotEmpty ? friend.name : friend.phone;
+  return contactNames
+      .bestDisplayName(
+    phone: friend.phone,
+    remoteName: friend.name,
+    fallback: fallback,
+  )
+      .trim();
+}
+
+
 /* ---------------------------------- ALL TAB -------------------------------- */
 
 class AllTab extends StatelessWidget {
@@ -882,6 +913,7 @@ class AllTab extends StatelessWidget {
   final String query;
   final Direction direction;           // <— add
   final VoidCallback onOpenFilters;    // <— add
+  final ContactNameService contactNames;
 
   const AllTab({
     required this.userPhone,
@@ -889,6 +921,7 @@ class AllTab extends StatelessWidget {
     required this.query,
     required this.direction,
     required this.onOpenFilters,
+    required this.contactNames,
     Key? key,
   }) : super(key: key);
 
@@ -916,7 +949,9 @@ class AllTab extends StatelessWidget {
 
                 // ---------- Friends ----------
                 for (final f in friends) {
+                  final displayName = _bestFriendDisplayName(contactNames, f);
                   if (query.isNotEmpty &&
+                      !_matches(query, displayName) &&
                       !_matches(query, f.name) &&
                       !_matches(query, f.phone)) continue;
 
@@ -952,7 +987,7 @@ class AllTab extends StatelessWidget {
                     id: f.phone,
                     phone: f.phone,
                     isGroup: false,
-                    title: f.name,
+                    title: displayName,
                     subtitle: "$subtitle$tail",
                     imageUrl: (f.avatar.startsWith('http') ||
                         f.avatar.startsWith('assets'))
@@ -1240,11 +1275,13 @@ class FriendsTab extends StatelessWidget {
   final bool openOnly;
   final String query;
   final Direction direction;
+  final ContactNameService contactNames;
   const FriendsTab({
     required this.userPhone,
     required this.openOnly,
     required this.query,
     required this.direction,
+    required this.contactNames,
     Key? key,
   }) : super(key: key);
 
@@ -1264,7 +1301,9 @@ class FriendsTab extends StatelessWidget {
 
             final items = <_ChatListItem>[];
             for (final f in friends) {
+              final displayName = _bestFriendDisplayName(contactNames, f);
               if (query.isNotEmpty &&
+                  !_matches(query, displayName) &&
                   !_matches(query, f.name) &&
                   !_matches(query, f.phone)) {
                 continue;
@@ -1300,7 +1339,7 @@ class FriendsTab extends StatelessWidget {
                 id: f.phone,
                 phone: f.phone,
                 isGroup: false,
-                title: f.name,
+                title: displayName,
                 subtitle: "$subtitle$tail",
                 imageUrl: (f.avatar.startsWith('http') ||
                     f.avatar.startsWith('assets'))
@@ -1558,7 +1597,12 @@ class GroupsTab extends StatelessWidget {
 
 class ActivityTab extends StatelessWidget {
   final String userPhone;
-  const ActivityTab({required this.userPhone, Key? key}) : super(key: key);
+  final ContactNameService contactNames;
+  const ActivityTab({
+    required this.userPhone,
+    required this.contactNames,
+    Key? key,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -1579,6 +1623,7 @@ class ActivityTab extends StatelessWidget {
                   expenses: expenses,
                   friends: friends,
                   groups: groups,
+                  contactNames: contactNames,
                 );
               },
             );
@@ -1594,12 +1639,14 @@ class _ActivityTabBody extends StatelessWidget {
   final List<ExpenseItem> expenses;
   final List<FriendModel> friends;
   final List<GroupModel> groups;
+  final ContactNameService contactNames;
 
   const _ActivityTabBody({
     required this.userPhone,
     required this.expenses,
     required this.friends,
     required this.groups,
+    required this.contactNames,
   });
 
   Map<String, FriendModel> get _friendMap => {for (final f in friends) f.phone: f};
@@ -1608,7 +1655,28 @@ class _ActivityTabBody extends StatelessWidget {
   String _nameFor(String phone) {
     if (phone == userPhone) return 'You';
     final friend = _friendMap[phone];
-    if (friend != null && friend.name.isNotEmpty) return friend.name;
+    if (friend != null) {
+      final remote = friend.name.trim();
+      if (remote.isNotEmpty &&
+          !contactNames.shouldPreferContact(remote, friend.phone)) {
+        return remote;
+      }
+    }
+
+    final remoteName = friend?.name;
+    final fallback =
+        (remoteName != null && remoteName.isNotEmpty) ? remoteName : phone;
+    final best = contactNames
+        .bestDisplayName(
+          phone: phone,
+          remoteName: remoteName,
+          fallback: fallback,
+        )
+        .trim();
+
+    if (best.isNotEmpty && !contactNames.shouldPreferContact(best, phone)) {
+      return best;
+    }
     final digits = phone.replaceAll(RegExp(r'\D'), '');
     if (digits.length >= 4) {
       return 'Member (${digits.substring(digits.length - 4)})';
@@ -2431,6 +2499,7 @@ class _QuickPickerSheet extends StatefulWidget {
   final String userPhone;
   final void Function(FriendModel friend) onPickFriend;
   final void Function(GroupModel group) onPickGroup;
+  final ContactNameService contactNames;
 
   const _QuickPickerSheet({
     required this.friends,
@@ -2438,6 +2507,7 @@ class _QuickPickerSheet extends StatefulWidget {
     required this.userPhone,
     required this.onPickFriend,
     required this.onPickGroup,
+    required this.contactNames,
   });
 
   @override
@@ -2448,8 +2518,20 @@ class _QuickPickerSheetState extends State<_QuickPickerSheet> {
   int _seg = 0; // 0 friends, 1 groups
   final TextEditingController _q = TextEditingController();
 
+  void _onNamesChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.contactNames.addListener(_onNamesChanged);
+  }
+
   @override
   void dispose() {
+    widget.contactNames.removeListener(_onNamesChanged);
     _q.dispose();
     super.dispose();
   }
@@ -2458,14 +2540,17 @@ class _QuickPickerSheetState extends State<_QuickPickerSheet> {
   Widget build(BuildContext context) {
     final isFriends = _seg == 0;
     final q = _q.text.trim().toLowerCase();
-    final friends = widget.friends
-        .where((f) =>
-    q.isEmpty ||
-        f.name.toLowerCase().contains(q) ||
-        f.phone.toLowerCase().contains(q))
+    final friends = widget.friends.where((f) {
+      final display =
+          _bestFriendDisplayName(widget.contactNames, f).toLowerCase();
+      return q.isEmpty ||
+          display.contains(q) ||
+          f.name.toLowerCase().contains(q) ||
+          f.phone.toLowerCase().contains(q);
+    }).toList();
+    final groups = widget.groups
+        .where((g) => q.isEmpty || g.name.toLowerCase().contains(q))
         .toList();
-    final groups =
-    widget.groups.where((g) => q.isEmpty || g.name.toLowerCase().contains(q)).toList();
 
     return SafeArea(
       child: Padding(
@@ -2519,9 +2604,11 @@ class _QuickPickerSheetState extends State<_QuickPickerSheet> {
                 itemBuilder: (_, i) {
                   if (isFriends) {
                     final f = friends[i];
+                    final displayName =
+                        _bestFriendDisplayName(widget.contactNames, f);
                     return ListTile(
                       leading: const CircleAvatar(child: Text('👤')),
-                      title: Text(f.name),
+                      title: Text(displayName),
                       subtitle: Text(f.phone),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => widget.onPickFriend(f),
