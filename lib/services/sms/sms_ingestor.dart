@@ -96,7 +96,49 @@ class SmsIngestor {
   static const int TEST_MAX_MSGBATCH = 4000;
   // Add this inside class SmsIngestor { ... }
 
-// Delegate to shared filter helper (with safe fallback)
+  bool _hasTxnEvidence(String text) {
+    final t = text.toLowerCase();
+
+    // Strong phrases like: "has been credited/debited"
+    if (RegExp(r'has\s*been\s*(credited|debited)', caseSensitive: false).hasMatch(t)) return true;
+
+    // Txn artifacts + payment verbs
+    final hasArtifact = RegExp(
+      r'\b(utr|rrn|ref(?:erence)?\s*(?:no|#)?|tx[nm]?(?:\s*(?:id|no|#))?|transaction\s*(?:id|no|#)|auth(?:orization)?\s*code)\b',
+      caseSensitive: false,
+    ).hasMatch(t);
+
+    final hasPayVerb = RegExp(
+      r'\b(credited|debited|received|rcvd|deposit(?:ed)?|withdrawn|payment|paid|purchase|pos|upi|imps|neft|rtgs|successful|successfully|completed|processed)\b',
+      caseSensitive: false,
+    ).hasMatch(t);
+
+    if (hasArtifact && hasPayVerb) return true;
+
+    // Account + CR/DR
+    if (RegExp(r'\ba/?c|\baccount|\bacct', caseSensitive: false).hasMatch(t) &&
+        RegExp(r'\b(cr|dr|credited|debited)\b', caseSensitive: false).hasMatch(t)) return true;
+
+    return false;
+  }
+
+  bool _looksLikePromoOrInfo(String text) {
+    final t = text.toLowerCase();
+    final marketing = RegExp(
+      r'\b(offer|enjoy|subscribe|plan|pack|validity|upgrade|recharge\s+now|only\s+rs|just\s+rs|watch|live\s+on|download|app|click|http[s]?://|sponsored)\b',
+      caseSensitive: false,
+    ).hasMatch(t);
+
+    final hasTxnWords = RegExp(
+      r'\b(credited|debited|received|rcvd|deposit(?:ed)?|withdrawn|payment|paid|purchase|pos|upi|imps|neft|rtgs|txn|transaction)\b',
+      caseSensitive: false,
+    ).hasMatch(t);
+
+    // Treat as promo/info only if it's marketing-y AND lacks txn evidence.
+    return marketing && !hasTxnWords && !_hasTxnEvidence(text);
+  }
+
+  // Delegate to shared filter helper (with safe fallback)
   bool _looksLikeOtpOnly(String body) {
     try {
       // uses looksLikeOtpOnly from lib/services/ingest_filters.dart
@@ -465,6 +507,19 @@ class SmsIngestor {
     // Only drop pure-OTP messages.
     if (_looksLikeOtpOnly(body)) return;
 
+    final bill = _extractCardBillInfo(body);
+
+    if (_looksLikePromoOrInfo(body)) {
+      _log('skip promo/info sms');
+      return;
+    }
+
+    final direction = _inferDirection(body);
+    if (bill == null && (direction == null || !_hasTxnEvidence(body))) {
+      _log('no txn evidence; skip');
+      return;
+    }
+
     final masked = _maskSensitive(body);
     final preview = _preview(masked);
     final rawCapped = _cap(masked);
@@ -482,7 +537,6 @@ class SmsIngestor {
     final fees = _extractFees(body); // {"convenience": 10.0, "gst": 1.8, ...}
 
     // Card bill detection (statement/due) → write a bill_reminder (not an expense)
-    final bill = _extractCardBillInfo(body);
     if (bill != null) {
       final total = bill.totalDue ?? bill.minDue ?? _extractAmountInr(body) ?? 0.0;
       if (total > 0) {
@@ -566,7 +620,6 @@ class SmsIngestor {
 
 
     // Regular debit/credit detection
-    final direction = _inferDirection(body); // 'debit' | 'credit' | null
     // Prefer txn amount cues; keep legacy extractor as final fallback
     final amountInr = fx == null
         ? (_extractTxnAmount(body, direction: direction) ?? _extractAmountInr(body))
@@ -1142,50 +1195,33 @@ class SmsIngestor {
   // infer debit/credit from common cues
   String? _inferDirection(String body) {
     final lower = body.toLowerCase();
-    final strongCreditRx =
-        RegExp(r'has\s*been\s*credited|credited\s*(?:by|with)', caseSensitive: false);
-    final strongDebitRx =
-        RegExp(r'has\s*been\s*debited|debited\s*(?:by|for)', caseSensitive: false);
-    final strongCreditMatch = strongCreditRx.firstMatch(lower);
-    final strongDebitMatch = strongDebitRx.firstMatch(lower);
 
-    if (strongCreditMatch != null &&
-        (strongDebitMatch == null || strongCreditMatch.start <= strongDebitMatch.start)) {
-      return 'credit';
-    }
-    if (strongDebitMatch != null &&
-        (strongCreditMatch == null || strongDebitMatch.start < strongCreditMatch.start)) {
-      return 'debit';
-    }
+    final strongCredit = RegExp(r'has\s*been\s*credited|credited\s*(?:by|with)', caseSensitive: false).hasMatch(lower);
+    final strongDebit  = RegExp(r'has\s*been\s*debited|debited\s*(?:by|for)', caseSensitive: false).hasMatch(lower);
 
     final isDR = RegExp(r'\bdr\b').hasMatch(lower);
     final isCR = RegExp(r'\bcr\b').hasMatch(lower);
+
+    // Note: NO plain 'recharge' here (to avoid ads). 'recharged' is okay but will be gated by evidence.
     final debit = RegExp(
-      r'\b(debit(?:ed)?|spent|purchase|paid|payment|pos|upi(?:\s*payment)?|imps|neft|rtgs|withdrawn|withdrawal|atm|charge[ds]?|recharge(?:d)?|bill\s*paid|auto[-\s]?debit|autopay|nach|e-?mandate|mandate)\b',
+      r'\b(debit(?:ed)?|spent|purchase|paid|payment|pos|upi(?:\s*payment)?|imps|neft|rtgs|withdrawn|withdrawal|atm|charge[ds]?|recharged|bill\s*paid|auto[-\s]?debit|autopay|nach|e-?mandate|mandate)\b',
       caseSensitive: false,
     ).hasMatch(lower);
+
     final credit = RegExp(
       r'\b(credit(?:ed)?|received|rcvd|deposit(?:ed)?|salary|refund|reversal|cashback|interest)\b',
       caseSensitive: false,
     ).hasMatch(lower);
 
+    if (strongCredit && !strongDebit) return 'credit';
+    if (strongDebit && !strongCredit) return 'debit';
+
     if ((debit || isDR) && !(credit || isCR)) return 'debit';
     if ((credit || isCR) && !(debit || isDR)) return 'credit';
 
-    final dIdx = RegExp(
-            r'debit|spent|purchase|paid|payment|dr|auto[-\s]?debit|autopay|nach|mandate',
-            caseSensitive: false)
-        .firstMatch(lower)
-        ?.start ??
-        -1;
-    final cIdx = RegExp(r'credit|received|rcvd|deposit|salary|refund|cr', caseSensitive: false)
-            .firstMatch(lower)
-            ?.start ??
-        -1;
+    final dIdx = RegExp(r'debit|spent|purchase|paid|payment|dr|auto[-\s]?debit|autopay|nach|mandate|recharged', caseSensitive: false).firstMatch(lower)?.start ?? -1;
+    final cIdx = RegExp(r'credit|received|rcvd|deposit|salary|refund|cr', caseSensitive: false).firstMatch(lower)?.start ?? -1;
     if (dIdx >= 0 && cIdx >= 0) return dIdx < cIdx ? 'debit' : 'credit';
-
-    if (strongCreditMatch != null) return 'credit';
-    if (strongDebitMatch != null) return 'debit';
     return null;
   }
 
