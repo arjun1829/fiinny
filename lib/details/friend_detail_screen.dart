@@ -1,7 +1,6 @@
 // lib/details/friend_detail_screen.dart
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'
-    show Clipboard, ClipboardData, SystemUiOverlayStyle;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:characters/characters.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -32,7 +31,6 @@ import '../services/loan_service.dart';
 import '../core/ads/ads_banner_card.dart';
 import '../core/ads/ads_shell.dart';
 import '../screens/edit_expense_screen.dart';
-import '../services/contact_name_service.dart';
 
 import '../widgets/add_friend_expense_dialog.dart';
 import '../widgets/settleup_dialog.dart';
@@ -75,11 +73,9 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
   String? _friendAvatarUrl;
   String? _friendDisplayName;
 
-  final ContactNameService _contactNames = ContactNameService.instance;
-
   final RecurringService _recurringSvc = RecurringService();
   final NumberFormat _compactInr =
-      NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+  NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
   final DateFormat _dueFormat = DateFormat('d MMM');
 
   String _fmtShort(DateTime dt) {
@@ -219,30 +215,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    _contactNames.addListener(_onContactNamesChanged);
-    _primeContactName();
     _loadFriendProfile();
-  }
-
-  @override
-  void dispose() {
-    _contactNames.removeListener(_onContactNamesChanged);
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  void _onContactNamesChanged() {
-    if (!mounted) return;
-    setState(() {});
-  }
-
-  void _primeContactName() {
-    final remote = (_friendDisplayName?.isNotEmpty == true)
-        ? _friendDisplayName!
-        : widget.friend.name;
-    if (_contactNames.shouldPreferContact(remote, widget.friend.phone)) {
-      _contactNames.lookup(widget.friend.phone);
-    }
   }
 
   void _goDiscussExpense(ExpenseItem e) {
@@ -927,7 +900,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                         Navigator.pop(context);
                         Future.delayed(
                           Duration.zero,
-                          () => _editEntry(e),
+                              () => _editEntry(e),
                         );
                       },
                     ),
@@ -1006,7 +979,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
             final n = (data['name'] as String?)?.trim();
             if (n != null && n.isNotEmpty) _friendDisplayName = n;
           });
-          _primeContactName();
         }
       }
     } catch (_) {/* fallback to FriendModel */}
@@ -1097,16 +1069,15 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
   // ======================= UI HELPERS =======================
   BoxDecoration _cardDeco(BuildContext context) {
     return BoxDecoration(
-      color: const Color(0xFF111A1C),
+      color: Colors.white,
       borderRadius: BorderRadius.circular(18),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.35),
-          blurRadius: 22,
-          offset: const Offset(0, 14),
-        ),
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 8))
       ],
-      border: Border.all(color: Colors.white.withOpacity(0.06)),
+      border: Border.all(color: Colors.grey.shade200),
     );
   }
 
@@ -1124,42 +1095,69 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     required int txCount,
     required int bucketCount,
   }) {
-    final double net = owed - owe; // +ve => friend owes you
+    final theme = Theme.of(context);
+    final Color mint = theme.colorScheme.primary;
+    final Color danger = theme.colorScheme.error;
+    final Color neutral =
+        theme.textTheme.bodySmall?.color?.withOpacity(0.7) ?? Colors.grey.shade600;
+    final double net = owed - owe;
+    const duration = Duration(milliseconds: 180);
+
     Color netColor;
-    String netText;
+    IconData netIcon;
+    String netLabel;
     if (net > 0.01) {
-      netColor = Colors.green.shade700;
-      netText = "You're owed ₹${net.toStringAsFixed(2)}";
+      netColor = mint;
+      netIcon = Icons.trending_up_rounded;
+      netLabel = '+ ₹${net.toStringAsFixed(2)}';
     } else if (net < -0.01) {
-      netColor = Colors.redAccent;
-      netText = "You owe ₹${(-net).toStringAsFixed(2)}";
+      netColor = danger;
+      netIcon = Icons.trending_down_rounded;
+      netLabel = '- ₹${(-net).toStringAsFixed(2)}';
     } else {
-      netColor = Colors.teal.shade700;
-      netText = 'All settled';
+      netColor = neutral;
+      netIcon = Icons.check_circle_rounded;
+      netLabel = 'Settled';
     }
 
-    final subtitle = [
-      if (widget.friend.phone.isNotEmpty) widget.friend.phone,
-      if ((widget.friend.email ?? '').isNotEmpty) widget.friend.email!,
-    ].join(' • ');
+    final bool allSettled = owe.abs() < 0.01 && owed.abs() < 0.01;
+    final subtitleParts = <String>[];
+    if (widget.friend.phone.isNotEmpty) {
+      subtitleParts.add(widget.friend.phone);
+    }
+    final email = widget.friend.email;
+    if (email != null && email.isNotEmpty) {
+      subtitleParts.add(email);
+    }
+    final subtitle = subtitleParts.join(' • ');
 
-    return Container(
+    final baseColor = theme.cardColor;
+    final bool isDark = theme.brightness == Brightness.dark;
+
+    return AnimatedContainer(
+      duration: duration,
+      curve: Curves.easeOut,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark ? Colors.white10 : Colors.grey.shade200,
+        ),
+        gradient: LinearGradient(
+          colors: [
+            baseColor.withOpacity(isDark ? 0.92 : 0.98),
+            baseColor.withOpacity(isDark ? 0.88 : 0.94),
+            mint.withOpacity(0.06),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.35),
-            blurRadius: 36,
-            offset: const Offset(0, 20),
-          ),
-          BoxShadow(
-            color: Colors.black.withOpacity(0.10),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 12),
           ),
         ],
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -1168,50 +1166,58 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAvatar(radius: 26),
-              const SizedBox(width: 12),
+              _buildAvatar(radius: 24),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 2),
                     Text(
                       _displayName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: theme.textTheme.titleLarge?.copyWith(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
-                      ),
+                      ) ??
+                          const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
                     ),
                     if (subtitle.isNotEmpty)
                       Text(
                         subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.grey.shade700,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: neutral,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              AnimatedContainer(
+                duration: duration,
                 decoration: BoxDecoration(
-                  color: netColor.withOpacity(0.10),
+                  color: netColor.withOpacity(netLabel == 'Settled' ? 0.14 : 0.16),
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: netColor.withOpacity(0.30)),
+                  border: Border.all(color: netColor.withOpacity(0.4)),
                 ),
-                child: Text(
-                  netText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: netColor,
-                    fontWeight: FontWeight.w800,
-                  ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(netIcon, size: 18, color: netColor),
+                    const SizedBox(width: 6),
+                    AnimatedSwitcher(
+                      duration: duration,
+                      child: Text(
+                        netLabel,
+                        key: ValueKey(netLabel),
+                        style: TextStyle(
+                          color: netColor,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1223,31 +1229,34 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
             children: [
               _AmountChip(
                 icon: Icons.call_made_rounded,
-                color: owe > 0.01 ? Colors.redAccent : Colors.grey.shade600,
+                color: owe > 0.01 ? danger : neutral,
                 label: owe > 0.01
                     ? 'You owe ₹${owe.toStringAsFixed(2)}'
-                    : 'You owe ₹0',
+                    : 'You owe ₹0.00',
               ),
               _AmountChip(
                 icon: Icons.call_received_rounded,
-                color: owed > 0.01 ? Colors.green.shade700 : Colors.grey.shade600,
+                color: owed > 0.01 ? mint : neutral,
                 label: owed > 0.01
                     ? 'Owes you ₹${owed.toStringAsFixed(2)}'
                     : 'No dues for you',
               ),
+              if (allSettled)
+                const _SettledBadge(),
             ],
           ),
           const SizedBox(height: 10),
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
             children: [
               _SummaryStat(
                 icon: Icons.receipt_long_rounded,
                 label: 'Transactions',
                 value: '$txCount',
               ),
-              const SizedBox(width: 10),
               _SummaryStat(
-                icon: Icons.groups_rounded,
+                icon: Icons.layers_rounded,
                 label: 'Shared groups',
                 value: '$bucketCount',
               ),
@@ -1260,12 +1269,12 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
 
   Widget _buildAvatar({double radius = 36}) {
     final url =
-        (_friendAvatarUrl?.isNotEmpty == true) ? _friendAvatarUrl! : widget.friend.avatar;
+    (_friendAvatarUrl?.isNotEmpty == true) ? _friendAvatarUrl! : widget.friend.avatar;
     if (url.isNotEmpty && url.startsWith('http')) {
       return CircleAvatar(radius: radius, backgroundImage: NetworkImage(url));
     }
     final initial =
-        widget.friend.name.isNotEmpty ? widget.friend.name[0].toUpperCase() : '👤';
+    widget.friend.name.isNotEmpty ? widget.friend.name[0].toUpperCase() : '👤';
     return CircleAvatar(
       radius: radius,
       child: Text(
@@ -1275,13 +1284,10 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     );
   }
 
-  String get _displayName => _contactNames.bestDisplayName(
-        phone: widget.friend.phone,
-        remoteName: (_friendDisplayName?.isNotEmpty == true)
-            ? _friendDisplayName!
-            : widget.friend.name,
-        fallback: widget.friend.name.isNotEmpty ? widget.friend.name : widget.friend.phone,
-      );
+  String get _displayName =>
+      (_friendDisplayName?.isNotEmpty == true)
+          ? _friendDisplayName!
+          : widget.friend.name;
 
   // ---------- Actions ----------
   void _openAddExpense() async {
@@ -1319,7 +1325,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
 
     try {
       final friendAvatar =
-          (_friendAvatarUrl?.isNotEmpty == true) ? _friendAvatarUrl : null;
+      (_friendAvatarUrl?.isNotEmpty == true) ? _friendAvatarUrl : null;
       final settled = await SettleUpFlowV2Launcher.openForFriend(
         context: context,
         currentUserPhone: widget.userPhone,
@@ -1389,43 +1395,44 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     final you = widget.userPhone;
     final primary = Colors.teal.shade800;
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        systemOverlayStyle: SystemUiOverlayStyle.dark,
-        title: Text(_displayName),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black),
-        titleTextStyle: const TextStyle(
-          color: Colors.black,
-          fontSize: 20,
-          fontWeight: FontWeight.w800,
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: _handleEditFriend,
-            tooltip: "Edit friend",
-          ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: Colors.black,
-          unselectedLabelColor: Colors.black54,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w800),
-          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
-          indicatorColor: Colors.black,
-          indicatorWeight: 3,
-          tabs: const [
-            Tab(text: "History"),
-            Tab(text: "Chart"),
-            Tab(text: "Analytics"),
-            Tab(text: "Chat"),
-          ],
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFFF7FBFF), Color(0xFFEFF5FF)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
         ),
       ),
-      body: StreamBuilder<List<ExpenseItem>>(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: Text(_displayName),
+          backgroundColor: Colors.white,
+          elevation: 2,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.edit),
+              onPressed: _handleEditFriend,
+              tooltip: "Edit friend",
+            ),
+          ],
+          bottom: TabBar(
+            controller: _tabController,
+            labelColor: Colors.teal.shade900,
+            unselectedLabelColor: Colors.teal.shade600,
+            labelStyle: const TextStyle(fontWeight: FontWeight.w800),
+            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
+            indicatorColor: Colors.teal.shade800,
+            indicatorWeight: 3,
+            tabs: const [
+              Tab(text: "History"),
+              Tab(text: "Chart"),
+              Tab(text: "Analytics"),
+              Tab(text: "Chat"),
+            ],
+          ),
+        ),
+        body: StreamBuilder<List<ExpenseItem>>(
           stream: ExpenseService().getExpensesStream(you),
           builder: (context, snapshot) {
             final all = snapshot.data ?? [];
@@ -1436,7 +1443,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
 
             // Totals + per-group breakdown (pairwise only)
             final breakdown =
-                computePairwiseBreakdown(you, friendPhone, pairwise);
+            computePairwiseBreakdown(you, friendPhone, pairwise);
             final totals = breakdown.totals;
             final buckets = breakdown.buckets;
             final totalOwe = totals.owe;
@@ -1883,7 +1890,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                                 _deleteEntry(ex),
                                             child: Row(
                                               crossAxisAlignment:
-                                                  CrossAxisAlignment.center,
+                                              CrossAxisAlignment.center,
                                               children: [
                                                 // leading
                                                 Container(
@@ -2291,7 +2298,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
             );
           },
         ),
-      );
+      ),
+    );
   }
 
   // ======================= SMALL UI BITS =======================
@@ -2504,9 +2512,9 @@ class _SummaryStat extends StatelessWidget {
               Text(
                 label,
                 style: theme.textTheme.bodySmall?.copyWith(
-                      color: textColor.withOpacity(0.7),
-                      fontWeight: FontWeight.w600,
-                    ) ??
+                  color: textColor.withOpacity(0.7),
+                  fontWeight: FontWeight.w600,
+                ) ??
                     TextStyle(
                       fontSize: 12,
                       color: textColor.withOpacity(0.7),
@@ -2516,9 +2524,9 @@ class _SummaryStat extends StatelessWidget {
               Text(
                 value,
                 style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: textColor,
-                    ) ??
+                  fontWeight: FontWeight.w800,
+                  color: textColor,
+                ) ??
                     TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
@@ -2533,17 +2541,49 @@ class _SummaryStat extends StatelessWidget {
   }
 }
 
+class _SettledBadge extends StatelessWidget {
+  const _SettledBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle_rounded, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(
+            'All settled',
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Pill extends StatelessWidget {
   final String text;
   final Color base;
   final EdgeInsetsGeometry padding;
 
   const _Pill(
-    this.text, {
-    this.base = AppColors.mint,
-    this.padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    super.key,
-  });
+      this.text, {
+        this.base = AppColors.mint,
+        this.padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        super.key,
+      });
 
   @override
   Widget build(BuildContext context) {
