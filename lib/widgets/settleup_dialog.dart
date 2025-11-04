@@ -10,7 +10,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
 
 import '../models/expense_item.dart';
 import '../models/friend_model.dart';
@@ -65,24 +64,6 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
 
   bool _submitting = false;
   String? _error;
-  bool _showSuccess = false;
-
-  final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
-  String _fmt(num v) => _inr.format(v);
-
-  double get _enteredAmt => double.tryParse(_amountCtrl.text.trim()) ?? 0.0;
-  bool get _isValidAmount =>
-      _enteredAmt > 0 &&
-      (_maxAmount == 0 || _enteredAmt <= _maxAmount + 0.005) &&
-      _selectedFriend != null;
-
-  String _ctaLabelFull() =>
-      _payerIsMe ? "MARK ${_fmt(_enteredAmt)} AS PAID" : "MARK ${_fmt(_enteredAmt)} AS RECEIVED";
-
-  String _ctaLabelCompact() =>
-      _payerIsMe ? "PAID ${_fmt(_enteredAmt)}" : "RECEIVED ${_fmt(_enteredAmt)}";
-
-  Color get _mint => Colors.teal.shade700;
 
   // ---- Helpers to exclude "me" from friend choices ----
   String _normalizePhone(String? raw) =>
@@ -232,7 +213,6 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
     setState(() {
       _submitting = true;
       _error = null;
-      _showSuccess = false;
     });
 
     try {
@@ -261,17 +241,11 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
         friendIds: [otherId],
         customSplits: null,
         groupId: _selectedGroup?.id, // nullable for non-group
-        isBill: false, // settlements are not bills
+        isBill: true,                // keep if other UI relies on this flag
       );
 
       await ExpenseService().addExpenseWithSync(widget.userPhone, settlementItem);
 
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _showSuccess = true;
-      });
-      await Future.delayed(const Duration(milliseconds: 900));
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
@@ -279,7 +253,6 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
       setState(() {
         _submitting = false;
         _error = "Failed: $e";
-        _showSuccess = false;
       });
     }
   }
@@ -378,6 +351,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   String _guessMimeByName(String name) {
     final lower = name.toLowerCase();
     if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+
     if (lower.endsWith('.png')) return 'image/png';
     if (lower.endsWith('.gif')) return 'image/gif';
     if (lower.endsWith('.webp')) return 'image/webp';
@@ -429,29 +403,19 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
 
   Color _directionColor() {
     if (_direction < 0) return Colors.red.shade600;
-    if (_direction > 0) return _mint;
+    if (_direction > 0) return Colors.green.shade600;
     return Colors.grey.shade700;
-  }
-
-  String _amountHelperText() {
-    if (_maxAmount <= 0) {
-      return "If this looks wrong, choose friend/group above.";
-    }
-    return _direction < 0
-        ? "Outstanding (you owe): ₹${_maxAmount.toStringAsFixed(2)}"
-        : "Outstanding (they owe you): ₹${_maxAmount.toStringAsFixed(2)}";
   }
 
   // Quick chips
   Widget _chip(String label, VoidCallback onTap) {
-    final color = _mint;
     return Padding(
       padding: const EdgeInsets.only(right: 8, bottom: 6),
       child: ActionChip(
         label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
         onPressed: _submitting ? null : onTap,
-        backgroundColor: color.withOpacity(0.12),
-        side: BorderSide(color: color.withOpacity(0.4)),
+        backgroundColor: Colors.teal.withOpacity(0.10),
+        side: BorderSide(color: Colors.teal.shade300),
       ),
     );
   }
@@ -479,701 +443,348 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
     ];
   }
 
-  Widget _summaryBadge(String label, double amount, {required Color color}) {
-    final display = "₹${amount.toStringAsFixed(2)}";
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: color)),
-          const SizedBox(width: 6),
-          Text(display, style: TextStyle(fontWeight: FontWeight.w800, color: color)),
-        ],
-      ),
-    );
-  }
-
   // ======= Build =======
   @override
   Widget build(BuildContext context) {
-    final primary = _mint;
-    final faint = primary.withOpacity(0.10);
+    final primary = Colors.teal.shade700;
+    final faint   = Colors.teal.withOpacity(0.10);
 
     // Use filtered friend list (exclude me)
     final friendChoices = _friendChoices;
     final singleFriend = friendChoices.length == 1;
-    final singleGroup = widget.groups.length == 1;
-    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-
-    final outstanding = _maxAmount;
-    final netSubtitle = (_direction == 0)
-        ? 'All settled'
-        : (_direction < 0)
-            ? "You'll pay ${_fmt(outstanding)}"
-            : "You'll receive ${_fmt(outstanding)}";
-
-    final fullLabel = (_direction == 0) ? 'SETTLED' : _ctaLabelFull();
-    final compactLabel = (_direction == 0) ? 'SETTLED' : _ctaLabelCompact();
-
-    Widget friendSummaryCard() {
-      final friend = _selectedFriend;
-      final name = friend?.name ?? 'Select a friend';
-      final phone = friend?.phone ?? '';
-      final youGet = _direction > 0 ? outstanding : 0.0;
-      final youOwe = _direction < 0 ? outstanding : 0.0;
-      final trimmed = name.trim();
-      final avatarInitial = trimmed.isNotEmpty ? trimmed[0].toUpperCase() : '?';
-
-      // UX: Glass-style header summarizing counterpart, balances, and helper affordances.
-      return _sectionCard(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: faint,
-                  child: Text(
-                    avatarInitial,
-                    style: TextStyle(color: primary, fontWeight: FontWeight.w800),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 150),
-                        transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
-                        child: Text(
-                          name,
-                          key: ValueKey(name),
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        phone.isNotEmpty ? phone : 'Tap to choose who you are settling with',
-                        style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w500),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 8,
-                        children: [
-                          _summaryBadge('You get back', youGet, color: youGet > 0 ? primary : Colors.grey.shade500),
-                          _summaryBadge('You owe', youOwe, color: youOwe > 0 ? Colors.orange.shade600 : Colors.grey.shade500),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                if (widget.groups.isNotEmpty) ...[
-                  Column(
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Checkbox(
-                            value: _selectedGroup == null,
-                            onChanged: (value) {
-                              setState(() {
-                                if (value == true) {
-                                  _selectedGroup = null;
-                                } else if (widget.groups.isNotEmpty) {
-                                  _selectedGroup = widget.groups.first;
-                                }
-                              });
-                              _relistenAndRecompute();
-                            },
-                            visualDensity: VisualDensity.compact,
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          const SizedBox(width: 4),
-                          const Text('Select all', style: TextStyle(fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                      IconButton(
-                        tooltip: 'Help',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () {
-                          showDialog<void>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('How Settle Up works'),
-                              content: const Text(
-                                'Mark settle ups when money moves outside Fiinny. Selecting all groups keeps every shared expense in scope.',
-                              ),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('GOT IT')),
-                              ],
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.help_outline_rounded),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ],
-        ),
-      );
-    }
+    final singleGroup  = widget.groups.length == 1;
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: SafeArea(
-        top: false,
-        bottom: false,
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 520),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-          child: AbsorbPointer(
-            absorbing: _submitting || _showSuccess,
-            child: Stack(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 520),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        child: AbsorbPointer(
+          absorbing: _submitting,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Padding(
-                  padding: EdgeInsets.only(bottom: 90 + viewInsets),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                // Header
+                Row(
+                  children: [
+                    Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        color: faint,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.handshake_rounded, size: 22, color: Colors.teal),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text("Settle Up", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                    ),
+                    if (_submitting)
+                      const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                // Error banner (if any)
+                if (_error != null) ...[
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.08),
+                      border: Border.all(color: Colors.red.shade200),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
                       children: [
-                        // Header
-                        Row(
-                          children: [
-                            Container(
-                              width: 44,
-                              height: 44,
-                              decoration: BoxDecoration(
-                                color: faint,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Icon(Icons.handshake_rounded, size: 22, color: primary),
-                            ),
-                            const SizedBox(width: 10),
-                            const Expanded(
-                              child: Text('Settle Up', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                            ),
-                            if (_submitting)
-                              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                          ],
+                        const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(_error!, style: const TextStyle(color: Colors.red))),
+                        IconButton(
+                          tooltip: 'Dismiss',
+                          icon: const Icon(Icons.close, size: 16, color: Colors.red),
+                          onPressed: () => setState(() => _error = null),
                         ),
-                        const SizedBox(height: 14),
-
-                        friendSummaryCard(),
-                        const SizedBox(height: 14),
-
-                        // Error banner (if any)
-                        if (_error != null) ...[
-                          Container(
-                            width: double.infinity,
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.08),
-                              border: Border.all(color: Colors.red.shade200),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.error_outline, color: Colors.red, size: 18),
-                                const SizedBox(width: 8),
-                                Expanded(child: Text(_error!, style: const TextStyle(color: Colors.red))),
-                                IconButton(
-                                  tooltip: 'Dismiss',
-                                  icon: const Icon(Icons.close, size: 16, color: Colors.red),
-                                  onPressed: () => setState(() => _error = null),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-
-                        // Selection + direction
-                        // UX: Card keeps data-entry controls grounded with friend/group context.
-                        _sectionCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Group (optional)
-                              if (!singleGroup && widget.groups.isNotEmpty) ...[
-                                DropdownButtonFormField<GroupModel?>(
-                                  value: _selectedGroup,
-                                  items: <DropdownMenuItem<GroupModel?>>[
-                                    const DropdownMenuItem<GroupModel?>(value: null, child: Text('-- No Group --')),
-                                    ...widget.groups.map((g) => DropdownMenuItem<GroupModel?>(value: g, child: Text(g.name))),
-                                  ],
-                                  onChanged: (g) {
-                                    setState(() => _selectedGroup = g);
-                                    _relistenAndRecompute();
-                                  },
-                                  decoration: const InputDecoration(
-                                    labelText: 'Group (optional)',
-                                    prefixIcon: Icon(Icons.groups_rounded),
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                              ],
-
-                              // Friend (exclude "me")
-                              if (friendChoices.isEmpty)
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.amber.withOpacity(.12),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.amber.shade300),
-                                  ),
-                                  child: const Text(
-                                    "No eligible friends found (you can’t settle with yourself).",
-                                    style: TextStyle(fontWeight: FontWeight.w600),
-                                  ),
-                                )
-                              else if (!singleFriend) ...[
-                                DropdownButtonFormField<FriendModel?>(
-                                  value: _selectedFriend != null && !_isMeFriend(_selectedFriend!) ? _selectedFriend : null,
-                                  items: <DropdownMenuItem<FriendModel?>>[
-                                    const DropdownMenuItem<FriendModel?>(value: null, child: Text('-- Select Friend --')),
-                                    ...friendChoices.map(
-                                          (f) => DropdownMenuItem<FriendModel?>(value: f, child: Text(f.name)),
-                                    ),
-                                  ],
-                                  onChanged: (f) {
-                                    setState(() => _selectedFriend = f);
-                                    _relistenAndRecompute();
-                                  },
-                                  decoration: const InputDecoration(
-                                    labelText: 'With (Friend)',
-                                    prefixIcon: Icon(Icons.person_rounded),
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                              ],
-
-                              // Direction badge
-                              AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                curve: Curves.easeOut,
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: _directionColor().withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: _directionColor().withOpacity(0.5)),
-                                ),
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 150),
-                                  transitionBuilder: (child, anim) => FadeTransition(
-                                    opacity: anim,
-                                    child: ScaleTransition(scale: anim, child: child),
-                                  ),
-                                  child: Row(
-                                    key: ValueKey<String>(_directionText()),
-                                    children: [
-                                      Icon(
-                                        _direction < 0
-                                            ? Icons.call_made_rounded
-                                            : _direction > 0
-                                                ? Icons.call_received_rounded
-                                                : Icons.info_outline,
-                                        size: 18,
-                                        color: _directionColor(),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          _directionText(),
-                                          style: TextStyle(
-                                            color: _directionColor(),
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-
-                              // Who paid toggle
-                              Row(
-                                children: [
-                                  ChoiceChip(
-                                    label: const Text('They paid me'),
-                                    selected: !_payerIsMe,
-                                    onSelected: (v) => setState(() => _payerIsMe = false),
-                                    selectedColor: primary.withOpacity(0.15),
-                                    labelStyle: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: !_payerIsMe ? primary : Colors.grey.shade700,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  ChoiceChip(
-                                    label: const Text('I paid them'),
-                                    selected: _payerIsMe,
-                                    onSelected: (v) => setState(() => _payerIsMe = true),
-                                    selectedColor: primary.withOpacity(0.15),
-                                    labelStyle: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: _payerIsMe ? primary : Colors.grey.shade700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        // Amount + chips
-                        // UX: Amount card with helper microcopy + quick chips for fast fills.
-                        _sectionCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Amount', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.teal.shade900)),
-                              const SizedBox(height: 10),
-                              TextFormField(
-                                controller: _amountCtrl,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.allow(RegExp(r'^\d{0,9}(\.\d{0,2})?$')),
-                                ],
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                decoration: const InputDecoration(
-                                  prefixIcon: Icon(Icons.currency_rupee),
-                                  labelText: 'Settle amount',
-                                ),
-                                onChanged: (_) {
-                                  setState(() {
-                                    if (_error != null) _error = null;
-                                  });
-                                },
-                              ),
-                              const SizedBox(height: 6),
-                              AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 150),
-                                child: Text(
-                                  _amountHelperText(),
-                                  key: ValueKey<String>(_amountHelperText()),
-                                  style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w500),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Wrap(children: _chips()),
-                            ],
-                          ),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        // Note + date + attachment
-                        // UX: Keep optional context (notes/date/receipt) grouped for clarity.
-                        _sectionCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              TextFormField(
-                                decoration: const InputDecoration(
-                                  labelText: 'Note (optional)',
-                                  prefixIcon: Icon(Icons.sticky_note_2_outlined),
-                                ),
-                                onChanged: (v) => _note = v,
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  const Icon(Icons.calendar_today, size: 18, color: Colors.grey),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Date: ${_date.toLocal().toString().substring(0, 10)}',
-                                    style: const TextStyle(fontWeight: FontWeight.w600),
-                                  ),
-                                  const Spacer(),
-                                  TextButton(
-                                    onPressed: () async {
-                                      final picked = await showDatePicker(
-                                        context: context,
-                                        initialDate: _date,
-                                        firstDate: DateTime(2000),
-                                        lastDate: DateTime.now(),
-                                      );
-                                      if (picked != null) setState(() => _date = picked);
-                                    },
-                                    child: const Text('Change'),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  const Icon(Icons.attachment_rounded, size: 18, color: Colors.grey),
-                                  const SizedBox(width: 8),
-                                  const Text('Receipt (optional)', style: TextStyle(fontWeight: FontWeight.w600)),
-                                  const Spacer(),
-                                  if (!kIsWeb) ...[
-                                    IconButton(
-                                      tooltip: 'Camera',
-                                      onPressed: _pickFromCamera,
-                                      icon: Icon(Icons.photo_camera_outlined, color: primary),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Gallery',
-                                      onPressed: _pickFromGallery,
-                                      icon: Icon(Icons.photo_library_outlined, color: primary),
-                                    ),
-                                  ],
-                                  IconButton(
-                                    tooltip: 'File / PDF',
-                                    onPressed: _pickAnyFile,
-                                    icon: Icon(Icons.attach_file_rounded, color: primary),
-                                  ),
-                                ],
-                              ),
-                              if (_attachName != null) ...[
-                                const SizedBox(height: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: primary.withOpacity(0.08),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: primary.withOpacity(0.3)),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.insert_drive_file, size: 18, color: primary),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          _attachName!,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(fontWeight: FontWeight.w600),
-                                        ),
-                                      ),
-                                      const Icon(Icons.check_circle_rounded, size: 16, color: Colors.green),
-                                      const SizedBox(width: 6),
-                                      IconButton(
-                                        tooltip: 'Remove',
-                                        onPressed: () => setState(() {
-                                          _attachBytes = null;
-                                          _attachName = null;
-                                          _attachMime = null;
-                                          _uploadedUrl = null;
-                                        }),
-                                        icon: const Icon(Icons.close, size: 18),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
                       ],
                     ),
                   ),
-                ),
-                // UX: Sticky summary keeps CTA + disclaimer visible over keyboard scroll.
-                Align(
-                  alignment: Alignment.bottomCenter,
-                  child: _SummaryBar(
-                    enabled: _isValidAmount && !_submitting,
-                    busy: _submitting,
-                    label: fullLabel,
-                    compactLabel: compactLabel,
-                    subtitle: netSubtitle,
-                    accent: primary,
-                    onPressed: () async {
-                      FocusScope.of(context).unfocus();
-                      final ok = await showDialog<bool>(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          title: Text(
-                            _payerIsMe
-                                ? 'Are you sure you PAID ${_fmt(_enteredAmt)}?'
-                                : 'Are you sure you RECEIVED ${_fmt(_enteredAmt)}?'
+                ],
+
+                // Selection + direction
+                _sectionCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Group (optional)
+                      if (!singleGroup && widget.groups.isNotEmpty) ...[
+                        DropdownButtonFormField<GroupModel?>(
+                          value: _selectedGroup,
+                          items: <DropdownMenuItem<GroupModel?>>[
+                            const DropdownMenuItem<GroupModel?>(value: null, child: Text("-- No Group --")),
+                            ...widget.groups.map((g) => DropdownMenuItem<GroupModel?>(value: g, child: Text(g.name))),
+                          ],
+                          onChanged: (g) { setState(() => _selectedGroup = g); _relistenAndRecompute(); },
+                          decoration: const InputDecoration(
+                            labelText: "Group (optional)",
+                            prefixIcon: Icon(Icons.groups_rounded),
                           ),
-                          content: const Text(
-                            'If this happened outside Fiinny, you can mark it here.\nNo transfer will happen due to this action.',
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+
+                      // Friend (exclude "me")
+                      if (friendChoices.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(.12),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.amber.shade300),
                           ),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCEL')),
-                            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('CONFIRM')),
+                          child: const Text(
+                            "No eligible friends found (you can’t settle with yourself).",
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        )
+                      else if (!singleFriend) ...[
+                        DropdownButtonFormField<FriendModel?>(
+                          value: _selectedFriend != null && !_isMeFriend(_selectedFriend!)
+                              ? _selectedFriend
+                              : null,
+                          items: <DropdownMenuItem<FriendModel?>>[
+                            const DropdownMenuItem<FriendModel?>(value: null, child: Text("-- Select Friend --")),
+                            ...friendChoices.map(
+                                  (f) => DropdownMenuItem<FriendModel?>(value: f, child: Text(f.name)),
+                            ),
+                          ],
+                          onChanged: (f) { setState(() => _selectedFriend = f); _relistenAndRecompute(); },
+                          decoration: const InputDecoration(
+                            labelText: "With (Friend)",
+                            prefixIcon: Icon(Icons.person_rounded),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+
+                      // Direction badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: _directionColor().withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _directionColor().withOpacity(0.5)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              _direction < 0 ? Icons.call_made_rounded :
+                              _direction > 0 ? Icons.call_received_rounded :
+                              Icons.info_outline,
+                              size: 18, color: _directionColor(),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _directionText(),
+                                style: TextStyle(
+                                  color: _directionColor(),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
-                      );
-                      if (ok == true) _submit();
-                    },
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Who paid toggle
+                      DropdownButtonFormField<String>(
+                        value: _payerIsMe ? 'me' : 'they',
+                        items: const [
+                          DropdownMenuItem(value: 'they', child: Text('They paid me')),
+                          DropdownMenuItem(value: 'me',   child: Text('I paid them')),
+                        ],
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(() => _payerIsMe = (v == 'me'));
+                        },
+                        decoration: const InputDecoration(
+                          labelText: 'Who paid',
+                          prefixIcon: Icon(Icons.swap_horiz_rounded),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                if (_showSuccess)
-                  // UX: Mint success toast reassures the manual action without leaving dialog instantly.
-                  Positioned.fill(
-                    child: Container(
-                      color: Colors.black.withOpacity(.35),
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.all(24),
+
+                const SizedBox(height: 12),
+
+                // Amount + chips
+                _sectionCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Amount", style: TextStyle(fontWeight: FontWeight.w800, color: Colors.teal.shade900)),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: _amountCtrl,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'^\d{0,9}(\.\d{0,2})?$')),
+                        ],
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.currency_rupee),
+                          labelText: "Settle amount",
+                          helperText: _maxAmount > 0
+                              ? (_direction < 0
+                              ? "Outstanding (you owe): ₹${_maxAmount.toStringAsFixed(2)}"
+                              : "Outstanding (they owe you): ₹${_maxAmount.toStringAsFixed(2)}")
+                              : "If this looks wrong, choose friend/group above.",
+                        ),
+                        onChanged: (_) {
+                          // clear previous error if user edits
+                          if (_error != null) setState(() => _error = null);
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(children: _chips()),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Note + date + attachment
+                _sectionCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextFormField(
+                        decoration: const InputDecoration(
+                          labelText: "Note (optional)",
+                          prefixIcon: Icon(Icons.sticky_note_2_outlined),
+                        ),
+                        onChanged: (v) => _note = v,
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          const Icon(Icons.calendar_today, size: 18, color: Colors.grey),
+                          const SizedBox(width: 8),
+                          Text("Date: ${_date.toLocal().toString().substring(0, 10)}",
+                              style: const TextStyle(fontWeight: FontWeight.w600)),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: _date,
+                                firstDate: DateTime(2000),
+                                lastDate: DateTime.now(),
+                              );
+                              if (picked != null) setState(() => _date = picked);
+                            },
+                            child: const Text("Change"),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          const Icon(Icons.attachment_rounded, size: 18, color: Colors.grey),
+                          const SizedBox(width: 8),
+                          const Text("Receipt (optional)", style: TextStyle(fontWeight: FontWeight.w600)),
+                          const Spacer(),
+                          if (!kIsWeb) ...[
+                            IconButton(
+                              tooltip: 'Camera',
+                              onPressed: _pickFromCamera,
+                              icon: const Icon(Icons.photo_camera_outlined, color: Colors.teal),
+                            ),
+                            IconButton(
+                              tooltip: 'Gallery',
+                              onPressed: _pickFromGallery,
+                              icon: const Icon(Icons.photo_library_outlined, color: Colors.teal),
+                            ),
+                          ],
+                          IconButton(
+                            tooltip: 'File / PDF',
+                            onPressed: _pickAnyFile,
+                            icon: const Icon(Icons.attach_file_rounded, color: Colors.teal),
+                          ),
+                        ],
+                      ),
+                      if (_attachName != null) ...[
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
-                            color: Theme.of(context).cardColor.withOpacity(0.95),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.12),
-                                blurRadius: 24,
-                                offset: const Offset(0, 12),
-                              ),
-                            ],
+                            color: Colors.teal.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.teal.shade200),
                           ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
+                          child: Row(
                             children: [
-                              Icon(Icons.check_circle_rounded, size: 56, color: primary),
-                              const SizedBox(height: 10),
-                              const Text(
-                                'Success!',
-                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                              const Icon(Icons.insert_drive_file, size: 18, color: Colors.teal),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(_attachName!, overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                              ),
+                              IconButton(
+                                tooltip: 'Remove',
+                                onPressed: () => setState(() {
+                                  _attachBytes = null;
+                                  _attachName = null;
+                                  _attachMime = null;
+                                  _uploadedUrl = null;
+                                }),
+                                icon: const Icon(Icons.close, size: 18),
                               ),
                             ],
                           ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                // Actions
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _submitting ? null : () => Navigator.pop(context, false),
+                        icon: const Icon(Icons.close_rounded),
+                        label: const Text("Cancel"),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _submitting ? null : _submit,
+                        icon: const Icon(Icons.check_rounded),
+                        label: const Text("Settle"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
                     ),
-                  ),
+                  ],
+                ),
               ],
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _SummaryBar extends StatelessWidget {
-  final bool enabled;
-  final bool busy;
-  final String label;
-  final String subtitle;
-  final Color accent;
-  final VoidCallback onPressed;
-  final String? compactLabel;
-
-  const _SummaryBar({
-    required this.enabled,
-    required this.busy,
-    required this.label,
-    required this.subtitle,
-    required this.accent,
-    required this.onPressed,
-    this.compactLabel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: LayoutBuilder(
-        builder: (ctx, c) {
-          final textScale = MediaQuery.of(ctx).textScaleFactor;
-          final isCompact = c.maxWidth < 360 || label.length > 26 || textScale > 1.15;
-
-          Widget buildCopy() => Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'No money will be transferred',
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                  ),
-                ],
-              );
-
-          Widget buildButton(String text, {bool fullWidth = false}) => SizedBox(
-                width: fullWidth ? double.infinity : null,
-                child: ElevatedButton(
-                  onPressed: enabled ? onPressed : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: enabled ? accent : accent.withOpacity(0.4),
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(0, 44),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  child: busy
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
-                ),
-              );
-
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            padding: const RangeValues(12, 10).toString().isEmpty
-                ? const EdgeInsets.symmetric(horizontal: 12, vertical: 10)
-                : const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(.08), blurRadius: 10)],
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: isCompact
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      buildCopy(),
-                      const SizedBox(height: 8),
-                      buildButton(compactLabel ?? label, fullWidth: true),
-                    ],
-                  )
-                : Row(
-                    children: [
-                      Expanded(child: buildCopy()),
-                      const SizedBox(width: 12),
-                      Flexible(
-                        fit: FlexFit.loose,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(minWidth: 140, maxWidth: 260),
-                          child: buildButton(label),
-                        ),
-                      ),
-                    ],
-                  ),
-          );
-        },
       ),
     );
   }
