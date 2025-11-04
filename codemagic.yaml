@@ -41,6 +41,16 @@ workflows:
         script: |
           flutter build ipa --release
 
+      - name: Verify Runner.app bundle privacy manifest removal
+        script: |
+          set -euo pipefail
+          IPA_PATH=$(ls build/ios/ipa/*.ipa | head -n 1)
+          if unzip -l "$IPA_PATH" | grep -q "Runner.app/PrivacyInfo.xcprivacy"; then
+            echo "PrivacyInfo.xcprivacy found in Runner.app bundle"
+            exit 1
+          fi
+          plutil -lint ios/Runner/Info.plist
+
       - name: Show IPA(s)
         script: |
           ls -lah build/ios/ipa || true
