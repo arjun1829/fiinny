@@ -936,8 +936,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             );
           },
         ),
-      ),
-    );
+      );
   }
 
   // ---------- Sections (Overview) ----------
