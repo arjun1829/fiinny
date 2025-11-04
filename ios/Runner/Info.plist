@@ -11,7 +11,7 @@
   <key>CFBundleName</key><string>Fiinny</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$(FLUTTER_BUILD_NAME)</string>
-  <key>CFBundleVersion</key><string>$(FLUTTER_BUILD_NUMBER)</string>
+  <key>CFBundleVersion</key><string>8659</string>
 
   <!-- Flutter / Launch (no Main storyboard; only launch screen) -->
   <!-- Temporarily disable Impeller to rule out iOS 18/Metal black-screen -->
