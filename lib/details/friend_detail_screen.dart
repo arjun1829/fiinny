@@ -2291,8 +2291,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
             );
           },
         ),
-      ),
-    );
+      );
   }
 
   // ======================= SMALL UI BITS =======================
