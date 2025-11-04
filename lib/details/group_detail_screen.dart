@@ -24,6 +24,7 @@ import '../services/group_service.dart';
 import '../core/ads/ads_banner_card.dart';
 import '../core/ads/ads_shell.dart';
 import '../screens/edit_expense_screen.dart';
+import '../services/contact_name_service.dart';
 
 // Use the math helpers via an alias so calls are unambiguous.
 import '../group/group_balance_math.dart' as gbm;
@@ -101,12 +102,11 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   bool _loadingMembers = true;
   bool _balancesExpanded = true; // or false if you want it collapsed by default
   Map<String, String> _memberDisplayNames = {};
+  final ContactNameService _contactNames = ContactNameService.instance;
   List<Map<String, dynamic>> get _shareFaces => _members
             .map((m) => {
                     'id': m.phone,
-                    'name': (m.name.isNotEmpty && m.name != m.phone)
-                          ? m.name
-                          : _maskPhoneForDisplay(m.phone),
+                    'name': _bestNameFor(m),
               'avatarUrl': m.avatar.startsWith('http') ? m.avatar : null,
             })
       .toList();
@@ -276,15 +276,25 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   String _nameFor(String phone) {
     if (phone == widget.userId) return 'You';
     final f = _friend(phone);
-    final n = f.name.trim();
-    // If FriendService has a real name, use it; if it fell back to the phone, mask it.
-    if (n.isNotEmpty && n != phone) return n;
-    return _maskPhoneForDisplay(phone);
+    final fallback = _memberDisplayNames[phone]?.trim();
+    return _bestNameFor(
+      f,
+      fallback: fallback?.isNotEmpty == true ? fallback : _maskPhoneForDisplay(phone),
+    );
+  }
+
+  String _bestNameFor(FriendModel friend, {String? fallback}) {
+    return _contactNames.bestDisplayName(
+      phone: friend.phone,
+      remoteName: friend.name,
+      fallback: fallback ?? _maskPhoneForDisplay(friend.phone),
+    );
   }
 
 
   @override
   void dispose() {
+    _contactNames.removeListener(_onContactNamesChanged);
     _tabController.dispose();
     super.dispose();
   }
@@ -295,7 +305,23 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     super.initState();
     _tabController = TabController(length: 4, vsync: this); // Overview / Chart / Analytics / Chat
     _group = widget.group;
+    _contactNames.addListener(_onContactNamesChanged);
     _fetchMembers();
+  }
+
+  void _onContactNamesChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  void _primeMemberContacts(Iterable<FriendModel> friends) {
+    for (final friend in friends) {
+      final fallback = _memberDisplayNames[friend.phone];
+      final remote = friend.name.trim().isNotEmpty ? friend.name : fallback;
+      if (_contactNames.shouldPreferContact(remote, friend.phone)) {
+        _contactNames.lookup(friend.phone);
+      }
+    }
   }
 
   Future<void> _fetchMembers() async {
@@ -334,6 +360,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       _creator = creator;
       _loadingMembers = false;
     });
+    _primeMemberContacts(friends);
   }
 
   // ---------- Actions ----------
@@ -774,13 +801,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
-    final labelColor = Colors.teal.shade900;
-    final unselected = Colors.teal.shade600;
-
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFFF7FBFF), Color(0xFFEFF5FF)],
+          colors: [Color(0xFF0B1213), Color(0xFF0E1A1C)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -788,23 +812,30 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
+          systemOverlayStyle: SystemUiOverlayStyle.light,
           title: Text(_group.name),
-          backgroundColor: Colors.white,
-          elevation: 2,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.white),
+          titleTextStyle: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+          ),
           actions: [
             IconButton(
               tooltip: 'Settings',
-              icon: const Icon(Icons.settings_rounded),
+              icon: const Icon(Icons.settings_rounded, color: Colors.white),
               onPressed: _openSettings,
             ),
           ],
           bottom: TabBar(
             controller: _tabController,
-            labelColor: labelColor,
-            unselectedLabelColor: unselected,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
             labelStyle: const TextStyle(fontWeight: FontWeight.w800),
             unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
-            indicatorColor: Colors.teal.shade800,
+            indicatorColor: Colors.white,
             indicatorWeight: 3,
             tabs: const [
               Tab(text: 'Overview'),
@@ -925,65 +956,41 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   }) {
     final createdByYou = _group.createdBy == widget.userId;
     final creatorLabel = _nameFor(_group.createdBy);
-
-
-    final theme = Theme.of(context);
-    final Color mint = theme.colorScheme.primary;
-    final Color danger = theme.colorScheme.error;
-    final Color neutral =
-        theme.textTheme.bodySmall?.color?.withOpacity(0.7) ?? Colors.grey.shade600;
-    final double net = owed - owe;
-    const duration = Duration(milliseconds: 180);
-
+    final double net = owed - owe; // +ve => group owes you
     Color netColor;
-    IconData netIcon;
-    String netLabel;
+    String netText;
     if (net > 0.01) {
-      netColor = mint;
-      netIcon = Icons.trending_up_rounded;
-      netLabel = '+ ₹${net.toStringAsFixed(2)}';
+      netColor = Colors.green.shade700;
+      netText = "You're owed ₹${net.toStringAsFixed(2)}";
     } else if (net < -0.01) {
-      netColor = danger;
-      netIcon = Icons.trending_down_rounded;
-      netLabel = '- ₹${(-net).toStringAsFixed(2)}';
+      netColor = Colors.redAccent;
+      netText = "You owe ₹${(-net).toStringAsFixed(2)}";
     } else {
-      netColor = neutral;
-      netIcon = Icons.check_circle_rounded;
-      netLabel = 'Settled';
+      netColor = Colors.teal.shade700;
+      netText = 'All settled';
     }
 
-    final bool allSettled = owe.abs() < 0.01 && owed.abs() < 0.01;
     final creatorDisplay = createdByYou ? 'You' : creatorLabel;
     final subtitle =
         "Created by $creatorDisplay • ${_members.length} members • $txCount transactions";
 
-    final baseColor = theme.cardColor;
-    final bool isDark = theme.brightness == Brightness.dark;
-
-    return AnimatedContainer(
-      duration: duration,
-      curve: Curves.easeOut,
+    return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDark ? Colors.white10 : Colors.white.withOpacity(0.65),
-        ),
-        gradient: LinearGradient(
-          colors: [
-            baseColor.withOpacity(isDark ? 0.92 : 0.98),
-            baseColor.withOpacity(isDark ? 0.88 : 0.94),
-            mint.withOpacity(0.06),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
-            blurRadius: 18,
-            offset: const Offset(0, 12),
+            color: Colors.black.withOpacity(0.35),
+            blurRadius: 36,
+            offset: const Offset(0, 20),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.10),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
           ),
         ],
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -993,58 +1000,49 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _groupAvatar(radius: 26),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    const SizedBox(height: 2),
                     Text(
                       _group.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                          ) ??
-                          const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                            color: neutral,
-                            fontWeight: FontWeight.w600,
-                          ) ??
-                          TextStyle(color: neutral, fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
               ),
-              AnimatedContainer(
-                duration: duration,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                 decoration: BoxDecoration(
-                  color: netColor.withOpacity(netLabel == 'Settled' ? 0.14 : 0.16),
+                  color: netColor.withOpacity(0.10),
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: netColor.withOpacity(0.4)),
+                  border: Border.all(color: netColor.withOpacity(0.30)),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(netIcon, size: 18, color: netColor),
-                    const SizedBox(width: 6),
-                    AnimatedSwitcher(
-                      duration: duration,
-                      child: Text(
-                        'Net $netLabel',
-                        key: ValueKey(netLabel),
-                        style: TextStyle(
-                          color: netColor,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  netText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: netColor,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],
@@ -1056,32 +1054,29 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             children: [
               _AmountChip(
                 icon: Icons.call_received_rounded,
-                color: owed > 0.01 ? mint : neutral,
+                color: owed > 0.01 ? Colors.green.shade700 : Colors.grey.shade600,
                 label: owed > 0.01
-                    ? 'Owed to you ₹${owed.toStringAsFixed(2)}'
+                    ? 'Group owes you ₹${owed.toStringAsFixed(2)}'
                     : 'No one owes you',
               ),
               _AmountChip(
                 icon: Icons.call_made_rounded,
-                color: owe > 0.01 ? danger : neutral,
+                color: owe > 0.01 ? Colors.redAccent : Colors.grey.shade600,
                 label: owe > 0.01
                     ? 'You owe ₹${owe.toStringAsFixed(2)}'
-                    : 'You owe ₹0.00',
+                    : 'You owe ₹0',
               ),
-              if (allSettled)
-                const _SettledBadge(),
             ],
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 12,
-            runSpacing: 10,
+          Row(
             children: [
               _SummaryStat(
                 icon: Icons.receipt_long_rounded,
                 label: 'Transactions',
                 value: '$txCount',
               ),
+              const SizedBox(width: 10),
               _SummaryStat(
                 icon: Icons.groups_rounded,
                 label: 'Members',
@@ -1947,38 +1942,6 @@ class _SummaryStat extends StatelessWidget {
                     ),
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SettledBadge extends StatelessWidget {
-  const _SettledBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = theme.colorScheme.primary;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.24)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.check_circle_rounded, size: 16, color: color),
-          const SizedBox(width: 6),
-          Text(
-            'All settled',
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w700,
-            ),
           ),
         ],
       ),
