@@ -1389,51 +1389,43 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     final you = widget.userPhone;
     final primary = Colors.teal.shade800;
 
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF0B1213), Color(0xFF0E1A1C)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
+        title: Text(_displayName),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black),
+        titleTextStyle: const TextStyle(
+          color: Colors.black,
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: _handleEditFriend,
+            tooltip: "Edit friend",
+          ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: Colors.black,
+          unselectedLabelColor: Colors.black54,
+          labelStyle: const TextStyle(fontWeight: FontWeight.w800),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
+          indicatorColor: Colors.black,
+          indicatorWeight: 3,
+          tabs: const [
+            Tab(text: "History"),
+            Tab(text: "Chart"),
+            Tab(text: "Analytics"),
+            Tab(text: "Chat"),
+          ],
         ),
       ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          systemOverlayStyle: SystemUiOverlayStyle.light,
-          title: Text(_displayName),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          iconTheme: const IconThemeData(color: Colors.white),
-          titleTextStyle: const TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.edit, color: Colors.white),
-              onPressed: _handleEditFriend,
-              tooltip: "Edit friend",
-            ),
-          ],
-          bottom: TabBar(
-            controller: _tabController,
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            labelStyle: const TextStyle(fontWeight: FontWeight.w800),
-            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
-            indicatorColor: Colors.white,
-            indicatorWeight: 3,
-            tabs: const [
-              Tab(text: "History"),
-              Tab(text: "Chart"),
-              Tab(text: "Analytics"),
-              Tab(text: "Chat"),
-            ],
-          ),
-        ),
-        body: StreamBuilder<List<ExpenseItem>>(
+      body: StreamBuilder<List<ExpenseItem>>(
           stream: ExpenseService().getExpensesStream(you),
           builder: (context, snapshot) {
             final all = snapshot.data ?? [];
