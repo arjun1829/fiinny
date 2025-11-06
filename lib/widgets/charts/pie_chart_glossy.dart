@@ -69,75 +69,77 @@ class PieChartGlossy extends StatelessWidget {
 
     final values = List<double>.unmodifiable(slices.map((e) => e.value));
 
-    return SizedBox(
-      width: size,
-      height: size,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (onSliceTap == null)
-            ? null
-            : (details) {
-                final local = details.localPosition;
-                final center = Offset(size / 2, size / 2);
-                final rOuter = math.min(size, size) / 2;
+    return RepaintBoundary(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (onSliceTap == null)
+              ? null
+              : (details) {
+                  final local = details.localPosition;
+                  final center = Offset(size / 2, size / 2);
+                  final rOuter = math.min(size, size) / 2;
 
-                final v = local - center;
-                final dist = v.distance;
-                if (dist > rOuter) return;
+                  final v = local - center;
+                  final dist = v.distance;
+                  if (dist > rOuter) return;
 
-                double ang = math.atan2(v.dy, v.dx);
-                ang = (ang + 2 * math.pi) % (2 * math.pi);
-                double aFromTop = ang - (-math.pi / 2);
-                if (aFromTop < 0) aFromTop += 2 * math.pi;
+                  double ang = math.atan2(v.dy, v.dx);
+                  ang = (ang + 2 * math.pi) % (2 * math.pi);
+                  double aFromTop = ang - (-math.pi / 2);
+                  if (aFromTop < 0) aFromTop += 2 * math.pi;
 
-                double acc = 0.0;
-                for (int i = 0; i < arcs.length; i++) {
-                  final s = arcs[i];
-                  if (aFromTop >= acc && aFromTop < acc + s.sweep) {
-                    onSliceTap?.call(i, slices[i]);
-                    break;
+                  double acc = 0.0;
+                  for (int i = 0; i < arcs.length; i++) {
+                    final s = arcs[i];
+                    if (aFromTop >= acc && aFromTop < acc + s.sweep) {
+                      onSliceTap?.call(i, slices[i]);
+                      break;
+                    }
+                    acc += s.sweep;
                   }
-                  acc += s.sweep;
-                }
-              },
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            CustomPaint(
-              painter: _PiePainter(
-                arcs: arcs,
-                colors: colors,
-                selectedIndex: selectedIndex,
-                values: values,
-              ),
-            ),
-            if (showCenter)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: Colors.white.withOpacity(.72),
-                  boxShadow: const [
-                    BoxShadow(
-                      blurRadius: 12,
-                      color: Colors.black26,
-                      offset: Offset(0, 4),
-                    )
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(INR.c(total), style: Fx.number.copyWith(fontSize: 16)),
-                    Text(
-                      'total',
-                      style:
-                          Fx.label.copyWith(fontSize: 11, color: Fx.text.withOpacity(.70)),
-                    ),
-                  ],
+                },
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              CustomPaint(
+                painter: _PiePainter(
+                  arcs: arcs,
+                  colors: colors,
+                  selectedIndex: selectedIndex,
+                  values: values,
                 ),
               ),
-          ],
+              if (showCenter)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.white.withOpacity(.72),
+                    boxShadow: const [
+                      BoxShadow(
+                        blurRadius: 12,
+                        color: Colors.black26,
+                        offset: Offset(0, 4),
+                      )
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(INR.c(total), style: Fx.number.copyWith(fontSize: 16)),
+                      Text(
+                        'total',
+                        style:
+                            Fx.label.copyWith(fontSize: 11, color: Fx.text.withOpacity(.70)),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -198,7 +200,7 @@ class _PiePainter extends CustomPainter {
 
       final base = colors[i % colors.length];
       final isSelected = (selectedIndex != null && i == selectedIndex);
-      final fillColor = _tint(base, isSelected ? .12 : .0);
+      final fillColor = isSelected ? _tint(base, .06) : base;
 
       final paint = Paint()
         ..isAntiAlias = true
@@ -210,8 +212,8 @@ class _PiePainter extends CustomPainter {
       final border = Paint()
         ..isAntiAlias = true
         ..style = PaintingStyle.stroke
-        ..strokeWidth = isSelected ? 3 : 1.2
-        ..color = Colors.white.withOpacity(isSelected ? .9 : .65);
+        ..strokeWidth = isSelected ? 2.2 : 1.0
+        ..color = Colors.white.withOpacity(isSelected ? .55 : .35);
       canvas.drawArc(rect, arc.start, arc.sweep, true, border);
     }
 
@@ -225,8 +227,8 @@ class _PiePainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          Colors.white.withOpacity(.32),
-          Colors.white.withOpacity(.08),
+          Colors.white.withOpacity(.12),
+          Colors.white.withOpacity(.04),
           Colors.transparent,
         ],
         stops: const [0.0, 0.45, 1.0],
@@ -243,8 +245,8 @@ class _PiePainter extends CustomPainter {
         center: const Alignment(0, -0.65),
         radius: 0.6,
         colors: [
-          Colors.white.withOpacity(.18),
-          Colors.white.withOpacity(.06),
+          Colors.white.withOpacity(.08),
+          Colors.white.withOpacity(.03),
           Colors.transparent,
         ],
       ).createShader(rect);

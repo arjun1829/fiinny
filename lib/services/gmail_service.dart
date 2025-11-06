@@ -56,6 +56,111 @@ class GmailService {
     return t;
   }
 
+  // PATCH: strict txn gating utilities
+  bool _hasCurrencyAmount(String s) =>
+      RegExp(r'(?i)(₹|inr|rs\.?)\s*[0-9][\d,]*(?:\.\d{1,2})?').hasMatch(s);
+
+  bool _hasDebitVerb(String s) => RegExp(
+          r'(?i)\b(debited|spent|paid|payment|purchase|charged|withdrawn|withdrawal|pos|upi|imps|neft|rtgs|txn|transaction|autopay|mandate|emi)\b')
+      .hasMatch(s);
+
+  bool _hasCreditVerb(String s) => RegExp(
+          r'(?i)\b(credited|received|rcvd|deposit(?:ed)?|salary|refund|reversal|cashback|interest)\b')
+      .hasMatch(s);
+
+  bool _hasRefToken(String s) =>
+      RegExp(r'(?i)\b(utr|ref(?:erence)?|order|invoice|a/?c|acct|account|card|vpa|pos|txn)\b')
+          .hasMatch(s);
+
+  bool _passesTxnGate(String text, {String? domain}) {
+    final t = text;
+    final verbs = _hasDebitVerb(t) || _hasCreditVerb(t);
+    final whitelisted = () {
+      if (domain == null) return false;
+      const wl = [
+        'hdfcbank.com',
+        'axisbank.com',
+        'icicibank.com',
+        'sbi.co.in',
+        'kotak.com',
+        'yesbank.in',
+        'idfcbank.com',
+        'bankofbaroda.co.in',
+        'bobfinancial.com',
+        'amex.com',
+        'visacards.com',
+        'mastercard.com',
+        'rupay.co.in',
+        'razorpay.com',
+        'billdesk.com',
+        'paytm.com',
+        'cashfree.com'
+      ];
+      return wl.any((d) => domain.toLowerCase().endsWith(d));
+    }();
+
+    return whitelisted || (_hasCurrencyAmount(t) && verbs && _hasRefToken(t));
+  }
+
+  bool _tooSmallToTrust(String body, double amt) {
+    if (amt >= 5) return false;
+    final creditOK = RegExp(r'(?i)\b(refund|cashback|reversal|interest)\b')
+        .hasMatch(body);
+    return !creditOK;
+  }
+
+  // Stronger email domain whitelist for bank/gateway emails
+  static const Set<String> _EMAIL_WHITELIST = {
+    'hdfcbank.com',
+    'icicibank.com',
+    'axisbank.com',
+    'sbi.co.in',
+    'kotak.com',
+    'yesbank.in',
+    'idfcbank.com',
+    'bankofbaroda.co.in',
+    'bobfinancial.com',
+    'amex.com',
+    'mastercard.com',
+    'visacards.com',
+    'rupay.co.in',
+    'razorpay.com',
+    'billdesk.com',
+    'cashfree.com',
+    'paytm.com',
+    'phonepe.com',
+  };
+
+  bool _looksPromotionalIncome(String s) {
+    final rx = RegExp(
+      r'(?i)(loan\s+up\s+to|pre[-\s]?approved|apply\s+now|kyc|complete\s+kyc|'
+      r'offer|subscribe|webinar|workshop|newsletter|utm_|unsubscribe|http[s]?://)');
+    final strongTxn = RegExp(
+      r'(?i)\b(invoice|receipt|order|utr|ref(?:erence)?|payout|settlement|imps|neft|upi)\b',
+    ).hasMatch(s);
+    return rx.hasMatch(s) && !strongTxn;
+  }
+
+  bool _looksFutureCredit(String s) =>
+      RegExp(r'(?i)\b(can|will|may)\s+be\s+credited\b').hasMatch(s);
+
+  bool _emailTxnGateForIncome(String text, {String? domain}) {
+    final hasCurrency = _hasCurrencyAmount(text);
+    final strongCredit = RegExp(
+      r'(?i)\b(has\s*been\s*credited|credited\s*(?:by|with)?|received\s*(?:from)?|payout|settlement)\b',
+    ).hasMatch(text);
+    final hasRef = _hasRefToken(text);
+    final promoOrFuture =
+        _looksPromotionalIncome(text) || _looksFutureCredit(text);
+    final whitelisted = domain != null &&
+        _EMAIL_WHITELIST.any((d) => domain.toLowerCase().endsWith(d));
+
+    if (!whitelisted) {
+      return hasCurrency && strongCredit && hasRef && !promoOrFuture;
+    }
+    return hasCurrency && strongCredit && !promoOrFuture;
+  }
+
 
 
 
@@ -108,9 +213,29 @@ class GmailService {
 
   // --- helpers added ----------------------------------------------------------
 
-  // Extract UPI VPA (first one)
+  // Extract UPI VPA (first one) limited to known PSP/bank handles
   String? _extractUpiVpa(String text) {
-    final re = RegExp(r'\b([a-zA-Z0-9.\-_]{2,})@([a-zA-Z]{2,})\b');
+    const handles = [
+      'ybl',
+      'okaxis',
+      'oksbi',
+      'okhdfcbank',
+      'okicici',
+      'ibl',
+      'upi',
+      'paytm',
+      'apl',
+      'axisbank',
+      'hdfcbank',
+      'icici',
+      'sbi',
+      'idfcbank',
+      'kotak',
+    ];
+    final re = RegExp(
+      r'\b([a-zA-Z0-9.\-_]{2,})@(' + handles.join('|') + r')\b',
+      caseSensitive: false,
+    );
     return re.firstMatch(text)?.group(0);
   }
 
@@ -428,6 +553,12 @@ class GmailService {
 
     if (combined.isEmpty) return null;
 
+    // PATCH: strict gate before any heavy work (but allow card-bill path later)
+    final emailDomain = _fromDomain(headers);
+    final looksTxn = _passesTxnGate(combined, domain: emailDomain);
+    final passesIncomeGate =
+        _emailTxnGateForIncome(combined, domain: emailDomain);
+
     // ── Early skips & special routing (safe) ─────────────────────────────────
     final direction = _inferDirection(combined); // 'debit'|'credit'|null
     final amountFx = _extractFx(combined);
@@ -436,32 +567,36 @@ class GmailService {
         : null;
     final amount = amountInr ?? amountFx?['amount'] as double?;
     final postBal = _extractPostTxnBalance(combined);
-    final _looksTxn = (direction != null && (amount != null && amount > 0));
+    final parsedTxnSignals = direction != null && (amount != null && amount > 0);
 
     if (amountInr != null || postBal != null) {
       _log('parsed amountInr=${amountInr ?? -1} postBalance=${postBal ?? -1} dir=${direction ?? '-'} msg=${msg.id ?? '-'}');
     }
 
 // Drop newsletters/promos ONLY if they do NOT look like a transaction.
-    if (filt.isLikelyNewsletter(listId, fromHdr) && !_looksTxn) {
+    if (filt.isLikelyNewsletter(listId, fromHdr) &&
+        !(looksTxn || passesIncomeGate)) {
       if (_DEBUG) _log('drop: newsletter without txn signals');
       return null;
     }
-    if (filt.isLikelyPromo(combined) && !_looksTxn) {
+    if (filt.isLikelyPromo(combined) && !(looksTxn || passesIncomeGate)) {
       if (_DEBUG) _log('drop: promo without txn signals');
       return null;
     }
 
 // Balance alerts often include legit credits ("credited ... Avl bal ...").
 // So ONLY drop balance alerts when there is NO clear txn signal.
-    if (filt.isLikelyBalanceAlert(combined) && !_looksTxn) {
+    if (filt.isLikelyBalanceAlert(combined) &&
+        !(looksTxn || passesIncomeGate)) {
       if (_DEBUG) _log('drop: balance alert without txn signals');
       return null;
     }
 
 // Card bill logic: allow card-bill notices; drop other statements/bills.
     final cardBillCue = filt.isLikelyCardBillNotice(combined);
-    if (!cardBillCue && filt.isStatementOrBillNotice(combined) && !_looksTxn) {
+    if (!cardBillCue &&
+        filt.isStatementOrBillNotice(combined) &&
+        !(looksTxn || parsedTxnSignals)) {
       if (_DEBUG) _log('drop: statement/bill without txn signals');
       return null;
     }
@@ -471,7 +606,6 @@ class GmailService {
     final msgDate = DateTime.fromMillisecondsSinceEpoch(
       int.tryParse(msg.internalDate ?? '0') ?? DateTime.now().millisecondsSinceEpoch,
     );
-    final emailDomain = _fromDomain(headers);
     final bank = _guessBankFromHeaders(headers) ?? _guessIssuerBankFromBody(combined);
     final last4 = _extractCardLast4(combined);
     final upiVpa = _extractUpiVpa(combined);
@@ -570,6 +704,19 @@ class GmailService {
     // Otherwise, proceed with normal debit/credit
     if (direction == null) return null;
     if (amount == null || amount <= 0) return null;
+    if (direction == 'credit') {
+      if (!passesIncomeGate) {
+        if (_DEBUG) _log('drop: gmail income gate failed');
+        return null;
+      }
+      if (_tooSmallToTrust(combined, amount)) {
+        if (_DEBUG) _log('drop: tiny income $amount');
+        return null;
+      }
+    } else if (_tooSmallToTrust(combined, amount)) {
+      if (_DEBUG) _log('drop: tiny amount $amount');
+      return null;
+    }
 
     // Merchant extraction & normalization (initial)
     final merchantRaw = _guessMerchantSmart(combined) ?? upiSender;
@@ -791,6 +938,7 @@ class GmailService {
       );
 
       await expRef.set(e.toJson(), SetOptions(merge: true));
+      await expRef.set({'source': 'Email'}, SetOptions(merge: true));
       final labelsForDoc = labelSet.toList();
       final combinedTags = <String>{};
       combinedTags.addAll(e.tags ?? const []);
@@ -1084,7 +1232,8 @@ class GmailService {
       RegExp(r'\bamount\s+of\s+([0-9][\d,]*(?:\.\d{1,2})?)', caseSensitive: false),
     ];
     final balanceCue = RegExp(
-      r'(A/?c\.?\s*Bal|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance|\bBal(?:ance)?\b)',
+      r'(A/?c\.?\s*Bal|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance|Current\s*Balance|'
+      r'Ledger\s*Balance|Passbook\s*Balance|\bBal(?:ance)?\b)',
       caseSensitive: false,
     );
     final creditCues = RegExp(
@@ -1119,7 +1268,7 @@ class GmailService {
       for (final rx in amountPatterns) {
         for (final m in rx.allMatches(windowText)) {
           final absoluteStart = start + m.start;
-          final lookbackStart = math.max(0, absoluteStart - 25);
+          final lookbackStart = math.max(0, absoluteStart - 40);
           final lookback = text.substring(lookbackStart, absoluteStart);
           if (balanceCue.hasMatch(lookback)) continue;
           final numStr = (m.group(1) ?? '').replaceAll(',', '');
@@ -1143,7 +1292,7 @@ class GmailService {
     for (final rx in amountPatterns) {
       for (final m in rx.allMatches(text)) {
         final absoluteStart = m.start;
-        final lookbackStart = math.max(0, absoluteStart - 25);
+        final lookbackStart = math.max(0, absoluteStart - 40);
         final lookback = text.substring(lookbackStart, absoluteStart);
         if (balanceCue.hasMatch(lookback)) continue;
         final numStr = (m.group(1) ?? '').replaceAll(',', '');
@@ -1300,7 +1449,17 @@ class GmailService {
       'SONYLIV','AIRTEL','JIO','VI','HATHWAY','ACT FIBERNET','BOOKMYSHOW','BIGTREE','OLA','UBER',
       'IRCTC','REDBUS','AMAZON','FLIPKART','MEESHO','BLINKIT','ZEPTO'
     ];
-    for (final k in known) { if (t.contains(k)) return k; }
+    for (final k in known) {
+      final idx = t.indexOf(k);
+      if (idx >= 0) {
+        final windowStart = idx - 60 < 0 ? 0 : idx - 60;
+        final windowEnd = idx + 60 > t.length ? t.length : idx + 60;
+        final w = t.substring(windowStart, windowEnd);
+        final nearVerb = _hasDebitVerb(w) || _hasCreditVerb(w);
+        final nearAmt = _hasCurrencyAmount(w);
+        if (nearVerb || nearAmt) return k;
+      }
+    }
 
     // 4) “at|to <merchant>”
     final m3 = RegExp(r'\b(AT|TO)\b\s*([A-Z0-9&\.\-\* ]{3,40})').firstMatch(t);
@@ -1334,7 +1493,6 @@ class GmailService {
     if (RegExp(r'\bCREDIT CARD\b').hasMatch(t) || RegExp(r'\bCC\b').hasMatch(t)) return 'Credit Card';
     if (RegExp(r'WALLET|PAYTM WALLET|AMAZON PAY', caseSensitive: false).hasMatch(text)) return 'Wallet';
     if (RegExp(r'NETBANKING|NET BANKING', caseSensitive: false).hasMatch(text)) return 'NetBanking';
-    if (RegExp(r'\bRECHARGE\b|\bDTH\b|\bPREPAID\b', caseSensitive: false).hasMatch(text)) return 'Recharge';
     return null;
   }
 

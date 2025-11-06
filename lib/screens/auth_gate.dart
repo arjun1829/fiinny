@@ -1,14 +1,13 @@
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl_phone_field/intl_phone_field.dart';
 
 import 'main_nav_screen.dart';
 import 'onboarding_screen.dart';
 
-enum AuthStage { phoneInput, otpInput, loading, phoneAfterGoogle }
+enum AuthStage { phoneInput, otpInput, loading }
 
 class AuthGate extends StatefulWidget {
   const AuthGate({Key? key}) : super(key: key);
@@ -26,8 +25,6 @@ class _AuthGateState extends State<AuthGate> {
   AuthStage _stage = AuthStage.phoneInput;
   bool _loading = false;
 
-  User? _googleUser; // temporarily hold google signed-in user
-
   // ------- Brand colors (MATCH welcome_screen.dart) -------
   static const Color kMintBase = Color(0xFF21B9A3); // lighter
   static const Color kMintDeep = Color(0xFF159E8A); // darker (primary for Auth)
@@ -41,34 +38,6 @@ class _AuthGateState extends State<AuthGate> {
     return 1.0;
   }
   SizedBox _gap(BuildContext c, double base) => SizedBox(height: base * _scale(c));
-
-  // --- GOOGLE SIGN IN (unchanged) ---
-  Future<void> _signInWithGoogle() async {
-    setState(() => _loading = true);
-    try {
-      final googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) throw Exception('Cancelled');
-      final googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
-      _googleUser = userCredential.user;
-
-      if ((_googleUser?.phoneNumber ?? '').isEmpty) {
-        setState(() {
-          _stage = AuthStage.phoneAfterGoogle;
-          _loading = false;
-        });
-      } else {
-        await _saveUserToFirestore(_googleUser!, _googleUser!.phoneNumber!);
-      }
-    } catch (e) {
-      setState(() => _error = "Google sign in failed. Try again.");
-    }
-    setState(() => _loading = false);
-  }
 
   // --- PHONE AUTH (unchanged) ---
   Future<void> _sendOTP() async {
@@ -174,20 +143,6 @@ class _AuthGateState extends State<AuthGate> {
         MaterialPageRoute(builder: (_) => const OnboardingScreen()),
       );
     }
-  }
-
-  // --- After Google sign in (unchanged) ---
-  void _savePhoneAfterGoogle() async {
-    final phone = _fullPhoneNumber ?? '';
-    if (phone.isEmpty || !phone.startsWith("+")) {
-      setState(() => _error = "Please enter a valid phone number.");
-      return;
-    }
-    if (_googleUser == null) {
-      setState(() => _error = "Google session expired. Please try again.");
-      return;
-    }
-    await _saveUserToFirestore(_googleUser!, phone);
   }
 
   // --- Logged in handling (unchanged) ---
@@ -350,41 +305,6 @@ class _AuthGateState extends State<AuthGate> {
     );
   }
 
-  Widget _googleButton(BuildContext context) {
-    final s = _scale(context);
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        icon: Image.asset('assets/icons/google_icon.png', height: 22 * s, width: 22 * s),
-        label: Text(
-          "Sign in with Google",
-          style: TextStyle(fontFamily: 'Montserrat', fontSize: 16.5 * s, fontWeight: FontWeight.w600),
-        ),
-        onPressed: _signInWithGoogle,
-        style: OutlinedButton.styleFrom(
-          minimumSize: Size.fromHeight(52 * s),
-          side: const BorderSide(color: kMintDeep, width: 1.2),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          foregroundColor: Colors.black87,
-        ),
-      ),
-    );
-  }
-
-  Widget _dividerWithOr(BuildContext context) {
-    final c = Colors.black.withOpacity(.25);
-    return Row(
-      children: [
-        Expanded(child: Container(height: 1, color: c)),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 10),
-          child: Text("or", style: TextStyle(fontFamily: 'Montserrat', fontSize: 13, color: Colors.black54)),
-        ),
-        Expanded(child: Container(height: 1, color: c)),
-      ],
-    );
-  }
-
   // ----- Stage sections -----
   Widget _phoneSection(BuildContext context) {
     return Column(
@@ -464,30 +384,6 @@ class _AuthGateState extends State<AuthGate> {
     );
   }
 
-  Widget _phoneAfterGoogleSection(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _header(context, subtitle: "Add your phone to finish sign-in", step: 1, of: 1),
-        _gap(context, 16),
-        _glassCard(
-          child: Column(
-            children: [
-              IntlPhoneField(
-                controller: _phoneController,
-                initialCountryCode: 'IN',
-                decoration: _inputDecoration(context, 'Phone Number', prefixIcon: const Icon(Icons.phone_outlined)),
-                onChanged: (phone) => _fullPhoneNumber = phone.completeNumber,
-              ),
-              _gap(context, 12),
-              _primaryButton(context, label: "Save & Continue", onPressed: _savePhoneAfterGoogle),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   // ---------- MAIN BUILD ----------
   @override
   Widget build(BuildContext context) {
@@ -539,19 +435,13 @@ class _AuthGateState extends State<AuthGate> {
                                   return _phoneSection(context);
                                 case AuthStage.otpInput:
                                   return _otpSection(context);
-                                case AuthStage.phoneAfterGoogle:
-                                  return _phoneAfterGoogleSection(context);
                                 case AuthStage.loading:
                                   return const SizedBox.shrink();
                               }
                             }(),
                           ),
-                          _gap(context, 20),
-                          _dividerWithOr(context),
-                          _gap(context, 14),
-                          _googleButton(context),
                           if (_error != null) ...[
-                            _gap(context, 12),
+                            _gap(context, 20),
                             Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 14)),
                           ],
                           _gap(context, 14),

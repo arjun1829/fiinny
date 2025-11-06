@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../models/expense_item.dart';
 import '../models/income_item.dart';
+import '../services/ai/tx_extractor.dart';
 import '../services/loan_service.dart'; // (ok if unused)
 import '../brain/loan_detection_service.dart';
 
@@ -81,9 +82,13 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
   final _loanDetector = LoanDetectionService();
 
   // regexes
-  final _feeWords = RegExp(
-      r'\b(fee|charge|convenience|processing|gst|markup|penalty|late)\b',
-      caseSensitive: false);
+  final _feePrecise = RegExp(
+      r'(?i)\b('
+      r'convenience\s*fee|conv\.?\s*fee|processing\s*fee|platform\s*fee|'
+      r'late\s*fee|penalt(?:y|ies)|surcharge|fuel\s*surcharge|gst|igst|cgst|sgst|markup'
+      r')\b');
+  final _feeBlacklist =
+      RegExp(r'(?i)\b(recharge|top[-\s]?up|prepaid|plan|pack|dth)\b');
   final _subKw = RegExp(
     r'\b('
     r'subscript|subscription|recurring|auto[- ]?pay|autopay|auto[- ]?debit|'
@@ -91,6 +96,12 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
     r')\b',
     caseSensitive: false,
   );
+  final _fxVerb =
+      RegExp(r'(?i)\b(spent|purchase|charged|txn|transaction|pos)\b');
+  final _balanceWords =
+      RegExp(r'(?i)\b(available|avl|closing|current|passbook)\s*balance\b');
+  final _promoWords =
+      RegExp(r'(?i)\b(offer|subscribe|newsletter|utm_|unsubscribe)\b');
   final _salaryKw = RegExp(
       r'\b(salary|sal\s*cr|salary\s*credit|payroll|salary\s*neft)\b',
       caseSensitive: false);
@@ -170,11 +181,11 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
           Expanded(
             child: Text(
               'Fiinny Personalized Diagnosis',
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style:
+                  theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              maxLines: 2,
+              softWrap: true,
               overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-              softWrap: false,
             ),
           ),
           const SizedBox(width: 8),
@@ -531,6 +542,21 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
     );
   }
 
+  Future<Map<String, dynamic>?> _loadLatestRun() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userPhone)
+          .collection('diagnosis')
+          .doc('latest')
+          .get();
+      if (!doc.exists) return null;
+      return doc.data();
+    } catch (_) {
+      return null;
+    }
+  }
+
   // common 3-dot menu
   Widget _actionsForFinding(
       BuildContext ctx, {
@@ -754,6 +780,61 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
 
   Future<void> _runAll() async {
     if (_running) return;
+
+    final latest = await _loadLatestRun();
+    final today = DateTime.now();
+    final windowStart =
+        DateTime(today.year, today.month, today.day).subtract(Duration(days: widget.daysWindow));
+    if (latest != null) {
+      final range = (latest['range'] as Map?) ?? {};
+      DateTime? lastFrom;
+      if (range['from'] is Timestamp) {
+        lastFrom = (range['from'] as Timestamp).toDate();
+      }
+      final lastDays = (latest['windowDays'] as num?)?.toInt();
+      final sameStart = lastFrom != null &&
+          lastFrom.year == windowStart.year &&
+          lastFrom.month == windowStart.month &&
+          lastFrom.day == windowStart.day;
+      if (sameStart && lastDays == widget.daysWindow) {
+        final counters = (latest['counters'] as Map?) ?? {};
+        final forex = (latest['forex'] as Map?) ?? {};
+        final salary = (latest['salary'] as Map?) ?? {};
+        final currencies = (forex['currencies'] as Map?) ?? {};
+        setState(() {
+          _running = false;
+          _done = true;
+          _status = 'Already scanned for this window.';
+          _lastRunAt = (latest['at'] is Timestamp)
+              ? (latest['at'] as Timestamp).toDate()
+              : _lastRunAt;
+          _txScanned = (counters['scanned'] as num?)?.toInt() ?? _txScanned;
+          _hiddenCharges = (counters['hidden'] as num?)?.toInt() ?? _hiddenCharges;
+          _subscriptions = (counters['subs'] as num?)?.toInt() ?? _subscriptions;
+          _forexHits = (counters['forexHits'] as num?)?.toInt() ?? _forexHits;
+          _loanSuggestions =
+              (counters['loanSuggestions'] as num?)?.toInt() ?? _loanSuggestions;
+          _intlSpendInr = (forex['intlSpendInr'] as num?)?.toDouble() ?? _intlSpendInr;
+          _forexFeesInr = (forex['feesInr'] as num?)?.toDouble() ?? _forexFeesInr;
+          _intlSpendByCurrency
+            ..clear()
+            ..addEntries(currencies.entries.map((e) => MapEntry(
+                e.key.toString().toUpperCase(), (e.value as num?)?.toDouble() ?? 0)));
+          _salaryHits = (salary['hits'] as num?)?.toInt() ?? _salaryHits;
+          _medianDays = (salary['medianDays'] as num?)?.toInt() ?? _medianDays;
+          _avgSalary = (salary['avgSalary'] as num?)?.toDouble() ?? _avgSalary;
+          _salaryConfidence =
+              (salary['confidence'] as num?)?.toDouble() ?? _salaryConfidence;
+          _payWindowStart = (salary['windowStart'] is Timestamp)
+              ? (salary['windowStart'] as Timestamp).toDate()
+              : _payWindowStart;
+          _payWindowEnd = (salary['windowEnd'] is Timestamp)
+              ? (salary['windowEnd'] as Timestamp).toDate()
+              : _payWindowEnd;
+        });
+        return;
+      }
+    }
     setState(() {
       _running = true;
       _cancelRequested = false;
@@ -842,28 +923,40 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
         final e = ExpenseItem.fromFirestore(d);
         _txScanned++;
 
-        final note = e.note.toLowerCase();
+        final lower = e.note.toLowerCase();
         final tags =
             (e.toJson()['tags'] as List?)?.cast<String>() ?? const [];
-        final isFee = tags.contains('fee') || _feeWords.hasMatch(note);
+        final isFee = tags.contains('fee') ||
+            (_feePrecise.hasMatch(lower) && !_feeBlacklist.hasMatch(lower));
 
-        if (isFee) {
-          found++;
-          _hiddenFeeItems.add(e);
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(widget.userPhone)
-              .collection('hidden_charge_suggestions')
-              .doc(d.id)
-              .set({
-            'expenseId': d.id,
-            'amount': e.amount,
-            'date': d['date'],
-            'note': e.note,
-            'createdAt': FieldValue.serverTimestamp(),
-            'status': 'new',
-          }, SetOptions(merge: true));
+        if (!isFee) continue;
+
+        final review = await TxReviewer.reviewFinding(
+          type: 'hidden_fee',
+          text: e.note,
+          amountInr: e.amount,
+          merchant: _merchantOf(e),
+          extra: {'tags': tags},
+        );
+        if (!review.keep || review.confidence < 0.55) {
+          continue;
         }
+
+        found++;
+        _hiddenFeeItems.add(e);
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.userPhone)
+            .collection('hidden_charge_suggestions')
+            .doc(d.id)
+            .set({
+          'expenseId': d.id,
+          'amount': e.amount,
+          'date': d['date'],
+          'note': e.note,
+          'createdAt': FieldValue.serverTimestamp(),
+          'status': 'new',
+        }, SetOptions(merge: true));
 
         if (mounted) setState(() {});
         await Future.delayed(const Duration(milliseconds: 4));
@@ -1000,13 +1093,32 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
         if (_cancelRequested) break;
         final e = ExpenseItem.fromFirestore(d);
         final lower = e.note.toLowerCase();
+        final tags = (e.toJson()['tags'] as List?)?.cast<String>() ?? const [];
 
-        final isIntl = reSpentFx.hasMatch(lower) ||
-            reFxHint.hasMatch(lower) ||
-            reFxSymbol.hasMatch(lower);
+        final isIntl = _fxVerb.hasMatch(lower) &&
+            (reSpentFx.hasMatch(lower) ||
+                reFxSymbol.hasMatch(lower) ||
+                reFxHint.hasMatch(lower)) &&
+            !_balanceWords.hasMatch(lower) &&
+            !_promoWords.hasMatch(lower);
         if (!isIntl) continue;
 
-        final looksFee = _feeWords.hasMatch(lower);
+        final review = await TxReviewer.reviewFinding(
+          type: 'intl_spend',
+          text: e.note,
+          amountInr: e.amount,
+          merchant: _merchantOf(e),
+          extra: {
+            'fx': e.fx ?? const <String, dynamic>{},
+            'tags': tags,
+          },
+        );
+        if (!review.keep || review.confidence < 0.55) {
+          continue;
+        }
+
+        final looksFee =
+            _feePrecise.hasMatch(lower) && !_feeBlacklist.hasMatch(lower);
 
         if (!looksFee) {
           intlCount++;
@@ -1177,11 +1289,17 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
     final db = FirebaseFirestore.instance;
     final now = DateTime.now();
     final runId = now.toIso8601String();
+    final from = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: widget.daysWindow));
 
     final payload = {
       'userId': widget.userPhone,
       'at': Timestamp.fromDate(now),
       'windowDays': widget.daysWindow,
+      'range': {
+        'from': Timestamp.fromDate(from),
+        'to': Timestamp.fromDate(now),
+      },
       'counters': {
         'scanned': _txScanned,
         'hidden': _hiddenCharges,

@@ -1,4 +1,6 @@
 // lib/details/friend_detail_screen.dart
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -66,6 +68,12 @@ class FriendDetailScreen extends StatefulWidget {
 
 class _FriendDetailScreenState extends State<FriendDetailScreen>
     with SingleTickerProviderStateMixin {
+  // Keep tab indices centralized so adding/removing tabs doesn’t break deep-links
+  static const int _TAB_HISTORY = 0;
+  static const int _TAB_CHART = 1;
+  static const int _TAB_ANALYTICS = 2;
+  static const int _TAB_CHAT = 3;
+
   Map<String, double>? _lastCustomSplit;
   late TabController _tabController;
   bool _breakdownExpanded = false;
@@ -223,7 +231,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
         ? e.label!
         : ((e.category?.isNotEmpty == true) ? e.category! : 'Expense');
     final msg = "Discussing: $title • ₹${e.amount.toStringAsFixed(0)} • ${_fmtShort(e.date)}";
-    _tabController.animateTo(2); // Chat tab
+    _tabController.animateTo(_TAB_CHAT); // Chat tab
     Clipboard.setData(ClipboardData(text: msg));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Context copied — paste in chat')),
@@ -1096,187 +1104,294 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     required int bucketCount,
   }) {
     final theme = Theme.of(context);
-    final Color mint = theme.colorScheme.primary;
-    final Color danger = theme.colorScheme.error;
-    final Color neutral =
-        theme.textTheme.bodySmall?.color?.withOpacity(0.7) ?? Colors.grey.shade600;
-    final double net = owed - owe;
-    const duration = Duration(milliseconds: 180);
+    final isDark = theme.brightness == Brightness.dark;
+    final neutral =
+        theme.textTheme.bodySmall?.color?.withOpacity(.70) ?? Colors.black54;
 
-    Color netColor;
-    IconData netIcon;
-    String netLabel;
-    if (net > 0.01) {
-      netColor = mint;
-      netIcon = Icons.trending_up_rounded;
-      netLabel = '+ ₹${net.toStringAsFixed(2)}';
-    } else if (net < -0.01) {
-      netColor = danger;
-      netIcon = Icons.trending_down_rounded;
-      netLabel = '- ₹${(-net).toStringAsFixed(2)}';
-    } else {
-      netColor = neutral;
-      netIcon = Icons.check_circle_rounded;
-      netLabel = 'Settled';
-    }
+    final net = double.parse((owed - owe).toStringAsFixed(2));
+    final Color netColor = net > 0.01
+        ? Colors.teal.shade700
+        : net < -0.01
+            ? Colors.redAccent
+            : neutral;
+    final netLabel = net.abs() < 0.01
+        ? 'Settled'
+        : (net > 0
+            ? '+ ₹${net.toStringAsFixed(2)}'
+            : '- ₹${(-net).toStringAsFixed(2)}');
 
-    final bool allSettled = owe.abs() < 0.01 && owed.abs() < 0.01;
     final subtitleParts = <String>[];
-    if (widget.friend.phone.isNotEmpty) {
-      subtitleParts.add(widget.friend.phone);
-    }
+    if (widget.friend.phone.isNotEmpty) subtitleParts.add(widget.friend.phone);
     final email = widget.friend.email;
-    if (email != null && email.isNotEmpty) {
-      subtitleParts.add(email);
-    }
+    if (email != null && email.isNotEmpty) subtitleParts.add(email);
     final subtitle = subtitleParts.join(' • ');
 
-    final baseColor = theme.cardColor;
-    final bool isDark = theme.brightness == Brightness.dark;
+    final oweLabel = owe > 0.01
+        ? 'You owe ₹${owe.toStringAsFixed(2)}'
+        : 'You owe ₹0.00';
+    final owedLabel = owed > 0.01
+        ? 'Owes you ₹${owed.toStringAsFixed(2)}'
+        : 'No dues for you';
 
-    return AnimatedContainer(
-      duration: duration,
-      curve: Curves.easeOut,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDark ? Colors.white10 : Colors.grey.shade200,
+    final settled = owe.abs() < 0.01 && owed.abs() < 0.01;
+
+    Widget statChip({
+      required IconData icon,
+      required String label,
+      required String value,
+    }) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(isDark ? 0.10 : 0.55),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withOpacity(isDark ? 0.14 : 0.35)),
         ),
-        gradient: LinearGradient(
-          colors: [
-            baseColor.withOpacity(isDark ? 0.92 : 0.98),
-            baseColor.withOpacity(isDark ? 0.88 : 0.94),
-            mint.withOpacity(0.06),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: Colors.indigo.shade600),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              value,
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                color: Colors.indigo,
+              ),
+            ),
           ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
-            blurRadius: 18,
-            offset: const Offset(0, 12),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withOpacity(isDark ? 0.12 : 0.65),
+                Colors.white.withOpacity(isDark ? 0.08 : 0.40),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withOpacity(isDark ? 0.10 : 0.50),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(isDark ? 0.25 : 0.07),
+                blurRadius: 18,
+                offset: const Offset(0, 12),
+              ),
+            ],
           ),
-        ],
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAvatar(radius: 24),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ) ??
-                          const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                    ),
-                    if (subtitle.isNotEmpty)
-                      Text(
-                        subtitle,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: neutral,
-                          fontWeight: FontWeight.w600,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _buildAvatar(radius: 28),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.teal.shade900,
+                              ) ??
+                              TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.teal.shade900,
+                              ),
                         ),
-                      ),
-                  ],
-                ),
-              ),
-              AnimatedContainer(
-                duration: duration,
-                decoration: BoxDecoration(
-                  color: netColor.withOpacity(netLabel == 'Settled' ? 0.14 : 0.16),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: netColor.withOpacity(0.4)),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(netIcon, size: 18, color: netColor),
-                    const SizedBox(width: 6),
-                    AnimatedSwitcher(
-                      duration: duration,
-                      child: Text(
-                        netLabel,
-                        key: ValueKey(netLabel),
-                        style: TextStyle(
+                        if (subtitle.isNotEmpty)
+                          Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                                  color: neutral,
+                                  fontWeight: FontWeight.w600,
+                                ) ??
+                                TextStyle(
+                                  color: neutral,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: netColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(999),
+                      border:
+                          Border.all(color: netColor.withOpacity(netLabel == 'Settled' ? 0.28 : 0.45)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          net.abs() < 0.01
+                              ? Icons.check_circle_rounded
+                              : (net > 0
+                                  ? Icons.trending_up_rounded
+                                  : Icons.trending_down_rounded),
+                          size: 18,
                           color: netColor,
-                          fontWeight: FontWeight.w800,
                         ),
+                        const SizedBox(width: 6),
+                        Text(
+                          netLabel,
+                          style: TextStyle(
+                            color: netColor,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Colors.redAccent.withOpacity(0.35),
                       ),
                     ),
-                  ],
-                ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.call_made_rounded,
+                            size: 16, color: Colors.redAccent),
+                        const SizedBox(width: 6),
+                        Text(
+                          oweLabel,
+                          style: const TextStyle(
+                            color: Colors.redAccent,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Colors.teal.withOpacity(0.35),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.call_received_rounded,
+                            size: 16, color: Colors.teal.shade700),
+                        const SizedBox(width: 6),
+                        Text(
+                          owedLabel,
+                          style: TextStyle(
+                            color: Colors.teal.shade700,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (settled)
+                    const _SettledBadge(),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  statChip(
+                    icon: Icons.receipt_long_rounded,
+                    label: 'Transactions',
+                    value: '$txCount',
+                  ),
+                  if (bucketCount > 0)
+                    statChip(
+                      icon: Icons.layers_rounded,
+                      label: 'Shared groups',
+                      value: '$bucketCount',
+                    ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _AmountChip(
-                icon: Icons.call_made_rounded,
-                color: owe > 0.01 ? danger : neutral,
-                label: owe > 0.01
-                    ? 'You owe ₹${owe.toStringAsFixed(2)}'
-                    : 'You owe ₹0.00',
-              ),
-              _AmountChip(
-                icon: Icons.call_received_rounded,
-                color: owed > 0.01 ? mint : neutral,
-                label: owed > 0.01
-                    ? 'Owes you ₹${owed.toStringAsFixed(2)}'
-                    : 'No dues for you',
-              ),
-              if (allSettled)
-                const _SettledBadge(),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 12,
-            runSpacing: 10,
-            children: [
-              _SummaryStat(
-                icon: Icons.receipt_long_rounded,
-                label: 'Transactions',
-                value: '$txCount',
-              ),
-              _SummaryStat(
-                icon: Icons.layers_rounded,
-                label: 'Shared groups',
-                value: '$bucketCount',
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildAvatar({double radius = 36}) {
-    final url =
-    (_friendAvatarUrl?.isNotEmpty == true) ? _friendAvatarUrl! : widget.friend.avatar;
-    if (url.isNotEmpty && url.startsWith('http')) {
-      return CircleAvatar(radius: radius, backgroundImage: NetworkImage(url));
+    final raw = (_friendAvatarUrl?.trim().isNotEmpty == true)
+        ? _friendAvatarUrl!.trim()
+        : widget.friend.avatar.trim();
+
+    if (raw.isNotEmpty &&
+        (raw.startsWith('http://') || raw.startsWith('https://'))) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: Colors.white,
+        foregroundImage: NetworkImage(raw),
+      );
     }
-    final initial =
-    widget.friend.name.isNotEmpty ? widget.friend.name[0].toUpperCase() : '👤';
+
+    if (raw.isNotEmpty && raw.startsWith('assets/')) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: Colors.white,
+        foregroundImage: AssetImage(raw),
+      );
+    }
+
+    final initial = widget.friend.name.isNotEmpty
+        ? widget.friend.name.characters.first.toUpperCase()
+        : '👤';
     return CircleAvatar(
       radius: radius,
+      backgroundColor: Colors.white,
       child: Text(
         initial,
         style: TextStyle(fontSize: radius * 1.4, fontWeight: FontWeight.w700),
@@ -1350,7 +1465,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
   }
 
   void _remind() async {
-    _tabController.animateTo(2);
+    _tabController.animateTo(_TAB_CHAT);
     final msg =
         "Hi ${_displayName.split(' ').first}, quick nudge — current balance says we should settle soon. Can we do ₹… today? 😊";
     await Clipboard.setData(ClipboardData(text: msg));
