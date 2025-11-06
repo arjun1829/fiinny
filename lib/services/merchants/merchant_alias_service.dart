@@ -28,7 +28,7 @@ class MerchantAlias {
 
     // -------- OTT / Media / SaaS --------
     RegExp(r'NETFLIX', caseSensitive: false): 'NETFLIX',
-    RegExp(r'PRIME\s*VIDEO|AMAZON\s*PRIME', caseSensitive: false): 'AMAZON PRIME',
+    RegExp(r'PRIME\s*VIDEO|AMAZON\s*PRIME', caseSensitive: false): 'PRIME VIDEO',
     RegExp(r'DISNEY\+?\s*HOTSTAR|HOTSTAR', caseSensitive: false): 'HOTSTAR',
     RegExp(r'SONY\s*LIV|SONYLIV', caseSensitive: false): 'SONYLIV',
     RegExp(r'ZEE5', caseSensitive: false): 'ZEE5',
@@ -70,6 +70,7 @@ class MerchantAlias {
     RegExp(r'JIO', caseSensitive: false): 'JIO',
     RegExp(r'AIRTEL\s*X?STREAM', caseSensitive: false): 'AIRTEL XSTREAM',
     RegExp(r'AIRTEL', caseSensitive: false): 'AIRTEL',
+    RegExp(r'VODAFONE\s*IDEA', caseSensitive: false): 'VI',
     RegExp(r'VODAFONE|VI\b', caseSensitive: false): 'VI',
     RegExp(r'BSNL', caseSensitive: false): 'BSNL',
     RegExp(r'ACT\s*FIBER(?:NET)?', caseSensitive: false): 'ACT FIBERNET',

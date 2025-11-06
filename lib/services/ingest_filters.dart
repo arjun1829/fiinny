@@ -64,6 +64,7 @@ bool isLikelyPromo(String body) {
     'bookmyshow','bms','event tickets',
     'amazon','flipkart','myntra','ajio','nykaa','meesho',
     'ola select','uber pass','swiggy one','zomato gold',
+    'newsletter','utm_','webinar','workshop','apply now','loan up to','complete kyc','kyc pending',
   ];
   for (final kw in promoKeywords) {
     if (lower.contains(kw)) return true;
@@ -81,6 +82,14 @@ bool isLikelyPromo(String body) {
 
   return false;
 }
+
+bool hasAutopayCue(String s) =>
+    RegExp(r'(?i)\b(auto[-\s]?debit|autopay|nach|e[-\s]?mandate|mandate|standing\s+instruction|si\b|renew(?:al)?|subscription|plan|membership)\b')
+        .hasMatch(s);
+
+bool looksSubscriptionContext(String s) =>
+    RegExp(r'(?i)\b(renew|next\s*(?:due|billing)|validity|pack|plan|subscription|membership|premium)\b')
+        .hasMatch(s);
 
 /// True if text is OTP-only (no txn verbs around).
 bool looksLikeOtpOnly(String body) {
@@ -129,7 +138,7 @@ String? guessBankFromSms({String? address, required String body}) {
 bool isLikelyBalanceAlert(String body) {
   final t = body.toLowerCase();
   return RegExp(
-    r'\b(available|closing)\s*balance\b|\bavl\s*bal\b|\bbal(?:ance)?\s*(?:is|:)\b',
+    r'\b(passbook|available|closing|current|ledger|eod)\s*balance\b|\bavl\s*bal\b|\bbal(?:ance)?\s*(?:is|:)\b',
     caseSensitive: false,
   ).hasMatch(t) && !hasTxnVerb(t);
 }

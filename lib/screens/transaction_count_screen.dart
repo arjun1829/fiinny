@@ -39,6 +39,20 @@ class _TransactionCountScreenState extends State<TransactionCountScreen> with Si
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_period != 'D') {
+        setState(() {
+          _period = 'D';
+        });
+      }
+      _updateForPeriod(animate: true);
+    });
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
@@ -48,7 +62,7 @@ class _TransactionCountScreenState extends State<TransactionCountScreen> with Si
     setState(() => _loading = true);
     _allExpenses = await ExpenseService().getExpenses(widget.userId);
     _allIncomes = await IncomeService().getIncomes(widget.userId);
-    _updateForPeriod(animate: false);
+    _updateForPeriod(animate: true);
     setState(() => _loading = false);
   }
 
@@ -61,10 +75,13 @@ class _TransactionCountScreenState extends State<TransactionCountScreen> with Si
     _totalCount = _expenseCount + _incomeCount;
 
     _barCount = _buildBarData(_period, filteredExpenses, filteredIncomes);
-
-    if (mounted && animate) {
+    if (!mounted) return;
+    if (animate) {
       _controller.forward(from: 0);
+    } else {
+      _controller.value = 1.0;
     }
+    setState(() {});
   }
 
   List<ExpenseItem> _filteredExpensesForPeriod(String period) {

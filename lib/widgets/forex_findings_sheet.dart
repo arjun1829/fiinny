@@ -39,7 +39,17 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
     caseSensitive: false,
   );
   final _fxSymbol = RegExp(r'(\$|€|£|usd|eur|gbp|aud|cad|sgd|aed|jpy)', caseSensitive: false);
-  final _feeWords = RegExp(r'\b(fee|charge|convenience|processing|gst|markup)\b', caseSensitive: false);
+  final _fxVerb = RegExp(r'(?i)\b(spent|purchase|charged|txn|transaction|pos)\b');
+  final _balanceWords =
+      RegExp(r'(?i)\b(available|avl|closing|current|passbook)\s*balance\b');
+  final _promoWords = RegExp(r'(?i)\b(offer|subscribe|newsletter|utm_|unsubscribe)\b');
+  final _feePrecise = RegExp(
+      r'(?i)\b('
+      r'convenience\s*fee|conv\.?\s*fee|processing\s*fee|platform\s*fee|'
+      r'late\s*fee|penalt(?:y|ies)|surcharge|fuel\s*surcharge|gst|igst|cgst|sgst|markup'
+      r')\b');
+  final _feeBlacklist =
+      RegExp(r'(?i)\b(recharge|top[-\s]?up|prepaid|plan|pack|dth)\b');
 
   List<ExpenseItem> _intl = [];
   List<ExpenseItem> _fees = [];
@@ -100,10 +110,14 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
         final e = ExpenseItem.fromFirestore(d);
         final lower = e.note.toLowerCase();
 
-        final looksIntl = _reSpentFx.hasMatch(lower) || _fxHint.hasMatch(lower) || _fxSymbol.hasMatch(lower);
+        final looksIntl = _fxVerb.hasMatch(lower) &&
+            (_reSpentFx.hasMatch(lower) || _fxHint.hasMatch(lower) || _fxSymbol.hasMatch(lower)) &&
+            !_balanceWords.hasMatch(lower) &&
+            !_promoWords.hasMatch(lower);
         if (!looksIntl) continue;
 
-        final looksFee = _feeWords.hasMatch(lower);
+        final looksFee =
+            _feePrecise.hasMatch(lower) && !_feeBlacklist.hasMatch(lower);
         if (looksFee) {
           fees.add(e);
         } else {

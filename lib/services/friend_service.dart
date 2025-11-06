@@ -28,6 +28,17 @@ class FriendService {
     return doc.exists;
   }
 
+  Future<String> _userProfileName(String phone) async {
+    try {
+      final snap = await _firestore.collection('users').doc(phone).get();
+      final name = (snap.data()?['name'] as String?)?.trim();
+      if (name != null && name.isNotEmpty) {
+        return name;
+      }
+    } catch (_) {}
+    return phone;
+  }
+
   // ==== Streams / Reads (UNCHANGED) ====
   Stream<List<FriendModel>> streamFriends(String userPhone) {
     return getFriendsCollection(userPhone)
@@ -107,8 +118,13 @@ class FriendService {
 
     // 4) If friend already has an account, auto-complete the relation now:
     if (await _userExists(friendPhone)) {
-      await _createGlobalPairAndMirrors(userPhone, friendPhone,
-          nameA: friendName, nameB: userPhone /* fallback label */);
+      final yourDisplay = await _userProfileName(userPhone);
+      await _createGlobalPairAndMirrors(
+        userPhone,
+        friendPhone,
+        nameA: friendName,
+        nameB: yourDisplay,
+      );
 
       // Mark both directions active (idempotent)
       await _links.doc('${userPhone}_$friendPhone').set({
@@ -193,7 +209,7 @@ class FriendService {
     for (final d in q.docs) {
       final data = d.data();
       final inviterPhone = (data['inviterPhone'] as String).trim();
-      final inviterName = (data['inviterName'] as String?) ?? inviterPhone;
+      final inviterProfileName = await _userProfileName(inviterPhone);
 
       // Global pair
       final pairId = _pairId(inviterPhone, myPhone);
@@ -215,7 +231,7 @@ class FriendService {
       // Mirrors: I see inviter
       batch.set(getFriendsCollection(myPhone).doc(inviterPhone), {
         'phone': inviterPhone,
-        'name': inviterName,
+        'name': inviterProfileName,
         'avatar': '👤',
         'source': 'claimed',
         'createdAt': FieldValue.serverTimestamp(),
@@ -248,6 +264,9 @@ class FriendService {
     final batch = _firestore.batch();
     final pairId = _pairId(phoneA, phoneB);
 
+    final displayForA = nameA ?? await _userProfileName(phoneB);
+    final displayForB = nameB ?? await _userProfileName(phoneA);
+
     // Global pair
     batch.set(_pairs.doc(pairId), {
       'a': phoneA,
@@ -258,7 +277,7 @@ class FriendService {
     // Mirrors
     batch.set(getFriendsCollection(phoneA).doc(phoneB), {
       'phone': phoneB,
-      'name': nameA ?? phoneB,
+      'name': displayForA,
       'avatar': '👤',
       'source': 'pair',
       'createdAt': FieldValue.serverTimestamp(),
@@ -266,12 +285,24 @@ class FriendService {
 
     batch.set(getFriendsCollection(phoneB).doc(phoneA), {
       'phone': phoneA,
-      'name': nameB ?? phoneA,
+      'name': displayForB,
       'avatar': '👤',
       'source': 'pair',
       'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
     await batch.commit();
+  }
+
+  Future<void> backfillNamesForUser(String userPhone) async {
+    final snapshot = await getFriendsCollection(userPhone).get();
+    for (final doc in snapshot.docs) {
+      final currentName = (doc.data()['name'] as String?)?.trim() ?? '';
+      final looksPhone = RegExp(r'^[+0-9]{6,}$').hasMatch(currentName);
+      if (currentName.isEmpty || looksPhone) {
+        final profileName = await _userProfileName(doc.id);
+        await doc.reference.set({'name': profileName}, SetOptions(merge: true));
+      }
+    }
   }
 }
