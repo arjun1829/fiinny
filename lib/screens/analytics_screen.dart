@@ -219,9 +219,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           return false;
         }
       }
-      if (filter.last4 != null && filter.last4!.isNotEmpty) {
-        if (!(i.cardLast4 ?? '').trim().endsWith(filter.last4!)) return false;
-      }
+      // Incomes generally don’t carry card last4 in model → do NOT enforce last4 match for incomes
       if (filter.network != null && filter.network!.isNotEmpty) {
         if ((i.instrumentNetwork ?? '').toUpperCase() !=
             filter.network!.toUpperCase()) {
@@ -337,7 +335,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         amount: i.amount,
         bank: i.issuerBank,
         instrument: i.instrument,
-        last4: i.upiVpa != null ? null : i.cardLast4,
+        last4: null, // incomes do not carry cardLast4 in model
         network: i.instrumentNetwork,
       );
     }
@@ -482,7 +480,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         const SizedBox(height: 8),
                         Align(
                           alignment: Alignment.centerLeft,
-                          child: ActionChip(
+                          child: InputChip(
                             avatar: const Icon(
                               Icons.filter_alt,
                               size: 16,
@@ -492,26 +490,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                               _activeAccount!.label(),
                               overflow: TextOverflow.ellipsis,
                             ),
-                            onPressed: () {},
-                            onDeleted: () {
-                              setState(() {
-                                _activeAccount = null;
-                              });
-                              if (_scrollCtrl.hasClients) {
-                                _scrollCtrl.animateTo(
-                                  0,
-                                  duration: const Duration(milliseconds: 220),
-                                  curve: Curves.easeOutCubic,
-                                );
-                              }
-                            },
+                            onPressed: () {}, // no-op
+                            onDeleted: () => setState(() => _activeAccount = null),
                             deleteIcon: const Icon(Icons.close, size: 16),
                             backgroundColor: Colors.teal.withOpacity(.10),
-                            shape: StadiumBorder(
-                              side: BorderSide(
-                                color: Colors.teal.withOpacity(.35),
-                              ),
-                            ),
+                            shape: const StadiumBorder(),
+                            selected: true,
                           ),
                         ),
                       ],
