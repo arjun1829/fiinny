@@ -2,7 +2,7 @@
 import '../chat/io_file_ops.dart' if (dart.library.html) '../chat/io_file_ops_stub.dart';
 
 import 'dart:typed_data';
-import 'dart:ui' show ImageFilter;
+import 'dart:ui' as ui;
 import 'package:characters/characters.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -960,147 +960,158 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     final baseColor = theme.cardColor;
     final bool isDark = theme.brightness == Brightness.dark;
 
-    return AnimatedContainer(
-      duration: duration,
-      curve: Curves.easeOut,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDark ? Colors.white10 : Colors.white.withOpacity(0.65),
-        ),
-        gradient: LinearGradient(
-          colors: [
-            baseColor.withOpacity(isDark ? 0.92 : 0.98),
-            baseColor.withOpacity(isDark ? 0.88 : 0.94),
-            mint.withOpacity(0.06),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
-            blurRadius: 18,
-            offset: const Offset(0, 12),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: AnimatedContainer(
+          duration: duration,
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withOpacity(isDark ? 0.14 : 0.70),
+                Colors.white.withOpacity(isDark ? 0.10 : 0.45),
+                mint.withOpacity(0.10),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withOpacity(isDark ? 0.12 : 0.55),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(isDark ? 0.25 : 0.08),
+                blurRadius: 18,
+                offset: const Offset(0, 12),
+              ),
+            ],
           ),
-        ],
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _groupAvatar(radius: 26),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _group.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ) ??
-                          const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: neutral,
-                        fontWeight: FontWeight.w600,
-                      ) ??
-                          TextStyle(color: neutral, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              ),
-              AnimatedContainer(
-                duration: duration,
-                decoration: BoxDecoration(
-                  color: netColor.withOpacity(netLabel == 'Settled' ? 0.14 : 0.16),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: netColor.withOpacity(0.4)),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(netIcon, size: 18, color: netColor),
-                    const SizedBox(width: 6),
-                    AnimatedSwitcher(
-                      duration: duration,
-                      child: Text(
-                        'Net $netLabel',
-                        key: ValueKey(netLabel),
-                        style: TextStyle(
-                          color: netColor,
-                          fontWeight: FontWeight.w800,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _groupAvatar(radius: 30),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _group.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.teal.shade900,
+                              ) ??
+                              TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.teal.shade900,
+                              ),
                         ),
-                      ),
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                                color: neutral,
+                                fontWeight: FontWeight.w600,
+                              ) ??
+                              TextStyle(color: neutral, fontWeight: FontWeight.w600),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: netColor.withOpacity(netLabel == 'Settled' ? 0.14 : 0.18),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: netColor.withOpacity(0.4)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(netIcon, size: 18, color: netColor),
+                        const SizedBox(width: 6),
+                        AnimatedSwitcher(
+                          duration: duration,
+                          child: Text(
+                            'Net $netLabel',
+                            key: ValueKey(netLabel),
+                            style: TextStyle(
+                              color: netColor,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _AmountChip(
+                    icon: Icons.call_received_rounded,
+                    color: owed > 0.01 ? mint : neutral,
+                    label: owed > 0.01
+                        ? 'Owed to you ₹${owed.toStringAsFixed(2)}'
+                        : 'No one owes you',
+                  ),
+                  _AmountChip(
+                    icon: Icons.call_made_rounded,
+                    color: owe > 0.01 ? danger : neutral,
+                    label: owe > 0.01
+                        ? 'You owe ₹${owe.toStringAsFixed(2)}'
+                        : 'You owe ₹0.00',
+                  ),
+                  if (allSettled)
+                    const _SettledBadge(),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 12,
+                runSpacing: 10,
+                children: [
+                  _SummaryStat(
+                    icon: Icons.receipt_long_rounded,
+                    label: 'Transactions',
+                    value: '$txCount',
+                  ),
+                  _SummaryStat(
+                    icon: Icons.groups_rounded,
+                    label: 'Members',
+                    value: '${_members.length}',
+                  ),
+                ],
+              ),
+              if (_shareFaces.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ShareBadge(
+                    participants: _shareFaces,
+                    dense: true,
+                    onTap: _openSettings,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _AmountChip(
-                icon: Icons.call_received_rounded,
-                color: owed > 0.01 ? mint : neutral,
-                label: owed > 0.01
-                    ? 'Owed to you ₹${owed.toStringAsFixed(2)}'
-                    : 'No one owes you',
-              ),
-              _AmountChip(
-                icon: Icons.call_made_rounded,
-                color: owe > 0.01 ? danger : neutral,
-                label: owe > 0.01
-                    ? 'You owe ₹${owe.toStringAsFixed(2)}'
-                    : 'You owe ₹0.00',
-              ),
-              if (allSettled)
-                const _SettledBadge(),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 12,
-            runSpacing: 10,
-            children: [
-              _SummaryStat(
-                icon: Icons.receipt_long_rounded,
-                label: 'Transactions',
-                value: '$txCount',
-              ),
-              _SummaryStat(
-                icon: Icons.groups_rounded,
-                label: 'Members',
-                value: '${_members.length}',
-              ),
-            ],
-          ),
-          if (_shareFaces.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: ShareBadge(
-                participants: _shareFaces,
-                dense: true,
-                onTap: _openSettings,
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -1435,7 +1446,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 6),
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
@@ -1785,7 +1796,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
           padding: padding ?? const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -1828,13 +1839,31 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   }
 
   Widget _groupAvatar({double radius = 28}) {
-    final url = _group.avatarUrl;
-    if (url != null && url.isNotEmpty) {
-      return CircleAvatar(radius: radius, backgroundImage: NetworkImage(url));
+    final raw = (_group.avatarUrl ?? '').trim();
+    if (raw.isNotEmpty && (raw.startsWith('http://') || raw.startsWith('https://'))) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: Colors.white,
+        foregroundImage: NetworkImage(raw),
+      );
     }
+    if (raw.isNotEmpty && raw.startsWith('assets/')) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: Colors.white,
+        foregroundImage: AssetImage(raw),
+      );
+    }
+    final initial = _group.name.isNotEmpty
+        ? _group.name.characters.first.toUpperCase()
+        : '👥';
     return CircleAvatar(
       radius: radius,
-      child: Icon(Icons.groups_rounded, size: radius),
+      backgroundColor: Colors.white,
+      child: Text(
+        initial,
+        style: TextStyle(fontSize: radius * 1.2, fontWeight: FontWeight.w700),
+      ),
     );
   }
 }

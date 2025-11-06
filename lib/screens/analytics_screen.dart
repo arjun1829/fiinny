@@ -28,6 +28,69 @@ class _TrendAxisScale {
   const _TrendAxisScale(this.maxY, this.tick);
 }
 
+class _CardGroup {
+  final String bank;
+  final String instrument;
+  final String? last4;
+  final String? network;
+  double debitTotal;
+  double creditTotal;
+  int txCount;
+
+  _CardGroup({
+    required this.bank,
+    required this.instrument,
+    required this.last4,
+    required this.network,
+    this.debitTotal = 0,
+    this.creditTotal = 0,
+    this.txCount = 0,
+  });
+
+  double get netOutflow => debitTotal - creditTotal;
+}
+
+class _AccountFilter {
+  final String bank;
+  final String instrument;
+  final String? last4;
+  final String? network;
+
+  const _AccountFilter({
+    required this.bank,
+    required this.instrument,
+    this.last4,
+    this.network,
+  });
+
+  String label() {
+    final l4 = (last4 == null || last4!.isEmpty) ? '' : ' • ****$last4';
+    final net = (network == null || network!.isEmpty) ? '' : ' • $network';
+    return '$bank • $instrument$l4$net';
+  }
+
+  bool equalsGroup(_CardGroup g) {
+    return bank == g.bank.toUpperCase() &&
+        instrument.toLowerCase() == g.instrument.toLowerCase() &&
+        ((last4 ?? '') == (g.last4 ?? '')) &&
+        ((network ?? '').toUpperCase() == (g.network ?? '').toUpperCase());
+  }
+}
+
+String _formatBankLabel(String bank) {
+  if (bank.isEmpty || bank == 'UNKNOWN') return 'Unknown Bank';
+  final parts = bank
+      .split(' ')
+      .where((part) => part.isNotEmpty)
+      .map((part) {
+        final first = part.substring(0, 1).toUpperCase();
+        final rest = part.length > 1 ? part.substring(1).toLowerCase() : '';
+        return first + rest;
+      })
+      .toList();
+  return parts.isEmpty ? 'Unknown Bank' : parts.join(' ');
+}
+
 class AnalyticsScreen extends StatefulWidget {
   final String userPhone;
   const AnalyticsScreen({super.key, required this.userPhone});
@@ -56,6 +119,238 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   final Map<String, Map<String, double>> _rollCache = {};
   int _rev = 0;
 
+  // Banks & Cards selection (screen-wide filter)
+  _AccountFilter? _activeAccount;
+  final ScrollController _scrollCtrl = ScrollController();
+
+  String _slugBank(String s) {
+    final x = s.toLowerCase();
+    if (x.contains('axis')) return 'axis';
+    if (x.contains('hdfc')) return 'hdfc';
+    if (x.contains('icici')) return 'icici';
+    if (x.contains('kotak')) return 'kotak';
+    if (x.contains('sbi') || x.contains('state bank')) return 'sbi';
+    if (x.contains('american express') || x.contains('amex')) return 'amex';
+    return x.replaceAll(RegExp(r'[^a-z]'), '');
+  }
+
+  String? _bankLogoAsset(String? bank, {String? network}) {
+    final candidates = <String>[];
+    if (bank != null && bank.trim().isNotEmpty) {
+      final slug = _slugBank(bank);
+      if (slug.isNotEmpty) {
+        candidates.addAll([
+          'assets/banks/' + slug + '.png',
+          'lib/assets/banks/' + slug + '.png',
+        ]);
+      }
+    }
+
+    if (network != null && network.trim().isNotEmpty) {
+      final n = network.toLowerCase();
+      String networkSlug = '';
+      if (n.contains('visa')) {
+        networkSlug = 'visa';
+      } else if (n.contains('master')) {
+        networkSlug = 'mastercard';
+      } else if (n.contains('amex') || n.contains('american express')) {
+        networkSlug = 'amex';
+      } else if (n.contains('rupay')) {
+        networkSlug = 'rupay';
+      }
+
+      if (networkSlug.isNotEmpty) {
+        candidates.addAll([
+          'assets/banks/' + networkSlug + '.png',
+          'lib/assets/banks/' + networkSlug + '.png',
+        ]);
+      }
+    }
+
+    return candidates.isNotEmpty ? candidates.first : null;
+  }
+
+  String _normInstrument(String? raw) {
+    final upper = (raw ?? '').toUpperCase();
+    if (upper.contains('CREDIT')) return 'Credit Card';
+    if (upper.contains('DEBIT')) return 'Debit Card';
+    if (upper.contains('UPI')) return 'UPI';
+    if (upper.contains('NET')) return 'NetBanking';
+    if (upper.contains('IMPS')) return 'IMPS';
+    if (upper.contains('NEFT')) return 'NEFT';
+    if (upper.contains('RTGS')) return 'RTGS';
+    if (upper.contains('ATM')) return 'ATM';
+    if (upper.contains('POS')) return 'POS';
+    return raw?.trim().isEmpty == true ? 'Account' : (raw ?? '').trim();
+  }
+
+  List<ExpenseItem> _applyAccountToExp(List<ExpenseItem> src) {
+    final filter = _activeAccount;
+    if (filter == null) return src;
+    return src.where((e) {
+      if ((e.issuerBank ?? '').toUpperCase() != filter.bank) return false;
+      if (!_normInstrument(e.instrument)
+          .toLowerCase()
+          .contains(filter.instrument.toLowerCase())) {
+        return false;
+      }
+      if (filter.last4 != null && filter.last4!.isNotEmpty) {
+        if (!(e.cardLast4 ?? '').trim().endsWith(filter.last4!)) return false;
+      }
+      if (filter.network != null && filter.network!.isNotEmpty) {
+        if ((e.instrumentNetwork ?? '').toUpperCase() !=
+            filter.network!.toUpperCase()) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
+  List<IncomeItem> _applyAccountToInc(List<IncomeItem> src) {
+    final filter = _activeAccount;
+    if (filter == null) return src;
+    return src.where((i) {
+      if ((i.issuerBank ?? '').toUpperCase() != filter.bank) return false;
+      if (filter.instrument.isNotEmpty) {
+        if (!_normInstrument(i.instrument)
+            .toLowerCase()
+            .contains(filter.instrument.toLowerCase())) {
+          return false;
+        }
+      }
+      if (filter.last4 != null && filter.last4!.isNotEmpty) {
+        if (!(i.cardLast4 ?? '').trim().endsWith(filter.last4!)) return false;
+      }
+      if (filter.network != null && filter.network!.isNotEmpty) {
+        if ((i.instrumentNetwork ?? '').toUpperCase() !=
+            filter.network!.toUpperCase()) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
+  Map<String, double> _summaryFor(
+      List<ExpenseItem> expenses, List<IncomeItem> incomes) {
+    final debit = expenses.fold<double>(0, (sum, e) => sum + e.amount);
+    final credit = incomes.fold<double>(0, (sum, i) => sum + i.amount);
+    return {'credit': credit, 'debit': debit, 'net': credit - debit};
+  }
+
+  void _setActiveAccountFromGroup(_CardGroup group) {
+    final filter = _AccountFilter(
+      bank: group.bank.toUpperCase(),
+      instrument: group.instrument,
+      last4: group.last4,
+      network: group.network?.toUpperCase(),
+    );
+
+    setState(() {
+      if (_activeAccount != null && _activeAccount!.equalsGroup(group)) {
+        _activeAccount = null;
+      } else {
+        _activeAccount = filter;
+      }
+    });
+
+    if (_scrollCtrl.hasClients) {
+      _scrollCtrl.animateTo(
+        0,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  List<_CardGroup> _cardGroupsForPeriod(
+    List<ExpenseItem> exp,
+    List<IncomeItem> inc,
+  ) {
+    final map = <String, _CardGroup>{};
+
+    void addTxn({
+      required String direction,
+      required double amount,
+      String? bank,
+      String? instrument,
+      String? last4,
+      String? network,
+    }) {
+      if (amount <= 0) return;
+
+      final rawBank = (bank ?? 'Unknown').trim();
+      final rawInstrument = (instrument ?? '').trim();
+      if (rawBank.isEmpty && rawInstrument.isEmpty) return;
+
+      String? l4;
+      if (last4 != null) {
+        final trimmed = last4.trim();
+        if (trimmed.isNotEmpty) {
+          final digits = RegExp(r'([0-9]{4})$').firstMatch(trimmed);
+          if (digits != null) {
+            l4 = digits.group(1);
+          } else {
+            final start = trimmed.length >= 4 ? trimmed.length - 4 : 0;
+            l4 = trimmed.substring(start);
+          }
+        }
+      }
+
+      final labelInstrument = _normInstrument(rawInstrument);
+
+      final normalizedNetwork = (network ?? '').trim();
+      final key = '${rawBank.toUpperCase()}|$labelInstrument|${l4 ?? ''}|${normalizedNetwork.toUpperCase()}';
+      final group = map.putIfAbsent(
+        key,
+        () => _CardGroup(
+          bank: rawBank.isEmpty ? 'UNKNOWN' : rawBank.toUpperCase(),
+          instrument: labelInstrument.isEmpty ? 'Account' : labelInstrument,
+          last4: l4,
+          network: normalizedNetwork.isEmpty ? null : normalizedNetwork,
+        ),
+      );
+
+      if (direction == 'debit') {
+        group.debitTotal += amount;
+      } else {
+        group.creditTotal += amount;
+      }
+      group.txCount += 1;
+    }
+
+    for (final e in exp) {
+      addTxn(
+        direction: 'debit',
+        amount: e.amount,
+        bank: e.issuerBank,
+        instrument: e.instrument,
+        last4: e.cardLast4,
+        network: e.instrumentNetwork,
+      );
+    }
+
+    for (final i in inc) {
+      addTxn(
+        direction: 'credit',
+        amount: i.amount,
+        bank: i.issuerBank,
+        instrument: i.instrument,
+        last4: i.upiVpa != null ? null : i.cardLast4,
+        network: i.instrumentNetwork,
+      );
+    }
+
+    final groups = map.values.where((g) => g.txCount > 0).toList();
+    groups.sort((a, b) {
+      final diff = b.netOutflow.compareTo(a.netOutflow);
+      if (diff != 0) return diff;
+      return b.txCount.compareTo(a.txCount);
+    });
+    return groups;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -73,6 +368,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     } catch (_) {}
     if (!mounted) return;
     setState(() => _loading = false);
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
   }
 
   Widget _analyticsBannerCard() {
@@ -115,12 +416,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     // Use custom range when set from calendar
     final r = AnalyticsAgg.rangeFor(_period, now, custom: _custom);
 
-    final exp = AnalyticsAgg.filterExpenses(_allExp, r);
-    final inc = AnalyticsAgg.filterIncomes(_allInc, r);
+    final expPeriod = AnalyticsAgg.filterExpenses(_allExp, r);
+    final incPeriod = AnalyticsAgg.filterIncomes(_allInc, r);
+    final cardGroups = _cardGroupsForPeriod(expPeriod, incPeriod);
 
-    final totalExp = AnalyticsAgg.sumAmount(exp, (e) => e.amount);
-    final totalInc = AnalyticsAgg.sumAmount(inc, (i) => i.amount);
-    final savings = totalInc - totalExp;
+    final exp = _applyAccountToExp(expPeriod);
+    final inc = _applyAccountToInc(incPeriod);
+
+    final txSummary = _summaryFor(exp, inc);
+    final totalExp = txSummary['debit'] ?? 0.0;
+    final totalInc = txSummary['credit'] ?? 0.0;
+    final savings = txSummary['net'] ?? 0.0;
 
     final seriesKey = '$_rev|$_period|series|${_custom?.start}-${_custom?.end}';
     final series = _seriesCache[seriesKey] ??=
@@ -149,7 +455,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         _sparkLabelsForPeriod(_period, spark, now, custom: _custom);
 
     // Calendar heatmap uses current month overview (tap -> set custom day)
-    final calData = _monthExpenseMap(_allExp, now);
+    final calData =
+        _monthExpenseMap(_activeAccount == null ? _allExp : exp, now);
 
     return Scaffold(
       appBar: AppBar(
@@ -166,10 +473,48 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               : RefreshIndicator(
                   onRefresh: _bootstrap,
                   child: ListView(
+                    controller: _scrollCtrl,
                     padding: EdgeInsets.fromLTRB(16, 12, 16, bottomPadding),
                     children: [
                       // Period chips (no premium)
                       _periodChips(),
+                      if (_activeAccount != null) ...[
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: ActionChip(
+                            avatar: const Icon(
+                              Icons.filter_alt,
+                              size: 16,
+                              color: Colors.teal,
+                            ),
+                            label: Text(
+                              _activeAccount!.label(),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onPressed: () {},
+                            onDeleted: () {
+                              setState(() {
+                                _activeAccount = null;
+                              });
+                              if (_scrollCtrl.hasClients) {
+                                _scrollCtrl.animateTo(
+                                  0,
+                                  duration: const Duration(milliseconds: 220),
+                                  curve: Curves.easeOutCubic,
+                                );
+                              }
+                            },
+                            deleteIcon: const Icon(Icons.close, size: 16),
+                            backgroundColor: Colors.teal.withOpacity(.10),
+                            shape: StadiumBorder(
+                              side: BorderSide(
+                                color: Colors.teal.withOpacity(.35),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
 
                       // ===== OVERVIEW (Totals + counts + sparkline) =====
@@ -243,9 +588,47 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
                       const SizedBox(height: 14),
 
-                      // Expense by Category (donut + legend + drill-down)
-                      _donutCard(
-                        title: 'Expense by Category',
+                      if (cardGroups.isNotEmpty) ...[
+                        GlassCard(
+                          radius: Fx.r24,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _sectionHeader('Banks & Cards', Icons.credit_card_rounded),
+                              const SizedBox(height: 8),
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    const SizedBox(width: 12),
+                                    ...cardGroups.take(12).map((g) {
+                                      final asset = _bankLogoAsset(g.bank, network: g.network);
+                                      final isSelected =
+                                          _activeAccount != null && _activeAccount!.equalsGroup(g);
+
+                                      return Padding(
+                                        padding: const EdgeInsets.only(right: 10),
+                                        child: _BankCardTile(
+                                          group: g,
+                                          assetPath: asset,
+                                          selected: isSelected,
+                                          onTap: () => _setActiveAccountFromGroup(g),
+                                        ),
+                                      );
+                                    }).toList(),
+                                    const SizedBox(width: 12),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+
+                        // Expense by Category (donut + legend + drill-down)
+                        _donutCard(
+                          title: 'Expense by Category',
                         entries: catSlicesExp,
                         palette: palette,
                         onSliceTap: (label) => _openCategorySheet(
@@ -363,38 +746,48 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       ('5D', Period.last5),
       ('All', Period.all),
     ];
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: items.map((t) {
-        final sel = t.$2 == _period;
-        return InkWell(
-          borderRadius: BorderRadius.circular(999),
-          onTap: () => setState(() {
-            _period = t.$2;
-            if (_period != Period.custom) _custom = null;
-          }),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: sel ? Fx.mintDark.withOpacity(.12) : Colors.white,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color:
-                    sel ? Fx.mintDark.withOpacity(.35) : Colors.grey.shade200,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          const SizedBox(width: 2),
+          ...items.map((t) {
+            final sel = t.$2 == _period;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: () => setState(() {
+                  _period = t.$2;
+                  if (_period != Period.custom) _custom = null;
+                }),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: sel ? Fx.mintDark.withOpacity(.12) : Colors.white,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: sel
+                          ? Fx.mintDark.withOpacity(.35)
+                          : Colors.grey.shade200,
+                    ),
+                    boxShadow: sel ? Fx.soft : null,
+                  ),
+                  child: Text(
+                    t.$1,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: sel ? Fx.mintDark : Fx.text,
+                    ),
+                  ),
+                ),
               ),
-              boxShadow: sel ? Fx.soft : null,
-            ),
-            child: Text(
-              t.$1,
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: sel ? Fx.mintDark : Fx.text,
-              ),
-            ),
-          ),
-        );
-      }).toList(),
+            );
+          }).toList(),
+          const SizedBox(width: 2),
+        ],
+      ),
     );
   }
 
@@ -1223,6 +1616,133 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 }
 
+class _BankCardTile extends StatelessWidget {
+  final _CardGroup group;
+  final String? assetPath;
+  final VoidCallback onTap;
+  final bool selected;
+
+  const _BankCardTile({
+    required this.group,
+    required this.assetPath,
+    required this.onTap,
+    this.selected = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final spent = group.debitTotal;
+    final received = group.creditTotal;
+    final net = spent - received;
+    final amountValue = net >= 0 ? spent : -net;
+    final amountColor = net >= 0
+        ? (Colors.red.shade700 ?? Colors.red)
+        : (Colors.green.shade700 ?? Colors.green);
+    final amountText = INR.f(amountValue);
+
+    final subtitleParts = <String>[];
+    if (group.instrument.isNotEmpty) subtitleParts.add(group.instrument);
+    if (group.last4 != null && group.last4!.isNotEmpty) {
+      subtitleParts.add('****${group.last4}');
+    }
+    if (group.network != null && group.network!.isNotEmpty) {
+      subtitleParts.add(group.network!);
+    }
+    final subtitle = subtitleParts.join(' • ');
+
+    Widget avatar;
+    if (assetPath != null && assetPath!.isNotEmpty) {
+      avatar = ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.asset(
+          assetPath!,
+          width: 28,
+          height: 28,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const Text('🏦', style: TextStyle(fontSize: 22)),
+        ),
+      );
+    } else {
+      avatar = const Text('🏦', style: TextStyle(fontSize: 22));
+    }
+
+    return Material(
+      color: selected ? Fx.mintDark.withOpacity(.08) : Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          width: 240,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color:
+                  selected ? Fx.mintDark.withOpacity(.55) : Colors.black12,
+              width: selected ? 1.6 : 1,
+            ),
+            boxShadow: selected ? Fx.soft : null,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              avatar,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _formatBankLabel(group.bank),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if (subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          amountText,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: amountColor,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '• ${group.txCount} tx',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ---------- legend pill ----------
 Widget _pillWithDot(
   String label, {
@@ -1369,11 +1889,11 @@ class _AnalyticsDonutCardState extends State<_AnalyticsDonutCard> {
           const SizedBox(height: 8),
           Center(
             child: SizedBox(
-              width: 210,
-              height: 210,
+              width: 220,
+              height: 220,
               child: PieChartGlossy(
                 data: donutData,
-                size: 210,
+                size: 220,
                 showCenter: true,
                 palette: widget.palette,
                 selectedIndex: selectedIndex,
@@ -1382,10 +1902,18 @@ class _AnalyticsDonutCardState extends State<_AnalyticsDonutCard> {
             ),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: legendItems,
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                const SizedBox(width: 12),
+                ...legendItems.map((w) => Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: w,
+                    )),
+                const SizedBox(width: 12),
+              ],
+            ),
           ),
           if (bars.isNotEmpty) ...[
             const SizedBox(height: 14),

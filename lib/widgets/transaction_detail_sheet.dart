@@ -98,6 +98,28 @@ class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
     } catch (_) { return null; }
   }
 
+  // PATCH: pull common fields if present
+  String? _paymentMethod() {
+    try { return (widget.tx.instrument as String?)?.trim(); } catch (_) {}
+    try { return (widget.tx.paymentMethod as String?)?.trim(); } catch (_) {}
+    return null;
+  }
+
+  String? _cardLast4() {
+    try { return (widget.tx.cardLast4 as String?)?.trim(); } catch (_) {}
+    return null;
+  }
+
+  String? _issuerBank() {
+    try { return (widget.tx.issuerBank as String?)?.trim(); } catch (_) {}
+    return null;
+  }
+
+  String? _upiVpa() {
+    try { return (widget.tx.upiVpa as String?)?.trim(); } catch (_) {}
+    return null;
+  }
+
   List<String> _labels() {
     try {
       final any = widget.tx.allLabels;
@@ -251,6 +273,19 @@ class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
                   ],
 
                   _MetaRow(icon: Icons.event, label: 'Date', value: _dateText()),
+                  if (_paymentMethod() != null)
+                    _MetaRow(icon: Icons.credit_card, label: 'Payment method', value: _paymentMethod()!),
+                  if (_issuerBank() != null || _cardLast4() != null)
+                    _MetaRow(
+                      icon: Icons.account_balance,
+                      label: 'Card/Bank',
+                      value: [
+                        _issuerBank(),
+                        _cardLast4() != null ? '•••• ${_cardLast4()}' : null,
+                      ].whereType<String>().join(' · '),
+                    ),
+                  if (_upiVpa() != null)
+                    _MetaRow(icon: Icons.alternate_email, label: 'UPI', value: _upiVpa()!),
                   if ((_isExpense ? (widget.tx as ex.ExpenseItem).bankLogo
                       : (_isIncome ? (widget.tx as inc.IncomeItem).bankLogo : null)) != null)
                     const _MetaRow(icon: Icons.account_balance, label: 'Bank', value: 'Linked'),

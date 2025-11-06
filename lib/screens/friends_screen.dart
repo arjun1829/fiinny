@@ -143,6 +143,7 @@ class _FriendsScreenState extends State<FriendsScreen>
         AnimationController(vsync: this, duration: const Duration(milliseconds: 220));
     _searchSlide = CurvedAnimation(parent: _searchAnim, curve: Curves.easeOutCubic);
     _contactNames.addListener(_onContactNamesChanged);
+    Future.microtask(() => FriendService().backfillNamesForUser(widget.userPhone));
   }
 
   @override
