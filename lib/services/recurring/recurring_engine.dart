@@ -64,6 +64,44 @@ String? _normalizeLast4(String? raw) {
   return digits.substring(digits.length - 4);
 }
 
+String _readMerchantFromExpense(ExpenseItem e) {
+  try {
+    final m = (e.toJson()['merchant'] ?? e.label ?? e.category ?? '')
+        .toString()
+        .trim();
+    if (m.isNotEmpty) return m;
+  } catch (_) {}
+  return (e.counterparty ?? '').toString().trim();
+}
+
+String _readMerchantKeyFromExpense(ExpenseItem e) {
+  try {
+    final mk = (e.toJson()['merchantKey'] ?? '').toString().trim();
+    if (mk.isNotEmpty) return mk.toUpperCase();
+  } catch (_) {}
+  final m = _readMerchantFromExpense(e);
+  return m.isNotEmpty ? m.toUpperCase() : '';
+}
+
+String _readMerchantFromIncome(IncomeItem i) {
+  try {
+    final m = (i.toJson()['merchant'] ?? i.label ?? i.category ?? '')
+        .toString()
+        .trim();
+    if (m.isNotEmpty) return m;
+  } catch (_) {}
+  return (i.counterparty ?? '').toString().trim();
+}
+
+String _readMerchantKeyFromIncome(IncomeItem i) {
+  try {
+    final mk = (i.toJson()['merchantKey'] ?? '').toString().trim();
+    if (mk.isNotEmpty) return mk.toUpperCase();
+  } catch (_) {}
+  final m = _readMerchantFromIncome(i);
+  return m.isNotEmpty ? m.toUpperCase() : '';
+}
+
 bool _tagsContain(List<String>? tags, String needle) {
   if (tags == null) return false;
   final lower = needle.toLowerCase();
@@ -152,14 +190,18 @@ List<SubscriptionEvidence> _collectEvidence(
 
   void addExpense(ExpenseItem e) {
     if (e.amount <= 0) return;
-    final primary = e.merchant ?? e.counterparty ?? e.merchantKey;
+    final primary = _readMerchantFromExpense(e).isNotEmpty
+        ? _readMerchantFromExpense(e)
+        : _readMerchantKeyFromExpense(e);
     final normalized = MerchantAlias.normalizeFromContext(
       raw: primary,
       upiVpa: e.upiVpa,
     );
     final fallback = MerchantAlias.normalize(primary);
     final brand = (normalized.isNotEmpty ? normalized : fallback).toUpperCase();
-    final merchantKey = (e.merchantKey ?? brand).toString().toUpperCase();
+    final merchantKey = (_readMerchantKeyFromExpense(e).isNotEmpty
+        ? _readMerchantKeyFromExpense(e)
+        : brand.toUpperCase());
     final instrument = _normInstrument(e.instrument ?? e.cardType);
     final last4 = _normalizeLast4(e.cardLast4);
     final network = (e.instrumentNetwork ?? '').toUpperCase().trim();
@@ -197,16 +239,20 @@ List<SubscriptionEvidence> _collectEvidence(
   // Incomes are rarely subscriptions; keep hook for future use if needed.
   void addIncome(IncomeItem i) {
     if (i.amount <= 0) return;
-    final primary = i.merchant ?? i.counterparty ?? i.merchantKey;
+    final primary = _readMerchantFromIncome(i).isNotEmpty
+        ? _readMerchantFromIncome(i)
+        : _readMerchantKeyFromIncome(i);
     final normalized = MerchantAlias.normalizeFromContext(
       raw: primary,
       upiVpa: i.upiVpa,
     );
     final fallback = MerchantAlias.normalize(primary);
     final brand = (normalized.isNotEmpty ? normalized : fallback).toUpperCase();
-    final merchantKey = (i.merchantKey ?? brand).toString().toUpperCase();
+    final merchantKey = (_readMerchantKeyFromIncome(i).isNotEmpty
+        ? _readMerchantKeyFromIncome(i)
+        : brand.toUpperCase());
     final instrument = _normInstrument(i.instrument);
-    final last4 = _normalizeLast4(i.cardLast4);
+    final last4 = null; // IncomeItem model has no cardLast4; ignore for recurring
     final network = (i.instrumentNetwork ?? '').toUpperCase().trim();
 
     if (brand.isEmpty && merchantKey.isEmpty) return;
