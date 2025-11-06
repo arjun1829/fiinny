@@ -1,17 +1,67 @@
 import 'package:flutter/material.dart';
 
-/// Previously responsible for reserving space for anchored banner ads.
-///
-/// Ads are now embedded directly within screens, so this shell simply passes
-/// the child through unchanged while keeping the historical API surface.
-class AdsShell extends StatelessWidget {
+/// Shell that manages a single overlay entry used for ads.
+class AdsShell extends StatefulWidget {
   const AdsShell({super.key, this.child});
 
   final Widget? child;
 
   @override
+  State<AdsShell> createState() => _AdsShellState();
+}
+
+class _AdsShellState extends State<AdsShell> {
+  OverlayEntry? _bannerEntry;
+  bool _inserted = false;
+  bool _scheduledInsert = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _bannerEntry = OverlayEntry(builder: _buildBanner);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scheduleInsert();
+  }
+
+  void _scheduleInsert() {
+    if (_scheduledInsert || _inserted || _bannerEntry == null) return;
+    _scheduledInsert = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduledInsert = false;
+      if (!mounted || _inserted || _bannerEntry == null) return;
+      final overlay = Overlay.of(context);
+      if (overlay != null && overlay.mounted) {
+        overlay.insert(_bannerEntry!);
+        _inserted = true;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _bannerEntry?.remove();
+    _bannerEntry = null;
+    _inserted = false;
+    _scheduledInsert = false;
+    super.dispose();
+  }
+
+  Widget _buildBanner(BuildContext context) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        ignoring: true,
+        child: Container(),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return child ?? const SizedBox.shrink();
+    return widget.child ?? const SizedBox.shrink();
   }
 }
 
