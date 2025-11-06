@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -154,8 +155,45 @@ class _DiagApp extends StatefulWidget {
 }
 
 class _DiagAppState extends State<_DiagApp> {
+  VoidCallback? _tracerListener;
+
+  void _afterFirstFrame(VoidCallback fn) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      fn();
+    });
+  }
+
+  void _safeSetState(VoidCallback fn) {
+    if (!mounted) return;
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.transientCallbacks) {
+      _afterFirstFrame(() {
+        if (!mounted) return;
+        setState(fn);
+      });
+    } else {
+      setState(fn);
+    }
+  }
+
   @override
-  void initState() { super.initState(); widget.tracer.attach(() => setState(() {})); }
+  void initState() {
+    super.initState();
+    _tracerListener = () {
+      if (!mounted) return;
+      _safeSetState(() {});
+    };
+    widget.tracer.attach(_tracerListener);
+  }
+
+  @override
+  void dispose() {
+    widget.tracer.attach(null);
+    _tracerListener = null;
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -220,10 +258,13 @@ class _StartupTracer {
   final _lines = <String>[];
   VoidCallback? _onChange;
   List<String> get lines => List.unmodifiable(_lines);
-  void attach(VoidCallback onChange) => _onChange = onChange;
+  void attach(VoidCallback? onChange) => _onChange = onChange;
   void add(String s) {
     final ts = DateTime.now().toIso8601String().split('T').last.split('.').first;
-    _lines.add('[$ts] $s'); debugPrint(s); _onChange?.call();
+    _lines.add('[$ts] $s');
+    debugPrint(s);
+    final listener = _onChange;
+    listener?.call();
   }
 }
 
