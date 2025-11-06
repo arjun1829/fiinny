@@ -27,6 +27,7 @@ import '../widgets/tx_filter_bar.dart';
 import '../widgets/hero_transaction_ring.dart';
 import '../services/user_data.dart';
 import '../widgets/dashboard_activity_tab.dart';
+import '../widgets/dashboard/banks_cards_summary_card.dart';
 import '../models/activity_event.dart';
 import 'dashboard_activity_screen.dart';
 import 'insight_feed_screen.dart';
@@ -170,6 +171,17 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool get _isAndroidPlatform => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
   bool get _showSmsPermissionBanner => _isAndroidPlatform && (_hasSmsPermission == false);
 
+  // Animated dashboard numbers (ring + cards)
+  late AnimationController _numbersCtrl;
+  double _animCredit = 0.0;
+  double _animDebit = 0.0;
+  double _animAmount = 0.0;
+  int _animTxCount = 0;
+  VoidCallback? _numbersListener;
+
+  // Toggle to render insight feed at the bottom (keep diagnosis card already at bottom)
+  static const bool _INSIGHTS_AT_BOTTOM = true;
+
   Widget _buildDashboardAdCard() {
     return AdsBannerCard(
       placement: 'dashboard_summary',
@@ -189,6 +201,153 @@ class _DashboardScreenState extends State<DashboardScreen>
       ],
       placeholder: _dashboardAdPlaceholder(),
     );
+  }
+
+  Future<void> _refreshDashboardSmooth() async {
+    final backgroundFuture = _refreshBackgroundJobs();
+    await _fetchTransactionsAndAnimate();
+    unawaited(backgroundFuture.then((_) async {
+      await _fetchTransactionsAndAnimate(
+        duration: const Duration(milliseconds: 600),
+        showError: false,
+      );
+    }));
+    unawaited(_refreshSecondaryBlocks());
+  }
+
+  Future<void> _fetchTransactionsAndAnimate({
+    Duration duration = const Duration(milliseconds: 900),
+    bool showError = true,
+  }) async {
+    try {
+      final expenseFuture = _expenseSvc.getExpenses(widget.userPhone);
+      final incomeFuture = _incomeSvc.getIncomes(widget.userPhone);
+      final expenses = await expenseFuture;
+      final incomes = await incomeFuture;
+      if (!mounted) return;
+
+      setState(() {
+        allExpenses = expenses;
+        allIncomes = incomes;
+        _summaryRevision++;
+        _summaryCache.clear();
+        _barsRevision++;
+        _amountBarsCache.clear();
+        _countBarsCache.clear();
+      });
+
+      final summary = _getTxSummaryForPeriod(txPeriod);
+      final credit = summary['credit'] ?? 0.0;
+      final debit = summary['debit'] ?? 0.0;
+      final total = credit + debit;
+      final txCnt = periodTotalCount;
+      _animateDashboardNumbersTo(
+        credit: credit,
+        debit: debit,
+        txCount: txCnt,
+        totalAmount: total,
+        duration: duration,
+      );
+    } catch (e) {
+      if (showError && mounted) {
+        SnackThrottle.show(context, "Refresh error: $e", color: Colors.red);
+      }
+    }
+  }
+
+  Future<void> _refreshBackgroundJobs() async {
+    try {
+      if (_isEmailLinked && (_userEmail?.isNotEmpty ?? false)) {
+        await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
+        if (mounted) {
+          SnackThrottle.show(context, "Synced Gmail transactions", color: Colors.green);
+        }
+      } else {
+        await _fetchEmailTx();
+      }
+    } catch (_) {}
+
+    try {
+      await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
+      _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _refreshSecondaryBlocks() async {
+    try {
+      final goalsList = await GoalService().getGoals(widget.userPhone);
+      final loans = await LoanService().getLoans(widget.userPhone);
+      final assetsForInsights = await _assetSvc.getAssets(widget.userPhone);
+      await _loadPortfolioTotals();
+
+      final openLoans = loans.where((l) => !(l.isClosed ?? false)).toList();
+      final openLoanTotal =
+          openLoans.fold<double>(0.0, (sum, loan) => sum + loan.amount);
+
+      final userData = await FiinnyBrainService.createFromLiveData(
+        widget.userPhone,
+        incomes: allIncomes,
+        expenses: allExpenses,
+        goals: goalsList,
+        loans: loans,
+        assets: assetsForInsights,
+      );
+      final generated =
+          FiinnyBrainService.generateInsights(userData, userId: widget.userPhone);
+
+      if (!mounted) return;
+      setState(() {
+        goals = goalsList;
+        currentGoal = goalsList.isNotEmpty ? goalsList.first : null;
+        loanCount = openLoans.length;
+        totalLoan = openLoanTotal;
+
+        _insightUserData = userData;
+        insights = generated;
+        _generateSmartInsight();
+      });
+
+      await _loadPeriodLimit();
+      _recomputeAutopayCount();
+      _checkLimitWarnings();
+    } catch (_) {}
+  }
+
+  void _animateDashboardNumbersTo({
+    required double credit,
+    required double debit,
+    required int txCount,
+    required double totalAmount,
+    Duration duration = const Duration(milliseconds: 900),
+  }) {
+    _numbersCtrl.stop();
+    _numbersCtrl.duration = duration;
+
+    final double fromCredit = _animCredit;
+    final double fromDebit = _animDebit;
+    final double fromAmount = _animAmount;
+    final double fromCount = _animTxCount.toDouble();
+
+    if (_numbersListener != null) {
+      _numbersCtrl.removeListener(_numbersListener!);
+    }
+
+    void listener() {
+      final t = Curves.easeOutCubic.transform(_numbersCtrl.value);
+      setState(() {
+        _animCredit = lerpDouble(fromCredit, credit, t)!;
+        _animDebit = lerpDouble(fromDebit, debit, t)!;
+        _animAmount = lerpDouble(fromAmount, totalAmount, t)!;
+        _animTxCount = lerpDouble(fromCount, txCount.toDouble(), t)!.round();
+      });
+    }
+
+    _numbersListener = listener;
+    _numbersCtrl.addListener(listener);
+    _numbersCtrl.forward(from: 0);
   }
 
   Widget _dashboardAdPlaceholder() {
@@ -359,6 +518,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         }
       });
     _ringShineController.forward();
+    _numbersCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
     _initDashboard();
     SyncCoordinator.instance.onAppStart(widget.userPhone);
     // 🔔 Start system recurring reminders (subs, SIPs, loans, card bills)
@@ -390,6 +550,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     _sipsSub?.cancel();
     _cardsSub?.cancel();
     _ringShineController.dispose();
+    if (_numbersListener != null) {
+      _numbersCtrl.removeListener(_numbersListener!);
+    }
+    _numbersCtrl.dispose();
     SmsPermissionHelper.permissionStatus.removeListener(_onSmsPermissionStatusChanged);
     super.dispose();
   }
@@ -1171,6 +1335,18 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (!mounted) return;
     setState(() => _loading = false);
     _checkLimitWarnings();
+    final summary = _getTxSummaryForPeriod(txPeriod);
+    final credit = summary['credit'] ?? 0.0;
+    final debit = summary['debit'] ?? 0.0;
+    final total = credit + debit;
+    final txCnt = periodTotalCount;
+    _animateDashboardNumbersTo(
+      credit: credit,
+      debit: debit,
+      txCount: txCnt,
+      totalAmount: total,
+      duration: const Duration(milliseconds: 1100),
+    );
   }
 
   // --- Limit Firestore Logic ---
@@ -1200,6 +1376,17 @@ class _DashboardScreenState extends State<DashboardScreen>
     _resetLimitWarnings();
     _checkLimitWarnings();
     _recomputeAutopayCount();
+    final summary = _getTxSummaryForPeriod(period);
+    final credit = summary['credit'] ?? 0.0;
+    final debit = summary['debit'] ?? 0.0;
+    final total = credit + debit;
+    final txCnt = periodTotalCount;
+    _animateDashboardNumbersTo(
+      credit: credit,
+      debit: debit,
+      txCount: txCnt,
+      totalAmount: total,
+    );
   }
 
   DateTime _startOfDay(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
@@ -1541,9 +1728,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget build(BuildContext context) {
     final filteredIncomes = _filteredIncomesForPeriod(txPeriod);
     final filteredExpenses = _filteredExpensesForPeriod(txPeriod);
-    final txSummary = _getTxSummaryForPeriod(txPeriod);
-    final periodTotalAmount = filteredExpenses.fold<double>(0.0, (a, b) => a + b.amount) +
-        filteredIncomes.fold<double>(0.0, (a, b) => a + b.amount);
 
     final summaryTitle = _summaryTitle(txPeriod);
     final summarySubtitle = _summarySubtitle(txPeriod);
@@ -1571,33 +1755,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             bottom: false,
             child: RefreshIndicator(
               onRefresh: () async {
-                try {
-                  if (_isEmailLinked && (_userEmail?.isNotEmpty ?? false)) {
-                    await OldGmail.GmailService()
-                        .fetchAndStoreTransactionsFromGmail(widget.userPhone);
-                    await _initDashboard();
-                    if (mounted) {
-                      SnackThrottle.show(context, "Synced Gmail transactions", color: Colors.green);
-                    }
-                  } else {
-                    await _fetchEmailTx();
-                  }
-                } catch (e, st) {
-                  debugPrint('[onRefresh] error: $e\n$st');
-                  if (mounted) {
-                    SnackThrottle.show(context, "Sync error: $e", color: Colors.red);
-                  }
-                }
-
-                try {
-                  await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
-                  _loanSuggestionsCount =
-                      await _loanDetector.pendingCount(widget.userPhone);
-                  if (!mounted) return;
-                  setState(() {});
-                } catch (e) {
-                  debugPrint('[onRefresh] loan scan error: $e');
-                }
+                await _refreshDashboardSmooth();
               },
               child: CustomScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -1771,8 +1929,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                             child: Stack(
                               children: [
                                 HeroTransactionRing(
-                                  credit: txSummary['credit']!,
-                                  debit: txSummary['debit']!,
+                                  credit: _animCredit,
+                                  debit: _animDebit,
                                   period: txPeriod,
                                   title: summaryTitle,
                                   titleStyle: Theme.of(context)
@@ -1849,7 +2007,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   height: 220,
                                   child: TransactionCountCard(
                                     key: ValueKey('count|$_barsRevision|$txPeriod'),
-                                    count: filteredIncomes.length + filteredExpenses.length,
+                                    count: _animTxCount,
                                     period: txPeriod,
                                     barData: _barDataCount(),
                                     onFilterTap: () async {
@@ -1881,7 +2039,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   child: TransactionAmountCard(
                                     key: ValueKey('amount|$_barsRevision|$txPeriod'),
                                     label: 'Transaction Amount',
-                                    amount: periodTotalAmount,
+                                    amount: _animAmount,
                                     barData: _barDataAmount(),
                                     period: txPeriod,
                                     onFilterTap: () async {
@@ -1907,6 +2065,21 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 ),
                               ),
                             ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: BanksCardsSummaryCard(
+                            expenses: filteredExpenses,
+                            incomes: filteredIncomes,
+                            onOpenAnalytics: () {
+                              Navigator.pushNamed(
+                                context,
+                                '/analytics',
+                                arguments: widget.userPhone,
+                              );
+                            },
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -1965,7 +2138,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ),
                         const SizedBox(height: 12),
-                        if (_insightUserData != null) ...[
+                        if (_insightUserData != null && !_INSIGHTS_AT_BOTTOM) ...[
                           _buildInsightFeedSection(horizontalPadding),
                           const SizedBox(height: 14),
                         ] else
@@ -2068,6 +2241,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                               onPressed: _fetchEmailTx,
                             ),
                           ),
+                        ],
+                        if (_insightUserData != null && _INSIGHTS_AT_BOTTOM) ...[
+                          _buildInsightFeedSection(horizontalPadding),
+                          const SizedBox(height: 14),
                         ],
                         const SizedBox(height: 18),
                         Padding(

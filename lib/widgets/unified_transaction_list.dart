@@ -1032,6 +1032,112 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     ).whenComplete(() => widget.onEndModal?.call());
   }
 
+  // PATCH: dedupe & map tags to readable chips
+  static const Set<String> _kMethodTags = {
+    'upi',
+    'imps',
+    'neft',
+    'rtgs',
+    'pos',
+    'atm',
+    'card',
+    'credit_card',
+    'debit_card',
+    'wallet',
+    'netbanking'
+  };
+
+  List<String> _parseRawTags(String raw) {
+    var s = raw.trim();
+    if (s.isEmpty) return const [];
+    if (s.startsWith('[') && s.endsWith(']')) {
+      s = s.substring(1, s.length - 1);
+    }
+    // split by comma or pipe
+    final parts = s
+        .split(RegExp(r'[,\|]'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (parts.isNotEmpty) return parts;
+    // fallback: whitespace split
+    return s.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+  }
+
+  String _normTag(String t) {
+    return t
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .trim();
+  }
+
+  String? _displayFromTag(String k) {
+    switch (k) {
+      case 'loan_emi':
+      case 'emi':
+        return 'EMI';
+      case 'autopay':
+      case 'auto_debit':
+      case 'mandate':
+      case 'nach':
+        return 'Autopay';
+      case 'subscription':
+      case 'subscriptions':
+        return 'Subscription';
+      case 'fuel':
+        return 'Fuel';
+      case 'international':
+      case 'intl':
+      case 'forex':
+        return 'Intl';
+      case 'charges':
+      case 'charge':
+      case 'fee':
+      case 'fees':
+        return 'Charges';
+      default:
+        return null; // ignore unknowns for now to avoid noise
+    }
+  }
+
+  /// Turn raw "tags" string into extra chips, avoiding duplicates with existing chips
+  List<Widget> _meaningfulTagChips({
+    required String rawTags,
+    required bool isInternational,
+    required bool hasFees,
+    required String? instrument,
+  }) {
+    final tokens = _parseRawTags(rawTags).map(_normTag).toList();
+    final out = <String>{};
+    final inst = (instrument ?? '').toLowerCase();
+
+    for (final k in tokens) {
+      if (k.isEmpty) continue;
+
+      // Drop instrument duplicates (already shown as a chip)
+      if (_kMethodTags.contains(k)) continue;
+      if (k == inst) continue; // e.g., "imps" tag when instrument is IMPS
+
+      // If sheet already shows INTL or FEES, skip those duplicates
+      if ((k == 'international' || k == 'intl' || k == 'forex') && isInternational) {
+        continue;
+      }
+      if ((k == 'charges' || k == 'fee' || k == 'fees') && hasFees) {
+        continue;
+      }
+
+      final disp = _displayFromTag(k);
+      if (disp != null) out.add(disp);
+    }
+
+    // Make chips in a stable order
+    final order = ['EMI', 'Autopay', 'Subscription', 'Fuel', 'Charges', 'Intl'];
+    final sorted = order.where(out.contains).toList();
+
+    return sorted.map((t) => _chip(t)).toList();
+  }
+
   Widget _categoryDropdown({
     required String txId,
     required String current,
@@ -1352,7 +1458,16 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             if ((network ?? '').isNotEmpty) chipWidgets.add(_chip(network!));
             if (isInternational) chipWidgets.add(_chip("INTL"));
             if (hasFees) chipWidgets.add(_chip("Fees"));
-            if ((tags ?? '').isNotEmpty) chipWidgets.add(_chip(tags!));
+            if ((tags ?? '').isNotEmpty) {
+              chipWidgets.addAll(
+                _meaningfulTagChips(
+                  rawTags: tags!,
+                  isInternational: isInternational,
+                  hasFees: hasFees,
+                  instrument: instrument,
+                ),
+              );
+            }
             final sourceLabel = () {
               final s = categorySource.toLowerCase();
               if (s == 'llm') return 'LLM';
