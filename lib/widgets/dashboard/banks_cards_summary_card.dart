@@ -148,7 +148,7 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
         amount: income.amount,
         bank: income.issuerBank,
         instrument: income.instrument,
-        last4: income.cardLast4,
+        last4: null, // incomes typically don't expose card last4
         network: income.instrumentNetwork,
       );
     }
@@ -218,7 +218,7 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
       }
       final instrument = _normInstrument(income.instrument).toLowerCase();
       if (instrument.contains('credit') || instrument.contains('debit')) {
-        final last4 = (income.cardLast4 ?? '').trim();
+        final last4 = ''; // ignore last4 for incomes
         if (last4.isNotEmpty) {
           cards.add('${(income.issuerBank ?? '').toUpperCase()}-$last4');
         }
