@@ -184,6 +184,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Widget _buildDashboardAdCard() {
     return AdsBannerCard(
+      key: const ValueKey('ad-dashboard_summary'),
       placement: 'dashboard_summary',
       inline: true,
       inlineMaxHeight: 120,
@@ -1893,113 +1894,111 @@ class _DashboardScreenState extends State<DashboardScreen>
                     child: Center(child: CircularProgressIndicator()),
                   )
                 else
-                  SliverPadding(
-                    padding: const EdgeInsets.only(bottom: 32),
-                    sliver: SliverList(
-                      delegate: SliverChildListDelegate([
-                        const SizedBox(height: 6),
-                        Padding(
-                          padding: horizontalPadding,
-                          child: _buildDashboardAdCard(),
-                        ),
-                        const SizedBox(height: 12),
-                        Padding(
-                          padding: horizontalPadding,
-                          child: Text(
-                            'Welcome, ${userName ?? '...'}',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: Fx.mintDark,
-                        ),
+                  (() {
+                    final sections = <Widget>[
+                      const SizedBox(height: 6),
+                      Padding(
+                        padding: horizontalPadding,
+                        child: _buildDashboardAdCard(),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    Padding(
-                      padding: horizontalPadding,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                              Navigator.pushNamed(
-                                context,
-                                '/tx-day-details',
-                                arguments: widget.userPhone,
-                              );
-                            },
-                            child: Stack(
-                              children: [
-                                HeroTransactionRing(
-                                  credit: _animCredit,
-                                  debit: _animDebit,
-                                  period: txPeriod,
-                                  title: summaryTitle,
-                                  titleStyle: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
-                                  subtitle: summarySubtitle,
-                                  onFilterTap: () async {
-                                    final result = await showModalBottomSheet<String>(
-                                      context: context,
-                                      builder: (ctx) => TxFilterBar(
-                                        selected: txPeriod,
-                                        onSelect: (period) => Navigator.pop(ctx, period),
-                                      ),
-                                    );
-                                    if (result != null && result != txPeriod) {
-                                      await _changePeriod(result);
-                                    }
-                                  },
-                                ),
-                                Positioned.fill(
-                                  child: Align(
-                                    alignment: Alignment.bottomRight,
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(right: 20, bottom: 18),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.end,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (limitUsageText != null)
-                                            Container(
-                                              constraints: const BoxConstraints(maxWidth: 180),
-                                              margin: const EdgeInsets.only(bottom: 12),
-                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: Colors.teal.withOpacity(0.12),
-                                                borderRadius: BorderRadius.circular(12),
-                                              ),
-                                              child: Text(
-                                                limitUsageText,
-                                                textAlign: TextAlign.right,
-                                                style: TextStyle(
-                                                  color: Colors.teal[900],
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ),
-                                          GestureDetector(
-                                            onTap: _savingLimit ? null : _editLimitDialog,
-                                            child: CircleAvatar(
-                                              radius: 16,
-                                              backgroundColor: Colors.teal.withOpacity(0.09),
-                                              child: const Icon(Icons.edit_rounded, size: 17, color: Colors.teal),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: horizontalPadding,
+                        child: Text(
+                          'Welcome, ${userName ?? '...'}',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Fx.mintDark,
                           ),
                         ),
                       ),
-                        const SizedBox(height: 12),
-                        Padding(
-                          padding: horizontalPadding,
-                          child: Row(
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding: horizontalPadding,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            Navigator.pushNamed(
+                              context,
+                              '/tx-day-details',
+                              arguments: widget.userPhone,
+                            );
+                          },
+                          child: Stack(
+                            children: [
+                              HeroTransactionRing(
+                                credit: _animCredit,
+                                debit: _animDebit,
+                                period: txPeriod,
+                                title: summaryTitle,
+                                titleStyle: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
+                                subtitle: summarySubtitle,
+                                onFilterTap: () async {
+                                  final result = await showModalBottomSheet<String>(
+                                    context: context,
+                                    builder: (ctx) => TxFilterBar(
+                                      selected: txPeriod,
+                                      onSelect: (period) => Navigator.pop(ctx, period),
+                                    ),
+                                  );
+                                  if (result != null && result != txPeriod) {
+                                    await _changePeriod(result);
+                                  }
+                                },
+                              ),
+                              Positioned.fill(
+                                child: Align(
+                                  alignment: Alignment.bottomRight,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 20, bottom: 18),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (limitUsageText != null)
+                                          Container(
+                                            constraints: const BoxConstraints(maxWidth: 180),
+                                            margin: const EdgeInsets.only(bottom: 12),
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.teal.withOpacity(0.12),
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              limitUsageText,
+                                              textAlign: TextAlign.right,
+                                              style: TextStyle(
+                                                color: Colors.teal[900],
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ),
+                                        GestureDetector(
+                                          onTap: _savingLimit ? null : _editLimitDialog,
+                                          child: CircleAvatar(
+                                            radius: 16,
+                                            backgroundColor: Colors.teal.withOpacity(0.09),
+                                            child: const Icon(Icons.edit_rounded, size: 17, color: Colors.teal),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: horizontalPadding,
+                        child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Expanded(
@@ -2261,9 +2260,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ),
                         const SizedBox(height: 48),
-                      ]),
-                    ),
-                  ),
+                      ];
+                    return SliverPadding(
+                      padding: const EdgeInsets.only(bottom: 32),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (ctx, index) => KeyedSubtree(
+                            key: ValueKey('dashboard-section-$index-${sections[index].runtimeType}'),
+                            child: sections[index],
+                          ),
+                          childCount: sections.length,
+                          addAutomaticKeepAlives: false,
+                          addRepaintBoundaries: true,
+                        ),
+                      ),
+                    );
+                  })(),
                   if (_showSmsPermissionBanner)
                     SliverToBoxAdapter(
                       child: _buildSmsPermissionBanner(),

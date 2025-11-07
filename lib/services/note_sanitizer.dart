@@ -87,28 +87,51 @@ class NoteSanitizer {
 
     // drop unsubscribe / not-you / marketing CTAs / app-download lines
     final dropLine = RegExp(
-        r'(?i)^(?:not you\?.*|block\s*upi.*|unsubscribe.*|to\s+stop.*|download.*app.*|install.*app.*|visit\s+https?://.*|t&c.*|terms.*|offer.*|hurry.*|limited time.*)$'
+      r'^(?:not you\?.*|block\s*upi.*|unsubscribe.*|to\s+stop.*|download.*app.*|install.*app.*|visit\s+https?://.*|t&c.*|terms.*|offer.*|hurry.*|limited time.*)$',
+      caseSensitive: false,
     );
 
     // drop balance/limit statements
     final dropBalance = RegExp(
-        r'(?i)^(?:available\s*(?:credit|balance|limit).+|avl\s*(?:bal|limit).+|account\s*balance.+|statement.+)$'
+      r'^(?:available\s*(?:credit|balance|limit).+|avl\s*(?:bal|limit).+|account\s*balance.+|statement.+)$',
+      caseSensitive: false,
     );
 
     // drop OTP lines completely
-    final dropOtp = RegExp(r'(?i)^.*\botp\b.*$');
+    final dropOtp = RegExp(
+      r'^.*\botp\b.*$',
+      caseSensitive: false,
+    );
 
     // drop long phone / cust-id / service numbers lines
-    final dropPhones = RegExp(r'(?i)^(?:cust(?:omer)?\s*id[:\s]*\S+|call\s*\d{6,}.*|ph[:\s]*\d{6,}.*)$');
+    final dropPhones = RegExp(
+      r'^(?:cust(?:omer)?\s*id[:\s]*\S+|call\s*\d{6,}.*|ph[:\s]*\d{6,}.*)$',
+      caseSensitive: false,
+    );
 
     // drop pure url lines
-    final dropUrlOnly = RegExp(r'(?i)^\s*(?:https?://|www\.)\S+\s*$');
+    final dropUrlOnly = RegExp(
+      r'^\s*(?:https?://|www\.)\S+\s*$',
+      caseSensitive: false,
+    );
 
     // trim URLs inside lines to keep just domain (e.g., “bookmyshow.com”)
-    t = t.replaceAllMapped(RegExp(r'(?i)https?://([a-z0-9\-\._]+\.[a-z]{2,})(?:/[^\s]*)?'), (m) => m[1]!);
+    t = t.replaceAllMapped(
+      RegExp(
+        r'https?://([a-z0-9\-\._]+\.[a-z]{2,})(?:/[^\s]*)?',
+        caseSensitive: false,
+      ),
+      (m) => m[1]!,
+    );
 
     // remove email addresses (keep domain in many SMS is noisy anyway)
-    t = t.replaceAll(RegExp(r'(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b'), '');
+    t = t.replaceAll(
+      RegExp(
+        r'\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b',
+        caseSensitive: false,
+      ),
+      '',
+    );
 
     // mask long numbers except last 4
     t = t.replaceAllMapped(RegExp(r'(\d{2,})(\d{4})\b'), (m) => 'XX' * (m[1]!.length ~/ 2) + m[2]!);
@@ -125,7 +148,10 @@ class NoteSanitizer {
         .toList();
 
     // compact “available limit/balance” fragments inside remaining lines
-    final compactAvail = RegExp(r'(?i)\b(?:available|avl|avail|bal(?:ance)?)\b.*$');
+    final compactAvail = RegExp(
+      r'\b(?:available|avl|avail|bal(?:ance)?)\b.*$',
+      caseSensitive: false,
+    );
     final compacted = lines.map((l) => l.replaceAll(compactAvail, '').trim()).where((l) => l.isNotEmpty).toList();
 
     return compacted.join(' • ');

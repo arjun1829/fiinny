@@ -28,10 +28,9 @@ class HiddenChargesCard extends StatelessWidget {
         double total = 0;
         final byType = <String, double>{};
         final feeWords = RegExp(
-            r'(?i)\b('
-            r'convenience\s*fee|conv\.?\s*fee|processing\s*fee|platform\s*fee|'
-            r'late\s*fee|penalt(?:y|ies)|surcharge|fuel\s*surcharge|gst|igst|cgst|sgst|markup'
-            r')\b');
+          r'\b(?:convenience\s*fee|conv\.?\s*fee|processing\s*fee|platform\s*fee|late\s*fee|penalt(?:y|ies)|surcharge|fuel\s*surcharge|gst|igst|cgst|sgst|markup)\b',
+          caseSensitive: false,
+        );
 
         List<ExpenseItem> items = docs.map((d) => ExpenseItem.fromFirestore(d)).toList();
 
@@ -41,8 +40,10 @@ class HiddenChargesCard extends StatelessWidget {
           final isFeeHeuristic = feeWords.hasMatch(e.note);
           if (!isFeeTag && !isFeeHeuristic) continue;
 
-          if (RegExp(r'(?i)\b(recharge|prepaid|top[-\s]?up|pack|plan|dth)\b')
-              .hasMatch(e.note)) {
+          if (RegExp(
+            r'\b(recharge|prepaid|top[-\s]?up|pack|plan|dth)\b',
+            caseSensitive: false,
+          ).hasMatch(e.note)) {
             continue;
           }
 
