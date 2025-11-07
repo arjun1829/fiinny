@@ -129,4 +129,24 @@ class NotificationService {
   Future<void> cancel(int id) async {
     await LocalNotifs.cancelForItem(id.toString());
   }
+
+  /// Schedule a monthly wrap notification for the next month on the 1st at 9 AM.
+  Future<void> scheduleMonthlyWrapIfNeeded() async {
+    final now = DateTime.now();
+    var month = now.month + 1;
+    var year = now.year;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+    final fireAt = DateTime(year, month, 1, 9, 0);
+
+    await LocalNotifs.scheduleOnce(
+      itemId: 'monthly_wrap_${fireAt.year}_${fireAt.month}',
+      title: '📊 Your Monthly Wrap is ready',
+      body: 'Spends, savings, best & worst days — dive into insights.',
+      fireAt: fireAt,
+      payload: 'app://analytics/monthly',
+    );
+  }
 }

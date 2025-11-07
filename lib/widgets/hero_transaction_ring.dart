@@ -12,6 +12,8 @@ class HeroTransactionRing extends StatelessWidget {
   final VoidCallback onFilterTap;
   final VoidCallback? onTap;
   final TextStyle? titleStyle;
+  final String? limitInfo;
+  final VoidCallback? onEditLimit;
 
   const HeroTransactionRing({
     super.key,
@@ -23,6 +25,8 @@ class HeroTransactionRing extends StatelessWidget {
     required this.onFilterTap,
     this.onTap,
     this.titleStyle,
+    this.limitInfo,
+    this.onEditLimit,
   });
 
   @override
@@ -125,6 +129,49 @@ class HeroTransactionRing extends StatelessWidget {
                           ),
                         ),
                       ),
+                      if ((limitInfo ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Flexible(
+                              child: Container(
+                                constraints: const BoxConstraints(maxWidth: 260),
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: isCompact ? Fx.s10 : Fx.s12,
+                                  vertical: Fx.s8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Fx.mintDark.withOpacity(0.10),
+                                  borderRadius: BorderRadius.circular(Fx.r12),
+                                ),
+                                child: Text(
+                                  limitInfo!,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Fx.label.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: Fx.mintDark,
+                                    fontSize: isCompact ? 12 : 13.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (onEditLimit != null) ...[
+                              const SizedBox(width: 8),
+                              InkWell(
+                                borderRadius: BorderRadius.circular(999),
+                                onTap: onEditLimit,
+                                child: CircleAvatar(
+                                  radius: 16,
+                                  backgroundColor: Fx.mintDark.withOpacity(0.12),
+                                  child: const Icon(Icons.edit_rounded, size: 17, color: Fx.mintDark),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
