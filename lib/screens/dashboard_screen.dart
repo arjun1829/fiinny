@@ -1960,6 +1960,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                             },
                             limitInfo: limitUsageText,
                             onEditLimit: _savingLimit ? null : _editLimitDialog,
+                            onLimitTap: _savingLimit ? null : _editLimitDialog,
+                            showLimitButton: true,
                           ),
                         ),
                       ),
