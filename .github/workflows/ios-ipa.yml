@@ -115,7 +115,7 @@ jobs:
           cd ..
 
       - name: Create GoogleService-Info.plist (if secret present)
-        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 != '' }}
+        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 && env.FIREBASE_IOS_PLIST_BASE64 != '' }}
         shell: bash
         run: |
           set -euxo pipefail
@@ -124,7 +124,7 @@ jobs:
           test -s ios/Runner/GoogleService-Info.plist && echo "✅ GoogleService-Info.plist created"
 
       - name: Add Google URL Scheme to Info.plist
-        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 != '' }}
+        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 && env.FIREBASE_IOS_PLIST_BASE64 != '' }}
         shell: bash
         run: |
           set -euxo pipefail
@@ -172,13 +172,25 @@ jobs:
         run: |
           set -euxo pipefail
           PBX="ios/Runner.xcodeproj/project.pbxproj"
-          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" "$PBX" || true
-          sed -i '' "s/DEVELOPMENT_TEAM = [A-Z0-9]*;/DEVELOPMENT_TEAM = ${TEAM_ID};/g" "$PBX" || true
-          sed -i '' "s/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g" "$PBX" || true
-          if ! grep -q "PROVISIONING_PROFILE_SPECIFIER" "$PBX"; then
-            /usr/bin/perl -0777 -pe "s/(CODE_SIGN_IDENTITY = .+?;)/\\1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = ${PROFILE_NAME};/gs" -i "$PBX"
+          # Bundle id & team
+          /usr/bin/sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" "$PBX" || true
+          /usr/bin/sed -i '' "s/DEVELOPMENT_TEAM = [A-Z0-9]*;/DEVELOPMENT_TEAM = ${TEAM_ID};/g" "$PBX" || true
+
+          # Manual signing
+          /usr/bin/sed -i '' "s/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g" "$PBX" || true
+
+          # Provisioning profile specifier (insert if missing, else replace)
+          if ! /usr/bin/grep -q "PROVISIONING_PROFILE_SPECIFIER" "$PBX"; then
+            /usr/bin/awk -v prof="${PROFILE_NAME}" '
+              BEGIN { inserted=0 }
+              { print }
+              /CODE_SIGN_IDENTITY = .+;/ && !inserted {
+                print "\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = " prof ";"
+                inserted=1
+              }
+            ' "$PBX" > "$PBX.tmp" && mv "$PBX.tmp" "$PBX"
           else
-            sed -i '' "s/PROVISIONING_PROFILE_SPECIFIER = [^;]*;/PROVISIONING_PROFILE_SPECIFIER = ${PROFILE_NAME};/g" "$PBX" || true
+            /usr/bin/sed -i '' "s/PROVISIONING_PROFILE_SPECIFIER = [^;]*;/PROVISIONING_PROFILE_SPECIFIER = ${PROFILE_NAME};/g" "$PBX" || true
           fi
 
       - name: Force OFF Swift module interfaces via xcconfig
@@ -284,7 +296,7 @@ EOF
           add_str NSContactsUsageDescription "Contacts are used to help you connect with people you know."
 
       - name: Verify GoogleService-Info.plist presence
-        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 != '' }}
+        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 && env.FIREBASE_IOS_PLIST_BASE64 != '' }}
         shell: bash
         run: |
           set -euxo pipefail
@@ -307,7 +319,7 @@ EOF
           /usr/bin/sed -i '' "s/BUILD_LIBRARY_FOR_DISTRIBUTION = YES/BUILD_LIBRARY_FOR_DISTRIBUTION = NO/g" "$PBX" || true
 
       - name: Enable Background remote notifications (optional)
-        if: always()
+        if: ${{ always() }}
         shell: bash
         run: |
           set -euo pipefail
@@ -317,7 +329,7 @@ EOF
           /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string remote-notification' "$IP"
 
       - name: Sanity check Firebase plist vs Bundle ID
-        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 != '' }}
+        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 && env.FIREBASE_IOS_PLIST_BASE64 != '' }}
         shell: bash
         run: |
           set -euo pipefail
