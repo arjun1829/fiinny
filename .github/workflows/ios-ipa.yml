@@ -1,8 +1,5 @@
 name: iOS IPA (Flutter export + ASC upload)
 
-env:
-  BUILD_NUMBER: ${{ github.run_number }}
-
 on:
   workflow_dispatch:
   push:
@@ -42,6 +39,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Compute BUILD_NUMBER (offset to avoid App Store duplicates)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # If you ever need to raise this, change OFFSET so BUILD_NUMBER > previously uploaded bundle version.
+          OFFSET=9000
+          # GITHUB_RUN_NUMBER is always set in GitHub Actions; fallback to 1 just in case.
+          RN=${GITHUB_RUN_NUMBER:-1}
+          COMPUTED=$((RN + OFFSET))
+          echo "Computed BUILD_NUMBER=${COMPUTED}"
+          # Export for remaining steps
+          echo "BUILD_NUMBER=${COMPUTED}" >>"$GITHUB_ENV"
 
       - name: Select Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
@@ -197,6 +207,8 @@ jobs:
 
       - name: Bump build number in pubspec.yaml (safe replace)
         shell: bash
+        env:
+          BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
         run: |
           set -euxo pipefail
           base_version="$(grep -m1 '^version:' pubspec.yaml | cut -d ':' -f2 | xargs | cut -d '+' -f1)"
@@ -304,6 +316,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+          # BUILD_NUMBER is exported earlier into GITHUB_ENV
           flutter build ipa --release \
             --build-number "$BUILD_NUMBER" \
             --export-options-plist ios/ExportOptions.plist
