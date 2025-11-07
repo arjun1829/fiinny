@@ -372,7 +372,7 @@ EOF
           bash scripts/upload_dsyms.sh
 
       - name: Archive dSYMs as artifact (optional backfill)
-        if: always()
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: dsym-${{ env.BUILD_NUMBER }}
