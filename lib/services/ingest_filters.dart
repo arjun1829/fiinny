@@ -83,13 +83,15 @@ bool isLikelyPromo(String body) {
   return false;
 }
 
-bool hasAutopayCue(String s) =>
-    RegExp(r'(?i)\b(auto[-\s]?debit|autopay|nach|e[-\s]?mandate|mandate|standing\s+instruction|si\b|renew(?:al)?|subscription|plan|membership)\b')
-        .hasMatch(s);
+bool hasAutopayCue(String s) => RegExp(
+      r'\b(auto[-\s]?debit|autopay|nach|e[-\s]?mandate|mandate|standing\s+instruction|si\b|renew(?:al)?|subscription|plan|membership)\b',
+      caseSensitive: false,
+    ).hasMatch(s);
 
-bool looksSubscriptionContext(String s) =>
-    RegExp(r'(?i)\b(renew|next\s*(?:due|billing)|validity|pack|plan|subscription|membership|premium)\b')
-        .hasMatch(s);
+bool looksSubscriptionContext(String s) => RegExp(
+      r'\b(renew|next\s*(?:due|billing)|validity|pack|plan|subscription|membership|premium)\b',
+      caseSensitive: false,
+    ).hasMatch(s);
 
 /// True if text is OTP-only (no txn verbs around).
 bool looksLikeOtpOnly(String body) {

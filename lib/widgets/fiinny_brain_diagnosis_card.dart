@@ -82,13 +82,14 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
   final _loanDetector = LoanDetectionService();
 
   // regexes
-  final _feePrecise = RegExp(
-      r'(?i)\b('
-      r'convenience\s*fee|conv\.?\s*fee|processing\s*fee|platform\s*fee|'
-      r'late\s*fee|penalt(?:y|ies)|surcharge|fuel\s*surcharge|gst|igst|cgst|sgst|markup'
-      r')\b');
-  final _feeBlacklist =
-      RegExp(r'(?i)\b(recharge|top[-\s]?up|prepaid|plan|pack|dth)\b');
+  final _feeWords = RegExp(
+    r'\b(?:convenience\s*fee|conv\.?\s*fee|processing\s*fee|platform\s*fee|late\s*fee|penalt(?:y|ies)|surcharge|fuel\s*surcharge|gst|igst|cgst|sgst|markup)\b',
+    caseSensitive: false,
+  );
+  final _feeBlacklist = RegExp(
+    r'\b(recharge|top[-\s]?up|prepaid|plan|pack|dth)\b',
+    caseSensitive: false,
+  );
   final _subKw = RegExp(
     r'\b('
     r'subscript|subscription|recurring|auto[- ]?pay|autopay|auto[- ]?debit|'
@@ -96,12 +97,18 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
     r')\b',
     caseSensitive: false,
   );
-  final _fxVerb =
-      RegExp(r'(?i)\b(spent|purchase|charged|txn|transaction|pos)\b');
-  final _balanceWords =
-      RegExp(r'(?i)\b(available|avl|closing|current|passbook)\s*balance\b');
-  final _promoWords =
-      RegExp(r'(?i)\b(offer|subscribe|newsletter|utm_|unsubscribe)\b');
+  final _fxVerb = RegExp(
+    r'\b(spent|purchase|charged|txn|transaction|pos)\b',
+    caseSensitive: false,
+  );
+  final _balanceWords = RegExp(
+    r'\b(available|avl|closing|current|passbook)\s*balance\b',
+    caseSensitive: false,
+  );
+  final _promoWords = RegExp(
+    r'\b(offer|subscribe|newsletter|utm_|unsubscribe)\b',
+    caseSensitive: false,
+  );
   final _salaryKw = RegExp(
       r'\b(salary|sal\s*cr|salary\s*credit|payroll|salary\s*neft)\b',
       caseSensitive: false);
@@ -927,7 +934,7 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
         final tags =
             (e.toJson()['tags'] as List?)?.cast<String>() ?? const [];
         final isFee = tags.contains('fee') ||
-            (_feePrecise.hasMatch(lower) && !_feeBlacklist.hasMatch(lower));
+            (_feeWords.hasMatch(lower) && !_feeBlacklist.hasMatch(lower));
 
         if (!isFee) continue;
 
@@ -1118,7 +1125,7 @@ class _FiinnyBrainDiagnosisCardState extends State<FiinnyBrainDiagnosisCard> {
         }
 
         final looksFee =
-            _feePrecise.hasMatch(lower) && !_feeBlacklist.hasMatch(lower);
+            _feeWords.hasMatch(lower) && !_feeBlacklist.hasMatch(lower);
 
         if (!looksFee) {
           intlCount++;
