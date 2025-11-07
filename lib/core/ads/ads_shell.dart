@@ -33,12 +33,20 @@ class _AdsShellState extends State<AdsShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scheduledInsert = false;
       if (!mounted || _inserted || _bannerEntry == null) return;
-      final overlay = Overlay.of(context);
+      final overlay = Overlay.of(context, rootOverlay: true);
       if (overlay != null && overlay.mounted) {
         overlay.insert(_bannerEntry!);
         _inserted = true;
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant AdsShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_inserted) {
+      _scheduleInsert();
+    }
   }
 
   @override

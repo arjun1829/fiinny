@@ -79,19 +79,24 @@ class SmsIngestor {
 
   String _cap(String s, [int max = 4000]) => s.length <= max ? s : s.substring(0, max) + '…';
 
-  bool _hasCurrencyAmount(String s) =>
-      RegExp(r'(?i)(₹|inr|rs\.?)\s*[0-9][\d,]*(?:\.\d{1,2})?').hasMatch(s);
+  bool _hasCurrencyAmount(String s) => RegExp(
+        r'(₹|inr|rs\.?)\s*[0-9][\d,]*(?:\.\d{1,2})?',
+        caseSensitive: false,
+      ).hasMatch(s);
 
   bool _hasDebitVerb(String s) => RegExp(
-        r'(?i)\b(debited|spent|paid|payment|purchase|charged|withdrawn|withdrawal|pos|upi|imps|neft|rtgs|txn|transaction|autopay|mandate|emi)\b',
+        r'\b(debited|spent|paid|payment|purchase|charged|withdrawn|withdrawal|pos|upi|imps|neft|rtgs|txn|transaction|autopay|mandate|emi)\b',
+        caseSensitive: false,
       ).hasMatch(s);
 
   bool _hasCreditVerb(String s) => RegExp(
-        r'(?i)\b(credited|received|rcvd|deposit(?:ed)?|salary|refund|reversal|cashback|interest)\b',
+        r'\b(credited|received|rcvd|deposit(?:ed)?|salary|refund|reversal|cashback|interest)\b',
+        caseSensitive: false,
       ).hasMatch(s);
 
   bool _hasRefToken(String s) => RegExp(
-        r'(?i)\b(utr|rrn|ref(?:erence)?|order|invoice|a/?c|acct|account|card|vpa|pos|txn|auth(?:orization)?|approval)\b',
+        r'\b(utr|rrn|ref(?:erence)?|order|invoice|a/?c|acct|account|card|vpa|pos|txn|auth(?:orization)?|approval)\b',
+        caseSensitive: false,
       ).hasMatch(s);
 
   bool _passesTxnGate(String text, {String? sender}) {
@@ -113,22 +118,28 @@ class SmsIngestor {
 
   bool _tooSmallToTrust(String body, double amt) {
     if (amt >= 5) return false;
-    final creditOK =
-        RegExp(r'(?i)\b(refund|cashback|reversal|interest)\b').hasMatch(body);
+    final creditOK = RegExp(
+      r'\b(refund|cashback|reversal|interest)\b',
+      caseSensitive: false,
+    ).hasMatch(body);
     return !creditOK;
   }
 
-  bool _futureCredit(String s) =>
-      RegExp(r'(?i)\b(can|will|may)\s+be\s+credited\b').hasMatch(s);
+  bool _futureCredit(String s) => RegExp(
+        r'\b(can|will|may)\s+be\s+credited\b',
+        caseSensitive: false,
+      ).hasMatch(s);
 
   bool _loanOffer(String s) => RegExp(
-        r'(?i)\b(loan\s+up\s+to|pre[-\s]?approved|apply\s+now|kyc|complete\s+kyc|offer)\b',
+        r'\b(loan\s+up\s+to|pre[-\s]?approved|apply\s+now|kyc|complete\s+kyc|offer)\b',
+        caseSensitive: false,
       ).hasMatch(s);
 
   bool _smsIncomeGate(String text) {
     final hasCurrency = _hasCurrencyAmount(text);
     final strongCredit = RegExp(
-      r'(?i)\b(has\s*been\s*credited|credited\s*(?:by|with)?|received\s*(?:from)?|payout|settlement)\b',
+      r'\b(has\s*been\s*credited|credited\s*(?:by|with)?|received\s*(?:from)?|payout|settlement)\b',
+      caseSensitive: false,
     ).hasMatch(text);
     final hasRef = _hasRefToken(text);
     return hasCurrency && strongCredit && hasRef &&
@@ -590,7 +601,8 @@ class SmsIngestor {
 
     if (isLikelyBalanceAlert(body)) {
       final strongCredit = RegExp(
-        r'(?i)\b(has\s*been\s*credited|credited\s*(?:by|with)?|received\s*(?:from)?)\b',
+        r'\b(has\s*been\s*credited|credited\s*(?:by|with)?|received\s*(?:from)?)\b',
+        caseSensitive: false,
       ).hasMatch(body);
       final hasRef = _hasRefToken(body);
       if (!(direction == 'credit' && strongCredit && hasRef)) {
