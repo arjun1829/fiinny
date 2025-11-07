@@ -166,11 +166,12 @@ class SocialEventsWatch {
       for (final change in snapshot.docChanges) {
         if (change.type != DocumentChangeType.added) continue;
         final data = change.doc.data();
-        final createdAt = _tsOrNow(data['createdAt']);
+        final map = data ?? const <String, dynamic>{};
+        final createdAt = _tsOrNow(map['createdAt']);
         if (createdAt.isBefore(_bootAt)) continue;
 
-        final a = (data['a'] ?? '').toString();
-        final b = (data['b'] ?? '').toString();
+        final a = (map['a'] ?? '').toString();
+        final b = (map['b'] ?? '').toString();
         final other = a == userPhone
             ? b
             : (b == userPhone
