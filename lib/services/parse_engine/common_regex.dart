@@ -5,9 +5,23 @@ class CommonRegex {
   static final _last4 = RegExp(r'(?:ending|xx|XXXX|last\s?digits?|last\s?4)\s?(\d{4})', caseSensitive: false);
   static final _upi = RegExp(r'\b([\w\.\-_]+)@[\w\.\-_]+\b');
   static final _merchantAfter =
-  RegExp(r"\b(?:at|to|for)\s+([A-Za-z0-9 &().@'_\-]{2,60})");
-  static final _credit = RegExp(r'(credited|received|deposit|refund|cashback|interest\s+credited)', caseSensitive: false);
-  static final _debit  = RegExp(r'(debited|spent|purchase|paid|payment|withdrawn|transferred|deducted|ATM)', caseSensitive: false);
+      RegExp(r"\b(?:at|to|for)\s+([A-Za-z0-9 &().@'_\-]{2,60})");
+  static final _paidToExplicit = RegExp(
+    r'\b(PAID\s+TO|PAYMENT\s+TO|TO)\b\s*[:\-]?\s*([A-Z][A-Z0-9 .&\-\(\)]{2,40})',
+    caseSensitive: false,
+  );
+  static final _upiP2aTail = RegExp(
+    r'\bUPI\/P2A\/[^\/\s]{3,}\/([A-Z][A-Z0-9 \.\-]{2,})(?:\/|\b)',
+    caseSensitive: false,
+  );
+  static final _credit = RegExp(
+    r'(credited|amount\s*credited|received|rcvd|deposit|refund|reversal|cashback|interest\s+credited)',
+    caseSensitive: false,
+  );
+  static final _debit = RegExp(
+    r'(debited|amount\s*debited|spent|purchase|paid|payment|withdrawn|transferred|deducted|autopay|emi|ATM)',
+    caseSensitive: false,
+  );
 
   static int? extractAmountPaise(String text) {
     final m = _amount.firstMatch(text);
@@ -39,9 +53,34 @@ class CommonRegex {
   }
 
   static bool isCredit(String text) => _credit.hasMatch(text);
-  static bool isDebit (String text) => _debit.hasMatch(text);
+  static bool isDebit(String text) => _debit.hasMatch(text);
 
-  static String? extractMerchant(String text) => _merchantAfter.firstMatch(text)?.group(1);
+  static String? extractPaidToName(String text) {
+    final upper = text.toUpperCase();
+
+    final m1 = _paidToExplicit.firstMatch(upper);
+    if (m1 != null) {
+      final v = (m1.group(2) ?? '').trim();
+      if (v.isNotEmpty) return v;
+    }
+
+    final m2 = _upiP2aTail.firstMatch(upper);
+    if (m2 != null) {
+      final raw = (m2.group(1) ?? '').trim();
+      if (raw.isNotEmpty) return raw;
+    }
+
+    return null;
+  }
+
+  static String? extractMerchant(String text) {
+    final paidTo = extractPaidToName(text);
+    if (paidTo != null && paidTo.isNotEmpty) {
+      return paidTo;
+    }
+    final m = _merchantAfter.firstMatch(text);
+    return m?.group(1)?.trim();
+  }
 
   static DateTime? parseDateFromHeader(String hdr) {
     // Let Gmail internalDate be primary; header parse is optional
@@ -59,7 +98,12 @@ class CommonRegex {
     return 'Other';
   }
 
-  static double confidenceScore({required bool hasAmount, required bool hasInstrument, required bool hasMerchant, required bool channelKnown}) {
+  static double confidenceScore({
+    required bool hasAmount,
+    required bool hasInstrument,
+    required bool hasMerchant,
+    required bool channelKnown,
+  }) {
     double s = 0;
     if (hasAmount) s += 0.40;
     if (hasInstrument) s += 0.25;
