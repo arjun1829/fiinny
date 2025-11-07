@@ -195,13 +195,52 @@ jobs:
             } >> "$f"
           done
 
-      - name: Bump build number in pubspec.yaml (safe replace)
+      - name: Create ASC API Key JSON
+        shell: bash
+        run: |
+          set -euxo pipefail
+          [[ -n "${APPLE_API_KEY_BASE64:-}" ]] || { echo "APPLE_API_KEY_BASE64 is missing"; exit 1; }
+          [[ -n "${APPLE_KEY_ID:-}"        ]] || { echo "APPLE_KEY_ID is missing"; exit 1; }
+          [[ -n "${APPLE_ISSUER_ID:-}"     ]] || { echo "APPLE_ISSUER_ID is missing"; exit 1; }
+          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "AuthKey_${APPLE_KEY_ID}.p8"
+          chmod 600 "AuthKey_${APPLE_KEY_ID}.p8"
+          python3 -c 'import json,os;kid=os.environ["APPLE_KEY_ID"];iss=os.environ["APPLE_ISSUER_ID"];print(json.dumps({"key_id":kid,"issuer_id":iss,"key":open(f"AuthKey_{kid}.p8").read()}))' > api_key.json
+
+      - name: Set up Fastlane bundle
+        shell: bash
+        run: |
+          set -euxo pipefail
+          gem install bundler -N || sudo gem install bundler -N
+          mkdir -p fastlane_ci
+          cat <<'EOF' > fastlane_ci/Gemfile
+source "https://rubygems.org"
+gem "fastlane"
+EOF
+          bundle install --gemfile fastlane_ci/Gemfile --path fastlane_ci/vendor/bundle
+          echo "BUNDLE_GEMFILE=$PWD/fastlane_ci/Gemfile" >> "$GITHUB_ENV"
+          echo "BUNDLE_PATH=$PWD/fastlane_ci/vendor/bundle" >> "$GITHUB_ENV"
+
+      - name: Determine next TestFlight build number
+        env:
+          BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+        run: |
+          set -euo pipefail
+          LATEST=$(bundle exec fastlane run latest_testflight_build_number \
+            api_key_path:api_key.json \
+            app_identifier:$BUNDLE_ID \
+            --json | jq -r '.result // empty' || echo "")
+          if [ -z "$LATEST" ]; then LATEST=0; fi
+          NEXT=$((LATEST + 1))
+          echo "BUILD_NUMBER=$NEXT" >> $GITHUB_ENV
+          echo "Using BUILD_NUMBER=$NEXT"
+
+      - name: Sync pubspec build number
         shell: bash
         run: |
           set -euxo pipefail
           base_version="$(grep -m1 '^version:' pubspec.yaml | cut -d ':' -f2 | xargs | cut -d '+' -f1)"
-          perl -0777 -pe "s/^version:\\s*[^\\r\\n]+/version: ${base_version}+$BUILD_NUMBER/m" pubspec.yaml > pubspec.yaml.tmp
-          mv pubspec.yaml.tmp pubspec.yaml
+          sed -i.bak -E "s/^version: ([0-9.]+)\+[0-9]+$/version: \1+${BUILD_NUMBER}/" pubspec.yaml
+          rm -f pubspec.yaml.bak
           echo "Updated version to: $(grep -m1 '^version:' pubspec.yaml)"
 
       - name: Prepare ExportOptions.plist (manual signing)
@@ -305,7 +344,7 @@ jobs:
         run: |
           set -euxo pipefail
           flutter build ipa --release \
-            --build-number "$BUILD_NUMBER" \
+            --build-number $BUILD_NUMBER \
             --export-options-plist ios/ExportOptions.plist
           ls -lah build/ios/ipa || true
           ls -lah build/ios/archive || true
@@ -344,23 +383,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Install Fastlane
-        shell: bash
-        run: |
-          set -euxo pipefail
-          sudo gem install fastlane -N
-
-      - name: Create ASC API Key JSON
-        shell: bash
-        run: |
-          set -euxo pipefail
-          [[ -n "${APPLE_API_KEY_BASE64:-}" ]] || { echo "APPLE_API_KEY_BASE64 is missing"; exit 1; }
-          [[ -n "${APPLE_KEY_ID:-}"        ]] || { echo "APPLE_KEY_ID is missing"; exit 1; }
-          [[ -n "${APPLE_ISSUER_ID:-}"     ]] || { echo "APPLE_ISSUER_ID is missing"; exit 1; }
-          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "AuthKey_${APPLE_KEY_ID}.p8"
-          chmod 600 "AuthKey_${APPLE_KEY_ID}.p8"
-          python3 -c 'import json,os;kid=os.environ["APPLE_KEY_ID"];iss=os.environ["APPLE_ISSUER_ID"];print(json.dumps({"key_id":kid,"issuer_id":iss,"key":open(f"AuthKey_{kid}.p8").read()}))' > api_key.json
-
       - name: Upload to TestFlight
         if: ${{ success() }}
         env:
@@ -370,7 +392,7 @@ jobs:
           set -euxo pipefail
           IPA_PATH="$(ls -1 build/ios/ipa/*.ipa | head -n 1)"
           echo "Uploading: ${IPA_PATH}"
-          fastlane pilot upload \
+          bundle exec fastlane pilot upload \
             --ipa "${IPA_PATH}" \
             --api_key_path api_key.json \
             --skip_submission \
