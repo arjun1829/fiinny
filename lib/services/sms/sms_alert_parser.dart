@@ -53,6 +53,7 @@ class SmsAlertParser {
       confidence: conf,
       meta: {
         'source': 'sms',
+        if (rawMerchant.isNotEmpty) 'counterpartyHint': rawMerchant,
         if (norm.bankLogoAsset != null) 'bankLogo': norm.bankLogoAsset!,
       },
       sources: {TxSource.sms},

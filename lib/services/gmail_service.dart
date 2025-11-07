@@ -63,12 +63,12 @@ class GmailService {
       ).hasMatch(s);
 
   bool _hasDebitVerb(String s) => RegExp(
-        r'\b(debited|spent|paid|payment|purchase|charged|withdrawn|withdrawal|pos|upi|imps|neft|rtgs|txn|transaction|autopay|mandate|emi)\b',
+        r'\b(debited|amount\s*debited|spent|paid|payment|purchase|charged|withdrawn|withdrawal|pos|upi|imps|neft|rtgs|txn|transaction|autopay|mandate|emi)\b',
         caseSensitive: false,
       ).hasMatch(s);
 
   bool _hasCreditVerb(String s) => RegExp(
-        r'\b(credited|received|rcvd|deposit(?:ed)?|salary|refund|reversal|cashback|interest)\b',
+        r'\b(credited|amount\s*credited|received|rcvd|deposit(?:ed)?|salary|refund|reversal|cashback|interest)\b',
         caseSensitive: false,
       ).hasMatch(s);
 
@@ -104,7 +104,17 @@ class GmailService {
       return wl.any((d) => domain.toLowerCase().endsWith(d));
     }();
 
-    return whitelisted || (_hasCurrencyAmount(t) && verbs && _hasRefToken(t));
+    if (whitelisted) {
+      // For trusted bank/gateway domains, currency + verb is enough
+      if (_hasCurrencyAmount(t) && verbs) return true;
+    }
+
+    // General fallback: currency + verb + (ref OR common txn markers)
+    final hasRefOrCue = _hasRefToken(t) ||
+        RegExp(r'(account\s*(no|number)|txn\s*id|transaction\s*info)', caseSensitive: false)
+            .hasMatch(t);
+
+    return _hasCurrencyAmount(t) && verbs && hasRefOrCue;
   }
 
   bool _tooSmallToTrust(String body, double amt) {
@@ -252,6 +262,30 @@ class GmailService {
     return re.firstMatch(text)?.group(0);
   }
 
+  String? _extractPaidToName(String text) {
+    final t = text.toUpperCase();
+
+    final m1 = RegExp(
+      r'\b(PAID\s+TO|PAYMENT\s+TO|TO)\b\s*[:\-]?\s*([A-Z][A-Z0-9 .&\-\(\)]{2,40})',
+      caseSensitive: false,
+    ).firstMatch(t);
+    if (m1 != null) {
+      final v = (m1.group(2) ?? '').trim();
+      if (v.isNotEmpty) return v;
+    }
+
+    final m2 = RegExp(
+      r'\bUPI\/P2A\/[^\/\s]{3,}\/([A-Z][A-Z0-9 \.\-]{2,})(?:\/|\b)',
+      caseSensitive: false,
+    ).firstMatch(t);
+    if (m2 != null) {
+      final raw = (m2.group(1) ?? '').trim();
+      if (raw.isNotEmpty) return raw;
+    }
+
+    return null;
+  }
+
   // Credit Card Bill extraction (Total Due, Min Due, Due Date, Statement period)
   _BillInfo? _extractCardBillInfo(String text) {
     final t = text.toUpperCase();
@@ -341,7 +375,10 @@ class GmailService {
 
   // Extract sender name for UPI P2A alerts, e.g. "UPI/P2A/.../SHREYA AG/HDFC BANK"
   String? _extractUpiSenderName(String text) {
-    final rx = RegExp(r'\bUPI\/P2A\/[^\/\s]{3,}\/([A-Z][A-Z0-9 \.\-]{2,})\/', caseSensitive: false);
+    final rx = RegExp(
+      r'\bUPI\/P2A\/[^\/\s]{3,}\/([A-Z][A-Z0-9 \.\-]{2,})(?:\/|\b)',
+      caseSensitive: false,
+    );
     final m = rx.firstMatch(text.toUpperCase());
     if (m != null) {
       final raw = (m.group(1) ?? '').trim();
@@ -626,7 +663,9 @@ class GmailService {
     final network = _inferCardNetwork(combined);
     final isIntl = _looksInternational(combined);
     final fees = _extractFees(combined);
-    final upiSender = _extractUpiSenderName(combined);
+    final upiSenderRaw = _extractUpiSenderName(combined);
+    final paidTo = _extractPaidToName(combined) ?? upiSenderRaw;
+    final upiSender = upiSenderRaw;
 
     // Card bill path FIRST
     final bill = _extractCardBillInfo(combined);
@@ -732,7 +771,7 @@ class GmailService {
     }
 
     // Merchant extraction & normalization (initial)
-    final merchantRaw = _guessMerchantSmart(combined) ?? upiSender;
+    final merchantRaw = paidTo ?? _guessMerchantSmart(combined) ?? upiSender;
     var merchantNorm = MerchantAlias.normalizeFromContext(
       raw: merchantRaw,
       upiVpa: upiVpa,
@@ -902,8 +941,17 @@ class GmailService {
     final note = _cleanNoteSimple(combined);
     final currency = (amountFx?['currency'] as String?) ?? 'INR';
     final isIntlResolved = isIntl || (amountFx != null && currency.toUpperCase() != 'INR');
+    String merchantNormPrime = merchantNorm;
+    if (merchantNormPrime.isEmpty && paidTo != null && paidTo.trim().isNotEmpty) {
+      merchantNormPrime = paidTo.trim().toUpperCase();
+    }
+    if (merchantNormPrime.isNotEmpty) {
+      merchantKey = merchantNormPrime.toUpperCase();
+    }
+    merchantNorm = merchantNormPrime;
+
     final counterparty = _deriveCounterparty(
-      merchantNorm: merchantNorm,
+      merchantNorm: merchantNormPrime,
       upiVpa: upiVpa,
       last4: last4,
       bank: bank,
@@ -912,7 +960,7 @@ class GmailService {
       direction: direction,
     );
     final cptyType = _deriveCounterpartyType(
-      merchantNorm: merchantNorm,
+      merchantNorm: merchantNormPrime,
       upiVpa: upiVpa,
       instrument: instrument,
       direction: direction,
@@ -1395,8 +1443,14 @@ class GmailService {
         .replaceAll(RegExp(r'\bcredit\s+card\b'), '')
         .replaceAll(RegExp(r'\bdebit\s+card\b'), '');
 
-    final strongCredit = RegExp(r'has\s*been\s*credited|credited\s*(?:by|with)').hasMatch(lower);
-    final strongDebit = RegExp(r'has\s*been\s*debited|debited\s*(?:by|for)').hasMatch(lower);
+    final strongCredit = RegExp(
+      r'(has\s*been\s*credited|credited\s*(?:by|with)|amount\s*credited)',
+      caseSensitive: false,
+    ).hasMatch(lower);
+    final strongDebit = RegExp(
+      r'(has\s*been\s*debited|debited|amount\s*debited)',
+      caseSensitive: false,
+    ).hasMatch(lower);
 
     if (strongCredit && !strongDebit) return 'credit';
     if (strongDebit && !strongCredit) return 'debit';

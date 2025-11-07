@@ -2252,6 +2252,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           // after the rest of the dashboard so it is visible,
                           // even when earlier sections are collapsed or gated.
                           child: FiinnyBrainDiagnosisCard(
+                            key: const ValueKey('diag-v3'),
                             userPhone: widget.userPhone,
                             daysWindow: 180,
                             initiallyExpanded: false,
@@ -2259,19 +2260,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                             margin: EdgeInsets.zero,
                           ),
                         ),
-                        const SizedBox(height: 48),
+                        SizedBox(
+                          height: MediaQuery.of(context).padding.bottom + 48,
+                        ),
                       ];
+                    final builtSections = List<Widget>.unmodifiable(sections);
                     return SliverPadding(
                       padding: const EdgeInsets.only(bottom: 32),
                       sliver: SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (ctx, index) => KeyedSubtree(
-                            key: ValueKey('dashboard-section-$index-${sections[index].runtimeType}'),
-                            child: sections[index],
-                          ),
-                          childCount: sections.length,
+                        delegate: SliverChildListDelegate(
+                          builtSections,
                           addAutomaticKeepAlives: false,
                           addRepaintBoundaries: true,
+                          addSemanticIndexes: false,
                         ),
                       ),
                     );
