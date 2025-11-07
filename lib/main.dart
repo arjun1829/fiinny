@@ -166,16 +166,10 @@ class _DiagAppState extends State<_DiagApp> {
 
   void _safeSetState(VoidCallback fn) {
     if (!mounted) return;
-    final phase = SchedulerBinding.instance.schedulerPhase;
-    if (phase == SchedulerPhase.persistentCallbacks ||
-        phase == SchedulerPhase.transientCallbacks) {
-      _afterFirstFrame(() {
-        if (!mounted) return;
-        setState(fn);
-      });
-    } else {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       setState(fn);
-    }
+    });
   }
 
   @override

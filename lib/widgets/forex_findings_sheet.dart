@@ -39,17 +39,26 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
     caseSensitive: false,
   );
   final _fxSymbol = RegExp(r'(\$|€|£|usd|eur|gbp|aud|cad|sgd|aed|jpy)', caseSensitive: false);
-  final _fxVerb = RegExp(r'(?i)\b(spent|purchase|charged|txn|transaction|pos)\b');
-  final _balanceWords =
-      RegExp(r'(?i)\b(available|avl|closing|current|passbook)\s*balance\b');
-  final _promoWords = RegExp(r'(?i)\b(offer|subscribe|newsletter|utm_|unsubscribe)\b');
-  final _feePrecise = RegExp(
-      r'(?i)\b('
-      r'convenience\s*fee|conv\.?\s*fee|processing\s*fee|platform\s*fee|'
-      r'late\s*fee|penalt(?:y|ies)|surcharge|fuel\s*surcharge|gst|igst|cgst|sgst|markup'
-      r')\b');
-  final _feeBlacklist =
-      RegExp(r'(?i)\b(recharge|top[-\s]?up|prepaid|plan|pack|dth)\b');
+  final _fxVerb = RegExp(
+    r'\b(spent|purchase|charged|txn|transaction|pos)\b',
+    caseSensitive: false,
+  );
+  final _balanceWords = RegExp(
+    r'\b(available|avl|closing|current|passbook)\s*balance\b',
+    caseSensitive: false,
+  );
+  final _promoWords = RegExp(
+    r'\b(offer|subscribe|newsletter|utm_|unsubscribe)\b',
+    caseSensitive: false,
+  );
+  final _feeWords = RegExp(
+    r'\b(?:convenience\s*fee|conv\.?\s*fee|processing\s*fee|platform\s*fee|late\s*fee|penalt(?:y|ies)|surcharge|fuel\s*surcharge|gst|igst|cgst|sgst|markup)\b',
+    caseSensitive: false,
+  );
+  final _feeBlacklist = RegExp(
+    r'\b(recharge|top[-\s]?up|prepaid|plan|pack|dth)\b',
+    caseSensitive: false,
+  );
 
   List<ExpenseItem> _intl = [];
   List<ExpenseItem> _fees = [];
@@ -117,7 +126,7 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
         if (!looksIntl) continue;
 
         final looksFee =
-            _feePrecise.hasMatch(lower) && !_feeBlacklist.hasMatch(lower);
+            _feeWords.hasMatch(lower) && !_feeBlacklist.hasMatch(lower);
         if (looksFee) {
           fees.add(e);
         } else {
