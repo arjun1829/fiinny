@@ -364,22 +364,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final currencyFull = INR.f;
 
     final baseExpenses = expense
-        ? _applyBankFiltersToExpenses(_allExp)
-            .where((e) =>
-                _inRange(e.date, range) &&
-                AnalyticsAgg.resolveExpenseCategory(e) == category)
-            .toList()
-          ..sort((a, b) => b.date.compareTo(a.date))
+        ? (List<ExpenseItem>.from(_applyBankFiltersToExpenses(_allExp)
+              .where((e) =>
+                  _inRange(e.date, range) &&
+                  AnalyticsAgg.resolveExpenseCategory(e) == category)
+              .toList())
+            ..sort((a, b) => b.date.compareTo(a.date)))
         : <ExpenseItem>[];
 
     final baseIncomes = expense
         ? <IncomeItem>[]
-        : _applyBankFiltersToIncomes(_allInc)
-            .where((i) =>
-                _inRange(i.date, range) &&
-                AnalyticsAgg.resolveIncomeCategory(i) == category)
-            .toList()
-          ..sort((a, b) => b.date.compareTo(a.date));
+        : (List<IncomeItem>.from(_applyBankFiltersToIncomes(_allInc)
+              .where((i) =>
+                  _inRange(i.date, range) &&
+                  AnalyticsAgg.resolveIncomeCategory(i) == category)
+              .toList())
+            ..sort((a, b) => b.date.compareTo(a.date)));
 
     String _merchantKey(dynamic tx) {
       if (tx is ExpenseItem) {
@@ -721,7 +721,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         return false;
       }
       if (_last4Filter != null) {
-        final l4 = (i.cardLast4 ?? '').trim();
+        final String l4 = '';
         if (l4.isEmpty || !l4.endsWith(_last4Filter!)) {
           return false;
         }
