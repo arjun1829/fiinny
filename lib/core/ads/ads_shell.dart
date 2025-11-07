@@ -11,14 +11,24 @@ class AdsShell extends StatefulWidget {
 }
 
 class _AdsShellState extends State<AdsShell> {
-  OverlayEntry? _bannerEntry;
-  bool _inserted = false;
-  bool _scheduledInsert = false;
+  OverlayEntry? _entry;
+  bool _inserting = false;
+  bool _scheduled = false;
+
+  OverlayState? _resolveOverlay() {
+    final overlay = Overlay.maybeOf(context);
+    if (overlay != null) {
+      return overlay;
+    }
+
+    final navigator = Navigator.maybeOf(context, rootNavigator: true);
+    return navigator?.overlay;
+  }
 
   @override
   void initState() {
     super.initState();
-    _bannerEntry = OverlayEntry(builder: _buildBanner);
+    _entry = OverlayEntry(builder: _buildBanner);
   }
 
   @override
@@ -28,33 +38,56 @@ class _AdsShellState extends State<AdsShell> {
   }
 
   void _scheduleInsert() {
-    if (_scheduledInsert || _inserted || _bannerEntry == null) return;
-    _scheduledInsert = true;
+    if (!mounted || _inserting) return;
+    if (_entry?.mounted ?? false) {
+      return;
+    }
+    _inserting = true;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scheduledInsert = false;
-      if (!mounted || _inserted || _bannerEntry == null) return;
-      final overlay = Overlay.of(context, rootOverlay: true);
-      if (overlay != null && overlay.mounted) {
-        overlay.insert(_bannerEntry!);
-        _inserted = true;
+      if (!mounted) {
+        _inserting = false;
+        return;
       }
+
+      final overlay = _resolveOverlay();
+      if (overlay == null) {
+        _inserting = false;
+        if (!_scheduled) {
+          _scheduled = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _scheduled = false;
+            if (mounted) {
+              _scheduleInsert();
+            }
+          });
+        }
+        return;
+      }
+
+      _entry ??= OverlayEntry(builder: _buildBanner);
+      if (!(_entry!.mounted)) {
+        overlay.insert(_entry!);
+      }
+
+      _inserting = false;
     });
   }
 
   @override
   void didUpdateWidget(covariant AdsShell oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_inserted) {
-      _scheduleInsert();
-    }
+    _scheduleInsert();
   }
 
   @override
   void dispose() {
-    _bannerEntry?.remove();
-    _bannerEntry = null;
-    _inserted = false;
-    _scheduledInsert = false;
+    try {
+      _entry?.remove();
+    } catch (_) {}
+    _entry = null;
+    _inserting = false;
+    _scheduled = false;
     super.dispose();
   }
 

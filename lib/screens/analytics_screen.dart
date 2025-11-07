@@ -50,33 +50,6 @@ class _CardGroup {
   double get netOutflow => debitTotal - creditTotal;
 }
 
-class _AccountFilter {
-  final String bank;
-  final String instrument;
-  final String? last4;
-  final String? network;
-
-  const _AccountFilter({
-    required this.bank,
-    required this.instrument,
-    this.last4,
-    this.network,
-  });
-
-  String label() {
-    final l4 = (last4 == null || last4!.isEmpty) ? '' : ' • ****$last4';
-    final net = (network == null || network!.isEmpty) ? '' : ' • $network';
-    return '$bank • $instrument$l4$net';
-  }
-
-  bool equalsGroup(_CardGroup g) {
-    return bank == g.bank.toUpperCase() &&
-        instrument.toLowerCase() == g.instrument.toLowerCase() &&
-        ((last4 ?? '') == (g.last4 ?? '')) &&
-        ((network ?? '').toUpperCase() == (g.network ?? '').toUpperCase());
-  }
-}
-
 String _formatBankLabel(String bank) {
   if (bank.isEmpty || bank == 'UNKNOWN') return 'Unknown Bank';
   final parts = bank
@@ -107,6 +80,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   List<ExpenseItem> _allExp = [];
   List<IncomeItem> _allInc = [];
   Period _period = Period.month;
+  String _periodToken = 'M';
+  DateTimeRange? _range;
 
   // Bottom list filter chips
   String _txnFilter = "All";
@@ -114,13 +89,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   // Calendar / custom filter
   CustomRange? _custom;
 
+  int _aggRev = 0;
+  final Map<String, Map<String, double>> _aggCache = {};
+
   // caches
   final Map<String, List<SeriesPoint>> _seriesCache = {};
   final Map<String, Map<String, double>> _rollCache = {};
   int _rev = 0;
 
   // Banks & Cards selection (screen-wide filter)
-  _AccountFilter? _activeAccount;
+  String? _bankFilter;   // normalized uppercase bank name
+  String? _last4Filter;  // last 4 digits for specific account
   final ScrollController _scrollCtrl = ScrollController();
 
   String _slugBank(String s) {
@@ -170,6 +149,623 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return candidates.isNotEmpty ? candidates.first : null;
   }
 
+  void _invalidateAggCache() {
+    _aggRev++;
+    _aggCache.clear();
+  }
+
+  Period _periodForToken(String token) {
+    switch (token) {
+      case 'D':
+        return Period.day;
+      case 'W':
+        return Period.week;
+      case 'Y':
+        return Period.year;
+      case 'All Time':
+        return Period.all;
+      case 'M':
+      default:
+        return Period.month;
+    }
+  }
+
+  DateTimeRange _rangeOrDefault() {
+    if (_range != null) return _range!;
+
+    final now = DateTime.now();
+    DateTime sod(DateTime d) => DateTime(d.year, d.month, d.day);
+
+    switch (_periodToken) {
+      case 'D':
+        final s = sod(now);
+        return DateTimeRange(start: s, end: s.add(const Duration(days: 1)));
+      case 'W':
+        final monday = sod(now).subtract(Duration(days: now.weekday - 1));
+        return DateTimeRange(start: monday, end: monday.add(const Duration(days: 7)));
+      case 'Y':
+        final start = DateTime(now.year, 1, 1);
+        return DateTimeRange(start: start, end: DateTime(now.year + 1, 1, 1));
+      case 'All Time':
+        if (_allExp.isEmpty && _allInc.isEmpty) {
+          final fallbackStart = sod(now).subtract(const Duration(days: 30));
+          return DateTimeRange(
+            start: fallbackStart,
+            end: fallbackStart.add(const Duration(days: 30)),
+          );
+        }
+        DateTime? minD;
+        DateTime? maxD;
+        for (final e in _allExp) {
+          final d = sod(e.date);
+          minD = (minD == null || d.isBefore(minD!)) ? d : minD;
+          maxD = (maxD == null || d.isAfter(maxD!)) ? d : maxD;
+        }
+        for (final i in _allInc) {
+          final d = sod(i.date);
+          minD = (minD == null || d.isBefore(minD!)) ? d : minD;
+          maxD = (maxD == null || d.isAfter(maxD!)) ? d : maxD;
+        }
+        final start = minD ?? sod(now);
+        final end = (maxD ?? sod(now)).add(const Duration(days: 1));
+        return DateTimeRange(start: start, end: end);
+      case 'M':
+      default:
+        final start = DateTime(now.year, now.month, 1);
+        return DateTimeRange(start: start, end: DateTime(now.year, now.month + 1, 1));
+    }
+  }
+
+  bool _inRange(DateTime date, DateTimeRange range) {
+    return !date.isBefore(range.start) && date.isBefore(range.end);
+  }
+
+  Map<String, double> _memo(String key, Map<String, double> Function() build) {
+    final cacheKey = [
+      key,
+      _aggRev,
+      _range?.start.millisecondsSinceEpoch,
+      _range?.end.millisecondsSinceEpoch,
+      _periodToken,
+      _bankFilter,
+      _last4Filter,
+    ].join('|');
+
+    final cached = _aggCache[cacheKey];
+    if (cached != null) return cached;
+
+    final built = Map<String, double>.from(build());
+    _aggCache[cacheKey] = built;
+    return built;
+  }
+
+  Map<String, double> sumExpenseByCategory() {
+    final range = _rangeOrDefault();
+    return _memo('expByCat', () {
+      final out = <String, double>{};
+      for (final e in _applyBankFiltersToExpenses(_allExp)) {
+        if (!_inRange(e.date, range)) continue;
+        final cat = AnalyticsAgg.resolveExpenseCategory(e);
+        out[cat] = (out[cat] ?? 0) + e.amount;
+      }
+      final sorted = out.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      return Map.fromEntries(sorted);
+    });
+  }
+
+  Map<String, double> sumIncomeByCategory() {
+    final range = _rangeOrDefault();
+    return _memo('incByCat', () {
+      final out = <String, double>{};
+      for (final i in _applyBankFiltersToIncomes(_allInc)) {
+        if (!_inRange(i.date, range)) continue;
+        final cat = AnalyticsAgg.resolveIncomeCategory(i);
+        out[cat] = (out[cat] ?? 0) + i.amount;
+      }
+      final sorted = out.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      return Map.fromEntries(sorted);
+    });
+  }
+
+  Map<String, double> topMerchantsForCategory({
+    required bool expense,
+    required String category,
+    int top = 8,
+  }) {
+    final range = _rangeOrDefault();
+    return _memo('${expense ? 'exp' : 'inc'}|merch|$category', () {
+      final out = <String, double>{};
+      if (expense) {
+        for (final e in _applyBankFiltersToExpenses(_allExp)) {
+          if (!_inRange(e.date, range)) continue;
+          final cat = AnalyticsAgg.resolveExpenseCategory(e);
+          if (cat != category) continue;
+          final merch = (e.counterparty ?? e.upiVpa ?? e.label ?? 'MERCHANT')
+              .toString()
+              .trim();
+          final normalized = merch.isEmpty ? 'MERCHANT' : merch.toUpperCase();
+          out[normalized] = (out[normalized] ?? 0) + e.amount;
+        }
+      } else {
+        for (final i in _applyBankFiltersToIncomes(_allInc)) {
+          if (!_inRange(i.date, range)) continue;
+          final cat = AnalyticsAgg.resolveIncomeCategory(i);
+          if (cat != category) continue;
+          final merch = (i.counterparty ?? i.label ?? i.source ?? 'SENDER')
+              .toString()
+              .trim();
+          final normalized = merch.isEmpty ? 'SENDER' : merch.toUpperCase();
+          out[normalized] = (out[normalized] ?? 0) + i.amount;
+        }
+      }
+      final sorted = out.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      return Map.fromEntries(sorted.take(top));
+    });
+  }
+
+  String _formatMerchantName(String raw) {
+    if (raw.trim().isEmpty) return 'Merchant';
+    final parts = raw.toLowerCase().split(RegExp(r'[\s_]+'));
+    return parts
+        .where((p) => p.isNotEmpty)
+        .map((p) => p[0].toUpperCase() + p.substring(1))
+        .join(' ');
+  }
+
+  Widget _categoryChips({required bool expense}) {
+    final data = expense ? sumExpenseByCategory() : sumIncomeByCategory();
+    final entries = data.entries.toList();
+    if (entries.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(.65),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: Fx.soft,
+        ),
+        child: Text(
+          'No data for this selection',
+          style: Fx.label.copyWith(color: Fx.text.withOpacity(.7)),
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final entry in entries)
+          ActionChip(
+            label: Text(
+              '${entry.key} • ${INR.c(entry.value)}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            onPressed: () => _openCategoryDrilldown(
+              expense: expense,
+              category: entry.key,
+              total: entry.value,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _openCategoryDrilldown({
+    required bool expense,
+    required String category,
+    required double total,
+  }) async {
+    final merchants = topMerchantsForCategory(expense: expense, category: category, top: 8);
+    final selectedMerchant = ValueNotifier<String?>(null);
+    final range = _rangeOrDefault();
+    final currencyFull = INR.f;
+
+    final baseExpenses = expense
+        ? _applyBankFiltersToExpenses(_allExp)
+            .where((e) =>
+                _inRange(e.date, range) &&
+                AnalyticsAgg.resolveExpenseCategory(e) == category)
+            .toList()
+          ..sort((a, b) => b.date.compareTo(a.date))
+        : <ExpenseItem>[];
+
+    final baseIncomes = expense
+        ? <IncomeItem>[]
+        : _applyBankFiltersToIncomes(_allInc)
+            .where((i) =>
+                _inRange(i.date, range) &&
+                AnalyticsAgg.resolveIncomeCategory(i) == category)
+            .toList()
+          ..sort((a, b) => b.date.compareTo(a.date));
+
+    String _merchantKey(dynamic tx) {
+      if (tx is ExpenseItem) {
+        final merch = (tx.counterparty ?? tx.upiVpa ?? tx.label ?? 'MERCHANT').toString().trim();
+        return merch.isEmpty ? 'MERCHANT' : merch.toUpperCase();
+      }
+      if (tx is IncomeItem) {
+        final merch = (tx.counterparty ?? tx.label ?? tx.source ?? 'SENDER').toString().trim();
+        return merch.isEmpty ? 'SENDER' : merch.toUpperCase();
+      }
+      return '';
+    }
+
+    List<dynamic> _filtered() {
+      final sel = selectedMerchant.value;
+      if (expense) {
+        if (sel == null) return baseExpenses;
+        return baseExpenses.where((e) => _merchantKey(e) == sel).toList();
+      }
+      if (sel == null) return baseIncomes;
+      return baseIncomes.where((i) => _merchantKey(i) == sel).toList();
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        final height = MediaQuery.of(ctx).size.height * 0.86;
+        final merchantEntries = merchants.entries.toList();
+        return SizedBox(
+          height: height,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '$category — ${expense ? baseExpenses.length : baseIncomes.length} tx • ${currencyFull(total)}',
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                RepaintBoundary(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: merchantEntries.isEmpty
+                        ? Container(
+                            key: const ValueKey('empty-merchants'),
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: Fx.soft,
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+                            child: Text(
+                              'No merchants to show',
+                              style: Fx.label.copyWith(color: Fx.text.withOpacity(.7)),
+                            ),
+                          )
+                        : Container(
+                            key: const ValueKey('merchant-donut'),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: Fx.soft,
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            child: SizedBox(
+                              height: 160,
+                              child: PieChartGlossy(
+                                data: [
+                                  for (final entry in merchantEntries)
+                                    DonutSlice(entry.key, entry.value.abs()),
+                                ],
+                                showCenter: false,
+                                onSliceTap: (index, slice) {
+                                  selectedMerchant.value = slice.label;
+                                },
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ValueListenableBuilder<String?>(
+                  valueListenable: selectedMerchant,
+                  builder: (_, sel, __) {
+                    if (merchantEntries.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final entry in merchantEntries)
+                          ChoiceChip(
+                            label: Text(_formatMerchantName(entry.key)),
+                            selected: sel == entry.key,
+                            onSelected: (_) => selectedMerchant.value = sel == entry.key ? null : entry.key,
+                          ),
+                        ActionChip(
+                          avatar: const Icon(Icons.clear, size: 16),
+                          label: const Text('Clear'),
+                          onPressed: () => selectedMerchant.value = null,
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 10),
+                const Divider(height: 1),
+                const SizedBox(height: 6),
+                const Text('Transactions', style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Expanded(
+                  child: ValueListenableBuilder<String?>(
+                    valueListenable: selectedMerchant,
+                    builder: (_, __, ___) {
+                      final list = _filtered();
+                      if (list.isEmpty) {
+                        return Center(
+                          child: Text(
+                            'Nothing here for this selection.',
+                            style: Fx.label,
+                          ),
+                        );
+                      }
+                      return ListView.separated(
+                        itemCount: list.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, index) {
+                          final tx = list[index];
+                          final date = tx is ExpenseItem ? tx.date : (tx as IncomeItem).date;
+                          final amt = tx is ExpenseItem ? tx.amount : (tx as IncomeItem).amount;
+                          final who = tx is ExpenseItem
+                              ? ((tx.counterparty ?? tx.upiVpa ?? tx.label) ?? '—')
+                              : (((tx as IncomeItem).counterparty ?? tx.label ?? tx.source) ?? '—');
+                          final note = tx is ExpenseItem
+                              ? (tx.note ?? '')
+                              : ((tx as IncomeItem).note ?? '');
+                          final subtitle = [
+                            DateFormat('d MMM yyyy, hh:mm a').format(date),
+                            if (note.trim().isNotEmpty) note.trim(),
+                          ].join(' • ');
+
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              '${INR.f(amt)} • ${who.toString()}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(subtitle),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _categorySection({required bool expense}) {
+    final title = expense ? 'Expense by Category' : 'Income by Category';
+    final data = expense ? sumExpenseByCategory() : sumIncomeByCategory();
+    final entries = data.entries
+        .where((e) => e.value.isFinite && e.value != 0)
+        .toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final hasData = entries.isNotEmpty &&
+        entries.any((element) => element.value.abs() > 0);
+
+    Widget _emptyCard() => Container(
+          key: ValueKey('empty-${expense ? 'exp' : 'inc'}'),
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: Fx.soft,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+          child: Text(
+            'No data for this selection',
+            style: Fx.label.copyWith(color: Fx.text.withOpacity(.7)),
+          ),
+        );
+
+    Widget _chart() => Container(
+          key: ValueKey('chart-${expense ? 'exp' : 'inc'}'),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: Fx.soft,
+          ),
+          padding: const EdgeInsets.all(12),
+          child: PieChartGlossy(
+            data: [
+              for (final entry in entries)
+                DonutSlice(entry.key, entry.value.abs()),
+            ],
+            palette: _legendPalette(),
+            onSliceTap: (_, slice) => _openCategoryDrilldown(
+              expense: expense,
+              category: slice.label,
+              total: data[slice.label] ?? 0,
+            ),
+          ),
+        );
+
+    return GlassCard(
+      radius: Fx.r24,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader(title, Icons.pie_chart_rounded),
+          const SizedBox(height: 8),
+          RepaintBoundary(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              child: hasData ? _chart() : _emptyCard(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (hasData) _categoryChips(expense: expense),
+        ],
+      ),
+    );
+  }
+
+  Widget _periodFilterRow() {
+    const periods = ['D', 'W', 'M', 'Y', 'All Time'];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Flexible(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final token in periods)
+                  ChoiceChip(
+                    label: Text(token == 'All Time' ? 'All' : token),
+                    selected: _range == null && _periodToken == token,
+                    onSelected: (_) {
+                      setState(() {
+                        _periodToken = token;
+                        _period = _periodForToken(token);
+                        _range = null;
+                        _custom = null;
+                        _invalidateAggCache();
+                      });
+                    },
+                  ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Custom range',
+            icon: const Icon(Icons.calendar_month_rounded),
+            onPressed: () async {
+              final now = DateTime.now();
+              final firstDate = now.subtract(const Duration(days: 180));
+              final active = _range ?? _rangeOrDefault();
+              final initial = DateTimeRange(
+                start: active.start,
+                end: active.end.subtract(const Duration(days: 1)),
+              );
+
+              final picked = await showDateRangePicker(
+                context: context,
+                firstDate: firstDate,
+                lastDate: now.add(const Duration(days: 1)),
+                initialDateRange: initial,
+                helpText: 'Pick date range',
+              );
+
+              if (picked != null) {
+                final start = DateTime(picked.start.year, picked.start.month, picked.start.day);
+                final endInclusive = DateTime(picked.end.year, picked.end.month, picked.end.day);
+                setState(() {
+                  _range = DateTimeRange(
+                    start: start,
+                    end: endInclusive.add(const Duration(days: 1)),
+                  );
+                  _period = Period.custom;
+                  _custom = CustomRange(start, endInclusive);
+                  _invalidateAggCache();
+                });
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<ExpenseItem> _applyBankFiltersToExpenses(List<ExpenseItem> list) {
+    return list.where((e) {
+      if (_bankFilter != null &&
+          (e.issuerBank ?? '').toUpperCase() != _bankFilter) {
+        return false;
+      }
+      if (_last4Filter != null) {
+        final l4 = (e.cardLast4 ?? '').trim();
+        if (l4.isEmpty || !l4.endsWith(_last4Filter!)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
+  List<IncomeItem> _applyBankFiltersToIncomes(List<IncomeItem> list) {
+    return list.where((i) {
+      if (_bankFilter != null &&
+          (i.issuerBank ?? '').toUpperCase() != _bankFilter) {
+        return false;
+      }
+      if (_last4Filter != null) {
+        final l4 = (i.cardLast4 ?? '').trim();
+        if (l4.isEmpty || !l4.endsWith(_last4Filter!)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
+  bool _isBankSelected(String bank, {String? last4}) {
+    final normalizedBank = bank.toUpperCase();
+    if (_bankFilter != normalizedBank) return false;
+    final targetLast4 = (last4 ?? '').trim();
+    if (targetLast4.isEmpty) {
+      return _last4Filter == null;
+    }
+    return _last4Filter == targetLast4;
+  }
+
+  void _toggleBankSelection(String bank, {String? last4}) {
+    final normalizedBank = bank.toUpperCase();
+    final normalizedLast4 = (last4 ?? '').trim().isEmpty ? null : last4!.trim();
+
+    setState(() {
+      final currentLast4 = _last4Filter ?? '';
+      final targetLast4 = normalizedLast4 ?? '';
+      if (_bankFilter == normalizedBank && currentLast4 == targetLast4) {
+        _bankFilter = null;
+        _last4Filter = null;
+      } else {
+        _bankFilter = normalizedBank;
+        _last4Filter = normalizedLast4;
+      }
+    });
+    _invalidateAggCache();
+
+    if (_scrollCtrl.hasClients) {
+      _scrollCtrl.animateTo(
+        0,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   String _normInstrument(String? raw) {
     final upper = (raw ?? '').toUpperCase();
     if (upper.contains('CREDIT')) return 'Credit Card';
@@ -184,82 +780,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return raw?.trim().isEmpty == true ? 'Account' : (raw ?? '').trim();
   }
 
-  List<ExpenseItem> _applyAccountToExp(List<ExpenseItem> src) {
-    final filter = _activeAccount;
-    if (filter == null) return src;
-    return src.where((e) {
-      if ((e.issuerBank ?? '').toUpperCase() != filter.bank) return false;
-      if (!_normInstrument(e.instrument)
-          .toLowerCase()
-          .contains(filter.instrument.toLowerCase())) {
-        return false;
-      }
-      if (filter.last4 != null && filter.last4!.isNotEmpty) {
-        if (!(e.cardLast4 ?? '').trim().endsWith(filter.last4!)) return false;
-      }
-      if (filter.network != null && filter.network!.isNotEmpty) {
-        if ((e.instrumentNetwork ?? '').toUpperCase() !=
-            filter.network!.toUpperCase()) {
-          return false;
-        }
-      }
-      return true;
-    }).toList();
-  }
-
-  List<IncomeItem> _applyAccountToInc(List<IncomeItem> src) {
-    final filter = _activeAccount;
-    if (filter == null) return src;
-    return src.where((i) {
-      if ((i.issuerBank ?? '').toUpperCase() != filter.bank) return false;
-      if (filter.instrument.isNotEmpty) {
-        if (!_normInstrument(i.instrument)
-            .toLowerCase()
-            .contains(filter.instrument.toLowerCase())) {
-          return false;
-        }
-      }
-      // Incomes generally don’t carry card last4 in model → do NOT enforce last4 match for incomes
-      if (filter.network != null && filter.network!.isNotEmpty) {
-        if ((i.instrumentNetwork ?? '').toUpperCase() !=
-            filter.network!.toUpperCase()) {
-          return false;
-        }
-      }
-      return true;
-    }).toList();
-  }
-
   Map<String, double> _summaryFor(
       List<ExpenseItem> expenses, List<IncomeItem> incomes) {
     final debit = expenses.fold<double>(0, (sum, e) => sum + e.amount);
     final credit = incomes.fold<double>(0, (sum, i) => sum + i.amount);
     return {'credit': credit, 'debit': debit, 'net': credit - debit};
-  }
-
-  void _setActiveAccountFromGroup(_CardGroup group) {
-    final filter = _AccountFilter(
-      bank: group.bank.toUpperCase(),
-      instrument: group.instrument,
-      last4: group.last4,
-      network: group.network?.toUpperCase(),
-    );
-
-    setState(() {
-      if (_activeAccount != null && _activeAccount!.equalsGroup(group)) {
-        _activeAccount = null;
-      } else {
-        _activeAccount = filter;
-      }
-    });
-
-    if (_scrollCtrl.hasClients) {
-      _scrollCtrl.animateTo(
-        0,
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOutCubic,
-      );
-    }
   }
 
   List<_CardGroup> _cardGroupsForPeriod(
@@ -363,6 +888,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       _rev++;
       _seriesCache.clear();
       _rollCache.clear();
+      _invalidateAggCache();
     } catch (_) {}
     if (!mounted) return;
     setState(() => _loading = false);
@@ -411,15 +937,23 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final now = DateTime.now();
     final bottomPadding = context.adsBottomPadding(extra: 24);
 
-    // Use custom range when set from calendar
-    final r = AnalyticsAgg.rangeFor(_period, now, custom: _custom);
+    final activeRange = _range ?? _rangeOrDefault();
 
-    final expPeriod = AnalyticsAgg.filterExpenses(_allExp, r);
-    final incPeriod = AnalyticsAgg.filterIncomes(_allInc, r);
+    final expPeriod = _allExp
+        .where((e) => _inRange(e.date, activeRange))
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+    final incPeriod = _allInc
+        .where((i) => _inRange(i.date, activeRange))
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
     final cardGroups = _cardGroupsForPeriod(expPeriod, incPeriod);
 
-    final exp = _applyAccountToExp(expPeriod);
-    final inc = _applyAccountToInc(incPeriod);
+    var exp = expPeriod;
+    var inc = incPeriod;
+
+    exp = _applyBankFiltersToExpenses(exp);
+    inc = _applyBankFiltersToIncomes(inc);
 
     final txSummary = _summaryFor(exp, inc);
     final totalExp = txSummary['debit'] ?? 0.0;
@@ -431,21 +965,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         AnalyticsAgg.amountSeries(_period, exp, inc, now, custom: _custom);
 
     // Robust category rollups (smart resolvers)
-    final catKey = '$_rev|$_period|expCat|${_custom?.start}-${_custom?.end}';
-    final byCatExp = _rollCache[catKey] ??= AnalyticsAgg.byExpenseCategorySmart(exp);
-
-    final incKey = '$_rev|$_period|incCat|${_custom?.start}-${_custom?.end}';
-    final byCatInc = _rollCache[incKey] ??= AnalyticsAgg.byIncomeCategorySmart(inc);
-
     final merchKey = '$_rev|$_period|merch|${_custom?.start}-${_custom?.end}';
     final byMerch = _rollCache[merchKey] ??= AnalyticsAgg.byMerchant(exp);
-
-    final catSlicesExp = byCatExp.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final catSlicesInc = byCatInc.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    final palette = _legendPalette();
 
     // Sparkline series reacts to the current filter/period
     final spark = _sparkForPeriod(_period, exp, now, custom: _custom);
@@ -453,8 +974,109 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         _sparkLabelsForPeriod(_period, spark, now, custom: _custom);
 
     // Calendar heatmap uses current month overview (tap -> set custom day)
-    final calData =
-        _monthExpenseMap(_activeAccount == null ? _allExp : exp, now);
+    final calData = _monthExpenseMap(
+        (_bankFilter == null && _last4Filter == null) ? _allExp : exp, now);
+
+    final bankExpansionTiles = <Widget>[];
+    if (cardGroups.isNotEmpty) {
+      final grouped = <String, List<_CardGroup>>{};
+      for (final group in cardGroups) {
+        grouped.putIfAbsent(group.bank, () => []).add(group);
+      }
+
+      final bankKeys = grouped.keys.toList()..sort();
+      for (final bank in bankKeys) {
+        final accounts = List<_CardGroup>.from(grouped[bank]!);
+        accounts.sort((a, b) => b.netOutflow.compareTo(a.netOutflow));
+        final bankNet =
+            accounts.fold<double>(0, (sum, item) => sum + item.netOutflow);
+        final bankColor = bankNet >= 0
+            ? (Colors.red.shade700 ?? Colors.red)
+            : (Colors.green.shade700 ?? Colors.green);
+
+        final tiles = <Widget>[
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            selected: _isBankSelected(bank),
+            onTap: () => _toggleBankSelection(bank),
+            title: Text('All ${_formatBankLabel(bank)}'),
+            trailing: Text(
+              INR.f(bankNet),
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: bankColor,
+              ),
+            ),
+          ),
+        ];
+
+        if (accounts.isNotEmpty) {
+          tiles.add(const SizedBox(height: 6));
+        }
+
+        for (final account in accounts) {
+          final subtitleParts = <String>[];
+          if (account.last4 != null && account.last4!.isNotEmpty) {
+            subtitleParts.add('••${account.last4}');
+          }
+          if ((account.network ?? '').isNotEmpty) {
+            subtitleParts.add(account.network!);
+          }
+          subtitleParts.add('${account.txCount} tx');
+          final subtitle = subtitleParts.join(' • ');
+          final accountColor = account.netOutflow >= 0
+              ? (Colors.red.shade700 ?? Colors.red)
+              : (Colors.green.shade700 ?? Colors.green);
+
+          tiles.add(
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              selected: _isBankSelected(bank, last4: account.last4),
+              onTap: () =>
+                  _toggleBankSelection(bank, last4: account.last4),
+              title: Text(account.instrument),
+              subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+              trailing: Text(
+                INR.f(account.netOutflow),
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: accountColor,
+                ),
+              ),
+            ),
+          );
+        }
+
+        bankExpansionTiles.add(
+          ExpansionTile(
+            key: PageStorageKey('analytics-bank-$bank'),
+            initiallyExpanded: _isBankSelected(bank),
+            tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _formatBankLabel(bank),
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                Text(
+                  INR.f(bankNet),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: bankColor,
+                  ),
+                ),
+              ],
+            ),
+            children: tiles,
+          ),
+        );
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -474,9 +1096,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     controller: _scrollCtrl,
                     padding: EdgeInsets.fromLTRB(16, 12, 16, bottomPadding),
                     children: [
-                      // Period chips (no premium)
-                      _periodChips(),
-                      if (_activeAccount != null) ...[
+                      _periodFilterRow(),
+                      if (_bankFilter != null) ...[
                         const SizedBox(height: 8),
                         Align(
                           alignment: Alignment.centerLeft,
@@ -487,11 +1108,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                               color: Colors.teal,
                             ),
                             label: Text(
-                              _activeAccount!.label(),
+                              _formatBankLabel(_bankFilter!) +
+                                  (_last4Filter != null
+                                      ? ' • ••${_last4Filter!}'
+                                      : ''),
                               overflow: TextOverflow.ellipsis,
                             ),
                             onPressed: () {}, // no-op
-                            onDeleted: () => setState(() => _activeAccount = null),
+                            onDeleted: () => setState(() {
+                              _bankFilter = null;
+                              _last4Filter = null;
+                              _invalidateAggCache();
+                            }),
                             deleteIcon: const Icon(Icons.close, size: 16),
                             backgroundColor: Colors.teal.withOpacity(.10),
                             shape: const StadiumBorder(),
@@ -538,9 +1166,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                               amountsByDay: calData,
                               onDayTap: (day, amt) {
                                 final date = DateTime(now.year, now.month, day);
+                                final start = DateTime(date.year, date.month, date.day);
                                 setState(() {
                                   _period = Period.custom;
-                                  _custom = CustomRange(date, date);
+                                  _custom = CustomRange(start, start);
+                                  _range = DateTimeRange(
+                                    start: start,
+                                    end: start.add(const Duration(days: 1)),
+                                  );
+                                  _invalidateAggCache();
                                 });
                               },
                               onDayLongPress: (day, amt) {
@@ -572,7 +1206,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
                       const SizedBox(height: 14),
 
-                      if (cardGroups.isNotEmpty) ...[
+                      if (bankExpansionTiles.isNotEmpty) ...[
                         GlassCard(
                           radius: Fx.r24,
                           child: Column(
@@ -580,29 +1214,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                             children: [
                               _sectionHeader('Banks & Cards', Icons.credit_card_rounded),
                               const SizedBox(height: 8),
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  children: [
-                                    const SizedBox(width: 12),
-                                    ...cardGroups.take(12).map((g) {
-                                      final asset = _bankLogoAsset(g.bank, network: g.network);
-                                      final isSelected =
-                                          _activeAccount != null && _activeAccount!.equalsGroup(g);
-
-                                      return Padding(
-                                        padding: const EdgeInsets.only(right: 10),
-                                        child: _BankCardTile(
-                                          group: g,
-                                          assetPath: asset,
-                                          selected: isSelected,
-                                          onTap: () => _setActiveAccountFromGroup(g),
-                                        ),
-                                      );
-                                    }).toList(),
-                                    const SizedBox(width: 12),
-                                  ],
-                                ),
+                              ListView(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                children: bankExpansionTiles,
                               ),
                             ],
                           ),
@@ -610,34 +1225,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         const SizedBox(height: 14),
                       ],
 
-                        // Expense by Category (donut + legend + drill-down)
-                        _donutCard(
-                          title: 'Expense by Category',
-                        entries: catSlicesExp,
-                        palette: palette,
-                        onSliceTap: (label) => _openCategorySheet(
-                          isIncome: false,
-                          category: label,
-                          srcExp: exp,
-                          srcInc: inc,
-                        ),
-                      ),
+                      // Expense by Category (donut + drill-down)
+                      _categorySection(expense: true),
 
                       const SizedBox(height: 14),
 
-                      // Income by Category (donut + legend + drill-down)
-                      if (totalInc > 0)
-                        _donutCard(
-                          title: 'Income by Category',
-                          entries: catSlicesInc,
-                          palette: palette,
-                          onSliceTap: (label) => _openCategorySheet(
-                            isIncome: true,
-                            category: label,
-                            srcExp: exp,
-                            srcInc: inc,
-                          ),
-                        ),
+                      // Income by Category (donut + drill-down)
+                      _categorySection(expense: false),
 
                       const SizedBox(height: 14),
 
@@ -716,64 +1310,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ),
         ),
       );
-
-  // ---------- period chips (added Quarter "Q") ----------
-  Widget _periodChips() {
-    final items = <(String, Period)>[
-      ('D', Period.day),
-      ('W', Period.week),
-      ('M', Period.month),
-      ('Last Month', Period.lastMonth),
-      ('Q', Period.quarter),
-      ('Y', Period.year),
-      ('2D', Period.last2),
-      ('5D', Period.last5),
-      ('All', Period.all),
-    ];
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          const SizedBox(width: 2),
-          ...items.map((t) {
-            final sel = t.$2 == _period;
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(999),
-                onTap: () => setState(() {
-                  _period = t.$2;
-                  if (_period != Period.custom) _custom = null;
-                }),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: sel ? Fx.mintDark.withOpacity(.12) : Colors.white,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: sel
-                          ? Fx.mintDark.withOpacity(.35)
-                          : Colors.grey.shade200,
-                    ),
-                    boxShadow: sel ? Fx.soft : null,
-                  ),
-                  child: Text(
-                    t.$1,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: sel ? Fx.mintDark : Fx.text,
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-          const SizedBox(width: 2),
-        ],
-      ),
-    );
-  }
 
   // ---------- Section header ----------
   Widget _sectionHeader(String title, IconData icon) {
@@ -1156,20 +1692,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       decimalDigits: decimals,
     ).format(value);
   }
-
-  // ---------- donut card helper (bigger ring + palette + taps) ----------
-  Widget _donutCard({
-    required String title,
-    required List<MapEntry<String, double>> entries,
-    required List<Color> palette,
-    required void Function(String label) onSliceTap,
-  }) =>
-      _AnalyticsDonutCard(
-        header: _sectionHeader(title, Icons.pie_chart_rounded),
-        entries: entries,
-        palette: palette,
-        onSliceTap: onSliceTap,
-      );
 
   // ---------- Top merchants as compact chips (amount + tx count) ----------
   List<Widget> _topMerchants(
@@ -1600,382 +2122,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 }
 
-class _BankCardTile extends StatelessWidget {
-  final _CardGroup group;
-  final String? assetPath;
-  final VoidCallback onTap;
-  final bool selected;
-
-  const _BankCardTile({
-    required this.group,
-    required this.assetPath,
-    required this.onTap,
-    this.selected = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final spent = group.debitTotal;
-    final received = group.creditTotal;
-    final net = spent - received;
-    final amountValue = net >= 0 ? spent : -net;
-    final amountColor = net >= 0
-        ? (Colors.red.shade700 ?? Colors.red)
-        : (Colors.green.shade700 ?? Colors.green);
-    final amountText = INR.f(amountValue);
-
-    final subtitleParts = <String>[];
-    if (group.instrument.isNotEmpty) subtitleParts.add(group.instrument);
-    if (group.last4 != null && group.last4!.isNotEmpty) {
-      subtitleParts.add('****${group.last4}');
-    }
-    if (group.network != null && group.network!.isNotEmpty) {
-      subtitleParts.add(group.network!);
-    }
-    final subtitle = subtitleParts.join(' • ');
-
-    Widget avatar;
-    if (assetPath != null && assetPath!.isNotEmpty) {
-      avatar = ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Image.asset(
-          assetPath!,
-          width: 28,
-          height: 28,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => const Text('🏦', style: TextStyle(fontSize: 22)),
-        ),
-      );
-    } else {
-      avatar = const Text('🏦', style: TextStyle(fontSize: 22));
-    }
-
-    return Material(
-      color: selected ? Fx.mintDark.withOpacity(.08) : Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          width: 240,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color:
-                  selected ? Fx.mintDark.withOpacity(.55) : Colors.black12,
-              width: selected ? 1.6 : 1,
-            ),
-            boxShadow: selected ? Fx.soft : null,
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              avatar,
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _formatBankLabel(group.bank),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Text(
-                          amountText,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: amountColor,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '• ${group.txCount} tx',
-                          style: theme.textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------- legend pill ----------
-Widget _pillWithDot(
-  String label, {
-  Color? dot,
-  bool selected = false,
-  VoidCallback? onTap,
-}) {
-  final bg = selected ? Fx.mintDark.withOpacity(.18) : Fx.mintDark.withOpacity(.12);
-  final border = selected ? Fx.mintDark.withOpacity(.45) : Fx.mintDark.withOpacity(.25);
-  final textColor = selected ? Fx.mintDark : Fx.text;
-
-  return Material(
-    color: Colors.transparent,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (dot != null) ...[
-              Container(
-                  width: 8,
-                  height: 8,
-                  decoration:
-                      BoxDecoration(color: dot, shape: BoxShape.circle)),
-              const SizedBox(width: 6),
-            ],
-            Text(
-              label,
-              style:
-                  TextStyle(fontWeight: FontWeight.w600, color: textColor),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _AnalyticsDonutCard extends StatefulWidget {
-  final Widget header;
-  final List<MapEntry<String, double>> entries;
-  final List<Color> palette;
-  final void Function(String label) onSliceTap;
-
-  const _AnalyticsDonutCard({
-    required this.header,
-    required this.entries,
-    required this.palette,
-    required this.onSliceTap,
-  });
-
-  @override
-  State<_AnalyticsDonutCard> createState() => _AnalyticsDonutCardState();
-}
-
-class _AnalyticsDonutCardState extends State<_AnalyticsDonutCard> {
-  int? _selected;
-
-  void _handleSliceTap(int index, DonutSlice slice) {
-    widget.onSliceTap(slice.label);
-    setState(() => _selected = index);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final donutData = widget.entries
-        .where((e) => e.value.isFinite && e.value != 0)
-        .map((e) => DonutSlice(e.key, e.value.abs()))
-        .toList();
-
-    if (donutData.isEmpty) {
-      return GlassCard(
-        radius: Fx.r24,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            widget.header,
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 14),
-              child: Text(
-                'No data to chart for this period.',
-                style: Fx.label.copyWith(color: Fx.text.withOpacity(.8)),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final total = donutData.fold<double>(0, (sum, slice) => sum + slice.value);
-    var selectedIndex = _selected;
-    if (selectedIndex != null && selectedIndex >= donutData.length) {
-      selectedIndex = null;
-    }
-
-    final legendItems = <Widget>[];
-    for (int i = 0; i < donutData.length && i < 12; i++) {
-      final slice = donutData[i];
-      final percent = total <= 0 ? 0.0 : (slice.value / total * 100);
-      final percentText =
-          percent >= 10 ? percent.toStringAsFixed(0) : percent.toStringAsFixed(1);
-      final label =
-          '${slice.label}: ${INR.c(slice.value)} • $percentText%';
-      legendItems.add(
-        _pillWithDot(
-          label,
-          dot: widget.palette[i % widget.palette.length],
-          selected: selectedIndex == i,
-          onTap: () => _handleSliceTap(i, slice),
-        ),
-      );
-    }
-
-    final bars = <Widget>[];
-    for (int i = 0; i < donutData.length && i < 6; i++) {
-      final slice = donutData[i];
-      final percent = total <= 0 ? 0.0 : (slice.value / total);
-      bars.add(
-        _CategoryBar(
-          label: slice.label,
-          amount: slice.value,
-          color: widget.palette[i % widget.palette.length],
-          fraction: percent,
-          onTap: () => _handleSliceTap(i, slice),
-        ),
-      );
-    }
-
-    return GlassCard(
-      radius: Fx.r24,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          widget.header,
-          const SizedBox(height: 8),
-          Center(
-            child: SizedBox(
-              width: 220,
-              height: 220,
-              child: PieChartGlossy(
-                data: donutData,
-                size: 220,
-                showCenter: true,
-                palette: widget.palette,
-                selectedIndex: selectedIndex,
-                onSliceTap: (_, slice) => _handleSliceTap(_, slice),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                const SizedBox(width: 12),
-                ...legendItems.map((w) => Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: w,
-                    )),
-                const SizedBox(width: 12),
-              ],
-            ),
-          ),
-          if (bars.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            ...bars,
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _CategoryBar extends StatelessWidget {
-  final String label;
-  final double amount;
-  final Color color;
-  final double fraction;
-  final VoidCallback onTap;
-
-  const _CategoryBar({
-    required this.label,
-    required this.amount,
-    required this.color,
-    required this.fraction,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final percent = (fraction * 100).clamp(0, 100);
-    final percentText =
-        percent >= 10 ? percent.toStringAsFixed(0) : percent.toStringAsFixed(1);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: Fx.label.copyWith(fontWeight: FontWeight.w700),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(INR.c(amount),
-                        style: Fx.number.copyWith(color: Fx.text)),
-                    const SizedBox(width: 8),
-                    Text('$percentText%',
-                        style: Fx.label.copyWith(color: Fx.text.withOpacity(.75))),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: LinearProgressIndicator(
-                    value: fraction.clamp(0, 1),
-                    minHeight: 8,
-                    backgroundColor: color.withOpacity(.15),
-                    valueColor: AlwaysStoppedAnimation<Color>(color),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 // ================================================
 // Small, dependency-free sparkline for Overview card

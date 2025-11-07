@@ -17,6 +17,7 @@ import '../services/loan_service.dart';
 import '../services/asset_service.dart';
 import '../services/fiinny_brain_service.dart';
 import '../services/notification_service.dart';
+import '../services/push/push_service.dart';
 import '../widgets/smart_insights_card.dart';
 import '../widgets/insight_feed_card.dart';
 import '../widgets/smart_nudge_widget.dart';
@@ -66,6 +67,7 @@ import '../services/gmail_service.dart' as OldGmail;
 import '../widgets/goals_summary_card.dart';
 import '../widgets/add_goal_dialog.dart';
 import '../services/notif_prefs_service.dart';
+import '../services/notifs/social_events_watch.dart';
 
 // Fiinnny Brain cards
 import '../widgets/fiinny_brain_diagnosis_card.dart';
@@ -313,7 +315,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
       await _loadPeriodLimit();
       _recomputeAutopayCount();
-      _checkLimitWarnings();
+      unawaited(_checkLimitWarnings());
     } catch (_) {}
   }
 
@@ -525,6 +527,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     // 🔔 Start system recurring reminders (subs, SIPs, loans, card bills)
     _sysNotifs = SystemRecurringLocalScheduler(userId: widget.userPhone);
     _sysNotifs!.bind();
+    unawaited(SocialEventsWatch.bind(widget.userPhone));
+    unawaited(NotificationService().scheduleMonthlyWrapIfNeeded());
 
     Future.microtask(() async {
       await _fetchUserName();              // sets _isEmailLinked / _userEmail
@@ -546,6 +550,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     SyncCoordinator.instance.onAppStop();
+    unawaited(SocialEventsWatch.unbind());
     _subsSub?.cancel();
     _sysNotifs?.unbind();
     _sipsSub?.cancel();
@@ -968,7 +973,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _warned100 = false;
   }
 
-  void _checkLimitWarnings() {
+  Future<void> _checkLimitWarnings() async {
     if (_periodLimit == null || _periodLimit! <= 0) return;
     final used = periodSpendOnly;
     final ratio = used / _periodLimit!;
@@ -981,10 +986,13 @@ class _DashboardScreenState extends State<DashboardScreen>
         message,
         color: Colors.orange,
       );
-      unawaited(NotificationService().showNotification(
-        title: 'Spending limit alert',
-        body: message,
-      ));
+      await PushService.showLocalSmart(
+        title: '⚠️ Close to limit',
+        body:
+            'You’ve reached 80% of your ${_friendlyPeriodLabel(txPeriod)} limit. Keep an eye on spending.',
+        deeplink: 'app://budget',
+        channelId: 'fiinny_critical',
+      );
     }
     if (!_warned100 && ratio >= 1.0) {
       _warned100 = true;
@@ -994,10 +1002,13 @@ class _DashboardScreenState extends State<DashboardScreen>
         message,
         color: Colors.red,
       );
-      unawaited(NotificationService().showNotification(
-        title: 'Spending limit alert',
-        body: message,
-      ));
+      await PushService.showLocalSmart(
+        title: '⛔ Limit crossed',
+        body:
+            'You crossed the ${_friendlyPeriodLabel(txPeriod)} limit. Open Analytics for fixes & tips.',
+        deeplink: 'app://analytics/monthly',
+        channelId: 'fiinny_critical',
+      );
     }
   }
 
@@ -1335,7 +1346,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     if (!mounted) return;
     setState(() => _loading = false);
-    _checkLimitWarnings();
+    unawaited(_checkLimitWarnings());
     final summary = _getTxSummaryForPeriod(txPeriod);
     final credit = summary['credit'] ?? 0.0;
     final debit = summary['debit'] ?? 0.0;
@@ -1375,7 +1386,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     setState(() => txPeriod = period);
     await _loadPeriodLimit();
     _resetLimitWarnings();
-    _checkLimitWarnings();
+    unawaited(_checkLimitWarnings());
     _recomputeAutopayCount();
     final summary = _getTxSummaryForPeriod(period);
     final credit = summary['credit'] ?? 0.0;
@@ -1689,7 +1700,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       setState(() => _savingLimit = false);
     }
     _resetLimitWarnings();
-    _checkLimitWarnings();
+    unawaited(_checkLimitWarnings());
   }
 
   void _generateSmartInsight() {
@@ -1925,73 +1936,30 @@ class _DashboardScreenState extends State<DashboardScreen>
                               arguments: widget.userPhone,
                             );
                           },
-                          child: Stack(
-                            children: [
-                              HeroTransactionRing(
-                                credit: _animCredit,
-                                debit: _animDebit,
-                                period: txPeriod,
-                                title: summaryTitle,
-                                titleStyle: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
-                                subtitle: summarySubtitle,
-                                onFilterTap: () async {
-                                  final result = await showModalBottomSheet<String>(
-                                    context: context,
-                                    builder: (ctx) => TxFilterBar(
-                                      selected: txPeriod,
-                                      onSelect: (period) => Navigator.pop(ctx, period),
-                                    ),
-                                  );
-                                  if (result != null && result != txPeriod) {
-                                    await _changePeriod(result);
-                                  }
-                                },
-                              ),
-                              Positioned.fill(
-                                child: Align(
-                                  alignment: Alignment.bottomRight,
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(right: 20, bottom: 18),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (limitUsageText != null)
-                                          Container(
-                                            constraints: const BoxConstraints(maxWidth: 180),
-                                            margin: const EdgeInsets.only(bottom: 12),
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.teal.withOpacity(0.12),
-                                              borderRadius: BorderRadius.circular(12),
-                                            ),
-                                            child: Text(
-                                              limitUsageText,
-                                              textAlign: TextAlign.right,
-                                              style: TextStyle(
-                                                color: Colors.teal[900],
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ),
-                                        GestureDetector(
-                                          onTap: _savingLimit ? null : _editLimitDialog,
-                                          child: CircleAvatar(
-                                            radius: 16,
-                                            backgroundColor: Colors.teal.withOpacity(0.09),
-                                            child: const Icon(Icons.edit_rounded, size: 17, color: Colors.teal),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                          child: HeroTransactionRing(
+                            credit: _animCredit,
+                            debit: _animDebit,
+                            period: txPeriod,
+                            title: summaryTitle,
+                            titleStyle: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
+                            subtitle: summarySubtitle,
+                            onFilterTap: () async {
+                              final result = await showModalBottomSheet<String>(
+                                context: context,
+                                builder: (ctx) => TxFilterBar(
+                                  selected: txPeriod,
+                                  onSelect: (period) => Navigator.pop(ctx, period),
                                 ),
-                              ),
-                            ],
+                              );
+                              if (result != null && result != txPeriod) {
+                                await _changePeriod(result);
+                              }
+                            },
+                            limitInfo: limitUsageText,
+                            onEditLimit: _savingLimit ? null : _editLimitDialog,
                           ),
                         ),
                       ),
@@ -2241,10 +2209,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                             ),
                           ),
                         ],
-                        if (_insightUserData != null && _INSIGHTS_AT_BOTTOM) ...[
-                          _buildInsightFeedSection(horizontalPadding),
-                          const SizedBox(height: 14),
-                        ],
                         const SizedBox(height: 18),
                         Padding(
                           padding: horizontalPadding,
@@ -2260,9 +2224,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                             margin: EdgeInsets.zero,
                           ),
                         ),
-                        SizedBox(
-                          height: MediaQuery.of(context).padding.bottom + 48,
-                        ),
+                        const SizedBox(height: 14),
+                        if (_insightUserData != null && _INSIGHTS_AT_BOTTOM) ...[
+                          _buildInsightFeedSection(horizontalPadding),
+                          const SizedBox(height: 14),
+                        ],
+                        const SizedBox(height: 48),
                       ];
                     final builtSections = List<Widget>.unmodifiable(sections);
                     return SliverPadding(
