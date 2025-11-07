@@ -5,6 +5,8 @@ import '../../models/expense_item.dart';
 import '../../models/income_item.dart';
 import '../../themes/glass_card.dart';
 import '../../themes/tokens.dart';
+import '../../ui/atoms/brand_avatar.dart';
+import '../../screens/subs_bills/widgets/brand_avatar_registry.dart';
 
 class BanksCardsSummaryCard extends StatefulWidget {
   const BanksCardsSummaryCard({
@@ -216,7 +218,7 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
       addAcct(group.bank, group.last4, group.instrument, group.netOutflow);
     }
 
-    final bankNames = byBank.keys.toList()..sort();
+    final miniCards = _miniAccountCards(byBank);
 
     return GestureDetector(
       onTap: widget.onOpenAnalytics,
@@ -269,7 +271,7 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 12),
-                  if (bankNames.isEmpty)
+                  if (miniCards.isEmpty)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
@@ -284,65 +286,7 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
                       ),
                     )
                   else
-                    ListView(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: [
-                        for (final bank in bankNames) ...[
-                          Builder(
-                            builder: (_) {
-                              final accounts = List<_Acct>.from(byBank[bank]!);
-                              accounts.sort((a, b) => b.total.compareTo(a.total));
-                              final bankTotal =
-                                  accounts.fold<double>(0, (sum, acct) => sum + acct.total);
-                              final bankColor = bankTotal >= 0
-                                  ? Colors.redAccent
-                                  : Colors.green;
-
-                              return ExpansionTile(
-                                tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-                                childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                                title: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        bank,
-                                        style: const TextStyle(fontWeight: FontWeight.w800),
-                                      ),
-                                    ),
-                                    Text(
-                                      INR.f(bankTotal),
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        color: bankColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                children: [
-                                  for (final acct in accounts)
-                                    ListTile(
-                                      dense: true,
-                                      contentPadding: EdgeInsets.zero,
-                                      title: Text(acct.label),
-                                      subtitle: Text(acct.instrument),
-                                      trailing: Text(
-                                        INR.f(acct.total),
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          color: acct.total >= 0
-                                              ? Colors.redAccent
-                                              : Colors.green,
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              );
-                            },
-                          ),
-                        ],
-                      ],
-                    ),
+                    _buildAccountLayout(context, miniCards),
                 ],
               ),
               crossFadeState:
@@ -354,6 +298,183 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
       ),
     );
   }
+
+  List<_MiniAccountCardData> _miniAccountCards(Map<String, List<_Acct>> byBank) {
+    final entries = byBank.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    final out = <_MiniAccountCardData>[];
+    for (final entry in entries) {
+      final prettyBank = _formatBankName(entry.key);
+      final assetPathBase = BrandAvatarRegistry.assetFor(prettyBank);
+      final accounts = List<_Acct>.from(entry.value)
+        ..sort((a, b) => b.total.compareTo(a.total));
+      for (final acct in accounts) {
+        final assetPath = assetPathBase ??
+            BrandAvatarRegistry.assetFor(acct.instrument) ??
+            BrandAvatarRegistry.assetFor(acct.label);
+        out.add(
+          _MiniAccountCardData(
+            bank: prettyBank,
+            subtitle: _subtitleForAcct(acct),
+            total: acct.total,
+            assetPath: assetPath,
+          ),
+        );
+      }
+    }
+    return out;
+  }
+
+  Widget _buildAccountLayout(BuildContext context, List<_MiniAccountCardData> cards) {
+    final isWide = MediaQuery.of(context).size.width >= 640;
+    if (isWide) {
+      return GridView.count(
+        crossAxisCount: 2,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 2.8,
+        children: cards
+            .map((card) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: _miniAccountCard(context, card),
+                ))
+            .toList(),
+      );
+    }
+
+    return SizedBox(
+      height: 118,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          children: cards
+              .map(
+                (card) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: SizedBox(
+                    width: 240,
+                    child: _miniAccountCard(context, card),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _miniAccountCard(BuildContext context, _MiniAccountCardData card) {
+    final amountColor = card.total >= 0 ? Fx.bad : Fx.good;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 12,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          BrandAvatar(
+            assetPath: card.assetPath,
+            label: card.bank,
+            size: 32,
+            radius: 10,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  card.bank,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15.5,
+                    color: Fx.textStrong,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  card.subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Fx.label.copyWith(
+                    fontSize: 12.5,
+                    color: Fx.text.withOpacity(.65),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            INR.f(card.total),
+            style: Fx.label.copyWith(
+              fontWeight: FontWeight.w800,
+              color: amountColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatBankName(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return 'Bank';
+    if (trimmed.length <= 4) return trimmed.toUpperCase();
+    return trimmed
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .map((word) =>
+            word.isEmpty ? word : '${word[0].toUpperCase()}${word.substring(1)}')
+        .join(' ');
+  }
+
+  String _subtitleForAcct(_Acct acct) {
+    final last4 = (acct.last4 ?? '').trim();
+    final instrument = (acct.instrument).trim();
+    final label = (acct.label).trim();
+    if (last4.isNotEmpty && instrument.isNotEmpty) {
+      return '•••• $last4 · $instrument';
+    }
+    if (last4.isNotEmpty) {
+      return '•••• $last4';
+    }
+    if (label.isNotEmpty) {
+      return label;
+    }
+    if (instrument.isNotEmpty) {
+      return instrument;
+    }
+    return 'Account';
+  }
+}
+
+class _MiniAccountCardData {
+  const _MiniAccountCardData({
+    required this.bank,
+    required this.subtitle,
+    required this.total,
+    this.assetPath,
+  });
+
+  final String bank;
+  final String subtitle;
+  final double total;
+  final String? assetPath;
 }
 
 class _BanksCardsGroup {
