@@ -33,6 +33,8 @@ import '../services/loan_service.dart';
 import '../core/ads/ads_banner_card.dart';
 import '../core/ads/ads_shell.dart';
 import '../screens/edit_expense_screen.dart';
+import '../services/notification_service.dart';
+import '../services/push/push_service.dart';
 
 import '../widgets/add_friend_expense_dialog.dart';
 import '../widgets/settleup_dialog.dart';
@@ -1472,6 +1474,24 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Reminder copied — paste in chat')),
+    );
+    final firstName = _displayName.split(' ').first;
+    await PushService.showLocalSmart(
+      title: '🧠 Nudge sent',
+      body: 'Reminder ready for $firstName. Tap to open chat and paste.',
+      deeplink:
+          'app://friend/${widget.friend.phone}?name=${Uri.encodeComponent(_displayName)}',
+      channelId: 'fiinny_nudges',
+    );
+
+    final follow = DateTime.now().add(const Duration(hours: 3));
+    await NotificationService().scheduleAt(
+      id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      title: '⏰ Follow up with $firstName',
+      body: 'Still waiting? A quick “settle up?” can save the awkwardness.',
+      when: follow,
+      payload:
+          'app://friend/${widget.friend.phone}?name=${Uri.encodeComponent(_displayName)}',
     );
   }
 

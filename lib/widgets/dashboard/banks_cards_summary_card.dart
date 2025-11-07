@@ -47,49 +47,6 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
     return (raw ?? '').trim().isEmpty ? 'Account' : raw!.trim();
   }
 
-  String _slugBank(String bank) {
-    final x = bank.toLowerCase();
-    if (x.contains('axis')) return 'axis';
-    if (x.contains('hdfc')) return 'hdfc';
-    if (x.contains('icici')) return 'icici';
-    if (x.contains('kotak')) return 'kotak';
-    if (x.contains('sbi') || x.contains('state bank')) return 'sbi';
-    if (x.contains('american express') || x.contains('amex')) return 'amex';
-    return x.replaceAll(RegExp(r'[^a-z]'), '');
-  }
-
-  String? _bankLogoAsset(String? bank, {String? network}) {
-    final candidates = <String>[];
-    if (bank != null && bank.trim().isNotEmpty) {
-      final slug = _slugBank(bank);
-      candidates.addAll([
-        'assets/banks/$slug.png',
-        'lib/assets/banks/$slug.png',
-      ]);
-    }
-
-    if (network != null && network.trim().isNotEmpty) {
-      final n = network.toLowerCase();
-      final badge = n.contains('visa')
-          ? 'visa'
-          : n.contains('master')
-              ? 'mastercard'
-              : n.contains('amex')
-                  ? 'amex'
-                  : n.contains('rupay')
-                      ? 'rupay'
-                      : '';
-      if (badge.isNotEmpty) {
-        candidates.addAll([
-          'assets/banks/$badge.png',
-          'lib/assets/banks/$badge.png',
-        ]);
-      }
-    }
-
-    return candidates.isNotEmpty ? candidates.first : null;
-  }
-
   List<_BanksCardsGroup> _buildGroups(
     List<ExpenseItem> expenses,
     List<IncomeItem> incomes,
@@ -230,7 +187,36 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
     final txCount = expenses.length + incomes.length;
 
     final groups = _buildGroups(expenses, incomes);
-    final topGroups = groups.take(6).toList();
+
+    final Map<String, List<_Acct>> byBank = {};
+    void addAcct(String bank, String? last4, String instrument, double amount) {
+      final normalizedBank = (bank.isEmpty ? 'BANK' : bank).toUpperCase();
+      byBank.putIfAbsent(normalizedBank, () => []);
+      final sanitizedLast4 =
+          (last4 != null && last4.trim().isNotEmpty) ? last4.trim() : null;
+      final label = sanitizedLast4 != null ? '••$sanitizedLast4' : instrument;
+      final list = byBank[normalizedBank]!;
+      final index = list.indexWhere((acct) => acct.label == label);
+      if (index >= 0) {
+        list[index] =
+            list[index].copyWith(total: list[index].total + amount);
+      } else {
+        list.add(
+          _Acct(
+            label: label,
+            instrument: instrument,
+            last4: sanitizedLast4,
+            total: amount,
+          ),
+        );
+      }
+    }
+
+    for (final group in groups) {
+      addAcct(group.bank, group.last4, group.instrument, group.netOutflow);
+    }
+
+    final bankNames = byBank.keys.toList()..sort();
 
     return GestureDetector(
       onTap: widget.onOpenAnalytics,
@@ -283,12 +269,7 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 12),
-                  Text(
-                    'Top accounts this period',
-                    style: Fx.label,
-                  ),
-                  const SizedBox(height: 8),
-                  if (topGroups.isEmpty)
+                  if (bankNames.isEmpty)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
@@ -303,92 +284,64 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
                       ),
                     )
                   else
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 2),
-                          ...topGroups.map((group) {
-                            final asset = _bankLogoAsset(group.bank, network: group.network);
-                            final fallback = const Text('🏦', style: TextStyle(fontSize: 22));
-                            final avatar = asset == null
-                                ? fallback
-                                : ClipRRect(
-                                    borderRadius: BorderRadius.circular(10),
-                                    child: Image.asset(
-                                      asset,
-                                      width: 28,
-                                      height: 28,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => fallback,
-                                    ),
-                                  );
+                    ListView(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        for (final bank in bankNames) ...[
+                          Builder(
+                            builder: (_) {
+                              final accounts = List<_Acct>.from(byBank[bank]!);
+                              accounts.sort((a, b) => b.total.compareTo(a.total));
+                              final bankTotal =
+                                  accounts.fold<double>(0, (sum, acct) => sum + acct.total);
+                              final bankColor = bankTotal >= 0
+                                  ? Colors.redAccent
+                                  : Colors.green;
 
-                            final subtitle = [
-                              group.instrument,
-                              if (group.last4 != null) '•••• ${group.last4}',
-                              if ((group.network ?? '').isNotEmpty) group.network!,
-                            ].join(' • ');
-
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 12),
-                              child: Container(
-                                width: 240,
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: Colors.black12),
-                                ),
-                                child: Row(
+                              return ExpansionTile(
+                                tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                                childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                                title: Row(
                                   children: [
-                                    avatar,
-                                    const SizedBox(width: 10),
                                     Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            group.bank,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(fontWeight: FontWeight.w800),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            subtitle,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(color: Colors.black.withOpacity(.8)),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Row(
-                                            children: [
-                                              Text(
-                                                INR.c(group.debit),
-                                                style: TextStyle(
-                                                  color: Colors.red[700],
-                                                  fontWeight: FontWeight.w800,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                '${group.count} tx',
-                                                style: const TextStyle(fontWeight: FontWeight.w600),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
+                                      child: Text(
+                                        bank,
+                                        style: const TextStyle(fontWeight: FontWeight.w800),
+                                      ),
+                                    ),
+                                    Text(
+                                      INR.f(bankTotal),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: bankColor,
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
-                            );
-                          }).toList(),
-                          const SizedBox(width: 2),
+                                children: [
+                                  for (final acct in accounts)
+                                    ListTile(
+                                      dense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                      title: Text(acct.label),
+                                      subtitle: Text(acct.instrument),
+                                      trailing: Text(
+                                        INR.f(acct.total),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          color: acct.total >= 0
+                                              ? Colors.redAccent
+                                              : Colors.green,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                 ],
               ),
@@ -423,4 +376,32 @@ class _BanksCardsGroup {
   int count;
 
   double get netOutflow => debit - credit;
+}
+
+class _Acct {
+  const _Acct({
+    required this.label,
+    required this.instrument,
+    this.last4,
+    required this.total,
+  });
+
+  final String label;
+  final String instrument;
+  final String? last4;
+  final double total;
+
+  _Acct copyWith({
+    String? label,
+    String? instrument,
+    String? last4,
+    double? total,
+  }) {
+    return _Acct(
+      label: label ?? this.label,
+      instrument: instrument ?? this.instrument,
+      last4: last4 ?? this.last4,
+      total: total ?? this.total,
+    );
+  }
 }

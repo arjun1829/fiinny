@@ -7,7 +7,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:lifemap/core/notifications/local_notifications.dart';
 import 'package:lifemap/main.dart' show rootNavigatorKey;
+import 'package:lifemap/services/notif_prefs_service.dart' as Prefs;
 import 'package:lifemap/services/push/first_surface_gate.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -285,6 +287,73 @@ class PushService {
     );
   }
 
+  /// Show a local notification if the user opted in and we're outside quiet hours.
+  /// Non-critical notifications respect quiet-hour schedules by deferring until
+  /// the next window. Channel preferences are also honored.
+  static Future<void> showLocalSmart({
+    required String title,
+    required String body,
+    String deeplink = '',
+    String channelId = 'fiinny_default',
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      await _showLocalNow(title, body, deeplink, channelId: channelId);
+      return;
+    }
+
+    final prefs = await Prefs.NotifPrefsService.fetchForUser(uid);
+    final channels = (prefs['channels'] as Map?) ?? const {};
+    final pushOn = (prefs['push_enabled'] ?? true) == true;
+    if (!pushOn) return;
+
+    bool enabledFor(String ch) {
+      if (ch == _chCritical.id) return true;
+      if (ch == _chNudges.id) {
+        return (channels['settleup_nudges'] ?? true) == true;
+      }
+      if (ch == _chDigests.id) {
+        return (channels['monthly_reflection'] ?? true) == true;
+      }
+      if (ch == _chDefault.id) {
+        return true;
+      }
+      return true;
+    }
+
+    if (!enabledFor(channelId)) return;
+
+    final quiet = (prefs['quiet_hours'] as Map?) ?? const {};
+    final start = _parseHhMm(quiet['start'] ?? '22:00');
+    final end = _parseHhMm(quiet['end'] ?? '08:00');
+
+    final now = DateTime.now();
+    final startToday = DateTime(now.year, now.month, now.day, start.$1, start.$2);
+    final endToday = DateTime(now.year, now.month, now.day, end.$1, end.$2);
+
+    final inQuiet = endToday.isAfter(startToday)
+        ? now.isAfter(startToday) && now.isBefore(endToday)
+        : now.isAfter(startToday) || now.isBefore(endToday);
+
+    if (!inQuiet || channelId == _chCritical.id) {
+      await _showLocalNow(title, body, deeplink, channelId: channelId);
+      return;
+    }
+
+    var fireAt = DateTime(now.year, now.month, now.day, end.$1, end.$2);
+    if (!fireAt.isAfter(now)) {
+      fireAt = fireAt.add(const Duration(days: 1));
+    }
+
+    await LocalNotifs.scheduleOnce(
+      itemId: 'qh_${now.millisecondsSinceEpoch}',
+      title: title,
+      body: body,
+      fireAt: fireAt,
+      payload: deeplink,
+    );
+  }
+
   /// Prebuilt local nudge that deep-links to a specific friend's recurring screen.
   /// app://friend/{friendId}/recurring
   static Future<void> nudgeFriendRecurringLocal({
@@ -377,6 +446,13 @@ class PushService {
       details,
       payload: deeplink,
     );
+  }
+
+  static (int, int) _parseHhMm(dynamic raw) {
+    final parts = '$raw'.split(':');
+    final hours = int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 9;
+    final minutes = int.tryParse(parts.length > 1 ? parts[1] : '') ?? 0;
+    return (hours, minutes);
   }
 
   static Future<void> _saveToken(String? token) async {
