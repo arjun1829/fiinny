@@ -3,7 +3,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:intl/intl.dart';
 
 import '../core/ads/ads_banner_card.dart';
@@ -18,7 +17,7 @@ import '../services/income_service.dart';
 import '../themes/glass_card.dart';
 import '../themes/tokens.dart';
 import '../widgets/charts/bar_chart_simple.dart';
-import '../widgets/charts/pie_chart_glossy.dart';
+import '../widgets/charts/donut_chart_simple.dart';
 import '../widgets/unified_transaction_list.dart';
 import 'edit_expense_screen.dart';
 
@@ -358,209 +357,30 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     required String category,
     required double total,
   }) async {
-    final merchants = topMerchantsForCategory(expense: expense, category: category, top: 8);
-    final selectedMerchant = ValueNotifier<String?>(null);
     final range = _rangeOrDefault();
-    final currencyFull = INR.f;
-
-    final baseExpenses = expense
-        ? (List<ExpenseItem>.from(_applyBankFiltersToExpenses(_allExp)
-              .where((e) =>
-                  _inRange(e.date, range) &&
-                  AnalyticsAgg.resolveExpenseCategory(e) == category)
-              .toList())
-            ..sort((a, b) => b.date.compareTo(a.date)))
-        : <ExpenseItem>[];
-
-    final baseIncomes = expense
-        ? <IncomeItem>[]
-        : (List<IncomeItem>.from(_applyBankFiltersToIncomes(_allInc)
-              .where((i) =>
-                  _inRange(i.date, range) &&
-                  AnalyticsAgg.resolveIncomeCategory(i) == category)
-              .toList())
-            ..sort((a, b) => b.date.compareTo(a.date)));
-
-    String _merchantKey(dynamic tx) {
-      if (tx is ExpenseItem) {
-        final merch = (tx.counterparty ?? tx.upiVpa ?? tx.label ?? 'MERCHANT').toString().trim();
-        return merch.isEmpty ? 'MERCHANT' : merch.toUpperCase();
-      }
-      if (tx is IncomeItem) {
-        final merch = (tx.counterparty ?? tx.label ?? tx.source ?? 'SENDER').toString().trim();
-        return merch.isEmpty ? 'SENDER' : merch.toUpperCase();
-      }
-      return '';
+    if (expense) {
+      final matches = _applyBankFiltersToExpenses(_allExp)
+          .where((e) =>
+              _inRange(e.date, range) &&
+              AnalyticsAgg.resolveExpenseCategory(e) == category)
+          .toList();
+      await _openTxDrilldown(
+        title: 'Expense • $category · ${INR.f(total)}',
+        exp: matches,
+        inc: const [],
+      );
+    } else {
+      final matches = _applyBankFiltersToIncomes(_allInc)
+          .where((i) =>
+              _inRange(i.date, range) &&
+              AnalyticsAgg.resolveIncomeCategory(i) == category)
+          .toList();
+      await _openTxDrilldown(
+        title: 'Income • $category · ${INR.f(total)}',
+        exp: const [],
+        inc: matches,
+      );
     }
-
-    List<dynamic> _filtered() {
-      final sel = selectedMerchant.value;
-      if (expense) {
-        if (sel == null) return baseExpenses;
-        return baseExpenses.where((e) => _merchantKey(e) == sel).toList();
-      }
-      if (sel == null) return baseIncomes;
-      return baseIncomes.where((i) => _merchantKey(i) == sel).toList();
-    }
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (ctx) {
-        final height = MediaQuery.of(ctx).size.height * 0.86;
-        final merchantEntries = merchants.entries.toList();
-        return SizedBox(
-          height: height,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '$category — ${expense ? baseExpenses.length : baseIncomes.length} tx • ${currencyFull(total)}',
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded),
-                      onPressed: () => Navigator.of(ctx).pop(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                RepaintBoundary(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    child: merchantEntries.isEmpty
-                        ? Container(
-                            key: const ValueKey('empty-merchants'),
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: Fx.soft,
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
-                            child: Text(
-                              'No merchants to show',
-                              style: Fx.label.copyWith(color: Fx.text.withOpacity(.7)),
-                            ),
-                          )
-                        : Container(
-                            key: const ValueKey('merchant-donut'),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: Fx.soft,
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            child: SizedBox(
-                              height: 160,
-                              child: PieChartGlossy(
-                                data: [
-                                  for (final entry in merchantEntries)
-                                    DonutSlice(entry.key, entry.value.abs()),
-                                ],
-                                showCenter: false,
-                                onSliceTap: (index, slice) {
-                                  selectedMerchant.value = slice.label;
-                                },
-                              ),
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                ValueListenableBuilder<String?>(
-                  valueListenable: selectedMerchant,
-                  builder: (_, sel, __) {
-                    if (merchantEntries.isEmpty) {
-                      return const SizedBox.shrink();
-                    }
-                    return Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final entry in merchantEntries)
-                          ChoiceChip(
-                            label: Text(_formatMerchantName(entry.key)),
-                            selected: sel == entry.key,
-                            onSelected: (_) => selectedMerchant.value = sel == entry.key ? null : entry.key,
-                          ),
-                        ActionChip(
-                          avatar: const Icon(Icons.clear, size: 16),
-                          label: const Text('Clear'),
-                          onPressed: () => selectedMerchant.value = null,
-                        ),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 10),
-                const Divider(height: 1),
-                const SizedBox(height: 6),
-                const Text('Transactions', style: TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                Expanded(
-                  child: ValueListenableBuilder<String?>(
-                    valueListenable: selectedMerchant,
-                    builder: (_, __, ___) {
-                      final list = _filtered();
-                      if (list.isEmpty) {
-                        return Center(
-                          child: Text(
-                            'Nothing here for this selection.',
-                            style: Fx.label,
-                          ),
-                        );
-                      }
-                      return ListView.separated(
-                        itemCount: list.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (_, index) {
-                          final tx = list[index];
-                          final date = tx is ExpenseItem ? tx.date : (tx as IncomeItem).date;
-                          final amt = tx is ExpenseItem ? tx.amount : (tx as IncomeItem).amount;
-                          final who = tx is ExpenseItem
-                              ? ((tx.counterparty ?? tx.upiVpa ?? tx.label) ?? '—')
-                              : (((tx as IncomeItem).counterparty ?? tx.label ?? tx.source) ?? '—');
-                          final note = tx is ExpenseItem
-                              ? (tx.note ?? '')
-                              : ((tx as IncomeItem).note ?? '');
-                          final subtitle = [
-                            DateFormat('d MMM yyyy, hh:mm a').format(date),
-                            if (note.trim().isNotEmpty) note.trim(),
-                          ].join(' • ');
-
-                          return ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(
-                              '${INR.f(amt)} • ${who.toString()}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text(subtitle),
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
   }
 
   Widget _categorySection({required bool expense}) {
@@ -596,12 +416,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             boxShadow: Fx.soft,
           ),
           padding: const EdgeInsets.all(12),
-          child: PieChartGlossy(
-            data: [
+          child: DonutChartSimple(
+            slices: [
               for (final entry in entries)
-                DonutSlice(entry.key, entry.value.abs()),
+                DonutSlice(
+                  label: entry.key,
+                  value: entry.value.abs(),
+                ),
             ],
-            palette: _legendPalette(),
+            height: 220,
+            centerLabel: expense ? 'Spent' : 'Received',
+            showCenterTotal: true,
             onSliceTap: (_, slice) => _openCategoryDrilldown(
               expense: expense,
               category: slice.label,
@@ -1192,7 +1017,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                         !i.date.isBefore(rr.start) &&
                                         i.date.isBefore(rr.end))
                                     .toList();
-                                _openUnifiedSheet(
+                                _openTxDrilldown(
                                   title:
                                       'Transactions • ${DateFormat('d MMM').format(date)}',
                                   exp: expD,
@@ -1794,68 +1619,78 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  // keep legend colors in sync with PieChartGlossy painter palette
-  List<Color> _legendPalette() => const [
-        Fx.mintDark,
-        Fx.good,
-        Fx.warn,
-        Fx.bad,
-        Colors.indigo,
-        Colors.purple,
-        Colors.cyan,
-        Colors.brown,
-      ];
-
   // ---------- Drill-down helpers (reuse UnifiedTransactionList) ----------
-  void _openUnifiedSheet({
+  Future<void> _openTxDrilldown({
     required String title,
     required List<ExpenseItem> exp,
     required List<IncomeItem> inc,
-  }) {
-    showModalBottomSheet(
+  }) async {
+    final expenses = List<ExpenseItem>.from(exp)
+      ..sort((a, b) => b.date.compareTo(a.date));
+    final incomes = List<IncomeItem>.from(inc)
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      useSafeArea: true,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) {
-        final h = MediaQuery.of(context).size.height * 0.88;
-        return SizedBox(
-          height: h,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 6, 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 18),
-                      ),
-                    ),
-                    IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context)),
-                  ],
+      builder: (ctx) {
+        final totalCount = expenses.length + incomes.length;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: UnifiedTransactionList(
-                  expenses: exp,
-                  incomes: inc,
-                  friendsById: const <String, FriendModel>{},
-                  userPhone: widget.userPhone,
-                  previewCount: 20,
-                  showBillIcon: true,
-                  onEdit: _handleEdit,
-                  onDelete: _handleDelete,
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(ctx)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
                 ),
-              ),
-            ],
+                const SizedBox(height: 8),
+                Expanded(
+                  child: UnifiedTransactionList(
+                    expenses: expenses,
+                    incomes: incomes,
+                    friendsById: const <String, FriendModel>{},
+                    userPhone: widget.userPhone,
+                    previewCount: math.max(20, totalCount),
+                    filterType: 'All',
+                    showBillIcon: true,
+                    onEdit: (tx) async {
+                      final updated = await _editTransaction(ctx, tx);
+                      if (updated) {
+                        await _bootstrap();
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      }
+                    },
+                    onDelete: (tx) async {
+                      final deleted = await _deleteTransaction(ctx, tx);
+                      if (deleted) {
+                        await _bootstrap();
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -1884,7 +1719,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             .toList()
         : <IncomeItem>[];
 
-    _openUnifiedSheet(
+    _openTxDrilldown(
       title: isIncome ? 'Income • $category' : 'Expense • $category',
       exp: exp,
       inc: inc,
@@ -1900,7 +1735,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       return key == target;
     }).toList();
 
-    _openUnifiedSheet(title: 'Merchant • $merchant', exp: matched, inc: const []);
+    _openTxDrilldown(title: 'Merchant • $merchant', exp: matched, inc: const []);
   }
 
   // ---------- Helpers for sparkline & calendar ----------
@@ -2093,30 +1928,81 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   bool _sameDayLocal(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
-  Future<void> _handleDelete(dynamic tx) async {
-    if (tx is ExpenseItem) {
-      await _expenseSvc.deleteExpense(
-        widget.userPhone,
-        tx.id,
-        friendPhones: tx.friendIds,
-      );
-    } else if (tx is IncomeItem) {
-      await _incomeSvc.deleteIncome(widget.userPhone, tx.id);
+  Future<bool> _deleteTransaction(BuildContext ctx, dynamic tx) async {
+    try {
+      if (tx is ExpenseItem) {
+        await _expenseSvc.deleteExpense(
+          widget.userPhone,
+          tx.id,
+          friendPhones: tx.friendIds,
+        );
+      } else if (tx is IncomeItem) {
+        await _incomeSvc.deleteIncome(widget.userPhone, tx.id);
+      } else {
+        return false;
+      }
+      return true;
+    } catch (err) {
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(content: Text('Delete failed: $err')),
+        );
+      }
+      return false;
     }
-    await _bootstrap();
+  }
+
+  Future<bool> _editTransaction(BuildContext ctx, dynamic tx) async {
+    try {
+      if (tx is ExpenseItem) {
+        await Navigator.of(ctx).push(
+          MaterialPageRoute(
+            builder: (_) => EditExpenseScreen(
+              userPhone: widget.userPhone,
+              expense: tx,
+            ),
+          ),
+        );
+        return true;
+      }
+      if (tx is IncomeItem) {
+        try {
+          final result = await Navigator.pushNamed(
+            ctx,
+            '/edit-income',
+            arguments: {'userPhone': widget.userPhone, 'income': tx},
+          );
+          return result == true;
+        } catch (_) {
+          if (ctx.mounted) {
+            ScaffoldMessenger.of(ctx).showSnackBar(
+              const SnackBar(
+                content: Text("Edit Income screen not found. Set '/edit-income' route."),
+              ),
+            );
+          }
+        }
+      }
+    } catch (_) {
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          const SnackBar(content: Text('Unable to open editor.')),
+        );
+      }
+    }
+    return false;
+  }
+
+  Future<void> _handleDelete(dynamic tx) async {
+    final deleted = await _deleteTransaction(context, tx);
+    if (deleted) {
+      await _bootstrap();
+    }
   }
 
   Future<void> _handleEdit(dynamic tx) async {
-    if (tx is ExpenseItem) {
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => EditExpenseScreen(
-            userPhone: widget.userPhone,
-            expense: tx,
-          ),
-        ),
-      );
+    final edited = await _editTransaction(context, tx);
+    if (edited) {
       await _bootstrap();
     }
   }
