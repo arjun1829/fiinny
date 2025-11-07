@@ -14,6 +14,8 @@ class HeroTransactionRing extends StatelessWidget {
   final TextStyle? titleStyle;
   final String? limitInfo;
   final VoidCallback? onEditLimit;
+  final VoidCallback? onLimitTap;
+  final bool showLimitButton;
 
   const HeroTransactionRing({
     super.key,
@@ -27,6 +29,8 @@ class HeroTransactionRing extends StatelessWidget {
     this.titleStyle,
     this.limitInfo,
     this.onEditLimit,
+    this.onLimitTap,
+    this.showLimitButton = true,
   });
 
   @override
@@ -60,121 +64,153 @@ class HeroTransactionRing extends StatelessWidget {
               horizontal: isCompact ? Fx.s16 : Fx.s20,
               vertical: isCompact ? Fx.s16 : Fx.s20,
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+            child: Stack(
               children: [
-                _Rings(
-                  credit: pCredit,
-                  debit: pDebit,
-                  isCompact: isCompact,
-                ),
-                SizedBox(width: isCompact ? Fx.s16 : Fx.s24),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: resolvedTitleStyle,
-                      ),
-                      if (subtitle != null && subtitle!.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          subtitle!,
-                          style: Fx.label.copyWith(
-                            fontSize: 12.5,
-                            color: Colors.black.withOpacity(0.55),
-                            fontWeight: FontWeight.w500,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _Rings(
+                      credit: pCredit,
+                      debit: pDebit,
+                      isCompact: isCompact,
+                    ),
+                    SizedBox(width: isCompact ? Fx.s16 : Fx.s24),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: resolvedTitleStyle,
                           ),
-                        ),
-                      ],
-                      SizedBox(height: subtitle == null || subtitle!.isEmpty ? Fx.s10 : Fx.s14),
-                      _rowAmount(label: 'Credit', amount: credit, color: Fx.good, compact: isCompact),
-                      const SizedBox(height: 8),
-                      _rowAmount(label: 'Debit', amount: debit, color: Fx.bad, compact: isCompact),
-                      const SizedBox(height: 14),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(Fx.r12),
-                            onTap: onFilterTap,
-                            child: Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: isCompact ? Fx.s12 : Fx.s16,
-                                vertical: Fx.s8,
+                          if (subtitle != null && subtitle!.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              subtitle!,
+                              style: Fx.label.copyWith(
+                                fontSize: 12.5,
+                                color: Colors.black.withOpacity(0.55),
+                                fontWeight: FontWeight.w500,
                               ),
-                              decoration: BoxDecoration(
-                                color: Fx.mintDark.withOpacity(0.08),
+                            ),
+                          ],
+                          SizedBox(height: subtitle == null || subtitle!.isEmpty ? Fx.s10 : Fx.s14),
+                          _rowAmount(label: 'Credit', amount: credit, color: Fx.good, compact: isCompact),
+                          const SizedBox(height: 8),
+                          _rowAmount(label: 'Debit', amount: debit, color: Fx.bad, compact: isCompact),
+                          const SizedBox(height: 14),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
                                 borderRadius: BorderRadius.circular(Fx.r12),
+                                onTap: onFilterTap,
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: isCompact ? Fx.s12 : Fx.s16,
+                                    vertical: Fx.s8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Fx.mintDark.withOpacity(0.08),
+                                    borderRadius: BorderRadius.circular(Fx.r12),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        period,
+                                        style: Fx.label.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                          color: Fx.mintDark,
+                                          fontSize: isCompact ? 12 : 13.5,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.expand_more_rounded, size: 18, color: Fx.mintDark),
+                                    ],
+                                  ),
+                                ),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    period,
-                                    style: Fx.label.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      color: Fx.mintDark,
-                                      fontSize: isCompact ? 12 : 13.5,
+                            ),
+                          ),
+                          if ((limitInfo ?? '').isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Flexible(
+                                  child: Container(
+                                    constraints: const BoxConstraints(maxWidth: 260),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: isCompact ? Fx.s10 : Fx.s12,
+                                      vertical: Fx.s8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Fx.mintDark.withOpacity(0.10),
+                                      borderRadius: BorderRadius.circular(Fx.r12),
+                                    ),
+                                    child: Text(
+                                      limitInfo!,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Fx.label.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: Fx.mintDark,
+                                        fontSize: isCompact ? 12 : 13.5,
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(width: 4),
-                                  const Icon(Icons.expand_more_rounded, size: 18, color: Fx.mintDark),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      if ((limitInfo ?? '').isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Flexible(
-                              child: Container(
-                                constraints: const BoxConstraints(maxWidth: 260),
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: isCompact ? Fx.s10 : Fx.s12,
-                                  vertical: Fx.s8,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: Fx.mintDark.withOpacity(0.10),
-                                  borderRadius: BorderRadius.circular(Fx.r12),
-                                ),
-                                child: Text(
-                                  limitInfo!,
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Fx.label.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    color: Fx.mintDark,
-                                    fontSize: isCompact ? 12 : 13.5,
+                                if (onEditLimit != null) ...[
+                                  const SizedBox(width: 8),
+                                  InkWell(
+                                    borderRadius: BorderRadius.circular(999),
+                                    onTap: onEditLimit,
+                                    child: CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor: Fx.mintDark.withOpacity(0.12),
+                                      child: const Icon(Icons.edit_rounded, size: 17, color: Fx.mintDark),
+                                    ),
                                   ),
-                                ),
-                              ),
+                                ],
+                              ],
                             ),
-                            if (onEditLimit != null) ...[
-                              const SizedBox(width: 8),
-                              InkWell(
-                                borderRadius: BorderRadius.circular(999),
-                                onTap: onEditLimit,
-                                child: CircleAvatar(
-                                  radius: 16,
-                                  backgroundColor: Fx.mintDark.withOpacity(0.12),
-                                  child: const Icon(Icons.edit_rounded, size: 17, color: Fx.mintDark),
-                                ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (showLimitButton && (onLimitTap ?? onEditLimit) != null)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: onLimitTap ?? onEditLimit,
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x1A000000),
+                                blurRadius: 6,
+                                offset: Offset(0, 3),
                               ),
                             ],
-                          ],
+                          ),
+                          child: const Icon(Icons.speed, size: 18, color: Colors.black87),
                         ),
-                      ],
-                    ],
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
           ),

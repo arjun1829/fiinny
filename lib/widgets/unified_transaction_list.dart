@@ -12,6 +12,8 @@ import '../services/expense_service.dart';
 import '../services/income_service.dart';
 import '../services/user_overrides.dart';
 
+enum _TxAction { edit, delete }
+
 // ✅ for inline ads inside the details sheet
 import '../core/ads/ads_banner_card.dart';
 import '../core/filters/transaction_filter.dart';
@@ -1746,22 +1748,47 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                     visualDensity: VisualDensity.compact,
                                     onPressed: () => widget.onSplit?.call(payload),
                                   ),
-                                if (widget.onEdit != null)
-                                  IconButton(
-                                    icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
-                                    tooltip: 'Edit',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => widget.onEdit?.call(payload),
-                                  ),
-                                if (widget.onDelete != null)
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                                    tooltip: 'Delete',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () async {
-                                      if (widget.onDelete == null) return;
-                                      final confirmed = await _confirmDeleteTransaction(context, payload);
-                                      if (confirmed) widget.onDelete!(payload);
+                                if (widget.onEdit != null || widget.onDelete != null)
+                                  PopupMenuButton<_TxAction>(
+                                    icon: const Icon(Icons.more_horiz_rounded, color: Colors.blueGrey, size: 20),
+                                    tooltip: 'More actions',
+                                    onSelected: (action) async {
+                                      switch (action) {
+                                        case _TxAction.edit:
+                                          widget.onEdit?.call(payload);
+                                          break;
+                                        case _TxAction.delete:
+                                          if (widget.onDelete == null) break;
+                                          final confirmed = await _confirmDeleteTransaction(context, payload);
+                                          if (confirmed) widget.onDelete!(payload);
+                                          break;
+                                      }
+                                    },
+                                    itemBuilder: (ctx) {
+                                      return [
+                                        if (widget.onEdit != null)
+                                          PopupMenuItem<_TxAction>(
+                                            value: _TxAction.edit,
+                                            child: Row(
+                                              children: const [
+                                                Icon(Icons.edit, size: 18, color: Colors.blueGrey),
+                                                SizedBox(width: 8),
+                                                Text('Edit'),
+                                              ],
+                                            ),
+                                          ),
+                                        if (widget.onDelete != null)
+                                          PopupMenuItem<_TxAction>(
+                                            value: _TxAction.delete,
+                                            child: Row(
+                                              children: const [
+                                                Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                                SizedBox(width: 8),
+                                                Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                                              ],
+                                            ),
+                                          ),
+                                      ];
                                     },
                                   ),
                               ],
