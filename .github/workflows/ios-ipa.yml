@@ -115,7 +115,7 @@ jobs:
           cd ..
 
       - name: Create GoogleService-Info.plist (if secret present)
-        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 && env.FIREBASE_IOS_PLIST_BASE64 != '' }}
+        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 != '' }}
         shell: bash
         run: |
           set -euxo pipefail
@@ -124,7 +124,7 @@ jobs:
           test -s ios/Runner/GoogleService-Info.plist && echo "✅ GoogleService-Info.plist created"
 
       - name: Add Google URL Scheme to Info.plist
-        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 && env.FIREBASE_IOS_PLIST_BASE64 != '' }}
+        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 != '' }}
         shell: bash
         run: |
           set -euxo pipefail
@@ -172,25 +172,13 @@ jobs:
         run: |
           set -euxo pipefail
           PBX="ios/Runner.xcodeproj/project.pbxproj"
-          # Bundle id & team
-          /usr/bin/sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" "$PBX" || true
-          /usr/bin/sed -i '' "s/DEVELOPMENT_TEAM = [A-Z0-9]*;/DEVELOPMENT_TEAM = ${TEAM_ID};/g" "$PBX" || true
-
-          # Manual signing
-          /usr/bin/sed -i '' "s/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g" "$PBX" || true
-
-          # Provisioning profile specifier (insert if missing, else replace)
-          if ! /usr/bin/grep -q "PROVISIONING_PROFILE_SPECIFIER" "$PBX"; then
-            /usr/bin/awk -v prof="${PROFILE_NAME}" '
-              BEGIN { inserted=0 }
-              { print }
-              /CODE_SIGN_IDENTITY = .+;/ && !inserted {
-                print "\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = " prof ";"
-                inserted=1
-              }
-            ' "$PBX" > "$PBX.tmp" && mv "$PBX.tmp" "$PBX"
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" "$PBX" || true
+          sed -i '' "s/DEVELOPMENT_TEAM = [A-Z0-9]*;/DEVELOPMENT_TEAM = ${TEAM_ID};/g" "$PBX" || true
+          sed -i '' "s/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g" "$PBX" || true
+          if ! grep -q "PROVISIONING_PROFILE_SPECIFIER" "$PBX"; then
+            /usr/bin/perl -0777 -pe "s/(CODE_SIGN_IDENTITY = .+?;)/\\1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = ${PROFILE_NAME};/gs" -i "$PBX"
           else
-            /usr/bin/sed -i '' "s/PROVISIONING_PROFILE_SPECIFIER = [^;]*;/PROVISIONING_PROFILE_SPECIFIER = ${PROFILE_NAME};/g" "$PBX" || true
+            sed -i '' "s/PROVISIONING_PROFILE_SPECIFIER = [^;]*;/PROVISIONING_PROFILE_SPECIFIER = ${PROFILE_NAME};/g" "$PBX" || true
           fi
 
       - name: Force OFF Swift module interfaces via xcconfig
@@ -207,52 +195,13 @@ jobs:
             } >> "$f"
           done
 
-      - name: Create ASC API Key JSON
-        shell: bash
-        run: |
-          set -euxo pipefail
-          [[ -n "${APPLE_API_KEY_BASE64:-}" ]] || { echo "APPLE_API_KEY_BASE64 is missing"; exit 1; }
-          [[ -n "${APPLE_KEY_ID:-}"        ]] || { echo "APPLE_KEY_ID is missing"; exit 1; }
-          [[ -n "${APPLE_ISSUER_ID:-}"     ]] || { echo "APPLE_ISSUER_ID is missing"; exit 1; }
-          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "AuthKey_${APPLE_KEY_ID}.p8"
-          chmod 600 "AuthKey_${APPLE_KEY_ID}.p8"
-          python3 -c 'import json,os;kid=os.environ["APPLE_KEY_ID"];iss=os.environ["APPLE_ISSUER_ID"];print(json.dumps({"key_id":kid,"issuer_id":iss,"key":open(f"AuthKey_{kid}.p8").read()}))' > api_key.json
-
-      - name: Set up Fastlane bundle
-        shell: bash
-        run: |
-          set -euxo pipefail
-          gem install bundler -N || sudo gem install bundler -N
-          mkdir -p fastlane_ci
-          cat <<'EOF' > fastlane_ci/Gemfile
-source "https://rubygems.org"
-gem "fastlane"
-EOF
-          bundle install --gemfile fastlane_ci/Gemfile --path fastlane_ci/vendor/bundle
-          echo "BUNDLE_GEMFILE=$PWD/fastlane_ci/Gemfile" >> "$GITHUB_ENV"
-          echo "BUNDLE_PATH=$PWD/fastlane_ci/vendor/bundle" >> "$GITHUB_ENV"
-
-      - name: Determine next TestFlight build number
-        env:
-          BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
-        run: |
-          set -euo pipefail
-          LATEST=$(bundle exec fastlane run latest_testflight_build_number \
-            api_key_path:api_key.json \
-            app_identifier:$BUNDLE_ID \
-            --json | jq -r '.result // empty' || echo "")
-          if [ -z "$LATEST" ]; then LATEST=0; fi
-          NEXT=$((LATEST + 1))
-          echo "BUILD_NUMBER=$NEXT" >> $GITHUB_ENV
-          echo "Using BUILD_NUMBER=$NEXT"
-
-      - name: Sync pubspec build number
+      - name: Bump build number in pubspec.yaml (safe replace)
         shell: bash
         run: |
           set -euxo pipefail
           base_version="$(grep -m1 '^version:' pubspec.yaml | cut -d ':' -f2 | xargs | cut -d '+' -f1)"
-          sed -i.bak -E "s/^version: ([0-9.]+)\+[0-9]+$/version: \1+${BUILD_NUMBER}/" pubspec.yaml
-          rm -f pubspec.yaml.bak
+          perl -0777 -pe "s/^version:\s*[^\r\n]+/version: ${base_version}+${BUILD_NUMBER}/m" pubspec.yaml > pubspec.yaml.tmp
+          mv pubspec.yaml.tmp pubspec.yaml
           echo "Updated version to: $(grep -m1 '^version:' pubspec.yaml)"
 
       - name: Prepare ExportOptions.plist (manual signing)
@@ -296,7 +245,7 @@ EOF
           add_str NSContactsUsageDescription "Contacts are used to help you connect with people you know."
 
       - name: Verify GoogleService-Info.plist presence
-        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 && env.FIREBASE_IOS_PLIST_BASE64 != '' }}
+        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 != '' }}
         shell: bash
         run: |
           set -euxo pipefail
@@ -319,7 +268,7 @@ EOF
           /usr/bin/sed -i '' "s/BUILD_LIBRARY_FOR_DISTRIBUTION = YES/BUILD_LIBRARY_FOR_DISTRIBUTION = NO/g" "$PBX" || true
 
       - name: Enable Background remote notifications (optional)
-        if: ${{ always() }}
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -329,7 +278,7 @@ EOF
           /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string remote-notification' "$IP"
 
       - name: Sanity check Firebase plist vs Bundle ID
-        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 && env.FIREBASE_IOS_PLIST_BASE64 != '' }}
+        if: ${{ env.FIREBASE_IOS_PLIST_BASE64 != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -356,7 +305,7 @@ EOF
         run: |
           set -euxo pipefail
           flutter build ipa --release \
-            --build-number $BUILD_NUMBER \
+            --build-number "$BUILD_NUMBER" \
             --export-options-plist ios/ExportOptions.plist
           ls -lah build/ios/ipa || true
           ls -lah build/ios/archive || true
@@ -372,7 +321,7 @@ EOF
           bash scripts/upload_dsyms.sh
 
       - name: Archive dSYMs as artifact (optional backfill)
-        if: ${{ always() }}
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dsym-${{ env.BUILD_NUMBER }}
@@ -395,6 +344,23 @@ EOF
           if-no-files-found: warn
           retention-days: 7
 
+      - name: Install Fastlane
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo gem install fastlane -N
+
+      - name: Create ASC API Key JSON
+        shell: bash
+        run: |
+          set -euxo pipefail
+          [[ -n "${APPLE_API_KEY_BASE64:-}" ]] || { echo "APPLE_API_KEY_BASE64 is missing"; exit 1; }
+          [[ -n "${APPLE_KEY_ID:-}"        ]] || { echo "APPLE_KEY_ID is missing"; exit 1; }
+          [[ -n "${APPLE_ISSUER_ID:-}"     ]] || { echo "APPLE_ISSUER_ID is missing"; exit 1; }
+          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "AuthKey_${APPLE_KEY_ID}.p8"
+          chmod 600 "AuthKey_${APPLE_KEY_ID}.p8"
+          python3 -c 'import json,os;kid=os.environ["APPLE_KEY_ID"];iss=os.environ["APPLE_ISSUER_ID"];print(json.dumps({"key_id":kid,"issuer_id":iss,"key":open(f"AuthKey_{kid}.p8").read()}))' > api_key.json
+
       - name: Upload to TestFlight
         if: ${{ success() }}
         env:
@@ -404,7 +370,7 @@ EOF
           set -euxo pipefail
           IPA_PATH="$(ls -1 build/ios/ipa/*.ipa | head -n 1)"
           echo "Uploading: ${IPA_PATH}"
-          bundle exec fastlane pilot upload \
+          fastlane pilot upload \
             --ipa "${IPA_PATH}" \
             --api_key_path api_key.json \
             --skip_submission \
