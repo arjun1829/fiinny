@@ -6,7 +6,7 @@ import 'dart:ui' as ui;
 import 'package:characters/characters.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -21,15 +21,13 @@ import '../models/expense_item.dart';
 import '../services/expense_service.dart';
 import '../services/friend_service.dart';
 import '../services/group_service.dart';
-import '../core/ads/ads_banner_card.dart';
 import '../core/ads/ads_shell.dart';
 import '../screens/edit_expense_screen.dart';
 
 // Use the math helpers via an alias so calls are unambiguous.
 import '../group/group_balance_math.dart' as gbm;
+import '../group/ledger_math.dart' as ledger;
 
-// Optional sections reused
-import '../group/group_chart_tab.dart';
 import '../group/group_settings_sheet.dart';
 import '../group/group_reminder_dialog.dart';
 
@@ -43,6 +41,15 @@ import '../settleup_v2/index.dart';
 import 'analytics/group_analytics_tab.dart';
 
 import '../details/recurring/group_recurring_screen.dart';
+
+import '../widgets/ads/sleek_ad_card.dart';
+import '../ui/comp/glass_card.dart' as detail;
+import '../ui/comp/pill_chip.dart';
+import '../ui/fx/motion.dart';
+import '../ui/typography/amount_text.dart';
+import '../widgets/charts/category_legend_row.dart';
+import '../widgets/charts/pie_touch_chart.dart';
+import '../widgets/unified_transaction_list.dart';
 
 // put this near the top of the file, after imports
 Future<Uri?> _safeDownloadUri(String raw) async {
@@ -111,6 +118,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   })
       .toList();
 
+  PieSlice? _selectedCategorySlice;
+  final GlobalKey _chartListAnchorKey = GlobalKey();
+
 
   // Chat prefill when user taps "Discuss" on an expense
   String? _pendingChatDraft;
@@ -129,6 +139,41 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         n.endsWith('.png') || n.endsWith('.gif') ||
         n.endsWith('.webp');
   }
+
+  String _categoryLabelForExpense(ExpenseItem expense) {
+    if (expense.category != null && expense.category!.trim().isNotEmpty) {
+      return expense.category!.trim();
+    }
+    if (expense.label != null && expense.label!.trim().isNotEmpty) {
+      return expense.label!.trim();
+    }
+    if (expense.type != null && expense.type!.trim().isNotEmpty) {
+      return expense.type!.trim();
+    }
+    return 'General';
+  }
+
+  void _onSliceSelected(PieSlice? slice) {
+    setState(() => _selectedCategorySlice = slice);
+    if (slice != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _chartListAnchorKey.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: kMed,
+            curve: kEase,
+            alignment: 0.1,
+          );
+        }
+      });
+    }
+  }
+
+  FriendModel get _selfFriend => FriendModel(
+        phone: widget.userId,
+        name: 'You',
+      );
 
 // Inline preview first; fallback to tile if not an image or if resolving fails
   Widget _attachmentView({
@@ -823,18 +868,17 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             final expenses = snapshot.data ?? [];
             final safeBottom = context.adsBottomPadding();
 
-            // Pairwise math (YOU vs each member), group-only — unified logic
-            final pairNet = gbm.pairwiseNetForUser(
-              expenses,
-              widget.userId,
-              onlyGroupId: _group.id,
-            );
-
-            double owedToYou = 0, youOwe = 0;
-            for (final v in pairNet.values) {
-              if (v > 0) owedToYou += v;
-              if (v < 0) youOwe += (-v);
+            if (kDebugMode && expenses.isEmpty) {
+              debugPrint(
+                  '[GroupDetailScreen] No expenses found for group ${_group.id} yet.');
             }
+
+            // Pairwise math (YOU vs each member), group-only — unified logic
+            final pairNet =
+                ledger.pairwiseNetForUserInGroup(expenses, widget.userId, _group.id);
+            final headerTotals = ledger.summarizeForHeader(pairNet);
+            final owedToYou = headerTotals.owedToYou;
+            final youOwe = headerTotals.youOwe;
 
             return TabBarView(
               controller: _tabController,
@@ -851,12 +895,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                         txCount: expenses.length,
                       ),
                       const SizedBox(height: 12),
-                      AdsBannerCard(
-                        placement: 'group_detail_summary_banner',
-                        inline: true,
-                        inlineMaxHeight: 120,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                        minHeight: 92,
+                      const SleekAdCard(
+                        margin: EdgeInsets.symmetric(horizontal: 4),
+                        radius: 16,
                       ),
                       const SizedBox(height: 14),
                       _recurringShortcutCard(),
@@ -874,14 +915,146 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                 ),
 
                 // ============ CHART ============
-                Padding(
-                  padding: EdgeInsets.fromLTRB(16, 20, 16, safeBottom + 20),
-                  child: GroupChartTab(
-                    currentUserPhone: widget.userId,
-                    members: _members,
-                    expenses: expenses,
-                  ),
-                ),
+                Builder(builder: (context) {
+                  final categoryTotals = <String, double>{};
+                  for (final expense in expenses) {
+                    final cat = _categoryLabelForExpense(expense);
+                    categoryTotals.update(cat, (value) => value + expense.amount.abs(),
+                        ifAbsent: () => expense.amount.abs());
+                  }
+                  final palette = [
+                    Colors.teal,
+                    Colors.indigo,
+                    Colors.deepPurple,
+                    Colors.orange,
+                    Colors.pink,
+                    Colors.blueGrey,
+                  ];
+                  var colorIndex = 0;
+                  final slices = categoryTotals.entries
+                      .map((entry) => PieSlice(
+                            key: entry.key,
+                            label: entry.key,
+                            value: entry.value,
+                            color: palette[colorIndex++ % palette.length],
+                          ))
+                      .toList()
+                    ..sort((a, b) => b.value.compareTo(a.value));
+                  final totalSpending =
+                      slices.fold<double>(0, (sum, slice) => sum + slice.value);
+                  final filteredExpenses = _selectedCategorySlice == null
+                      ? expenses
+                      : expenses
+                          .where((e) =>
+                              _categoryLabelForExpense(e) ==
+                              _selectedCategorySlice!.label)
+                          .toList();
+                  final friendsById = <String, FriendModel>{
+                    for (final member in _members) member.phone: member,
+                    widget.userId: _selfFriend,
+                  };
+
+                  return RefreshIndicator(
+                    onRefresh: _fetchMembers,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(16, 20, 16, safeBottom + 24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            detail.GlassCard(
+                              padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'Spending by category',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 16,
+                                          color: Colors.teal.shade900,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      Icon(Icons.pie_chart_outline_rounded,
+                                          color: Colors.teal.shade700, size: 18),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Center(
+                                    child: SizedBox(
+                                      height: 220,
+                                      width: 220,
+                                      child: PieTouchChart(
+                                        slices: slices,
+                                        selected: _selectedCategorySlice,
+                                        onSelect: _onSliceSelected,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  CategoryLegendRow(
+                                    slices: slices,
+                                    total: totalSpending,
+                                    selected: _selectedCategorySlice,
+                                    onSelect: _onSliceSelected,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            const SleekAdCard(
+                              margin: EdgeInsets.symmetric(horizontal: 4),
+                              radius: 16,
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              key: _chartListAnchorKey,
+                              child: UnifiedTransactionList(
+                                key: ValueKey(
+                                    'group-chart-${_selectedCategorySlice?.key ?? 'all'}'),
+                                expenses: filteredExpenses,
+                                incomes: const [],
+                                friendsById: friendsById,
+                                userPhone: widget.userId,
+                                onEdit: (tx) {
+                                  if (tx is ExpenseItem) {
+                                    _openEditExpense(tx);
+                                  }
+                                },
+                                onDelete: (tx) {
+                                  if (tx is ExpenseItem) {
+                                    _confirmDelete(tx);
+                                  }
+                                },
+                                showTopBannerAd: false,
+                                showBottomBannerAd: true,
+                                inlineAdAfterIndex: 2,
+                                enableInlineAds: true,
+                                emptyBuilder: (ctx) => Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 24),
+                                  child: Text(
+                                    _selectedCategorySlice == null
+                                        ? 'No group expenses yet.'
+                                        : 'No expenses in ${_selectedCategorySlice!.label}.',
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(ctx)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
 
                 // ============ ANALYTICS ============
                 RefreshIndicator(
@@ -924,198 +1097,156 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     required int txCount,
   }) {
     final createdByYou = _group.createdBy == widget.userId;
-    final creatorLabel = _nameFor(_group.createdBy);
-
-
+    final creatorLabel = createdByYou ? 'You' : _nameFor(_group.createdBy);
     final theme = Theme.of(context);
-    final Color mint = theme.colorScheme.primary;
-    final Color danger = theme.colorScheme.error;
-    final Color neutral =
-        theme.textTheme.bodySmall?.color?.withOpacity(0.7) ?? Colors.grey.shade600;
-    final double net = owed - owe;
-    const duration = Duration(milliseconds: 180);
+    final net = double.parse((owed - owe).toStringAsFixed(2));
+    final settled = owe.abs() < 0.01 && owed.abs() < 0.01;
+    final membersCount = _members.length;
 
-    Color netColor;
-    IconData netIcon;
-    String netLabel;
-    if (net > 0.01) {
-      netColor = mint;
-      netIcon = Icons.trending_up_rounded;
-      netLabel = '+ ₹${net.toStringAsFixed(2)}';
-    } else if (net < -0.01) {
-      netColor = danger;
-      netIcon = Icons.trending_down_rounded;
-      netLabel = '- ₹${(-net).toStringAsFixed(2)}';
-    } else {
-      netColor = neutral;
-      netIcon = Icons.check_circle_rounded;
-      netLabel = 'Settled';
+    final netColor = net > 0.01
+        ? Colors.teal.shade700
+        : net < -0.01
+            ? theme.colorScheme.error
+            : theme.colorScheme.onSurface.withOpacity(.64);
+
+    final netLabel = net.abs() < 0.01
+        ? 'Settled'
+        : net > 0
+            ? '+ ₹${net.toStringAsFixed(2)}'
+            : '- ₹${(-net).toStringAsFixed(2)}';
+
+    final chipStyle = theme.textTheme.labelLarge?.copyWith(
+      fontFeatures: const [ui.FontFeature.tabularFigures()],
+    );
+
+    Widget amountChip(String label, double amount,
+        {Color? color, IconData? icon}) {
+      final chipColor = color ??
+          (amount >= 0 ? Colors.teal.shade700 : theme.colorScheme.error);
+      return PillChip(
+        label,
+        icon: icon,
+        fg: chipColor,
+        bg: chipColor.withOpacity(0.14),
+        textStyle: chipStyle,
+      );
     }
 
-    final bool allSettled = owe.abs() < 0.01 && owed.abs() < 0.01;
-    final creatorDisplay = createdByYou ? 'You' : creatorLabel;
-    final subtitle =
-        "Created by $creatorDisplay • ${_members.length} members • $txCount transactions";
-
-    final baseColor = theme.cardColor;
-    final bool isDark = theme.brightness == Brightness.dark;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: AnimatedContainer(
-          duration: duration,
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withOpacity(isDark ? 0.14 : 0.70),
-                Colors.white.withOpacity(isDark ? 0.10 : 0.45),
-                mint.withOpacity(0.10),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white.withOpacity(isDark ? 0.12 : 0.55),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(isDark ? 0.25 : 0.08),
-                blurRadius: 18,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return detail.GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  _groupAvatar(radius: 30),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _group.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.teal.shade900,
-                              ) ??
-                              TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.teal.shade900,
-                              ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          subtitle,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                                color: neutral,
-                                fontWeight: FontWeight.w600,
-                              ) ??
-                              TextStyle(color: neutral, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: netColor.withOpacity(netLabel == 'Settled' ? 0.14 : 0.18),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: netColor.withOpacity(0.4)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(netIcon, size: 18, color: netColor),
-                        const SizedBox(width: 6),
-                        AnimatedSwitcher(
-                          duration: duration,
-                          child: Text(
-                            'Net $netLabel',
-                            key: ValueKey(netLabel),
-                            style: TextStyle(
-                              color: netColor,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+              Hero(
+                tag: 'group:${_group.id}',
+                child: _groupAvatar(radius: 30),
               ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _AmountChip(
-                    icon: Icons.call_received_rounded,
-                    color: owed > 0.01 ? mint : neutral,
-                    label: owed > 0.01
-                        ? 'Owed to you ₹${owed.toStringAsFixed(2)}'
-                        : 'No one owes you',
-                  ),
-                  _AmountChip(
-                    icon: Icons.call_made_rounded,
-                    color: owe > 0.01 ? danger : neutral,
-                    label: owe > 0.01
-                        ? 'You owe ₹${owe.toStringAsFixed(2)}'
-                        : 'You owe ₹0.00',
-                  ),
-                  if (allSettled)
-                    const _SettledBadge(),
-                ],
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _group.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Created by $creatorLabel • $membersCount members • $txCount transactions',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.textTheme.bodySmall?.color?.withOpacity(.74),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 12,
-                runSpacing: 10,
-                children: [
-                  _SummaryStat(
-                    icon: Icons.receipt_long_rounded,
-                    label: 'Transactions',
-                    value: '$txCount',
-                  ),
-                  _SummaryStat(
-                    icon: Icons.groups_rounded,
-                    label: 'Members',
-                    value: '${_members.length}',
-                  ),
-                ],
-              ),
-              if (_shareFaces.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: ShareBadge(
-                    participants: _shareFaces,
-                    dense: true,
-                    onTap: _openSettings,
+              AnimatedSwitcher(
+                duration: kMed,
+                switchInCurve: kEase,
+                switchOutCurve: kEase,
+                child: PillChip(
+                  'Net $netLabel',
+                  key: ValueKey(netLabel),
+                  fg: netColor,
+                  bg: netColor.withOpacity(0.18),
+                  textStyle: theme.textTheme.labelLarge?.copyWith(
+                    fontFeatures: const [ui.FontFeature.tabularFigures()],
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-              ],
+              ),
             ],
           ),
-        ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              amountChip(
+                owe <= 0.01
+                    ? 'Group owes you ₹0.00'
+                    : 'Group owes you ₹${owed.toStringAsFixed(2)}',
+                owed,
+                icon: Icons.call_received_rounded,
+                color: Colors.teal.shade700,
+              ),
+              amountChip(
+                owe <= 0.01
+                    ? 'You owe group ₹0.00'
+                    : 'You owe group ₹${owe.toStringAsFixed(2)}',
+                -owe,
+                icon: Icons.call_made_rounded,
+                color: theme.colorScheme.error,
+              ),
+              if (settled)
+                PillChip(
+                  'All settled',
+                  icon: Icons.check_circle,
+                  fg: theme.colorScheme.onSurface.withOpacity(.72),
+                  bg: theme.colorScheme.onSurface.withOpacity(.08),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              PillChip(
+                'Transactions: $txCount',
+                icon: Icons.receipt_long_rounded,
+                textStyle: theme.textTheme.labelLarge,
+              ),
+              PillChip(
+                'Members: $membersCount',
+                icon: Icons.groups_rounded,
+                textStyle: theme.textTheme.labelLarge,
+              ),
+            ],
+          ),
+          if (_shareFaces.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ShareBadge(
+                participants: _shareFaces,
+                dense: true,
+                onTap: _openSettings,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
-
   Widget _recurringShortcutCard() {
     return _glassCard(
       child: Material(
@@ -1407,19 +1538,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       }
       children.add(_activityCard(e));
       inserted++;
-      if (inserted % 5 == 0) {
-        final slot = inserted ~/ 5;
-        children.add(Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: AdsBannerCard(
-            placement: 'group_detail_activity_$slot',
-            inline: true,
-            inlineMaxHeight: 120,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            minHeight: 88,
-          ),
-        ));
-      }
     }
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: children);
@@ -2743,7 +2861,7 @@ class _GroupChatTabState extends State<GroupChatTab> {
                 return const Center(child: Text("No messages yet."));
               }
 
-              const chatAdEvery = 20;
+              const chatAdEvery = 0;
               final blockSize = chatAdEvery + 1;
               final adCount = chatAdEvery > 0 ? docs.length ~/ chatAdEvery : 0;
               final totalItems = docs.length + adCount;
@@ -2755,17 +2873,7 @@ class _GroupChatTabState extends State<GroupChatTab> {
                 itemBuilder: (context, i) {
                   final isAdSlot = chatAdEvery > 0 && blockSize > 0 && (i + 1) % blockSize == 0;
                   if (isAdSlot) {
-                    final slot = (i + 1) ~/ blockSize;
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      child: AdsBannerCard(
-                        placement: 'group_chat_midroll_$slot',
-                        inline: true,
-                        inlineMaxHeight: 100,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                        minHeight: 72,
-                      ),
-                    );
+                    return const SizedBox.shrink();
                   }
 
                   final adsBefore = chatAdEvery > 0 ? (i + 1) ~/ blockSize : 0;
