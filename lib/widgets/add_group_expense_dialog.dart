@@ -14,6 +14,7 @@ import '../models/friend_model.dart';
 import '../models/group_model.dart';
 import '../services/expense_service.dart';
 import '../utils/helpers.dart';
+import 'ads/sleek_ad_card.dart';
 
 /// Palette — indigo + teal accents (not just green)
 const Color _kBg = Color(0xFFF6F7FB);
@@ -932,6 +933,17 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                           ),
                         ),
                       ),
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      switchInCurve: Curves.easeInOut,
+                      switchOutCurve: Curves.easeInOut,
+                      child: _step >= 2
+                          ? const SleekAdCard(
+                              margin: EdgeInsets.fromLTRB(12, 6, 12, 6),
+                              radius: 14,
+                            )
+                          : const SizedBox.shrink(),
                     ),
 
                     // Footer controls
