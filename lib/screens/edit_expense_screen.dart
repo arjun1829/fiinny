@@ -381,12 +381,16 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
           : _category;
       final personalNote = _noteCtrl.text.trim();
       final bankNote = _bankRefText.trim();
+      final combinedNote = [
+        if (personalNote.isNotEmpty) personalNote,
+        if (bankNote.isNotEmpty) bankNote,
+      ].join('\n\n');
 
       final updated = ExpenseItem(
         id: widget.expense.id,
         type: effectiveCategory,
         amount: double.parse(_amountCtrl.text.trim()),
-        note: bankNote,
+        note: combinedNote,
         date: _date,
         friendIds: friendIds,
         payerId: _selectedPayerPhone!,
@@ -677,7 +681,13 @@ class _StepBasics extends StatelessWidget {
                   ),
                 );
               }).toList(),
-              onChanged: saving ? null : onCategory,
+              onChanged: saving
+                  ? null
+                  : (value) {
+                      if (value != null) {
+                        onCategory(value);
+                      }
+                    },
             ),
           ),
           if (category == 'Other') ...[
