@@ -1,3 +1,5 @@
+import org.gradle.api.initialization.resolve.RepositoriesMode
+
 pluginManagement {
     val flutterSdkPath = run {
         val properties = java.util.Properties()
@@ -13,6 +15,18 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
+        maven(url = "https://storage.googleapis.com/download.flutter.io")
+        maven(url = "https://dl.google.com/dl/android/maven2/")
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+        maven(url = "https://storage.googleapis.com/download.flutter.io")
+        maven(url = "https://dl.google.com/dl/android/maven2/")
     }
 }
 
@@ -25,4 +39,5 @@ plugins {
     id("org.jetbrains.kotlin.android") version "1.9.25" apply false
 }
 
+rootProject.name = "lifemap"
 include(":app")
