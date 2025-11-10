@@ -1,5 +1,6 @@
 // lib/screens/add_expense_screen.dart
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/expense_item.dart';
@@ -282,27 +283,65 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
       return;
     }
 
-    // Participants (keeping prior logic)
-    final friendPhones = _selectedGroup != null
-        ? _selectedGroup!.memberPhones.where((p) => p != widget.userPhone).toList()
-        : _selectedFriends.map((f) => f.phone).toList();
+    final payerPhone = _selectedPayer!.phone;
 
-    if (friendPhones.isEmpty && _selectedGroup == null) {
+    final participantSet = <String>{};
+    if (_selectedGroup != null) {
+      participantSet.addAll(_selectedGroup!.memberPhones);
+    } else {
+      participantSet.add(widget.userPhone);
+      participantSet.addAll(_selectedFriends.map((f) => f.phone));
+    }
+    participantSet.removeWhere((id) => id.trim().isEmpty);
+    participantSet.add(payerPhone);
+
+    final others = <String>{...participantSet}..remove(payerPhone);
+    if (others.isEmpty && _selectedGroup == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Select at least one participant")),
       );
       return;
     }
 
-    // Splits
-    final Map<String, double> splits = _customSplitMode
-        ? Map<String, double>.from(_customSplits)
-        : {
-      for (final phone in <String>{_selectedPayer!.phone, ...friendPhones})
-        phone: (_amount <= 0 || (friendPhones.length + 1) == 0)
-            ? 0.0
-            : _amount / (friendPhones.length + 1),
-    };
+    Map<String, double> splits;
+    if (_customSplitMode) {
+      splits = Map<String, double>.from(_customSplits);
+      if (!splits.containsKey(payerPhone)) {
+        final distributed =
+            splits.values.fold<double>(0.0, (acc, value) => acc + value);
+        final remaining = _amount - distributed;
+        splits[payerPhone] = remaining > 0
+            ? double.parse(remaining.toStringAsFixed(2))
+            : 0.0;
+      }
+      splits.removeWhere((key, value) => key.trim().isEmpty);
+    } else {
+      final equalParticipants = <String>{...others, payerPhone};
+      final count = equalParticipants.length;
+      final share = (count == 0 || _amount <= 0) ? 0.0 : _amount / count;
+      splits = {for (final phone in equalParticipants) phone: share};
+    }
+
+    final friendSet = _customSplitMode
+        ? (
+            () {
+              final nonZero = splits.entries
+                  .where((entry) => entry.value.abs() >= 0.005)
+                  .map((entry) => entry.key)
+                  .toSet();
+              nonZero.add(payerPhone);
+              return nonZero;
+            }()
+          )
+        : others;
+    friendSet.removeWhere((phone) => phone.trim().isEmpty);
+    final friendPhones = friendSet.toList();
+
+    if (kDebugMode) {
+      final previewFriends = friendPhones.join(', ');
+      debugPrint(
+          "[AddExpenseScreen] submitting expense group=${_selectedGroup?.id} payer=$payerPhone friends=$previewFriends custom=$_customSplitMode");
+    }
 
     final expense = ExpenseItem(
       id: widget.existingExpense?.id ?? '',

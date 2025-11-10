@@ -1,8 +1,14 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../core/ads/ad_ids.dart';
 import '../../core/ads/ad_service.dart';
 import '../../core/ads/adaptive_banner.dart';
+import '../../core/ads/web_house_ad_card.dart';
+import '../../core/flags/remote_flags.dart';
 
 class SleekAdCard extends StatefulWidget {
   final EdgeInsets margin;
@@ -22,11 +28,90 @@ class _SleekAdCardState extends State<SleekAdCard> {
   bool _loaded = false;
   int _bannerGeneration = 0;
   bool _initializationRequested = false;
+  bool _flagEnabled = false;
+  bool _flagResolved = false;
+  StreamSubscription<bool>? _flagSubscription;
 
   @override
   void initState() {
     super.initState();
+    _listenForFlags();
     _ensureAdInitialization();
+  }
+
+  @override
+  void dispose() {
+    _flagSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _listenForFlags() {
+    if (kIsWeb) {
+      try {
+        if (!mounted) return;
+        setState(() {
+          _flagResolved = true;
+          _flagEnabled = false;
+        });
+
+        _flagSubscription = RemoteFlags.instance
+            .on<bool>('adsWebHouse', fallback: false)
+            .listen((enabled) {
+          if (!mounted) return;
+          setState(() {
+            _flagResolved = true;
+            _flagEnabled = enabled;
+          });
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _flagResolved = true;
+          _flagEnabled = false;
+        });
+      }
+      return;
+    }
+
+    Future<void>.microtask(() async {
+      try {
+        final fallback = await _computeFallback();
+        if (!mounted) return;
+        setState(() {
+          _flagResolved = true;
+          _flagEnabled = fallback;
+        });
+
+        _flagSubscription = RemoteFlags.instance
+            .on<bool>('adsEnabledAddFlows', fallback: fallback)
+            .listen((enabled) {
+          if (!mounted) return;
+          setState(() {
+            _flagResolved = true;
+            _flagEnabled = enabled;
+          });
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _flagResolved = true;
+          _flagEnabled = true;
+        });
+      }
+    });
+  }
+
+  Future<bool> _computeFallback() async {
+    if (kIsWeb) return false;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      try {
+        return await RemoteFlags.instance
+            .get<bool>('adsEnabledIOS', fallback: true);
+      } catch (_) {
+        return true;
+      }
+    }
+    return true;
   }
 
   void _ensureAdInitialization() {
@@ -49,6 +134,21 @@ class _SleekAdCardState extends State<SleekAdCard> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_flagResolved) {
+      return const SizedBox.shrink();
+    }
+
+    if (!_flagEnabled) {
+      return const SizedBox.shrink();
+    }
+
+    if (kIsWeb) {
+      return WebHouseAdCard(
+        margin: widget.margin,
+        radius: widget.radius,
+      );
+    }
+
     if (!AdService.isReady || !AdService.I.isEnabled) {
       _ensureAdInitialization();
       return const SizedBox.shrink();
@@ -61,6 +161,13 @@ class _SleekAdCardState extends State<SleekAdCard> {
       inlineMaxHeight: 120,
       padding: EdgeInsets.zero,
       onLoadChanged: (isLoaded) {
+        assert(() {
+          debugPrint(
+            '[SleekAdCard] banner ${maskAdIdentifier(AdIds.banner)} '
+            'loaded=$isLoaded generation=$_bannerGeneration',
+          );
+          return true;
+        }());
         if (!mounted || _loaded == isLoaded) return;
         setState(() => _loaded = isLoaded);
       },
