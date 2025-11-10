@@ -1520,6 +1520,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                 ledger.summarizeForHeader({friendPhone: canonicalNet});
             final totalOwe = headerTotals.youOwe;
             final totalOwed = headerTotals.owedToYou;
+            final double netHeader = headerTotals.net;
 
             return TabBarView(
               controller: _tabController,
@@ -1678,11 +1679,11 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                         ),
                                         const Spacer(),
                                         Builder(builder: (_) {
-                                          final netColor = net >= 0
+                                          final netColor = netHeader >= 0
                                               ? Colors.green
                                               : Colors.redAccent;
                                           final netText =
-                                              "${net >= 0 ? '+' : '-'} ₹${net.abs().toStringAsFixed(2)}";
+                                              "${netHeader >= 0 ? '+' : '-'} ₹${netHeader.abs().toStringAsFixed(2)}";
                                           return Container(
                                             padding: const EdgeInsets
                                                 .symmetric(

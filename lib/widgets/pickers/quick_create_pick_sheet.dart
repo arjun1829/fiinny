@@ -3,10 +3,11 @@ import 'dart:math' as math;
 import 'package:characters/characters.dart';
 import 'package:flutter/material.dart';
 
+import 'package:lifemap/ui/theme/small_typography_overlay.dart';
+
 import '../../models/friend_model.dart';
 import '../../models/group_model.dart';
 import '../../services/contact_name_service.dart';
-import '../../ui/theme/small_typography_overlay.dart';
 import '../ads/sleek_ad_card.dart';
 
 enum QuickCreateSegment { friends, groups, newEntry }
@@ -133,6 +134,7 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 560;
         final sheet = SmallTypographyOverlay(
+          scale: 0.92,
           child: SafeArea(
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 220),
@@ -164,59 +166,59 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
                   bottom: 12 + MediaQuery.of(context).viewInsets.bottom,
                 ),
                 child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(3),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: const [
-                      Text(
-                        'Add or pick',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF0A6F66),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  if (isWide)
-                    SizedBox(
-                      height: math.max(360, MediaQuery.of(context).size.height * 0.55),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _WideRail(
-                            segment: _segment,
-                            onChanged: (seg) {
-                              setState(() {
-                                _segment = seg;
-                                _searchCtrl.clear();
-                              });
-                            },
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: const [
+                        Text(
+                          'Add or pick',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0A6F66),
                           ),
-                          const SizedBox(width: 18),
-                          Expanded(child: _buildContent(isWide: true)),
-                        ],
-                      ),
-                    )
-                  else
-                    _buildContent(isWide: false),
-                  const SizedBox(height: 12),
-                  const SleekAdCard(
-                    margin: EdgeInsets.only(top: 4),
-                    radius: 16,
-                  ),
-                ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    if (isWide)
+                      SizedBox(
+                        height: math.max(360, MediaQuery.of(context).size.height * 0.55),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _WideRail(
+                              segment: _segment,
+                              onChanged: (seg) {
+                                setState(() {
+                                  _segment = seg;
+                                  _searchCtrl.clear();
+                                });
+                              },
+                            ),
+                            const SizedBox(width: 18),
+                            Expanded(child: _buildContent(isWide: true)),
+                          ],
+                        ),
+                      )
+                    else
+                      _buildContent(isWide: false),
+                    const SizedBox(height: 12),
+                    const SleekAdCard(
+                      margin: EdgeInsets.only(top: 4),
+                      radius: 16,
+                    ),
+                  ],
               ),
             ),
           ),
