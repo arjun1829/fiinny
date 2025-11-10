@@ -86,7 +86,6 @@ class SmallTypographyOverlay extends StatelessWidget {
             base.chipTheme.labelStyle ?? const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             fixedSize: 11.5,
           ),
-          visualDensity: VisualDensity.compact,
         ),
         popupMenuTheme: base.popupMenuTheme.copyWith(
           textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
