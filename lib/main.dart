@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -24,6 +25,39 @@ import 'services/sms/sms_ingestor.dart';
 const bool SAFE_MODE = bool.fromEnvironment('SAFE_MODE', defaultValue: false);
 const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: true);
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+const MethodChannel _systemUiChannel = MethodChannel('lifemap/system_ui');
+
+Future<void> configureSystemUI() async {
+  if (!Platform.isAndroid) {
+    return;
+  }
+
+  int sdk = 0;
+  try {
+    final result = await _systemUiChannel.invokeMethod<int>('getSdkInt');
+    if (result != null) sdk = result;
+  } catch (err) {
+    debugPrint('System UI channel failed: $err');
+  }
+
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+  if (sdk >= 35) {
+    const style = SystemUiOverlayStyle(
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    );
+    SystemChrome.setSystemUIOverlayStyle(style);
+  } else {
+    const style = SystemUiOverlayStyle(
+      statusBarColor: Color(0x00000000),
+      systemNavigationBarColor: Color(0x00000000),
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    );
+    SystemChrome.setSystemUIOverlayStyle(style);
+  }
+}
 
 @pragma('vm:entry-point')
 void smsBackgroundDispatcher() {
@@ -50,6 +84,8 @@ void smsBackgroundDispatcher() {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await configureSystemUI();
 
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
     try {

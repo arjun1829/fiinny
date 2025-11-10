@@ -11,6 +11,14 @@ import 'ad_ids.dart';
 const bool kDiagBuild =
     bool.fromEnvironment('DIAG_BUILD', defaultValue: false);
 
+String maskAdIdentifier(String value) {
+  if (value.isEmpty) return value;
+  if (value.length <= 10) return value;
+  final prefix = value.substring(0, 8);
+  final suffix = value.substring(value.length - 4);
+  return '$prefix…$suffix';
+}
+
 class AdService {
   AdService._();
   static final AdService I = AdService._();
@@ -52,6 +60,17 @@ class AdService {
           bannerId.contains('zzzz') || appId.contains('zzzz') ||
           bannerId.contains('fill') || appId.contains('fill');
 
+      assert(() {
+        debugPrint(
+          '[AdService] initLater -> appId=${maskAdIdentifier(appId)} '
+          'banner=${maskAdIdentifier(bannerId)} inter=${maskAdIdentifier(AdIds.interstitial)} '
+          'rewarded=${maskAdIdentifier(AdIds.rewarded)} '
+          'forceTestAds=$forceTestAds '
+          'hasReal=${AdIds.hasRealIdsForCurrentPlatform}',
+        );
+        return true;
+      }());
+
       if (Platform.isIOS && missingIds) {
         debugPrint('[AdService] iOS AdMob IDs missing – skipping init.');
         _ready = false;
@@ -73,7 +92,17 @@ class AdService {
       return;
     }
     try {
-      await MobileAds.instance.initialize();
+      final initStatus = await MobileAds.instance.initialize();
+      assert(() {
+        final entries = initStatus.adapterStatuses.entries
+            .map((entry) {
+          final state = entry.value.state.toString().split('.').last;
+          return '${entry.key}:$state(${entry.value.description})';
+        })
+            .join(', ');
+        debugPrint('[AdService] MobileAds initialised (adapters: $entries)');
+        return true;
+      }());
       await MobileAds.instance.updateRequestConfiguration(
         RequestConfiguration(
           testDeviceIds: <String>[],

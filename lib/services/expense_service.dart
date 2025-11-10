@@ -1,5 +1,9 @@
 // lib/services/expense_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
+import 'package:rxdart/rxdart.dart';
+
+import '../core/flags/fx_flags.dart';
 import '../models/expense_item.dart';
 
 /// Top-level query spec for hybrid search (server coarse + client refine).
@@ -41,6 +45,25 @@ class ExpenseService {
   // group_expenses/<expenseId>
   CollectionReference<Map<String, dynamic>> get _groupExpenses =>
       _firestore.collection('group_expenses');
+
+  Future<void> _mirrorToGroupCollections(ExpenseItem expense) async {
+    final groupId = expense.groupId;
+    if (!FxFlags.groupCanonicalWrites || groupId == null || groupId.trim().isEmpty) {
+      return;
+    }
+    try {
+      final groupDoc = _firestore
+          .collection('groups')
+          .doc(groupId)
+          .collection('expenses')
+          .doc(expense.id);
+      await groupDoc.set(expense.toJson());
+    } catch (err) {
+      if (kDebugMode) {
+        debugPrint('[ExpenseService] failed to mirror group expense: $err');
+      }
+    }
+  }
 
   /// List all expenses for user
   Future<List<ExpenseItem>> getExpenses(String userPhone) async {
@@ -84,6 +107,7 @@ class ExpenseService {
     // Write to global group collection (separate)
     if (expense.groupId != null) {
       await _groupExpenses.doc(expenseWithId.id).set(expenseWithId.toJson());
+      await _mirrorToGroupCollections(expenseWithId);
     }
 
     return docRef.id;
@@ -120,6 +144,7 @@ class ExpenseService {
 
     if (expense.groupId != null) {
       await _groupExpenses.doc(expenseWithId.id).set(expenseWithId.toJson());
+      await _mirrorToGroupCollections(expenseWithId);
     }
 
     return docRef.id;
@@ -134,6 +159,7 @@ class ExpenseService {
 
     if (expense.groupId != null) {
       await _groupExpenses.doc(expenseWithId.id).set(expenseWithId.toJson());
+      await _mirrorToGroupCollections(expenseWithId);
     }
     return docRef.id;
   }
@@ -209,6 +235,24 @@ class ExpenseService {
     }
 
     await batch.commit();
+
+    if (groupId != null && groupId.isNotEmpty) {
+      await _mirrorToGroupCollections(expense);
+    } else if (previousGroupId != null && previousGroupId.isNotEmpty &&
+        FxFlags.groupCanonicalWrites) {
+      try {
+        await _firestore
+            .collection('groups')
+            .doc(previousGroupId)
+            .collection('expenses')
+            .doc(expense.id)
+            .delete();
+      } catch (err) {
+        if (kDebugMode) {
+          debugPrint('[ExpenseService] failed to delete mirrored group expense: $err');
+        }
+      }
+    }
   }
 
   /// Delete expense everywhere
@@ -221,7 +265,31 @@ class ExpenseService {
         }
       }
     }
+    Map<String, dynamic>? mirrorData;
+    if (FxFlags.groupCanonicalWrites) {
+      try {
+        final snap = await _groupExpenses.doc(expenseId).get();
+        mirrorData = snap.data();
+      } catch (_) {}
+    }
     await _groupExpenses.doc(expenseId).delete();
+    if (FxFlags.groupCanonicalWrites) {
+      final groupId = mirrorData?['groupId'] as String?;
+      if (groupId != null && groupId.isNotEmpty) {
+        try {
+          await _firestore
+              .collection('groups')
+              .doc(groupId)
+              .collection('expenses')
+              .doc(expenseId)
+              .delete();
+        } catch (err) {
+          if (kDebugMode) {
+            debugPrint('[ExpenseService] failed to delete mirrored group expense globally: $err');
+          }
+        }
+      }
+    }
   }
 
   /// Settle an expense (two-way)
@@ -248,11 +316,58 @@ class ExpenseService {
   }
 
   Stream<List<ExpenseItem>> getGroupExpensesStream(String userPhone, String groupId) {
-    return getExpensesCollection(userPhone)
+    final userQuery = getExpensesCollection(userPhone)
         .where('groupId', isEqualTo: groupId)
         .orderBy('date', descending: true)
-        .snapshots()
-        .map((snap) => snap.docs.map((d) => ExpenseItem.fromJson(d.data())).toList());
+        .snapshots();
+
+    if (!FxFlags.groupCanonicalWrites) {
+      if (kDebugMode) {
+        debugPrint('[ExpenseService] listen group stream (user scoped) user=$userPhone group=$groupId');
+      }
+      return userQuery.map((snap) {
+        final expenses = snap.docs.map((d) => ExpenseItem.fromJson(d.data())).toList();
+        if (kDebugMode) {
+          final preview = expenses.take(3).map((e) => '${e.id}:${e.groupId ?? ''}').join(', ');
+          debugPrint('[ExpenseService] group stream update user=$userPhone group=$groupId count=${expenses.length} recent=[$preview]');
+        }
+        return expenses;
+      });
+    }
+
+    final mirrorQuery = _firestore
+        .collection('groups')
+        .doc(groupId)
+        .collection('expenses')
+        .orderBy('date', descending: true)
+        .snapshots();
+
+    if (kDebugMode) {
+      debugPrint('[ExpenseService] listen group stream (combined) user=$userPhone group=$groupId');
+    }
+
+    return Rx.combineLatest2<QuerySnapshot<Map<String, dynamic>>, QuerySnapshot<Map<String, dynamic>>, List<ExpenseItem>>(
+      userQuery,
+      mirrorQuery,
+      (userSnap, mirrorSnap) {
+        final combined = <String, ExpenseItem>{};
+        for (final doc in mirrorSnap.docs) {
+          final expense = ExpenseItem.fromJson(doc.data());
+          combined[expense.id] = expense;
+        }
+        for (final doc in userSnap.docs) {
+          final expense = ExpenseItem.fromJson(doc.data());
+          combined[expense.id] = expense;
+        }
+        final list = combined.values.toList()
+          ..sort((a, b) => b.date.compareTo(a.date));
+        if (kDebugMode) {
+          final preview = list.take(3).map((e) => '${e.id}:${e.groupId ?? ''}').join(', ');
+          debugPrint('[ExpenseService] group stream update (combined) user=$userPhone group=$groupId count=${list.length} recent=[$preview]');
+        }
+        return list;
+      },
+    );
   }
 
   Future<List<ExpenseItem>> getExpensesByGroup(String userPhone, String groupId) async {

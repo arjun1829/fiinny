@@ -1109,9 +1109,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     required bool hasFees,
     required String? instrument,
   }) {
-    final tokens = _parseRawTags(rawTags).map(_normTag).toList();
+    final tokens = _parseRawTags(rawTags).map(_normTag).toSet();
     final out = <String>{};
     final inst = (instrument ?? '').toLowerCase();
+
+    bool isFeeToken(String k) =>
+        k == 'charges' || k == 'charge' || k == 'fee' || k == 'fees' || k == 'surcharge';
 
     for (final k in tokens) {
       if (k.isEmpty) continue;
@@ -1121,10 +1124,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       if (k == inst) continue; // e.g., "imps" tag when instrument is IMPS
 
       // If sheet already shows INTL or FEES, skip those duplicates
-      if ((k == 'international' || k == 'intl' || k == 'forex') && isInternational) {
+      if (k == 'international' || k == 'intl' || k == 'forex') {
+        if (isInternational) out.add('Intl');
         continue;
       }
-      if ((k == 'charges' || k == 'fee' || k == 'fees') && hasFees) {
+      if (isFeeToken(k)) {
+        if (hasFees) out.add('Charges');
         continue;
       }
 

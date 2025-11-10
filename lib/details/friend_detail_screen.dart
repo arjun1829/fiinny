@@ -30,7 +30,6 @@ import '../services/expense_service.dart';
 import '../services/group_service.dart';
 import '../core/flags/fx_flags.dart';
 import '../services/loan_service.dart';
-import '../core/ads/ads_banner_card.dart';
 import '../core/ads/ads_shell.dart';
 import '../screens/edit_expense_screen.dart';
 import '../services/notification_service.dart';
@@ -39,16 +38,25 @@ import '../services/push/push_service.dart';
 import '../widgets/add_friend_expense_dialog.dart';
 import '../widgets/settleup_dialog.dart';
 import '../widgets/expense_list_widget.dart';
-import '../widgets/simple_bar_chart_widget.dart';
 import '../settleup_v2/index.dart';
 import 'analytics/friend_analytics_tab.dart';
 import 'dart:math' as math;
+
+import '../widgets/ads/sleek_ad_card.dart';
+import '../ui/comp/glass_card.dart' as detail;
+import '../ui/comp/pill_chip.dart';
+import '../ui/fx/motion.dart';
+import '../ui/typography/amount_text.dart';
+import '../widgets/charts/category_legend_row.dart';
+import '../widgets/charts/pie_touch_chart.dart';
+import '../widgets/unified_transaction_list.dart';
 
 // Chat tab
 import 'package:lifemap/sharing/widgets/partner_chat_tab.dart';
 
 // Shared split logic
 import '../group/group_balance_math.dart' show computeSplits;
+import '../group/ledger_math.dart' as ledger;
 
 class FriendDetailScreen extends StatefulWidget {
   final String userPhone; // current user
@@ -79,6 +87,9 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
   Map<String, double>? _lastCustomSplit;
   late TabController _tabController;
   bool _breakdownExpanded = false;
+
+  PieSlice? _selectedCategorySlice;
+  final GlobalKey _chartListAnchorKey = GlobalKey();
 
   String? _friendAvatarUrl;
   String? _friendDisplayName;
@@ -120,8 +131,44 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     return '${value.toStringAsFixed(1)}%';
   }
 
+  void _onSliceSelected(PieSlice? slice) {
+    setState(() => _selectedCategorySlice = slice);
+    if (slice != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _chartListAnchorKey.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: kMed,
+            curve: kEase,
+            alignment: 0.1,
+          );
+        }
+      });
+    }
+  }
+
 
   String _nameFor(String phone) => phone == widget.userPhone ? 'You' : _displayName;
+
+  FriendModel get _selfFriendModel => FriendModel(
+        phone: widget.userPhone,
+        name: widget.userName,
+        avatar: widget.userAvatar ?? '👤',
+      );
+
+  String _categoryLabelForExpense(ExpenseItem expense) {
+    if (expense.category != null && expense.category!.trim().isNotEmpty) {
+      return expense.category!.trim();
+    }
+    if (expense.label != null && expense.label!.trim().isNotEmpty) {
+      return expense.label!.trim();
+    }
+    if (expense.type != null && expense.type!.trim().isNotEmpty) {
+      return expense.type!.trim();
+    }
+    return 'General';
+  }
 
   // ===== Attachments helpers =====
   // Try to read attachments from common fields without changing your model.
@@ -1106,266 +1153,153 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     required int bucketCount,
   }) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final neutral =
-        theme.textTheme.bodySmall?.color?.withOpacity(.70) ?? Colors.black54;
-
     final net = double.parse((owed - owe).toStringAsFixed(2));
-    final Color netColor = net > 0.01
+    final settled = owe.abs() < 0.01 && owed.abs() < 0.01;
+    final netColor = net > 0.01
         ? Colors.teal.shade700
         : net < -0.01
             ? Colors.redAccent
-            : neutral;
-    final netLabel = net.abs() < 0.01
-        ? 'Settled'
-        : (net > 0
-            ? '+ ₹${net.toStringAsFixed(2)}'
-            : '- ₹${(-net).toStringAsFixed(2)}');
-
-    final subtitleParts = <String>[];
-    if (widget.friend.phone.isNotEmpty) subtitleParts.add(widget.friend.phone);
+            : theme.colorScheme.onSurface.withOpacity(.64);
+    final phone = widget.friend.phone;
     final email = widget.friend.email;
+    final subtitleParts = <String>[];
+    if (phone.isNotEmpty) subtitleParts.add(phone);
     if (email != null && email.isNotEmpty) subtitleParts.add(email);
-    final subtitle = subtitleParts.join(' • ');
 
-    final oweLabel = owe > 0.01
-        ? 'You owe ₹${owe.toStringAsFixed(2)}'
-        : 'You owe ₹0.00';
-    final owedLabel = owed > 0.01
-        ? 'Owes you ₹${owed.toStringAsFixed(2)}'
-        : 'No dues for you';
+    final oweLabel = owe <= 0.01
+        ? 'You owe ₹0.00'
+        : 'You owe ₹${owe.toStringAsFixed(2)}';
+    final owedLabel = owed <= 0.01
+        ? 'No dues for you'
+        : 'Owes you ₹${owed.toStringAsFixed(2)}';
 
-    final settled = owe.abs() < 0.01 && owed.abs() < 0.01;
+    final chipTextStyle = theme.textTheme.labelLarge?.copyWith(
+      fontFeatures: const [ui.FontFeature.tabularFigures()],
+    );
 
-    Widget statChip({
-      required IconData icon,
-      required String label,
-      required String value,
-    }) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(isDark ? 0.10 : 0.55),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withOpacity(isDark ? 0.14 : 0.35)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: Colors.indigo.shade600),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              value,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                color: Colors.indigo,
-              ),
-            ),
-          ],
-        ),
+    Widget amountChip(String label, double amount,
+        {Color? color, IconData? icon}) {
+      final chipColor = color ??
+          (amount >= 0 ? Colors.teal.shade700 : Colors.redAccent);
+      return PillChip(
+        label,
+        icon: icon,
+        fg: chipColor,
+        bg: chipColor.withOpacity(0.15),
+        textStyle: chipTextStyle,
       );
     }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withOpacity(isDark ? 0.12 : 0.65),
-                Colors.white.withOpacity(isDark ? 0.08 : 0.40),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white.withOpacity(isDark ? 0.10 : 0.50),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(isDark ? 0.25 : 0.07),
-                blurRadius: 18,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final netLabel = net.abs() < 0.01
+        ? 'Settled'
+        : net > 0
+            ? '+ ₹${net.toStringAsFixed(2)}'
+            : '- ₹${(-net).toStringAsFixed(2)}';
+
+    return detail.GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  _buildAvatar(radius: 28),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _displayName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.teal.shade900,
-                              ) ??
-                              TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.teal.shade900,
-                              ),
-                        ),
-                        if (subtitle.isNotEmpty)
-                          Text(
-                            subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                                  color: neutral,
-                                  fontWeight: FontWeight.w600,
-                                ) ??
-                                TextStyle(
-                                  color: neutral,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: netColor.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(999),
-                      border:
-                          Border.all(color: netColor.withOpacity(netLabel == 'Settled' ? 0.28 : 0.45)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          net.abs() < 0.01
-                              ? Icons.check_circle_rounded
-                              : (net > 0
-                                  ? Icons.trending_up_rounded
-                                  : Icons.trending_down_rounded),
-                          size: 18,
-                          color: netColor,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          netLabel,
-                          style: TextStyle(
-                            color: netColor,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+              Hero(
+                tag: 'friend:${widget.friend.phone}',
+                child: _buildAvatar(radius: 28),
               ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: Colors.redAccent.withOpacity(0.10),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: Colors.redAccent.withOpacity(0.35),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.call_made_rounded,
-                            size: 16, color: Colors.redAccent),
-                        const SizedBox(width: 6),
-                        Text(
-                          oweLabel,
-                          style: const TextStyle(
-                            color: Colors.redAccent,
-                            fontWeight: FontWeight.w700,
+                    if (subtitleParts.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          subtitleParts.join(' • '),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.textTheme.bodySmall?.color
+                                ?.withOpacity(.74),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: Colors.teal.withOpacity(0.35),
                       ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.call_received_rounded,
-                            size: 16, color: Colors.teal.shade700),
-                        const SizedBox(width: 6),
-                        Text(
-                          owedLabel,
-                          style: TextStyle(
-                            color: Colors.teal.shade700,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (settled)
-                    const _SettledBadge(),
-                ],
+                  ],
+                ),
               ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  statChip(
-                    icon: Icons.receipt_long_rounded,
-                    label: 'Transactions',
-                    value: '$txCount',
+              AnimatedSwitcher(
+                duration: kMed,
+                switchInCurve: kEase,
+                switchOutCurve: kEase,
+                child: PillChip(
+                  netLabel,
+                  key: ValueKey(netLabel),
+                  fg: netColor,
+                  bg: netColor.withOpacity(0.18),
+                  textStyle: theme.textTheme.labelLarge?.copyWith(
+                    fontFeatures: const [ui.FontFeature.tabularFigures()],
+                    fontWeight: FontWeight.w800,
                   ),
-                  if (bucketCount > 0)
-                    statChip(
-                      icon: Icons.layers_rounded,
-                      label: 'Shared groups',
-                      value: '$bucketCount',
-                    ),
-                ],
+                ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              amountChip(
+                oweLabel,
+                -owe,
+                icon: Icons.call_made_rounded,
+                color: Colors.redAccent,
+              ),
+              amountChip(
+                owedLabel,
+                owed,
+                icon: Icons.call_received_rounded,
+                color: Colors.teal.shade700,
+              ),
+              if (settled)
+                PillChip(
+                  'All settled',
+                  icon: Icons.check_circle,
+                  fg: theme.colorScheme.onSurface.withOpacity(.72),
+                  bg: theme.colorScheme.onSurface.withOpacity(.08),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              PillChip(
+                'Transactions: $txCount',
+                icon: Icons.receipt_long_rounded,
+                textStyle: theme.textTheme.labelLarge,
+              ),
+              if (bucketCount > 0)
+                PillChip(
+                  'Shared groups: $bucketCount',
+                  icon: Icons.layers_rounded,
+                  textStyle: theme.textTheme.labelLarge,
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }
-
   Widget _buildAvatar({double radius = 36}) {
     final raw = (_friendAvatarUrl?.trim().isNotEmpty == true)
         ? _friendAvatarUrl!.trim()
@@ -1578,12 +1512,14 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
 
             // Totals + per-group breakdown (pairwise only)
             final breakdown =
-            computePairwiseBreakdown(you, friendPhone, pairwise);
-            final totals = breakdown.totals;
+                computePairwiseBreakdown(you, friendPhone, pairwise);
             final buckets = breakdown.buckets;
-            final totalOwe = totals.owe;
-            final totalOwed = totals.owed;
-            final net = totals.net;
+            final canonicalNet =
+                ledger.netBetween(you, friendPhone, pairwise);
+            final headerTotals =
+                ledger.summarizeForHeader({friendPhone: canonicalNet});
+            final totalOwe = headerTotals.youOwe;
+            final totalOwed = headerTotals.owedToYou;
 
             return TabBarView(
               controller: _tabController,
@@ -1607,12 +1543,9 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                             bucketCount: buckets.length,
                           ),
                           const SizedBox(height: 12),
-                          AdsBannerCard(
-                            placement: 'friend_detail_summary_banner',
-                            inline: true,
-                            inlineMaxHeight: 120,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                            minHeight: 92,
+                          const SleekAdCard(
+                            margin: EdgeInsets.symmetric(horizontal: 4),
+                            radius: 16,
                           ),
                           const SizedBox(height: 14),
                           // Recurring overview -> full recurring screen
@@ -1897,7 +1830,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                       for (final g in groups) g.id: g.name
                                     };
 
-                                    const int historyAdEvery = 5;
+                                    const int historyAdEvery = 0;
                                     final int blockSize = historyAdEvery + 1;
                                     final int adCount = historyAdEvery > 0
                                         ? pairwise.length ~/ historyAdEvery
@@ -1912,17 +1845,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                         final bool isAdSlot = historyAdEvery > 0 && blockSize > 0 &&
                                             (idx + 1) % blockSize == 0;
                                         if (isAdSlot) {
-                                          final slot = (idx + 1) ~/ blockSize;
-                                          return Padding(
-                                            padding: const EdgeInsets.symmetric(vertical: 6),
-                                            child: AdsBannerCard(
-                                              placement: 'friend_detail_history_$slot',
-                                              inline: true,
-                                              inlineMaxHeight: 120,
-                                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                              minHeight: 88,
-                                            ),
-                                          );
+                                          return const SizedBox.shrink();
                                         }
 
                                         final adsBefore = historyAdEvery > 0 ? (idx + 1) ~/ blockSize : 0;
@@ -2273,143 +2196,146 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                 ),
 
                 // ------------------ 2) CHART ------------------
-                RefreshIndicator(
-                  onRefresh: _refreshAll,
-                  child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    child: Padding(
-                      // mirror: 16px sides here too
-                      padding: EdgeInsets.fromLTRB(16, 22, 16, safeBottom + 22),
-                      child: _card(
-                        context,
-                        padding:
-                        const EdgeInsets.fromLTRB(12, 12, 12, 16),
+                Builder(builder: (context) {
+                  final categoryTotals = <String, double>{};
+                  for (final expense in pairwise) {
+                    final cat = _categoryLabelForExpense(expense);
+                    categoryTotals.update(cat, (value) => value + expense.amount.abs(),
+                        ifAbsent: () => expense.amount.abs());
+                  }
+                  final palette = [
+                    Colors.teal,
+                    Colors.indigo,
+                    Colors.deepPurple,
+                    Colors.orange,
+                    Colors.pink,
+                    Colors.blueGrey,
+                  ];
+                  var colorIndex = 0;
+                  final slices = categoryTotals.entries
+                      .map((entry) => PieSlice(
+                            key: entry.key,
+                            label: entry.key,
+                            value: entry.value,
+                            color: palette[colorIndex++ % palette.length],
+                          ))
+                      .toList()
+                    ..sort((a, b) => b.value.compareTo(a.value));
+                  final totalSpending =
+                      slices.fold<double>(0, (sum, slice) => sum + slice.value);
+                  final filteredExpenses = _selectedCategorySlice == null
+                      ? pairwise
+                      : pairwise
+                          .where((e) =>
+                              _categoryLabelForExpense(e) ==
+                              _selectedCategorySlice!.label)
+                          .toList();
+                  final friendsById = <String, FriendModel>{
+                    widget.friend.phone: widget.friend,
+                    widget.userPhone: _selfFriendModel,
+                  };
+
+                  return RefreshIndicator(
+                    onRefresh: _refreshAll,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(16, 22, 16, safeBottom + 22),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Row(
-                              children: [
-                                Text(
-                                  "Overview",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 16,
-                                    color: Colors.teal.shade900,
-                                  ),
-                                ),
-                                const Spacer(),
-                                Icon(Icons.bar_chart_rounded,
-                                    color: Colors.teal.shade700, size: 18),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-
-                            Builder(builder: (context) {
-                              final int txCount = pairwise.length;
-                              final double totalAmt = pairwise.fold<double>(
-                                  0.0, (s, e) => s + e.amount);
-                              return Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
+                            detail.GlassCard(
+                              padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.teal.withOpacity(0.10),
-                                      borderRadius:
-                                      BorderRadius.circular(999),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(Icons.receipt_long,
-                                            size: 14, color: Colors.teal),
-                                        const SizedBox(width: 6),
-                                        Text("Tx: $txCount",
-                                            style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors
-                                                    .teal.shade900,
-                                                fontWeight:
-                                                FontWeight.w600)),
-                                      ],
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'Spending by category',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 16,
+                                          color: Colors.teal.shade900,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      Icon(Icons.pie_chart_rounded,
+                                          color: Colors.teal.shade700, size: 18),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Center(
+                                    child: SizedBox(
+                                      height: 220,
+                                      width: 220,
+                                      child: PieTouchChart(
+                                        slices: slices,
+                                        selected: _selectedCategorySlice,
+                                        onSelect: _onSliceSelected,
+                                      ),
                                     ),
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.indigo.withOpacity(0.08),
-                                      borderRadius:
-                                      BorderRadius.circular(999),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(Icons.currency_rupee,
-                                            size: 14, color: Colors.indigo),
-                                        const SizedBox(width: 6),
-                                        Text("Total ₹${totalAmt.toStringAsFixed(0)}",
-                                            style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors
-                                                    .indigo.shade900,
-                                                fontWeight:
-                                                FontWeight.w600)),
-                                      ],
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.withOpacity(0.10),
-                                      borderRadius:
-                                      BorderRadius.circular(999),
-                                    ),
-                                    child: const Text(
-                                      "You owe",
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.redAccent,
-                                          fontWeight: FontWeight.w600),
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.green.withOpacity(0.10),
-                                      borderRadius:
-                                      BorderRadius.circular(999),
-                                    ),
-                                    child: const Text(
-                                      "Owed to you",
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.green,
-                                          fontWeight: FontWeight.w600),
-                                    ),
+                                  const SizedBox(height: 16),
+                                  CategoryLegendRow(
+                                    slices: slices,
+                                    total: totalSpending,
+                                    selected: _selectedCategorySlice,
+                                    onSelect: _onSliceSelected,
                                   ),
                                 ],
-                              );
-                            }),
-                            const SizedBox(height: 14),
-
-                            SizedBox(
-                              height: 240,
-                              child: SimpleBarChartWidget(
-                                owe: totalOwe,
-                                owed: totalOwed,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            const SleekAdCard(
+                              margin: EdgeInsets.symmetric(horizontal: 4),
+                              radius: 16,
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              key: _chartListAnchorKey,
+                              child: UnifiedTransactionList(
+                                key: ValueKey(
+                                    'friend-chart-${_selectedCategorySlice?.key ?? 'all'}'),
+                                expenses: filteredExpenses,
+                                incomes: const [],
+                                friendsById: friendsById,
+                                userPhone: widget.userPhone,
+                                onEdit: (tx) {
+                                  if (tx is ExpenseItem) {
+                                    _editEntry(tx);
+                                  }
+                                },
+                                onDelete: (tx) {
+                                  if (tx is ExpenseItem) {
+                                    _deleteEntry(tx);
+                                  }
+                                },
+                                showTopBannerAd: false,
+                                showBottomBannerAd: true,
+                                inlineAdAfterIndex: 2,
+                                enableInlineAds: true,
+                                emptyBuilder: (ctx) => Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 24),
+                                  child: Text(
+                                    _selectedCategorySlice == null
+                                        ? 'No shared expenses yet.'
+                                        : 'No expenses in ${_selectedCategorySlice!.label}.',
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(ctx)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                }),
 
                 // ------------------ 3) ANALYTICS ------------------
                 RefreshIndicator(
