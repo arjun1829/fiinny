@@ -10,6 +10,13 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+repositories {
+    google()
+    mavenCentral()
+    maven(url = "https://storage.googleapis.com/download.flutter.io")
+    maven(url = "https://dl.google.com/dl/android/maven2/")
+}
+
 /* 🔧 EXCLUDE the old IID lib that causes the duplicate */
 configurations.all {
     exclude(group = "com.google.firebase", module = "firebase-iid")
