@@ -520,8 +520,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
   @override
   Widget build(BuildContext context) {
     final accent = Colors.black87;
-    return SmallTypographyOverlay(
-      child: Dialog(
+    return Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
         child: ClipRRect(

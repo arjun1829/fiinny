@@ -73,13 +73,13 @@ class SmallTypographyOverlay extends StatelessWidget {
         appBarTheme: appBarTheme,
         tabBarTheme: tabBarTheme,
         elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(textStyle: buttonText, visualDensity: VisualDensity.compact),
+          style: ElevatedButton.styleFrom(textStyle: buttonText),
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
-          style: OutlinedButton.styleFrom(textStyle: buttonText, visualDensity: VisualDensity.compact),
+          style: OutlinedButton.styleFrom(textStyle: buttonText),
         ),
         textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(textStyle: buttonText, visualDensity: VisualDensity.compact),
+          style: TextButton.styleFrom(textStyle: buttonText),
         ),
         chipTheme: base.chipTheme.copyWith(
           labelStyle: _scaled(

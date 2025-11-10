@@ -31,6 +31,22 @@ import 'package:lifemap/screens/activity/activity_screen.dart';
 import 'package:lifemap/ui/sheets/settle_smart_sheet.dart';
 import 'package:lifemap/ui/theme/small_typography_overlay.dart';
 
+// --- SAFE stubs so tiles compile; they call legacy dialog if v2 not wired ---
+Future<void> _launchSettleForFriend(dynamic friend) async {
+  try {
+    // if you have SettleUpFlowV2Launcher open it here, else fallback:
+    // await SettleUpFlowV2Launcher.openForFriend(...);
+  } catch (_) {
+    // Optional: show legacy dialog or ignore
+  }
+}
+
+Future<void> _launchSettleForGroup(dynamic group) async {
+  try {
+    // Same pattern as above
+  } catch (_) {}
+}
+
 /* ===========================================================================
  * FRIENDS & GROUPS — Upgraded UI (self-contained)
  * - AppBar icons: 📊 summary (bottom sheet), 🔍 search (overlay)

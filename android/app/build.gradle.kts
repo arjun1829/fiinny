@@ -44,7 +44,7 @@ if (keystorePropertiesFile != null) {
 
 android {
     namespace = "com.KaranArjunTechnologies.lifemap"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "27.0.12077973"
 
     /* ✅ Use Java 17 to satisfy modern toolchains */
@@ -58,7 +58,7 @@ android {
     defaultConfig {
         applicationId = "com.KaranArjunTechnologies.lifemap"
         minSdk = 23
-        targetSdk = 35
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
