@@ -166,7 +166,7 @@ class _PiePainter extends CustomPainter {
 
       final outerRadius = isSelected ? radius + 6 : radius;
       final arcRect = Rect.fromCircle(center: center, radius: outerRadius);
-      canvas.drawArc(arcRect, startAngle, sweep, true, paint);
+      canvas.drawArc(arcRect, startAngle, sweep.toDouble(), true, paint);
       startAngle += sweep;
     }
 

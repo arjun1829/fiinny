@@ -287,8 +287,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
     final safeBottom = context.adsBottomPadding();
     final accent = Colors.black87;
     // Glassy dialog body
-    return SmallTypographyOverlay(
-      child: Dialog(
+    return Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         child: ClipRRect(

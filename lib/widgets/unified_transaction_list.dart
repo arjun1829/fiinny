@@ -1129,7 +1129,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         continue;
       }
       if (isFeeToken(k)) {
-        if (hasFees) out.add('Charges');
+        if (!hasFees) {
+          continue; // don't render Charges chip unless a fee was parsed
+        }
+        out.add('Charges');
         continue;
       }
 
