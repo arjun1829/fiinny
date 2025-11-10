@@ -275,13 +275,13 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
             icon: Icons.contact_phone_rounded,
             label: 'Add from Contacts',
             onTap: () =>
-                _closeWithResult(const QuickCreatePickResult.action(QuickCreateAction.addFriendFromContacts)),
+                _closeWithResult(QuickCreatePickResult.action(QuickCreateAction.addFriendFromContacts)),
           ),
           _QuickActionChip(
             icon: Icons.person_add_alt_1_rounded,
             label: 'Add friend (manual)',
             onTap: () =>
-                _closeWithResult(const QuickCreatePickResult.action(QuickCreateAction.addFriendManual)),
+                _closeWithResult(QuickCreatePickResult.action(QuickCreateAction.addFriendManual)),
           ),
         ],
       );
@@ -294,7 +294,7 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
             icon: Icons.group_add_rounded,
             label: 'Create group',
             onTap: () =>
-                _closeWithResult(const QuickCreatePickResult.action(QuickCreateAction.createGroup)),
+                _closeWithResult(QuickCreatePickResult.action(QuickCreateAction.createGroup)),
           ),
         ],
       );
@@ -393,7 +393,7 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
           title: 'Add from Contacts',
           subtitle: 'Import a contact and invite instantly',
           onTap: () =>
-              _closeWithResult(const QuickCreatePickResult.action(QuickCreateAction.addFriendFromContacts)),
+              _closeWithResult(QuickCreatePickResult.action(QuickCreateAction.addFriendFromContacts)),
         ),
         const SizedBox(height: 12),
         _NewEntryCard(
@@ -401,7 +401,7 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
           title: 'Add friend manually',
           subtitle: 'Enter phone number and name',
           onTap: () =>
-              _closeWithResult(const QuickCreatePickResult.action(QuickCreateAction.addFriendManual)),
+              _closeWithResult(QuickCreatePickResult.action(QuickCreateAction.addFriendManual)),
         ),
         const SizedBox(height: 12),
         _NewEntryCard(
@@ -409,7 +409,7 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
           title: 'Create a new group',
           subtitle: 'Plan trips, homes, events and more',
           onTap: () =>
-              _closeWithResult(const QuickCreatePickResult.action(QuickCreateAction.createGroup)),
+              _closeWithResult(QuickCreatePickResult.action(QuickCreateAction.createGroup)),
         ),
       ],
     );

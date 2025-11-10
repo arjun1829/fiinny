@@ -269,7 +269,7 @@ class GmailService {
     String? sanitize(String? raw) {
       if (raw == null) return null;
       final cleaned = raw
-          .replaceAll(RegExp(r'["\'"`]+'), ' ')
+          .replaceAll(RegExp(r"""["'`]+"""), ' ')
           .replaceAll(RegExp(r'[^A-Za-z0-9 .&/@-]'), ' ')
           .replaceAll(RegExp(r'\s+'), ' ')
           .trim();
@@ -2051,12 +2051,14 @@ class GmailService {
     if (RegExp(r'\bauto[- ]?debit|autopay|nach|mandate|e\s*mandate\b').hasMatch(t)) out.add('autopay');
     if (RegExp(r'\bemi\b').hasMatch(t)) out.add('loan_emi');
     if (RegExp(r'\bsubscription|renew(al)?|membership\b').hasMatch(t)) out.add('subscription');
-    if (RegExp(r'\b(surcharge|penalty|late\s*fee|convenience\s*fee|processing\s*fee)\b')
-        .hasMatch(t)) {
-      out.add('charges');
-    }
+    final feeNouns = RegExp(
+      r'\b(surcharge|penalty|late\s*fee|convenience\s*fee|processing\s*fee|service\s*charge|finance\s*charge)\b',
+      caseSensitive: false,
+    );
     try {
-      if (_extractFees(text).isNotEmpty) out.add('charges');
+      if (feeNouns.hasMatch(t) || _extractFees(text).isNotEmpty) {
+        out.add('charges');
+      }
     } catch (_) {
       // ignore parsing errors; best-effort tagging only
     }
