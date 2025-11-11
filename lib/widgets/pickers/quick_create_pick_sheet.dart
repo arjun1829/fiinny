@@ -219,6 +219,7 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
                       radius: 16,
                     ),
                   ],
+                ),
               ),
             ),
           ),
@@ -355,16 +356,16 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
                       ? friend.name.characters.first
                       : friend.phone.characters.first)
               .toUpperCase();
-          return _QuickListTile(
-            leading: CircleAvatar(
-              radius: 20,
-              backgroundColor: const Color(0xFF09857a).withOpacity(0.08),
-              child: Text(initials, style: const TextStyle(fontWeight: FontWeight.w700)),
-            ),
-            title: _friendDisplay(friend),
-            subtitle: friend.phone,
-            onTap: () => _closeWithResult(QuickCreatePickResult.friend(friend)),
-        ));
+            return _QuickListTile(
+              leading: CircleAvatar(
+                radius: 20,
+                backgroundColor: const Color(0xFF09857a).withOpacity(0.08),
+                child: Text(initials, style: const TextStyle(fontWeight: FontWeight.w700)),
+              ),
+              title: _friendDisplay(friend),
+              subtitle: friend.phone,
+              onTap: () => _closeWithResult(QuickCreatePickResult.friend(friend)),
+            );
         } else {
           final group = items[index] as GroupModel;
           final members = group.memberPhones.length;
