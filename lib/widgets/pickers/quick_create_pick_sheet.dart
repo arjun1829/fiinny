@@ -364,7 +364,7 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
             title: _friendDisplay(friend),
             subtitle: friend.phone,
             onTap: () => _closeWithResult(QuickCreatePickResult.friend(friend)),
-          );
+        ));
         } else {
           final group = items[index] as GroupModel;
           final members = group.memberPhones.length;
