@@ -81,7 +81,7 @@
 
   <!-- ===== Fiinny iOS permissions & AdMob ===== -->
   <key>NSContactsUsageDescription</key>
-  <string>Fiinny uses your contacts to help you find friends and enable Partner Mode.</string>
+  <string>Fiinny uses your contacts only to help you choose a partner to invite. We do not upload or store your address book.</string>
   <key>NSPhotoLibraryUsageDescription</key>
   <string>Allow access to save and pick receipt images and your profile photo.</string>
   <key>NSPhotoLibraryAddUsageDescription</key>
