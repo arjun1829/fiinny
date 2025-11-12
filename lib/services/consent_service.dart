@@ -50,7 +50,22 @@ class ConsentService {
     return _authorized;
   }
 
-  static Future<void> openSettings() {
-    return AppTrackingTransparency.openTrackingAuthorizationSettings();
+  static Future<void> openSettings() async {
+    if (!Platform.isIOS) {
+      return;
+    }
+
+    try {
+      final didOpen = await AppTrackingTransparency.openAppSettings();
+      if (!didOpen) {
+        // Best-effort attempt: if the dedicated settings screen could not be
+        // opened, fall back to re-requesting the authorization dialog.
+        await AppTrackingTransparency.requestTrackingAuthorization();
+      }
+    } catch (_) {
+      // The underlying plugin can throw when the iOS version does not support
+      // opening the settings screen directly. Ignore and keep the flow
+      // consistent for callers.
+    }
   }
 }
