@@ -127,7 +127,7 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
       banner = BannerAd(
         adUnitId: widget.adUnitId,
         size: size,
-        request: const AdRequest(),
+        request: AdService.buildAdRequest(),
         listener: BannerAdListener(
           onAdLoaded: (ad) {
             if (!mounted) {

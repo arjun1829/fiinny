@@ -64,6 +64,7 @@ dependencies:
   file_picker: ^8.0.0
   firebase_messaging: ^15.2.10
 
+  app_tracking_transparency: ^2.0.4
   google_mobile_ads: ^5.1.0
   package_info_plus: ^8.0.2
 

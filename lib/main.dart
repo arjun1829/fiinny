@@ -18,6 +18,7 @@ import 'core/ads/ads_shell.dart';
 
 import 'screens/launcher_screen.dart';
 import 'themes/theme_provider.dart';
+import 'services/consent_service.dart';
 import 'services/startup_prefs.dart';
 import 'services/sms/sms_ingestor.dart';
 
@@ -127,6 +128,17 @@ Future<void> _boot(_StartupTracer tracer) async {
   tracer.add('BOOT start');
   tracer.add('Platform=${Platform.operatingSystem} diag=$kDiagBuild');
 
+  await _ensureNavigatorReady();
+
+  final attAllowed = await ConsentService.requestATTIfNeeded(
+    showPrePrompt: _showAttPrePrompt,
+  );
+  tracer.add('ATT status=${ConsentService.lastStatus} allowed=$attAllowed');
+  AdService.updateConsent(authorized: attAllowed);
+  if (!attAllowed && ConsentService.isDeniedOrRestricted) {
+    unawaited(_showTrackingSettingsDialog());
+  }
+
   try {
     tracer.add('Firebase.initializeApp…');
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)
@@ -172,6 +184,97 @@ Future<void> _boot(_StartupTracer tracer) async {
       : 'NAV → LauncherScreen (welcome pending)');
   _DiagApp.navTo(const LauncherScreen());
   tracer.add('BOOT done (UI visible)');
+}
+
+Future<void> _ensureNavigatorReady() async {
+  for (var i = 0; i < 20; i++) {
+    if (rootNavigatorKey.currentContext != null) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+  }
+}
+
+Future<bool> _showAttPrePrompt() async {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) {
+    return true;
+  }
+
+  final result = await showDialog<bool>(
+    context: context,
+    useRootNavigator: true,
+    barrierDismissible: false,
+    builder: (context) => const _AttPrePromptDialog(),
+  );
+
+  return result ?? false;
+}
+
+Future<void> _showTrackingSettingsDialog() async {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) {
+    return;
+  }
+
+  await showDialog<void>(
+    context: context,
+    useRootNavigator: true,
+    builder: (context) => const _AttSettingsDialog(),
+  );
+}
+
+class _AttPrePromptDialog extends StatelessWidget {
+  const _AttPrePromptDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Help keep Fiinny free'),
+      content: const Text(
+        'We use this permission to improve ad relevance and measure performance. '
+        'You can continue either way.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context, rootNavigator: true).pop(false),
+          child: const Text('Not now'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context, rootNavigator: true).pop(true),
+          child: const Text('Continue'),
+        ),
+      ],
+    );
+  }
+}
+
+class _AttSettingsDialog extends StatelessWidget {
+  const _AttSettingsDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Tracking disabled'),
+      content: const Text(
+        'Ads will remain non-personalized. You can enable tracking later from '
+        'iOS Settings → Privacy & Security → Tracking.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+          child: const Text('Continue'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.of(context, rootNavigator: true).pop();
+            unawaited(ConsentService.openSettings());
+          },
+          child: const Text('Open Settings'),
+        ),
+      ],
+    );
+  }
 }
 
 class _DiagApp extends StatefulWidget {
