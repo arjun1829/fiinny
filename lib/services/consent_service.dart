@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:app_tracking_transparency/app_tracking_transparency.dart';
-import 'package:permission_handler/permission_handler.dart' show openAppSettings;
+import 'package:permission_handler/permission_handler.dart' as perm;
 
 /// Centralized helper for Apple App Tracking Transparency (ATT) consent.
 typedef ConsentPrePrompt = Future<bool> Function();
@@ -57,16 +57,11 @@ class ConsentService {
     }
 
     try {
-      final didOpen = await openAppSettings();
-      if (!didOpen) {
-        // Best-effort attempt: if the dedicated settings screen could not be
-        // opened, fall back to re-requesting the authorization dialog.
-        await AppTrackingTransparency.requestTrackingAuthorization();
-      }
+      await AppTrackingTransparency.openTrackingAuthorizationSettings();
     } catch (_) {
-      // The underlying plugin can throw when the iOS version does not support
-      // opening the settings screen directly. Ignore and keep the flow
-      // consistent for callers.
+      try {
+        await perm.openAppSettings();
+      } catch (_) {}
     }
   }
 }
