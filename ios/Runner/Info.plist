@@ -91,7 +91,7 @@
   <key>NSMicrophoneUsageDescription</key>
   <string>Required only if you record videos (not used by default).</string>
   <key>NSUserTrackingUsageDescription</key>
-  <string>Used to deliver relevant ads and support Fiinny.</string>
+  <string>Fiinny asks permission to use your device’s identifier to show more relevant ads and measure performance. You can continue even if you don’t allow.</string>
   <key>FirebaseCrashlyticsCollectionEnabled</key>
   <true/>
   <key>NSLocationWhenInUseUsageDescription</key>

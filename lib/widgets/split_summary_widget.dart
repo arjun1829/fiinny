@@ -1,21 +1,25 @@
 // lib/widgets/split_summary_widget.dart
 import 'package:flutter/material.dart';
+import 'package:characters/characters.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/expense_item.dart';
 import '../models/friend_model.dart';
 import '../group/group_balance_math.dart';
+import '../services/contact_name_service.dart';
 
 class SplitSummaryWidget extends StatelessWidget {
   final List<ExpenseItem> expenses;
   final List<FriendModel> friends;
   final String userPhone;
+  final ContactNameService? contactNames;
 
   const SplitSummaryWidget({
     Key? key,
     required this.expenses,
     required this.friends,
     required this.userPhone,
+    this.contactNames,
   }) : super(key: key);
 
   FriendModel? _friend(String phone) {
@@ -158,25 +162,43 @@ class SplitSummaryWidget extends StatelessWidget {
               ),
             )
           else
-            ...top4.map((e) => _TopLine(
-              phone: e.key,
-              friend: _friend(e.key),
-              description: e.value > 0
-                  ? "${_displayName(_friend(e.key), e.key)} owes you"
-                  : "You owe ${_displayName(_friend(e.key), e.key)}",
-              amountText: _money0(e.value.abs()),
-              amountColor: e.value > 0
-                  ? Colors.teal.shade800
-                  : Colors.redAccent,
-            )),
+            ...top4.map((entry) {
+              final friend = _friend(entry.key);
+              final displayName = _displayName(friend, entry.key);
+              final owesYou = entry.value > 0;
+              final description = owesYou
+                  ? '$displayName owes you'
+                  : 'You owe $displayName';
+              return _TopLine(
+                phone: entry.key,
+                friend: friend,
+                displayName: displayName,
+                description: description,
+                amountText: _money0(entry.value.abs()),
+                amountColor:
+                    owesYou ? Colors.teal.shade800 : Colors.redAccent,
+              );
+            }),
         ],
       ),
     );
   }
 
   String _displayName(FriendModel? f, String phone) {
-    if (f == null) return phone;
-    return f.name.isNotEmpty ? f.name : phone;
+    final fallback = (f != null && f.name.isNotEmpty) ? f.name : phone;
+    final remoteName = f?.name;
+    final service = contactNames;
+    if (service != null) {
+      return service
+          .bestDisplayName(
+            phone: phone,
+            remoteName: remoteName,
+            fallback: fallback,
+          )
+          .trim();
+    }
+    if (f == null) return fallback;
+    return fallback;
   }
 }
 
@@ -218,6 +240,7 @@ class _RowLine extends StatelessWidget {
 class _TopLine extends StatelessWidget {
   final String phone;
   final FriendModel? friend;
+  final String displayName;
   final String description;
   final String amountText;
   final Color amountColor;
@@ -226,6 +249,7 @@ class _TopLine extends StatelessWidget {
     Key? key,
     required this.phone,
     required this.friend,
+    required this.displayName,
     required this.description,
     required this.amountText,
     required this.amountColor,
@@ -233,17 +257,15 @@ class _TopLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = (friend?.name.isNotEmpty == true) ? friend!.name : phone;
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          _TinyAvatar(phone: phone, friend: friend),
+          _TinyAvatar(phone: phone, friend: friend, displayName: displayName),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              "$name — $description",
+              "$displayName — $description",
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -285,7 +307,12 @@ class _AvatarCache {
 class _TinyAvatar extends StatelessWidget {
   final String phone;
   final FriendModel? friend;
-  const _TinyAvatar({required this.phone, this.friend});
+  final String displayName;
+  const _TinyAvatar({
+    required this.phone,
+    this.friend,
+    required this.displayName,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -308,8 +335,10 @@ class _TinyAvatar extends StatelessWidget {
         if (url != null && url.startsWith('http')) {
           return CircleAvatar(radius: 14, backgroundImage: NetworkImage(url));
         }
-        final initial = (friend?.name.isNotEmpty == true)
-            ? friend!.name[0].toUpperCase()
+        final nameSource =
+            (friend?.name.isNotEmpty == true) ? friend!.name : displayName;
+        final initial = nameSource.isNotEmpty
+            ? nameSource.characters.first.toUpperCase()
             : '👤';
         return CircleAvatar(
             radius: 14, child: Text(initial, style: const TextStyle(fontSize: 13)));

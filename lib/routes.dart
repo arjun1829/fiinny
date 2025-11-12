@@ -42,6 +42,8 @@ import 'details/shared/partner_capabilities.dart';
 
 // ---------- Friend recurring (NEW route target) ----------
 import 'details/recurring/friend_recurring_screen.dart';
+import 'details/friend_detail_route_screen.dart';
+import 'details/group_detail_route_screen.dart';
 
 import 'screens/subs_bills/subs_bills_screen.dart';
 import 'screens/tx_day_details_screen.dart';
@@ -323,6 +325,58 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
               friendName: friendName,
             ),
             settings: settings, // keep settings so screen can inspect section if needed
+          );
+        }
+      }
+      break;
+
+    case '/friend-detail':
+      {
+        String? friendId;
+        String? friendName;
+        if (args is String) {
+          friendId = args;
+        } else if (args is Map<String, dynamic>) {
+          if (args['friendId'] is String) {
+            friendId = (args['friendId'] as String).trim();
+          }
+          if (args['friendName'] is String) {
+            friendName = (args['friendName'] as String).trim();
+          }
+        }
+        if (friendId != null && friendId.isNotEmpty) {
+          return MaterialPageRoute(
+            builder: (_) => FriendDetailRouteScreen(
+              friendId: friendId!,
+              friendNameHint: friendName,
+            ),
+            settings: settings,
+          );
+        }
+      }
+      break;
+
+    case '/group-detail':
+      {
+        String? groupId;
+        String? groupName;
+        if (args is String) {
+          groupId = args;
+        } else if (args is Map<String, dynamic>) {
+          if (args['groupId'] is String) {
+            groupId = (args['groupId'] as String).trim();
+          }
+          if (args['groupName'] is String) {
+            groupName = (args['groupName'] as String).trim();
+          }
+        }
+        if (groupId != null && groupId.isNotEmpty) {
+          return MaterialPageRoute(
+            builder: (_) => GroupDetailRouteScreen(
+              groupId: groupId!,
+              groupNameHint: groupName,
+            ),
+            settings: settings,
           );
         }
       }

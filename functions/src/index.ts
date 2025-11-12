@@ -107,23 +107,76 @@ export const onSharedExpenseCreated = onDocumentCreated(
     const d = snap.data() as any;
 
     const amount = Math.round(Number(d.amount || 0));
-    const payerName = String(d.payerName || "Someone");
-    const assignees: string[] = Array.isArray(d.assignees) ? d.assignees : [];
-    const payerUid = String(d.payerUid || "");
+    const amountDisplay = `₹${amount.toLocaleString('en-IN')}`;
+    const payerName = String(d.payerName || "Someone").trim() || "Someone";
+    const assignees: string[] = Array.isArray(d.assignees)
+      ? d.assignees.map((x: unknown) => String(x || "").trim()).filter((x: string) => x.length > 0)
+      : [];
+    const payerUid = typeof d.payerUid === 'string' ? d.payerUid.trim() : '';
+    const payerId = typeof d.payerId === 'string' ? d.payerId.trim() : '';
+    const payerPhone = typeof d.payerPhone === 'string' ? d.payerPhone.trim() : '';
+    const createdBy = typeof d.createdBy === 'string' ? d.createdBy.trim() : '';
+    const createdByUid = typeof d.createdByUid === 'string' ? d.createdByUid.trim() : '';
+    const createdById = typeof d.createdById === 'string' ? d.createdById.trim() : '';
+    const ownerId = typeof d.ownerId === 'string' ? d.ownerId.trim() : '';
+    const ownerUid = typeof d.ownerUid === 'string' ? d.ownerUid.trim() : '';
+    const ownerPhone = typeof d.ownerPhone === 'string' ? d.ownerPhone.trim() : '';
+
+    const skipIds = new Set<string>();
+    [
+      payerUid,
+      payerId,
+      payerPhone,
+      createdBy,
+      createdByUid,
+      createdById,
+      ownerId,
+      ownerUid,
+      ownerPhone,
+    ].forEach((val) => {
+      if (val) skipIds.add(val);
+    });
+
+    const payerIdentifier = [payerPhone, payerId, payerUid].find((val) => val && val.length > 0) || '';
+    const groupId = typeof d.groupId === 'string' ? d.groupId.trim() : '';
+    let groupName = typeof d.groupName === 'string' ? d.groupName.trim() : '';
+    if (groupId && !groupName) {
+      try {
+        const groupDoc = await db.doc(`groups/${groupId}`).get();
+        const fetched = (groupDoc.data()?.name as string | undefined)?.trim();
+        if (fetched) {
+          groupName = fetched;
+        }
+      } catch (_) {
+        // ignore fetch errors; fallback handled below
+      }
+    }
 
     for (const uid of assignees) {
-      if (!uid || uid === payerUid) continue;
+      if (!uid || skipIds.has(uid)) continue;
 
       const userDoc = await db.doc(`users/${uid}`).get();
       const token = userDoc.get("fcmToken") as string | undefined;
+
+      const title = groupId
+          ? (groupName || 'Group expense')
+          : `${payerName} added an expense`;
+      const body = groupId
+          ? `${payerName} added ${amountDisplay} in ${groupName || 'your group'}.`
+          : `${payerName} added ${amountDisplay} with you.`;
+      const deeplink = groupId
+          ? `app://group-detail/${encodeURIComponent(groupId)}${groupName ? `?name=${encodeURIComponent(groupName)}` : ''}`
+          : (payerIdentifier
+              ? `app://friend-detail/${encodeURIComponent(payerIdentifier)}?name=${encodeURIComponent(payerName)}`
+              : 'app://friends');
 
       await sendOrFeed({
         uid,
         token,
         channelKey: "realtime_expense",
-        title: "🧾 New shared expense",
-        body: `${payerName} added ₹${amount} to you.`,
-        deeplink: `app://expense/${snap.id}`,
+        title,
+        body,
+        deeplink,
         idempotencyKey: `${uid}:expense:${snap.id}`,
       });
     }
