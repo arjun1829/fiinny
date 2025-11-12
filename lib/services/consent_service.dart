@@ -52,15 +52,12 @@ class ConsentService {
   }
 
   static Future<void> openSettings() async {
-    if (!Platform.isIOS) {
-      return;
-    }
-
+    if (!Platform.isIOS) return;
     try {
-      await AppTrackingTransparency.openTrackingAuthorizationSettings();
+      await perm.openAppSettings();
     } catch (_) {
       try {
-        await perm.openAppSettings();
+        await AppTrackingTransparency.requestTrackingAuthorization();
       } catch (_) {}
     }
   }
