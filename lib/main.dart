@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
 import 'package:workmanager/workmanager.dart';
 import 'firebase_options.dart';
@@ -18,6 +19,7 @@ import 'core/ads/ads_shell.dart';
 
 import 'screens/launcher_screen.dart';
 import 'themes/theme_provider.dart';
+import 'services/ad_config.dart';
 import 'services/consent_service.dart';
 import 'services/startup_prefs.dart';
 import 'services/sms/sms_ingestor.dart';
@@ -105,6 +107,12 @@ void main() async {
     return;
   }
 
+  // System ATT prompt only — no custom pre-prompt.
+  AdConfig.authorized = await ConsentService.requestATTIfNeeded();
+
+  await MobileAds.instance.initialize();
+  AdService.updateConsent(authorized: AdConfig.authorized);
+
   final tracer = _StartupTracer();
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
@@ -117,22 +125,19 @@ void main() async {
 
   await runZonedGuarded<Future<void>>(() async {
     runApp(_DiagApp(tracer: tracer));
-    await _boot(tracer);
+    await _boot(tracer, attAllowed: AdConfig.authorized);
   }, (error, stack) async {
     tracer.add('Uncaught: $error');
     try { await FirebaseCrashlytics.instance.recordError(error, stack, fatal: true); } catch (_) {}
   });
 }
 
-Future<void> _boot(_StartupTracer tracer) async {
+Future<void> _boot(_StartupTracer tracer, {required bool attAllowed}) async {
   tracer.add('BOOT start');
   tracer.add('Platform=${Platform.operatingSystem} diag=$kDiagBuild');
 
   await _ensureNavigatorReady();
 
-  final attAllowed = await ConsentService.requestATTIfNeeded(
-    showPrePrompt: _showAttPrePrompt,
-  );
   tracer.add('ATT status=${ConsentService.lastStatus} allowed=$attAllowed');
   AdService.updateConsent(authorized: attAllowed);
   if (!attAllowed && ConsentService.isDeniedOrRestricted) {
@@ -195,22 +200,6 @@ Future<void> _ensureNavigatorReady() async {
   }
 }
 
-Future<bool> _showAttPrePrompt() async {
-  final context = rootNavigatorKey.currentContext;
-  if (context == null) {
-    return true;
-  }
-
-  final result = await showDialog<bool>(
-    context: context,
-    useRootNavigator: true,
-    barrierDismissible: false,
-    builder: (context) => const _AttPrePromptDialog(),
-  );
-
-  return result ?? false;
-}
-
 Future<void> _showTrackingSettingsDialog() async {
   final context = rootNavigatorKey.currentContext;
   if (context == null) {
@@ -222,31 +211,6 @@ Future<void> _showTrackingSettingsDialog() async {
     useRootNavigator: true,
     builder: (context) => const _AttSettingsDialog(),
   );
-}
-
-class _AttPrePromptDialog extends StatelessWidget {
-  const _AttPrePromptDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Help keep Fiinny free'),
-      content: const Text(
-        'We use this permission to improve ad relevance and measure performance. '
-        'You can continue either way.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context, rootNavigator: true).pop(false),
-          child: const Text('Not now'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context, rootNavigator: true).pop(true),
-          child: const Text('Continue'),
-        ),
-      ],
-    );
-  }
 }
 
 class _AttSettingsDialog extends StatelessWidget {
