@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart'
     show SynchronousFuture, debugPrint, kIsWeb, kReleaseMode;
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import '../../services/ad_config.dart';
 import 'ad_ids.dart';
 
 /// Default to false. Enable special diagnostics explicitly with
@@ -24,15 +25,11 @@ class AdService {
   static final AdService I = AdService._();
   static bool _ready = false;
   static bool get isReady => _ready;
-  static bool _trackingAuthorized = !Platform.isIOS;
-
   static void updateConsent({required bool authorized}) {
-    _trackingAuthorized = authorized;
+    AdConfig.authorized = authorized;
   }
 
-  static AdRequest buildAdRequest() {
-    return AdRequest(nonPersonalizedAds: !_trackingAuthorized);
-  }
+  static AdRequest buildAdRequest() => AdConfig.adRequest();
 
   InterstitialAd? _inter;
   RewardedAd? _rewarded;
