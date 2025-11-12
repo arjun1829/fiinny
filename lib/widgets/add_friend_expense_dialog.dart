@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../core/ads/ads_shell.dart';
+import 'ads/sleek_ad_card.dart';
 import '../models/friend_model.dart';
 import '../models/expense_item.dart';
 import '../services/expense_service.dart';
@@ -925,6 +926,17 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
                           ),
                         ),
                       ),
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      switchInCurve: Curves.easeInOut,
+                      switchOutCurve: Curves.easeInOut,
+                      child: _step >= 2
+                          ? const SleekAdCard(
+                              margin: EdgeInsets.fromLTRB(12, 6, 12, 6),
+                              radius: 14,
+                            )
+                          : const SizedBox.shrink(),
                     ),
 
                     // Footer

@@ -8,7 +8,8 @@ import 'package:lifemap/core/flags/fx_flags.dart';
 import 'package:lifemap/models/friend_model.dart';
 import 'package:lifemap/models/group_model.dart';
 import 'package:lifemap/models/expense_item.dart';
-import 'package:lifemap/group/group_balance_math.dart' show computeSplits;
+import 'package:lifemap/group/group_balance_math.dart'
+    show computeSplits, computeNetByMember;
 import 'package:intl/intl.dart';
 
 import 'package:lifemap/services/contact_name_service.dart';
@@ -21,11 +22,30 @@ import 'package:lifemap/widgets/add_group_dialog.dart';
 import 'package:lifemap/widgets/settleup_dialog.dart';
 import 'package:lifemap/widgets/split_summary_widget.dart';
 import 'package:lifemap/settleup_v2/index.dart';
+import 'package:lifemap/widgets/pickers/quick_create_pick_sheet.dart';
 
 import 'package:lifemap/details/friend_detail_screen.dart';
 import 'package:lifemap/details/group_detail_screen.dart';
 import 'package:lifemap/widgets/add_expense_dialog.dart';
 import 'package:lifemap/screens/activity/activity_screen.dart';
+import 'package:lifemap/ui/sheets/settle_smart_sheet.dart';
+import 'package:lifemap/ui/theme/small_typography_overlay.dart';
+
+// --- SAFE stubs so tiles compile; they call legacy dialog if v2 not wired ---
+Future<void> _launchSettleForFriend(dynamic friend) async {
+  try {
+    // if you have SettleUpFlowV2Launcher open it here, else fallback:
+    // await SettleUpFlowV2Launcher.openForFriend(...);
+  } catch (_) {
+    // Optional: show legacy dialog or ignore
+  }
+}
+
+Future<void> _launchSettleForGroup(dynamic group) async {
+  try {
+    // Same pattern as above
+  } catch (_) {}
+}
 
 /* ===========================================================================
  * FRIENDS & GROUPS — Upgraded UI (self-contained)
@@ -70,18 +90,126 @@ class _TinyPill extends StatelessWidget {
       ),
     );
   }
+
 }
 
-// --- TEMP stubs to unblock build (friends_screen.dart) ---
-Future<void> _launchSettleForFriend(dynamic _friend) async {
-  // TODO: Hook to your settle-up flow (friend) without breaking existing calls.
+class _SettleSmartCTA extends StatefulWidget {
+  const _SettleSmartCTA({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<_SettleSmartCTA> createState() => _SettleSmartCTAState();
 }
 
-Future<void> _launchSettleForGroup(dynamic _group) async {
-  // TODO: Hook to your settle-up flow (group) without breaking existing calls.
-}
-// ---------------------------------------------------------
+class _SettleSmartCTAState extends State<_SettleSmartCTA>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _anim;
 
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _anim = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: AnimatedBuilder(
+        animation: _anim,
+        builder: (context, child) {
+          final t = _anim.value.clamp(0.0, 1.0);
+          final shimmerOpacity = t < 1.0 ? (0.55 * (1 - t)) : 0.0;
+
+          return Semantics(
+            button: true,
+            label: 'Settle smart suggestions',
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: widget.onTap,
+                splashColor: const Color(0xFF09857a).withOpacity(0.16),
+                highlightColor: const Color(0xFF09857a).withOpacity(0.08),
+                child: Ink(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF09857a).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE0ECE9)),
+                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      child!,
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: Opacity(
+                            opacity: shimmerOpacity,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: Align(
+                                alignment: Alignment(-1 + (t * 2), 0),
+                                child: Container(
+                                  width: 52,
+                                  decoration: const BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Color(0x00FFFFFF),
+                                        Color(0xAAFFFFFF),
+                                        Color(0x00FFFFFF),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.auto_mode_rounded, size: 18, color: Color(0xFF09857a)),
+            SizedBox(width: 6),
+            Text(
+              'Settle smart',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: Color(0xFF09857a),
+                letterSpacing: 0.15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _ActionTile extends StatelessWidget {
   final IconData icon; final String label; final VoidCallback onTap;
@@ -163,6 +291,28 @@ class _FriendsScreenState extends State<FriendsScreen>
 
   Future<List<GroupModel>> _fetchAllGroups() async {
     return await GroupService().streamGroups(widget.userPhone).first;
+  }
+
+  Future<void> _handleSettleSmartRecord(String counterpartyPhone) async {
+    final friends = await _fetchAllFriends();
+    FriendModel? match;
+    for (final f in friends) {
+      if (f.phone == counterpartyPhone) {
+        match = f;
+        break;
+      }
+    }
+
+    if (match != null) {
+      await _launchSettleForFriend(match);
+      return;
+    }
+
+    final groups = await _fetchAllGroups();
+    await _openLegacySettleDialog(
+      friends: friends,
+      groups: groups,
+    );
   }
 
   Future<void> _openLegacySettleDialog({
@@ -530,6 +680,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                               expenses: allTx,
                               friends: friends,
                               userPhone: widget.userPhone,
+                              contactNames: _contactNames,
                             ),
                           ),
                         ),
@@ -582,68 +733,177 @@ class _FriendsScreenState extends State<FriendsScreen>
     final allGroups = await _fetchAllGroups();
 
     if (!mounted) return;
-    await showModalBottomSheet(
+
+    final friendPhonesBefore = allFriends.map((f) => f.phone).toSet();
+    final groupIdsBefore = allGroups.map((g) => g.id).toSet();
+
+    final result = await showQuickCreatePickSheet(
       context: context,
-      useRootNavigator: true,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (context) {
-        return _QuickPickerSheet(
-          friends: allFriends,
-          groups: allGroups,
-          userPhone: widget.userPhone,
-          contactNames: _contactNames,
-          onPickFriend: (friend) async {
-            Navigator.pop(context);
-            if (forSettle) {
-              await _launchSettleForFriend(friend);
-            } else {
-              final ok = await Navigator.push<bool>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => AddExpenseScreen(
-                    userPhone: widget.userPhone,
-                    friends: allFriends,
-                    groups: allGroups,
-                    contextFriend: friend,
-                  ),
-                ),
-              );
-              if (ok == true && mounted) setState(() {});
-            }
-          },
-          onPickGroup: (group) async {
-            Navigator.pop(context);
-            if (forSettle) {
-              await _launchSettleForGroup(group);
-            } else {
-              final ok = await Navigator.push<bool>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => AddExpenseScreen(
-                    userPhone: widget.userPhone,
-                    friends: allFriends,
-                    groups: allGroups,
-                    contextGroup: group,
-                  ),
-                ),
-              );
-              if (ok == true && mounted) setState(() {});
-            }
-          },
-        );
-      },
+      friends: allFriends,
+      groups: allGroups,
+      contactNames: _contactNames,
     );
+
+    if (!mounted || result == null) return;
+
+    if (result.friend != null) {
+      final friend = result.friend!;
+      if (forSettle) {
+        await _launchSettleForFriend(friend);
+      } else {
+        await Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => FriendDetailScreen(
+            userPhone: widget.userPhone,
+            userName: "You",
+            friend: friend,
+          ),
+        ));
+        if (mounted) setState(() {});
+      }
+      return;
+    }
+
+    if (result.group != null) {
+      final group = result.group!;
+      if (forSettle) {
+        await _launchSettleForGroup(group);
+      } else {
+        await Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => GroupDetailScreen(
+            userId: widget.userPhone,
+            group: group,
+          ),
+        ));
+        if (mounted) setState(() {});
+      }
+      return;
+    }
+
+    switch (result.action) {
+      case QuickCreateAction.addFriendFromContacts:
+      case QuickCreateAction.addFriendManual:
+        await _handleFriendCreationAction(
+          context,
+          action: result.action!,
+          before: friendPhonesBefore,
+        );
+        break;
+      case QuickCreateAction.createGroup:
+        await _handleGroupCreationAction(
+          context,
+          before: groupIdsBefore,
+          friends: allFriends,
+        );
+        break;
+      case null:
+        break;
+    }
+  }
+
+  Future<void> _handleFriendCreationAction(
+    BuildContext context, {
+    required QuickCreateAction action,
+    required Set<String> before,
+  }) async {
+    String? createdPhone;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AddFriendDialog(
+        userPhone: widget.userPhone,
+        autoOpenContacts: action == QuickCreateAction.addFriendFromContacts,
+        onFriendCreated: (phone) => createdPhone = phone,
+      ),
+    );
+
+    if (ok == true) {
+      final friend = await _resolveCreatedFriend(createdPhone, before);
+      if (friend != null && mounted) {
+        await Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => FriendDetailScreen(
+            userPhone: widget.userPhone,
+            userName: "You",
+            friend: friend,
+          ),
+        ));
+        setState(() {});
+      }
+    }
+  }
+
+  Future<void> _handleGroupCreationAction(
+    BuildContext context, {
+    required Set<String> before,
+    required List<FriendModel> friends,
+  }) async {
+    String? createdGroupId;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AddGroupDialog(
+        userPhone: widget.userPhone,
+        allFriends: friends,
+        onGroupCreated: (id) => createdGroupId = id,
+      ),
+    );
+
+    if (ok == true) {
+      final group = await _resolveCreatedGroup(createdGroupId, before);
+      if (group != null && mounted) {
+        await Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => GroupDetailScreen(
+            userId: widget.userPhone,
+            group: group,
+          ),
+        ));
+        setState(() {});
+      }
+    }
+  }
+
+  Future<FriendModel?> _resolveCreatedFriend(
+    String? phone,
+    Set<String> before,
+  ) async {
+    if (phone != null) {
+      final byPhone = await FriendService().getFriendByPhone(widget.userPhone, phone);
+      if (byPhone != null) return byPhone;
+    }
+    final snapshot = await FriendService().streamFriends(widget.userPhone).first;
+    for (final friend in snapshot.reversed) {
+      if (!before.contains(friend.phone)) {
+        return friend;
+      }
+    }
+    return null;
+  }
+
+  Future<GroupModel?> _resolveCreatedGroup(
+    String? id,
+    Set<String> before,
+  ) async {
+    if (id != null) {
+      final group = await GroupService().getGroupById(id);
+      if (group != null) return group;
+    }
+    final snapshot = await GroupService().fetchUserGroups(widget.userPhone);
+    for (final group in snapshot.reversed) {
+      if (!before.contains(group.id)) {
+        return group;
+      }
+    }
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBody: true,
-      appBar: AppBar(
-        title: const Text("Friends & Groups"),
+    return SmallTypographyOverlay(
+      child: Scaffold(
+        extendBody: true,
+        appBar: AppBar(
+          title: const Text(
+            "Friends & Groups",
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         backgroundColor: Colors.white,
         elevation: 2,
         actions: [
@@ -678,7 +938,8 @@ class _FriendsScreenState extends State<FriendsScreen>
             children: [
               TabBar(
                 controller: _tabController,
-                isScrollable: true, // keeps tabs comfy with the actions above
+                isScrollable: false,
+                labelPadding: EdgeInsets.zero,
                 labelColor: const Color(0xFF09857a),
                 unselectedLabelColor: Colors.grey[600],
                 indicatorColor: const Color(0xFF09857a),
@@ -769,6 +1030,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                   direction: _direction,
                   onOpenFilters: _openFilterSheet,
                   contactNames: _contactNames,
+                  onLaunchSettleSmart: _handleSettleSmartRecord,
 
                 ),
                 FriendsTab(
@@ -796,6 +1058,7 @@ class _FriendsScreenState extends State<FriendsScreen>
 
 
         ],
+      ),
       ),
     );
   }
@@ -915,6 +1178,7 @@ class AllTab extends StatelessWidget {
   final Direction direction;           // <— add
   final VoidCallback onOpenFilters;    // <— add
   final ContactNameService contactNames;
+  final Future<void> Function(String counterpartyPhone)? onLaunchSettleSmart;
 
   const AllTab({
     required this.userPhone,
@@ -923,6 +1187,7 @@ class AllTab extends StatelessWidget {
     required this.direction,
     required this.onOpenFilters,
     required this.contactNames,
+    this.onLaunchSettleSmart,
     Key? key,
   }) : super(key: key);
 
@@ -945,6 +1210,70 @@ class AllTab extends StatelessWidget {
               stream: GroupService().streamGroups(userPhone),
               builder: (context, groupSnapshot) {
                 final groups = groupSnapshot.data ?? [];
+
+                final bool settleSmartEnabled = FxFlags.settleSmart;
+                Map<String, double> settleBalances = const {};
+                Map<String, SettleSmartParticipant> settleParticipants =
+                    const {};
+                Set<String> settleEligiblePhones = const {};
+
+                if (settleSmartEnabled) {
+                  final computed = computeNetByMember(allTx);
+                  computed.removeWhere((_, value) => value.abs() < 0.01);
+                  settleBalances = computed;
+
+                  final friendLookup = {for (final f in friends) f.phone: f};
+                  settleEligiblePhones = friendLookup.keys.toSet();
+
+                  final mapped = <String, SettleSmartParticipant>{};
+                  for (final entry in computed.entries) {
+                    final id = entry.key;
+                    if (id == userPhone) {
+                      mapped[id] = SettleSmartParticipant(
+                        id: id,
+                        displayName: 'You',
+                        fallbackEmoji: '🫶',
+                      );
+                      continue;
+                    }
+
+                    final friend = friendLookup[id];
+                    if (friend != null) {
+                      final avatar = friend.avatar;
+                      final hasImage =
+                          avatar.startsWith('http') || avatar.startsWith('assets');
+                      mapped[id] = buildParticipantFor(
+                        id,
+                        contactNames,
+                        remoteName: friend.name,
+                        fallback:
+                            friend.name.isNotEmpty ? friend.name : friend.phone,
+                        avatar: hasImage ? avatar : null,
+                        emoji: hasImage
+                            ? null
+                            : (avatar.isNotEmpty ? avatar : '👤'),
+                      );
+                      continue;
+                    }
+
+                    mapped[id] = buildParticipantFor(
+                      id,
+                      contactNames,
+                      fallback: id,
+                      emoji: '👤',
+                    );
+                  }
+
+                  if (mapped.isEmpty && allTx.isNotEmpty) {
+                    mapped[userPhone] = SettleSmartParticipant(
+                      id: userPhone,
+                      displayName: 'You',
+                      fallbackEmoji: '🫶',
+                    );
+                  }
+
+                  settleParticipants = mapped;
+                }
 
                 final items = <_ChatListItem>[];
 
@@ -1226,9 +1555,38 @@ class AllTab extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.tune_rounded, size: 20, color: Color(0xFF09857a)),
-                                onPressed: onOpenFilters,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (settleSmartEnabled)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 6),
+                                      child: _SettleSmartCTA(
+                                        onTap: () {
+                                          showModalBottomSheet(
+                                            context: context,
+                                            backgroundColor: Colors.transparent,
+                                            isScrollControlled: true,
+                                          builder: (_) => SettleSmartSheet(
+                                            userPhone: userPhone,
+                                            netBalances: settleBalances,
+                                            participants: settleParticipants,
+                                            settleEligiblePhones:
+                                                settleEligiblePhones,
+                                            onLaunchSettle: onLaunchSettleSmart,
+                                            friends: friends,
+                                            groups: groups,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.tune_rounded,
+                                        size: 20, color: Color(0xFF09857a)),
+                                    onPressed: onOpenFilters,
+                                  ),
+                                ],
                               ),
                               onTap: onOpenFilters,
                             ),

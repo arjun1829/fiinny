@@ -148,6 +148,59 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return candidates.isNotEmpty ? candidates.first : null;
   }
 
+  String _bankInitials(String? bank) {
+    final safeBank = (bank ?? '').trim();
+    final label =
+        _formatBankLabel(safeBank.isEmpty ? 'Unknown Bank' : safeBank);
+    final parts =
+        label.split(RegExp(r'\s+')).where((part) => part.isNotEmpty).toList();
+    if (parts.isEmpty) return 'BK';
+    if (parts.length == 1) {
+      final word = parts.first;
+      if (word.length >= 2) return word.substring(0, 2).toUpperCase();
+      return word.substring(0, 1).toUpperCase();
+    }
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
+  Widget _bankLogoFallback(String? bank) {
+    return ColoredBox(
+      color: Colors.teal.shade50,
+      child: Center(
+        child: Text(
+          _bankInitials(bank),
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            color: Colors.teal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _bankLogo(String? bank, {String? network, double size = 36}) {
+    final asset = _bankLogoAsset(bank, network: network);
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
+        border: Border.all(color: Colors.black12),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ClipOval(
+        child: asset != null
+            ? Image.asset(
+                asset,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _bankLogoFallback(bank),
+              )
+            : _bankLogoFallback(bank),
+      ),
+    );
+  }
+
   void _invalidateAggCache() {
     _aggRev++;
     _aggCache.clear();
@@ -825,6 +878,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             contentPadding: EdgeInsets.zero,
             selected: _isBankSelected(bank),
             onTap: () => _toggleBankSelection(bank),
+            leading: _bankLogo(bank, size: 32),
+            minLeadingWidth: 40,
             title: Text('All ${_formatBankLabel(bank)}'),
             trailing: Text(
               INR.f(bankNet),
@@ -861,6 +916,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               selected: _isBankSelected(bank, last4: account.last4),
               onTap: () =>
                   _toggleBankSelection(bank, last4: account.last4),
+              leading: _bankLogo(
+                bank,
+                network: account.network,
+                size: 32,
+              ),
+              minLeadingWidth: 40,
               title: Text(account.instrument),
               subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
               trailing: Text(
@@ -880,6 +941,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             initiallyExpanded: _isBankSelected(bank),
             tilePadding: const EdgeInsets.symmetric(horizontal: 12),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            leading: _bankLogo(bank, size: 40),
             title: Row(
               children: [
                 Expanded(

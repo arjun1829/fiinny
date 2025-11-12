@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -17,6 +18,7 @@ import 'core/ads/ads_shell.dart';
 
 import 'screens/launcher_screen.dart';
 import 'themes/theme_provider.dart';
+import 'services/consent_service.dart';
 import 'services/startup_prefs.dart';
 import 'services/sms/sms_ingestor.dart';
 
@@ -24,6 +26,39 @@ import 'services/sms/sms_ingestor.dart';
 const bool SAFE_MODE = bool.fromEnvironment('SAFE_MODE', defaultValue: false);
 const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: true);
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+const MethodChannel _systemUiChannel = MethodChannel('lifemap/system_ui');
+
+Future<void> configureSystemUI() async {
+  if (!Platform.isAndroid) {
+    return;
+  }
+
+  int sdk = 0;
+  try {
+    final result = await _systemUiChannel.invokeMethod<int>('getSdkInt');
+    if (result != null) sdk = result;
+  } catch (err) {
+    debugPrint('System UI channel failed: $err');
+  }
+
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+  if (sdk >= 35) {
+    const style = SystemUiOverlayStyle(
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    );
+    SystemChrome.setSystemUIOverlayStyle(style);
+  } else {
+    const style = SystemUiOverlayStyle(
+      statusBarColor: Color(0x00000000),
+      systemNavigationBarColor: Color(0x00000000),
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    );
+    SystemChrome.setSystemUIOverlayStyle(style);
+  }
+}
 
 @pragma('vm:entry-point')
 void smsBackgroundDispatcher() {
@@ -50,6 +85,8 @@ void smsBackgroundDispatcher() {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await configureSystemUI();
 
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
     try {
@@ -90,6 +127,17 @@ void main() async {
 Future<void> _boot(_StartupTracer tracer) async {
   tracer.add('BOOT start');
   tracer.add('Platform=${Platform.operatingSystem} diag=$kDiagBuild');
+
+  await _ensureNavigatorReady();
+
+  final attAllowed = await ConsentService.requestATTIfNeeded(
+    showPrePrompt: _showAttPrePrompt,
+  );
+  tracer.add('ATT status=${ConsentService.lastStatus} allowed=$attAllowed');
+  AdService.updateConsent(authorized: attAllowed);
+  if (!attAllowed && ConsentService.isDeniedOrRestricted) {
+    unawaited(_showTrackingSettingsDialog());
+  }
 
   try {
     tracer.add('Firebase.initializeApp…');
@@ -136,6 +184,97 @@ Future<void> _boot(_StartupTracer tracer) async {
       : 'NAV → LauncherScreen (welcome pending)');
   _DiagApp.navTo(const LauncherScreen());
   tracer.add('BOOT done (UI visible)');
+}
+
+Future<void> _ensureNavigatorReady() async {
+  for (var i = 0; i < 20; i++) {
+    if (rootNavigatorKey.currentContext != null) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+  }
+}
+
+Future<bool> _showAttPrePrompt() async {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) {
+    return true;
+  }
+
+  final result = await showDialog<bool>(
+    context: context,
+    useRootNavigator: true,
+    barrierDismissible: false,
+    builder: (context) => const _AttPrePromptDialog(),
+  );
+
+  return result ?? false;
+}
+
+Future<void> _showTrackingSettingsDialog() async {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) {
+    return;
+  }
+
+  await showDialog<void>(
+    context: context,
+    useRootNavigator: true,
+    builder: (context) => const _AttSettingsDialog(),
+  );
+}
+
+class _AttPrePromptDialog extends StatelessWidget {
+  const _AttPrePromptDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Help keep Fiinny free'),
+      content: const Text(
+        'We use this permission to improve ad relevance and measure performance. '
+        'You can continue either way.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context, rootNavigator: true).pop(false),
+          child: const Text('Not now'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context, rootNavigator: true).pop(true),
+          child: const Text('Continue'),
+        ),
+      ],
+    );
+  }
+}
+
+class _AttSettingsDialog extends StatelessWidget {
+  const _AttSettingsDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Tracking disabled'),
+      content: const Text(
+        'Ads will remain non-personalized. You can enable tracking later from '
+        'iOS Settings → Privacy & Security → Tracking.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+          child: const Text('Continue'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.of(context, rootNavigator: true).pop();
+            unawaited(ConsentService.openSettings());
+          },
+          child: const Text('Open Settings'),
+        ),
+      ],
+    );
+  }
 }
 
 class _DiagApp extends StatefulWidget {

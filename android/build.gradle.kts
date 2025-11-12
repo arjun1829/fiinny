@@ -1,6 +1,15 @@
 // android/build.gradle.kts
 import org.gradle.api.file.Directory
 
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+        maven(url = "https://storage.googleapis.com/download.flutter.io")
+        maven(url = "https://dl.google.com/dl/android/maven2/")
+    }
+}
+
 plugins {
     // Let Flutter’s gradle plugin manage AGP; keep these apply-false entries.
     id("com.android.application") apply false
@@ -15,6 +24,8 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        maven(url = "https://storage.googleapis.com/download.flutter.io")
+        maven(url = "https://dl.google.com/dl/android/maven2/")
     }
 }
 

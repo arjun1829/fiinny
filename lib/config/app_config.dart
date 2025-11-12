@@ -27,7 +27,7 @@ class AiConfig {
   static const bool weeklyBatchOn = true;
 
   /// If rules confidence is below this, we call the LLM fallback
-  static const double confThresh = 0.80;
+  static const double confThresh = 0.70;
 
   /// Extra guard to ensure we always send minimal/redacted fields
   static const bool redactionOn = true;

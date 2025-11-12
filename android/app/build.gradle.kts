@@ -10,6 +10,13 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+repositories {
+    google()
+    mavenCentral()
+    maven(url = "https://storage.googleapis.com/download.flutter.io")
+    maven(url = "https://dl.google.com/dl/android/maven2/")
+}
+
 /* 🔧 EXCLUDE the old IID lib that causes the duplicate */
 configurations.all {
     exclude(group = "com.google.firebase", module = "firebase-iid")
@@ -44,23 +51,29 @@ if (keystorePropertiesFile != null) {
 
 android {
     namespace = "com.KaranArjunTechnologies.lifemap"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = "27.0.12077973"
 
-    /* ✅ Use Java 11 to avoid legacy warnings */
+    /* ✅ Use Java 17 to satisfy modern toolchains */
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
         isCoreLibraryDesugaringEnabled = true
     }
-    kotlinOptions { jvmTarget = "11" }
+    kotlinOptions { jvmTarget = "17" }
 
     defaultConfig {
         applicationId = "com.KaranArjunTechnologies.lifemap"
         minSdk = 23
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
     }
 
     signingConfigs {
@@ -113,6 +126,9 @@ dependencies {
 
     // Needed by flutter_local_notifications and friends
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+
+    implementation("androidx.activity:activity-ktx:1.9.3")
+    implementation("androidx.core:core-ktx:1.13.1")
 
     // ✋ Do NOT add firebase-messaging directly here — FlutterFire provides it.
 }

@@ -4,14 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 
 import '../core/ads/ads_shell.dart';
+import 'ads/sleek_ad_card.dart';
 import '../services/friend_service.dart';
+import '../ui/theme/small_typography_overlay.dart';
 import '../utils/firebase_error_mapper.dart';
 import '../utils/permissions_helper.dart';
 import '../utils/phone_number_utils.dart';
 
 class AddFriendDialog extends StatefulWidget {
   final String userPhone; // current user's phone (E.164, e.g. +91xxx)
-  const AddFriendDialog({required this.userPhone, Key? key}) : super(key: key);
+  final void Function(String phone)? onFriendCreated;
+  final bool autoOpenContacts;
+
+  const AddFriendDialog({
+    required this.userPhone,
+    this.onFriendCreated,
+    this.autoOpenContacts = false,
+    Key? key,
+  }) : super(key: key);
 
   @override
   State<AddFriendDialog> createState() => _AddFriendDialogState();
@@ -32,6 +42,16 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
   bool _loadingContacts = false;
 
   final List<String> countryCodes = kSupportedCountryCodes;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoOpenContacts) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _importFromContacts();
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -247,6 +267,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
         friendName: _nameCtrl.text.trim(),
         friendPhone: _fullE164,
       );
+      widget.onFriendCreated?.call(_fullE164);
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
@@ -267,13 +288,13 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
     final accent = Colors.black87;
     // Glassy dialog body
     return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
@@ -316,7 +337,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                           child: Text(
                             "Add Friend",
                             style: TextStyle(
-                              fontSize: 18,
+                              fontSize: 16,
                               fontWeight: FontWeight.w800,
                               color: accent,
                             ),
@@ -418,6 +439,11 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                     ],
 
                     const SizedBox(height: 16),
+
+                    const SleekAdCard(
+                      margin: EdgeInsets.only(top: 6),
+                      radius: 12,
+                    ),
 
                     // Actions
                     Row(

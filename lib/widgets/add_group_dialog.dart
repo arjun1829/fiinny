@@ -1,23 +1,31 @@
-import 'dart:ui';
 import 'dart:io';
+import 'dart:ui';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../utils/firebase_error_mapper.dart';
 import '../utils/permissions_helper.dart';
 import '../utils/phone_number_utils.dart';
+import 'ads/sleek_ad_card.dart';
+import 'add_friend_dialog.dart';
+import '../ui/theme/small_typography_overlay.dart';
 
 import '../services/group_service.dart';
 import '../models/friend_model.dart';
+import '../services/friend_service.dart';
 
 class AddGroupDialog extends StatefulWidget {
   final String userPhone; // current user's phone (E.164)
   final List<FriendModel> allFriends;
+  final void Function(String groupId)? onGroupCreated;
 
   const AddGroupDialog({
     required this.userPhone,
     required this.allFriends,
+    this.onGroupCreated,
     Key? key,
   }) : super(key: key);
 
@@ -29,12 +37,24 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
   final _formKey = GlobalKey<FormState>();
   final _groupNameCtrl = TextEditingController();
   final _friendSearchCtrl = TextEditingController();
+  final _labelCtrl = TextEditingController();
 
   String _countryCode = kDefaultCountryCode; // default for contacts without +
   String? _error;
   bool _loading = false;
 
   File? _groupPhoto;
+
+  String? _selectedType;
+  final List<String> _groupTypes = const [
+    'Trip',
+    'Home',
+    'Roommates',
+    'Office',
+    'Event',
+    'Couple',
+    'Other',
+  ];
 
   // selections
   final List<FriendModel> _selectedFriends = [];
@@ -57,6 +77,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
   void dispose() {
     _groupNameCtrl.dispose();
     _friendSearchCtrl.dispose();
+    _labelCtrl.dispose();
     super.dispose();
   }
 
@@ -382,6 +403,71 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
     }
   }
 
+  Future<void> _addFriendManualInline() async {
+    String? createdPhone;
+    final before = widget.allFriends.map((f) => f.phone).toSet();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AddFriendDialog(
+        userPhone: widget.userPhone,
+        onFriendCreated: (phone) => createdPhone = phone,
+      ),
+    );
+    if (ok == true) {
+      final friend = await _resolveFriend(createdPhone, before);
+      if (friend != null && mounted) {
+        setState(() {
+          if (!_isSelected(friend)) {
+            _selectedFriends.add(friend);
+          }
+          if (!widget.allFriends.any((f) => f.phone == friend.phone)) {
+            widget.allFriends.add(friend);
+          }
+          if (!_filteredFriends.any((f) => f.phone == friend.phone)) {
+            _filteredFriends = [..._filteredFriends, friend];
+          }
+        });
+      }
+    }
+  }
+
+  Future<FriendModel?> _resolveFriend(String? phone, Set<String> before) async {
+    if (phone != null) {
+      final byPhone = await FriendService().getFriendByPhone(widget.userPhone, phone);
+      if (byPhone != null) return byPhone;
+    }
+    final snapshot = await FriendService().streamFriends(widget.userPhone).first;
+    for (final friend in snapshot.reversed) {
+      if (!before.contains(friend.phone)) {
+        return friend;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _persistMeta(String groupId) async {
+    final type = _selectedType?.trim();
+    final label = _labelCtrl.text.trim();
+    if ((type == null || type.isEmpty) && label.isEmpty) {
+      return;
+    }
+    try {
+      await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(groupId)
+          .collection('meta')
+          .doc('info')
+          .set({
+        if (type != null && type.isNotEmpty) 'type': type,
+        if (label.isNotEmpty) 'label': label,
+        'createdAt': FieldValue.serverTimestamp(),
+        'createdBy': widget.userPhone,
+      }, SetOptions(merge: true));
+    } catch (e, stack) {
+      debugPrint('Group meta save failed: $e\n$stack');
+    }
+  }
+
   // ------------------------ Submit ------------------------
 
   Future<void> _submit() async {
@@ -404,7 +490,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
           if (f.name.trim().isNotEmpty) f.phone: f.name.trim(),
       };
 
-      await GroupService().addGroup(
+      final groupId = await GroupService().addGroup(
         userPhone: widget.userPhone,
         name: _groupNameCtrl.text.trim(),
         memberPhones: _selectedFriends.map((f) => f.phone).toList(),
@@ -412,6 +498,9 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
         avatarUrl: avatarUrl,
         memberDisplayNames: displayNames.isEmpty ? null : displayNames,
       );
+
+      await _persistMeta(groupId);
+      widget.onGroupCreated?.call(groupId);
 
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -432,13 +521,13 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
   Widget build(BuildContext context) {
     final accent = Colors.black87;
     return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
@@ -481,7 +570,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                           child: Text(
                             "Create Group",
                             style: TextStyle(
-                              fontSize: 18,
+                              fontSize: 16,
                               fontWeight: FontWeight.w800,
                               color: accent,
                             ),
@@ -542,6 +631,35 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                       (v == null || v.trim().isEmpty)
                           ? "Enter a group name"
                           : null,
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    DropdownButtonFormField<String>(
+                      value: _selectedType,
+                      decoration: _pillDecoration(
+                        label: "Group Type (optional)",
+                        icon: Icons.style_rounded,
+                      ),
+                      isExpanded: true,
+                      items: _groupTypes
+                          .map((type) => DropdownMenuItem<String>(
+                                value: type,
+                                child: Text(type),
+                              ))
+                          .toList(),
+                      onChanged: (value) => setState(() => _selectedType = value),
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    TextFormField(
+                      controller: _labelCtrl,
+                      decoration: _pillDecoration(
+                        label: "Label / emoji (optional)",
+                        icon: Icons.short_text_rounded,
+                      ),
+                      textInputAction: TextInputAction.next,
                     ),
 
                     const SizedBox(height: 10),
@@ -618,40 +736,64 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
 
                     const SizedBox(height: 10),
 
-                    // Friend multi-select (chips)
                     Wrap(
                       spacing: 8,
                       runSpacing: 6,
-                      children: _filteredFriends.map((friend) {
-                        final selected = _isSelected(friend);
-                        final a = friend.avatar;
-                        final avatar = a.startsWith('http')
-                            ? CircleAvatar(
-                          radius: 10,
-                          backgroundImage: NetworkImage(a),
-                        )
-                            : (a.startsWith('assets/')
-                            ? CircleAvatar(
-                          radius: 10,
-                          backgroundImage: AssetImage(a),
-                        )
-                            : CircleAvatar(
-                          radius: 10,
-                          child: Text(
-                            a.isNotEmpty
-                                ? a.characters.first
-                                : friend.name.characters.first,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ));
-                        return FilterChip(
-                          avatar: avatar,
-                          label: Text(friend.name,
-                              overflow: TextOverflow.ellipsis),
-                          selected: selected,
-                          onSelected: (v) => _toggleFriend(friend, v),
-                        );
-                      }).toList(),
+                      children: [
+                        TextButton.icon(
+                          onPressed: _loading ? null : _openContactsPicker,
+                          icon: const Icon(Icons.contact_phone_rounded),
+                          label: const Text('Add from Contacts'),
+                        ),
+                        TextButton.icon(
+                          onPressed: _addFriendManualInline,
+                          icon: const Icon(Icons.person_add_alt_1_rounded),
+                          label: const Text('Add friend manually'),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    // Friend multi-select (chips)
+                    SizedBox(
+                      height: 260,
+                      child: ListView.builder(
+                        itemCount: _filteredFriends.length,
+                        itemBuilder: (_, i) {
+                          final friend = _filteredFriends[i];
+                          final selected = _isSelected(friend);
+                          Widget leading;
+                          if (friend.avatar.startsWith('http')) {
+                            leading = CircleAvatar(
+                              radius: 16,
+                              backgroundImage: NetworkImage(friend.avatar),
+                            );
+                          } else if (friend.avatar.startsWith('assets/')) {
+                            leading = CircleAvatar(
+                              radius: 16,
+                              backgroundImage: AssetImage(friend.avatar),
+                            );
+                          } else {
+                            final initial = friend.avatar.isNotEmpty
+                                ? friend.avatar.characters.first
+                                : (friend.name.isNotEmpty
+                                    ? friend.name.characters.first
+                                    : '👤');
+                            leading = CircleAvatar(
+                              radius: 16,
+                              child: Text(initial, style: const TextStyle(fontSize: 14)),
+                            );
+                          }
+                          return CheckboxListTile(
+                            value: selected,
+                            onChanged: (v) => _toggleFriend(friend, v ?? false),
+                            title: Text(friend.name, overflow: TextOverflow.ellipsis),
+                            subtitle: Text(friend.phone),
+                            secondary: leading,
+                          );
+                        },
+                      ),
                     ),
 
                     const SizedBox(height: 10),
@@ -690,6 +832,11 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                     ],
 
                     const SizedBox(height: 14),
+
+                    const SleekAdCard(
+                      margin: EdgeInsets.only(top: 6),
+                      radius: 12,
+                    ),
 
                     // Actions
                     Row(
