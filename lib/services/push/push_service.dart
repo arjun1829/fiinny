@@ -537,6 +537,36 @@ class PushService {
         }
         break;
 
+      case 'friend-detail':
+        if (firstSeg.isNotEmpty) {
+          nav.pushNamed(
+            '/friend-detail',
+            arguments: {
+              'friendId': Uri.decodeComponent(firstSeg),
+              if (uri.queryParameters['name'] != null)
+                'friendName': uri.queryParameters['name'],
+            },
+          );
+        } else {
+          nav.pushNamed('/friends');
+        }
+        break;
+
+      case 'group-detail':
+        if (firstSeg.isNotEmpty) {
+          nav.pushNamed(
+            '/group-detail',
+            arguments: {
+              'groupId': Uri.decodeComponent(firstSeg),
+              if (uri.queryParameters['name'] != null)
+                'groupName': uri.queryParameters['name'],
+            },
+          );
+        } else {
+          nav.pushNamed('/friends');
+        }
+        break;
+
       case 'partner':
         nav.pushNamed('/partner-dashboard');
         break;

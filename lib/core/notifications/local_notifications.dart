@@ -128,6 +128,24 @@ class LocalNotifs {
       return;
     }
 
+    if (host == 'friend-detail' && first.isNotEmpty) {
+      nav.pushNamed('/friend-detail', arguments: {
+        'friendId': Uri.decodeComponent(first),
+        if (uri.queryParameters['name'] != null)
+          'friendName': uri.queryParameters['name'],
+      });
+      return;
+    }
+
+    if (host == 'group-detail' && first.isNotEmpty) {
+      nav.pushNamed('/group-detail', arguments: {
+        'groupId': Uri.decodeComponent(first),
+        if (uri.queryParameters['name'] != null)
+          'groupName': uri.queryParameters['name'],
+      });
+      return;
+    }
+
     // New simple hosts
     if (host == 'subs' || host == 'sips') {
       nav.pushNamed('/subs_bills'); // your Subscriptions & Bills screen
