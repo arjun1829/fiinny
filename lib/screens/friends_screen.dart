@@ -680,6 +680,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                               expenses: allTx,
                               friends: friends,
                               userPhone: widget.userPhone,
+                              contactNames: _contactNames,
                             ),
                           ),
                         ),
@@ -937,7 +938,8 @@ class _FriendsScreenState extends State<FriendsScreen>
             children: [
               TabBar(
                 controller: _tabController,
-                isScrollable: true, // keeps tabs comfy with the actions above
+                isScrollable: false,
+                labelPadding: EdgeInsets.zero,
                 labelColor: const Color(0xFF09857a),
                 unselectedLabelColor: Colors.grey[600],
                 indicatorColor: const Color(0xFF09857a),

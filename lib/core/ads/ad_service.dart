@@ -24,6 +24,15 @@ class AdService {
   static final AdService I = AdService._();
   static bool _ready = false;
   static bool get isReady => _ready;
+  static bool _trackingAuthorized = !Platform.isIOS;
+
+  static void updateConsent({required bool authorized}) {
+    _trackingAuthorized = authorized;
+  }
+
+  static AdRequest buildAdRequest() {
+    return AdRequest(nonPersonalizedAds: !_trackingAuthorized);
+  }
 
   InterstitialAd? _inter;
   RewardedAd? _rewarded;
@@ -140,7 +149,7 @@ class AdService {
     if (!_adsEnabled || _inter != null) return;
     InterstitialAd.load(
       adUnitId: AdIds.interstitial,
-      request: const AdRequest(),
+      request: AdService.buildAdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
           ad.fullScreenContentCallback = FullScreenContentCallback(
@@ -162,7 +171,7 @@ class AdService {
     if (!_adsEnabled || _rewarded != null) return;
     RewardedAd.load(
       adUnitId: AdIds.rewarded,
-      request: const AdRequest(),
+      request: AdService.buildAdRequest(),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) {
           ad.fullScreenContentCallback = FullScreenContentCallback(
