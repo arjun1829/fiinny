@@ -20,7 +20,6 @@ import '../widgets/chart_switcher_widget.dart';
 import '../widgets/unified_transaction_list.dart';
 import '../themes/custom_card.dart';
 import '../themes/tokens.dart';
-import '../widgets/animated_mint_background.dart';
 import '../widgets/dashboard/banks_cards_summary_card.dart';
 
 class ExpensesScreen extends StatefulWidget {
@@ -520,11 +519,24 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: Colors.transparent,
       floatingActionButton: _buildFAB(context),
       body: Stack(
         children: [
-          const AnimatedMintBackground(),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Fx.mintDark,
+                  Fx.mint.withOpacity(0.9),
+                  Colors.white,
+                ],
+                stops: const [0.0, 0.4, 1.0],
+              ),
+            ),
+          ),
           SafeArea(
             child: Column(
               children: [
@@ -543,16 +555,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         ),
                       ),
                       const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.swap_horiz_rounded,
-                            color: Colors.teal, size: 26),
-                        tooltip: 'Transactions',
-                        onPressed: () => Navigator.pushNamed(
-                          context,
-                          '/transactions',
-                          arguments: widget.userPhone,
-                        ),
-                      ),
                       Tooltip(
                         message: "Calendar View",
                         child: IconButton(
