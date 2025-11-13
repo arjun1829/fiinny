@@ -45,7 +45,6 @@ import 'details/recurring/friend_recurring_screen.dart';
 import 'details/friend_detail_route_screen.dart';
 import 'details/group_detail_route_screen.dart';
 
-import 'screens/subs_bills/subs_bills_screen.dart';
 import 'screens/tx_day_details_screen.dart';
 
 /// Static routes that don't require arguments.
@@ -86,64 +85,6 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
   final args = settings.arguments;
 
   switch (settings.name) {
-  /* ------------------ NEW: Subscriptions & Bills ------------------ */
-    case '/subscriptions-bills':
-    case '/subs-bills': // alias
-      {
-        String? userPhone;
-        String? friendId;
-        String? friendName;
-        String? groupId;
-        List<String>? participantUserIds;
-        bool? mirrorToFriend;
-        PartnerCapabilities? partnerCapabilities;
-        if (args is String) {
-          userPhone = args;
-        } else if (args is Map<String, dynamic>) {
-          if (args['userPhone'] is String) {
-            userPhone = args['userPhone'] as String;
-          } else if (args['userId'] is String) {
-            userPhone = args['userId'] as String;
-          }
-          if (args['friendId'] is String) {
-            friendId = args['friendId'] as String;
-          }
-          if (args['friendName'] is String) {
-            friendName = args['friendName'] as String;
-          }
-          if (args['groupId'] is String) {
-            groupId = args['groupId'] as String;
-          }
-          if (args['participantUserIds'] is List) {
-            participantUserIds = (args['participantUserIds'] as List)
-                .whereType<String>()
-                .toList();
-          }
-          if (args['mirrorToFriend'] is bool) {
-            mirrorToFriend = args['mirrorToFriend'] as bool;
-          }
-          if (args['partnerCapabilities'] is Map<String, dynamic>) {
-            partnerCapabilities = PartnerCapabilities.fromJson(
-                args['partnerCapabilities'] as Map<String, dynamic>);
-          }
-        }
-        // Derive from FirebaseAuth if not provided
-        userPhone ??= FirebaseAuth.instance.currentUser?.phoneNumber ??
-            FirebaseAuth.instance.currentUser?.uid;
-        return MaterialPageRoute(
-          builder: (_) => SubsBillsScreen(
-            userPhone: userPhone,
-            friendId: friendId,
-            friendName: friendName,
-            groupId: groupId,
-            participantUserIds: participantUserIds ?? const <String>[],
-            mirrorToFriend: mirrorToFriend ?? true,
-            partnerCapabilities: partnerCapabilities,
-          ),
-          settings: settings,
-        );
-      }
-
     case '/tx-day-details':
       if (args is String) {
         return MaterialPageRoute(
