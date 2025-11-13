@@ -524,16 +524,16 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       body: Stack(
         children: [
           Container(
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Fx.mintDark,
-                  Fx.mint.withOpacity(0.9),
+                  Color(0xFF00423D),
+                  Color(0xFF006D64),
                   Colors.white,
                 ],
-                stops: const [0.0, 0.4, 1.0],
+                stops: const [0.0, 0.45, 1.0],
               ),
             ),
           ),
@@ -551,7 +551,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                           fontWeight: FontWeight.bold,
                           fontSize: 24,
                           letterSpacing: 0.4,
-                          color: Color(0xFF09857a),
+                          color: Colors.white,
                         ),
                       ),
                       const Spacer(),
@@ -560,7 +560,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         child: IconButton(
                           icon: Icon(
                             Icons.calendar_today,
-                            color: _viewMode == 'calendar' ? Colors.teal : Colors.grey[500],
+                            color:
+                                _viewMode == 'calendar' ? Colors.white : Colors.white70,
                             size: 26,
                           ),
                           onPressed: () => setState(() => _viewMode = 'calendar'),
@@ -571,7 +572,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         child: IconButton(
                           icon: Icon(
                             Icons.dashboard,
-                            color: _viewMode == 'summary' ? Colors.blueAccent : Colors.grey[500],
+                            color:
+                                _viewMode == 'summary' ? Colors.white : Colors.white70,
                             size: 26,
                           ),
                           onPressed: () => setState(() => _viewMode = 'summary'),
@@ -583,7 +585,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         child: IconButton(
                           icon: const Icon(
                             Icons.insights_rounded,
-                            color: Colors.indigoAccent,
+                            color: Colors.white,
                             size: 26,
                           ),
                           onPressed: () async {
@@ -677,9 +679,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             isDiamondCut: true,
             borderRadius: 22,
             padding: const EdgeInsets.symmetric(vertical: 34, horizontal: 14),
-            glassGradient: [
-              Colors.white.withOpacity(0.21),
-              Colors.white.withOpacity(0.09),
+            glassGradient: const [
+              Colors.white,
+              Colors.white,
             ],
             child: InkWell(
               // tap anywhere on the card to open Analytics
@@ -694,25 +696,25 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               borderRadius: BorderRadius.circular(5),
               child: Row(
                 children: [
-              Expanded(
-                 child: _MiniDonutChart(
-                   title: "Expenses",
-                   total: periodTotalExpense,
-                   sections: _miniExpenseSections(),
-                   height: 110,           // a bit taller
-                   ringThickness: 2,      // slim like Analytics
-                   ),
-              ),
+                  Expanded(
+                    child: _MiniDonutChart(
+                      title: "Expenses",
+                      total: periodTotalExpense,
+                      sections: _miniExpenseSections(),
+                      height: 110, // a bit taller
+                      ringThickness: 2, // slim like Analytics
+                    ),
+                  ),
                   const SizedBox(width: 18),
-              Expanded(
-                 child: _MiniDonutChart(
-                   title: "Income",
-                   total: periodTotalIncome,
-                   sections: _miniIncomeSections(),
-                   height: 110,
-                   ringThickness: 2,
-              ),
-              ),
+                  Expanded(
+                    child: _MiniDonutChart(
+                      title: "Income",
+                      total: periodTotalIncome,
+                      sections: _miniIncomeSections(),
+                      height: 110,
+                      ringThickness: 2,
+                    ),
+                  ),
                 ],
               ),
             ),
