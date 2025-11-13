@@ -880,13 +880,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             onTap: () => _toggleBankSelection(bank),
             leading: _bankLogo(bank, size: 32),
             minLeadingWidth: 40,
-            title: Text('All ${_formatBankLabel(bank)}'),
+            title: Text(
+              'All ${_formatBankLabel(bank)}',
+              style: Fx.label.copyWith(fontWeight: FontWeight.w700),
+            ),
             trailing: Text(
               INR.f(bankNet),
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: bankColor,
-              ),
+              style:
+                  Fx.number.copyWith(color: bankColor, fontWeight: FontWeight.w800),
             ),
           ),
         ];
@@ -922,14 +923,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 size: 32,
               ),
               minLeadingWidth: 40,
-              title: Text(account.instrument),
-              subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+              title: Text(
+                account.instrument,
+                style: Fx.label.copyWith(fontWeight: FontWeight.w600),
+              ),
+              subtitle: subtitle.isNotEmpty
+                  ? Text(subtitle, style: Fx.label.copyWith(fontSize: 12))
+                  : null,
               trailing: Text(
                 INR.f(account.netOutflow),
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: accountColor,
-                ),
+                style: Fx.number
+                    .copyWith(color: accountColor, fontWeight: FontWeight.w800),
               ),
             ),
           );
@@ -947,15 +951,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 Expanded(
                   child: Text(
                     _formatBankLabel(bank),
-                    style: const TextStyle(fontWeight: FontWeight.w800),
+                    style:
+                        Fx.label.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
                   ),
                 ),
                 Text(
                   INR.f(bankNet),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: bankColor,
-                  ),
+                  style: Fx.number
+                      .copyWith(color: bankColor, fontWeight: FontWeight.w800),
                 ),
               ],
             ),
@@ -1204,7 +1207,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       children: [
         Icon(icon, color: Fx.mintDark),
         const SizedBox(width: Fx.s8),
-        Text(title, style: Fx.title),
+        Text(title, style: Fx.title.copyWith(fontSize: 18)),
       ],
     );
   }
@@ -1226,7 +1229,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Overview', style: Fx.title),
+          Text('Overview', style: Fx.title.copyWith(fontSize: 18)),
           const SizedBox(height: 8),
           Row(
             children: [

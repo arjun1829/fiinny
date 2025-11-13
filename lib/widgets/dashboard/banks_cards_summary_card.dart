@@ -6,6 +6,18 @@ import '../../models/income_item.dart';
 import '../../themes/glass_card.dart';
 import '../../themes/tokens.dart';
 
+class BankInstrumentFilter {
+  final String? bank;
+  final String? last4;
+
+  const BankInstrumentFilter({this.bank, this.last4});
+
+  bool get isEmpty =>
+      (bank == null || bank!.isEmpty) && (last4 == null || last4!.isEmpty);
+
+  static const empty = BankInstrumentFilter();
+}
+
 class BanksCardsSummaryCard extends StatefulWidget {
   const BanksCardsSummaryCard({
     super.key,
@@ -13,12 +25,18 @@ class BanksCardsSummaryCard extends StatefulWidget {
     required this.incomes,
     required this.onOpenAnalytics,
     this.initiallyExpanded = false,
+    this.enableTapToOpenAnalytics = true,
+    this.onSelectionChanged,
+    this.activeFilter,
   });
 
   final List<ExpenseItem> expenses;
   final List<IncomeItem> incomes;
   final VoidCallback onOpenAnalytics;
   final bool initiallyExpanded;
+  final bool enableTapToOpenAnalytics;
+  final ValueChanged<BankInstrumentFilter>? onSelectionChanged;
+  final BankInstrumentFilter? activeFilter;
 
   @override
   State<BanksCardsSummaryCard> createState() => _BanksCardsSummaryCardState();
@@ -121,7 +139,7 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
 
   Widget _pill(String label, {IconData? icon, Color? color}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(.04),
         borderRadius: BorderRadius.circular(999),
@@ -138,6 +156,7 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
             label,
             style: TextStyle(
               fontWeight: FontWeight.w700,
+              fontSize: 13,
               color: color ?? Fx.text,
             ),
           ),
@@ -190,13 +209,10 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
 
     final bankTiles = _bankExpansionTiles(groups);
 
-    return GestureDetector(
-      onTap: widget.onOpenAnalytics,
-      behavior: HitTestBehavior.opaque,
-      child: GlassCard(
-        radius: Fx.r24,
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-        child: Column(
+    final card = GlassCard(
+      radius: Fx.r24,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -223,7 +239,7 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -240,11 +256,12 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
               secondChild: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   if (bankTiles.isEmpty)
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                       decoration: BoxDecoration(
                         color: Colors.grey.shade100,
                         borderRadius: BorderRadius.circular(14),
@@ -252,7 +269,8 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
                       ),
                       child: const Text(
                         'We will list your most active cards and accounts once we have enough data for this period.',
-                        style: TextStyle(fontWeight: FontWeight.w500),
+                        style:
+                            TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
                       ),
                     )
                   else ...bankTiles,
@@ -265,6 +283,16 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
           ],
         ),
       ),
+    );
+
+    if (!widget.enableTapToOpenAnalytics) {
+      return card;
+    }
+
+    return GestureDetector(
+      onTap: widget.onOpenAnalytics,
+      behavior: HitTestBehavior.opaque,
+      child: card,
     );
   }
 
@@ -400,21 +428,43 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
       final totalBankTx =
           accounts.fold<int>(0, (sum, item) => sum + item.count);
 
+      final isSelectedBank = widget.activeFilter != null &&
+          (widget.activeFilter!.bank ?? '').toUpperCase() == bank.toUpperCase() &&
+          ((widget.activeFilter!.last4 ?? '').isEmpty);
+
       final tiles = <Widget>[
         ListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
           leading: _bankLogo(bank, size: 32),
           minLeadingWidth: 40,
-          title: Text('All ${_formatBankName(bank)}'),
-          subtitle: Text('$totalBankTx tx'),
+          title: Text(
+            'All ${_formatBankName(bank)}',
+            style: Fx.label.copyWith(fontWeight: FontWeight.w700),
+          ),
+          subtitle: Text(
+            '$totalBankTx tx',
+            style: Fx.label.copyWith(fontSize: 12),
+          ),
           trailing: Text(
             INR.f(bankNet),
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: bankColor,
-            ),
+            style: Fx.number.copyWith(color: bankColor, fontWeight: FontWeight.w800),
           ),
+          selected: isSelectedBank,
+          selectedColor: Fx.mintDark,
+          selectedTileColor: Fx.mint.withOpacity(0.12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          onTap: widget.onSelectionChanged == null
+              ? null
+              : () {
+                  if (isSelectedBank) {
+                    widget.onSelectionChanged!(BankInstrumentFilter.empty);
+                  } else {
+                    widget.onSelectionChanged!(
+                      BankInstrumentFilter(bank: bank.toUpperCase()),
+                    );
+                  }
+                },
         ),
       ];
 
@@ -436,6 +486,10 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
             ? Colors.red.shade700
             : Colors.green.shade700;
 
+        final isSelectedAccount = widget.activeFilter != null &&
+            (widget.activeFilter!.bank ?? '').toUpperCase() == bank.toUpperCase() &&
+            (widget.activeFilter!.last4 ?? '') == (account.last4 ?? '');
+
         tiles.add(
           ListTile(
             dense: true,
@@ -446,15 +500,36 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
               size: 32,
             ),
             minLeadingWidth: 40,
-            title: Text(account.instrument),
-            subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+            title: Text(
+              account.instrument,
+              style: Fx.label.copyWith(fontWeight: FontWeight.w600),
+            ),
+            subtitle: subtitle.isNotEmpty
+                ? Text(subtitle, style: Fx.label.copyWith(fontSize: 12))
+                : null,
             trailing: Text(
               INR.f(account.netOutflow),
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: accountColor,
-              ),
+              style:
+                  Fx.number.copyWith(color: accountColor, fontWeight: FontWeight.w800),
             ),
+            selected: isSelectedAccount,
+            selectedColor: Fx.mintDark,
+            selectedTileColor: Fx.mint.withOpacity(0.12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            onTap: widget.onSelectionChanged == null
+                ? null
+                : () {
+                    if (isSelectedAccount) {
+                      widget.onSelectionChanged!(BankInstrumentFilter.empty);
+                    } else {
+                      widget.onSelectionChanged!(
+                        BankInstrumentFilter(
+                          bank: bank.toUpperCase(),
+                          last4: account.last4,
+                        ),
+                      );
+                    }
+                  },
           ),
         );
       }
@@ -475,17 +550,16 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
               Expanded(
                 child: Text(
                   _formatBankName(bank),
-                  style: const TextStyle(fontWeight: FontWeight.w800),
+                  style:
+                      Fx.label.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
                 ),
               ),
               Text(
                 INR.f(bankNet),
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: bankColor,
+                style:
+                    Fx.number.copyWith(color: bankColor, fontWeight: FontWeight.w800),
               ),
-            ),
-          ],
+            ],
           ),
           children: tiles,
         ),
