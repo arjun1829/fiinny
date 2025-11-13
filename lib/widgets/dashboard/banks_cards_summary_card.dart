@@ -213,75 +213,78 @@ class _BanksCardsSummaryCardState extends State<BanksCardsSummaryCard> {
       radius: Fx.r24,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.credit_card_rounded, color: Fx.mintDark),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Banks & Cards',
-                    style: Fx.title,
-                  ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.credit_card_rounded, color: Fx.mintDark),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Banks & Cards',
+                  style: Fx.title,
                 ),
-                IconButton(
-                  tooltip: _open ? 'Collapse' : 'Expand',
-                  onPressed: () {
-                    setState(() {
-                      _open = !_open;
-                    });
-                  },
-                  icon: Icon(
-                    _open ? Icons.expand_less : Icons.expand_more,
-                    color: Fx.text,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _pill('Banks: ${banks.length}', icon: Icons.account_balance_rounded),
-                _pill('Cards: ${cards.length}', icon: Icons.credit_card),
-                _pill('Tx: $txCount', icon: Icons.list_alt),
-                _pill('Spent ${INR.f(spent)}', icon: Icons.south_east_rounded, color: Colors.red[700]),
-                _pill('Received ${INR.f(received)}', icon: Icons.north_east_rounded, color: Colors.green[700]),
-              ],
-            ),
-            AnimatedCrossFade(
-              firstChild: const SizedBox.shrink(),
-              secondChild: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 10),
-                  if (bankTiles.isEmpty)
-                    Container(
-                      width: double.infinity,
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.grey.shade200),
-                      ),
-                      child: const Text(
-                        'We will list your most active cards and accounts once we have enough data for this period.',
-                        style:
-                            TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
-                      ),
-                    )
-                  else ...bankTiles,
-                ],
               ),
-              crossFadeState:
-                  _open ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-              duration: const Duration(milliseconds: 220),
+              IconButton(
+                tooltip: _open ? 'Collapse' : 'Expand',
+                onPressed: () {
+                  setState(() {
+                    _open = !_open;
+                  });
+                },
+                icon: Icon(
+                  _open ? Icons.expand_less : Icons.expand_more,
+                  color: Fx.text,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _pill('Banks: ${banks.length}', icon: Icons.account_balance_rounded),
+              _pill('Cards: ${cards.length}', icon: Icons.credit_card),
+              _pill('Tx: $txCount', icon: Icons.list_alt),
+              _pill('Spent ${INR.f(spent)}', icon: Icons.south_east_rounded, color: Colors.red[700]),
+              _pill('Received ${INR.f(received)}', icon: Icons.north_east_rounded, color: Colors.green[700]),
+            ],
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 10),
+                if (bankTiles.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: const Text(
+                      'We will list your most active cards and accounts once we have enough data for this period.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 13,
+                      ),
+                    ),
+                  )
+                else ...bankTiles,
+              ],
             ),
-          ],
-        ),
+            crossFadeState:
+                _open ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 220),
+          ),
+        ],
       ),
     );
 
