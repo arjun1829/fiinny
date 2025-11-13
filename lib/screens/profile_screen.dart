@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData, SystemUiOverlayStyle;
 
@@ -30,6 +32,10 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   // Accent agreed
   static const Color _accent = Color(0xFF159E8A);
+
+  // ---- Logout helpers ----
+  static bool _signingOut = false;
+  static const String _AUTH_ROUTE = '/';
 
   String? profileImageUrl;
   String? avatarAsset;
@@ -418,9 +424,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _logout() async {
-    await FirebaseAuth.instance.signOut();
-    if (!mounted) return;
-    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+    if (_signingOut) return;
+    _signingOut = true;
+
+    final nav = Navigator.of(context);
+
+    try {
+      try {
+        await GoogleSignIn(scopes: <String>[]).signOut();
+      } catch (_) {}
+
+      try {
+        final notif = await FirebaseMessaging.instance.getNotificationSettings();
+        final ok = notif.authorizationStatus == AuthorizationStatus.authorized ||
+            notif.authorizationStatus == AuthorizationStatus.provisional;
+        if (ok) {
+          await FirebaseMessaging.instance.deleteToken();
+        }
+      } catch (_) {}
+
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {
+    } finally {
+      if (nav.mounted) {
+        nav.pushNamedAndRemoveUntil(_AUTH_ROUTE, (route) => false);
+      }
+      _signingOut = false;
+    }
   }
 
   Future<void> _deleteAccount() async {

@@ -7,6 +7,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 
+import '../core/analytics/aggregators.dart';
 import '../models/expense_item.dart';
 import '../models/income_item.dart';
 import '../models/friend_model.dart';
@@ -18,7 +19,9 @@ import '../widgets/date_filter_bar.dart';
 import '../widgets/chart_switcher_widget.dart';
 import '../widgets/unified_transaction_list.dart';
 import '../themes/custom_card.dart';
+import '../themes/tokens.dart';
 import '../widgets/animated_mint_background.dart';
+import '../widgets/dashboard/banks_cards_summary_card.dart';
 
 class ExpensesScreen extends StatefulWidget {
   final String userPhone;
@@ -60,6 +63,11 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   DateTime? _searchFrom;
   DateTime? _searchTo;
   final TextEditingController _searchController = TextEditingController();
+
+  String? _bankFilter;
+  String? _cardLast4Filter;
+  String? _instrumentFilter;
+  String? _merchantFilter;
 
   // Subscriptions / Debounce
   StreamSubscription? _expSub, _incSub, _friendSub;
@@ -245,6 +253,23 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         final d = _d(e.date);
         if (d.isBefore(_d(_searchFrom!)) || d.isAfter(_d(_searchTo!))) return false;
       }
+      if (_bankFilter != null && _bankFilter!.isNotEmpty) {
+        if ((e.issuerBank ?? '').toUpperCase() != _bankFilter) return false;
+      }
+      if (_cardLast4Filter != null && _cardLast4Filter!.isNotEmpty) {
+        final l4 = (e.cardLast4 ?? '').trim();
+        if (l4.isEmpty || !l4.endsWith(_cardLast4Filter!)) return false;
+      }
+      if (_instrumentFilter != null && _instrumentFilter!.isNotEmpty) {
+        final inst = _normInstrument(e.instrument);
+        if (inst != _instrumentFilter) return false;
+      }
+      if (_merchantFilter != null && _merchantFilter!.isNotEmpty) {
+        final raw = (e.counterparty ?? e.upiVpa ?? e.label ?? '').trim();
+        if (raw.isEmpty) return false;
+        final key = AnalyticsAgg.displayMerchantKey(raw);
+        if (key.toLowerCase() != _merchantFilter!.toLowerCase()) return false;
+      }
       return inMainRange(e.date);
     }
 
@@ -260,6 +285,19 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         final d = _d(i.date);
         if (d.isBefore(_d(_searchFrom!)) || d.isAfter(_d(_searchTo!))) return false;
       }
+      if (_bankFilter != null && _bankFilter!.isNotEmpty) {
+        if ((i.issuerBank ?? '').toUpperCase() != _bankFilter) return false;
+      }
+      if (_instrumentFilter != null && _instrumentFilter!.isNotEmpty) {
+        final inst = _normInstrument(i.instrument);
+        if (inst != _instrumentFilter) return false;
+      }
+      if (_merchantFilter != null && _merchantFilter!.isNotEmpty) {
+        final raw = (i.counterparty ?? i.upiVpa ?? i.label ?? '').trim();
+        if (raw.isEmpty) return false;
+        final key = AnalyticsAgg.displayMerchantKey(raw);
+        if (key.toLowerCase() != _merchantFilter!.toLowerCase()) return false;
+      }
       return inMainRange(i.date);
     }
 
@@ -272,6 +310,197 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     if (_searchCategory != null && !catsNow.contains(_searchCategory)) {
       _searchCategory = null;
     }
+  }
+
+  String _normInstrument(String? raw) {
+    final upper = (raw ?? '').toUpperCase();
+    if (upper.contains('CREDIT')) return 'Credit Card';
+    if (upper.contains('DEBIT')) return 'Debit Card';
+    if (upper.contains('UPI')) return 'UPI';
+    if (upper.contains('NET')) return 'NetBanking';
+    if (upper.contains('IMPS')) return 'IMPS';
+    if (upper.contains('NEFT')) return 'NEFT';
+    if (upper.contains('RTGS')) return 'RTGS';
+    if (upper.contains('ATM')) return 'ATM';
+    if (upper.contains('POS')) return 'POS';
+    final trimmed = (raw ?? '').trim();
+    return trimmed.isEmpty ? 'Account' : trimmed;
+  }
+
+  String _formatMerchantName(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return 'Unknown';
+    return trimmed
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .map((word) =>
+            '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}')
+        .join(' ');
+  }
+
+  Widget _buildTypeChips() {
+    const types = ['All', 'Expense', 'Income'];
+    return Wrap(
+      spacing: 8,
+      children: types.map((type) {
+        final selected = _dataType == type;
+        return ChoiceChip(
+          label: Text(type, style: const TextStyle(fontSize: 13)),
+          selected: selected,
+          onSelected: (_) {
+            setState(() => _dataType = type);
+          },
+        );
+      }).toList(),
+    );
+  }
+
+  List<Widget> _buildInstrumentChips() {
+    final counts = <String, int>{};
+
+    void add(String? raw) {
+      final inst = _normInstrument(raw);
+      if (inst.isEmpty) return;
+      counts[inst] = (counts[inst] ?? 0) + 1;
+    }
+
+    for (final e in filteredExpenses) {
+      add(e.instrument);
+    }
+    for (final i in filteredIncomes) {
+      add(i.instrument);
+    }
+
+    final entries = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return entries.map((entry) {
+      final inst = entry.key;
+      final selected = _instrumentFilter == inst;
+      return FilterChip(
+        label: Text(
+          '$inst (${entry.value})',
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 13),
+        ),
+        selected: selected,
+        onSelected: (_) {
+          setState(() {
+            _instrumentFilter = selected ? null : inst;
+          });
+          _recompute();
+        },
+      );
+    }).toList();
+  }
+
+  List<Widget> _buildCategoryChips() {
+    final cats = _expenseCategories().toSet().toList()..sort();
+    return cats.map((cat) {
+      final selected = _searchCategory == cat;
+      return FilterChip(
+        label: Text(cat, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+        selected: selected,
+        onSelected: (_) {
+          setState(() {
+            _searchCategory = selected ? null : cat;
+          });
+          _recompute();
+        },
+      );
+    }).toList();
+  }
+
+  List<Widget> _buildTopMerchantChips() {
+    if (filteredExpenses.isEmpty) return const [];
+
+    final byMerchant = AnalyticsAgg.byMerchant(filteredExpenses);
+    if (byMerchant.isEmpty) return const [];
+
+    final formatter = NumberFormat.compactCurrency(
+      locale: 'en_IN',
+      symbol: '₹',
+      decimalDigits: 0,
+    );
+
+    return byMerchant.entries.take(6).map((entry) {
+      final merchant = entry.key;
+      final selected =
+          _merchantFilter != null && _merchantFilter!.toLowerCase() == merchant.toLowerCase();
+      return FilterChip(
+        label: Text(
+          '${_formatMerchantName(merchant)} • ${formatter.format(entry.value.abs())}',
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 13),
+        ),
+        selected: selected,
+        onSelected: (_) {
+          setState(() {
+            _merchantFilter = selected ? null : merchant;
+          });
+          _recompute();
+        },
+      );
+    }).toList();
+  }
+
+  Widget _filtersAndAccountsCard() {
+    final instrumentChips = _buildInstrumentChips();
+    final categoryChips = _buildCategoryChips();
+    final merchantChips = _buildTopMerchantChips();
+    final combinedChips = <Widget>[
+      ...instrumentChips,
+      ...categoryChips,
+      ...merchantChips,
+    ];
+
+    return CustomDiamondCard(
+      borderRadius: 22,
+      glassGradient: [
+        Colors.white.withOpacity(0.19),
+        Colors.white.withOpacity(0.08),
+      ],
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Filters & Accounts', style: Fx.title.copyWith(fontSize: 18)),
+          const SizedBox(height: 10),
+          _buildTypeChips(),
+          if (combinedChips.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: combinedChips,
+            ),
+          ],
+          const SizedBox(height: 12),
+          BanksCardsSummaryCard(
+            expenses: filteredExpenses,
+            incomes: filteredIncomes,
+            initiallyExpanded: false,
+            enableTapToOpenAnalytics: false,
+            onOpenAnalytics: () {},
+            activeFilter: BankInstrumentFilter(
+              bank: _bankFilter,
+              last4: _cardLast4Filter,
+            ),
+            onSelectionChanged: (filter) {
+              _bankFilter = (filter.bank != null && filter.bank!.isNotEmpty)
+                  ? filter.bank
+                  : null;
+              _cardLast4Filter =
+                  (filter.last4 != null && filter.last4!.isNotEmpty)
+                      ? filter.last4
+                      : null;
+              _instrumentFilter = null;
+              _recompute();
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   void _generateDailyTotals() {
@@ -308,8 +537,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         "Expenses",
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          fontSize: 28,
-                          letterSpacing: 0.5,
+                          fontSize: 24,
+                          letterSpacing: 0.4,
                           color: Color(0xFF09857a),
                         ),
                       ),
@@ -445,7 +674,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           CustomDiamondCard(
             isDiamondCut: true,
             borderRadius: 22,
-            padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 15),
+            padding: const EdgeInsets.symmetric(vertical: 34, horizontal: 14),
             glassGradient: [
               Colors.white.withOpacity(0.21),
               Colors.white.withOpacity(0.09),
@@ -487,7 +716,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             ),
           ),
 
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
 
           // --- Bulk Actions Bar ---
           if (_multiSelectMode)
@@ -805,9 +1034,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   ],
                 );
               },
-            ),
           ),
+        ),
 
+
+          const SizedBox(height: 12),
+          _filtersAndAccountsCard(),
 
           // Transaction List Unified (Expense+Income)
           CustomDiamondCard(
