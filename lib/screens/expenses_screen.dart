@@ -2249,7 +2249,6 @@ class _SummaryRingCard extends StatelessWidget {
           ),
         ),
       ),
-    ),
     );
   }
 }
