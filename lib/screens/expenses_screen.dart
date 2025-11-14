@@ -2185,69 +2185,71 @@ class _SummaryRingCard extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          backgroundColor: Colors.grey[100],
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            backgroundColor: Colors.grey[100],
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
                           ),
-                        ),
-                        onPressed: onTapPeriod,
-                        child: Text(
-                          periodLabel,
-                          style: Fx.label.copyWith(fontWeight: FontWeight.w600),
+                          onPressed: onTapPeriod,
+                          child: Text(
+                            periodLabel,
+                            style: Fx.label.copyWith(fontWeight: FontWeight.w600),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Text('Spent', style: Fx.label.copyWith(color: Fx.text)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            formatter.format(spentValue),
-                            textAlign: TextAlign.right,
-                            style: Fx.number.copyWith(fontSize: 24),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Text('Spent', style: Fx.label.copyWith(color: Fx.text)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              formatter.format(spentValue),
+                              textAlign: TextAlign.right,
+                              style: Fx.number.copyWith(fontSize: 24),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Text('Received', style: Fx.label.copyWith(color: Fx.text)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            formatter.format(incomeValue),
-                            textAlign: TextAlign.right,
-                            style: Fx.label.copyWith(fontSize: 18, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Banks: $bankCount · Cards: $cardCount · Tx: $txCount',
-                      style: Fx.label.copyWith(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Text('Received', style: Fx.label.copyWith(color: Fx.text)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              formatter.format(incomeValue),
+                              textAlign: TextAlign.right,
+                              style: Fx.label.copyWith(fontSize: 18, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Banks: $bankCount · Cards: $cardCount · Tx: $txCount',
+                        style: Fx.label.copyWith(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
+    ),
     );
   }
 }
