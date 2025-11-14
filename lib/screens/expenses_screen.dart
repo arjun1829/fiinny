@@ -67,6 +67,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   String? _cardLast4Filter;
   String? _instrumentFilter;
   String? _merchantFilter;
+  Set<String> _friendFilterPhones = {};
+  Set<String> _groupFilterIds = {};
 
   // Subscriptions / Debounce
   StreamSubscription? _expSub, _incSub, _friendSub;
@@ -269,6 +271,18 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         final key = AnalyticsAgg.displayMerchantKey(raw);
         if (key.toLowerCase() != _merchantFilter!.toLowerCase()) return false;
       }
+      if (_friendFilterPhones.isNotEmpty) {
+        final ids = e.friendIds.toSet();
+        if (ids.isEmpty || ids.intersection(_friendFilterPhones).isEmpty) {
+          return false;
+        }
+      }
+      if (_groupFilterIds.isNotEmpty) {
+        final gid = (e.groupId ?? '').trim();
+        if (gid.isEmpty || !_groupFilterIds.contains(gid)) {
+          return false;
+        }
+      }
       return inMainRange(e.date);
     }
 
@@ -308,6 +322,401 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final catsNow = _expenseCategories().toSet();
     if (_searchCategory != null && !catsNow.contains(_searchCategory)) {
       _searchCategory = null;
+    }
+  }
+
+  (int banks, int cards) _computeBankCardStats() {
+    final bankSet = <String>{};
+    final cardSet = <String>{};
+
+    void addBankCard({String? bank, String? last4}) {
+      final bankName = (bank ?? '').trim();
+      if (bankName.isNotEmpty) {
+        bankSet.add(bankName.toUpperCase());
+      }
+      final l4 = (last4 ?? '').trim();
+      if (bankName.isNotEmpty && l4.isNotEmpty) {
+        cardSet.add('${bankName.toUpperCase()}-$l4');
+      }
+    }
+
+    for (final e in filteredExpenses) {
+      addBankCard(bank: e.issuerBank, last4: e.cardLast4);
+    }
+    for (final i in filteredIncomes) {
+      addBankCard(bank: i.issuerBank);
+    }
+
+    return (bankSet.length, cardSet.length);
+  }
+
+  String _periodLabelFor(String token) {
+    switch (token) {
+      case 'Day':
+      case 'D':
+        return 'Today';
+      case '2D':
+        return 'Last 2 Days';
+      case 'Week':
+      case 'W':
+        return 'This Week';
+      case 'Last Month':
+      case 'LM':
+        return 'Last Month';
+      case 'Quarter':
+      case 'Q':
+        return 'This Quarter';
+      case 'Year':
+      case 'Y':
+        return 'This Year';
+      case 'Month':
+      case 'M':
+        return 'This Month';
+      case 'All':
+      default:
+        return 'All Time';
+    }
+  }
+
+  String _currentPeriodLabel() {
+    if (_searchFrom != null && _searchTo != null) {
+      final start = _d(_searchFrom!);
+      final end = _d(_searchTo!);
+      final yesterday = _d(DateTime.now().subtract(const Duration(days: 1)));
+      if (start == yesterday && end == yesterday) {
+        return 'Yesterday';
+      }
+      if (start == end) {
+        return DateFormat('d MMM y').format(start);
+      }
+      final sameYear = start.year == end.year;
+      final startFormat = DateFormat(sameYear ? 'd MMM' : 'd MMM y').format(start);
+      final endFormat = DateFormat('d MMM y').format(end);
+      return '$startFormat – $endFormat';
+    }
+    return _periodLabelFor(_selectedFilter);
+  }
+
+  bool get _hasActiveFilters =>
+      (_searchCategory != null && _searchCategory!.isNotEmpty) ||
+      (_merchantFilter != null && _merchantFilter!.isNotEmpty) ||
+      (_bankFilter != null && _bankFilter!.isNotEmpty) ||
+      (_cardLast4Filter != null && _cardLast4Filter!.isNotEmpty) ||
+      (_instrumentFilter != null && _instrumentFilter!.isNotEmpty) ||
+      _friendFilterPhones.isNotEmpty ||
+      _groupFilterIds.isNotEmpty ||
+      _searchFrom != null ||
+      _searchTo != null;
+
+  Widget _buildActiveFiltersWrap() {
+    final chips = _activeFilterChips();
+    if (chips.isEmpty) {
+      return const SizedBox(height: 12);
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, left: 4, right: 4),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          ...chips,
+          if (_hasActiveFilters)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: TextButton(
+                onPressed: _clearAllFilters,
+                child: const Text('Clear filters'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _activeFilterChips() {
+    final chips = <Widget>[];
+
+    if (_searchFrom != null && _searchTo != null) {
+      final label = _currentPeriodLabel();
+      chips.add(InputChip(
+        label: Text(label),
+        onDeleted: () {
+          setState(() {
+            _searchFrom = null;
+            _searchTo = null;
+          });
+          _recompute();
+        },
+      ));
+    }
+
+    if (_searchCategory != null && _searchCategory!.isNotEmpty) {
+      chips.add(InputChip(
+        label: Text(_searchCategory!),
+        onDeleted: () {
+          setState(() => _searchCategory = null);
+          _recompute();
+        },
+      ));
+    }
+
+    if (_merchantFilter != null && _merchantFilter!.isNotEmpty) {
+      final merchantName = _formatMerchantName(_merchantFilter!);
+      chips.add(InputChip(
+        label: Text(merchantName),
+        onDeleted: () {
+          setState(() => _merchantFilter = null);
+          _recompute();
+        },
+      ));
+    }
+
+    if (_bankFilter != null && _bankFilter!.isNotEmpty) {
+      final bank = _bankFilter!;
+      final label = (_cardLast4Filter != null && _cardLast4Filter!.isNotEmpty)
+          ? '$bank • ••${_cardLast4Filter!}'
+          : bank;
+      chips.add(InputChip(
+        label: Text(label),
+        onDeleted: () {
+          setState(() {
+            _bankFilter = null;
+            _cardLast4Filter = null;
+          });
+          _recompute();
+        },
+      ));
+    } else if (_cardLast4Filter != null && _cardLast4Filter!.isNotEmpty) {
+      chips.add(InputChip(
+        label: Text('••${_cardLast4Filter!}'),
+        onDeleted: () {
+          setState(() => _cardLast4Filter = null);
+          _recompute();
+        },
+      ));
+    }
+
+    if (_instrumentFilter != null && _instrumentFilter!.isNotEmpty) {
+      chips.add(InputChip(
+        label: Text(_instrumentFilter!),
+        onDeleted: () {
+          setState(() => _instrumentFilter = null);
+          _recompute();
+        },
+      ));
+    }
+
+    final friendPhones = _friendFilterPhones.toList()..sort();
+    for (final phone in friendPhones) {
+      final friendName = _friendsById[phone]?.name.trim();
+      final label = (friendName != null && friendName.isNotEmpty) ? friendName : phone;
+      chips.add(InputChip(
+        label: Text(label),
+        onDeleted: () {
+          setState(() {
+            _friendFilterPhones = {..._friendFilterPhones}..remove(phone);
+          });
+          _recompute();
+        },
+      ));
+    }
+
+    final groupIds = _groupFilterIds.toList()..sort();
+    for (final groupId in groupIds) {
+      final label = groupId.isEmpty ? 'Group' : 'Group $groupId';
+      chips.add(InputChip(
+        label: Text(label),
+        onDeleted: () {
+          setState(() {
+            _groupFilterIds = {..._groupFilterIds}..remove(groupId);
+          });
+          _recompute();
+        },
+      ));
+    }
+
+    return chips;
+  }
+
+  void _clearAllFilters() {
+    setState(() {
+      _selectedFilter = 'Month';
+      _searchCategory = null;
+      _merchantFilter = null;
+      _bankFilter = null;
+      _cardLast4Filter = null;
+      _instrumentFilter = null;
+      _friendFilterPhones = {};
+      _groupFilterIds = {};
+      _searchFrom = null;
+      _searchTo = null;
+    });
+    _recompute();
+  }
+
+  Future<void> _showPeriodPickerBottomSheet() async {
+    final now = DateTime.now();
+    final yesterday = _d(now.subtract(const Duration(days: 1)));
+
+    bool isYesterdaySelected() {
+      if (_searchFrom == null || _searchTo == null) return false;
+      return _d(_searchFrom!) == yesterday && _d(_searchTo!) == yesterday;
+    }
+
+    bool isTokenSelected(String token) {
+      switch (token) {
+        case 'Day':
+          return (_selectedFilter == 'Day' || _selectedFilter == 'D') &&
+              _searchFrom == null &&
+              _searchTo == null;
+        case '2D':
+          return _selectedFilter == '2D' && _searchFrom == null && _searchTo == null;
+        case 'Week':
+          return (_selectedFilter == 'Week' || _selectedFilter == 'W') &&
+              _searchFrom == null &&
+              _searchTo == null;
+        case 'Month':
+          return (_selectedFilter == 'Month' || _selectedFilter == 'M') &&
+              _searchFrom == null &&
+              _searchTo == null;
+        case 'Last Month':
+          return (_selectedFilter == 'Last Month' || _selectedFilter == 'LM') &&
+              _searchFrom == null &&
+              _searchTo == null;
+        case 'Quarter':
+          return (_selectedFilter == 'Quarter' || _selectedFilter == 'Q') &&
+              _searchFrom == null &&
+              _searchTo == null;
+        case 'Year':
+          return (_selectedFilter == 'Year' || _selectedFilter == 'Y') &&
+              _searchFrom == null &&
+              _searchTo == null;
+        case 'All':
+          return _selectedFilter == 'All' &&
+              _searchFrom == null &&
+              _searchTo == null;
+        default:
+          return false;
+      }
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text('Select period',
+                    style: Fx.label.copyWith(fontSize: 16, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 12),
+                ...[
+                  ('Day', 'Day'),
+                  ('Yesterday', 'Yesterday'),
+                  ('2D', '2D'),
+                  ('Week', 'Week'),
+                  ('Month', 'Month'),
+                  ('Last Month', 'Last Month'),
+                  ('Quarter', 'Quarter'),
+                  ('Year', 'Year'),
+                  ('All Time', 'All'),
+                ].map((entry) {
+                  final label = entry.$1;
+                  final token = entry.$2;
+                  final selected = token == 'Yesterday'
+                      ? isYesterdaySelected()
+                      : isTokenSelected(token);
+                  return ListTile(
+                    title: Text(label),
+                    trailing: selected
+                        ? const Icon(Icons.check_circle, color: Colors.teal)
+                        : null,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      setState(() {
+                        if (token == 'Yesterday') {
+                          _selectedFilter = 'All';
+                          _searchFrom = yesterday;
+                          _searchTo = yesterday;
+                        } else {
+                          _selectedFilter = token;
+                          _searchFrom = null;
+                          _searchTo = null;
+                        }
+                      });
+                      _recompute();
+                    },
+                  );
+                }).toList(),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openFiltersScreen() async {
+    final config = await Navigator.push<ExpenseFilterConfig>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ExpenseFiltersScreen(
+          initialConfig: ExpenseFilterConfig(
+            periodToken: _selectedFilter,
+            customRange: _searchFrom != null && _searchTo != null
+                ? DateTimeRange(start: _searchFrom!, end: _searchTo!)
+                : null,
+            category: _searchCategory,
+            merchantKey: _merchantFilter,
+            bank: _bankFilter,
+            cardLast4: _cardLast4Filter,
+            friendPhones: _friendFilterPhones,
+            groupIds: _groupFilterIds,
+          ),
+          expenses: allExpenses,
+          incomes: allIncomes,
+          friendsById: _friendsById,
+        ),
+      ),
+    );
+
+    if (config != null) {
+      setState(() {
+        _selectedFilter = config.periodToken;
+        if (config.customRange != null) {
+          _searchFrom = config.customRange!.start;
+          _searchTo = config.customRange!.end;
+        } else {
+          _searchFrom = null;
+          _searchTo = null;
+        }
+        _searchCategory = config.category;
+        _merchantFilter = config.merchantKey;
+        _bankFilter = config.bank;
+        _cardLast4Filter = config.cardLast4;
+        _friendFilterPhones = {...config.friendPhones};
+        _groupFilterIds = {...config.groupIds};
+      });
+      _recompute();
     }
   }
 
@@ -669,58 +1078,53 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
 
   Widget _summaryView(BuildContext context) {
+    final bankCardStats = _computeBankCardStats();
+    final periodLabel = _currentPeriodLabel();
+    final txCount = filteredExpenses.length + filteredIncomes.length;
     return RefreshIndicator(
       onRefresh: () async => _recompute(),
       child: ListView(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
         children: [
-          // MINI ANALYTICS (two donuts in one card)
-          CustomDiamondCard(
-            isDiamondCut: true,
-            borderRadius: 22,
-            padding: const EdgeInsets.symmetric(vertical: 34, horizontal: 14),
-            glassGradient: const [
-              Colors.white,
-              Colors.white,
-            ],
-            child: InkWell(
-              // tap anywhere on the card to open Analytics
-              onTap: () async {
-                await Navigator.pushNamed(
-                  context,
-                  '/analytics',
-                  arguments: widget.userPhone,
-                );
-              },
+          _SummaryRingCard(
+            spent: periodTotalExpense,
+            received: periodTotalIncome,
+            bankCount: bankCardStats.$1,
+            cardCount: bankCardStats.$2,
+            txCount: txCount,
+            periodLabel: periodLabel,
+            onTapPeriod: _showPeriodPickerBottomSheet,
+            onTap: () async {
+              await Navigator.pushNamed(
+                context,
+                '/analytics',
+                arguments: widget.userPhone,
+              );
+            },
+          ),
 
-              borderRadius: BorderRadius.circular(5),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _MiniDonutChart(
-                      title: "Expenses",
-                      total: periodTotalExpense,
-                      sections: _miniExpenseSections(),
-                      height: 110, // a bit taller
-                      ringThickness: 2, // slim like Analytics
-                    ),
-                  ),
-                  const SizedBox(width: 18),
-                  Expanded(
-                    child: _MiniDonutChart(
-                      title: "Income",
-                      total: periodTotalIncome,
-                      sections: _miniIncomeSections(),
-                      height: 110,
-                      ringThickness: 2,
-                    ),
-                  ),
-                ],
+          const SizedBox(height: 12),
+
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.filter_alt_rounded, size: 18),
+              label: const Text('Filters'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Fx.mintDark,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(22),
+                ),
               ),
+              onPressed: _openFiltersScreen,
             ),
           ),
 
-          const SizedBox(height: 14),
+          _buildActiveFiltersWrap(),
+
+          const SizedBox(height: 8),
 
           // --- Bulk Actions Bar ---
           if (_multiSelectMode)
@@ -854,194 +1258,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               ],
             ),
           ),
-    // --- Search & Advanced Filter ---
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-            child: Builder(
-              builder: (context) {
-                final cats = _expenseCategories().toSet().toList()..sort();
-                final currentCat =
-                (cats.contains(_searchCategory)) ? _searchCategory : null;
-
-                final dateLabel = (_searchFrom != null && _searchTo != null)
-                    ? "${DateFormat('d MMM').format(_searchFrom!)} – ${DateFormat('d MMM').format(_searchTo!)}"
-                    : "Date Range";
-
-                final yesterday = _d(DateTime.now().subtract(const Duration(days: 1)));
-
-                bool isYesterdaySelected() {
-                  if (_searchFrom == null || _searchTo == null) return false;
-                  return _d(_searchFrom!) == yesterday && _d(_searchTo!) == yesterday;
-                }
-
-                Widget chip(String label, String filterValue) {
-                  final selected = _selectedFilter == filterValue ||
-                      (_selectedFilter == filterValue[0]); // supports D/M/Q/Y short
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(label),
-                      selected: selected,
-                      onSelected: (_) {
-                        setState(() {
-                          _selectedFilter = filterValue;
-                          // Clear custom range so it doesn't intersect with preset filter
-                          _searchFrom = null;
-                          _searchTo = null;
-                        });
-                        _recompute();
-                      },
-                    ),
-                  );
-                }
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Row: Category dropdown + Date range button (+ clear)
-                    Row(
-                      children: [
-                        // Category dropdown (pill style, expands)
-                        Expanded(
-                          child: Container(
-                            height: 44,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: Colors.black12),
-                              color: Colors.white.withOpacity(0.7),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.category_rounded,
-                                    size: 18, color: Colors.teal),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: DropdownButtonHideUnderline(
-                                    child: DropdownButton<String?>(
-                                      isExpanded: true,
-                                      value: currentCat,
-                                      hint: const Text("All"),
-                                      items: <DropdownMenuItem<String?>>[
-                                        const DropdownMenuItem<String?>(
-                                            value: null, child: Text("All")),
-                                        ...cats.map(
-                                              (cat) => DropdownMenuItem<String?>(
-                                            value: cat,
-                                            child: Text(cat),
-                                          ),
-                                        ),
-                                      ],
-                                      onChanged: (cat) {
-                                        setState(() => _searchCategory = cat);
-                                        _recompute();
-                                      },
-                                    ),
-                                  ),
-                                ),
-                                if (currentCat != null)
-                                  InkWell(
-                                    borderRadius: BorderRadius.circular(20),
-                                    onTap: () {
-                                      setState(() => _searchCategory = null);
-                                      _recompute();
-                                    },
-                                    child: const Padding(
-                                      padding: EdgeInsets.all(4.0),
-                                      child: Icon(Icons.close_rounded,
-                                          size: 18, color: Colors.grey),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-
-                        // Date range (outlined pill)
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.calendar_today_rounded, size: 18),
-                          label: Text(dateLabel),
-                          style: OutlinedButton.styleFrom(
-                            padding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            shape: const StadiumBorder(),
-                            side: const BorderSide(color: Colors.black12),
-                            foregroundColor: Colors.black87,
-                          ),
-                          onPressed: () async {
-                            final picked = await showDateRangePicker(
-                              context: context,
-                              firstDate: DateTime(2000),
-                              lastDate: DateTime.now().add(const Duration(days: 1)),
-                            );
-                            if (picked != null) {
-                              setState(() {
-                                _searchFrom = picked.start;
-                                _searchTo = picked.end;
-                              });
-                              _recompute();
-                            }
-                          },
-
-                        ),
-
-                        if (_searchFrom != null || _searchTo != null)
-                          IconButton(
-                            tooltip: "Clear Date Range",
-                            icon: const Icon(Icons.close_rounded, color: Colors.grey),
-                            onPressed: () {
-                              setState(() {
-                                _searchFrom = null;
-                                _searchTo = null;
-                              });
-                              _recompute();
-                            },
-                          ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    // Row: Preset filter chips (Day / Yesterday / 2D / Week / Month / Last Month / Quarter / Year / All)
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          chip('Day', 'Day'),
-                          // Special "Yesterday" uses custom date range so it works independently
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: ChoiceChip(
-                              label: const Text('Yesterday'),
-                              selected: isYesterdaySelected(),
-                              onSelected: (_) {
-                                setState(() {
-                                  _selectedFilter = 'All'; // avoid intersecting with "today"
-                                  _searchFrom = yesterday;
-                                  _searchTo = yesterday;
-                                });
-                                _recompute();
-                              },
-                            ),
-                          ),
-                          chip('2D', '2D'),
-                          chip('Week', 'Week'),
-                          chip('Month', 'Month'),
-                          chip('Last Month', 'Last Month'),
-                          chip('Quarter', 'Quarter'),
-                          chip('Year', 'Year'),
-                          chip('All', 'All'),
-                        ],
-                      ),
-                    ),
-                  ],
-                );
-              },
-          ),
-        ),
-
-
           const SizedBox(height: 12),
           _filtersAndAccountsCard(),
 
@@ -1946,6 +2162,157 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return result;
   }
 }
+
+class _SummaryRingCard extends StatelessWidget {
+  final double spent;
+  final double received;
+  final int bankCount;
+  final int cardCount;
+  final int txCount;
+  final String periodLabel;
+  final VoidCallback onTapPeriod;
+  final VoidCallback? onTap;
+
+  const _SummaryRingCard({
+    required this.spent,
+    required this.received,
+    required this.bankCount,
+    required this.cardCount,
+    required this.txCount,
+    required this.periodLabel,
+    required this.onTapPeriod,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final formatter = NumberFormat.currency(
+      locale: 'en_IN',
+      symbol: '₹',
+      decimalDigits: 0,
+    );
+
+    final spentValue = spent.abs();
+    final incomeValue = received.abs();
+    final hasData = spentValue > 0 || incomeValue > 0;
+    final chartSpent = spentValue == 0 && !hasData ? 0.01 : spentValue;
+    double chartRemainder;
+    if (!hasData) {
+      chartRemainder = 1;
+    } else if (incomeValue <= 0) {
+      chartRemainder = spentValue > 0 ? spentValue : 1;
+    } else {
+      chartRemainder = incomeValue;
+    }
+
+    return Material(
+      color: Colors.white,
+      elevation: 3,
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 120,
+                height: 120,
+                child: PieChart(
+                  PieChartData(
+                    sectionsSpace: 0,
+                    centerSpaceRadius: 48,
+                    startDegreeOffset: -90,
+                    sections: [
+                      PieChartSectionData(
+                        value: chartSpent <= 0 ? 0.01 : chartSpent,
+                        color: Fx.mintDark,
+                        title: '',
+                        radius: 60,
+                      ),
+                      PieChartSectionData(
+                        value: chartRemainder <= 0 ? 0.01 : chartRemainder,
+                        color: Fx.mint.withOpacity(0.2),
+                        title: '',
+                        radius: 60,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          backgroundColor: Colors.grey[100],
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                        onPressed: onTapPeriod,
+                        child: Text(
+                          periodLabel,
+                          style: Fx.label.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Text('Spent', style: Fx.label.copyWith(color: Fx.text)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            formatter.format(spentValue),
+                            textAlign: TextAlign.right,
+                            style: Fx.number.copyWith(fontSize: 24),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text('Received', style: Fx.label.copyWith(color: Fx.text)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            formatter.format(incomeValue),
+                            textAlign: TextAlign.right,
+                            style: Fx.label.copyWith(fontSize: 18, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Banks: $bankCount · Cards: $cardCount · Tx: $txCount',
+                      style: Fx.label.copyWith(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MiniDonutChart extends StatelessWidget {
   final String title;
   final double total;
@@ -2044,5 +2411,573 @@ class _MiniDonutChart extends StatelessWidget {
         },
       ),
     );
+  }
+}
+
+class ExpenseFilterConfig {
+  final String periodToken;
+  final DateTimeRange? customRange;
+  final String? category;
+  final String? merchantKey;
+  final String? bank;
+  final String? cardLast4;
+  final Set<String> friendPhones;
+  final Set<String> groupIds;
+
+  static const _sentinel = Object();
+
+  ExpenseFilterConfig({
+    required this.periodToken,
+    this.customRange,
+    this.category,
+    this.merchantKey,
+    this.bank,
+    this.cardLast4,
+    Set<String>? friendPhones,
+    Set<String>? groupIds,
+  })  : friendPhones = Set<String>.from(friendPhones ?? const <String>{}),
+        groupIds = Set<String>.from(groupIds ?? const <String>{});
+
+  ExpenseFilterConfig copyWith({
+    String? periodToken,
+    Object? customRange = _sentinel,
+    Object? category = _sentinel,
+    Object? merchantKey = _sentinel,
+    Object? bank = _sentinel,
+    Object? cardLast4 = _sentinel,
+    Set<String>? friendPhones,
+    Set<String>? groupIds,
+  }) {
+    return ExpenseFilterConfig(
+      periodToken: periodToken ?? this.periodToken,
+      customRange: customRange == _sentinel
+          ? this.customRange
+          : customRange as DateTimeRange?,
+      category:
+          category == _sentinel ? this.category : category as String?,
+      merchantKey: merchantKey == _sentinel
+          ? this.merchantKey
+          : merchantKey as String?,
+      bank: bank == _sentinel ? this.bank : bank as String?,
+      cardLast4: cardLast4 == _sentinel
+          ? this.cardLast4
+          : cardLast4 as String?,
+      friendPhones: friendPhones ?? this.friendPhones,
+      groupIds: groupIds ?? this.groupIds,
+    );
+  }
+}
+
+class ExpenseFiltersScreen extends StatefulWidget {
+  final ExpenseFilterConfig initialConfig;
+  final List<ExpenseItem> expenses;
+  final List<IncomeItem> incomes;
+  final Map<String, FriendModel> friendsById;
+
+  const ExpenseFiltersScreen({
+    required this.initialConfig,
+    required this.expenses,
+    required this.incomes,
+    required this.friendsById,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  State<ExpenseFiltersScreen> createState() => _ExpenseFiltersScreenState();
+}
+
+class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
+  late String _periodToken;
+  DateTimeRange? _customRange;
+  String? _category;
+  String? _merchantKey;
+  String? _bank;
+  String? _cardLast4;
+  late Set<String> _friendPhones;
+  late Set<String> _groupIds;
+
+  int _selectedCategoryIndex = 0;
+
+  late final List<String> _categoryOptions;
+  late final List<String> _merchantOptions;
+  late final Map<String, Set<String>> _bankToCards;
+  late final List<String> _bankOptions;
+  late final List<String> _groupOptions;
+
+  List<FriendModel> get _friends => widget.friendsById.values.toList()
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+  @override
+  void initState() {
+    super.initState();
+    _periodToken = widget.initialConfig.periodToken;
+    _customRange = widget.initialConfig.customRange;
+    _category = widget.initialConfig.category;
+    _merchantKey = widget.initialConfig.merchantKey;
+    _bank = widget.initialConfig.bank;
+    _cardLast4 = widget.initialConfig.cardLast4;
+    _friendPhones = Set<String>.from(widget.initialConfig.friendPhones);
+    _groupIds = Set<String>.from(widget.initialConfig.groupIds);
+
+    final categorySet = <String>{};
+    for (final e in widget.expenses) {
+      final type = e.type.trim().isEmpty ? 'Other' : e.type.trim();
+      if (type.isNotEmpty) {
+        categorySet.add(type);
+      }
+    }
+    _categoryOptions = categorySet.toList()..sort();
+
+    final merchantMap = AnalyticsAgg.byMerchant(widget.expenses);
+    _merchantOptions = merchantMap.keys.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    final bankMap = <String, Set<String>>{};
+    void addBank(String? bank, [String? last4]) {
+      final b = (bank ?? '').trim();
+      if (b.isEmpty) return;
+      final upper = b.toUpperCase();
+      final set = bankMap.putIfAbsent(upper, () => <String>{});
+      final l4 = (last4 ?? '').trim();
+      if (l4.isNotEmpty) {
+        set.add(l4);
+      }
+    }
+
+    for (final e in widget.expenses) {
+      addBank(e.issuerBank, e.cardLast4);
+    }
+    for (final i in widget.incomes) {
+      addBank(i.issuerBank);
+    }
+
+    _bankToCards = bankMap;
+    _bankOptions = bankMap.keys.toList()..sort();
+
+    final groups = <String>{};
+    for (final e in widget.expenses) {
+      final gid = (e.groupId ?? '').trim();
+      if (gid.isNotEmpty) {
+        groups.add(gid);
+      }
+    }
+    _groupOptions = groups.toList()..sort();
+  }
+
+  void _resetFilters() {
+    setState(() {
+      _periodToken = widget.initialConfig.periodToken;
+      _customRange = null;
+      _category = null;
+      _merchantKey = null;
+      _bank = null;
+      _cardLast4 = null;
+      _friendPhones = {};
+      _groupIds = {};
+    });
+  }
+
+  void _applyFilters() {
+    Navigator.pop(
+      context,
+      ExpenseFilterConfig(
+        periodToken: _periodToken,
+        customRange: _customRange,
+        category: _category,
+        merchantKey: _merchantKey,
+        bank: _bank,
+        cardLast4: _cardLast4,
+        friendPhones: _friendPhones,
+        groupIds: _groupIds,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final menuItems = [
+      'Date',
+      'Category',
+      'Merchant',
+      'Bank & Cards',
+      'Friends',
+      'Groups',
+    ];
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Filters')),
+      body: Row(
+        children: [
+          Container(
+            width: 140,
+            color: Colors.grey[100],
+            child: ListView.builder(
+              itemCount: menuItems.length,
+              itemBuilder: (context, index) {
+                final selected = _selectedCategoryIndex == index;
+                return Material(
+                  color: selected ? Fx.mint.withOpacity(0.12) : Colors.transparent,
+                  child: ListTile(
+                    title: Text(
+                      menuItems[index],
+                      style: TextStyle(
+                        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                        color: selected ? Fx.textStrong : Fx.text,
+                      ),
+                    ),
+                    onTap: () => setState(() => _selectedCategoryIndex = index),
+                  ),
+                );
+              },
+            ),
+          ),
+          const VerticalDivider(width: 1),
+          Expanded(
+            child: _buildFilterPanel(_selectedCategoryIndex),
+          ),
+        ],
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 12,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              TextButton(
+                onPressed: _resetFilters,
+                child: const Text('Clear'),
+              ),
+              const Spacer(),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Fx.mintDark,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                ),
+                onPressed: _applyFilters,
+                child: const Text('Apply'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterPanel(int index) {
+    switch (index) {
+      case 0:
+        return _buildDatePanel();
+      case 1:
+        return _buildCategoryPanel();
+      case 2:
+        return _buildMerchantPanel();
+      case 3:
+        return _buildBankCardPanel();
+      case 4:
+        return _buildFriendsPanel();
+      case 5:
+      default:
+        return _buildGroupsPanel();
+    }
+  }
+
+  Widget _buildDatePanel() {
+    bool isYesterdaySelected() {
+      if (_customRange == null) return false;
+      final start = _customRange!.start;
+      final end = _customRange!.end;
+      final now = DateTime.now();
+      final yesterday = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 1));
+      return DateUtils.isSameDay(start, yesterday) && DateUtils.isSameDay(end, yesterday);
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _periodChoiceChip('Day', () {
+              setState(() {
+                _periodToken = 'Day';
+                _customRange = null;
+              });
+            }, selected: _periodToken == 'Day' || _periodToken == 'D'),
+            _periodChoiceChip('Yesterday', () {
+              final now = DateTime.now();
+              final y = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 1));
+              setState(() {
+                _periodToken = 'All';
+                _customRange = DateTimeRange(start: y, end: y);
+              });
+            }, selected: isYesterdaySelected()),
+            _periodChoiceChip('2D', () {
+              setState(() {
+                _periodToken = '2D';
+                _customRange = null;
+              });
+            }, selected: _periodToken == '2D'),
+            _periodChoiceChip('Week', () {
+              setState(() {
+                _periodToken = 'Week';
+                _customRange = null;
+              });
+            }, selected: _periodToken == 'Week' || _periodToken == 'W'),
+            _periodChoiceChip('Month', () {
+              setState(() {
+                _periodToken = 'Month';
+                _customRange = null;
+              });
+            }, selected: _periodToken == 'Month' || _periodToken == 'M'),
+            _periodChoiceChip('Last Month', () {
+              setState(() {
+                _periodToken = 'Last Month';
+                _customRange = null;
+              });
+            }, selected: _periodToken == 'Last Month' || _periodToken == 'LM'),
+            _periodChoiceChip('Quarter', () {
+              setState(() {
+                _periodToken = 'Quarter';
+                _customRange = null;
+              });
+            }, selected: _periodToken == 'Quarter' || _periodToken == 'Q'),
+            _periodChoiceChip('Year', () {
+              setState(() {
+                _periodToken = 'Year';
+                _customRange = null;
+              });
+            }, selected: _periodToken == 'Year' || _periodToken == 'Y'),
+            _periodChoiceChip('All Time', () {
+              setState(() {
+                _periodToken = 'All';
+                _customRange = null;
+              });
+            }, selected: _periodToken == 'All' && _customRange == null),
+          ],
+        ),
+        const SizedBox(height: 24),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.date_range),
+          label: Text(_customRange == null
+              ? 'Pick date range'
+              : '${DateFormat('d MMM y').format(_customRange!.start)} – ${DateFormat('d MMM y').format(_customRange!.end)}'),
+          onPressed: () async {
+            final picked = await showDateRangePicker(
+              context: context,
+              firstDate: DateTime(2000),
+              lastDate: DateTime.now().add(const Duration(days: 1)),
+              initialDateRange: _customRange,
+            );
+            if (picked != null) {
+              setState(() {
+                _periodToken = 'All';
+                _customRange = picked;
+              });
+            }
+          },
+        ),
+        if (_customRange != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => setState(() => _customRange = null),
+              child: const Text('Clear range'),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCategoryPanel() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        RadioListTile<String?>(
+          value: null,
+          groupValue: _category,
+          title: const Text('All categories'),
+          onChanged: (value) => setState(() => _category = value),
+        ),
+        ..._categoryOptions.map((cat) {
+          return RadioListTile<String?>(
+            value: cat,
+            groupValue: _category,
+            title: Text(cat),
+            onChanged: (value) => setState(() => _category = value),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildMerchantPanel() {
+    if (_merchantOptions.isEmpty) {
+      return const Center(child: Text('No merchants yet'));
+    }
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        RadioListTile<String?>(
+          value: null,
+          groupValue: _merchantKey,
+          title: const Text('All merchants'),
+          onChanged: (value) => setState(() => _merchantKey = value),
+        ),
+        ..._merchantOptions.map((merchant) {
+          final display = _formatMerchant(merchant);
+          return RadioListTile<String?>(
+            value: merchant,
+            groupValue: _merchantKey,
+            title: Text(display),
+            onChanged: (value) => setState(() => _merchantKey = value),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildBankCardPanel() {
+    if (_bankOptions.isEmpty) {
+      return const Center(child: Text('No banks detected'));
+    }
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        RadioListTile<String?>(
+          value: null,
+          groupValue: _bank,
+          title: const Text('All banks'),
+          onChanged: (value) => setState(() {
+            _bank = null;
+            _cardLast4 = null;
+          }),
+        ),
+        ..._bankOptions.map((bank) {
+          final cards = _bankToCards[bank] ?? {};
+          final isSelected = _bank == bank;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              RadioListTile<String?>(
+                value: bank,
+                groupValue: _bank,
+                title: Text(bank),
+                onChanged: (value) => setState(() {
+                  _bank = bank;
+                  if (!(cards.contains(_cardLast4 ?? ''))) {
+                    _cardLast4 = null;
+                  }
+                }),
+              ),
+              if (isSelected && cards.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(left: 16, bottom: 12),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: cards.map((card) {
+                      return ChoiceChip(
+                        label: Text('••$card'),
+                        selected: _cardLast4 == card,
+                        onSelected: (selected) {
+                          setState(() {
+                            _cardLast4 = selected ? card : null;
+                            _bank = bank;
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildFriendsPanel() {
+    if (_friends.isEmpty) {
+      return const Center(child: Text('No friends added yet'));
+    }
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: _friends.map((friend) {
+        final selected = _friendPhones.contains(friend.phone);
+        return CheckboxListTile(
+          value: selected,
+          onChanged: (value) {
+            setState(() {
+              if (value == true) {
+                _friendPhones = {..._friendPhones, friend.phone};
+              } else {
+                _friendPhones = {..._friendPhones}..remove(friend.phone);
+              }
+            });
+          },
+          title: Text(friend.name.isEmpty ? friend.phone : friend.name),
+          subtitle: friend.name.isNotEmpty ? Text(friend.phone) : null,
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildGroupsPanel() {
+    if (_groupOptions.isEmpty) {
+      return const Center(child: Text('No groups yet'));
+    }
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: _groupOptions.map((group) {
+        final selected = _groupIds.contains(group);
+        return CheckboxListTile(
+          value: selected,
+          onChanged: (value) {
+            setState(() {
+              if (value == true) {
+                _groupIds = {..._groupIds, group};
+              } else {
+                _groupIds = {..._groupIds}..remove(group);
+              }
+            });
+          },
+          title: Text(group),
+        );
+      }).toList(),
+    );
+  }
+
+  ChoiceChip _periodChoiceChip(String label, VoidCallback onSelected,
+      {required bool selected}) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onSelected(),
+    );
+  }
+
+  String _formatMerchant(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return 'Unknown';
+    return trimmed
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .map((word) =>
+            '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}')
+        .join(' ');
   }
 }

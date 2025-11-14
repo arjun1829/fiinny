@@ -302,6 +302,21 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     return (m ?? '').trim();
   }
 
+  String? _merchantLogoAsset(String? merchant) {
+    if (merchant == null) return null;
+    final m = merchant.toLowerCase();
+    if (m.contains('amazon')) return 'assets/brands/amazon.png';
+    if (m.contains('zomato')) return 'assets/brands/zomato.png';
+    if (m.contains('swiggy')) return 'assets/brands/swiggy.png';
+    if (m.contains('uber')) return 'assets/brands/uber.png';
+    if (m.contains('bigbasket')) return 'assets/brands/bigbasket.png';
+    if (m.contains('myntra')) return 'assets/brands/myntra.png';
+    if (m.contains('nykaa')) return 'assets/brands/nykaa.png';
+    if (m.contains('ajio')) return 'assets/brands/ajio.png';
+    if (m.contains('flipkart')) return 'assets/brands/flipkart.png';
+    return null;
+  }
+
   String _legacyTags(dynamic item) {
     try {
       final j = (item as dynamic).toJson?.call();
@@ -472,6 +487,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final double confidence = _legacyCategoryConfidence(e);
       final String categorySource = _legacyCategorySource(e);
       final String merchantKey = _legacyMerchantKey(e, merchant);
+      final String? merchantLogo = _merchantLogoAsset(merchant);
 
       return {
         'mode': 'legacy',
@@ -485,6 +501,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'merchant': merchant.isEmpty ? null : merchant,
         'bankLogo': e.bankLogo,
         'schemeLogo': null,
+        'brandLogo': merchantLogo,
         'cardLast4': last4.isEmpty ? null : last4,
         'channel': null,
         'instrument': _legacyInstrument(e),
@@ -511,6 +528,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final double confidence = _legacyCategoryConfidence(i);
       final String categorySource = _legacyCategorySource(i);
       final String merchantKey = _legacyMerchantKey(i, merchant);
+      final String? merchantLogo = _merchantLogoAsset(merchant);
 
       return {
         'mode': 'legacy',
@@ -524,6 +542,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'merchant': merchant.isEmpty ? null : merchant,
         'bankLogo': i.bankLogo,
         'schemeLogo': null,
+        'brandLogo': merchantLogo,
         'cardLast4': null,
         'channel': null,
         'instrument': _legacyInstrument(i),
@@ -630,6 +649,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         if (merch != null && merch.isNotEmpty) return merch.toUpperCase();
         return '';
       })();
+      final String? brandLogo =
+          _readString(doc, ['badges', 'brandLogo']) ??
+          _readString(doc, ['badges', 'merchantLogo']) ??
+          _readString(doc, ['brandLogo']);
 
       tx.add({
         'mode': 'unified',
@@ -643,6 +666,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'merchant': (doc['merchant'] ?? '').toString(),
         'bankLogo': _readString(doc, ['badges', 'bankLogo']),
         'schemeLogo': _readString(doc, ['badges', 'schemeLogo']),
+        'brandLogo': brandLogo,
         'cardLast4': _readString(doc, ['meta', 'cardLast4']),
         'channel': channel,
         'instrument': _pick(doc['instrument']?.toString()) ?? channel,
@@ -723,7 +747,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     if (path.startsWith('http')) {
       return Image.network(path, width: w, height: h, errorBuilder: (_, __, ___) => const SizedBox());
     }
-    return Image.asset(path, width: w, height: h);
+    return Image.asset(
+      path,
+      width: w,
+      height: h,
+      errorBuilder: (_, __, ___) => const SizedBox(),
+    );
   }
 
   Future<void> _showBillImage(BuildContext context, String imageUrl) async {
@@ -773,7 +802,11 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     widget.onEndModal?.call();
   }
 
-  Future<void> _showDetailsScreenFromUnified(Map<String, dynamic> doc, BuildContext context) async {
+  Future<void> _showDetailsScreenFromUnified(
+    Map<String, dynamic> doc,
+    BuildContext context, {
+    List<String>? methodChipLabels,
+  }) async {
     widget.onBeginModal?.call();
 
     final isIncome = (doc['type'] == 'income');
@@ -793,127 +826,163 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final counterparty = doc['counterparty']?.toString();
     final isIntl = (doc['isInternational'] == true);
     final hasFees = (doc['hasFees'] == true);
+    final tags = doc['tags'] as String?;
+
+    final labels = _methodChipLabels(
+      instrument: instrument,
+      channel: channel,
+      cardLast4: last4,
+      network: network,
+      isInternational: isIntl,
+      hasFees: hasFees,
+      tags: tags,
+    );
+    final methodChips = (labels.isNotEmpty ? labels : (methodChipLabels ?? const []))
+        .map(_chip)
+        .toList();
 
     await showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.all(18.0),
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (bankLogo != null && bankLogo.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: _logo(bankLogo, w: 28, h: 28),
+        final height = MediaQuery.of(ctx).size.height * 0.75;
+        return SizedBox(
+          height: height,
+          child: Padding(
+            padding: const EdgeInsets.all(18.0),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (bankLogo != null && bankLogo.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: _logo(bankLogo, w: 28, h: 28),
+                      ),
+                    Icon(
+                      getCategoryIcon(category, isIncome: isIncome),
+                      size: 40,
+                      color: isIncome ? Colors.green : Colors.pink,
                     ),
-                  Icon(
-                    getCategoryIcon(category, isIncome: isIncome),
-                    size: 40,
-                    color: isIncome ? Colors.green : Colors.pink,
-                  ),
-                  if (schemeLogo != null && schemeLogo.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: _logo(schemeLogo, w: 26, h: 26),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                "${isIncome ? 'Income' : 'Expense'} - $category",
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              if (counterparty != null && counterparty.isNotEmpty)
-                Text(isIncome ? "From: $counterparty" : "Paid to: $counterparty"),
-              if (instrument != null && instrument.isNotEmpty)
-                Text("Instrument: $instrument"),
-              if (issuer != null && issuer.isNotEmpty)
-                Text("Bank: $issuer"),
-              if (network != null && network.isNotEmpty)
-                Text("Network: $network"),
-              if (last4 != null && last4.isNotEmpty)
-                Text("Card: ****$last4"),
-              if (isIntl) const Text("International: Yes"),
-              if (hasFees) const Text("Fees Detected: Yes"),
-              const SizedBox(height: 12),
-              Text("Amount: ${_inCurrency.format(amount)}", style: const TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Text("Date: ${DateFormat('d MMM yyyy, h:mm a').format(date)}"),
-              if (note.trim().isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(note),
-              ],
-              const SizedBox(height: 16),
-              _inlineAdCard('txn_detail_sheet'),
-              const SizedBox(height: 12),
-              if (widget.showBillIcon && billUrl.isNotEmpty)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.receipt_long_rounded, color: Colors.brown),
-                    label: const Text("View bill/attachment"),
-                    onPressed: () => _showBillImage(context, billUrl),
-                  ),
+                    if (schemeLogo != null && schemeLogo.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: _logo(schemeLogo, w: 26, h: 26),
+                      ),
+                  ],
                 ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (!isIncome && widget.onSplit != null)
-                    TextButton.icon(
-                      icon: const Icon(Icons.group, color: Colors.deepPurple, size: 21),
-                      label: const Text("Split"),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        widget.onSplit?.call(doc);
-                      },
-                    ),
-                  if (widget.onEdit != null)
-                    TextButton.icon(
-                      icon: const Icon(Icons.edit, color: Colors.blue, size: 21),
-                      label: const Text("Edit"),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        widget.onEdit?.call(doc);
-                      },
-                    ),
-                  if (widget.onDelete != null)
-                    TextButton.icon(
-                      icon: const Icon(Icons.delete, color: Colors.red, size: 21),
-                      label: const Text("Delete"),
-                      onPressed: () async {
-                        final confirmed = await _confirmDeleteTransaction(
-                          context,
-                          doc,
-                          triggerAnchoredCallbacks: false,
-                        );
-                        if (!confirmed) return;
-                        Navigator.pop(context);
-                        widget.onDelete?.call(doc);
-                      },
-                    ),
-                  TextButton(child: const Text("Close"), onPressed: () => Navigator.pop(context)),
+                const SizedBox(height: 16),
+                Text(
+                  "${isIncome ? 'Income' : 'Expense'} - $category",
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                if (methodChips.isNotEmpty) ...[
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: -6,
+                    alignment: WrapAlignment.center,
+                    children: methodChips,
+                  ),
+                  const SizedBox(height: 8),
                 ],
-              ),
-            ],
+                if (counterparty != null && counterparty.isNotEmpty)
+                  Text(isIncome ? "From: $counterparty" : "Paid to: $counterparty"),
+                if (instrument != null && instrument.isNotEmpty)
+                  Text("Instrument: $instrument"),
+                if (issuer != null && issuer.isNotEmpty)
+                  Text("Bank: $issuer"),
+                if (network != null && network.isNotEmpty)
+                  Text("Network: $network"),
+                if (last4 != null && last4.isNotEmpty)
+                  Text("Card: ****$last4"),
+                if (isIntl) const Text("International: Yes"),
+                if (hasFees) const Text("Fees Detected: Yes"),
+                const SizedBox(height: 12),
+                Text(
+                  "Amount: ${_inCurrency.format(amount)}",
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Text("Date: ${DateFormat('d MMM yyyy, h:mm a').format(date)}"),
+                if (note.trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(note),
+                ],
+                const SizedBox(height: 16),
+                _inlineAdCard('txn_detail_sheet'),
+                const SizedBox(height: 12),
+                if (widget.showBillIcon && billUrl.isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.receipt_long_rounded, color: Colors.brown),
+                      label: const Text("View bill/attachment"),
+                      onPressed: () => _showBillImage(context, billUrl),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (!isIncome && widget.onSplit != null)
+                      TextButton.icon(
+                        icon: const Icon(Icons.group, color: Colors.deepPurple, size: 21),
+                        label: const Text("Split"),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          widget.onSplit?.call(doc);
+                        },
+                      ),
+                    if (widget.onEdit != null)
+                      TextButton.icon(
+                        icon: const Icon(Icons.edit, color: Colors.blue, size: 21),
+                        label: const Text("Edit"),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          widget.onEdit?.call(doc);
+                        },
+                      ),
+                    if (widget.onDelete != null)
+                      TextButton.icon(
+                        icon: const Icon(Icons.delete, color: Colors.red, size: 21),
+                        label: const Text("Delete"),
+                        onPressed: () async {
+                          final confirmed = await _confirmDeleteTransaction(
+                            context,
+                            doc,
+                            triggerAnchoredCallbacks: false,
+                          );
+                          if (!confirmed) return;
+                          Navigator.pop(context);
+                          widget.onDelete?.call(doc);
+                        },
+                      ),
+                    TextButton(child: const Text("Close"), onPressed: () => Navigator.pop(context)),
+                  ],
+                ),
+              ],
+            ),
           ),
         );
       },
     ).whenComplete(() => widget.onEndModal?.call());
   }
 
-  Future<void> _showDetailsScreenLegacy(dynamic item, bool isIncome, BuildContext context) async {
+  Future<void> _showDetailsScreenLegacy(
+    dynamic item,
+    bool isIncome,
+    BuildContext context, {
+    List<String>? methodChipLabels,
+  }) async {
     widget.onBeginModal?.call();
 
     final counterparty = _legacyCounterparty(item);
@@ -923,110 +992,138 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final last4 = _legacyCardLast4(item);
     final isIntl = _legacyIsIntl(item);
     final hasFees = _legacyHasFees(item);
+    final tags = _legacyTags(item);
+
+    final labels = _methodChipLabels(
+      instrument: instrument,
+      channel: null,
+      cardLast4: last4,
+      network: network,
+      isInternational: isIntl,
+      hasFees: hasFees,
+      tags: tags,
+    );
+    final methodChips = (labels.isNotEmpty ? labels : (methodChipLabels ?? const []))
+        .map(_chip)
+        .toList();
 
     await showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.all(18.0),
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              Center(
-                child: Icon(
-                  getCategoryIcon(_legacyResolvedCategory(item, isIncome: isIncome), isIncome: isIncome),
-                  size: 40,
-                  color: isIncome ? Colors.green : Colors.pink,
+        final height = MediaQuery.of(ctx).size.height * 0.75;
+        return SizedBox(
+          height: height,
+          child: Padding(
+            padding: const EdgeInsets.all(18.0),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                Center(
+                  child: Icon(
+                    getCategoryIcon(_legacyResolvedCategory(item, isIncome: isIncome), isIncome: isIncome),
+                    size: 40,
+                    color: isIncome ? Colors.green : Colors.pink,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                "${isIncome ? 'Income' : 'Expense'} - ${_legacyResolvedCategory(item, isIncome: isIncome)}",
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              if ((counterparty ?? '').toString().trim().isNotEmpty)
-                Text(isIncome ? "From: $counterparty" : "Paid to: $counterparty"),
-              if ((instrument ?? '').toString().trim().isNotEmpty)
-                Text("Instrument: $instrument"),
-              if ((issuer ?? '').toString().trim().isNotEmpty)
-                Text("Bank: $issuer"),
-              if ((network ?? '').toString().trim().isNotEmpty)
-                Text("Network: $network"),
-              if ((last4 ?? '').toString().trim().isNotEmpty)
-                Text("Card: ****$last4"),
-              if (isIntl) const Text("International: Yes"),
-              if (hasFees) const Text("Fees Detected: Yes"),
-              const SizedBox(height: 12),
-              Text(
-                "Amount: ${_inCurrency.format((item.amount is num) ? (item.amount as num).toDouble() : 0.0)}",
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              Text("Date: ${DateFormat('d MMM yyyy, h:mm a').format(item.date)}"),
-              if ((item.note ?? '').toString().trim().isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  "${isIncome ? 'Income' : 'Expense'} - ${_legacyResolvedCategory(item, isIncome: isIncome)}",
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 8),
-                const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(item.note ?? ''),
-              ],
-              if (!isIncome && (item.friendIds != null) && item.friendIds.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text("Split with:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(item.friendIds.map((id) => widget.friendsById[id]?.name ?? "Friend").join(', ')),
-              ],
-              if (isIncome && (item.source ?? '').toString().isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text("Source:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(item.source ?? ''),
-              ],
-              const SizedBox(height: 16),
-              _inlineAdCard('txn_detail_sheet_modern'),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (!isIncome && widget.onSplit != null)
-                    TextButton.icon(
-                      icon: const Icon(Icons.group, color: Colors.deepPurple, size: 21),
-                      label: const Text("Split"),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        widget.onSplit?.call(item);
-                      },
-                    ),
-                  if (widget.onEdit != null)
-                    TextButton.icon(
-                      icon: const Icon(Icons.edit, color: Colors.blue, size: 21),
-                      label: const Text("Edit"),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        widget.onEdit?.call(item);
-                      },
-                    ),
-                  if (widget.onDelete != null)
-                    TextButton.icon(
-                      icon: const Icon(Icons.delete, color: Colors.red, size: 21),
-                      label: const Text("Delete"),
-                      onPressed: () async {
-                        final confirmed = await _confirmDeleteTransaction(
-                          context,
-                          item,
-                          triggerAnchoredCallbacks: false,
-                        );
-                        if (!confirmed) return;
-                        Navigator.pop(context);
-                        widget.onDelete?.call(item);
-                      },
-                    ),
-                  TextButton(child: const Text("Close"), onPressed: () => Navigator.pop(context)),
+                if (methodChips.isNotEmpty) ...[
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: -6,
+                    alignment: WrapAlignment.center,
+                    children: methodChips,
+                  ),
+                  const SizedBox(height: 8),
                 ],
-              ),
-            ],
+                if ((counterparty ?? '').toString().trim().isNotEmpty)
+                  Text(isIncome ? "From: $counterparty" : "Paid to: $counterparty"),
+                if ((instrument ?? '').toString().trim().isNotEmpty)
+                  Text("Instrument: $instrument"),
+                if ((issuer ?? '').toString().trim().isNotEmpty)
+                  Text("Bank: $issuer"),
+                if ((network ?? '').toString().trim().isNotEmpty)
+                  Text("Network: $network"),
+                if ((last4 ?? '').toString().trim().isNotEmpty)
+                  Text("Card: ****$last4"),
+                if (isIntl) const Text("International: Yes"),
+                if (hasFees) const Text("Fees Detected: Yes"),
+                const SizedBox(height: 12),
+                Text(
+                  "Amount: ${_inCurrency.format((item.amount is num) ? (item.amount as num).toDouble() : 0.0)}",
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Text("Date: ${DateFormat('d MMM yyyy, h:mm a').format(item.date)}"),
+                if ((item.note ?? '').toString().trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(item.note ?? ''),
+                ],
+                if (!isIncome && (item.friendIds != null) && item.friendIds.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Text("Split with:", style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(item.friendIds.map((id) => widget.friendsById[id]?.name ?? "Friend").join(', ')),
+                ],
+                if (isIncome && (item.source ?? '').toString().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Text("Source:", style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(item.source ?? ''),
+                ],
+                const SizedBox(height: 16),
+                _inlineAdCard('txn_detail_sheet_modern'),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (!isIncome && widget.onSplit != null)
+                      TextButton.icon(
+                        icon: const Icon(Icons.group, color: Colors.deepPurple, size: 21),
+                        label: const Text("Split"),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          widget.onSplit?.call(item);
+                        },
+                      ),
+                    if (widget.onEdit != null)
+                      TextButton.icon(
+                        icon: const Icon(Icons.edit, color: Colors.blue, size: 21),
+                        label: const Text("Edit"),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          widget.onEdit?.call(item);
+                        },
+                      ),
+                    if (widget.onDelete != null)
+                      TextButton.icon(
+                        icon: const Icon(Icons.delete, color: Colors.red, size: 21),
+                        label: const Text("Delete"),
+                        onPressed: () async {
+                          final confirmed = await _confirmDeleteTransaction(
+                            context,
+                            item,
+                            triggerAnchoredCallbacks: false,
+                          );
+                          if (!confirmed) return;
+                          Navigator.pop(context);
+                          widget.onDelete?.call(item);
+                        },
+                      ),
+                    TextButton(child: const Text("Close"), onPressed: () => Navigator.pop(context)),
+                  ],
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -1102,8 +1199,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     }
   }
 
-  /// Turn raw "tags" string into extra chips, avoiding duplicates with existing chips
-  List<Widget> _meaningfulTagChips({
+  List<String> _meaningfulTagLabels({
     required String rawTags,
     required bool isInternational,
     required bool hasFees,
@@ -1142,9 +1238,60 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
     // Make chips in a stable order
     final order = ['EMI', 'Autopay', 'Subscription', 'Fuel', 'Charges', 'Intl'];
-    final sorted = order.where(out.contains).toList();
+    return order.where(out.contains).toList();
+  }
 
-    return sorted.map((t) => _chip(t)).toList();
+  /// Turn raw "tags" string into extra chips, avoiding duplicates with existing chips
+  List<Widget> _meaningfulTagChips({
+    required String rawTags,
+    required bool isInternational,
+    required bool hasFees,
+    required String? instrument,
+  }) {
+    return _meaningfulTagLabels(
+      rawTags: rawTags,
+      isInternational: isInternational,
+      hasFees: hasFees,
+      instrument: instrument,
+    ).map(_chip).toList();
+  }
+
+  List<String> _methodChipLabels({
+    String? instrument,
+    String? channel,
+    String? cardLast4,
+    String? network,
+    required bool isInternational,
+    required bool hasFees,
+    String? tags,
+  }) {
+    final chips = <String>[];
+    final primary = ((instrument ?? '').trim().isNotEmpty)
+        ? instrument!.trim()
+        : ((channel ?? '').trim());
+    if (primary != null && primary.isNotEmpty) {
+      chips.add(primary);
+    }
+    if ((cardLast4 ?? '').trim().isNotEmpty) {
+      chips.add('****${cardLast4!.trim()}');
+    }
+    if ((network ?? '').trim().isNotEmpty) {
+      chips.add(network!.trim());
+    }
+    if (isInternational) chips.add('INTL');
+    if (hasFees) chips.add('Fees');
+    if ((tags ?? '').trim().isNotEmpty) {
+      chips.addAll(
+        _meaningfulTagLabels(
+          rawTags: tags!,
+          isInternational: isInternational,
+          hasFees: hasFees,
+          instrument: instrument,
+        ),
+      );
+    }
+
+    return chips;
   }
 
   Widget _categoryDropdown({
@@ -1403,6 +1550,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             final double amount = (tx['amount'] is num) ? (tx['amount'] as num).toDouble() : 0.0;
 
             final String? bankLogo = tx['bankLogo'] as String?;
+            final String? brandLogo = tx['brandLogo'] as String?;
             final String? schemeLogo = tx['schemeLogo'] as String?;
             final String? merchant = (tx['merchant'] as String?)?.trim();
             final String? cardLast4 = tx['cardLast4'] as String?;
@@ -1457,26 +1605,29 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
               }
             }
 
-            final chipWidgets = <Widget>[];
-            if ((instrument ?? '').isNotEmpty) {
-              chipWidgets.add(_chip(instrument!));
-            } else if ((channel ?? '').isNotEmpty) {
-              chipWidgets.add(_chip(channel!));
-            }
-            if ((cardLast4 ?? '').isNotEmpty) chipWidgets.add(_chip("****$cardLast4"));
-            if ((network ?? '').isNotEmpty) chipWidgets.add(_chip(network!));
-            if (isInternational) chipWidgets.add(_chip("INTL"));
-            if (hasFees) chipWidgets.add(_chip("Fees"));
-            if ((tags ?? '').isNotEmpty) {
-              chipWidgets.addAll(
-                _meaningfulTagChips(
-                  rawTags: tags!,
-                  isInternational: isInternational,
-                  hasFees: hasFees,
-                  instrument: instrument,
+            Widget leadingVisual;
+            if (brandLogo != null && brandLogo.isNotEmpty) {
+              leadingVisual = ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: _logo(brandLogo, w: 32, h: 32),
+              );
+            } else if (bankLogo != null && bankLogo.isNotEmpty) {
+              leadingVisual = ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: _logo(bankLogo, w: 30, h: 30),
+              );
+            } else {
+              leadingVisual = CircleAvatar(
+                radius: 16,
+                backgroundColor: isIncome ? Colors.green[50] : Colors.pink[50],
+                child: Icon(
+                  getCategoryIcon(category, isIncome: isIncome),
+                  color: isIncome ? Colors.green[700] : Colors.pink[700],
+                  size: 18,
                 ),
               );
             }
+
             final sourceLabel = () {
               final s = categorySource.toLowerCase();
               if (s == 'llm') return 'LLM';
@@ -1485,9 +1636,53 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
               if (s.isNotEmpty) return s.toUpperCase();
               return null;
             }();
-            if (sourceLabel != null) chipWidgets.add(_chip(sourceLabel));
+            final methodChipLabels = _methodChipLabels(
+              instrument: instrument,
+              channel: channel,
+              cardLast4: cardLast4,
+              network: network,
+              isInternational: isInternational,
+              hasFees: hasFees,
+              tags: tags,
+            );
+            final rowChips = <Widget>[];
+            if (labels.isNotEmpty) {
+              rowChips.addAll(labels.take(3).map((l) => Chip(
+                    label: Text(
+                      '#$l',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    backgroundColor: Colors.teal.withOpacity(0.10),
+                    visualDensity: VisualDensity.compact,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  )));
+              if (labels.length > 3) {
+                rowChips.add(
+                  Chip(
+                    label: Text(
+                      '+${labels.length - 3}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
+                    backgroundColor: Colors.teal.withOpacity(0.08),
+                    visualDensity: VisualDensity.compact,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                );
+              }
+            }
+            if (sourceLabel != null) {
+              rowChips.add(_chip(sourceLabel));
+            }
             if (categorySource == 'llm' && categoryConfidence > 0 && categoryConfidence < 0.6) {
-              chipWidgets.add(_chip('Review'));
+              rowChips.add(_chip('Review'));
             }
 
             final canSwipe = widget.onDelete != null || widget.onEdit != null;
@@ -1547,9 +1742,18 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                           if (!widget.enableDetailsSheet) return;
 
                           if (tx['mode'] == 'unified') {
-                            _showDetailsScreenFromUnified(tx, context);
+                            _showDetailsScreenFromUnified(
+                              tx,
+                              context,
+                              methodChipLabels: methodChipLabels,
+                            );
                           } else {
-                            _showDetailsScreenLegacy(raw, isIncome, context);
+                            _showDetailsScreenLegacy(
+                              raw,
+                              isIncome,
+                              context,
+                              methodChipLabels: methodChipLabels,
+                            );
                           }
                         },
                   child: AnimatedContainer(
@@ -1589,19 +1793,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                               ),
                             ),
                           ),
-                        if (bankLogo != null && bankLogo.isNotEmpty) ...[
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: _logo(bankLogo, w: 22, h: 22),
-                          ),
-                        ],
-                        CircleAvatar(
-                          radius: 16,
-                          backgroundColor: isIncome ? Colors.green[50] : Colors.pink[50],
-                          child: Icon(
-                            getCategoryIcon(category, isIncome: isIncome),
-                            color: isIncome ? Colors.green[700] : Colors.pink[700],
-                            size: 18,
+                        SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: Align(
+                            alignment: Alignment.center,
+                            child: leadingVisual,
                           ),
                         ),
                         if (schemeLogo != null && schemeLogo.isNotEmpty)
@@ -1650,42 +1847,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                     ),
                                   ),
                                 ),
-                              if (labels.isNotEmpty || chipWidgets.isNotEmpty)
+                              if (rowChips.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4.0),
                                   child: Wrap(
                                     spacing: 6,
                                     runSpacing: -6,
-                                    children: [
-                                      ...labels.take(3).map((l) => Chip(
-                                            label: Text(
-                                              '#$l',
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w700,
-                                                color: Colors.black87,
-                                              ),
-                                            ),
-                                            backgroundColor: Colors.teal.withOpacity(0.10),
-                                            visualDensity: VisualDensity.compact,
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                          )),
-                                      if (labels.length > 3)
-                                        Chip(
-                                          label: Text(
-                                            '+${labels.length - 3}',
-                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                                          ),
-                                          backgroundColor: Colors.teal.withOpacity(0.08),
-                                          visualDensity: VisualDensity.compact,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                        ),
-                                      ...chipWidgets,
-                                    ],
+                                    children: rowChips,
                                   ),
                                 ),
                               if (tx['mode'] == 'legacy')
