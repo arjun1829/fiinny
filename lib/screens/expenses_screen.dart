@@ -828,7 +828,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         .join(' ');
   }
 
-  Widget _buildDataTypeSelector() {
+  Widget _buildTxTypeChipsRow() {
     const types = ['All', 'Expense', 'Income'];
     return Wrap(
       spacing: 8,
@@ -857,6 +857,22 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           },
         );
       }).toList(),
+    );
+  }
+
+  Widget _buildFiltersButton() {
+    return ElevatedButton.icon(
+      icon: const Icon(Icons.filter_alt_rounded, size: 18),
+      label: const Text('Filters'),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Fx.mintDark,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+        ),
+      ),
+      onPressed: _openFiltersScreen,
     );
   }
 
@@ -1033,7 +1049,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return RefreshIndicator(
       onRefresh: () async => _recompute(),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(8, 16, 8, 20),
+        padding: const EdgeInsets.fromLTRB(12, 14, 12, 20),
         children: [
           _SummaryRingCard(
             spent: periodTotalExpense,
@@ -1052,22 +1068,16 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             },
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
-          Align(
-            alignment: Alignment.centerLeft,
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.filter_alt_rounded, size: 18),
-              label: const Text('Filters'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Fx.mintDark,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(22),
-                ),
-              ),
-              onPressed: _openFiltersScreen,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            child: Row(
+              children: [
+                _buildFiltersButton(),
+                const SizedBox(width: 8),
+                Expanded(child: _buildTxTypeChipsRow()),
+              ],
             ),
           ),
 
@@ -1083,8 +1093,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 children: [
                   Text("${_selectedTxIds.length} selected",
                       style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.deepPurple)),
+                          fontWeight: FontWeight.bold, color: Colors.white)),
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.label, color: Colors.amber),
@@ -1167,7 +1176,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     ),
                     cursorColor: Colors.black,
                     decoration: InputDecoration(
-                      hintText: 'Search by note, label, type…',
+                      hintText: 'Search by note, label, type...',
                       hintStyle: const TextStyle(
                         color: Colors.black54,
                         fontWeight: FontWeight.w500,
@@ -1211,26 +1220,32 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   ),
                 ),
                 const SizedBox(width: 7),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: !_multiSelectMode
-                      ? IconButton(
-                          key: const ValueKey('multisel1'),
-                          icon: const Icon(Icons.check_box_rounded,
-                              color: Colors.deepPurple),
-                          tooltip: 'Multi-Select',
-                          onPressed: () =>
-                              setState(() => _multiSelectMode = true),
-                        )
-                      : const SizedBox(width: 36),
+                SizedBox(
+                  width: 36,
+                  child: Center(
+                    child: Checkbox(
+                      value: _multiSelectMode,
+                      onChanged: (val) {
+                        setState(() {
+                          _multiSelectMode = val ?? false;
+                          if (!_multiSelectMode) {
+                            _selectedTxIds.clear();
+                          }
+                        });
+                      },
+                      activeColor: const Color(0xFF7C3AED),
+                      checkColor: Colors.black,
+                      side: const BorderSide(color: Color(0xFF7C3AED)),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: _buildDataTypeSelector(),
           ),
           const SizedBox(height: 10),
 
@@ -2251,17 +2266,18 @@ class _SummaryRingCard extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 140),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                const SizedBox(width: 8),
                 SizedBox(
                   width: 96,
                   height: 96,
                   child: PieChart(
                     PieChartData(
                       sectionsSpace: 0,
-                      centerSpaceRadius: 30,
+                      centerSpaceRadius: 34,
                       startDegreeOffset: -90,
                       sections: [
                         PieChartSectionData(
@@ -2330,6 +2346,7 @@ class _SummaryRingCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
               ],
             ),
           ),
