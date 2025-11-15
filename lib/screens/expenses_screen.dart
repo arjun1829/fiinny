@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:characters/characters.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -11,9 +12,11 @@ import '../core/analytics/aggregators.dart';
 import '../models/expense_item.dart';
 import '../models/income_item.dart';
 import '../models/friend_model.dart';
+import '../models/group_model.dart';
 import '../services/expense_service.dart';
 import '../services/income_service.dart';
 import '../services/friend_service.dart';
+import '../services/group_service.dart';
 import 'edit_expense_screen.dart';
 import '../widgets/date_filter_bar.dart';
 import '../widgets/chart_switcher_widget.dart';
@@ -44,6 +47,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   double periodTotalExpense = 0;
   double periodTotalIncome = 0;
   Map<String, FriendModel> _friendsById = {};
+  List<GroupModel> _groups = [];
 
   // Calendar state
   DateTime _focusedDay = DateTime.now();
@@ -68,7 +72,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   Set<String> _groupFilterIds = {};
 
   // Subscriptions / Debounce
-  StreamSubscription? _expSub, _incSub, _friendSub;
+  StreamSubscription? _expSub, _incSub, _friendSub, _groupSub;
   Timer? _debounce;
 
   List<PieChartSectionData> _miniExpenseSections() {
@@ -148,6 +152,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     _expSub?.cancel();
     _incSub?.cancel();
     _friendSub?.cancel();
+    _groupSub?.cancel();
     super.dispose();
   }
 
@@ -213,6 +218,13 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       if (!mounted) return;
       setState(() {
         _friendsById = {for (var f in friends) f.phone: f};
+      });
+    });
+
+    _groupSub = GroupService().streamGroups(widget.userPhone).listen((groups) {
+      if (!mounted) return;
+      setState(() {
+        _groups = groups;
       });
     });
   }
@@ -302,6 +314,23 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       }
     }
     return _formatMerchantName(selection);
+  }
+
+  String _transactionPanelKey() {
+    final parts = [
+      _selectedFilter,
+      _searchFrom?.toIso8601String() ?? '',
+      _searchTo?.toIso8601String() ?? '',
+      _selectedCategories.join(','),
+      _selectedMerchants.join(','),
+      _selectedBanks.join(','),
+      _friendFilterPhones.join(','),
+      _groupFilterIds.join(','),
+      _dataType,
+      filteredExpenses.length.toString(),
+      filteredIncomes.length.toString(),
+    ];
+    return parts.join('|');
   }
 
   void _applyFilter() {
@@ -746,6 +775,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           expenses: allExpenses,
           incomes: allIncomes,
           friendsById: _friendsById,
+          groups: _groups,
         ),
       ),
     );
@@ -810,12 +840,18 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: selected ? Fx.mintDark : Colors.white,
+              color: selected ? Colors.white : Colors.black87,
             ),
           ),
           selected: selected,
-          selectedColor: Colors.white,
-          backgroundColor: Colors.white.withOpacity(0.12),
+          selectedColor: Fx.mintDark,
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(
+              color: selected ? Fx.mintDark : Colors.black12,
+            ),
+          ),
           onSelected: (_) {
             setState(() => _dataType = type);
           },
@@ -1125,15 +1161,23 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 Expanded(
                   child: TextField(
                     controller: _searchController,
-                    style: const TextStyle(color: Colors.white),
-                    cursorColor: Colors.white,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    cursorColor: Colors.black,
                     decoration: InputDecoration(
                       hintText: 'Search by note, label, type…',
-                      hintStyle: const TextStyle(color: Colors.white70),
-                      prefixIcon: const Icon(Icons.search, color: Colors.white),
+                      hintStyle: const TextStyle(
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      prefixIcon:
+                          const Icon(Icons.search, color: Colors.black54),
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.close, color: Colors.white70),
+                              icon:
+                                  const Icon(Icons.close, color: Colors.black45),
                               onPressed: () {
                                 _searchController.clear();
                                 _debounce?.cancel();
@@ -1143,16 +1187,16 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             )
                           : null,
                       filled: true,
-                      fillColor: Colors.white.withOpacity(0.08),
+                      fillColor: Colors.white,
                       contentPadding:
                           const EdgeInsets.symmetric(vertical: 0, horizontal: 6),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(13),
-                        borderSide: const BorderSide(color: Colors.white54),
+                        borderSide: const BorderSide(color: Colors.black26),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(13),
-                        borderSide: const BorderSide(color: Colors.white),
+                        borderSide: const BorderSide(color: Colors.black54),
                       ),
                     ),
                     onChanged: (val) {
@@ -1191,53 +1235,66 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           const SizedBox(height: 12),
 
           // Transaction List Unified (Expense+Income)
-          CustomDiamondCard(
-            borderRadius: 22,
-            glassGradient: [
-              Colors.white.withOpacity(0.23),
-              Colors.white.withOpacity(0.09)
-            ],
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
-            child: UnifiedTransactionList(
-              expenses: _dataType == "Income" ? [] : filteredExpenses,
-              incomes: _dataType == "Expense" ? [] : filteredIncomes,
-              userPhone: widget.userPhone,
-              filterType: _dataType,
-              previewCount: 15,
-              friendsById: _friendsById,
-              showBillIcon: true,
-              multiSelectEnabled: _multiSelectMode,
-              selectedIds: _selectedTxIds,
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.04),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+            child: CustomDiamondCard(
+              key: ValueKey(_transactionPanelKey()),
+              borderRadius: 22,
+              glassGradient: [
+                Colors.white.withOpacity(0.23),
+                Colors.white.withOpacity(0.09)
+              ],
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+              child: UnifiedTransactionList(
+                expenses: _dataType == "Income" ? [] : filteredExpenses,
+                incomes: _dataType == "Expense" ? [] : filteredIncomes,
+                userPhone: widget.userPhone,
+                filterType: _dataType,
+                previewCount: 15,
+                friendsById: _friendsById,
+                showBillIcon: true,
+                multiSelectEnabled: _multiSelectMode,
+                selectedIds: _selectedTxIds,
 
 
-              onSelectTx: (txId, selected) {
-                setState(() {
-                  if (selected) {
-                    _selectedTxIds.add(txId);
-                  } else {
-                    _selectedTxIds.remove(txId);
-                  }
-                });
-              },
-              onEdit: (tx) async {
-                if (_multiSelectMode) return;
-                if (tx is ExpenseItem) {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => EditExpenseScreen(
-                        userPhone: widget.userPhone,
-                        expense: tx,
+                onSelectTx: (txId, selected) {
+                  setState(() {
+                    if (selected) {
+                      _selectedTxIds.add(txId);
+                    } else {
+                      _selectedTxIds.remove(txId);
+                    }
+                  });
+                },
+                onEdit: (tx) async {
+                  if (_multiSelectMode) return;
+                  if (tx is ExpenseItem) {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => EditExpenseScreen(
+                          userPhone: widget.userPhone,
+                          expense: tx,
+                        ),
                       ),
-                    ),
-                  );
-                  _recompute();
-                }
-              },
+                    );
+                    _recompute();
+                  }
+                },
 
-              onDelete: (tx) async {
-                if (_multiSelectMode) return;
-                if (tx is ExpenseItem) {
+                onDelete: (tx) async {
+                  if (_multiSelectMode) return;
+                  if (tx is ExpenseItem) {
                   await ExpenseService()
                       .deleteExpense(widget.userPhone, tx.id);
                 } else if (tx is IncomeItem) {
@@ -1409,8 +1466,21 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
           const SizedBox(height: 16),
           AnimatedSwitcher(
-            duration: const Duration(milliseconds: 350),
+            duration: const Duration(milliseconds: 220),
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.04),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
             child: CustomDiamondCard(
+              key: ValueKey(
+                'day-${_selectedDay?.toIso8601String() ?? ''}-${_expensesForSelectedDay.length}-${_transactionPanelKey()}',
+              ),
               borderRadius: 24,
               glassGradient: [
                 Colors.white.withOpacity(0.23),
@@ -1706,76 +1776,90 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             ),
           ),
 
-        CustomDiamondCard(
-          borderRadius: 24,
-          glassGradient: [
-            Colors.white.withOpacity(0.23),
-            Colors.white.withOpacity(0.09)
-          ],
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
-          child: UnifiedTransactionList(
-            expenses: _dataType == "Income" ? [] : filteredExpenses,
-            incomes: _dataType == "Expense" ? [] : filteredIncomes,
-            userPhone: widget.userPhone,
-            filterType: _dataType,
-            previewCount: 15,
-            friendsById: _friendsById,
-            showBillIcon: true,
-            multiSelectEnabled: _multiSelectMode,
-            selectedIds: _selectedTxIds,
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.04),
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
+            ),
+          ),
+          child: CustomDiamondCard(
+            key: ValueKey('summary-${_transactionPanelKey()}-${filteredExpenses.length}-${filteredIncomes.length}-${_dataType}'),
+            borderRadius: 24,
+            glassGradient: [
+              Colors.white.withOpacity(0.23),
+              Colors.white.withOpacity(0.09)
+            ],
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+            child: UnifiedTransactionList(
+              expenses: _dataType == "Income" ? [] : filteredExpenses,
+              incomes: _dataType == "Expense" ? [] : filteredIncomes,
+              userPhone: widget.userPhone,
+              filterType: _dataType,
+              previewCount: 15,
+              friendsById: _friendsById,
+              showBillIcon: true,
+              multiSelectEnabled: _multiSelectMode,
+              selectedIds: _selectedTxIds,
 
-            onSelectTx: (txId, selected) {
-              setState(() {
-                if (selected) {
-                  _selectedTxIds.add(txId);
-                } else {
-                  _selectedTxIds.remove(txId);
+              onSelectTx: (txId, selected) {
+                setState(() {
+                  if (selected) {
+                    _selectedTxIds.add(txId);
+                  } else {
+                    _selectedTxIds.remove(txId);
+                  }
+                });
+              },
+              onEdit: (tx) async {
+                if (_multiSelectMode) return;
+                if (tx is ExpenseItem) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditExpenseScreen(
+                        userPhone: widget.userPhone,
+                        expense: tx,
+                      ),
+                    ),
+                  );
+                  _recompute();
                 }
-              });
-            },
-            onEdit: (tx) async {
-              if (_multiSelectMode) return;
-              if (tx is ExpenseItem) {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => EditExpenseScreen(
-                      userPhone: widget.userPhone,
-                      expense: tx,
-                    ),
-                  ),
-                );
-                _recompute();
-              }
-            },
+              },
 
-            onDelete: (tx) async {
-              if (_multiSelectMode) return;
-              if (tx is ExpenseItem) {
-                await ExpenseService()
-                    .deleteExpense(widget.userPhone, tx.id);
-              } else if (tx is IncomeItem) {
-                await IncomeService()
-                    .deleteIncome(widget.userPhone, tx.id);
-              }
-              _recompute();
-            },
-            onSplit: (tx) async {
-              if (_multiSelectMode) return;
-              if (tx is ExpenseItem) {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => EditExpenseScreen(
-                      userPhone: widget.userPhone,
-                      expense: tx,
-                      initialStep: 1,
-                    ),
-                  ),
-                );
+              onDelete: (tx) async {
+                if (_multiSelectMode) return;
+                if (tx is ExpenseItem) {
+                  await ExpenseService()
+                      .deleteExpense(widget.userPhone, tx.id);
+                } else if (tx is IncomeItem) {
+                  await IncomeService()
+                      .deleteIncome(widget.userPhone, tx.id);
+                }
                 _recompute();
-              }
-            },
+              },
+              onSplit: (tx) async {
+                if (_multiSelectMode) return;
+                if (tx is ExpenseItem) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditExpenseScreen(
+                        userPhone: widget.userPhone,
+                        expense: tx,
+                        initialStep: 1,
+                      ),
+                    ),
+                  );
+                  _recompute();
+                }
+              },
+            ),
           ),
         ),
       ],
@@ -2140,6 +2224,25 @@ class _SummaryRingCard extends StatelessWidget {
       }
     }
 
+    final bool valuesEqual = spentValue == incomeValue;
+    final bool spentIsBigger = spentValue > incomeValue;
+    final bool incomeIsBigger = incomeValue > spentValue;
+    const double bigSize = 20;
+    const double smallSize = 16;
+    const double equalSize = 18;
+
+    final spentStyle = TextStyle(
+      fontWeight: FontWeight.w700,
+      fontSize: valuesEqual ? equalSize : (spentIsBigger ? bigSize : smallSize),
+      color: Colors.red.shade600,
+    );
+
+    final incomeStyle = TextStyle(
+      fontWeight: FontWeight.w700,
+      fontSize: valuesEqual ? equalSize : (incomeIsBigger ? bigSize : smallSize),
+      color: Colors.green.shade600,
+    );
+
     return Material(
       color: Colors.white,
       elevation: 3,
@@ -2150,30 +2253,30 @@ class _SummaryRingCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
           child: SizedBox(
-            height: 170,
+            height: 160,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 SizedBox(
-                  width: 110,
-                  height: 110,
+                  width: 96,
+                  height: 96,
                   child: PieChart(
                     PieChartData(
                       sectionsSpace: 0,
-                      centerSpaceRadius: 40,
+                      centerSpaceRadius: 36,
                       startDegreeOffset: -90,
                       sections: [
                         PieChartSectionData(
                           value: chartSpent,
                           color: Fx.mintDark,
                           title: '',
-                          radius: 52,
+                          radius: 46,
                         ),
                         PieChartSectionData(
                           value: chartIncome,
                           color: Fx.mint.withOpacity(0.2),
                           title: '',
-                          radius: 52,
+                          radius: 46,
                         ),
                       ],
                     ),
@@ -2182,7 +2285,6 @@ class _SummaryRingCard extends StatelessWidget {
                 const SizedBox(width: 20),
                 Expanded(
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Align(
@@ -2204,35 +2306,17 @@ class _SummaryRingCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Text('Spent', style: Fx.label.copyWith(color: Fx.text)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              formatter.format(spentValue),
-                              textAlign: TextAlign.right,
-                              style: Fx.number.copyWith(fontSize: 24),
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: 16),
+                      Text(
+                        formatter.format(spentValue),
+                        style: spentStyle,
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Text('Received', style: Fx.label.copyWith(color: Fx.text)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              formatter.format(incomeValue),
-                              textAlign: TextAlign.right,
-                              style: Fx.label.copyWith(fontSize: 18, fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        ],
+                      Text(
+                        formatter.format(incomeValue),
+                        style: incomeStyle,
                       ),
-                      const SizedBox(height: 12),
+                      const Spacer(),
                       Text(
                         'Banks: $bankCount · Cards: $cardCount · Tx: $txCount',
                         style: Fx.label.copyWith(
@@ -2407,18 +2491,22 @@ class ExpenseFiltersScreen extends StatefulWidget {
   final List<ExpenseItem> expenses;
   final List<IncomeItem> incomes;
   final Map<String, FriendModel> friendsById;
+  final List<GroupModel> groups;
 
   const ExpenseFiltersScreen({
+    Key? key,
     required this.initialConfig,
     required this.expenses,
     required this.incomes,
-    required this.friendsById,
-    Key? key,
+    this.friendsById = const {},
+    this.groups = const [],
   }) : super(key: key);
 
   @override
   State<ExpenseFiltersScreen> createState() => _ExpenseFiltersScreenState();
 }
+
+enum MerchantMode { brand, people }
 
 class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
   late String _periodToken;
@@ -2432,13 +2520,22 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
   int _selectedCategoryIndex = 0;
 
   late final List<String> _categoryOptions;
-  late final List<String> _merchantOptions;
   late final Map<String, Set<String>> _bankToCards;
   late final Map<String, String> _bankDisplayNames;
   late final Map<String, String?> _bankLogos;
   late final Map<String, String?> _merchantLogos;
   late final List<String> _bankOptions;
+  late final Map<String, String?> _bankPrimaryNetworks;
+  late final Map<String, String?> _cardNetworks;
+  late final Map<String, double> _brandMerchantTotals;
+  late final Map<String, double> _peopleMerchantTotals;
+  late final Set<String> _friendNameTokens;
+  late final Set<String> _friendPhoneSet;
   late final List<String> _groupOptions;
+  late final Map<String, GroupModel> _groupsById;
+  late final NumberFormat _amountFormat;
+
+  MerchantMode _merchantMode = MerchantMode.brand;
 
   final TextEditingController _panelSearchController = TextEditingController();
   String _panelSearchQuery = '';
@@ -2480,25 +2577,46 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     }
     _categoryOptions = categorySet.toList()..sort();
 
+    _friendNameTokens = widget.friendsById.values
+        .map((f) => f.name.trim().toLowerCase())
+        .where((name) => name.isNotEmpty)
+        .toSet();
+    _friendPhoneSet = widget.friendsById.keys.toSet();
+
     final merchantMap = AnalyticsAgg.byMerchant(widget.expenses);
-    _merchantOptions = merchantMap.keys.toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     _merchantLogos = {
-      for (final key in _merchantOptions)
-        key.toUpperCase(): _merchantLogoAsset(key),
+      for (final key in merchantMap.keys) key.toUpperCase(): _merchantLogoAsset(key),
     };
+
+    final brandEntries = <String, double>{};
+    final peopleEntries = <String, double>{};
+    merchantMap.forEach((key, value) {
+      if (_isPersonLikeMerchant(key)) {
+        peopleEntries[key] = value;
+      } else {
+        brandEntries[key] = value;
+      }
+    });
+    _brandMerchantTotals = brandEntries;
+    _peopleMerchantTotals = peopleEntries;
 
     final bankMap = <String, Set<String>>{};
     final bankNames = <String, String>{};
     final bankLogos = <String, String?>{};
+    final bankNetworks = <String, String?>{};
+    final cardNetworks = <String, String?>{};
 
-    void addBank(String? bank, {String? cardLast4, String? logo}) {
+    void addBank(String? bank, {String? cardLast4, String? logo, String? network}) {
       final normalized = _normalizeBank(bank);
       if (normalized.isEmpty) return;
       final cards = bankMap.putIfAbsent(normalized, () => <String>{});
-      final l4 = (cardLast4 ?? '').trim();
-      if (l4.isNotEmpty) {
-        cards.add(l4);
+      final last4 = (cardLast4 ?? '').trim();
+      if (last4.isNotEmpty) {
+        cards.add(last4);
+        final net = (network ?? '').trim();
+        if (net.isNotEmpty) {
+          cardNetworks['$normalized|$last4'] = net;
+        }
       }
       final display = (bank ?? '').trim();
       if (display.isNotEmpty && !bankNames.containsKey(normalized)) {
@@ -2508,34 +2626,861 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       if (logoPath.isNotEmpty && !bankLogos.containsKey(normalized)) {
         bankLogos[normalized] = logoPath;
       }
+      final networkTrimmed = (network ?? '').trim();
+      if (networkTrimmed.isNotEmpty && !bankNetworks.containsKey(normalized)) {
+        bankNetworks[normalized] = networkTrimmed;
+      }
     }
 
     for (final e in widget.expenses) {
-      addBank(e.issuerBank, cardLast4: e.cardLast4, logo: e.bankLogo);
+      addBank(
+        e.issuerBank,
+        cardLast4: e.cardLast4,
+        logo: e.bankLogo,
+        network: e.instrumentNetwork,
+      );
     }
     for (final i in widget.incomes) {
-      addBank(i.issuerBank, logo: i.bankLogo);
+      addBank(i.issuerBank, logo: i.bankLogo, network: i.instrumentNetwork);
     }
 
     _bankToCards = bankMap;
     _bankDisplayNames = bankNames;
     _bankLogos = bankLogos;
+    _bankPrimaryNetworks = bankNetworks;
+    _cardNetworks = cardNetworks;
     _bankOptions = bankMap.keys.toList()..sort();
 
-    final groups = <String>{};
+    _groupsById = {for (final g in widget.groups) g.id: g};
+    final groupIdSet = <String>{..._groupsById.keys};
     for (final e in widget.expenses) {
       final gid = (e.groupId ?? '').trim();
       if (gid.isNotEmpty) {
-        groups.add(gid);
+        groupIdSet.add(gid);
       }
     }
-    _groupOptions = groups.toList()..sort();
+    _groupOptions = groupIdSet.toList()
+      ..sort((a, b) => _groupNameForId(a).toLowerCase().compareTo(_groupNameForId(b).toLowerCase()));
+
+    _amountFormat = NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹');
   }
 
   @override
   void dispose() {
     _panelSearchController.dispose();
     super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final menuItems = [
+      'Date',
+      'Category',
+      'Merchant',
+      'Bank & Cards',
+      'Friends',
+      'Groups',
+    ];
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('Filters'),
+        backgroundColor: Colors.white.withOpacity(0.95),
+        foregroundColor: Colors.black87,
+        elevation: 0,
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Fx.mintDark.withOpacity(0.12),
+              Fx.mint.withOpacity(0.04),
+              Colors.white,
+            ],
+            stops: const [0.0, 0.4, 1.0],
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 180,
+              child: Card(
+                margin: const EdgeInsets.fromLTRB(16, 16, 8, 16),
+                color: Colors.white.withOpacity(0.92),
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: menuItems.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 6),
+                    itemBuilder: (context, index) {
+                      final selected = _selectedCategoryIndex == index;
+                      return ListTile(
+                        title: Text(
+                          menuItems[index],
+                          style: TextStyle(
+                            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                            color: selected ? Fx.textStrong : Fx.text,
+                          ),
+                        ),
+                        selected: selected,
+                        selectedTileColor: Fx.mint.withOpacity(0.12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        onTap: () => _handleMenuTap(index),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 16, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildSearchField(),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 220),
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(0.02, 0.02),
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: child,
+                          ),
+                        ),
+                        child: _buildFilterPanel(_selectedCategoryIndex),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: _buildBottomBar(),
+    );
+  }
+
+  Widget _buildSearchField() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      child: TextField(
+        controller: _panelSearchController,
+        decoration: const InputDecoration(
+          hintText: 'Search…',
+          prefixIcon: Icon(Icons.search, color: Colors.teal),
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        ),
+        onChanged: _updateSearch,
+      ),
+    );
+  }
+
+  Widget _buildBottomBar() {
+    return SafeArea(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.98),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            TextButton(
+              onPressed: _resetFilters,
+              child: const Text('Clear'),
+            ),
+            const Spacer(),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.check_rounded, size: 18),
+              label: const Text('Apply'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Fx.mintDark,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+              ),
+              onPressed: _applyFilters,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterPanel(int index) {
+    Widget child;
+    switch (index) {
+      case 0:
+        child = _buildDatePanel();
+        break;
+      case 1:
+        child = _buildCategoryPanel();
+        break;
+      case 2:
+        child = _buildMerchantPanel();
+        break;
+      case 3:
+        child = _buildBankCardPanel();
+        break;
+      case 4:
+        child = _buildFriendsPanel();
+        break;
+      case 5:
+      default:
+        child = _buildGroupsPanel();
+        break;
+    }
+    return Card(
+      key: ValueKey('panel-$index-${_panelSearchQuery.hashCode}-${_merchantMode.name}'),
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+      margin: EdgeInsets.zero,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(26),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildDatePanel() {
+    final tiles = <Widget>[];
+
+    void addPreset({
+      required String label,
+      required IconData icon,
+      required VoidCallback onTap,
+      required bool selected,
+    }) {
+      if (!_matchesQuery(label)) return;
+      tiles.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Card(
+            elevation: selected ? 3 : 1,
+            color: selected ? Fx.mint.withOpacity(0.12) : Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            child: ListTile(
+              leading: Icon(icon, color: selected ? Fx.mintDark : Colors.teal),
+              title: Text(label),
+              trailing: selected
+                  ? const Icon(Icons.check_circle, color: Colors.teal)
+                  : const Icon(Icons.circle_outlined, color: Colors.grey),
+              onTap: onTap,
+            ),
+          ),
+        ),
+      );
+    }
+
+    addPreset(
+      label: 'Today',
+      icon: Icons.calendar_today_outlined,
+      selected: _isPresetSelected('Day'),
+      onTap: () {
+        setState(() {
+          _periodToken = 'Day';
+          _customRange = null;
+        });
+      },
+    );
+
+    addPreset(
+      label: 'Yesterday',
+      icon: Icons.history_rounded,
+      selected: _isPresetSelected('Yesterday'),
+      onTap: () {
+        setState(() {
+          final now = DateTime.now();
+          final yesterday =
+              DateTime(now.year, now.month, now.day).subtract(const Duration(days: 1));
+          _periodToken = 'Custom';
+          _customRange = DateTimeRange(start: yesterday, end: yesterday);
+        });
+      },
+    );
+
+    addPreset(
+      label: 'Last 2 Days',
+      icon: Icons.view_day_rounded,
+      selected: _isPresetSelected('2D'),
+      onTap: () {
+        setState(() {
+          _periodToken = '2D';
+          _customRange = null;
+        });
+      },
+    );
+
+    addPreset(
+      label: 'This Week',
+      icon: Icons.calendar_view_week_rounded,
+      selected: _isPresetSelected('Week'),
+      onTap: () {
+        setState(() {
+          _periodToken = 'Week';
+          _customRange = null;
+        });
+      },
+    );
+
+    addPreset(
+      label: 'This Month',
+      icon: Icons.calendar_view_month_rounded,
+      selected: _isPresetSelected('Month'),
+      onTap: () {
+        setState(() {
+          _periodToken = 'Month';
+          _customRange = null;
+        });
+      },
+    );
+
+    addPreset(
+      label: 'Last Month',
+      icon: Icons.schedule_rounded,
+      selected: _isPresetSelected('Last Month'),
+      onTap: () {
+        setState(() {
+          _periodToken = 'Last Month';
+          _customRange = null;
+        });
+      },
+    );
+
+    addPreset(
+      label: 'This Quarter',
+      icon: Icons.event_note_rounded,
+      selected: _isPresetSelected('Quarter'),
+      onTap: () {
+        setState(() {
+          _periodToken = 'Quarter';
+          _customRange = null;
+        });
+      },
+    );
+
+    addPreset(
+      label: 'This Year',
+      icon: Icons.event_available_rounded,
+      selected: _isPresetSelected('Year'),
+      onTap: () {
+        setState(() {
+          _periodToken = 'Year';
+          _customRange = null;
+        });
+      },
+    );
+
+    addPreset(
+      label: 'All Time',
+      icon: Icons.all_inclusive_rounded,
+      selected: _isPresetSelected('All'),
+      onTap: () {
+        setState(() {
+          _periodToken = 'All';
+          _customRange = null;
+        });
+      },
+    );
+
+    if (_matchesQuery('Custom range')) {
+      final subtitle = _customRange != null
+          ? '${DateFormat('d MMM y').format(_customRange!.start)} – '
+              '${DateFormat('d MMM y').format(_customRange!.end)}'
+          : 'Choose a date range';
+      tiles.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Card(
+            elevation: 1,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            child: ListTile(
+              leading: const Icon(Icons.date_range_rounded, color: Colors.teal),
+              title: const Text('Custom range'),
+              subtitle: Text(subtitle),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: _pickCustomRange,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (tiles.isEmpty) {
+      return _panelList([
+        _inlinePlaceholder('No date presets match your search'),
+      ]);
+    }
+
+    return _panelList(tiles);
+  }
+
+  Widget _buildCategoryPanel() {
+    final tiles = <Widget>[];
+
+    if (_matchesQuery('All categories')) {
+      tiles.add(
+        _buildSelectableCard(
+          selected: _selectedCategories.isEmpty,
+          leading: const Icon(Icons.all_inclusive_rounded, color: Colors.teal),
+          title: 'All categories',
+          subtitle: 'Show everything',
+          onTap: () {
+            setState(() => _selectedCategories = {});
+          },
+        ),
+      );
+    }
+
+    final filtered = _categoryOptions.where(_matchesQuery).toList();
+    for (final category in filtered) {
+      final selected = _selectedCategories.contains(category);
+      tiles.add(
+        _buildSelectableCard(
+          selected: selected,
+          leading: Icon(_categoryIcon(category), color: Colors.teal),
+          title: category,
+          onTap: () {
+            setState(() {
+              if (selected) {
+                _selectedCategories = {..._selectedCategories}..remove(category);
+              } else {
+                _selectedCategories = {..._selectedCategories, category};
+              }
+            });
+          },
+        ),
+      );
+    }
+
+    if (tiles.isEmpty) {
+      return _panelList([
+        _inlinePlaceholder('No categories match your search'),
+      ]);
+    }
+
+    return _panelList(tiles);
+  }
+
+  Widget _buildMerchantPanel() {
+    final tiles = <Widget>[
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+        child: Wrap(
+          spacing: 8,
+          children: [
+            ChoiceChip(
+              label: const Text('Merchants'),
+              selected: _merchantMode == MerchantMode.brand,
+              onSelected: (_) => setState(() => _merchantMode = MerchantMode.brand),
+            ),
+            ChoiceChip(
+              label: const Text('People'),
+              selected: _merchantMode == MerchantMode.people,
+              onSelected: (_) => setState(() => _merchantMode = MerchantMode.people),
+            ),
+          ],
+        ),
+      ),
+    ];
+
+    if (_matchesQuery('All merchants')) {
+      tiles.add(
+        _buildSelectableCard(
+          selected: _selectedMerchants.isEmpty,
+          leading: const Icon(Icons.store_mall_directory_rounded, color: Colors.teal),
+          title: 'All merchants',
+          subtitle: 'Show everything',
+          onTap: () {
+            setState(() => _selectedMerchants = {});
+          },
+        ),
+      );
+    }
+
+    final source = _merchantMode == MerchantMode.brand
+        ? _brandMerchantTotals
+        : _peopleMerchantTotals;
+    final entries = source.entries.where((e) => _matchesQuery(e.key)).toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    for (final entry in entries) {
+      final key = entry.key.toUpperCase();
+      final selected = _selectedMerchants.contains(key);
+      tiles.add(
+        _buildSelectableCard(
+          selected: selected,
+          leading: _merchantAvatar(entry.key, isPerson: _merchantMode == MerchantMode.people),
+          title: _formatMerchant(entry.key),
+          subtitle: _formatAmount(entry.value),
+          onTap: () {
+            setState(() {
+              if (selected) {
+                _selectedMerchants = {..._selectedMerchants}..remove(key);
+              } else {
+                _selectedMerchants = {..._selectedMerchants, key};
+              }
+            });
+          },
+        ),
+      );
+    }
+
+    if (entries.isEmpty) {
+      tiles.add(_inlinePlaceholder('No ${_merchantMode == MerchantMode.brand ? 'merchants' : 'people'} match your search'));
+    }
+
+    return _panelList(tiles);
+  }
+
+  Widget _buildBankCardPanel() {
+    if (_bankOptions.isEmpty) {
+      return _panelCenterMessage('No banks detected');
+    }
+
+    final filteredBanks = _bankOptions.where((bank) {
+      if (_panelSearchQuery.isEmpty) return true;
+      final display = _displayBankName(bank).toLowerCase();
+      if (display.contains(_panelSearchQuery)) return true;
+      final cards = _bankToCards[bank] ?? {};
+      return cards.any((card) => '••$card'.toLowerCase().contains(_panelSearchQuery));
+    }).toList();
+
+    if (filteredBanks.isEmpty) {
+      return _panelList([
+        _inlinePlaceholder('No banks or cards match your search'),
+      ]);
+    }
+
+    final tiles = <Widget>[];
+    if (_matchesQuery('All banks')) {
+      tiles.add(
+        _buildSelectableCard(
+          selected: _selectedBanks.isEmpty,
+          leading: const Icon(Icons.account_balance_rounded, color: Colors.teal),
+          title: 'All banks',
+          subtitle: 'Show everything',
+          onTap: () {
+            setState(() => _selectedBanks = {});
+          },
+        ),
+      );
+    }
+
+    for (final bank in filteredBanks) {
+      final isBankSelected = _selectedBanks.contains(bank);
+      tiles.add(
+        _buildSelectableCard(
+          selected: isBankSelected,
+          leading: _bankLogo(
+            _displayBankName(bank),
+            network: _bankPrimaryNetworks[bank],
+            overrideLogo: _bankLogos[bank],
+            size: 40,
+          ),
+          title: _displayBankName(bank),
+          onTap: () {
+            setState(() {
+              if (isBankSelected) {
+                final updated = {..._selectedBanks};
+                updated.remove(bank);
+                updated.removeWhere((entry) => entry.startsWith('$bank|'));
+                _selectedBanks = updated;
+              } else {
+                _selectedBanks = {..._selectedBanks, bank};
+              }
+            });
+          },
+        ),
+      );
+
+      final cards = (_bankToCards[bank] ?? {})
+          .where((card) {
+            if (_panelSearchQuery.isEmpty) return true;
+            return '••$card'.toLowerCase().contains(_panelSearchQuery);
+          })
+          .toList()
+        ..sort();
+      for (final card in cards) {
+        final selectionKey = _encodeBankSelection(bank, card);
+        final selected = _selectedBanks.contains(selectionKey);
+        tiles.add(
+          Padding(
+            padding: const EdgeInsets.only(left: 18),
+            child: _buildSelectableCard(
+              selected: selected,
+              leading: _bankLogo(
+                _displayBankName(bank),
+                network: _cardNetworks[selectionKey] ?? _bankPrimaryNetworks[bank],
+                overrideLogo: _bankLogos[bank],
+                size: 36,
+              ),
+              title: '••$card',
+              subtitle: _displayBankName(bank),
+              onTap: () {
+                setState(() {
+                  if (selected) {
+                    _selectedBanks = {..._selectedBanks}..remove(selectionKey);
+                  } else {
+                    _selectedBanks = {..._selectedBanks, selectionKey};
+                  }
+                });
+              },
+            ),
+          ),
+        );
+      }
+    }
+
+    return _panelList(tiles);
+  }
+
+  Widget _buildFriendsPanel() {
+    if (_friends.isEmpty) {
+      return _panelCenterMessage('No friends added yet');
+    }
+    final filtered = _friends.where((friend) {
+      if (_panelSearchQuery.isEmpty) return true;
+      final name = friend.name.toLowerCase();
+      final phone = friend.phone.toLowerCase();
+      return name.contains(_panelSearchQuery) || phone.contains(_panelSearchQuery);
+    }).toList();
+    if (filtered.isEmpty) {
+      return _panelList([
+        _inlinePlaceholder('No friends match your search'),
+      ]);
+    }
+    final tiles = filtered
+        .map((friend) => _friendTile(friend, _friendPhones.contains(friend.phone)))
+        .toList();
+    return _panelList(tiles);
+  }
+
+  Widget _buildGroupsPanel() {
+    if (_groupOptions.isEmpty) {
+      return _panelCenterMessage('No groups yet');
+    }
+    final filtered = _groupOptions.where((groupId) {
+      if (_panelSearchQuery.isEmpty) return true;
+      final name = _groupNameForId(groupId).toLowerCase();
+      return name.contains(_panelSearchQuery) || groupId.toLowerCase().contains(_panelSearchQuery);
+    }).toList();
+    if (filtered.isEmpty) {
+      return _panelList([
+        _inlinePlaceholder('No groups match your search'),
+      ]);
+    }
+    final tiles = filtered
+        .map((groupId) => _groupTile(groupId, _groupsById[groupId], _groupIds.contains(groupId)))
+        .toList();
+    return _panelList(tiles);
+  }
+
+  Widget _buildSelectableCard({
+    required bool selected,
+    required Widget leading,
+    required String title,
+    String? subtitle,
+    VoidCallback? onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      child: Card(
+        elevation: selected ? 4 : 1,
+        color: selected ? Fx.mint.withOpacity(0.12) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: ListTile(
+          leading: leading,
+          title: Text(title, overflow: TextOverflow.ellipsis),
+          subtitle: subtitle != null ? Text(subtitle) : null,
+          trailing: selected
+              ? const Icon(Icons.check_circle, color: Colors.teal)
+              : const Icon(Icons.circle_outlined, color: Colors.grey),
+          onTap: onTap,
+        ),
+      ),
+    );
+  }
+
+  Widget _friendTile(FriendModel friend, bool selected) {
+    Widget avatar;
+    final avatarValue = friend.avatar;
+    if (avatarValue.startsWith('http')) {
+      avatar = ClipOval(
+        child: Image.network(
+          avatarValue,
+          width: 36,
+          height: 36,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Center(
+            child: Text(
+              friend.name.isNotEmpty
+                  ? friend.name.characters.first.toUpperCase()
+                  : friend.phone.characters.first,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+      );
+    } else if (avatarValue.trim().isNotEmpty && avatarValue.trim().length <= 2) {
+      avatar = Center(
+        child: Text(
+          avatarValue,
+          style: const TextStyle(fontSize: 18),
+        ),
+      );
+    } else if (avatarValue.trim().isNotEmpty) {
+      avatar = Center(
+        child: Text(
+          avatarValue.characters.first,
+          style: const TextStyle(fontSize: 18),
+        ),
+      );
+    } else {
+      avatar = Center(
+        child: Text(
+          friend.name.isNotEmpty
+              ? friend.name.characters.first.toUpperCase()
+              : friend.phone.characters.first,
+          style: const TextStyle(fontSize: 18),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      child: Card(
+        elevation: selected ? 4 : 1,
+        color: selected ? Fx.mint.withOpacity(0.12) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ListTile(
+          leading: CircleAvatar(
+            radius: 18,
+            backgroundColor: Colors.teal.shade50,
+            child: avatar,
+          ),
+          title: Text(friend.name.isEmpty ? friend.phone : friend.name,
+              overflow: TextOverflow.ellipsis),
+          subtitle: friend.name.isNotEmpty ? Text(friend.phone, style: const TextStyle(fontSize: 12)) : null,
+          trailing: selected
+              ? const Icon(Icons.check_circle, color: Colors.teal)
+              : const Icon(Icons.circle_outlined, color: Colors.grey),
+          onTap: () {
+            setState(() {
+              if (selected) {
+                _friendPhones = {..._friendPhones}..remove(friend.phone);
+              } else {
+                _friendPhones = {..._friendPhones, friend.phone};
+              }
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _groupTile(String groupId, GroupModel? group, bool selected) {
+    final name = _groupNameForId(groupId);
+    final memberCount = group?.memberCount ?? 0;
+    final avatarUrl = group?.avatarUrl ?? '';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      child: Card(
+        elevation: selected ? 4 : 1,
+        color: selected ? Fx.mint.withOpacity(0.12) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ListTile(
+          leading: CircleAvatar(
+            radius: 18,
+            backgroundColor: Colors.teal.shade50,
+            backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+            child: avatarUrl.isEmpty
+                ? Text(
+                    name.isNotEmpty
+                        ? name.characters.first.toUpperCase()
+                        : 'G',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  )
+                : null,
+          ),
+          title: Text(name, overflow: TextOverflow.ellipsis),
+          subtitle: memberCount > 0
+              ? Text('$memberCount member${memberCount == 1 ? '' : 's'}',
+                  style: const TextStyle(fontSize: 12))
+              : null,
+          trailing: selected
+              ? const Icon(Icons.check_circle, color: Colors.teal)
+              : const Icon(Icons.circle_outlined, color: Colors.grey),
+          onTap: () {
+            setState(() {
+              if (selected) {
+                _groupIds = {..._groupIds}..remove(groupId);
+              } else {
+                _groupIds = {..._groupIds, groupId};
+              }
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _panelList(List<Widget> children) {
+    return Container(
+      color: Colors.white.withOpacity(0.96),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
+        children: children,
+      ),
+    );
+  }
+
+  Widget _panelCenterMessage(String message) {
+    return Container(
+      color: Colors.white.withOpacity(0.96),
+      alignment: Alignment.center,
+      child: Text(
+        message,
+        style: const TextStyle(color: Colors.grey),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+
+  Widget _inlinePlaceholder(String message) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 32),
+      child: Center(
+        child: Text(
+          message,
+          style: const TextStyle(color: Colors.grey),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
   }
 
   void _resetFilters() {
@@ -2548,6 +3493,7 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       _friendPhones = {};
       _groupIds = {};
       _panelSearchQuery = '';
+      _merchantMode = MerchantMode.brand;
       _panelSearchController.clear();
     });
   }
@@ -2604,44 +3550,125 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
 
   String _titleCase(String input) {
     return input
-        .split(RegExp(r'[_\\s]+'))
+        .split(RegExp(r'[_\s]+'))
         .where((part) => part.isNotEmpty)
         .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
         .join(' ');
   }
 
-  Widget _logo(String path, {double size = 28}) {
+  String _slugBank(String s) {
+    final x = s.toLowerCase();
+    if (x.contains('axis')) return 'axis';
+    if (x.contains('hdfc')) return 'hdfc';
+    if (x.contains('icici')) return 'icici';
+    if (x.contains('kotak')) return 'kotak';
+    if (x.contains('sbi') || x.contains('state bank')) return 'sbi';
+    if (x.contains('american express') || x.contains('amex')) return 'amex';
+    return x.replaceAll(RegExp(r'[^a-z]'), '');
+  }
+
+  String? _bankLogoAsset(String? bank, {String? network}) {
+    final candidates = <String>[];
+    if (bank != null && bank.trim().isNotEmpty) {
+      final slug = _slugBank(bank);
+      if (slug.isNotEmpty) {
+        candidates.addAll([
+          'assets/banks/$slug.png',
+          'lib/assets/banks/$slug.png',
+        ]);
+      }
+    }
+    if (network != null && network.trim().isNotEmpty) {
+      final n = network.toLowerCase();
+      String networkSlug = '';
+      if (n.contains('visa')) {
+        networkSlug = 'visa';
+      } else if (n.contains('master')) {
+        networkSlug = 'mastercard';
+      } else if (n.contains('amex') || n.contains('american express')) {
+        networkSlug = 'amex';
+      } else if (n.contains('rupay')) {
+        networkSlug = 'rupay';
+      }
+      if (networkSlug.isNotEmpty) {
+        candidates.addAll([
+          'assets/banks/$networkSlug.png',
+          'lib/assets/banks/$networkSlug.png',
+        ]);
+      }
+    }
+    return candidates.isNotEmpty ? candidates.first : null;
+  }
+
+  Widget _bankLogo(String? bank, {String? network, String? overrideLogo, double size = 36}) {
+    final asset = bank != null ? _bankLogoAsset(bank, network: network) : null;
+    Widget? image;
+    if (asset != null) {
+      image = Image.asset(
+        asset,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => overrideLogo != null
+            ? _buildLogo(overrideLogo, size: size)
+            : _bankLogoFallback(bank),
+      );
+    } else if (overrideLogo != null && overrideLogo.isNotEmpty) {
+      image = _buildLogo(overrideLogo, size: size);
+    }
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
+        border: Border.all(color: Colors.black12),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ClipOval(
+        child: image ?? _bankLogoFallback(bank),
+      ),
+    );
+  }
+
+  Widget _bankLogoFallback(String? bank) {
+    final label = (bank ?? '').trim();
+    final initials = label.isEmpty
+        ? 'BK'
+        : label
+            .split(RegExp(r'\s+'))
+            .where((p) => p.isNotEmpty)
+            .take(2)
+            .map((p) => p[0].toUpperCase())
+            .join();
+    return ColoredBox(
+      color: Colors.teal.shade50,
+      child: Center(
+        child: Text(
+          initials,
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            color: Colors.teal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLogo(String path, {double size = 36}) {
     if (path.startsWith('http')) {
       return Image.network(
         path,
+        fit: BoxFit.cover,
         width: size,
         height: size,
-        errorBuilder: (_, __, ___) => const SizedBox(),
+        errorBuilder: (_, __, ___) => _bankLogoFallback(path),
       );
     }
     return Image.asset(
       path,
+      fit: BoxFit.cover,
       width: size,
       height: size,
-      errorBuilder: (_, __, ___) => const SizedBox(),
-    );
-  }
-
-  Widget _bankLogoWidget(String bank, {double size = 32}) {
-    final logo = _bankLogos[bank];
-    if (logo != null && logo.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(size / 4),
-        child: _logo(logo, size: size),
-      );
-    }
-    return CircleAvatar(
-      radius: size / 2,
-      backgroundColor: Colors.teal.withOpacity(0.1),
-      child: Text(
-        _displayBankName(bank).isNotEmpty ? _displayBankName(bank)[0] : '?',
-        style: TextStyle(color: Colors.teal[700], fontWeight: FontWeight.w600),
-      ),
+      errorBuilder: (_, __, ___) => _bankLogoFallback(path),
     );
   }
 
@@ -2672,15 +3699,6 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     if (t.contains('education')) return Icons.school_rounded;
     if (t.contains('loan')) return Icons.account_balance_rounded;
     return Icons.category_rounded;
-  }
-
-  Widget _emptyState(String message) {
-    return Center(
-      child: Text(
-        message,
-        style: const TextStyle(color: Colors.grey),
-      ),
-    );
   }
 
   bool _isYesterdaySelected() {
@@ -2743,599 +3761,110 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         final start = DateTime(result.start.year, result.start.month, result.start.day);
         final end = DateTime(result.end.year, result.end.month, result.end.day);
         _customRange = DateTimeRange(start: start, end: end);
+        _periodToken = 'Custom';
       });
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final menuItems = [
-      'Date',
-      'Category',
-      'Merchant',
-      'Bank & Cards',
-      'Friends',
-      'Groups',
-    ];
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Filters')),
-      body: Row(
-        children: [
-          Container(
-            width: 140,
-            color: Colors.grey[100],
-            child: ListView.builder(
-              itemCount: menuItems.length,
-              itemBuilder: (context, index) {
-                final selected = _selectedCategoryIndex == index;
-                return Material(
-                  color: selected ? Fx.mint.withOpacity(0.12) : Colors.transparent,
-                  child: ListTile(
-                    title: Text(
-                      menuItems[index],
-                      style: TextStyle(
-                        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                        color: selected ? Fx.textStrong : Fx.text,
-                      ),
-                    ),
-                    onTap: () => _handleMenuTap(index),
-                  ),
-                );
-              },
-            ),
-          ),
-          const VerticalDivider(width: 1),
-          Expanded(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                  child: TextField(
-                    controller: _panelSearchController,
-                    decoration: InputDecoration(
-                      hintText: 'Search…',
-                      prefixIcon: const Icon(Icons.search, color: Colors.teal),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      contentPadding:
-                          const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-                    ),
-                    onChanged: _updateSearch,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Expanded(child: _buildFilterPanel(_selectedCategoryIndex)),
-              ],
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 12,
-                offset: const Offset(0, -2),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              TextButton(
-                onPressed: _resetFilters,
-                child: const Text('Clear'),
-              ),
-              const Spacer(),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Fx.mintDark,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                ),
-                onPressed: _applyFilters,
-                child: const Text('Apply'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilterPanel(int index) {
-    switch (index) {
-      case 0:
-        return _buildDatePanel();
-      case 1:
-        return _buildCategoryPanel();
-      case 2:
-        return _buildMerchantPanel();
-      case 3:
-        return _buildBankCardPanel();
-      case 4:
-        return _buildFriendsPanel();
-      case 5:
-      default:
-        return _buildGroupsPanel();
-    }
-  }
-
-  Widget _buildDatePanel() {
-    final tiles = <Widget>[];
-
-    void addPreset({
-      required String label,
-      required IconData icon,
-      required VoidCallback onTap,
-      required bool selected,
-    }) {
-      if (!_matchesQuery(label)) return;
-      tiles.add(
-        ListTile(
-          leading: Icon(icon, color: selected ? Fx.mintDark : Colors.teal),
-          title: Text(label),
-          trailing:
-              selected ? const Icon(Icons.check_circle, color: Colors.teal) : null,
-          onTap: onTap,
-        ),
-      );
-    }
-
-    addPreset(
-      label: 'Today',
-      icon: Icons.calendar_today_outlined,
-      selected: _isPresetSelected('Day'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'Day';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'Yesterday',
-      icon: Icons.history_toggle_off_rounded,
-      selected: _isYesterdaySelected(),
-      onTap: () {
-        final now = DateTime.now();
-        final y =
-            DateTime(now.year, now.month, now.day).subtract(const Duration(days: 1));
-        setState(() {
-          _periodToken = 'Day';
-          _customRange = DateTimeRange(start: y, end: y);
-        });
-      },
-    );
-
-    addPreset(
-      label: 'Last 2 Days',
-      icon: Icons.view_day_rounded,
-      selected: _isPresetSelected('2D'),
-      onTap: () {
-        setState(() {
-          _periodToken = '2D';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'This Week',
-      icon: Icons.calendar_view_week_rounded,
-      selected: _isPresetSelected('Week'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'Week';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'This Month',
-      icon: Icons.calendar_month_rounded,
-      selected: _isPresetSelected('Month'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'Month';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'Last Month',
-      icon: Icons.calendar_view_month_rounded,
-      selected: _isPresetSelected('Last Month'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'Last Month';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'This Quarter',
-      icon: Icons.date_range_rounded,
-      selected: _isPresetSelected('Quarter'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'Quarter';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'This Year',
-      icon: Icons.event_available_rounded,
-      selected: _isPresetSelected('Year'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'Year';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'All Time',
-      icon: Icons.all_inclusive_rounded,
-      selected: _isPresetSelected('All'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'All';
-          _customRange = null;
-        });
-      },
-    );
-
-    if (_matchesQuery('Custom range')) {
-      final subtitle = _customRange != null
-          ? '${DateFormat('d MMM y').format(_customRange!.start)} – '
-              '${DateFormat('d MMM y').format(_customRange!.end)}'
-          : 'Choose a date range';
-      tiles.add(
-        ListTile(
-          leading: const Icon(Icons.date_range_rounded, color: Colors.teal),
-          title: const Text('Custom range'),
-          subtitle: Text(subtitle),
-          trailing: const Icon(Icons.chevron_right_rounded),
-          onTap: _pickCustomRange,
-        ),
-      );
-    }
-
-    if (tiles.isEmpty) {
-      return _emptyState('No date presets match your search');
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: tiles.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (context, index) => tiles[index],
-    );
-  }
-
-  Widget _buildCategoryPanel() {
-    final tiles = <Widget>[];
-    if (_matchesQuery('All categories')) {
-      tiles.add(
-        ListTile(
-          leading: Icon(Icons.all_inclusive_rounded,
-              color: _selectedCategories.isEmpty ? Fx.mintDark : Colors.teal),
-          title: const Text('All categories'),
-          trailing: _selectedCategories.isEmpty
-              ? const Icon(Icons.check_circle, color: Colors.teal)
-              : null,
-          onTap: () {
-            setState(() => _selectedCategories = {});
-          },
-        ),
-      );
-    }
-
-    final filtered = _categoryOptions.where(_matchesQuery).toList();
-
-    for (final category in filtered) {
-      final selected = _selectedCategories.contains(category);
-      tiles.add(
-        CheckboxListTile(
-          value: selected,
-          onChanged: (checked) {
-            setState(() {
-              if (checked == true) {
-                _selectedCategories = {..._selectedCategories, category};
-              } else {
-                _selectedCategories = {..._selectedCategories}..remove(category);
-              }
-            });
-          },
-          controlAffinity: ListTileControlAffinity.leading,
-          title: Row(
-            children: [
-              Icon(_categoryIcon(category), color: Colors.teal),
-              const SizedBox(width: 12),
-              Expanded(child: Text(category)),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final hasResults = tiles.length > (_matchesQuery('All categories') ? 1 : 0);
-    if (!hasResults) {
-      return _emptyState('No categories match your search');
-    }
-
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-      children: tiles,
-    );
-  }
-
-  Widget _buildMerchantPanel() {
-    final tiles = <Widget>[];
-    if (_matchesQuery('All merchants')) {
-      tiles.add(
-        ListTile(
-          leading: Icon(Icons.store_mall_directory_rounded,
-              color: _selectedMerchants.isEmpty ? Fx.mintDark : Colors.teal),
-          title: const Text('All merchants'),
-          trailing: _selectedMerchants.isEmpty
-              ? const Icon(Icons.check_circle, color: Colors.teal)
-              : null,
-          onTap: () {
-            setState(() => _selectedMerchants = {});
-          },
-        ),
-      );
-    }
-
-    final filtered = _merchantOptions.where(_matchesQuery).toList();
-    for (final merchant in filtered) {
-      final key = merchant.toUpperCase();
-      final selected = _selectedMerchants.contains(key);
+  Widget _merchantAvatar(String merchant, {required bool isPerson}) {
+    final key = merchant.toUpperCase();
+    if (!isPerson) {
       final logo = _merchantLogos[key];
-      tiles.add(
-        CheckboxListTile(
-          value: selected,
-          onChanged: (checked) {
-            setState(() {
-              if (checked == true) {
-                _selectedMerchants = {..._selectedMerchants, key};
-              } else {
-                _selectedMerchants = {..._selectedMerchants}..remove(key);
-              }
-            });
-          },
-          controlAffinity: ListTileControlAffinity.leading,
-          title: Row(
-            children: [
-              if (logo != null && logo.isNotEmpty)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: _logo(logo, size: 28),
-                )
-              else
-                const Icon(Icons.storefront_rounded, color: Colors.teal),
-              const SizedBox(width: 12),
-              Expanded(child: Text(_formatMerchant(merchant))),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final hasResults = tiles.length > (_matchesQuery('All merchants') ? 1 : 0);
-    if (!hasResults) {
-      return _emptyState('No merchants match your search');
-    }
-
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-      children: tiles,
-    );
-  }
-
-  Widget _buildBankCardPanel() {
-    if (_bankOptions.isEmpty) {
-      return _emptyState('No banks detected');
-    }
-
-    final filteredBanks = _bankOptions.where((bank) {
-      if (_panelSearchQuery.isEmpty) return true;
-      final display = _displayBankName(bank).toLowerCase();
-      if (display.contains(_panelSearchQuery)) return true;
-      final cards = _bankToCards[bank] ?? {};
-      return cards.any((card) => '••$card'.toLowerCase().contains(_panelSearchQuery));
-    }).toList();
-
-    if (filteredBanks.isEmpty) {
-      return _emptyState('No banks or cards match your search');
-    }
-
-    final tiles = <Widget>[];
-    if (_matchesQuery('All banks')) {
-      tiles.add(
-        ListTile(
-          leading: Icon(Icons.account_balance_rounded,
-              color: _selectedBanks.isEmpty ? Fx.mintDark : Colors.teal),
-          title: const Text('All banks'),
-          trailing: _selectedBanks.isEmpty
-              ? const Icon(Icons.check_circle, color: Colors.teal)
-              : null,
-          onTap: () {
-            setState(() => _selectedBanks = {});
-          },
-        ),
-      );
-    }
-
-    for (final bank in filteredBanks) {
-      final isBankSelected = _selectedBanks.contains(bank);
-      tiles.add(
-        CheckboxListTile(
-          value: isBankSelected,
-          onChanged: (checked) {
-            setState(() {
-              if (checked == true) {
-                _selectedBanks = {..._selectedBanks, bank};
-              } else {
-                final updated = {..._selectedBanks};
-                updated.remove(bank);
-                updated.removeWhere((entry) => entry.startsWith('$bank|'));
-                _selectedBanks = updated;
-              }
-            });
-          },
-          controlAffinity: ListTileControlAffinity.leading,
-          title: Row(
-            children: [
-              _bankLogoWidget(bank, size: 32),
-              const SizedBox(width: 12),
-              Expanded(child: Text(_displayBankName(bank))),
-            ],
-          ),
-        ),
-      );
-
-      final cards = _bankToCards[bank] ?? {};
-      final cardList = cards.where((card) {
-        if (_panelSearchQuery.isEmpty) return true;
-        return '••$card'.toLowerCase().contains(_panelSearchQuery);
-      }).toList()
-        ..sort();
-      for (final card in cardList) {
-        final key = _encodeBankSelection(bank, card);
-        final selected = _selectedBanks.contains(key);
-        tiles.add(
-          Padding(
-            padding: const EdgeInsets.only(left: 32),
-            child: CheckboxListTile(
-              value: selected,
-              onChanged: (checked) {
-                setState(() {
-                  if (checked == true) {
-                    _selectedBanks = {..._selectedBanks, key};
-                  } else {
-                    _selectedBanks = {..._selectedBanks}..remove(key);
-                  }
-                });
-              },
-              controlAffinity: ListTileControlAffinity.leading,
-              title: Row(
-                children: [
-                  const Icon(Icons.credit_card_rounded, color: Colors.teal),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text('••$card')),
-                ],
-              ),
-              subtitle: Text(_displayBankName(bank)),
+      if (logo != null) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: _buildLogo(logo, size: 36),
+        );
+      }
+    } else {
+      final friend = _matchFriendForMerchant(merchant);
+      if (friend != null) {
+        final avatarVal = friend.avatar;
+        if (avatarVal.startsWith('http')) {
+          return ClipOval(
+            child: Image.network(
+              avatarVal,
+              width: 36,
+              height: 36,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _bankLogoFallback(friend.name),
             ),
+          );
+        }
+        if (avatarVal.trim().isNotEmpty) {
+          return CircleAvatar(
+            radius: 18,
+            backgroundColor: Colors.teal.shade50,
+            child: Text(
+              avatarVal.length <= 2
+                  ? avatarVal
+                  : avatarVal.characters.first,
+              style: const TextStyle(fontSize: 18),
+            ),
+          );
+        }
+        return CircleAvatar(
+          radius: 18,
+          backgroundColor: Colors.teal.shade50,
+          child: Text(
+            friend.name.isNotEmpty
+                ? friend.name.characters.first.toUpperCase()
+                : friend.phone.characters.first,
+            style: const TextStyle(fontWeight: FontWeight.bold),
           ),
         );
       }
     }
 
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-      children: tiles,
+    return CircleAvatar(
+      radius: 18,
+      backgroundColor: Colors.teal.shade50,
+      child: Text(
+        merchant.isNotEmpty
+            ? merchant.characters.first.toUpperCase()
+            : 'M',
+        style: const TextStyle(fontWeight: FontWeight.bold),
+      ),
     );
   }
 
-  Widget _buildFriendsPanel() {
-    if (_friends.isEmpty) {
-      return _emptyState('No friends added yet');
+  FriendModel? _matchFriendForMerchant(String merchant) {
+    final lower = merchant.toLowerCase();
+    for (final friend in _friends) {
+      final nameLower = friend.name.trim().toLowerCase();
+      if (nameLower.isEmpty) continue;
+      if (lower == nameLower || lower.contains(nameLower) || nameLower.contains(lower)) {
+        return friend;
+      }
     }
-    final filtered = _friends.where((friend) {
-      if (_panelSearchQuery.isEmpty) return true;
-      final name = friend.name.toLowerCase();
-      final phone = friend.phone.toLowerCase();
-      return name.contains(_panelSearchQuery) || phone.contains(_panelSearchQuery);
-    }).toList();
-    if (filtered.isEmpty) {
-      return _emptyState('No friends match your search');
-    }
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: filtered.map((friend) {
-        final selected = _friendPhones.contains(friend.phone);
-        return CheckboxListTile(
-          value: selected,
-          onChanged: (value) {
-            setState(() {
-              if (value == true) {
-                _friendPhones = {..._friendPhones, friend.phone};
-              } else {
-                _friendPhones = {..._friendPhones}..remove(friend.phone);
-              }
-            });
-          },
-          controlAffinity: ListTileControlAffinity.leading,
-          title: Row(
-            children: [
-              const Icon(Icons.person_rounded, color: Colors.teal),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(friend.name.isEmpty ? friend.phone : friend.name),
-              ),
-            ],
-          ),
-          subtitle: friend.name.isNotEmpty ? Text(friend.phone) : null,
-        );
-      }).toList(),
-    );
+    return null;
   }
 
-  Widget _buildGroupsPanel() {
-    if (_groupOptions.isEmpty) {
-      return _emptyState('No groups yet');
+  bool _isPersonLikeMerchant(String key) {
+    final lower = key.toLowerCase();
+    if (_friendNameTokens.any((n) => n.isNotEmpty && lower.contains(n))) {
+      return true;
     }
-    final filtered = _groupOptions.where(_matchesQuery).toList();
-    if (filtered.isEmpty) {
-      return _emptyState('No groups match your search');
+    final digits = lower.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.length >= 8 && digits.length <= 12) return true;
+    if (_friendPhoneSet.any((phone) => phone.replaceAll(RegExp(r'[^0-9]'), '').endsWith(digits) && digits.isNotEmpty)) {
+      return true;
     }
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: filtered.map((group) {
-        final selected = _groupIds.contains(group);
-        return CheckboxListTile(
-          value: selected,
-          onChanged: (value) {
-            setState(() {
-              if (value == true) {
-                _groupIds = {..._groupIds, group};
-              } else {
-                _groupIds = {..._groupIds}..remove(group);
-              }
-            });
-          },
-          controlAffinity: ListTileControlAffinity.leading,
-          title: Row(
-            children: [
-              const Icon(Icons.group_rounded, color: Colors.teal),
-              const SizedBox(width: 12),
-              Expanded(child: Text(group)),
-            ],
-          ),
-        );
-      }).toList(),
-    );
+    if (lower.contains('@') && !lower.contains('amazon') && !lower.contains('paytm')) {
+      return true;
+    }
+    return false;
   }
+
+  String _groupNameForId(String id) {
+    final group = _groupsById[id];
+    if (group != null && group.name.trim().isNotEmpty) {
+      return group.name.trim();
+    }
+    return id;
+  }
+
+  String _formatAmount(double amount) => _amountFormat.format(amount);
 
   String _formatMerchant(String raw) {
     final trimmed = raw.trim();
@@ -3343,8 +3872,7 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     return trimmed
         .split(RegExp(r'\s+'))
         .where((word) => word.isNotEmpty)
-        .map((word) =>
-            '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}')
+        .map((word) => '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}')
         .join(' ');
   }
 }
