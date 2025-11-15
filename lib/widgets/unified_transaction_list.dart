@@ -1520,7 +1520,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           if (dateLabel.isNotEmpty)
             rows.add(
               Container(
-                margin: const EdgeInsets.only(left: 14, right: 8, top: 11, bottom: 4),
+                margin: const EdgeInsets.only(left: 14, right: 8, top: 8, bottom: 2),
                 padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
                 decoration: BoxDecoration(
                   color: Colors.grey[200],
@@ -1759,7 +1759,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 120),
                     constraints: const BoxConstraints(minHeight: 58),
-                    margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+                    margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 0.5),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
                       color: isSelected
@@ -1987,7 +1987,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             }
           }
 
-          rows.add(const SizedBox(height: 4));
+          rows.add(const SizedBox(height: 2));
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,

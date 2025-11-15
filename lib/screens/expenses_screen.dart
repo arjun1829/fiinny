@@ -507,10 +507,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   Widget _buildActiveFiltersWrap() {
     final chips = _activeFilterChips();
     if (chips.isEmpty) {
-      return const SizedBox(height: 12);
+      return const SizedBox(height: 8);
     }
     return Padding(
-      padding: const EdgeInsets.only(top: 12, left: 4, right: 4),
+      padding: const EdgeInsets.only(top: 8, left: 4, right: 4),
       child: Wrap(
         spacing: 8,
         runSpacing: 6,
@@ -1033,7 +1033,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return RefreshIndicator(
       onRefresh: () async => _recompute(),
       child: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         children: [
           _SummaryRingCard(
             spent: periodTotalExpense,
@@ -1052,7 +1052,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             },
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
           Align(
             alignment: Alignment.centerLeft,
@@ -1073,7 +1073,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
           _buildActiveFiltersWrap(),
 
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
 
           // --- Bulk Actions Bar ---
           if (_multiSelectMode)
@@ -1227,12 +1227,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: _buildDataTypeSelector(),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
           // Transaction List Unified (Expense+Income)
           AnimatedSwitcher(
@@ -2249,85 +2249,86 @@ class _SummaryRingCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-          child: SizedBox(
-            height: 160,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: 96,
-                  height: 96,
-                  child: PieChart(
-                    PieChartData(
-                      sectionsSpace: 0,
-                      centerSpaceRadius: 36,
-                      startDegreeOffset: -90,
-                      sections: [
-                        PieChartSectionData(
-                          value: chartSpent,
-                          color: Fx.mintDark,
-                          title: '',
-                          radius: 46,
-                        ),
-                        PieChartSectionData(
-                          value: chartIncome,
-                          color: Fx.mint.withOpacity(0.2),
-                          title: '',
-                          radius: 46,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            backgroundColor: Colors.grey[100],
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                          onPressed: onTapPeriod,
-                          child: Text(
-                            periodLabel,
-                            style: Fx.label.copyWith(fontWeight: FontWeight.w600),
-                          ),
-                        ),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 92,
+                height: 92,
+                child: PieChart(
+                  PieChartData(
+                    sectionsSpace: 0,
+                    centerSpaceRadius: 34,
+                    startDegreeOffset: -90,
+                    sections: [
+                      PieChartSectionData(
+                        value: chartSpent,
+                        color: Fx.mintDark,
+                        title: '',
+                        radius: 44,
                       ),
-                      const SizedBox(height: 16),
-                      Text(
-                        formatter.format(spentValue),
-                        style: spentStyle,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        formatter.format(incomeValue),
-                        style: incomeStyle,
-                      ),
-                      const Spacer(),
-                      Text(
-                        'Banks: $bankCount · Cards: $cardCount · Tx: $txCount',
-                        style: Fx.label.copyWith(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
-                        ),
+                      PieChartSectionData(
+                        value: chartIncome,
+                        color: Fx.mint.withOpacity(0.24),
+                        title: '',
+                        radius: 44,
                       ),
                     ],
                   ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          backgroundColor: Colors.grey[100],
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                        onPressed: onTapPeriod,
+                        child: Text(
+                          periodLabel,
+                          style: Fx.label.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      formatter.format(spentValue),
+                      style: spentStyle,
+                      textAlign: TextAlign.right,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      formatter.format(incomeValue),
+                      style: incomeStyle,
+                      textAlign: TextAlign.right,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Banks: $bankCount · Cards: $cardCount · Tx: $txCount',
+                      style: Fx.label.copyWith(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.right,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -2484,6 +2485,7 @@ class ExpenseFilterConfig {
   }
 }
 
+
 class ExpenseFiltersScreen extends StatefulWidget {
   final ExpenseFilterConfig initialConfig;
   final List<ExpenseItem> expenses;
@@ -2504,8 +2506,6 @@ class ExpenseFiltersScreen extends StatefulWidget {
   State<ExpenseFiltersScreen> createState() => _ExpenseFiltersScreenState();
 }
 
-enum MerchantMode { brand, people }
-
 class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
   late String _periodToken;
   DateTimeRange? _customRange;
@@ -2514,8 +2514,6 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
   late Set<String> _selectedBanks;
   late Set<String> _friendPhones;
   late Set<String> _groupIds;
-
-  int _selectedCategoryIndex = 0;
 
   late final List<String> _categoryOptions;
   late final Map<String, Set<String>> _bankToCards;
@@ -2532,11 +2530,6 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
   late final List<String> _groupOptions;
   late final Map<String, GroupModel> _groupsById;
   late final NumberFormat _amountFormat;
-
-  MerchantMode _merchantMode = MerchantMode.brand;
-
-  final TextEditingController _panelSearchController = TextEditingController();
-  String _panelSearchQuery = '';
 
   List<FriendModel> get _friends => widget.friendsById.values.toList()
     ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -2561,16 +2554,15 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
           final card = parts.length > 1 ? parts[1].trim() : '';
           return card.isEmpty ? bank : '$bank|$card';
         })
-        .where((b) => b.isNotEmpty)
         .toSet();
     _friendPhones = Set<String>.from(widget.initialConfig.friendPhones);
     _groupIds = Set<String>.from(widget.initialConfig.groupIds);
 
     final categorySet = <String>{};
-    for (final e in widget.expenses) {
-      final type = e.type.trim().isEmpty ? 'Other' : e.type.trim();
+    for (final expense in widget.expenses) {
+      final type = (expense.category ?? '').trim();
       if (type.isNotEmpty) {
-        categorySet.add(type);
+        categorySet.add(_titleCase(type.toLowerCase()));
       }
     }
     _categoryOptions = categorySet.toList()..sort();
@@ -2664,818 +2656,476 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
   }
 
   @override
-  void dispose() {
-    _panelSearchController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final menuItems = [
-      'Date',
-      'Category',
-      'Merchant',
-      'Bank & Cards',
-      'Friends',
-      'Groups',
-    ];
-
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Filters'),
-        backgroundColor: Colors.white.withOpacity(0.95),
-        foregroundColor: Colors.black87,
-        elevation: 0,
+        title: const Text('Filters', style: TextStyle(color: Colors.black)),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0.5,
+        iconTheme: const IconThemeData(color: Colors.black),
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Fx.mintDark.withOpacity(0.12),
-              Fx.mint.withOpacity(0.04),
-              Colors.white,
-            ],
-            stops: const [0.0, 0.4, 1.0],
-          ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 180,
-              child: Card(
-                margin: const EdgeInsets.fromLTRB(16, 16, 8, 16),
-                color: Colors.white.withOpacity(0.92),
-                elevation: 4,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: menuItems.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 6),
-                    itemBuilder: (context, index) {
-                      final selected = _selectedCategoryIndex == index;
-                      return ListTile(
-                        title: Text(
-                          menuItems[index],
-                          style: TextStyle(
-                            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                            color: selected ? Fx.textStrong : Fx.text,
-                          ),
-                        ),
-                        selected: selected,
-                        selectedTileColor: Fx.mint.withOpacity(0.12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        onTap: () => _handleMenuTap(index),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(4, 16, 16, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildSearchField(),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 220),
-                        transitionBuilder: (child, animation) => FadeTransition(
-                          opacity: animation,
-                          child: SlideTransition(
-                            position: Tween<Offset>(
-                              begin: const Offset(0.02, 0.02),
-                              end: Offset.zero,
-                            ).animate(animation),
-                            child: child,
-                          ),
-                        ),
-                        child: _buildFilterPanel(_selectedCategoryIndex),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+        children: [
+          _buildDateSection(),
+          const Divider(height: 32),
+          _buildCategorySection(),
+          const Divider(height: 32),
+          _buildMerchantSection(),
+          const Divider(height: 32),
+          _buildBankCardsSection(),
+          const Divider(height: 32),
+          _buildFriendsSection(),
+          const Divider(height: 32),
+          _buildGroupsSection(),
+        ],
       ),
       bottomNavigationBar: _buildBottomBar(),
     );
   }
 
-  Widget _buildSearchField() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-      child: TextField(
-        controller: _panelSearchController,
-        decoration: const InputDecoration(
-          hintText: 'Search…',
-          prefixIcon: Icon(Icons.search, color: Colors.teal),
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-        ),
-        onChanged: _updateSearch,
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+        color: Colors.black,
       ),
+    );
+  }
+
+  Widget _buildDateSection() {
+    const periodOptions = <MapEntry<String, String>>[
+      MapEntry('Today', 'Day'),
+      MapEntry('Yesterday', 'Yesterday'),
+      MapEntry('Last 2 Days', '2D'),
+      MapEntry('This Week', 'Week'),
+      MapEntry('This Month', 'Month'),
+      MapEntry('Last Month', 'Last Month'),
+      MapEntry('This Quarter', 'Quarter'),
+      MapEntry('This Year', 'Year'),
+      MapEntry('All Time', 'All'),
+    ];
+    final currentValue = _currentPeriodValue();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('Date / Period'),
+        const SizedBox(height: 6),
+        for (final option in periodOptions)
+          RadioListTile<String>(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            value: option.value,
+            groupValue: currentValue,
+            title: Text(option.key, style: const TextStyle(color: Colors.black)),
+            onChanged: (_) => _selectPeriod(option.value),
+          ),
+        RadioListTile<String>(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          value: 'Custom',
+          groupValue: currentValue,
+          title: const Text(
+            'Custom range',
+            style: TextStyle(color: Colors.black),
+          ),
+          subtitle: Text(
+            _customRange != null
+                ? '${DateFormat('d MMM y').format(_customRange!.start)} – ${DateFormat('d MMM y').format(_customRange!.end)}'
+                : 'Choose a date range',
+            style: const TextStyle(color: Colors.black54, fontSize: 12),
+          ),
+          onChanged: (_) => _pickCustomRange(),
+        ),
+      ],
+    );
+  }
+
+  String _currentPeriodValue() {
+    if (_isYesterdaySelected()) {
+      return 'Yesterday';
+    }
+    if (_customRange != null) {
+      return 'Custom';
+    }
+    return _periodToken;
+  }
+
+  void _selectPeriod(String token) {
+    if (token == 'Custom') {
+      _pickCustomRange();
+      return;
+    }
+    if (token == 'Yesterday') {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final yesterday = today.subtract(const Duration(days: 1));
+      setState(() {
+        _periodToken = 'Custom';
+        _customRange = DateTimeRange(start: yesterday, end: yesterday);
+      });
+      return;
+    }
+    setState(() {
+      _periodToken = token;
+      _customRange = null;
+    });
+  }
+
+  Widget _buildCategorySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('Categories'),
+        const SizedBox(height: 6),
+        CheckboxListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          value: _selectedCategories.isEmpty,
+          secondary: const Icon(Icons.category_rounded, color: Colors.black54),
+          title: const Text('All categories', style: TextStyle(color: Colors.black)),
+          subtitle: const Text('Show everything', style: TextStyle(color: Colors.black54, fontSize: 12)),
+          onChanged: (val) {
+            if (val == true) {
+              setState(() => _selectedCategories = {});
+            }
+          },
+        ),
+        if (_categoryOptions.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('No categories found', style: TextStyle(color: Colors.black54)),
+          )
+        else
+          ..._categoryOptions.map((category) {
+            final selected = _selectedCategories.contains(category);
+            return CheckboxListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              value: selected,
+              secondary: Icon(_categoryIcon(category), color: Colors.black54),
+              title: Text(category, style: const TextStyle(color: Colors.black)),
+              onChanged: (val) {
+                setState(() {
+                  if (val == true) {
+                    _selectedCategories = {..._selectedCategories, category};
+                  } else {
+                    _selectedCategories = {..._selectedCategories}..remove(category);
+                  }
+                });
+              },
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _buildMerchantSection() {
+    final brandEntries = _brandMerchantTotals.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final peopleEntries = _peopleMerchantTotals.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('Merchants'),
+        const SizedBox(height: 6),
+        CheckboxListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          value: _selectedMerchants.isEmpty,
+          secondary: const Icon(Icons.store_mall_directory_rounded, color: Colors.black54),
+          title: const Text('All merchants', style: TextStyle(color: Colors.black)),
+          subtitle: const Text('Show everything', style: TextStyle(color: Colors.black54, fontSize: 12)),
+          onChanged: (val) {
+            if (val == true) {
+              setState(() => _selectedMerchants = {});
+            }
+          },
+        ),
+        if (brandEntries.isEmpty && peopleEntries.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('No merchants available', style: TextStyle(color: Colors.black54)),
+          )
+        else ...[
+          if (brandEntries.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Text('Brands', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
+            const SizedBox(height: 4),
+            ...brandEntries.map((entry) => _buildMerchantTile(entry, isPerson: false)),
+          ],
+          if (peopleEntries.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text('People', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
+            const SizedBox(height: 4),
+            ...peopleEntries.map((entry) => _buildMerchantTile(entry, isPerson: true)),
+          ],
+        ],
+      ],
+    );
+  }
+
+  Widget _buildMerchantTile(MapEntry<String, double> entry, {required bool isPerson}) {
+    final key = entry.key.trim().toUpperCase();
+    final selected = _selectedMerchants.contains(key);
+    return CheckboxListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      value: selected,
+      secondary: _merchantAvatar(entry.key, isPerson: isPerson),
+      title: Text(_formatMerchant(entry.key), style: const TextStyle(color: Colors.black)),
+      subtitle: Text(_formatAmount(entry.value), style: const TextStyle(color: Colors.black54, fontSize: 12)),
+      onChanged: (val) {
+        setState(() {
+          if (val == true) {
+            _selectedMerchants = {..._selectedMerchants, key};
+          } else {
+            _selectedMerchants = {..._selectedMerchants}..remove(key);
+          }
+        });
+      },
+    );
+  }
+
+  Widget _buildBankCardsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('Bank & Cards'),
+        const SizedBox(height: 6),
+        CheckboxListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          value: _selectedBanks.isEmpty,
+          secondary: const Icon(Icons.account_balance_rounded, color: Colors.black54),
+          title: const Text('All banks', style: TextStyle(color: Colors.black)),
+          subtitle: const Text('Show everything', style: TextStyle(color: Colors.black54, fontSize: 12)),
+          onChanged: (val) {
+            if (val == true) {
+              setState(() => _selectedBanks = {});
+            }
+          },
+        ),
+        if (_bankOptions.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('No banks detected', style: TextStyle(color: Colors.black54)),
+          )
+        else
+          ..._bankOptions.map((bank) {
+            final isBankSelected = _selectedBanks.contains(bank);
+            final cards = List<String>.from(_bankToCards[bank] ?? const <String>{})..sort();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: isBankSelected,
+                  secondary: _bankLogo(
+                    _displayBankName(bank),
+                    network: _bankPrimaryNetworks[bank],
+                    overrideLogo: _bankLogos[bank],
+                    size: 40,
+                  ),
+                  title: Text(_displayBankName(bank), style: const TextStyle(color: Colors.black)),
+                  onChanged: (val) {
+                    setState(() {
+                      if (val == true) {
+                        _selectedBanks = {..._selectedBanks, bank};
+                      } else {
+                        final updated = {..._selectedBanks};
+                        updated.remove(bank);
+                        updated.removeWhere((entry) => entry.startsWith('$bank|'));
+                        _selectedBanks = updated;
+                      }
+                    });
+                  },
+                ),
+                for (final card in cards)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 32),
+                    child: CheckboxListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      value: _selectedBanks.contains(_encodeBankSelection(bank, card)),
+                      secondary: _bankLogo(
+                        _displayBankName(bank),
+                        network: _cardNetworks['$bank|$card'] ?? _bankPrimaryNetworks[bank],
+                        overrideLogo: _bankLogos[bank],
+                        size: 32,
+                      ),
+                      title: Text('••$card', style: const TextStyle(color: Colors.black)),
+                      subtitle: Text(_displayBankName(bank), style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                      onChanged: (val) {
+                        final selectionKey = _encodeBankSelection(bank, card);
+                        setState(() {
+                          if (val == true) {
+                            _selectedBanks = {..._selectedBanks, selectionKey};
+                          } else {
+                            _selectedBanks = {..._selectedBanks}..remove(selectionKey);
+                          }
+                        });
+                      },
+                    ),
+                  ),
+              ],
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _buildFriendsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('Friends'),
+        const SizedBox(height: 6),
+        if (_friends.isEmpty)
+          const Text('No friends added yet', style: TextStyle(color: Colors.black54))
+        else
+          ..._friends.map((friend) {
+            final selected = _friendPhones.contains(friend.phone);
+            return CheckboxListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              value: selected,
+              secondary: _friendAvatar(friend),
+              title: Text(
+                friend.name.isEmpty ? friend.phone : friend.name,
+                style: const TextStyle(color: Colors.black),
+              ),
+              subtitle: friend.name.isNotEmpty
+                  ? Text(friend.phone, style: const TextStyle(color: Colors.black54, fontSize: 12))
+                  : null,
+              onChanged: (val) {
+                setState(() {
+                  final updated = {..._friendPhones};
+                  if (val == true) {
+                    updated.add(friend.phone);
+                  } else {
+                    updated.remove(friend.phone);
+                  }
+                  _friendPhones = updated;
+                });
+              },
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _friendAvatar(FriendModel friend) {
+    final avatarValue = friend.avatar.trim();
+    if (avatarValue.startsWith('http')) {
+      return CircleAvatar(
+        radius: 18,
+        backgroundColor: Colors.grey.shade200,
+        backgroundImage: NetworkImage(avatarValue),
+      );
+    }
+    String label;
+    if (avatarValue.isNotEmpty) {
+      label = avatarValue.length <= 2 ? avatarValue : avatarValue.characters.first;
+    } else if (friend.name.isNotEmpty) {
+      label = friend.name.characters.first;
+    } else {
+      label = friend.phone.characters.first;
+    }
+    return CircleAvatar(
+      radius: 18,
+      backgroundColor: Colors.grey.shade200,
+      child: Text(label.toUpperCase(), style: const TextStyle(color: Colors.black)),
+    );
+  }
+
+  Widget _buildGroupsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('Groups'),
+        const SizedBox(height: 6),
+        if (_groupOptions.isEmpty)
+          const Text('No groups yet', style: TextStyle(color: Colors.black54))
+        else
+          ..._groupOptions.map((groupId) {
+            final selected = _groupIds.contains(groupId);
+            final group = _groupsById[groupId];
+            final memberCount = group?.memberCount ?? 0;
+            return CheckboxListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              value: selected,
+              secondary: _groupAvatar(groupId, group),
+              title: Text(_groupNameForId(groupId), style: const TextStyle(color: Colors.black)),
+              subtitle: memberCount > 0
+                  ? Text('$memberCount member${memberCount == 1 ? '' : 's'}',
+                      style: const TextStyle(color: Colors.black54, fontSize: 12))
+                  : null,
+              onChanged: (val) {
+                setState(() {
+                  if (val == true) {
+                    _groupIds = {..._groupIds, groupId};
+                  } else {
+                    _groupIds = {..._groupIds}..remove(groupId);
+                  }
+                });
+              },
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _groupAvatar(String groupId, GroupModel? group) {
+    final avatarUrl = group?.avatarUrl ?? '';
+    if (avatarUrl.isNotEmpty) {
+      return CircleAvatar(
+        radius: 18,
+        backgroundColor: Colors.grey.shade200,
+        backgroundImage: NetworkImage(avatarUrl),
+      );
+    }
+    final name = _groupNameForId(groupId);
+    final label = name.isNotEmpty ? name.characters.first : groupId.characters.first;
+    return CircleAvatar(
+      radius: 18,
+      backgroundColor: Colors.grey.shade200,
+      child: Text(label.toUpperCase(), style: const TextStyle(color: Colors.black)),
     );
   }
 
   Widget _buildBottomBar() {
     return SafeArea(
       child: Container(
+        color: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.98),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
         child: Row(
           children: [
             TextButton(
               onPressed: _resetFilters,
+              style: TextButton.styleFrom(foregroundColor: Colors.black),
               child: const Text('Clear'),
             ),
             const Spacer(),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.check_rounded, size: 18),
-              label: const Text('Apply'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Fx.mintDark,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
-              ),
+            ElevatedButton(
               onPressed: _applyFilters,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilterPanel(int index) {
-    Widget child;
-    switch (index) {
-      case 0:
-        child = _buildDatePanel();
-        break;
-      case 1:
-        child = _buildCategoryPanel();
-        break;
-      case 2:
-        child = _buildMerchantPanel();
-        break;
-      case 3:
-        child = _buildBankCardPanel();
-        break;
-      case 4:
-        child = _buildFriendsPanel();
-        break;
-      case 5:
-      default:
-        child = _buildGroupsPanel();
-        break;
-    }
-    return Card(
-      key: ValueKey('panel-$index-${_panelSearchQuery.hashCode}-${_merchantMode.name}'),
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-      margin: EdgeInsets.zero,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(26),
-        child: child,
-      ),
-    );
-  }
-
-  Widget _buildDatePanel() {
-    final tiles = <Widget>[];
-
-    void addPreset({
-      required String label,
-      required IconData icon,
-      required VoidCallback onTap,
-      required bool selected,
-    }) {
-      if (!_matchesQuery(label)) return;
-      tiles.add(
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Card(
-            elevation: selected ? 3 : 1,
-            color: selected ? Fx.mint.withOpacity(0.12) : Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            child: ListTile(
-              leading: Icon(icon, color: selected ? Fx.mintDark : Colors.teal),
-              title: Text(label),
-              trailing: selected
-                  ? const Icon(Icons.check_circle, color: Colors.teal)
-                  : const Icon(Icons.circle_outlined, color: Colors.grey),
-              onTap: onTap,
-            ),
-          ),
-        ),
-      );
-    }
-
-    addPreset(
-      label: 'Today',
-      icon: Icons.calendar_today_outlined,
-      selected: _isPresetSelected('Day'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'Day';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'Yesterday',
-      icon: Icons.history_rounded,
-      selected: _isPresetSelected('Yesterday'),
-      onTap: () {
-        setState(() {
-          final now = DateTime.now();
-          final yesterday =
-              DateTime(now.year, now.month, now.day).subtract(const Duration(days: 1));
-          _periodToken = 'Custom';
-          _customRange = DateTimeRange(start: yesterday, end: yesterday);
-        });
-      },
-    );
-
-    addPreset(
-      label: 'Last 2 Days',
-      icon: Icons.view_day_rounded,
-      selected: _isPresetSelected('2D'),
-      onTap: () {
-        setState(() {
-          _periodToken = '2D';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'This Week',
-      icon: Icons.calendar_view_week_rounded,
-      selected: _isPresetSelected('Week'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'Week';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'This Month',
-      icon: Icons.calendar_view_month_rounded,
-      selected: _isPresetSelected('Month'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'Month';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'Last Month',
-      icon: Icons.schedule_rounded,
-      selected: _isPresetSelected('Last Month'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'Last Month';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'This Quarter',
-      icon: Icons.event_note_rounded,
-      selected: _isPresetSelected('Quarter'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'Quarter';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'This Year',
-      icon: Icons.event_available_rounded,
-      selected: _isPresetSelected('Year'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'Year';
-          _customRange = null;
-        });
-      },
-    );
-
-    addPreset(
-      label: 'All Time',
-      icon: Icons.all_inclusive_rounded,
-      selected: _isPresetSelected('All'),
-      onTap: () {
-        setState(() {
-          _periodToken = 'All';
-          _customRange = null;
-        });
-      },
-    );
-
-    if (_matchesQuery('Custom range')) {
-      final subtitle = _customRange != null
-          ? '${DateFormat('d MMM y').format(_customRange!.start)} – '
-              '${DateFormat('d MMM y').format(_customRange!.end)}'
-          : 'Choose a date range';
-      tiles.add(
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Card(
-            elevation: 1,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            child: ListTile(
-              leading: const Icon(Icons.date_range_rounded, color: Colors.teal),
-              title: const Text('Custom range'),
-              subtitle: Text(subtitle),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: _pickCustomRange,
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (tiles.isEmpty) {
-      return _panelList([
-        _inlinePlaceholder('No date presets match your search'),
-      ]);
-    }
-
-    return _panelList(tiles);
-  }
-
-  Widget _buildCategoryPanel() {
-    final tiles = <Widget>[];
-
-    if (_matchesQuery('All categories')) {
-      tiles.add(
-        _buildSelectableCard(
-          selected: _selectedCategories.isEmpty,
-          leading: const Icon(Icons.all_inclusive_rounded, color: Colors.teal),
-          title: 'All categories',
-          subtitle: 'Show everything',
-          onTap: () {
-            setState(() => _selectedCategories = {});
-          },
-        ),
-      );
-    }
-
-    final filtered = _categoryOptions.where(_matchesQuery).toList();
-    for (final category in filtered) {
-      final selected = _selectedCategories.contains(category);
-      tiles.add(
-        _buildSelectableCard(
-          selected: selected,
-          leading: Icon(_categoryIcon(category), color: Colors.teal),
-          title: category,
-          onTap: () {
-            setState(() {
-              if (selected) {
-                _selectedCategories = {..._selectedCategories}..remove(category);
-              } else {
-                _selectedCategories = {..._selectedCategories, category};
-              }
-            });
-          },
-        ),
-      );
-    }
-
-    if (tiles.isEmpty) {
-      return _panelList([
-        _inlinePlaceholder('No categories match your search'),
-      ]);
-    }
-
-    return _panelList(tiles);
-  }
-
-  Widget _buildMerchantPanel() {
-    final tiles = <Widget>[
-      Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-        child: Wrap(
-          spacing: 8,
-          children: [
-            ChoiceChip(
-              label: const Text('Merchants'),
-              selected: _merchantMode == MerchantMode.brand,
-              onSelected: (_) => setState(() => _merchantMode = MerchantMode.brand),
-            ),
-            ChoiceChip(
-              label: const Text('People'),
-              selected: _merchantMode == MerchantMode.people,
-              onSelected: (_) => setState(() => _merchantMode = MerchantMode.people),
-            ),
-          ],
-        ),
-      ),
-    ];
-
-    if (_matchesQuery('All merchants')) {
-      tiles.add(
-        _buildSelectableCard(
-          selected: _selectedMerchants.isEmpty,
-          leading: const Icon(Icons.store_mall_directory_rounded, color: Colors.teal),
-          title: 'All merchants',
-          subtitle: 'Show everything',
-          onTap: () {
-            setState(() => _selectedMerchants = {});
-          },
-        ),
-      );
-    }
-
-    final source = _merchantMode == MerchantMode.brand
-        ? _brandMerchantTotals
-        : _peopleMerchantTotals;
-    final entries = source.entries.where((e) => _matchesQuery(e.key)).toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    for (final entry in entries) {
-      final key = entry.key.toUpperCase();
-      final selected = _selectedMerchants.contains(key);
-      tiles.add(
-        _buildSelectableCard(
-          selected: selected,
-          leading: _merchantAvatar(entry.key, isPerson: _merchantMode == MerchantMode.people),
-          title: _formatMerchant(entry.key),
-          subtitle: _formatAmount(entry.value),
-          onTap: () {
-            setState(() {
-              if (selected) {
-                _selectedMerchants = {..._selectedMerchants}..remove(key);
-              } else {
-                _selectedMerchants = {..._selectedMerchants, key};
-              }
-            });
-          },
-        ),
-      );
-    }
-
-    if (entries.isEmpty) {
-      tiles.add(_inlinePlaceholder('No ${_merchantMode == MerchantMode.brand ? 'merchants' : 'people'} match your search'));
-    }
-
-    return _panelList(tiles);
-  }
-
-  Widget _buildBankCardPanel() {
-    if (_bankOptions.isEmpty) {
-      return _panelCenterMessage('No banks detected');
-    }
-
-    final filteredBanks = _bankOptions.where((bank) {
-      if (_panelSearchQuery.isEmpty) return true;
-      final display = _displayBankName(bank).toLowerCase();
-      if (display.contains(_panelSearchQuery)) return true;
-      final cards = _bankToCards[bank] ?? {};
-      return cards.any((card) => '••$card'.toLowerCase().contains(_panelSearchQuery));
-    }).toList();
-
-    if (filteredBanks.isEmpty) {
-      return _panelList([
-        _inlinePlaceholder('No banks or cards match your search'),
-      ]);
-    }
-
-    final tiles = <Widget>[];
-    if (_matchesQuery('All banks')) {
-      tiles.add(
-        _buildSelectableCard(
-          selected: _selectedBanks.isEmpty,
-          leading: const Icon(Icons.account_balance_rounded, color: Colors.teal),
-          title: 'All banks',
-          subtitle: 'Show everything',
-          onTap: () {
-            setState(() => _selectedBanks = {});
-          },
-        ),
-      );
-    }
-
-    for (final bank in filteredBanks) {
-      final isBankSelected = _selectedBanks.contains(bank);
-      tiles.add(
-        _buildSelectableCard(
-          selected: isBankSelected,
-          leading: _bankLogo(
-            _displayBankName(bank),
-            network: _bankPrimaryNetworks[bank],
-            overrideLogo: _bankLogos[bank],
-            size: 40,
-          ),
-          title: _displayBankName(bank),
-          onTap: () {
-            setState(() {
-              if (isBankSelected) {
-                final updated = {..._selectedBanks};
-                updated.remove(bank);
-                updated.removeWhere((entry) => entry.startsWith('$bank|'));
-                _selectedBanks = updated;
-              } else {
-                _selectedBanks = {..._selectedBanks, bank};
-              }
-            });
-          },
-        ),
-      );
-
-      final cards = (_bankToCards[bank] ?? {})
-          .where((card) {
-            if (_panelSearchQuery.isEmpty) return true;
-            return '••$card'.toLowerCase().contains(_panelSearchQuery);
-          })
-          .toList()
-        ..sort();
-      for (final card in cards) {
-        final selectionKey = _encodeBankSelection(bank, card);
-        final selected = _selectedBanks.contains(selectionKey);
-        tiles.add(
-          Padding(
-            padding: const EdgeInsets.only(left: 18),
-            child: _buildSelectableCard(
-              selected: selected,
-              leading: _bankLogo(
-                _displayBankName(bank),
-                network: _cardNetworks[selectionKey] ?? _bankPrimaryNetworks[bank],
-                overrideLogo: _bankLogos[bank],
-                size: 36,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               ),
-              title: '••$card',
-              subtitle: _displayBankName(bank),
-              onTap: () {
-                setState(() {
-                  if (selected) {
-                    _selectedBanks = {..._selectedBanks}..remove(selectionKey);
-                  } else {
-                    _selectedBanks = {..._selectedBanks, selectionKey};
-                  }
-                });
-              },
+              child: const Text('Apply'),
             ),
-          ),
-        );
-      }
-    }
-
-    return _panelList(tiles);
-  }
-
-  Widget _buildFriendsPanel() {
-    if (_friends.isEmpty) {
-      return _panelCenterMessage('No friends added yet');
-    }
-    final filtered = _friends.where((friend) {
-      if (_panelSearchQuery.isEmpty) return true;
-      final name = friend.name.toLowerCase();
-      final phone = friend.phone.toLowerCase();
-      return name.contains(_panelSearchQuery) || phone.contains(_panelSearchQuery);
-    }).toList();
-    if (filtered.isEmpty) {
-      return _panelList([
-        _inlinePlaceholder('No friends match your search'),
-      ]);
-    }
-    final tiles = filtered
-        .map((friend) => _friendTile(friend, _friendPhones.contains(friend.phone)))
-        .toList();
-    return _panelList(tiles);
-  }
-
-  Widget _buildGroupsPanel() {
-    if (_groupOptions.isEmpty) {
-      return _panelCenterMessage('No groups yet');
-    }
-    final filtered = _groupOptions.where((groupId) {
-      if (_panelSearchQuery.isEmpty) return true;
-      final name = _groupNameForId(groupId).toLowerCase();
-      return name.contains(_panelSearchQuery) || groupId.toLowerCase().contains(_panelSearchQuery);
-    }).toList();
-    if (filtered.isEmpty) {
-      return _panelList([
-        _inlinePlaceholder('No groups match your search'),
-      ]);
-    }
-    final tiles = filtered
-        .map((groupId) => _groupTile(groupId, _groupsById[groupId], _groupIds.contains(groupId)))
-        .toList();
-    return _panelList(tiles);
-  }
-
-  Widget _buildSelectableCard({
-    required bool selected,
-    required Widget leading,
-    required String title,
-    String? subtitle,
-    VoidCallback? onTap,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      child: Card(
-        elevation: selected ? 4 : 1,
-        color: selected ? Fx.mint.withOpacity(0.12) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        child: ListTile(
-          leading: leading,
-          title: Text(title, overflow: TextOverflow.ellipsis),
-          subtitle: subtitle != null ? Text(subtitle) : null,
-          trailing: selected
-              ? const Icon(Icons.check_circle, color: Colors.teal)
-              : const Icon(Icons.circle_outlined, color: Colors.grey),
-          onTap: onTap,
-        ),
-      ),
-    );
-  }
-
-  Widget _friendTile(FriendModel friend, bool selected) {
-    Widget avatar;
-    final avatarValue = friend.avatar;
-    if (avatarValue.startsWith('http')) {
-      avatar = ClipOval(
-        child: Image.network(
-          avatarValue,
-          width: 36,
-          height: 36,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Center(
-            child: Text(
-              friend.name.isNotEmpty
-                  ? friend.name.characters.first.toUpperCase()
-                  : friend.phone.characters.first,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
-      );
-    } else if (avatarValue.trim().isNotEmpty && avatarValue.trim().length <= 2) {
-      avatar = Center(
-        child: Text(
-          avatarValue,
-          style: const TextStyle(fontSize: 18),
-        ),
-      );
-    } else if (avatarValue.trim().isNotEmpty) {
-      avatar = Center(
-        child: Text(
-          avatarValue.characters.first,
-          style: const TextStyle(fontSize: 18),
-        ),
-      );
-    } else {
-      avatar = Center(
-        child: Text(
-          friend.name.isNotEmpty
-              ? friend.name.characters.first.toUpperCase()
-              : friend.phone.characters.first,
-          style: const TextStyle(fontSize: 18),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      child: Card(
-        elevation: selected ? 4 : 1,
-        color: selected ? Fx.mint.withOpacity(0.12) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: ListTile(
-          leading: CircleAvatar(
-            radius: 18,
-            backgroundColor: Colors.teal.shade50,
-            child: avatar,
-          ),
-          title: Text(friend.name.isEmpty ? friend.phone : friend.name,
-              overflow: TextOverflow.ellipsis),
-          subtitle: friend.name.isNotEmpty ? Text(friend.phone, style: const TextStyle(fontSize: 12)) : null,
-          trailing: selected
-              ? const Icon(Icons.check_circle, color: Colors.teal)
-              : const Icon(Icons.circle_outlined, color: Colors.grey),
-          onTap: () {
-            setState(() {
-              if (selected) {
-                _friendPhones = {..._friendPhones}..remove(friend.phone);
-              } else {
-                _friendPhones = {..._friendPhones, friend.phone};
-              }
-            });
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _groupTile(String groupId, GroupModel? group, bool selected) {
-    final name = _groupNameForId(groupId);
-    final memberCount = group?.memberCount ?? 0;
-    final avatarUrl = group?.avatarUrl ?? '';
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      child: Card(
-        elevation: selected ? 4 : 1,
-        color: selected ? Fx.mint.withOpacity(0.12) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: ListTile(
-          leading: CircleAvatar(
-            radius: 18,
-            backgroundColor: Colors.teal.shade50,
-            backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-            child: avatarUrl.isEmpty
-                ? Text(
-                    name.isNotEmpty
-                        ? name.characters.first.toUpperCase()
-                        : 'G',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  )
-                : null,
-          ),
-          title: Text(name, overflow: TextOverflow.ellipsis),
-          subtitle: memberCount > 0
-              ? Text('$memberCount member${memberCount == 1 ? '' : 's'}',
-                  style: const TextStyle(fontSize: 12))
-              : null,
-          trailing: selected
-              ? const Icon(Icons.check_circle, color: Colors.teal)
-              : const Icon(Icons.circle_outlined, color: Colors.grey),
-          onTap: () {
-            setState(() {
-              if (selected) {
-                _groupIds = {..._groupIds}..remove(groupId);
-              } else {
-                _groupIds = {..._groupIds, groupId};
-              }
-            });
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _panelList(List<Widget> children) {
-    return Container(
-      color: Colors.white.withOpacity(0.96),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
-        children: children,
-      ),
-    );
-  }
-
-  Widget _panelCenterMessage(String message) {
-    return Container(
-      color: Colors.white.withOpacity(0.96),
-      alignment: Alignment.center,
-      child: Text(
-        message,
-        style: const TextStyle(color: Colors.grey),
-        textAlign: TextAlign.center,
-      ),
-    );
-  }
-
-  Widget _inlinePlaceholder(String message) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 32),
-      child: Center(
-        child: Text(
-          message,
-          style: const TextStyle(color: Colors.grey),
-          textAlign: TextAlign.center,
+          ],
         ),
       ),
     );
@@ -3490,9 +3140,6 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       _selectedBanks = {};
       _friendPhones = {};
       _groupIds = {};
-      _panelSearchQuery = '';
-      _merchantMode = MerchantMode.brand;
-      _panelSearchController.clear();
     });
   }
 
@@ -3509,23 +3156,6 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         groupIds: _groupIds,
       ),
     );
-  }
-
-  void _handleMenuTap(int index) {
-    setState(() {
-      _selectedCategoryIndex = index;
-      _panelSearchQuery = '';
-      _panelSearchController.clear();
-    });
-  }
-
-  void _updateSearch(String value) {
-    setState(() => _panelSearchQuery = value.trim().toLowerCase());
-  }
-
-  bool _matchesQuery(String text) {
-    if (_panelSearchQuery.isEmpty) return true;
-    return text.toLowerCase().contains(_panelSearchQuery);
   }
 
   String _normalizeBank(String? bank) {
@@ -3638,13 +3268,13 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
             .map((p) => p[0].toUpperCase())
             .join();
     return ColoredBox(
-      color: Colors.teal.shade50,
+      color: Colors.grey.shade200,
       child: Center(
         child: Text(
           initials,
           style: const TextStyle(
             fontWeight: FontWeight.w700,
-            color: Colors.teal,
+            color: Colors.black87,
           ),
         ),
       ),
@@ -3704,48 +3334,15 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     final start = _customRange!.start;
     final end = _customRange!.end;
     final now = DateTime.now();
-    final yesterday =
-        DateTime(now.year, now.month, now.day).subtract(const Duration(days: 1));
+    final yesterday = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 1));
     return DateUtils.isSameDay(start, yesterday) && DateUtils.isSameDay(end, yesterday);
-  }
-
-  bool _isPresetSelected(String token) {
-    switch (token) {
-      case 'Day':
-      case 'D':
-        return (_periodToken == 'Day' || _periodToken == 'D') && _customRange == null;
-      case '2D':
-        return _periodToken == '2D' && _customRange == null;
-      case 'Week':
-      case 'W':
-        return (_periodToken == 'Week' || _periodToken == 'W') && _customRange == null;
-      case 'Month':
-      case 'M':
-        return (_periodToken == 'Month' || _periodToken == 'M') && _customRange == null;
-      case 'Last Month':
-      case 'LM':
-        return (_periodToken == 'Last Month' || _periodToken == 'LM') && _customRange == null;
-      case 'Quarter':
-      case 'Q':
-        return (_periodToken == 'Quarter' || _periodToken == 'Q') && _customRange == null;
-      case 'Year':
-      case 'Y':
-        return (_periodToken == 'Year' || _periodToken == 'Y') && _customRange == null;
-      case 'All':
-        return _periodToken == 'All' && _customRange == null;
-      case 'Yesterday':
-        return _isYesterdaySelected();
-      default:
-        return false;
-    }
   }
 
   Future<void> _pickCustomRange() async {
     final now = DateTime.now();
     final initial = _customRange ??
         DateTimeRange(
-          start: DateTime(now.year, now.month, now.day)
-              .subtract(const Duration(days: 6)),
+          start: DateTime(now.year, now.month, now.day).subtract(const Duration(days: 6)),
           end: DateTime(now.year, now.month, now.day),
         );
     final result = await showDateRangePicker(
@@ -3777,51 +3374,15 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     } else {
       final friend = _matchFriendForMerchant(merchant);
       if (friend != null) {
-        final avatarVal = friend.avatar;
-        if (avatarVal.startsWith('http')) {
-          return ClipOval(
-            child: Image.network(
-              avatarVal,
-              width: 36,
-              height: 36,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _bankLogoFallback(friend.name),
-            ),
-          );
-        }
-        if (avatarVal.trim().isNotEmpty) {
-          return CircleAvatar(
-            radius: 18,
-            backgroundColor: Colors.teal.shade50,
-            child: Text(
-              avatarVal.length <= 2
-                  ? avatarVal
-                  : avatarVal.characters.first,
-              style: const TextStyle(fontSize: 18),
-            ),
-          );
-        }
-        return CircleAvatar(
-          radius: 18,
-          backgroundColor: Colors.teal.shade50,
-          child: Text(
-            friend.name.isNotEmpty
-                ? friend.name.characters.first.toUpperCase()
-                : friend.phone.characters.first,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-        );
+        return _friendAvatar(friend);
       }
     }
-
     return CircleAvatar(
       radius: 18,
-      backgroundColor: Colors.teal.shade50,
+      backgroundColor: Colors.grey.shade200,
       child: Text(
-        merchant.isNotEmpty
-            ? merchant.characters.first.toUpperCase()
-            : 'M',
-        style: const TextStyle(fontWeight: FontWeight.bold),
+        merchant.isNotEmpty ? merchant.characters.first.toUpperCase() : 'M',
+        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
       ),
     );
   }
