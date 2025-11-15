@@ -1033,7 +1033,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return RefreshIndicator(
       onRefresh: () async => _recompute(),
       child: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        padding: const EdgeInsets.fromLTRB(8, 16, 8, 20),
         children: [
           _SummaryRingCard(
             spent: periodTotalExpense,
@@ -1333,9 +1333,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             child: CustomDiamondCard(
               borderRadius: 26,
               padding: const EdgeInsets.all(10),
-              glassGradient: [
-                Colors.white.withOpacity(0.19),
-                Colors.white.withOpacity(0.08)
+              glassGradient: const [
+                Colors.white,
+                Colors.white,
               ],
               child: Column(
                 children: [
@@ -1480,9 +1480,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 'day-${_selectedDay?.toIso8601String() ?? ''}-${_expensesForSelectedDay.length}-${_transactionPanelKey()}',
               ),
               borderRadius: 24,
-              glassGradient: [
-                Colors.white.withOpacity(0.23),
-                Colors.white.withOpacity(0.09)
+              glassGradient: const [
+                Colors.white,
+                Colors.white,
               ],
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
               child: UnifiedTransactionList(
@@ -2248,87 +2248,90 @@ class _SummaryRingCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(24),
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: 92,
-                height: 92,
-                child: PieChart(
-                  PieChartData(
-                    sectionsSpace: 0,
-                    centerSpaceRadius: 34,
-                    startDegreeOffset: -90,
-                    sections: [
-                      PieChartSectionData(
-                        value: chartSpent,
-                        color: Fx.mintDark,
-                        title: '',
-                        radius: 44,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 140),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 96,
+                  height: 96,
+                  child: PieChart(
+                    PieChartData(
+                      sectionsSpace: 0,
+                      centerSpaceRadius: 30,
+                      startDegreeOffset: -90,
+                      sections: [
+                        PieChartSectionData(
+                          value: chartSpent,
+                          color: Fx.mintDark,
+                          title: '',
+                          radius: 40,
+                        ),
+                        PieChartSectionData(
+                          value: chartIncome,
+                          color: Fx.mint.withOpacity(0.24),
+                          title: '',
+                          radius: 40,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            backgroundColor: Colors.grey[100],
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                          ),
+                          onPressed: onTapPeriod,
+                          child: Text(
+                            periodLabel,
+                            style: Fx.label.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
                       ),
-                      PieChartSectionData(
-                        value: chartIncome,
-                        color: Fx.mint.withOpacity(0.24),
-                        title: '',
-                        radius: 44,
+                      const SizedBox(height: 10),
+                      Text(
+                        formatter.format(spentValue),
+                        style: spentStyle,
+                        textAlign: TextAlign.right,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        formatter.format(incomeValue),
+                        style: incomeStyle,
+                        textAlign: TextAlign.right,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Banks: $bankCount · Cards: $cardCount · Tx: $txCount',
+                        style: Fx.label.copyWith(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.right,
                       ),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          backgroundColor: Colors.grey[100],
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
-                        onPressed: onTapPeriod,
-                        child: Text(
-                          periodLabel,
-                          style: Fx.label.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      formatter.format(spentValue),
-                      style: spentStyle,
-                      textAlign: TextAlign.right,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      formatter.format(incomeValue),
-                      style: incomeStyle,
-                      textAlign: TextAlign.right,
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Banks: $bankCount · Cards: $cardCount · Tx: $txCount',
-                      style: Fx.label.copyWith(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
-                      ),
-                      textAlign: TextAlign.right,
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -2506,6 +2509,15 @@ class ExpenseFiltersScreen extends StatefulWidget {
   State<ExpenseFiltersScreen> createState() => _ExpenseFiltersScreenState();
 }
 
+enum FilterSection {
+  date,
+  categories,
+  merchant,
+  bankCards,
+  friends,
+  groups,
+}
+
 class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
   late String _periodToken;
   DateTimeRange? _customRange;
@@ -2514,6 +2526,7 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
   late Set<String> _selectedBanks;
   late Set<String> _friendPhones;
   late Set<String> _groupIds;
+  FilterSection _selectedSection = FilterSection.date;
 
   late final List<String> _categoryOptions;
   late final Map<String, Set<String>> _bankToCards;
@@ -2666,24 +2679,100 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         elevation: 0.5,
         iconTheme: const IconThemeData(color: Colors.black),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildDateSection(),
-          const Divider(height: 32),
-          _buildCategorySection(),
-          const Divider(height: 32),
-          _buildMerchantSection(),
-          const Divider(height: 32),
-          _buildBankCardsSection(),
-          const Divider(height: 32),
-          _buildFriendsSection(),
-          const Divider(height: 32),
-          _buildGroupsSection(),
+          SizedBox(
+            width: 150,
+            child: Container(
+              color: Colors.white,
+              child: _buildLeftMenu(),
+            ),
+          ),
+          SizedBox(
+            height: double.infinity,
+            child: VerticalDivider(
+              width: 1,
+              thickness: 1,
+              color: Colors.grey.shade300,
+            ),
+          ),
+          Expanded(child: _buildRightPanel()),
         ],
       ),
       bottomNavigationBar: _buildBottomBar(),
     );
+  }
+
+  Widget _buildLeftMenu() {
+    const items = <FilterSection, String>{
+      FilterSection.date: 'Date / Period',
+      FilterSection.categories: 'Categories',
+      FilterSection.merchant: 'Merchant',
+      FilterSection.bankCards: 'Bank & Cards',
+      FilterSection.friends: 'Friends',
+      FilterSection.groups: 'Groups',
+    };
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(8, 12, 8, 96),
+      children: items.entries.map((entry) {
+        final section = entry.key;
+        final label = entry.value;
+        final bool selected = _selectedSection == section;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            title: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? Colors.black : Colors.black54,
+              ),
+            ),
+            selected: selected,
+            selectedTileColor: Colors.grey.shade200,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            onTap: () {
+              setState(() {
+                _selectedSection = section;
+              });
+            },
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildRightPanel() {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 200),
+      child: SingleChildScrollView(
+        key: ValueKey<FilterSection>(_selectedSection),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+        child: _buildSectionContent(_selectedSection),
+      ),
+    );
+  }
+
+  Widget _buildSectionContent(FilterSection section) {
+    switch (section) {
+      case FilterSection.date:
+        return _buildDateSection();
+      case FilterSection.categories:
+        return _buildCategorySection();
+      case FilterSection.merchant:
+        return _buildMerchantSection();
+      case FilterSection.bankCards:
+        return _buildBankCardsSection();
+      case FilterSection.friends:
+        return _buildFriendsSection();
+      case FilterSection.groups:
+        return _buildGroupsSection();
+    }
   }
 
   Widget _buildSectionTitle(String title) {
@@ -2833,7 +2922,7 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionTitle('Merchants'),
+        _buildSectionTitle('Merchant'),
         const SizedBox(height: 6),
         CheckboxListTile(
           dense: true,
