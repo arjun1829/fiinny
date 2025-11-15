@@ -1295,14 +1295,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 onDelete: (tx) async {
                   if (_multiSelectMode) return;
                   if (tx is ExpenseItem) {
-                  await ExpenseService()
-                      .deleteExpense(widget.userPhone, tx.id);
-                } else if (tx is IncomeItem) {
-                  await IncomeService()
-                      .deleteIncome(widget.userPhone, tx.id);
-                }
-                _recompute();
-              },
+                    await ExpenseService()
+                        .deleteExpense(widget.userPhone, tx.id);
+                  } else if (tx is IncomeItem) {
+                    await IncomeService()
+                        .deleteIncome(widget.userPhone, tx.id);
+                  }
+                  _recompute();
+                },
               onSplit: (tx) async {
                 if (_multiSelectMode) return;
                 if (tx is ExpenseItem) {
