@@ -1265,8 +1265,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 showBillIcon: true,
                 multiSelectEnabled: _multiSelectMode,
                 selectedIds: _selectedTxIds,
-
-
                 onSelectTx: (txId, selected) {
                   setState(() {
                     if (selected) {
@@ -1291,7 +1289,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     _recompute();
                   }
                 },
-
                 onDelete: (tx) async {
                   if (_multiSelectMode) return;
                   if (tx is ExpenseItem) {
@@ -1303,22 +1300,23 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   }
                   _recompute();
                 },
-              onSplit: (tx) async {
-                if (_multiSelectMode) return;
-                if (tx is ExpenseItem) {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => EditExpenseScreen(
-                        userPhone: widget.userPhone,
-                        expense: tx,
-                        initialStep: 1,
+                onSplit: (tx) async {
+                  if (_multiSelectMode) return;
+                  if (tx is ExpenseItem) {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => EditExpenseScreen(
+                          userPhone: widget.userPhone,
+                          expense: tx,
+                          initialStep: 1,
+                        ),
                       ),
-                    ),
-                  );
-                  _recompute();
-                }
-              },
+                    );
+                    _recompute();
+                  }
+                },
+                ),
             ),
           ),
         ],
