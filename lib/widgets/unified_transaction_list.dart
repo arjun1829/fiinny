@@ -305,15 +305,59 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   String? _merchantLogoAsset(String? merchant) {
     if (merchant == null) return null;
     final m = merchant.toLowerCase();
+
+    // Subscriptions & entertainment
+    if (m.contains('prime') && m.contains('video')) {
+      return 'assets/brands/prime_video.png';
+    }
+    if (m.contains('netflix')) return 'assets/brands/netflix.png';
+    if (m.contains('disney') || m.contains('hotstar')) {
+      return m.contains('hotstar')
+          ? 'assets/brands/hotstar.png'
+          : 'assets/brands/disney_plus.png';
+    }
+    if (m.contains('spotify')) return 'assets/brands/spotify.png';
+    if (m.contains('youtube') && m.contains('premium')) {
+      return 'assets/brands/youtube_premium.png';
+    }
+    if (m.contains('sonyliv') || (m.contains('sony') && m.contains('liv'))) {
+      return 'assets/brands/sonyliv.png';
+    }
+    if (m.contains('zee5')) return 'assets/brands/zee5.png';
+
+    // Ecommerce / shopping
     if (m.contains('amazon')) return 'assets/brands/amazon.png';
-    if (m.contains('zomato')) return 'assets/brands/zomato.png';
-    if (m.contains('swiggy')) return 'assets/brands/swiggy.png';
-    if (m.contains('uber')) return 'assets/brands/uber.png';
-    if (m.contains('bigbasket')) return 'assets/brands/bigbasket.png';
+    if (m.contains('flipkart')) return 'assets/brands/flipkart_plus.png';
     if (m.contains('myntra')) return 'assets/brands/myntra.png';
     if (m.contains('nykaa')) return 'assets/brands/nykaa.png';
     if (m.contains('ajio')) return 'assets/brands/ajio.png';
-    if (m.contains('flipkart')) return 'assets/brands/flipkart.png';
+
+    // Food & grocery
+    if (m.contains('zomato')) return 'assets/brands/zomato_gold.png';
+    if (m.contains('swiggy')) return 'assets/brands/swiggy_one.png';
+    if (m.contains('bigbasket')) return 'assets/brands/bigbasket.png';
+
+    // Mobility
+    if (m.contains('uber')) return 'assets/brands/uber.png';
+
+    // Productivity / SaaS
+    if (m.contains('notion')) return 'assets/brands/notion.png';
+    if (m.contains('slack')) return 'assets/brands/slack.png';
+    if (m.contains('dropbox')) return 'assets/brands/dropbox.png';
+    if (m.contains('onedrive')) return 'assets/brands/onedrive.png';
+    if (m.contains('icloud')) return 'assets/brands/icloud.png';
+    if (m.contains('googleone') || m.contains('google one')) {
+      return 'assets/brands/google_one.png';
+    }
+    if (m.contains('microsoft') || m.contains('office') || m.contains('365')) {
+      return 'assets/brands/microsoft_365.png';
+    }
+    if (m.contains('adobe')) return 'assets/brands/adobe_cc.png';
+
+    // Rent & home
+    if (m.contains('rentomojo')) return 'assets/brands/rentomojo.png';
+    if (m.contains('rent')) return 'assets/brands/rent.png';
+
     return null;
   }
 
@@ -854,9 +898,11 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           height: height,
           child: Padding(
             padding: const EdgeInsets.all(18.0),
-            child: ListView(
-              shrinkWrap: true,
-              children: [
+            child: DefaultTextStyle.merge(
+              style: const TextStyle(color: Colors.black),
+              child: ListView(
+                shrinkWrap: true,
+                children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -969,7 +1015,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                     TextButton(child: const Text("Close"), onPressed: () => Navigator.pop(context)),
                   ],
                 ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -1020,9 +1067,11 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           height: height,
           child: Padding(
             padding: const EdgeInsets.all(18.0),
-            child: ListView(
-              shrinkWrap: true,
-              children: [
+            child: DefaultTextStyle.merge(
+              style: const TextStyle(color: Colors.black),
+              child: ListView(
+                shrinkWrap: true,
+                children: [
                 Center(
                   child: Icon(
                     getCategoryIcon(_legacyResolvedCategory(item, isIncome: isIncome), isIncome: isIncome),
@@ -1122,7 +1171,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                     TextButton(child: const Text("Close"), onPressed: () => Navigator.pop(context)),
                   ],
                 ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -1647,35 +1697,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             );
             final rowChips = <Widget>[];
             if (labels.isNotEmpty) {
-              rowChips.addAll(labels.take(3).map((l) => Chip(
-                    label: Text(
-                      '#$l',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    backgroundColor: Colors.teal.withOpacity(0.10),
-                    visualDensity: VisualDensity.compact,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  )));
+              rowChips.addAll(labels.take(3).map((l) => _chip('#$l')));
               if (labels.length > 3) {
-                rowChips.add(
-                  Chip(
-                    label: Text(
-                      '+${labels.length - 3}',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                    ),
-                    backgroundColor: Colors.teal.withOpacity(0.08),
-                    visualDensity: VisualDensity.compact,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                );
+                rowChips.add(_chip('+${labels.length - 3}'));
               }
             }
             if (sourceLabel != null) {
@@ -2000,12 +2024,18 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
   Widget _chip(String label) {
     return Chip(
-      label: Text(label,
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black87)),
-      backgroundColor: Colors.blueGrey.withOpacity(0.12),
-      visualDensity: VisualDensity.compact,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+      label: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: Colors.black87,
+        ),
+      ),
+      backgroundColor: Colors.blueGrey.withOpacity(0.10),
+      visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
