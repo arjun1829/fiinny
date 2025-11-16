@@ -21,102 +21,122 @@ class CategoryGuess {
 }
 
 class CategoryRules {
+  /// Canonical taxonomy (main category → subcategories)
+  /// 1. Fund Transfers → {Fund Transfers - Others, Cash Withdrawals, Remittance}
+  /// 2. Payments → {Loans/EMIs, Fuel, Mobile bill, Auto Service, Bills / Utility,
+  ///    Credit card, Logistics, Payment others, Rental and realestate, Wallet payment}
+  /// 3. Shopping → {groceries and consumables, electronics, apparel,
+  ///    books and stationery, ecommerce, fitness, gift,
+  ///    home furnishing and gaming, jewellery and accessories,
+  ///    personal care, shopping others}
+  /// 4. Travel → {car rental, travel and tours, travel others, accommodation,
+  ///    airlines, cab/bike services, forex, railways}
+  /// 5. Food → {restaurants, alcohol, food delivery, food others}
+  /// 6. Entertainment → {OTT services, gaming, movies, music,
+  ///    entertainment others}
+  /// 7. Others → {others, business services, bank charges, cheque reject,
+  ///    government services, Tax payments}
+  /// 8. Healthcare → {medicine/pharma, healthcare others, hospital}
+  /// 9. Education → {Education}
+  /// 10. Investments → {Mutual Fund – SIP, Mutual Fund – Lumpsum,
+  ///     Stocks / Brokerage, Investments – Others}
+
   // -------------------- Canonical map --------------------
   // brand/keyword -> [category, subcategory, tags]
   static const Map<String, List<dynamic>> _brandMap = {
     // OTT & Subscriptions
-    'NETFLIX': ['Subscriptions', 'OTT', ['ott','subscription']],
-    'AMAZON PRIME': ['Subscriptions', 'OTT', ['ott','subscription']],
-    'PRIME VIDEO': ['Subscriptions', 'OTT', ['ott','subscription']],
-    'HOTSTAR': ['Subscriptions', 'OTT', ['ott','subscription']],
-    'DISNEY+ HOTSTAR': ['Subscriptions', 'OTT', ['ott','subscription']],
-    'SONYLIV': ['Subscriptions', 'OTT', ['ott','subscription']],
-    'ZEE5': ['Subscriptions', 'OTT', ['ott','subscription']],
-    'SPOTIFY': ['Subscriptions', 'Music', ['music','subscription']],
-    'YOUTUBE PREMIUM': ['Subscriptions', 'OTT', ['ott','subscription']],
-    'APPLE.COM/BILL': ['Subscriptions', 'Apps', ['apple','subscription']],
-    'APPLE': ['Subscriptions', 'Apps', ['apple','subscription']],
-    'ADOBE': ['Subscriptions', 'SaaS', ['saas','subscription']],
-    'MICROSOFT': ['Subscriptions', 'SaaS', ['saas','subscription']],
+    'NETFLIX': ['Entertainment', 'OTT services', ['ott','subscription']],
+    'AMAZON PRIME': ['Entertainment', 'OTT services', ['ott','subscription']],
+    'PRIME VIDEO': ['Entertainment', 'OTT services', ['ott','subscription']],
+    'HOTSTAR': ['Entertainment', 'OTT services', ['ott','subscription']],
+    'DISNEY+ HOTSTAR': ['Entertainment', 'OTT services', ['ott','subscription']],
+    'SONYLIV': ['Entertainment', 'OTT services', ['ott','subscription']],
+    'ZEE5': ['Entertainment', 'OTT services', ['ott','subscription']],
+    'SPOTIFY': ['Entertainment', 'music', ['music','subscription']],
+    'YOUTUBE PREMIUM': ['Entertainment', 'OTT services', ['ott','subscription']],
+    'APPLE.COM/BILL': ['Entertainment', 'entertainment others', ['apple','subscription']],
+    'APPLE': ['Entertainment', 'entertainment others', ['apple','subscription']],
+    'ADOBE': ['Payments', 'Payment others', ['saas','subscription']],
+    'MICROSOFT': ['Payments', 'Payment others', ['saas','subscription']],
 
     // Telecom / Internet / DTH
-    'JIO': ['Utilities', 'Telecom', ['telecom']],
-    'AIRTEL': ['Utilities', 'Telecom', ['telecom']],
-    'VI': ['Utilities', 'Telecom', ['telecom']],
-    'BSNL': ['Utilities', 'Telecom', ['telecom']],
-    'HATHWAY': ['Utilities', 'Broadband', ['broadband']],
-    'ACT FIBERNET': ['Utilities', 'Broadband', ['broadband']],
-    'JIOFIBER': ['Utilities', 'Broadband', ['broadband']],
-    'AIRTEL XSTREAM': ['Utilities', 'Broadband', ['broadband']],
-    'TATA PLAY': ['Utilities', 'DTH', ['dth']],
-    'SUN DIRECT': ['Utilities', 'DTH', ['dth']],
+    'JIO': ['Payments', 'Mobile bill', ['telecom']],
+    'AIRTEL': ['Payments', 'Mobile bill', ['telecom']],
+    'VI': ['Payments', 'Mobile bill', ['telecom']],
+    'BSNL': ['Payments', 'Mobile bill', ['telecom']],
+    'HATHWAY': ['Payments', 'Bills / Utility', ['broadband']],
+    'ACT FIBERNET': ['Payments', 'Bills / Utility', ['broadband']],
+    'JIOFIBER': ['Payments', 'Bills / Utility', ['broadband']],
+    'AIRTEL XSTREAM': ['Payments', 'Bills / Utility', ['broadband']],
+    'TATA PLAY': ['Payments', 'Bills / Utility', ['dth']],
+    'SUN DIRECT': ['Payments', 'Bills / Utility', ['dth']],
 
     // Food & Groceries
-    'ZOMATO': ['Food & Drink', 'Delivery', ['food']],
-    'SWIGGY': ['Food & Drink', 'Delivery', ['food']],
-    'DOMINOS': ['Food & Drink', 'Restaurants', ['food']],
-    'MCDONALD': ['Food & Drink', 'Restaurants', ['food']],
-    'KFC': ['Food & Drink', 'Restaurants', ['food']],
-    'BIGBASKET': ['Groceries', 'Delivery', ['groceries']],
-    'BLINKIT': ['Groceries', 'Quick Commerce', ['groceries']],
-    'ZEPTO': ['Groceries', 'Quick Commerce', ['groceries']],
-    'DMART': ['Groceries', 'Hypermarket', ['groceries']],
+    'ZOMATO': ['Food', 'food delivery', ['food']],
+    'SWIGGY': ['Food', 'food delivery', ['food']],
+    'DOMINOS': ['Food', 'restaurants', ['food']],
+    'MCDONALD': ['Food', 'restaurants', ['food']],
+    'KFC': ['Food', 'restaurants', ['food']],
+    'BIGBASKET': ['Shopping', 'groceries and consumables', ['groceries']],
+    'BLINKIT': ['Shopping', 'groceries and consumables', ['groceries']],
+    'ZEPTO': ['Shopping', 'groceries and consumables', ['groceries']],
+    'DMART': ['Shopping', 'groceries and consumables', ['groceries']],
 
     // Shopping
-    'AMAZON': ['Shopping', 'Marketplace', ['shopping']],
-    'FLIPKART': ['Shopping', 'Marketplace', ['shopping']],
-    'MYNTRA': ['Shopping', 'Fashion', ['shopping']],
-    'AJIO': ['Shopping', 'Fashion', ['shopping']],
-    'MEESHO': ['Shopping', 'Marketplace', ['shopping']],
-    'NYKAA': ['Shopping', 'Beauty', ['shopping']],
-    'TATA CLIQ': ['Shopping', 'Marketplace', ['shopping']],
+    'AMAZON': ['Shopping', 'ecommerce', ['shopping']],
+    'FLIPKART': ['Shopping', 'ecommerce', ['shopping']],
+    'MYNTRA': ['Shopping', 'apparel', ['shopping']],
+    'AJIO': ['Shopping', 'apparel', ['shopping']],
+    'MEESHO': ['Shopping', 'ecommerce', ['shopping']],
+    'NYKAA': ['Shopping', 'personal care', ['shopping']],
+    'TATA CLIQ': ['Shopping', 'ecommerce', ['shopping']],
 
     // Travel & Transport
-    'IRCTC': ['Travel', 'Rail', ['travel']],
-    'REDBUS': ['Travel', 'Bus', ['travel']],
-    'MAKEMYTRIP': ['Travel', 'Agency', ['travel']],
-    'YATRA': ['Travel', 'Agency', ['travel']],
-    'IXIGO': ['Travel', 'Agency', ['travel']],
-    'INDIGO': ['Travel', 'Air', ['travel']],
-    'VISTARA': ['Travel', 'Air', ['travel']],
-    'AIR INDIA': ['Travel', 'Air', ['travel']],
-    'OLA': ['Transport', 'Ride-hailing', ['mobility']],
-    'UBER': ['Transport', 'Ride-hailing', ['mobility']],
-    'RAPIDO': ['Transport', 'Ride-hailing', ['mobility']],
+    'IRCTC': ['Travel', 'railways', ['travel']],
+    'REDBUS': ['Travel', 'travel and tours', ['travel']],
+    'MAKEMYTRIP': ['Travel', 'travel and tours', ['travel']],
+    'YATRA': ['Travel', 'travel and tours', ['travel']],
+    'IXIGO': ['Travel', 'travel and tours', ['travel']],
+    'INDIGO': ['Travel', 'airlines', ['travel']],
+    'VISTARA': ['Travel', 'airlines', ['travel']],
+    'AIR INDIA': ['Travel', 'airlines', ['travel']],
+    'OLA': ['Travel', 'cab/bike services', ['mobility']],
+    'UBER': ['Travel', 'cab/bike services', ['mobility']],
+    'RAPIDO': ['Travel', 'cab/bike services', ['mobility']],
 
     // Entertainment
-    'BOOKMYSHOW': ['Entertainment', 'Events', ['entertainment']],
-    'BIGTREE': ['Entertainment', 'Events', ['entertainment']],
-    'PVR': ['Entertainment', 'Movies', ['entertainment']],
-    'INOX': ['Entertainment', 'Movies', ['entertainment']],
+    'BOOKMYSHOW': ['Entertainment', 'movies', ['entertainment']],
+    'BIGTREE': ['Entertainment', 'movies', ['entertainment']],
+    'PVR': ['Entertainment', 'movies', ['entertainment']],
+    'INOX': ['Entertainment', 'movies', ['entertainment']],
 
-    // Health
-    'APOLLO': ['Health', 'Pharmacy/Clinic', ['health']],
-    '1MG': ['Health', 'Pharmacy', ['health']],
-    'PHARMEASY': ['Health', 'Pharmacy', ['health']],
+    // Healthcare
+    'APOLLO': ['Healthcare', 'medicine/pharma', ['health']],
+    '1MG': ['Healthcare', 'medicine/pharma', ['health']],
+    'PHARMEASY': ['Healthcare', 'medicine/pharma', ['health']],
 
     // Education
-    'BYJUS': ['Education', 'Online', ['education']],
-    'UNACADEMY': ['Education', 'Online', ['education']],
+    'BYJUS': ['Education', 'Education', ['education']],
+    'UNACADEMY': ['Education', 'Education', ['education']],
 
     // Fuel
-    'HPCL': ['Fuel', 'Fuel', ['fuel']],
-    'BPCL': ['Fuel', 'Fuel', ['fuel']],
-    'IOCL': ['Fuel', 'Fuel', ['fuel']],
+    'HPCL': ['Payments', 'Fuel', ['fuel']],
+    'BPCL': ['Payments', 'Fuel', ['fuel']],
+    'IOCL': ['Payments', 'Fuel', ['fuel']],
 
     // Investments / Brokers / MFs
-    'ZERODHA': ['Investments', 'Brokerage', ['investments','brokerage']],
-    'GROWW': ['Investments', 'Brokerage', ['investments','brokerage']],
-    'UPSTOX': ['Investments', 'Brokerage', ['investments','brokerage']],
-    'ANGEL': ['Investments', 'Brokerage', ['investments','brokerage']],
-    'PAYTM MONEY': ['Investments', 'Brokerage', ['investments','brokerage']],
-    'ICICI DIRECT': ['Investments', 'Brokerage', ['investments','brokerage']],
-    'HDFC SEC': ['Investments', 'Brokerage', ['investments','brokerage']],
-    'SBI MUTUAL FUND': ['Investments', 'Mutual Funds', ['investments','mf']],
-    'HDFC MUTUAL FUND': ['Investments', 'Mutual Funds', ['investments','mf']],
-    'AXIS MUTUAL FUND': ['Investments', 'Mutual Funds', ['investments','mf']],
-    'NIPPON': ['Investments', 'Mutual Funds', ['investments','mf']],
-    'KOTAK MUTUAL FUND': ['Investments', 'Mutual Funds', ['investments','mf']],
+    'ZERODHA': ['Investments', 'Stocks / Brokerage', ['investments','brokerage']],
+    'GROWW': ['Investments', 'Stocks / Brokerage', ['investments','brokerage']],
+    'UPSTOX': ['Investments', 'Stocks / Brokerage', ['investments','brokerage']],
+    'ANGEL': ['Investments', 'Stocks / Brokerage', ['investments','brokerage']],
+    'PAYTM MONEY': ['Investments', 'Stocks / Brokerage', ['investments','brokerage']],
+    'ICICI DIRECT': ['Investments', 'Stocks / Brokerage', ['investments','brokerage']],
+    'HDFC SEC': ['Investments', 'Stocks / Brokerage', ['investments','brokerage']],
+    'SBI MUTUAL FUND': ['Investments', 'Mutual Fund – Lumpsum', ['investments','mf']],
+    'HDFC MUTUAL FUND': ['Investments', 'Mutual Fund – Lumpsum', ['investments','mf']],
+    'AXIS MUTUAL FUND': ['Investments', 'Mutual Fund – Lumpsum', ['investments','mf']],
+    'NIPPON': ['Investments', 'Mutual Fund – Lumpsum', ['investments','mf']],
+    'KOTAK MUTUAL FUND': ['Investments', 'Mutual Fund – Lumpsum', ['investments','mf']],
   };
 
   // -------------------- Public API (backward compatible) --------------------
@@ -148,48 +168,43 @@ class CategoryRules {
     // Subscriptions / Autopay
     if (_has(t, r'\b(auto[-\s]?debit|autopay|subscription|renew(al)?|membership|plan)\b') ||
         tags.contains('subscription')) {
-      return const CategoryGuess('Subscriptions', 'General', 0.9, ['subscription','autopay']);
+      return const CategoryGuess('Payments', 'Payment others', 0.9, ['subscription','autopay']);
     }
 
     // EMI / Loans
     if (_has(t, r'\b(EMI|LOAN|NACH|ECS|MANDATE)\b') || tags.contains('loan_emi')) {
-      final lender = detectLoanLender(text) ?? 'Loan';
-      return CategoryGuess('EMI & Loans', lender, 0.9, ['loan_emi']);
+      return const CategoryGuess('Payments', 'Loans/EMIs', 0.9, ['loan_emi']);
     }
 
     // Fees & Charges
     if (_has(t, r'\b(convenience\s*fee|gst|markup|surcharge|penalty|late\s*fee|processing\s*fee|charge)\b') ||
         tags.contains('fee') || tags.contains('charges')) {
-      // If this looks card-specific, mark as Credit Card Charges; else generic.
       final ccish = _has(t, r'\b(credit\s*card|cc\s*txn|cc\s*transaction|visa|mastercard|rupay|amex|diners)\b');
-      return CategoryGuess(
-        ccish ? 'Credit Cards' : 'Fees & Charges',
-        ccish ? 'Card Charges' : 'General',
-        0.85,
-        ['fee'],
-      );
+      if (ccish) {
+        return const CategoryGuess('Payments', 'Credit card', 0.85, ['fee','bank charges']);
+      }
+      return const CategoryGuess('Others', 'bank charges', 0.85, ['fee','bank charges']);
     }
 
     // UPI transfers
     if ((instrument ?? '').toUpperCase().contains('UPI') || _has(t, r'\b(UPI|VPA)\b')) {
-      // If words like salary/refund present -> may still be income/expense specific.
-      return const CategoryGuess('Transfers', 'UPI', 0.8, ['upi']);
+      return const CategoryGuess('Fund Transfers', 'Fund Transfers - Others', 0.8, ['upi']);
     }
 
     // Credit card bill payment acknowledgements
     if (_has(t, r'\b(credit\s*card).*(bill|due|payment)\b') ||
         _has(t, r'\b(statement|total\s*due|min(imum)?\s*due|due\s*date)\b')) {
-      return const CategoryGuess('Credit Cards', 'Bill', 0.85, ['bill','credit_card_bill']);
+      return const CategoryGuess('Payments', 'Credit card', 0.85, ['bill','credit card']);
     }
 
     // Recharges / DTH / Telecom
     if (_has(t, r'\b(recharge|prepaid|dth|pack|data\s*pack|mobile\s*bill)\b')) {
-      return const CategoryGuess('Utilities', 'Telecom', 0.8, ['telecom','recharge']);
+      return const CategoryGuess('Payments', 'Mobile bill', 0.8, ['telecom','recharge']);
     }
 
     // Utilities (Electricity/Water/Gas)
     if (_has(t, r'\b(bill\s*payment|electric(ity)?|water\s*bill|gas\s*bill|power\s*bill|mseb|bescom|tneb|bses|torrent|adani|tata\s*power)\b')) {
-      return const CategoryGuess('Utilities', 'Bills', 0.75, ['utilities']);
+      return const CategoryGuess('Payments', 'Bills / Utility', 0.75, ['utilities']);
     }
 
     // Fuel (petrol/diesel pumps + brand aliases)
@@ -217,63 +232,90 @@ class CategoryRules {
         merchantUpper.contains('NAYARA') ||
         merchantUpper.contains('JIO-BP');
     if (fuelHit) {
-      return const CategoryGuess('Fuel', 'Petrol/Diesel', 0.95, ['fuel', 'transport']);
+      return const CategoryGuess('Payments', 'Fuel', 0.95, ['fuel','transport']);
     }
 
     // Travel / Tickets / Hotels
-    if (_has(t, r'\b(irctc|redbus|yatra|ixigo|makemytrip|flight|air(?:line)?|hotel|booking\.com)\b')) {
-      return const CategoryGuess('Travel', 'General', 0.8, ['travel']);
+    final travelHit = _has(t, r'\b(irctc|redbus|yatra|ixigo|makemytrip|flight|air(?:line)?|hotel|booking\.com|train|railway|railways|bus|visa)\b');
+    if (travelHit) {
+      if (_has(t, r'\b(train|railway|railways|irctc)\b')) {
+        return const CategoryGuess('Travel', 'railways', 0.8, ['travel']);
+      }
+      if (_has(t, r'\b(flight|air(?:line)?|indigo|vistara|air india|airasia|spicejet)\b')) {
+        return const CategoryGuess('Travel', 'airlines', 0.8, ['travel']);
+      }
+      if (_has(t, r'\b(hotel|stay|booking\.com|oyo|airbnb|resort)\b')) {
+        return const CategoryGuess('Travel', 'accommodation', 0.8, ['travel']);
+      }
+      if (_has(t, r'\b(ola|uber|rapido|meru|cab|taxi|bike\s*ride)\b')) {
+        return const CategoryGuess('Travel', 'cab/bike services', 0.75, ['travel']);
+      }
+      return const CategoryGuess('Travel', 'travel others', 0.75, ['travel']);
     }
 
     // Food
-    if (_has(t, r'\b(zomato|swiggy|restaurant|dine|meal|kitchen|caf[eé])\b')) {
-      return const CategoryGuess('Food & Drink', 'General', 0.75, ['food']);
+    if (_has(t, r'\b(zomato|swiggy|restaurant|dine|meal|kitchen|caf[eé]|bistro|hotel\s*restaurant)\b')) {
+      if (_has(t, r'\b(zomato|swiggy)\b')) {
+        return const CategoryGuess('Food', 'food delivery', 0.8, ['food']);
+      }
+      return const CategoryGuess('Food', 'restaurants', 0.75, ['food']);
     }
 
     // Groceries
-    if (_has(t, r'\b(grocery|kirana|bigbasket|dmart|mart|fresh)\b')) {
-      return const CategoryGuess('Groceries', 'General', 0.75, ['groceries']);
+    if (_has(t, r'\b(grocery|kirana|bigbasket|dmart|mart|fresh|hypermarket|supermarket|ration)\b')) {
+      return const CategoryGuess('Shopping', 'groceries and consumables', 0.75, ['groceries']);
     }
 
     // Shopping
-    if (_has(t, r'\b(amazon|flipkart|myntra|ajio|meesho|nykaa|tata\s*cliq)\b')) {
-      return const CategoryGuess('Shopping', 'Marketplace', 0.8, ['shopping']);
+    if (_has(t, r'\b(amazon|flipkart|myntra|ajio|meesho|nykaa|tata\s*cliq|snapdeal|firstcry|lenskart)\b')) {
+      return const CategoryGuess('Shopping', 'ecommerce', 0.8, ['shopping']);
     }
 
     // Investments / SIP / Mutual Funds / Brokers / Depository
-    if (_has(t, r'\b(sip|systematic\s*investment|mutual\s*fund|mf|nav|amc|folio)\b') ||
-        _has(t, r'\b(zerodha|groww|upstox|icici\s*direct|angel|paytm\s*money)\b') ||
-        _has(t, r'\b(cdsl|nsdl|demat|brokerage)\b')) {
-      return const CategoryGuess('Investments', 'Mutual Funds / Stocks', 0.85, ['investments','sip']);
+    final hasSipCue = detectSip(text);
+    final hasMfCue = _has(t, r'\b(mutual\s*fund|mf|nav|amc|folio)\b');
+    final hasBrokerCue = _has(t, r'\b(zerodha|groww|upstox|icici\s*direct|angel|paytm\s*money|hdfc\s*sec|kotak\s*securities)\b');
+    final hasDepositoryCue = _has(t, r'\b(cdsl|nsdl|demat|brokerage)\b');
+    if (hasSipCue || hasMfCue || hasBrokerCue || hasDepositoryCue) {
+      if (hasSipCue) {
+        return const CategoryGuess('Investments', 'Mutual Fund – SIP', 0.9, ['investments','mf','sip']);
+      }
+      if (hasMfCue) {
+        return const CategoryGuess('Investments', 'Mutual Fund – Lumpsum', 0.85, ['investments','mf']);
+      }
+      return const CategoryGuess('Investments', 'Stocks / Brokerage', 0.85, ['investments','brokerage']);
     }
 
     // Health
-    if (_has(t, r'\b(hospital|clinic|pharma|apollopharmacy|pharmeasy|1mg|diagnostic)\b')) {
-      return const CategoryGuess('Health', 'General', 0.75, ['health']);
+    if (_has(t, r'\b(hospital|clinic|pharma|apollopharmacy|pharmeasy|1mg|diagnostic|medical|pharmacy)\b')) {
+      if (_has(t, r'\b(hospital|clinic|diagnostic)\b')) {
+        return const CategoryGuess('Healthcare', 'hospital', 0.75, ['health']);
+      }
+      return const CategoryGuess('Healthcare', 'medicine/pharma', 0.75, ['health']);
     }
 
     // Education
-    if (_has(t, r'\b(fee\s*payment|college|tuition|coaching|byjus|unacademy)\b')) {
-      return const CategoryGuess('Education', 'General', 0.7, ['education']);
+    if (_has(t, r'\b(fee\s*payment|college|tuition|coaching|byjus|unacademy|school|exam|univ)\b')) {
+      return const CategoryGuess('Education', 'Education', 0.7, ['education']);
     }
 
     // Entertainment / Movies / Events
-    if (_has(t, r'\b(movie|pvr|inox|bookmyshow|concert|event|ticket)\b')) {
-      return const CategoryGuess('Entertainment', 'General', 0.7, ['entertainment']);
+    if (_has(t, r'\b(movie|pvr|inox|bookmyshow|concert|event|ticket|festival|theatre)\b')) {
+      return const CategoryGuess('Entertainment', 'movies', 0.7, ['entertainment']);
     }
 
     // Transfers generic (IMPS/NEFT/RTGS)
     if (_has(t, r'\b(imps|neft|rtgs)\b')) {
-      return const CategoryGuess('Transfers', 'Bank Transfer', 0.7, ['transfer']);
+      return const CategoryGuess('Fund Transfers', 'Fund Transfers - Others', 0.7, ['transfer']);
     }
 
     // International hints
     if (_has(t, r'\b(international|foreign|fx|forex)\b')) {
-      return const CategoryGuess('Travel', 'International', 0.6, ['international','forex']);
+      return const CategoryGuess('Travel', 'forex', 0.6, ['international','forex']);
     }
 
     // Fallback
-    return const CategoryGuess('Uncategorized', 'General', 0.3, []);
+    return const CategoryGuess('Others', 'others', 0.3, []);
   }
 
   // -------------------- Secondary detectors (public) --------------------
@@ -306,7 +348,7 @@ class CategoryRules {
   /// Detect mutual fund SIP cues (brand-agnostic).
   static bool detectSip(String text) {
     final t = text.toUpperCase();
-    return _has(t, r'\b(SIP|SYSTEMATIC\s*INVESTMENT|MUTUAL\s*FUND|AMC|NAV|FOLIO)\b');
+    return _has(t, r'\b(SIP|SYSTEMATIC\s*INVESTMENT|S\.I\.P\.)\b');
   }
 
   // -------------------- Internals --------------------
