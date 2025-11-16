@@ -129,24 +129,88 @@ class UnifiedTransactionList extends StatefulWidget {
     this.onSelectTx,
     this.unifiedDocs,
     this.categoryOptions = const [
-      "General",
-      "Fuel",
-      "Groceries",
-      "Food",
-      "Travel",
-      "Shopping",
-      "Bills",
-      "Recharge",
-      "Subscriptions",
-      "Healthcare",
-      "Education",
-      "Entertainment",
-      "Loan EMI",
-      "Fees/Charges",
-      "Income",
-      "Other",
+      'Fund Transfers',
+      'Payments',
+      'Food',
+      'Entertainment',
+      'Shopping',
+      'Travel',
+      'Others',
+      'healthcare',
+      'education',
+      'Income',
     ],
-    this.subcategoryOptionsByCategory = const {},
+    this.subcategoryOptionsByCategory = const {
+      'Fund Transfers': [
+        'Fund Transfers- Others',
+        'Cash Withdrawals',
+        'Remittance',
+      ],
+      'Payments': [
+        'Loans/EMIs',
+        'Fuel',
+        'Mobile bill',
+        'Auto Service',
+        'Bills / Utility',
+        'credit card',
+        'Logistics',
+        'Payment others',
+        'Rental and realestate',
+        'wallet payment',
+      ],
+      'Food': [
+        'restaurants',
+        'alcohol',
+        'food delivery',
+        'food others',
+      ],
+      'Entertainment': [
+        'OTT services',
+        'gaming',
+        'movies',
+        'music',
+        'entertainment - others',
+      ],
+      'Shopping': [
+        'grocesires and consumables',
+        'electronics',
+        'apparel',
+        'books and statioanry',
+        'ecommerence',
+        'fittness',
+        'gift',
+        'home furnishin gaming',
+        'jewellery and other accessorie',
+        'personal care',
+        'shoping others',
+      ],
+      'Travel': [
+        'car rental',
+        'travel and tours',
+        'travel others',
+        'accomodation',
+        'airlines',
+        'cab/ bike services',
+        'forex',
+        'railways',
+      ],
+      'Others': [
+        'others',
+        'business services',
+        'bank charges',
+        'checque reject',
+        'government services/ firedepartment',
+        'Tax payments',
+      ],
+      'healthcare': [
+        'medicine/pharma',
+        'healthcare othere',
+        'hospital',
+      ],
+      'education': [
+        'Education',
+      ],
+    },
     this.onChangeSubcategory,
     this.onChangeCounterparty,
     this.onChangeCategory,
@@ -1428,7 +1492,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
-                      fontSize: 15.3,
+                      fontSize: 13.8,
                       color: Color(0xFF0F1E1C),
                     ),
                   ),
@@ -1481,7 +1545,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         borderRadius: BorderRadius.circular(12),
         style: const TextStyle(
           fontWeight: FontWeight.w700,
-          fontSize: 15.3,
+          fontSize: 13.8,
           color: Color(0xFF0F1E1C),
         ),
         menuMaxHeight: 300,
@@ -1492,24 +1556,24 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   Widget _subcategoryDropdown({
     required String txId,
     required String currentCategory,
-    required String currentSubcategory,
+    required String? currentSubcategory,
     required bool isIncome,
     required dynamic payload,
     required Map<String, dynamic> normalized,
   }) {
-    final List<String> baseOptions =
-        widget.subcategoryOptionsByCategory[currentCategory] ?? const [];
+    final baseOptions =
+        widget.subcategoryOptionsByCategory[currentCategory] ?? const <String>[];
 
+    // If no configured subcategories for this category, hide the control.
     if (baseOptions.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final Color subcatColor =
-        isIncome ? const Color(0xFF047857) : const Color(0xFF4B5563);
+    final String value = (currentSubcategory ?? '').trim().isNotEmpty
+        ? currentSubcategory!.trim()
+        : baseOptions.first;
 
-    final String value =
-        currentSubcategory.isEmpty ? baseOptions.first : currentSubcategory;
-    List<String> options = List<String>.from(baseOptions);
+    var options = List<String>.from(baseOptions);
     if (!options.contains(value)) {
       options = [value, ...options];
     }
@@ -1518,18 +1582,20 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       child: DropdownButton<String>(
         value: value,
         items: options
-            .map((c) => DropdownMenuItem(
-                  value: c,
-                  child: Text(
-                    c,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 13.5,
-                      color: subcatColor,
-                    ),
+            .map(
+              (c) => DropdownMenuItem<String>(
+                value: c,
+                child: Text(
+                  c,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 13.0,
+                    color: Color(0xFF4B5563),
                   ),
-                ))
+                ),
+              ),
+            )
             .toList(),
         onChanged: (newVal) async {
           if (newVal == null || newVal == value) return;
@@ -1538,8 +1604,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
             if (idx != -1) allTx[idx]['subcategory'] = newVal;
           });
-          normalized['subcategory'] = newVal;
 
+          // If you have a persistence callback, it will be handled there.
           if (widget.onChangeSubcategory != null) {
             try {
               await widget.onChangeSubcategory!(
@@ -1553,19 +1619,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         isDense: true,
         icon: const Icon(Icons.expand_more_rounded, size: 16),
         borderRadius: BorderRadius.circular(12),
-        style: TextStyle(
+        style: const TextStyle(
           fontWeight: FontWeight.w500,
-          fontSize: 13.5,
-          color: subcatColor,
+          fontSize: 13.0,
+          color: Color(0xFF4B5563),
         ),
-        menuMaxHeight: 300,
-        hint: Text(
-          isIncome ? 'Income subcategory' : 'Subcategory',
-          style: const TextStyle(
-            fontSize: 13,
-            color: Color(0xFF9CA3AF),
-          ),
-        ),
+        menuMaxHeight: 260,
       ),
     );
   }
@@ -1577,7 +1636,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     required dynamic payload,
     required Map<String, dynamic> normalized,
   }) async {
-    final theme = Theme.of(context);
     final controller = TextEditingController(text: current ?? '');
     widget.onBeginModal?.call();
 
@@ -1585,26 +1643,70 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: Text(isIncome ? 'Edit sender name' : 'Edit payee name'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: InputDecoration(
-              labelText: isIncome ? 'Got from' : 'Paid to',
+          backgroundColor: Colors.black87,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+          contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+          actionsPadding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+          title: Text(
+            isIncome ? 'Edit sender name' : 'Edit payee name',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 18,
             ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                cursorColor: Colors.white70,
+                decoration: InputDecoration(
+                  labelText: isIncome ? 'Got from' : 'Paid to',
+                  labelStyle: const TextStyle(color: Colors.white70),
+                  filled: true,
+                  fillColor: Colors.white10,
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Colors.white24),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Colors.white60),
+                  ),
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(null),
-              child: const Text('Cancel'),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.white60),
+              ),
             ),
             TextButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
               style: TextButton.styleFrom(
-                foregroundColor: theme.colorScheme.primary,
+                foregroundColor: Colors.white,
+                backgroundColor: Colors.tealAccent.withOpacity(0.15),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
-              child: const Text('Save'),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: Text(
+                  'Save',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
             ),
           ],
         );
@@ -1615,14 +1717,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     if (newName == null) return;
     if (newName.isEmpty) return;
 
+    // Update local state
     setState(() {
       final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
-      if (idx != -1) {
-        allTx[idx]['counterparty'] = newName;
-      }
+      if (idx != -1) allTx[idx]['counterparty'] = newName;
     });
-    normalized['counterparty'] = newName;
 
+    // Try optional callback if you wired one (keep existing behaviour)
     if (widget.onChangeCounterparty != null) {
       try {
         await widget.onChangeCounterparty!(
@@ -1634,17 +1735,16 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       } catch (_) {}
     }
 
+    // Default persistence for legacy models
     try {
       if (payload is ExpenseItem) {
         final e = payload as ExpenseItem;
         final updated = e.copyWith(counterparty: newName);
         await ExpenseService().updateExpense(widget.userPhone, updated);
-        return;
       } else if (payload is IncomeItem) {
         final i = payload as IncomeItem;
         final updated = i.copyWith(counterparty: newName);
         await IncomeService().updateIncome(widget.userPhone, updated);
-        return;
       }
     } catch (_) {}
   }
@@ -1838,7 +1938,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             final String categorySource = (tx['categorySource'] ?? '').toString();
 
             final raw = tx['raw'];
-            final String counterpartyText = (counterparty ?? '').trim();
 
             String? friendsStr;
             try {
@@ -1851,9 +1950,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
               friendsStr = null;
             }
 
+            final String displayName = (counterparty ?? '').toString().trim().isNotEmpty
+                ? counterparty!.trim()
+                : (merchant != null && merchant.isNotEmpty ? merchant : 'Unknown');
+
             final String showLine2 = () {
               if (title != null && title.trim().isNotEmpty) return title.trim();
-              if (merchant != null && merchant.isNotEmpty) return merchant;
               if (note.isNotEmpty) {
                 return note.length > 40 ? "${note.substring(0, 40)}..." : note;
               }
@@ -2055,92 +2157,84 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                mainAxisSize: MainAxisSize.max,
-                                children: [
-                                  Text(
-                                    isIncome ? 'Got from ' : 'Paid to ',
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                      color: Color(0xFF6B7280),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: GestureDetector(
-                                      onTap: () => _editCounterparty(
-                                        txId: id,
-                                        isIncome: isIncome,
-                                        current: counterparty,
-                                        payload: payload,
-                                        normalized: tx,
+                              // 1) Big editable title: just the name (no "Paid to"/"Got from")
+                              GestureDetector(
+                                onTap: () => _editCounterparty(
+                                  txId: id,
+                                  isIncome: isIncome,
+                                  current: counterparty,
+                                  payload: payload,
+                                  normalized: tx,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.max,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        displayName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 16.5,
+                                          fontWeight: FontWeight.w800,
+                                          color: Color(0xFF111827),
+                                        ),
                                       ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.max,
-                                        children: [
-                                          Flexible(
-                                            child: Text(
-                                              counterpartyText.isNotEmpty
-                                                  ? counterpartyText
-                                                  : ((merchant != null && merchant.isNotEmpty)
-                                                      ? merchant!
-                                                      : 'Unknown'),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.w700,
-                                                color: Color(0xFF111827),
-                                              ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Icon(
+                                      Icons.edit_outlined,
+                                      size: 14,
+                                      color: Color(0xFF9CA3AF),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              const SizedBox(height: 4),
+
+                              // 2) Category + Subcategory in one row, both dropdowns, responsive
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: widget.showCategoryDropdown
+                                        ? SizedBox(
+                                            height: 26,
+                                            child: _categoryDropdown(
+                                              txId: id,
+                                              current: category,
+                                              isIncome: isIncome,
+                                              payload: payload,
+                                              normalized: tx,
+                                            ),
+                                          )
+                                        : Text(
+                                            category,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 13.5,
+                                              color: Color(0xFF4B5563),
                                             ),
                                           ),
-                                          const SizedBox(width: 4),
-                                          const Icon(
-                                            Icons.edit_outlined,
-                                            size: 14,
-                                            color: Color(0xFF9CA3AF),
-                                          ),
-                                        ],
-                                      ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: _subcategoryDropdown(
+                                      txId: id,
+                                      currentCategory: category,
+                                      currentSubcategory:
+                                          (tx['subcategory'] ?? '').toString(),
+                                      isIncome: isIncome,
+                                      payload: payload,
+                                      normalized: tx,
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 4),
-                              if (widget.showCategoryDropdown)
-                                SizedBox(
-                                  height: 28,
-                                  child: _categoryDropdown(
-                                    txId: id,
-                                    current: category,
-                                    isIncome: isIncome,
-                                    payload: payload,
-                                    normalized: tx,
-                                  ),
-                                )
-                              else
-                                Text(
-                                  category,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 15.3,
-                                    color: Color(0xFF0F1E1C),
-                                  ),
-                                ),
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2.0),
-                                child: _subcategoryDropdown(
-                                  txId: id,
-                                  currentCategory: category,
-                                  currentSubcategory:
-                                      (tx['subcategory'] ?? '').toString(),
-                                  isIncome: isIncome,
-                                  payload: payload,
-                                  normalized: tx,
-                                ),
-                              ),
+
+                              // 3) Small secondary line (title or note)
                               if (showLine2.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4.0),
@@ -2155,6 +2249,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                     ),
                                   ),
                                 ),
+
+                              // 4) Chips row (tags, LLM/Rules/etc.) – unchanged
                               if (rowChips.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4.0),
@@ -2164,13 +2260,16 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                     children: rowChips,
                                   ),
                                 ),
+
+                              // 5) Legacy split/friends row – unchanged
                               if (tx['mode'] == 'legacy')
                                 Padding(
                                   padding: const EdgeInsets.only(top: 2.0),
                                   child: Row(
                                     children: [
                                       if (friendsStr != null) ...[
-                                        Icon(Icons.person_2_rounded, size: 15, color: Colors.deepPurple[500]),
+                                        Icon(Icons.person_2_rounded,
+                                            size: 15, color: Colors.deepPurple[500]),
                                         Flexible(
                                           child: Text(
                                             " $friendsStr",
@@ -2187,7 +2286,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                       if (tx['type'] == 'income' &&
                                           (raw.source ?? '').toString().isNotEmpty) ...[
                                         const SizedBox(width: 8),
-                                        Icon(Icons.input_rounded, size: 15, color: Colors.teal[600]),
+                                        Icon(Icons.input_rounded,
+                                            size: 15, color: Colors.teal[600]),
                                         Flexible(
                                           child: Text(
                                             " ${raw.source}",
