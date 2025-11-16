@@ -28,6 +28,30 @@ import './user_overrides.dart';
 // Merge policy: OFF (for testing), ENRICH (recommended), SILENT (current behavior)
 enum ReconcilePolicy { off, mergeEnrich, mergeSilent }
 
+// ── Bank detection & tiering (major vs other) ────────────────────────────────
+
+enum _BankTier { major, other, unknown }
+
+class _DetectedBank {
+  final String? code;     // e.g. 'HDFC'
+  final String? display;  // e.g. 'HDFC Bank'
+  final _BankTier tier;
+  const _DetectedBank({this.code, this.display, this.tier = _BankTier.unknown});
+}
+
+class _BankProfile {
+  final String code;                 // 'SBI'
+  final String display;              // 'State Bank of India'
+  final List<String> domains;        // email domains to match
+  final List<String> headerHints;    // name hints in From/headers
+  const _BankProfile({
+    required this.code,
+    required this.display,
+    this.domains = const [],
+    this.headerHints = const [],
+  });
+}
+
 
 class GmailService {
   // ── Behavior toggles ────────────────────────────────────────────────────────
@@ -37,6 +61,14 @@ class GmailService {
   static const int INITIAL_HISTORY_DAYS = 120;
   static const bool AUTO_RECAT_LAST_24H = true;
   static const ReconcilePolicy RECONCILE_POLICY = ReconcilePolicy.mergeEnrich;
+  // Backfill behaviour:
+  // - On first Gmail run, or if user comes back after a long gap,
+  //   we aggressively backfill up to this many days.
+  static const int MAX_BACKFILL_DAYS = 1000;
+
+  // "Long gap" threshold: if last Gmail sync was more than this many
+  // days ago, treat it like a fresh/backfill sync.
+  static const int LONG_GAP_DAYS = 60;
   bool _looksLikeCardBillPayment(String text, {String? bank, String? last4}) {
     final u = text.toUpperCase();
     final payCue = RegExp(r'(CARD\s*PAYMENT|PAYMENT\s*RECEIVED|THANK YOU.*PAYING|BILL\s*PAYMENT)').hasMatch(u);
@@ -55,6 +87,168 @@ class GmailService {
     // redact OTP tokens/one-time passwords
     t = t.replaceAll(RegExp(r'\b(OTP|ONE[-\s]?TIME\s*PASSWORD)\b[^\n]*', caseSensitive: false), '[REDACTED OTP]');
     return t;
+  }
+
+  // Major public + private sector banks we want strong primary logic for.
+  static const List<_BankProfile> _MAJOR_BANKS = [
+    // Public sector
+    _BankProfile(
+      code: 'SBI',
+      display: 'State Bank of India',
+      domains: ['sbi.co.in'],
+      headerHints: ['state bank of india', 'sbi'],
+    ),
+    _BankProfile(
+      code: 'PNB',
+      display: 'Punjab National Bank',
+      domains: ['pnb.co.in'],
+      headerHints: ['punjab national bank', 'pnb'],
+    ),
+    _BankProfile(
+      code: 'BOB',
+      display: 'Bank of Baroda',
+      domains: ['bankofbaroda.co.in'],
+      headerHints: ['bank of baroda', 'bob'],
+    ),
+    _BankProfile(
+      code: 'UNION',
+      display: 'Union Bank of India',
+      domains: ['unionbankofindia.co.in'],
+      headerHints: ['union bank of india', 'union bank'],
+    ),
+    _BankProfile(
+      code: 'BOI',
+      display: 'Bank of India',
+      domains: ['bankofindia.co.in'],
+      headerHints: ['bank of india'],
+    ),
+    _BankProfile(
+      code: 'CANARA',
+      display: 'Canara Bank',
+      domains: ['canarabank.com'],
+      headerHints: ['canara bank'],
+    ),
+    _BankProfile(
+      code: 'INDIAN',
+      display: 'Indian Bank',
+      domains: ['indianbank.in'],
+      headerHints: ['indian bank'],
+    ),
+    _BankProfile(
+      code: 'IOB',
+      display: 'Indian Overseas Bank',
+      domains: ['iob.in'],
+      headerHints: ['indian overseas bank', 'iob'],
+    ),
+    _BankProfile(
+      code: 'UCO',
+      display: 'UCO Bank',
+      domains: ['ucobank.com'],
+      headerHints: ['uco bank'],
+    ),
+    _BankProfile(
+      code: 'MAHARASHTRA',
+      display: 'Bank of Maharashtra',
+      domains: ['bankofmaharashtra.in', 'mahabank.co.in'],
+      headerHints: ['bank of maharashtra'],
+    ),
+    _BankProfile(
+      code: 'CBI',
+      display: 'Central Bank of India',
+      domains: ['centralbankofindia.co.in'],
+      headerHints: ['central bank of india'],
+    ),
+    _BankProfile(
+      code: 'PSB',
+      display: 'Punjab & Sind Bank',
+      domains: ['psbindia.com'],
+      headerHints: ['punjab and sind bank', 'punjab & sind bank'],
+    ),
+
+    // Private sector
+    _BankProfile(
+      code: 'HDFC',
+      display: 'HDFC Bank',
+      domains: ['hdfcbank.com'],
+      headerHints: ['hdfc bank', 'hdfc'],
+    ),
+    _BankProfile(
+      code: 'ICICI',
+      display: 'ICICI Bank',
+      domains: ['icicibank.com'],
+      headerHints: ['icici bank', 'icici'],
+    ),
+    _BankProfile(
+      code: 'AXIS',
+      display: 'Axis Bank',
+      domains: ['axisbank.com'],
+      headerHints: ['axis bank', 'axis'],
+    ),
+    _BankProfile(
+      code: 'KOTAK',
+      display: 'Kotak Mahindra Bank',
+      domains: ['kotak.com'],
+      headerHints: ['kotak mahindra bank', 'kotak'],
+    ),
+    _BankProfile(
+      code: 'INDUSIND',
+      display: 'IndusInd Bank',
+      domains: ['indusind.com'],
+      headerHints: ['indusind bank', 'indusind'],
+    ),
+    _BankProfile(
+      code: 'YES',
+      display: 'Yes Bank',
+      domains: ['yesbank.in'],
+      headerHints: ['yes bank'],
+    ),
+    _BankProfile(
+      code: 'FEDERAL',
+      display: 'Federal Bank',
+      domains: ['federalbank.co.in'],
+      headerHints: ['federal bank'],
+    ),
+    _BankProfile(
+      code: 'IDFCFIRST',
+      display: 'IDFC First Bank',
+      domains: ['idfcfirstbank.com', 'idfcbank.com'],
+      headerHints: ['idfc first bank', 'idfc'],
+    ),
+    _BankProfile(
+      code: 'IDBI',
+      display: 'IDBI Bank',
+      domains: ['idbibank.com'],
+      headerHints: ['idbi bank', 'idbi'],
+    ),
+  ];
+
+  _DetectedBank _detectBank({
+    required List<gmail.MessagePartHeader>? headers,
+    required String body,
+  }) {
+    final domain = _fromDomain(headers);
+    final normalizedDomain = domain?.toLowerCase();
+    final fromHdr = _getHeader(headers, 'from') ?? '';
+    final subject = _getHeader(headers, 'subject') ?? '';
+    final all = (fromHdr + ' ' + subject + ' ' + body).toLowerCase();
+
+    for (final b in _MAJOR_BANKS) {
+      if (normalizedDomain != null &&
+          b.domains.any((d) => normalizedDomain.endsWith(d.toLowerCase()))) {
+        return _DetectedBank(code: b.code, display: b.display, tier: _BankTier.major);
+      }
+      if (b.headerHints.any((h) => all.contains(h.toLowerCase()))) {
+        return _DetectedBank(code: b.code, display: b.display, tier: _BankTier.major);
+      }
+    }
+
+    // Fallback: reuse existing header/body guessers and treat as "other"
+    final guess = _guessBankFromHeaders(headers) ?? _guessIssuerBankFromBody(body);
+    if (guess != null && guess.trim().isNotEmpty) {
+      return _DetectedBank(code: guess.toUpperCase(), display: guess.toUpperCase(), tier: _BankTier.other);
+    }
+
+    return const _DetectedBank(tier: _BankTier.unknown);
   }
 
   // PATCH: strict txn gating utilities
@@ -78,44 +272,41 @@ class GmailService {
         caseSensitive: false,
       ).hasMatch(s);
 
-  bool _passesTxnGate(String text, {String? domain}) {
+  bool _passesTxnGate(String text, {String? domain, _DetectedBank? bank}) {
     final t = text;
-    final verbs = _hasDebitVerb(t) || _hasCreditVerb(t);
-    final whitelisted = () {
-      if (domain == null) return false;
-      const wl = [
-        'hdfcbank.com',
-        'axisbank.com',
-        'icicibank.com',
-        'sbi.co.in',
-        'kotak.com',
-        'yesbank.in',
-        'idfcbank.com',
-        'bankofbaroda.co.in',
-        'bobfinancial.com',
-        'amex.com',
-        'visacards.com',
-        'mastercard.com',
-        'rupay.co.in',
-        'razorpay.com',
-        'billdesk.com',
-        'paytm.com',
-        'cashfree.com'
-      ];
-      return wl.any((d) => domain.toLowerCase().endsWith(d));
-    }();
+    final hasCurrency = _hasCurrencyAmount(t);
+    final hasDebitOrCreditVerb = _hasDebitVerb(t) || _hasCreditVerb(t);
+    final hasRefOrCue = _hasRefToken(t) ||
+        RegExp(
+          r'(account\s*(no|number)|txn\s*id|transaction\s*info)',
+          caseSensitive: false,
+        ).hasMatch(t);
 
-    if (whitelisted) {
-      // For trusted bank/gateway domains, currency + verb is enough
-      if (_hasCurrencyAmount(t) && verbs) return true;
+    // obvious promo/future cues
+    final promo = filt.isLikelyPromo(t);
+    final futureish = _looksFutureCredit(t);
+
+    final isGatewayDomain = domain != null &&
+        _EMAIL_WHITELIST.any((d) => domain.toLowerCase().endsWith(d));
+    final isMajorBank = bank?.tier == _BankTier.major;
+
+    if (!hasCurrency || !hasDebitOrCreditVerb) return false;
+    if (futureish) return false;
+
+    // For major banks and known gateways:
+    // - allow slightly looser conditions, but still block pure promos.
+    if (isMajorBank || isGatewayDomain) {
+      if (promo && !hasRefOrCue) return false;
+      // Currency + verb is enough, ref is a nice-to-have
+      return true;
     }
 
-    // General fallback: currency + verb + (ref OR common txn markers)
-    final hasRefOrCue = _hasRefToken(t) ||
-        RegExp(r'(account\s*(no|number)|txn\s*id|transaction\s*info)', caseSensitive: false)
-            .hasMatch(t);
+    // For all other/unknown senders:
+    // - require ref/txn/account cue and non-promo.
+    if (!hasRefOrCue) return false;
+    if (promo && !hasRefOrCue) return false;
 
-    return _hasCurrencyAmount(t) && verbs && hasRefOrCue;
+    return true;
   }
 
   bool _tooSmallToTrust(String body, double amt) {
@@ -127,16 +318,9 @@ class GmailService {
     return !creditOK;
   }
 
-  // Stronger email domain whitelist for bank/gateway emails
+  // Stronger email domain whitelist for payment gateways / card networks / wallets.
+  // NOTE: major bank domains are handled via _MAJOR_BANKS + _detectBank, not here.
   static const Set<String> _EMAIL_WHITELIST = {
-    'hdfcbank.com',
-    'icicibank.com',
-    'axisbank.com',
-    'sbi.co.in',
-    'kotak.com',
-    'yesbank.in',
-    'idfcbank.com',
-    'bankofbaroda.co.in',
     'bobfinancial.com',
     'amex.com',
     'mastercard.com',
@@ -167,7 +351,7 @@ class GmailService {
         caseSensitive: false,
       ).hasMatch(s);
 
-  bool _emailTxnGateForIncome(String text, {String? domain}) {
+  bool _emailTxnGateForIncome(String text, {String? domain, _DetectedBank? bank}) {
     final hasCurrency = _hasCurrencyAmount(text);
     final strongCredit = RegExp(
       r'\b(has\s*been\s*credited|credited\s*(?:by|with)?|received\s*(?:from)?|payout|settlement)\b',
@@ -176,13 +360,21 @@ class GmailService {
     final hasRef = _hasRefToken(text);
     final promoOrFuture =
         _looksPromotionalIncome(text) || _looksFutureCredit(text);
-    final whitelisted = domain != null &&
-        _EMAIL_WHITELIST.any((d) => domain.toLowerCase().endsWith(d));
 
-    if (!whitelisted) {
-      return hasCurrency && strongCredit && hasRef && !promoOrFuture;
+    final isGatewayDomain = domain != null &&
+        _EMAIL_WHITELIST.any((d) => domain.toLowerCase().endsWith(d));
+    final isMajorBank = bank?.tier == _BankTier.major;
+
+    if (!hasCurrency || !strongCredit) return false;
+    if (promoOrFuture) return false;
+
+    // For major banks or known gateways: currency + strong credit is enough.
+    if (isMajorBank || isGatewayDomain) {
+      return true;
     }
-    return hasCurrency && strongCredit && !promoOrFuture;
+
+    // For others, require a reference/account/txn cue as well.
+    return hasRef && !promoOrFuture;
   }
 
 
@@ -567,11 +759,29 @@ class GmailService {
     int newerThanDays = INITIAL_HISTORY_DAYS,
     int pageSize = 500,
   }) async {
-    await IngestStateService.instance.ensureCutoff(userId);
+    // Ensure ingest state exists and load it (gives us lastGmailAt if any)
+    final st = await IngestStateService.instance.getOrCreate(userId);
+    final now = DateTime.now();
 
+    int daysBack;
+
+    if (st.lastGmailAt == null) {
+      // First time we are pulling Gmail for this user → heavy backfill
+      daysBack = MAX_BACKFILL_DAYS;
+    } else {
+      final gapDays = now.difference(st.lastGmailAt!).inDays;
+      // If user has been away for a long time, treat like a "fresh" backfill
+      daysBack = gapDays > LONG_GAP_DAYS
+          ? MAX_BACKFILL_DAYS
+          : newerThanDays;
+    }
+
+    // In TEST_MODE we still cap by TEST_BACKFILL_DAYS as before
     final since = TEST_MODE
-        ? DateTime.now().subtract(const Duration(days: TEST_BACKFILL_DAYS))
-        : DateTime.now().subtract(Duration(days: newerThanDays));
+        ? now.subtract(const Duration(days: TEST_BACKFILL_DAYS))
+        : now.subtract(
+            Duration(days: daysBack.clamp(1, MAX_BACKFILL_DAYS)),
+          );
 
     await _fetchAndStage(userId: userId, since: since, pageSize: pageSize);
 
@@ -590,17 +800,21 @@ class GmailService {
     final now = DateTime.now();
 
     DateTime since;
-    try {
-      final last = (st as dynamic)?.lastGmailTs;
-      if (last is Timestamp) {
-        since = last.toDate().subtract(Duration(hours: overlapHours));
-      } else if (last is DateTime) {
-        since = last.subtract(Duration(hours: overlapHours));
+    final last = st.lastGmailAt;
+
+    if (last == null) {
+      // No watermark yet → treat like a backfill, but capped.
+      final daysBack = fallbackDaysIfNoWatermark.clamp(1, MAX_BACKFILL_DAYS);
+      since = now.subtract(Duration(days: daysBack));
+    } else {
+      final gapDays = now.difference(last).inDays;
+      if (gapDays > LONG_GAP_DAYS) {
+        // User came back after a long time (e.g. > 2 months) → widen window aggressively.
+        since = now.subtract(Duration(days: MAX_BACKFILL_DAYS));
       } else {
-        since = now.subtract(Duration(days: fallbackDaysIfNoWatermark));
+        // Normal delta sync with overlap
+        since = last.subtract(Duration(hours: overlapHours));
       }
-    } catch (_) {
-      since = now.subtract(Duration(days: fallbackDaysIfNoWatermark));
     }
 
     await _fetchAndStage(userId: userId, since: since, pageSize: pageSize);
@@ -694,11 +908,21 @@ class GmailService {
 
     if (combined.isEmpty) return null;
 
-    // PATCH: strict gate before any heavy work (but allow card-bill path later)
+    // Detect bank/tier once and reuse everywhere.
     final emailDomain = _fromDomain(headers);
-    final looksTxn = _passesTxnGate(combined, domain: emailDomain);
-    final passesIncomeGate =
-        _emailTxnGateForIncome(combined, domain: emailDomain);
+    final detectedBank = _detectBank(headers: headers, body: combined);
+
+    // PATCH: strict gate before any heavy work (but allow card-bill path later)
+    final looksTxn = _passesTxnGate(
+      combined,
+      domain: emailDomain,
+      bank: detectedBank,
+    );
+    final passesIncomeGate = _emailTxnGateForIncome(
+      combined,
+      domain: emailDomain,
+      bank: detectedBank,
+    );
 
     // ── Early skips & special routing (safe) ─────────────────────────────────
     final direction = _inferDirection(combined); // 'debit'|'credit'|null
@@ -747,7 +971,9 @@ class GmailService {
     final msgDate = DateTime.fromMillisecondsSinceEpoch(
       int.tryParse(msg.internalDate ?? '0') ?? DateTime.now().millisecondsSinceEpoch,
     );
-    final bank = _guessBankFromHeaders(headers) ?? _guessIssuerBankFromBody(combined);
+    final bank = detectedBank.code ??
+        _guessBankFromHeaders(headers) ??
+        _guessIssuerBankFromBody(combined);
     final hasCardContext = _hasStrongCardCue(combined);
     String? cardLast4 = hasCardContext ? _extractCardLast4(combined) : null;
     final accountLast4 = _extractAccountLast4(combined);
@@ -884,7 +1110,7 @@ class GmailService {
             : (emailDomain ?? cardLast4 ?? bank ?? 'UNKNOWN'))
         .toUpperCase();
 
-    // ===== LLM-FIRST categorization =====
+    // ===== Categorization pipeline: overrides → rules → LLM fallback =====
     final preview = _preview(_maskSensitive(combined));
     final hintParts = <String>[
       'HINTS: dir=$direction',
@@ -905,6 +1131,7 @@ class GmailService {
     bool emiLocked = false;
     final Set<String> labelSet = <String>{};
 
+    // 1) User overrides (highest priority)
     final overrideCat = await UserOverrides.getCategoryForMerchant(userId, merchantKey);
     if (overrideCat != null && overrideCat.isNotEmpty) {
       finalCategory = overrideCat;
@@ -913,6 +1140,7 @@ class GmailService {
       categoryLocked = true;
     }
 
+    // 2) EMI autopay cues → force Loan EMI category if not overridden
     if (!categoryLocked && isEmiAutopay) {
       finalCategory = 'Loan EMI';
       finalSubcategory = '';
@@ -923,7 +1151,40 @@ class GmailService {
       labelSet.addAll({'loan_emi', 'autopay'});
     }
 
-    if (AiConfig.llmOn) {
+    // 3) Rules-based categorization (CategoryRules) FIRST
+    if (!categoryLocked) {
+      try {
+        final cat = CategoryRules.categorizeMerchant(combined, merchantKey);
+        finalCategory = cat.category;
+        finalSubcategory = cat.subcategory;
+        finalConfidence = cat.confidence;
+        labelSet.addAll(cat.tags);
+        categorySource = 'rules';
+
+        final lowerCat = finalCategory.toLowerCase();
+        if (lowerCat != 'other' &&
+            lowerCat != 'uncategorized' &&
+            lowerCat != 'general' &&
+            finalConfidence >= 0.55) {
+          categoryLocked = true;
+        }
+      } catch (e) {
+        _log('rules categorization error: $e');
+      }
+    }
+
+    // 4) LLM fallback ONLY if rules are weak or undecided
+    bool needsLlm = AiConfig.llmOn;
+    if (needsLlm) {
+      final lowerCat = finalCategory.toLowerCase();
+      needsLlm = !categoryLocked ||
+          lowerCat == 'other' ||
+          lowerCat == 'uncategorized' ||
+          lowerCat == 'general' ||
+          finalConfidence < AiConfig.confThresh;
+    }
+
+    if (needsLlm) {
       try {
         final labels = await TxExtractor.labelUnknown([
           TxRaw(
@@ -945,9 +1206,11 @@ class GmailService {
             merchantNorm = l.merchantNorm;
             merchantKey = merchantNorm.toUpperCase();
           }
+
           final llmEligible = l.category.isNotEmpty &&
               l.category.toLowerCase() != 'other' &&
               l.confidence >= AiConfig.confThresh;
+
           if (llmEligible && !categoryLocked) {
             finalCategory = l.category;
             finalSubcategory = l.subcategory;
@@ -955,24 +1218,13 @@ class GmailService {
             categorySource = 'llm';
             categoryLocked = true;
           } else if (!categoryLocked && l.subcategory.isNotEmpty) {
+            // Even if we don't fully trust the category, we can still accept a useful subcategory.
             finalSubcategory = l.subcategory;
           }
         }
       } catch (e) {
         _log('LLM error: $e');
       }
-    }
-
-    if (!categoryLocked) {
-      try {
-        final cat = CategoryRules.categorizeMerchant(combined, merchantKey);
-        finalCategory = cat.category;
-        finalSubcategory = cat.subcategory;
-        finalConfidence = cat.confidence;
-        labelSet.addAll(cat.tags);
-        categorySource = 'rules';
-        categoryLocked = true;
-      } catch (_) {}
     }
 
     // txKey + claim for idempotency
@@ -1977,29 +2229,86 @@ class GmailService {
     String? normalize(String? value) =>
         value == null ? null : value.trim().toUpperCase();
 
-    final paidToNorm = normalize(paidTo);
-    if (paidToNorm != null && paidToNorm.isNotEmpty) return paidToNorm;
+    /// Try to extract a "FROM <NAME>" style sender for credit flows,
+    /// making sure we don't just return generic words like "YOUR ACCOUNT".
+    String? extractFromName(String text) {
+      final rx = RegExp(
+        r'\bfrom\s+([A-Za-z0-9 .&\-\(\)/]{3,40})',
+        caseSensitive: false,
+      );
+      final m = rx.firstMatch(text);
+      if (m == null) return null;
 
-    if (upiVpa != null && upiVpa.trim().isNotEmpty) {
-      return upiVpa.trim().toUpperCase();
-    }
+      var candidate = (m.group(1) ?? '').trim();
+      if (candidate.isEmpty) return null;
 
-    if (merchantNorm.isNotEmpty) return merchantNorm;
+      final upper = candidate.toUpperCase();
 
-    if (isEmiAutopay) return 'EMI AUTOPAY';
+      // Skip very generic / self-account phrases
+      if (upper.startsWith('YOUR ')) return null;
+      if (upper.contains('ACCOUNT') || upper.contains('A/C')) return null;
+      if (upper.contains('ACCT')) return null;
 
-    if (direction == 'credit') {
-      final fromMatch = RegExp(r'\bfrom\s+([A-Za-z0-9 .&\-\(\)]{3,40})',
-              caseSensitive: false)
-          .firstMatch(rawText);
-      if (fromMatch != null) {
-        final candidate = fromMatch.group(1)?.trim();
-        if (candidate != null && candidate.isNotEmpty) {
-          return candidate.toUpperCase();
-        }
+      // Skip if it just repeats the bank name
+      if (bank != null && bank.trim().isNotEmpty) {
+        final b = bank.trim().toUpperCase();
+        if (upper.contains(b)) return null;
       }
+
+      return upper;
     }
 
+    final paidToNorm = normalize(paidTo);
+
+    // For DEBIT: keep old priority → paidTo → UPI → merchant → EMI → fallbacks.
+    if (direction == 'debit') {
+      if (paidToNorm != null && paidToNorm.isNotEmpty) return paidToNorm;
+
+      if (upiVpa != null && upiVpa.trim().isNotEmpty) {
+        return upiVpa.trim().toUpperCase();
+      }
+
+      if (merchantNorm.isNotEmpty) return merchantNorm;
+
+      if (isEmiAutopay) return 'EMI AUTOPAY';
+
+      if (last4 != null && last4.isNotEmpty) return 'CARD $last4';
+      if (bank != null) return bank;
+      if (domain != null && domain.trim().isNotEmpty) return domain.toUpperCase();
+      return 'UNKNOWN';
+    }
+
+    // For CREDIT: try to strongly prefer a real "FROM <NAME>" sender.
+    if (direction == 'credit') {
+      // 1) PaidTo (if somehow present on a credit alert)
+      if (paidToNorm != null && paidToNorm.isNotEmpty) return paidToNorm;
+
+      // 2) Explicit FROM <NAME> in the email body
+      final fromName = extractFromName(rawText);
+      if (fromName != null && fromName.isNotEmpty) {
+        return fromName;
+      }
+
+      // 3) If no FROM, but we have a normalized merchant (refunds, payouts),
+      //    use that as "Got from <MERCHANT>"
+      if (merchantNorm.isNotEmpty) return merchantNorm;
+
+      // 4) UPI sender as fallback
+      if (upiVpa != null && upiVpa.trim().isNotEmpty) {
+        return upiVpa.trim().toUpperCase();
+      }
+
+      // 5) If it's an EMI autopay reversal or similar
+      if (isEmiAutopay) return 'EMI AUTOPAY';
+
+      // 6) Bank/card fallbacks
+      if (last4 != null && last4.isNotEmpty) return 'CARD $last4';
+      if (bank != null) return bank;
+      if (domain != null && domain.trim().isNotEmpty) return domain.toUpperCase();
+      return 'SENDER';
+    }
+
+    // Unknown direction: behave conservatively
     if (last4 != null && last4.isNotEmpty) return 'CARD $last4';
     if (bank != null) return bank;
     if (domain != null && domain.trim().isNotEmpty) return domain.toUpperCase();
