@@ -41,6 +41,27 @@ class UnifiedTransactionList extends StatefulWidget {
   // Category dropdown options
   final List<String> categoryOptions;
 
+  /// Subcategory options per main category, e.g.
+  /// {
+  ///   "Food": ["restaurants", "food delivery"],
+  ///   "Investments": ["Mutual Fund – SIP", ...]
+  /// }
+  final Map<String, List<String>> subcategoryOptionsByCategory;
+
+  /// Persist subcategory changes (optional)
+  final Future<void> Function({
+    required String txId,
+    required String newSubcategory,
+    required dynamic payload,
+  })? onChangeSubcategory;
+
+  /// Persist counterparty changes (optional)
+  final Future<void> Function({
+    required String txId,
+    required String newCounterparty,
+    required dynamic payload,
+  })? onChangeCounterparty;
+
   // ✅ tell parent when a modal/sheet/dialog opens/closes (so it can hide the anchored banner)
   final VoidCallback? onBeginModal;
   final VoidCallback? onEndModal;
@@ -125,6 +146,9 @@ class UnifiedTransactionList extends StatefulWidget {
       "Income",
       "Other",
     ],
+    this.subcategoryOptionsByCategory = const {},
+    this.onChangeSubcategory,
+    this.onChangeCounterparty,
     this.onChangeCategory,
     this.onBeginModal,
     this.onEndModal,
@@ -532,6 +556,18 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final String categorySource = _legacyCategorySource(e);
       final String merchantKey = _legacyMerchantKey(e, merchant);
       final String? merchantLogo = _merchantLogoAsset(merchant);
+      final String? subcat =
+          _dyn<String>(e, 'subcategory') ??
+          (() {
+            try {
+              final json = (e as dynamic).toJson?.call();
+              if (json is Map<String, dynamic> && json['subcategory'] != null) {
+                final s = json['subcategory'].toString().trim();
+                return s.isNotEmpty ? s : null;
+              }
+            } catch (_) {}
+            return null;
+          })();
 
       return {
         'mode': 'legacy',
@@ -540,6 +576,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'date': e.date,
         'amount': (e.amount is num) ? (e.amount as num).toDouble() : 0.0,
         'category': cat,
+        'subcategory': subcat,
         'note': e.note,
         'raw': e,
         'merchant': merchant.isEmpty ? null : merchant,
@@ -573,6 +610,18 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final String categorySource = _legacyCategorySource(i);
       final String merchantKey = _legacyMerchantKey(i, merchant);
       final String? merchantLogo = _merchantLogoAsset(merchant);
+      final String? subcat =
+          _dyn<String>(i, 'subcategory') ??
+          (() {
+            try {
+              final json = (i as dynamic).toJson?.call();
+              if (json is Map<String, dynamic> && json['subcategory'] != null) {
+                final s = json['subcategory'].toString().trim();
+                return s.isNotEmpty ? s : null;
+              }
+            } catch (_) {}
+            return null;
+          })();
 
       return {
         'mode': 'legacy',
@@ -581,6 +630,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'date': i.date,
         'amount': (i.amount is num) ? (i.amount as num).toDouble() : 0.0,
         'category': cat,
+        'subcategory': subcat,
         'note': i.note,
         'raw': i,
         'merchant': merchant.isEmpty ? null : merchant,
@@ -669,9 +719,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final String type = isDebit ? 'expense' : 'income';
 
       String? _pick(String? s) => (s == null || s.trim().isEmpty) ? null : s.trim();
-      final resolvedCat = _pick(doc['category']?.toString()) ??
-          _pick(doc['subcategory']?.toString()) ??
-          (isDebit ? 'General' : 'Income');
+      final categoryRaw = _pick(doc['category']?.toString());
+      final subcategoryRaw = _pick(doc['subcategory']?.toString());
+      final resolvedCat = categoryRaw ?? (isDebit ? 'General' : 'Income');
 
       final labelsArr = <String>[];
       final rawLabels = doc['labels'];
@@ -705,6 +755,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'date': _asDate(doc['date']),
         'amount': _asDouble(doc['amount']),
         'category': resolvedCat,
+        'subcategory': subcategoryRaw,
         'note': (doc['note'] ?? '').toString(),
         'raw': doc,
         'merchant': (doc['merchant'] ?? '').toString(),
@@ -856,6 +907,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final isIncome = (doc['type'] == 'income');
     final amount = (doc['amount'] is num) ? (doc['amount'] as num).toDouble() : 0.0;
     final category = (doc['category'] ?? (isIncome ? 'Income' : 'Expense')).toString();
+    final subcategory = (doc['subcategory'] ?? '').toString().trim();
     final date = (doc['date'] as DateTime);
     final note = (doc['note'] ?? '').toString();
     final bankLogo = doc['bankLogo'] as String?;
@@ -940,7 +992,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                   const SizedBox(height: 8),
                 ],
                 if (counterparty != null && counterparty.isNotEmpty)
-                  Text(isIncome ? "From: $counterparty" : "Paid to: $counterparty"),
+                  Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
+                Text("Category: $category"),
+                if (subcategory.isNotEmpty)
+                  Text("Subcategory: $subcategory"),
                 if (instrument != null && instrument.isNotEmpty)
                   Text("Instrument: $instrument"),
                 if (issuer != null && issuer.isNotEmpty)
@@ -1039,6 +1094,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final last4 = _legacyCardLast4(item);
     final isIntl = _legacyIsIntl(item);
     final hasFees = _legacyHasFees(item);
+    final categoryResolved = _legacyResolvedCategory(item, isIncome: isIncome);
+    final subcategory = _dyn<String>(item, 'subcategory')?.toString().trim() ?? '';
     final tags = _legacyTags(item);
 
     final labels = _methodChipLabels(
@@ -1074,14 +1131,14 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 children: [
                 Center(
                   child: Icon(
-                    getCategoryIcon(_legacyResolvedCategory(item, isIncome: isIncome), isIncome: isIncome),
+                    getCategoryIcon(categoryResolved, isIncome: isIncome),
                     size: 40,
                     color: isIncome ? Colors.green : Colors.pink,
                   ),
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  "${isIncome ? 'Income' : 'Expense'} - ${_legacyResolvedCategory(item, isIncome: isIncome)}",
+                  "${isIncome ? 'Income' : 'Expense'} - $categoryResolved",
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
                   textAlign: TextAlign.center,
                 ),
@@ -1096,7 +1153,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                   const SizedBox(height: 8),
                 ],
                 if ((counterparty ?? '').toString().trim().isNotEmpty)
-                  Text(isIncome ? "From: $counterparty" : "Paid to: $counterparty"),
+                  Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
+                Text("Category: $categoryResolved"),
+                if (subcategory.isNotEmpty)
+                  Text("Subcategory: $subcategory"),
                 if ((instrument ?? '').toString().trim().isNotEmpty)
                   Text("Instrument: $instrument"),
                 if ((issuer ?? '').toString().trim().isNotEmpty)
@@ -1429,6 +1489,181 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     );
   }
 
+  Widget _subcategoryDropdown({
+    required String txId,
+    required String currentCategory,
+    required String currentSubcategory,
+    required bool isIncome,
+    required dynamic payload,
+    required Map<String, dynamic> normalized,
+  }) {
+    final List<String> baseOptions =
+        widget.subcategoryOptionsByCategory[currentCategory] ?? const [];
+
+    if (baseOptions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final Color subcatColor =
+        isIncome ? const Color(0xFF047857) : const Color(0xFF4B5563);
+
+    final String value =
+        currentSubcategory.isEmpty ? baseOptions.first : currentSubcategory;
+    List<String> options = List<String>.from(baseOptions);
+    if (!options.contains(value)) {
+      options = [value, ...options];
+    }
+
+    return DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        value: value,
+        items: options
+            .map((c) => DropdownMenuItem(
+                  value: c,
+                  child: Text(
+                    c,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13.5,
+                      color: subcatColor,
+                    ),
+                  ),
+                ))
+            .toList(),
+        onChanged: (newVal) async {
+          if (newVal == null || newVal == value) return;
+
+          setState(() {
+            final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
+            if (idx != -1) allTx[idx]['subcategory'] = newVal;
+          });
+          normalized['subcategory'] = newVal;
+
+          if (widget.onChangeSubcategory != null) {
+            try {
+              await widget.onChangeSubcategory!(
+                txId: txId,
+                newSubcategory: newVal,
+                payload: payload,
+              );
+              return;
+            } catch (_) {}
+          }
+
+          try {
+            if (payload is ExpenseItem) {
+              final e = payload as ExpenseItem;
+              final updated = e.copyWith(subcategory: newVal);
+              await ExpenseService().updateExpense(widget.userPhone, updated);
+              return;
+            } else if (payload is IncomeItem) {
+              final i = payload as IncomeItem;
+              final updated = i.copyWith(subcategory: newVal);
+              await IncomeService().updateIncome(widget.userPhone, updated);
+              return;
+            }
+          } catch (_) {}
+        },
+        isDense: true,
+        icon: const Icon(Icons.expand_more_rounded, size: 16),
+        borderRadius: BorderRadius.circular(12),
+        style: TextStyle(
+          fontWeight: FontWeight.w500,
+          fontSize: 13.5,
+          color: subcatColor,
+        ),
+        menuMaxHeight: 300,
+        hint: Text(
+          isIncome ? 'Income subcategory' : 'Subcategory',
+          style: const TextStyle(
+            fontSize: 13,
+            color: Color(0xFF9CA3AF),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editCounterparty({
+    required String txId,
+    required bool isIncome,
+    required String? current,
+    required dynamic payload,
+    required Map<String, dynamic> normalized,
+  }) async {
+    final theme = Theme.of(context);
+    final controller = TextEditingController(text: current ?? '');
+    widget.onBeginModal?.call();
+
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(isIncome ? 'Edit sender name' : 'Edit payee name'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: isIncome ? 'Got from' : 'Paid to',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(null),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              style: TextButton.styleFrom(
+                foregroundColor: theme.colorScheme.primary,
+              ),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    widget.onEndModal?.call();
+    if (newName == null) return;
+    if (newName.isEmpty) return;
+
+    setState(() {
+      final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
+      if (idx != -1) {
+        allTx[idx]['counterparty'] = newName;
+      }
+    });
+    normalized['counterparty'] = newName;
+
+    if (widget.onChangeCounterparty != null) {
+      try {
+        await widget.onChangeCounterparty!(
+          txId: txId,
+          newCounterparty: newName,
+          payload: payload,
+        );
+        return;
+      } catch (_) {}
+    }
+
+    try {
+      if (payload is ExpenseItem) {
+        final e = payload as ExpenseItem;
+        final updated = e.copyWith(counterparty: newName);
+        await ExpenseService().updateExpense(widget.userPhone, updated);
+        return;
+      } else if (payload is IncomeItem) {
+        final i = payload as IncomeItem;
+        final updated = i.copyWith(counterparty: newName);
+        await IncomeService().updateIncome(widget.userPhone, updated);
+        return;
+      }
+    } catch (_) {}
+  }
+
   Widget _amountPill(double amount, bool isIncome) {
     return ConstrainedBox(
       constraints: const BoxConstraints(minWidth: 92, maxWidth: 108),
@@ -1618,6 +1853,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             final String categorySource = (tx['categorySource'] ?? '').toString();
 
             final raw = tx['raw'];
+            final String counterpartyText = (counterparty ?? '').trim();
 
             String? friendsStr;
             try {
@@ -1632,11 +1868,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
             final String showLine2 = () {
               if (title != null && title.trim().isNotEmpty) return title.trim();
-              if ((counterparty ?? '').toString().trim().isNotEmpty) {
-                return isIncome ? "From ${counterparty!.trim()}" : "Paid to ${counterparty!.trim()}";
-              }
               if (merchant != null && merchant.isNotEmpty) return merchant;
-              if (note.isNotEmpty) return note.length > 40 ? "${note.substring(0, 40)}..." : note;
+              if (note.isNotEmpty) {
+                return note.length > 40 ? "${note.substring(0, 40)}..." : note;
+              }
               return '';
             }();
 
@@ -1835,6 +2070,58 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.max,
+                                children: [
+                                  Text(
+                                    isIncome ? 'Got from ' : 'Paid to ',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: Color(0xFF6B7280),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: () => _editCounterparty(
+                                        txId: id,
+                                        isIncome: isIncome,
+                                        current: counterparty,
+                                        payload: payload,
+                                        normalized: tx,
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.max,
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              counterpartyText.isNotEmpty
+                                                  ? counterpartyText
+                                                  : ((merchant != null && merchant.isNotEmpty)
+                                                      ? merchant!
+                                                      : 'Unknown'),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFF111827),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          const Icon(
+                                            Icons.edit_outlined,
+                                            size: 14,
+                                            color: Color(0xFF9CA3AF),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
                               if (widget.showCategoryDropdown)
                                 SizedBox(
                                   height: 28,
@@ -1857,9 +2144,21 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                     color: Color(0xFF0F1E1C),
                                   ),
                                 ),
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2.0),
+                                child: _subcategoryDropdown(
+                                  txId: id,
+                                  currentCategory: category,
+                                  currentSubcategory:
+                                      (tx['subcategory'] ?? '').toString(),
+                                  isIncome: isIncome,
+                                  payload: payload,
+                                  normalized: tx,
+                                ),
+                              ),
                               if (showLine2.isNotEmpty)
                                 Padding(
-                                  padding: const EdgeInsets.only(top: 2.0),
+                                  padding: const EdgeInsets.only(top: 4.0),
                                   child: Text(
                                     showLine2,
                                     maxLines: 1,

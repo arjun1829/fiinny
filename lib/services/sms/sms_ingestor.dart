@@ -35,6 +35,28 @@ import '../merchants/merchant_alias_service.dart';
 // Merge policy shared with Gmail ingestion for consistent behavior.
 enum ReconcilePolicy { off, mergeEnrich, mergeSilent }
 
+// ── Bank detection & tiering (major vs other) ──────────────────────────────
+
+enum _BankTier { major, other, unknown }
+
+class _DetectedBank {
+  final String? code;    // 'HDFC'
+  final String? display; // 'HDFC Bank'
+  final _BankTier tier;
+  const _DetectedBank({this.code, this.display, this.tier = _BankTier.unknown});
+}
+
+class _BankProfile {
+  final String code;              // 'SBI'
+  final String display;           // 'State Bank of India'
+  final List<String> headerHints; // keywords to look for in SMS address/body
+  const _BankProfile({
+    required this.code,
+    required this.display,
+    this.headerHints = const [],
+  });
+}
+
 class SmsIngestor {
   SmsIngestor._();
   static final SmsIngestor instance = SmsIngestor._();
@@ -46,6 +68,14 @@ class SmsIngestor {
   static const bool WRITE_BILL_AS_EXPENSE = false; // keep false to avoid double-counting
   static const int INITIAL_HISTORY_DAYS = 120;
   static const ReconcilePolicy RECONCILE_POLICY = ReconcilePolicy.mergeEnrich;
+  // Backfill behaviour:
+  // - On first SMS ingest, or if user comes back after a long gap,
+  //   we aggressively backfill up to this many days.
+  static const int MAX_BACKFILL_DAYS = 1000;
+
+  // "Long gap" threshold: if last SMS sync was more than this many
+  // days ago, treat it like a fresh/backfill sync.
+  static const int LONG_GAP_DAYS = 60;
   String _billDocId({
     required String? bank,
     required String? last4,
@@ -99,21 +129,49 @@ class SmsIngestor {
         caseSensitive: false,
       ).hasMatch(s);
 
-  bool _passesTxnGate(String text, {String? sender}) {
-    final verbs = _hasDebitVerb(text) || _hasCreditVerb(text);
-    final whitelisted = () {
-      if (sender == null) return false;
-      final s = sender.trim().toUpperCase();
-      if (s.isEmpty) return false;
-      const wl = [
-        'HDFCBK', 'ICICIB', 'SBIINB', 'AXISBK', 'KOTAKB', 'YESBNK', 'IDFCFB', 'BOBFIN',
-        'AMEX', 'VISA', 'MASTERC', 'RZPAYX', 'PAYTMB', 'PAYTMP', 'CASHFR', 'SBICRD',
-        'SBIPSG', 'PNBSMS', 'CANBNK', 'INDUSB', 'IDBIBK', 'FEDBNK', 'UCOBNK', 'UNIONB'
-      ];
-      return wl.any((d) => s.contains(d)) || RegExp(r'^\d{10,}$').hasMatch(s);
-    }();
+  bool _passesTxnGate(String text, {String? sender, _DetectedBank? bank}) {
+    final t = text;
+    final hasCurrency = _hasCurrencyAmount(t);
+    final hasVerb = _hasDebitVerb(t) || _hasCreditVerb(t);
+    final hasRef = _hasRefToken(t);
 
-    return whitelisted || (_hasCurrencyAmount(text) && verbs && _hasRefToken(text));
+    final isFuture = _futureCredit(t);
+    final isLoanPromo = _loanOffer(t);
+    final promoInfo = _looksLikePromoOrInfo(t);
+
+    // Sender whitelist: common bank shortcodes & gateways
+    bool whitelistedSender = false;
+    if (sender != null) {
+      final s = sender.trim().toUpperCase();
+      if (s.isNotEmpty) {
+        const wl = [
+          'HDFCBK', 'ICICIB', 'SBIINB', 'AXISBK', 'KOTAKB', 'YESBNK', 'IDFCFB',
+          'BOBFIN', 'SBICRD', 'SBIPSG', 'PNBSMS', 'CANBNK', 'INDUSB', 'IDBIBK',
+          'FEDBNK', 'UCOBNK', 'UNIONB',
+          // gateways/wallets
+          'RZPAYX', 'RAZORPAY', 'PAYTMB', 'PAYTMP', 'CASHFR', 'AMEX', 'VISA', 'MASTERC',
+        ];
+        whitelistedSender = wl.any((d) => s.contains(d)) ||
+            RegExp(r'^\d{10,}$').hasMatch(s); // pure numeric sender ids
+      }
+    }
+
+    final isMajorBank = bank?.tier == _BankTier.major;
+
+    if (!hasCurrency || !hasVerb) return false;
+    if (isFuture || isLoanPromo) return false;
+
+    // For major banks or known sender IDs, allow currency+verb but block pure promos.
+    if (isMajorBank || whitelistedSender) {
+      if (promoInfo && !hasRef) return false;
+      return true;
+    }
+
+    // For all others/unknown:
+    if (!hasRef) return false;
+    if (promoInfo && !hasRef) return false;
+
+    return true;
   }
 
   bool _tooSmallToTrust(String body, double amt) {
@@ -135,15 +193,43 @@ class SmsIngestor {
         caseSensitive: false,
       ).hasMatch(s);
 
-  bool _smsIncomeGate(String text) {
+  bool _smsIncomeGate(String text, {String? sender, _DetectedBank? bank}) {
     final hasCurrency = _hasCurrencyAmount(text);
     final strongCredit = RegExp(
       r'\b(has\s*been\s*credited|credited\s*(?:by|with)?|received\s*(?:from)?|payout|settlement)\b',
       caseSensitive: false,
     ).hasMatch(text);
     final hasRef = _hasRefToken(text);
-    return hasCurrency && strongCredit && hasRef &&
-        !_futureCredit(text) && !_loanOffer(text);
+    final futureish = _futureCredit(text);
+    final loanPromo = _loanOffer(text);
+    final promoInfo = _looksLikePromoOrInfo(text);
+
+    if (!hasCurrency || !strongCredit) return false;
+    if (futureish || loanPromo) return false;
+    if (promoInfo && !hasRef) return false;
+
+    bool whitelistedSender = false;
+    if (sender != null) {
+      final s = sender.trim().toUpperCase();
+      if (s.isNotEmpty) {
+        const wl = [
+          'HDFCBK', 'ICICIB', 'SBIINB', 'AXISBK', 'KOTAKB', 'YESBNK', 'IDFCFB',
+          'BOBFIN', 'SBICRD', 'SBIPSG', 'PNBSMS', 'CANBNK', 'INDUSB', 'IDBIBK',
+          'FEDBNK', 'UCOBNK', 'UNIONB',
+          'RZPAYX', 'RAZORPAY', 'PAYTMB', 'PAYTMP', 'CASHFR', 'AMEX', 'VISA', 'MASTERC',
+        ];
+        whitelistedSender = wl.any((d) => s.contains(d)) ||
+            RegExp(r'^\d{10,}$').hasMatch(s);
+      }
+    }
+
+    final isMajorBank = bank?.tier == _BankTier.major;
+    if (isMajorBank || whitelistedSender) {
+      return true;
+    }
+
+    // For all others, require a reference/txn/account cue.
+    return hasRef;
   }
 
   bool _looksLikeCardBillPayment(String text, {String? bank, String? last4}) {
@@ -153,6 +239,145 @@ class SmsIngestor {
     final last4Hit = (last4 != null) && RegExp(r'\b' + RegExp.escape(last4) + r'\b').hasMatch(u);
     final bankHit  = (bank != null) && u.contains(bank.toUpperCase());
     return payCue && (last4Hit || bankHit || ccCue);
+  }
+
+  // ── Bank detection & tiering (major vs other) ──────────────────────────────
+
+  static const List<_BankProfile> _MAJOR_BANKS = [
+    // Public sector
+    _BankProfile(
+      code: 'SBI',
+      display: 'State Bank of India',
+      headerHints: ['sbi', 'state bank of india', 'sbiinb'],
+    ),
+    _BankProfile(
+      code: 'PNB',
+      display: 'Punjab National Bank',
+      headerHints: ['pnb', 'punjab national bank'],
+    ),
+    _BankProfile(
+      code: 'BOB',
+      display: 'Bank of Baroda',
+      headerHints: ['bob', 'bank of baroda'],
+    ),
+    _BankProfile(
+      code: 'UNION',
+      display: 'Union Bank of India',
+      headerHints: ['union bank', 'union bank of india', 'unionb'],
+    ),
+    _BankProfile(
+      code: 'BOI',
+      display: 'Bank of India',
+      headerHints: ['bank of india'],
+    ),
+    _BankProfile(
+      code: 'CANARA',
+      display: 'Canara Bank',
+      headerHints: ['canara bank'],
+    ),
+    _BankProfile(
+      code: 'INDIAN',
+      display: 'Indian Bank',
+      headerHints: ['indian bank'],
+    ),
+    _BankProfile(
+      code: 'IOB',
+      display: 'Indian Overseas Bank',
+      headerHints: ['indian overseas bank', 'iob'],
+    ),
+    _BankProfile(
+      code: 'UCO',
+      display: 'UCO Bank',
+      headerHints: ['uco bank'],
+    ),
+    _BankProfile(
+      code: 'MAHARASHTRA',
+      display: 'Bank of Maharashtra',
+      headerHints: ['bank of maharashtra'],
+    ),
+    _BankProfile(
+      code: 'CBI',
+      display: 'Central Bank of India',
+      headerHints: ['central bank of india'],
+    ),
+    _BankProfile(
+      code: 'PSB',
+      display: 'Punjab & Sind Bank',
+      headerHints: ['punjab and sind bank', 'punjab & sind bank'],
+    ),
+
+    // Private sector
+    _BankProfile(
+      code: 'HDFC',
+      display: 'HDFC Bank',
+      headerHints: ['hdfc', 'hdfcbk'],
+    ),
+    _BankProfile(
+      code: 'ICICI',
+      display: 'ICICI Bank',
+      headerHints: ['icici'],
+    ),
+    _BankProfile(
+      code: 'AXIS',
+      display: 'Axis Bank',
+      headerHints: ['axis', 'axisbk'],
+    ),
+    _BankProfile(
+      code: 'KOTAK',
+      display: 'Kotak Mahindra Bank',
+      headerHints: ['kotak'],
+    ),
+    _BankProfile(
+      code: 'INDUSIND',
+      display: 'IndusInd Bank',
+      headerHints: ['indusind'],
+    ),
+    _BankProfile(
+      code: 'YES',
+      display: 'Yes Bank',
+      headerHints: ['yesbnk', 'yes bank'],
+    ),
+    _BankProfile(
+      code: 'FEDERAL',
+      display: 'Federal Bank',
+      headerHints: ['federal bank', 'fedbnk'],
+    ),
+    _BankProfile(
+      code: 'IDFCFIRST',
+      display: 'IDFC First Bank',
+      headerHints: ['idfc', 'idfcfb'],
+    ),
+    _BankProfile(
+      code: 'IDBI',
+      display: 'IDBI Bank',
+      headerHints: ['idbi'],
+    ),
+  ];
+
+  _DetectedBank _detectBankFromSms({String? address, required String body}) {
+    // 1) Use shared helper first
+    final guess = guessBankFromSms(address: address, body: body);
+    if (guess != null && guess.trim().isNotEmpty) {
+      final upper = guess.toUpperCase();
+      for (final b in _MAJOR_BANKS) {
+        if (b.code == upper) {
+          return _DetectedBank(code: b.code, display: b.display, tier: _BankTier.major);
+        }
+      }
+      return _DetectedBank(code: upper, display: upper, tier: _BankTier.other);
+    }
+
+    // 2) Fallback: look for hints in sender/body
+    final combined = ((address ?? '') + ' ' + body).toLowerCase();
+    for (final b in _MAJOR_BANKS) {
+      for (final h in b.headerHints) {
+        if (combined.contains(h.toLowerCase())) {
+          return _DetectedBank(code: b.code, display: b.display, tier: _BankTier.major);
+        }
+      }
+    }
+
+    return const _DetectedBank(tier: _BankTier.unknown);
   }
 
 
@@ -390,7 +615,10 @@ class SmsIngestor {
       return;
     }
     if (TEST_MODE) {
-      return backfillLastNDaysForTesting(userPhone: userPhone, days: TEST_BACKFILL_DAYS);
+      return backfillLastNDaysForTesting(
+        userPhone: userPhone,
+        days: TEST_BACKFILL_DAYS,
+      );
     }
 
     final granted = await SmsPermissionHelper.hasPermissions();
@@ -399,9 +627,22 @@ class SmsIngestor {
     final telephony = _ensureTelephony();
     if (telephony == null) return;
 
-    final state = await IngestStateService.instance.ensureCutoff(userPhone);
+    final st = await IngestStateService.instance.getOrCreate(userPhone);
     final now = DateTime.now();
-    final deviceCutoff = now.subtract(Duration(days: newerThanDays));
+
+    int daysBack;
+    if (st.lastSmsAt == null) {
+      // First time SMS ingest → heavy backfill
+      daysBack = MAX_BACKFILL_DAYS;
+    } else {
+      final gapDays = now.difference(st.lastSmsAt!).inDays;
+      daysBack = gapDays > LONG_GAP_DAYS
+          ? MAX_BACKFILL_DAYS
+          : newerThanDays;
+    }
+
+    final effectiveDays = daysBack.clamp(1, MAX_BACKFILL_DAYS);
+    final cutoff = now.subtract(Duration(days: effectiveDays));
 
     final msgs = await telephony.getInboxSms(
       columns: [SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE],
@@ -413,21 +654,24 @@ class SmsIngestor {
       final ts = DateTime.fromMillisecondsSinceEpoch(
         m.date ?? now.millisecondsSinceEpoch,
       );
-      if (ts.isBefore(deviceCutoff)) break;
+      if (ts.isBefore(cutoff)) break;
 
       await _handleOne(
         userPhone: userPhone,
         body: m.body ?? '',
         ts: ts,
         address: m.address,
-        ingestState: state,
+        ingestState: st,
       );
 
       if (lastSeen == null || ts.isAfter(lastSeen)) lastSeen = ts;
     }
 
     if (lastSeen != null) {
-      await IngestStateService.instance.setProgress(userPhone, lastSmsTs: lastSeen);
+      await IngestStateService.instance.setProgress(
+        userPhone,
+        lastSmsTs: lastSeen,
+      );
     }
   }
 
@@ -517,17 +761,20 @@ class SmsIngestor {
     final now = DateTime.now();
 
     DateTime since;
-    try {
-      final last = (st as dynamic)?.lastSmsTs;
-      if (last is Timestamp) {
-        since = last.toDate().subtract(Duration(hours: overlap));
-      } else if (last is DateTime) {
-        since = last.subtract(Duration(hours: overlap));
+    final last = st.lastSmsAt;
+
+    if (last == null) {
+      final daysBack = INITIAL_HISTORY_DAYS.clamp(1, MAX_BACKFILL_DAYS);
+      since = now.subtract(Duration(days: daysBack));
+    } else {
+      final gapDays = now.difference(last).inDays;
+      if (gapDays > LONG_GAP_DAYS) {
+        // User came back after a long time → widen window aggressively
+        since = now.subtract(Duration(days: MAX_BACKFILL_DAYS));
       } else {
-        since = now.subtract(Duration(days: INITIAL_HISTORY_DAYS));
+        // Normal delta sync + small overlap
+        since = last.subtract(Duration(hours: overlap));
       }
-    } catch (_) {
-      since = now.subtract(Duration(days: INITIAL_HISTORY_DAYS));
     }
 
     final msgs = await telephony.getInboxSms(
@@ -570,13 +817,15 @@ class SmsIngestor {
     String? address,
     dynamic ingestState,
   }) async {
-    // Be permissive so we don't skip real transactions.
-    // Only drop pure-OTP messages.
+    // Drop pure-OTP messages early.
     if (_looksLikeOtpOnly(body)) return;
+
+    // Detect issuer bank/tier from sender+body (major vs other/unknown).
+    final detectedBank = _detectBankFromSms(address: address, body: body);
 
     final bill = _extractCardBillInfo(body);
 
-    final looksTxn = _passesTxnGate(body, sender: address);
+    final looksTxn = _passesTxnGate(body, sender: address, bank: detectedBank);
 
     if (_looksLikePromoOrInfo(body) && !looksTxn) {
       _log('skip promo/info sms');
@@ -594,7 +843,8 @@ class SmsIngestor {
       return;
     }
 
-    if (direction == 'credit' && !_smsIncomeGate(body)) {
+    if (direction == 'credit' &&
+        !_smsIncomeGate(body, sender: address, bank: detectedBank)) {
       _log('credit gate failed; skip');
       return;
     }
@@ -618,7 +868,8 @@ class SmsIngestor {
     _log('incoming ${ts.toIso8601String()} ${address ?? "?"}: ${_oneLine(body)}');
 
     // Pre-extract common signals
-    final bank = _guessIssuerBank(address: address, body: body);
+    final bank = detectedBank.code ??
+        _guessIssuerBank(address: address, body: body);
     final last4 = _extractCardLast4(body);
     final upiVpa = _extractUpiVpa(body);
     final instrument = _inferInstrument(body);
@@ -626,6 +877,10 @@ class SmsIngestor {
     final isIntl = _looksInternational(body);
     final fx = _extractFx(body); // {"currency": "USD", "amount": 23.6}
     final fees = _extractFees(body); // {"convenience": 10.0, "gst": 1.8, ...}
+    final isEmiAutopay = RegExp(
+      r'\b(EMI|AUTOPAY|AUTO[- ]?DEBIT|NACH|E-?MANDATE|MANDATE)\b',
+      caseSensitive: false,
+    ).hasMatch(body);
 
     // Card bill detection (statement/due) → write a bill_reminder (not an expense)
     if (bill != null) {
@@ -762,24 +1017,81 @@ class SmsIngestor {
       return;
     }
 
-    // ===== LLM-FIRST categorization =====
+    // ===== Categorization pipeline: overrides → rules → LLM fallback =====
+    final hintParts = <String>[
+      'HINTS: dir=$direction',
+      if (isEmiAutopay) 'cues=emi,autopay',
+      if (instrument != null && instrument!.isNotEmpty)
+        'instrument=${instrument!.toLowerCase().replaceAll(' ', '_')}',
+      if (upiVpa != null && upiVpa.trim().isNotEmpty)
+        'upi=${upiVpa!.trim()}',
+      if (merchantNorm.isNotEmpty)
+        'merchant_norm=${merchantNorm.toLowerCase().replaceAll(' ', '_')}',
+    ];
+    final enrichedDesc = hintParts.join('; ') + '; ' + preview;
+
     String finalCategory = 'Other';
     String finalSubcategory = '';
     double finalConfidence = 0.0;
-    String categorySource = 'llm';
+    String categorySource = 'rules';
+    bool categoryLocked = false;
+    bool emiLocked = false;
     final Set<String> labelSet = <String>{};
 
-    bool hasSmartCategory = false;
-
+    // 1) User overrides (highest priority)
     final overrideCat = await UserOverrides.getCategoryForMerchant(userPhone, merchantKey);
     if (overrideCat != null && overrideCat.isNotEmpty) {
       finalCategory = overrideCat;
       finalConfidence = 1.0;
       categorySource = 'user_override';
-      hasSmartCategory = true;
+      categoryLocked = true;
     }
 
-    if (!hasSmartCategory && AiConfig.llmOn) {
+    // 2) EMI/autopay cues for debits
+    if (!categoryLocked && isEmiAutopay && direction == 'debit') {
+      finalCategory = 'Loan EMI';
+      finalSubcategory = '';
+      finalConfidence = 0.95;
+      categorySource = 'rules';
+      categoryLocked = true;
+      emiLocked = true;
+      labelSet.addAll({'loan_emi', 'autopay'});
+    }
+
+    // 3) Rules-based categorization FIRST
+    if (!categoryLocked) {
+      try {
+        final cat = CategoryRules.categorizeMerchant(body, merchantKey);
+        finalCategory = cat.category;
+        finalSubcategory = cat.subcategory;
+        finalConfidence = cat.confidence;
+        labelSet.addAll(cat.tags);
+        categorySource = 'rules';
+
+        final lowerCat = finalCategory.toLowerCase();
+        if (lowerCat != 'other' &&
+            lowerCat != 'uncategorized' &&
+            lowerCat != 'general' &&
+            finalConfidence >= 0.55) {
+          categoryLocked = true;
+        }
+      } catch (e) {
+        _log('rules categorization error: $e');
+      }
+    }
+
+    // 4) LLM fallback ONLY if rules are weak or undecided
+    bool needsLlm = AiConfig.llmOn;
+    if (needsLlm) {
+      final lowerCat = finalCategory.toLowerCase();
+      needsLlm = !categoryLocked ||
+          lowerCat == 'other' ||
+          lowerCat == 'uncategorized' ||
+          lowerCat == 'general' ||
+          finalConfidence < AiConfig.confThresh;
+    }
+
+    if (needsLlm) {
       try {
         final labels = await TxExtractor.labelUnknown([
           TxRaw(
@@ -787,22 +1099,13 @@ class SmsIngestor {
             merchant: merchantNorm.isNotEmpty
                 ? merchantNorm
                 : (merchantRaw ?? 'MERCHANT'),
-            desc: preview,
+            desc: enrichedDesc,
             date: ts.toIso8601String(),
           ),
         ]);
 
         if (labels.isNotEmpty) {
           final l = labels.first;
-          if (l.category.isNotEmpty) {
-            finalCategory = l.category;
-            finalConfidence = l.confidence;
-            hasSmartCategory = true;
-            categorySource = 'llm';
-          }
-          if (l.subcategory.isNotEmpty) {
-            finalSubcategory = l.subcategory;
-          }
           if (l.labels.isNotEmpty) {
             labelSet.addAll(l.labels);
           }
@@ -810,22 +1113,24 @@ class SmsIngestor {
             merchantNorm = l.merchantNorm;
             merchantKey = merchantNorm.toUpperCase();
           }
+
+          final llmEligible = l.category.isNotEmpty &&
+              l.category.toLowerCase() != 'other' &&
+              l.confidence >= AiConfig.confThresh;
+
+          if (llmEligible && !categoryLocked) {
+            finalCategory = l.category;
+            finalSubcategory = l.subcategory;
+            finalConfidence = l.confidence;
+            categorySource = 'llm';
+            categoryLocked = true;
+          } else if (!categoryLocked && l.subcategory.isNotEmpty) {
+            finalSubcategory = l.subcategory;
+          }
         }
       } catch (e) {
         _log('LLM error: $e');
       }
-    }
-
-    if (!hasSmartCategory) {
-      categorySource = 'rules';
-      try {
-        final cat = CategoryRules.categorizeMerchant(body, merchantKey);
-        finalCategory = cat.category;
-        finalSubcategory = cat.subcategory;
-        finalConfidence = cat.confidence;
-        labelSet.addAll(cat.tags);
-        hasSmartCategory = true;
-      } catch (_) {}
     }
 
     final extractedCounterparty = direction == 'debit'
@@ -917,14 +1222,24 @@ class SmsIngestor {
     }
 
     // Build model and write
-    final note = _cleanNoteSimple(body);
+    var note = _cleanNoteSimple(body);
+    if (emiLocked && direction == 'debit') {
+      final prefix = 'Paid towards your EMI' +
+          (last4 != null ? ' ****$last4' : '');
+      note = prefix + (note.isNotEmpty ? '\n$note' : '');
+    }
     final currency = (fx?['currency'] as String?) ?? 'INR';
     final isIntlResolved = isIntl || (fx != null && currency.toUpperCase() != 'INR');
+    final extraTagList = _extraTagsFromText(body);
+    if (emiLocked) {
+      if (!extraTagList.contains('loan_emi')) extraTagList.add('loan_emi');
+      if (!extraTagList.contains('autopay')) extraTagList.add('autopay');
+    }
     final tags = _buildTags(
       instrument: instrument,
       isIntl: isIntlResolved,
       hasFees: fees.isNotEmpty,
-      extra: _extraTagsFromText(body),
+      extra: extraTagList,
     );
 
     if (direction == 'debit') {
@@ -1598,16 +1913,58 @@ class SmsIngestor {
   }) {
     final parts = <String>[];
 
+    String? fromNameForCredit() {
+      final rx = RegExp(
+        r'\bfrom\s+([A-Za-z0-9 .&\-\(\)/]{3,40})',
+        caseSensitive: false,
+      );
+      final m = rx.firstMatch(body);
+      if (m == null) return null;
+
+      var raw = (m.group(1) ?? '').trim();
+      if (raw.isEmpty) return null;
+
+      // Trim at first sentence delimiter
+      raw = raw.split(RegExp(r'[\.;\n]')).first.trim();
+
+      final upper = raw.toUpperCase();
+      // Skip very generic/self phrases
+      if (upper.startsWith('YOUR ')) return null;
+      if (upper.contains('ACCOUNT') || upper.contains('A/C') || upper.contains('ACCT')) {
+        return null;
+      }
+      // Skip if it's just the bank name
+      if (bank != null && bank.trim().isNotEmpty) {
+        final b = bank.trim().toUpperCase();
+        if (upper.contains(b)) return null;
+      }
+      return raw;
+    }
+
+    // 1) CounterpartyExtractor result has highest priority (if present)
     if (extracted != null && extracted.name.trim().isNotEmpty) {
       _appendUnique(parts, extracted.name.trim());
     }
+
+    // 2) For CREDIT: try explicit "from <NAME>" as early as possible
+    if (direction == 'credit') {
+      final fromName = fromNameForCredit();
+      if (fromName != null && fromName.trim().isNotEmpty) {
+        _appendUnique(parts, fromName.trim());
+      }
+    }
+
+    // 3) Merchant / brand name
     if (merchantNorm.isNotEmpty) {
       _appendUnique(parts, merchantNorm);
     }
+
+    // 4) UPI handle
     if (upiVpa != null && upiVpa.trim().isNotEmpty) {
       _appendUnique(parts, upiVpa.trim().toUpperCase());
     }
 
+    // 5) Account/bank fallbacks
     final account = _accountToken(bank, last4);
     if (account != null) {
       _appendUnique(parts, account);
@@ -1615,21 +1972,7 @@ class SmsIngestor {
       _appendUnique(parts, bank.trim().toUpperCase());
     }
 
-    if (direction == 'credit') {
-      final match = RegExp(r'\bfrom\s+([A-Za-z0-9 .&\-\(\)/]{3,40})', caseSensitive: false)
-          .firstMatch(body);
-      if (match != null) {
-        final raw = match.group(1) ?? '';
-        var cleaned = raw.split(RegExp(r'[\.;\n]')).first.trim();
-        if (cleaned.toLowerCase().startsWith('your ')) {
-          cleaned = '';
-        }
-        if (cleaned.isNotEmpty) {
-          _appendUnique(parts, cleaned);
-        }
-      }
-    }
-
+    // 6) Final fallbacks if everything else failed
     if (parts.isEmpty) {
       if (last4 != null && last4.trim().isNotEmpty) {
         _appendUnique(parts, _accountToken(null, last4) ?? 'A/c …${last4.trim()}');
