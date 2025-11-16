@@ -510,7 +510,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       return const SizedBox(height: 8);
     }
     return Padding(
-      padding: const EdgeInsets.only(top: 8, left: 4, right: 4),
+      padding: const EdgeInsets.only(top: 4, left: 4, right: 4),
       child: Wrap(
         spacing: 8,
         runSpacing: 6,
@@ -991,40 +991,29 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
-      child: SizedBox(
-        height: 66,
-        child: FloatingActionButton.extended(
-          onPressed: () async {
-            await Navigator.pushNamed(
-              context,
-              '/add',
-              arguments: widget.userPhone,
-            );
-          },
-          icon: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(100),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.tealAccent.withOpacity(0.45),
-                  blurRadius: 12,
-                  offset: const Offset(0, 6),
-                )
-              ],
-            ),
-            child: const Icon(Icons.add_circle_rounded, size: 30),
+      child: FloatingActionButton(
+        onPressed: () async {
+          await Navigator.pushNamed(
+            context,
+            '/add',
+            arguments: widget.userPhone,
+          );
+        },
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.teal,
+        elevation: 6,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(100),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.tealAccent.withOpacity(0.45),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              )
+            ],
           ),
-          label: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-            child: Text(
-              "",
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-            ),
-          ),
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.teal,
-          elevation: 6,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          child: const Icon(Icons.add_circle_rounded, size: 30),
         ),
       ),
     );
@@ -1049,7 +1038,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return RefreshIndicator(
       onRefresh: () async => _recompute(),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 14, 12, 20),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
         children: [
           _SummaryRingCard(
             spent: periodTotalExpense,
@@ -1068,10 +1057,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             },
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
 
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: Row(
               children: [
                 _buildFiltersButton(),
@@ -1083,12 +1072,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
           _buildActiveFiltersWrap(),
 
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
 
           // --- Bulk Actions Bar ---
           if (_multiSelectMode)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
               child: Row(
                 children: [
                   Text("${_selectedTxIds.length} selected",
@@ -1164,7 +1153,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
           // --- Search & Advanced Filter ---
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
             child: Row(
               children: [
                 Expanded(
@@ -1233,8 +1222,11 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                           }
                         });
                       },
-                      activeColor: const Color(0xFF7C3AED),
                       checkColor: Colors.black,
+                      fillColor:
+                          MaterialStateProperty.resolveWith<Color>((states) {
+                        return Colors.white;
+                      }),
                       side: const BorderSide(color: Color(0xFF7C3AED)),
                       visualDensity: VisualDensity.compact,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1247,7 +1239,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
 
           // Transaction List Unified (Expense+Income)
           AnimatedSwitcher(
@@ -2270,7 +2262,7 @@ class _SummaryRingCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const SizedBox(width: 8),
+                const SizedBox(width: 14),
                 SizedBox(
                   width: 96,
                   height: 96,
@@ -2284,19 +2276,19 @@ class _SummaryRingCard extends StatelessWidget {
                           value: chartSpent,
                           color: Fx.mintDark,
                           title: '',
-                          radius: 40,
+                          radius: 38,
                         ),
                         PieChartSectionData(
                           value: chartIncome,
                           color: Fx.mint.withOpacity(0.24),
                           title: '',
-                          radius: 40,
+                          radius: 38,
                         ),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
