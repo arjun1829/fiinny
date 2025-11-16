@@ -1547,23 +1547,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 newSubcategory: newVal,
                 payload: payload,
               );
-              return;
             } catch (_) {}
           }
-
-          try {
-            if (payload is ExpenseItem) {
-              final e = payload as ExpenseItem;
-              final updated = e.copyWith(subcategory: newVal);
-              await ExpenseService().updateExpense(widget.userPhone, updated);
-              return;
-            } else if (payload is IncomeItem) {
-              final i = payload as IncomeItem;
-              final updated = i.copyWith(subcategory: newVal);
-              await IncomeService().updateIncome(widget.userPhone, updated);
-              return;
-            }
-          } catch (_) {}
         },
         isDense: true,
         icon: const Icon(Icons.expand_more_rounded, size: 16),
