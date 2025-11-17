@@ -131,84 +131,90 @@ class UnifiedTransactionList extends StatefulWidget {
     this.categoryOptions = const [
       'Fund Transfers',
       'Payments',
-      'Food',
-      'Entertainment',
       'Shopping',
       'Travel',
+      'Food',
+      'Entertainment',
       'Others',
-      'healthcare',
-      'education',
-      'Income',
+      'Healthcare',
+      'Education',
+      'Investments',
     ],
     this.subcategoryOptionsByCategory = const {
       'Fund Transfers': [
-        'Fund Transfers- Others',
+        'Fund Transfers – Others',
         'Cash Withdrawals',
         'Remittance',
       ],
       'Payments': [
         'Loans/EMIs',
         'Fuel',
-        'Mobile bill',
+        'Mobile Bill',
         'Auto Service',
         'Bills / Utility',
-        'credit card',
+        'Credit Card',
         'Logistics',
-        'Payment others',
-        'Rental and realestate',
-        'wallet payment',
+        'Payment – Others',
+        'Rental and Real Estate',
+        'Wallet Payment',
       ],
       'Food': [
-        'restaurants',
-        'alcohol',
-        'food delivery',
-        'food others',
+        'Restaurants',
+        'Alcohol',
+        'Food Delivery',
+        'Food – Others',
       ],
       'Entertainment': [
-        'OTT services',
-        'gaming',
-        'movies',
-        'music',
-        'entertainment - others',
+        'OTT Services',
+        'Gaming',
+        'Movies',
+        'Music',
+        'Entertainment – Others',
       ],
       'Shopping': [
-        'grocesires and consumables',
-        'electronics',
-        'apparel',
-        'books and statioanry',
-        'ecommerence',
-        'fittness',
-        'gift',
-        'home furnishin gaming',
-        'jewellery and other accessorie',
-        'personal care',
-        'shoping others',
+        'Groceries and Consumables',
+        'Electronics',
+        'Apparel',
+        'Books and Stationery',
+        'Ecommerce',
+        'Fitness',
+        'Gift',
+        'Home Furnishing & Gaming',
+        'Jewellery and Accessories',
+        'Personal Care',
+        'Shopping – Others',
       ],
       'Travel': [
-        'car rental',
-        'travel and tours',
-        'travel others',
-        'accomodation',
-        'airlines',
-        'cab/ bike services',
-        'forex',
-        'railways',
+        'Car Rental',
+        'Travel and Tours',
+        'Travel – Others',
+        'Accommodation',
+        'Airlines',
+        'Cab / Bike Services',
+        'Forex',
+        'Railways',
       ],
       'Others': [
-        'others',
-        'business services',
-        'bank charges',
-        'checque reject',
-        'government services/ firedepartment',
-        'Tax payments',
+        'Others',
+        'Business Services',
+        'Bank Charges',
+        'Cheque Reject',
+        'Government Services / Fire Department',
+        'Tax Payments',
       ],
-      'healthcare': [
-        'medicine/pharma',
-        'healthcare othere',
-        'hospital',
+      'Healthcare': [
+        'Medicine / Pharma',
+        'Healthcare – Others',
+        'Hospital',
       ],
-      'education': [
+      'Education': [
         'Education',
+      ],
+      'Investments': [
+        'Mutual Fund – SIP',
+        'Mutual Fund – Lumpsum',
+        'Stocks / Brokerage',
+        'Investments – Others',
       ],
     },
     this.onChangeSubcategory,
@@ -971,7 +977,22 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final isIncome = (doc['type'] == 'income');
     final amount = (doc['amount'] is num) ? (doc['amount'] as num).toDouble() : 0.0;
     final category = (doc['category'] ?? (isIncome ? 'Income' : 'Expense')).toString();
-    final subcategory = (doc['subcategory'] ?? '').toString().trim();
+    final String subcategory = (() {
+      // First try normalized tx map
+      final rawSub = doc['subcategory']?.toString().trim();
+      if (rawSub != null && rawSub.isNotEmpty) return rawSub;
+
+      // Then try underlying raw unified doc, if present
+      try {
+        final raw = doc['raw'];
+        if (raw is Map<String, dynamic>) {
+          final v = raw['subcategory']?.toString().trim();
+          if (v != null && v.isNotEmpty) return v;
+        }
+      } catch (_) {}
+
+      return '';
+    })();
     final date = (doc['date'] as DateTime);
     final note = (doc['note'] ?? '').toString();
     final bankLogo = doc['bankLogo'] as String?;
@@ -1045,6 +1066,16 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
                   textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: 4),
+                if (subcategory.isNotEmpty)
+                  Text(
+                    "Subcategory: $subcategory",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey,
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 if (methodChips.isNotEmpty) ...[
                   Wrap(
@@ -1057,9 +1088,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 ],
                 if (counterparty != null && counterparty.isNotEmpty)
                   Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
-                Text("Category: $category"),
-                if (subcategory.isNotEmpty)
-                  Text("Subcategory: $subcategory"),
                 if (instrument != null && instrument.isNotEmpty)
                   Text("Instrument: $instrument"),
                 if (issuer != null && issuer.isNotEmpty)
@@ -1159,7 +1187,20 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final isIntl = _legacyIsIntl(item);
     final hasFees = _legacyHasFees(item);
     final categoryResolved = _legacyResolvedCategory(item, isIncome: isIncome);
-    final subcategory = _dyn<String>(item, 'subcategory')?.toString().trim() ?? '';
+    final String subcategory = (() {
+      final direct = _dyn<String>(item, 'subcategory')?.toString().trim();
+      if (direct != null && direct.isNotEmpty) return direct;
+
+      try {
+        final json = (item as dynamic).toJson?.call();
+        if (json is Map<String, dynamic>) {
+          final v = json['subcategory']?.toString().trim();
+          if (v != null && v.isNotEmpty) return v;
+        }
+      } catch (_) {}
+
+      return '';
+    })();
     final tags = _legacyTags(item);
 
     final labels = _methodChipLabels(
@@ -1206,6 +1247,17 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
                   textAlign: TextAlign.center,
                 ),
+                if (subcategory.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    "Subcategory: $subcategory",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 if (methodChips.isNotEmpty) ...[
                   Wrap(
@@ -1218,9 +1270,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 ],
                 if ((counterparty ?? '').toString().trim().isNotEmpty)
                   Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
-                Text("Category: $categoryResolved"),
-                if (subcategory.isNotEmpty)
-                  Text("Subcategory: $subcategory"),
                 if ((instrument ?? '').toString().trim().isNotEmpty)
                   Text("Instrument: $instrument"),
                 if ((issuer ?? '').toString().trim().isNotEmpty)
@@ -1481,74 +1530,88 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       options = [value, ...options];
     }
 
-    return DropdownButtonHideUnderline(
-      child: DropdownButton<String>(
-        value: value,
-        items: options
-            .map((c) => DropdownMenuItem(
-                  value: c,
-                  child: Text(
-                    c,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13.8,
-                      color: Color(0xFF0F1E1C),
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minWidth: 0,
+          maxWidth: double.infinity,
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: value,
+            isExpanded: true, // prevent internal Row overflow
+            items: options
+                .map(
+                  (c) => DropdownMenuItem<String>(
+                    value: c,
+                    child: Text(
+                      c,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13.8,
+                        color: Color(0xFF0F1E1C),
+                      ),
                     ),
                   ),
-                ))
-            .toList(),
-        onChanged: (newVal) async {
-          if (newVal == null || newVal == value) return;
+                )
+                .toList(),
+            onChanged: (newVal) async {
+              if (newVal == null || newVal == value) return;
 
-          setState(() {
-            final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
-            if (idx != -1) allTx[idx]['category'] = newVal;
-          });
+              setState(() {
+                final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
+                if (idx != -1) allTx[idx]['category'] = newVal;
+              });
 
-          if (widget.onChangeCategory != null) {
-            try {
-              await widget.onChangeCategory!(
-                txId: txId,
-                newCategory: newVal,
-                payload: payload,
-              );
-              await _saveOverrideIfPossible(newVal, normalized);
-              return;
-            } catch (_) {}
-          } else {
-            try {
-              if (payload is ExpenseItem) {
-                final e = payload as ExpenseItem;
-                final updated = e.copyWith(type: newVal, category: newVal);
-                await ExpenseService().updateExpense(widget.userPhone, updated);
-                await _saveOverrideIfPossible(newVal, normalized);
-                return;
-              } else if (payload is IncomeItem) {
-                final i = payload as IncomeItem;
-                final updated = i.copyWith(type: newVal, category: newVal);
-                await IncomeService().updateIncome(widget.userPhone, updated);
-                await _saveOverrideIfPossible(newVal, normalized);
-                return;
+              if (widget.onChangeCategory != null) {
+                try {
+                  await widget.onChangeCategory!(
+                    txId: txId,
+                    newCategory: newVal,
+                    payload: payload,
+                  );
+                  await _saveOverrideIfPossible(newVal, normalized);
+                  return;
+                } catch (_) {}
+              } else {
+                try {
+                  if (payload is ExpenseItem) {
+                    final e = payload as ExpenseItem;
+                    final updated = e.copyWith(type: newVal, category: newVal);
+                    await ExpenseService().updateExpense(widget.userPhone, updated);
+                    await _saveOverrideIfPossible(newVal, normalized);
+                    return;
+                  } else if (payload is IncomeItem) {
+                    final i = payload as IncomeItem;
+                    final updated = i.copyWith(type: newVal, category: newVal);
+                    await IncomeService().updateIncome(widget.userPhone, updated);
+                    await _saveOverrideIfPossible(newVal, normalized);
+                    return;
+                  }
+                  throw Exception('Unsupported payload for default saver');
+                } catch (_) {}
               }
-              throw Exception('Unsupported payload for default saver');
-            } catch (_) {}
-          }
 
-          setState(() {
-            final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
-            if (idx != -1) allTx[idx]['category'] = value;
-          });
-        },
-        isDense: true,
-        icon: const Icon(Icons.expand_more_rounded, size: 18),
-        borderRadius: BorderRadius.circular(12),
-        style: const TextStyle(
-          fontWeight: FontWeight.w700,
-          fontSize: 13.8,
-          color: Color(0xFF0F1E1C),
+              // rollback on error
+              setState(() {
+                final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
+                if (idx != -1) allTx[idx]['category'] = value;
+              });
+            },
+            isDense: true,
+            icon: const Icon(Icons.expand_more_rounded, size: 18),
+            borderRadius: BorderRadius.circular(12),
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 13.8,
+              color: Color(0xFF0F1E1C),
+            ),
+            menuMaxHeight: 300,
+          ),
         ),
-        menuMaxHeight: 300,
       ),
     );
   }
@@ -1578,53 +1641,63 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       options = [value, ...options];
     }
 
-    return DropdownButtonHideUnderline(
-      child: DropdownButton<String>(
-        value: value,
-        items: options
-            .map(
-              (c) => DropdownMenuItem<String>(
-                value: c,
-                child: Text(
-                  c,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 13.0,
-                    color: Color(0xFF4B5563),
-                  ),
-                ),
-              ),
-            )
-            .toList(),
-        onChanged: (newVal) async {
-          if (newVal == null || newVal == value) return;
-
-          setState(() {
-            final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
-            if (idx != -1) allTx[idx]['subcategory'] = newVal;
-          });
-
-          // If you have a persistence callback, it will be handled there.
-          if (widget.onChangeSubcategory != null) {
-            try {
-              await widget.onChangeSubcategory!(
-                txId: txId,
-                newSubcategory: newVal,
-                payload: payload,
-              );
-            } catch (_) {}
-          }
-        },
-        isDense: true,
-        icon: const Icon(Icons.expand_more_rounded, size: 16),
-        borderRadius: BorderRadius.circular(12),
-        style: const TextStyle(
-          fontWeight: FontWeight.w500,
-          fontSize: 13.0,
-          color: Color(0xFF4B5563),
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minWidth: 0,
+          maxWidth: double.infinity,
         ),
-        menuMaxHeight: 260,
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: value,
+            isExpanded: true, // avoid internal Row overflow
+            items: options
+                .map(
+                  (c) => DropdownMenuItem<String>(
+                    value: c,
+                    child: Text(
+                      c,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 13.0,
+                        color: Color(0xFF4B5563),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (newVal) async {
+              if (newVal == null || newVal == value) return;
+
+              setState(() {
+                final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
+                if (idx != -1) allTx[idx]['subcategory'] = newVal;
+              });
+
+              if (widget.onChangeSubcategory != null) {
+                try {
+                  await widget.onChangeSubcategory!(
+                    txId: txId,
+                    newSubcategory: newVal,
+                    payload: payload,
+                  );
+                } catch (_) {}
+              }
+            },
+            isDense: true,
+            icon: const Icon(Icons.expand_more_rounded, size: 16),
+            borderRadius: BorderRadius.circular(12),
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 13.0,
+              color: Color(0xFF4B5563),
+            ),
+            menuMaxHeight: 260,
+          ),
+        ),
       ),
     );
   }
