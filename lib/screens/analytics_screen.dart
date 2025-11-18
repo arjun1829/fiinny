@@ -797,7 +797,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                             '$category • ${bucket.name} • $monthLabel · ${INR.f(bucket.amount)}',
                                         exp: matches,
                                         inc: const [],
-                                        overrideRange: range,
                                       );
                                     },
                                   );
