@@ -1037,132 +1037,138 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             padding: const EdgeInsets.all(18.0),
             child: DefaultTextStyle.merge(
               style: const TextStyle(color: Colors.black),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (bankLogo != null && bankLogo.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: _logo(bankLogo, w: 28, h: 28),
-                      ),
-                    Icon(
-                      getCategoryIcon(category, isIncome: isIncome),
-                      size: 40,
-                      color: isIncome ? Colors.green : Colors.pink,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (bankLogo != null && bankLogo.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: _logo(bankLogo, w: 28, h: 28),
+                          ),
+                        Icon(
+                          getCategoryIcon(category, isIncome: isIncome),
+                          size: 40,
+                          color: isIncome ? Colors.green : Colors.pink,
+                        ),
+                        if (schemeLogo != null && schemeLogo.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: _logo(schemeLogo, w: 26, h: 26),
+                          ),
+                      ],
                     ),
-                    if (schemeLogo != null && schemeLogo.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: _logo(schemeLogo, w: 26, h: 26),
+                    const SizedBox(height: 16),
+                    Text(
+                      "${isIncome ? 'Income' : 'Expense'} - $category",
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
+                      textAlign: TextAlign.center,
+                    ),
+                    if (subcategory.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        "Subcategory: $subcategory",
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey,
+                        ),
                       ),
+                    ],
+                    const SizedBox(height: 8),
+                    if (methodChips.isNotEmpty) ...[
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: -6,
+                        alignment: WrapAlignment.center,
+                        children: methodChips,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (counterparty != null && counterparty.isNotEmpty)
+                      Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
+                    if (instrument != null && instrument.isNotEmpty)
+                      Text("Instrument: $instrument"),
+                    if (issuer != null && issuer.isNotEmpty)
+                      Text("Bank: $issuer"),
+                    if (network != null && network.isNotEmpty)
+                      Text("Network: $network"),
+                    if (last4 != null && last4.isNotEmpty)
+                      Text("Card: ****$last4"),
+                    if (isIntl) const Text("International: Yes"),
+                    if (hasFees) const Text("Fees Detected: Yes"),
+                    const SizedBox(height: 12),
+                    Text(
+                      "Amount: ${_inCurrency.format(amount)}",
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Text("Date: ${DateFormat('d MMM yyyy, h:mm a').format(date)}"),
+                    if (note.trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(note),
+                    ],
+                    const SizedBox(height: 16),
+                    _inlineAdCard('txn_detail_sheet'),
+                    const SizedBox(height: 12),
+                    if (widget.showBillIcon && billUrl.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          icon: const Icon(Icons.receipt_long_rounded, color: Colors.brown),
+                          label: const Text("View bill/attachment"),
+                          onPressed: () => _showBillImage(context, billUrl),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (!isIncome && widget.onSplit != null)
+                          TextButton.icon(
+                            icon: const Icon(Icons.group, color: Colors.deepPurple, size: 21),
+                            label: const Text("Split"),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              widget.onSplit?.call(doc);
+                            },
+                          ),
+                        if (widget.onEdit != null)
+                          TextButton.icon(
+                            icon: const Icon(Icons.edit, color: Colors.blue, size: 21),
+                            label: const Text("Edit"),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              widget.onEdit?.call(doc);
+                            },
+                          ),
+                        if (widget.onDelete != null)
+                          TextButton.icon(
+                            icon: const Icon(Icons.delete, color: Colors.red, size: 21),
+                            label: const Text("Delete"),
+                            onPressed: () async {
+                              final confirmed = await _confirmDeleteTransaction(
+                                context,
+                                doc,
+                                triggerAnchoredCallbacks: false,
+                              );
+                              if (!confirmed) return;
+                              Navigator.pop(context);
+                              widget.onDelete?.call(doc);
+                            },
+                          ),
+                        TextButton(
+                          child: const Text("Close"),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  "${isIncome ? 'Income' : 'Expense'} - $category",
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 4),
-                if (subcategory.isNotEmpty)
-                  Text(
-                    "Subcategory: $subcategory",
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey,
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                if (methodChips.isNotEmpty) ...[
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: -6,
-                    alignment: WrapAlignment.center,
-                    children: methodChips,
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                if (counterparty != null && counterparty.isNotEmpty)
-                  Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
-                if (instrument != null && instrument.isNotEmpty)
-                  Text("Instrument: $instrument"),
-                if (issuer != null && issuer.isNotEmpty)
-                  Text("Bank: $issuer"),
-                if (network != null && network.isNotEmpty)
-                  Text("Network: $network"),
-                if (last4 != null && last4.isNotEmpty)
-                  Text("Card: ****$last4"),
-                if (isIntl) const Text("International: Yes"),
-                if (hasFees) const Text("Fees Detected: Yes"),
-                const SizedBox(height: 12),
-                Text(
-                  "Amount: ${_inCurrency.format(amount)}",
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                Text("Date: ${DateFormat('d MMM yyyy, h:mm a').format(date)}"),
-                if (note.trim().isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text(note),
-                ],
-                const SizedBox(height: 16),
-                _inlineAdCard('txn_detail_sheet'),
-                const SizedBox(height: 12),
-                if (widget.showBillIcon && billUrl.isNotEmpty)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      icon: const Icon(Icons.receipt_long_rounded, color: Colors.brown),
-                      label: const Text("View bill/attachment"),
-                      onPressed: () => _showBillImage(context, billUrl),
-                    ),
-                  ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (!isIncome && widget.onSplit != null)
-                      TextButton.icon(
-                        icon: const Icon(Icons.group, color: Colors.deepPurple, size: 21),
-                        label: const Text("Split"),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          widget.onSplit?.call(doc);
-                        },
-                      ),
-                    if (widget.onEdit != null)
-                      TextButton.icon(
-                        icon: const Icon(Icons.edit, color: Colors.blue, size: 21),
-                        label: const Text("Edit"),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          widget.onEdit?.call(doc);
-                        },
-                      ),
-                    if (widget.onDelete != null)
-                      TextButton.icon(
-                        icon: const Icon(Icons.delete, color: Colors.red, size: 21),
-                        label: const Text("Delete"),
-                        onPressed: () async {
-                          final confirmed = await _confirmDeleteTransaction(
-                            context,
-                            doc,
-                            triggerAnchoredCallbacks: false,
-                          );
-                          if (!confirmed) return;
-                          Navigator.pop(context);
-                          widget.onDelete?.call(doc);
-                        },
-                      ),
-                    TextButton(child: const Text("Close"), onPressed: () => Navigator.pop(context)),
-                  ],
-                ),
-                ],
               ),
             ),
           ),
@@ -1231,120 +1237,125 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             padding: const EdgeInsets.all(18.0),
             child: DefaultTextStyle.merge(
               style: const TextStyle(color: Colors.black),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                Center(
-                  child: Icon(
-                    getCategoryIcon(categoryResolved, isIncome: isIncome),
-                    size: 40,
-                    color: isIncome ? Colors.green : Colors.pink,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  "${isIncome ? 'Income' : 'Expense'} - $categoryResolved",
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
-                  textAlign: TextAlign.center,
-                ),
-                if (subcategory.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    "Subcategory: $subcategory",
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                if (methodChips.isNotEmpty) ...[
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: -6,
-                    alignment: WrapAlignment.center,
-                    children: methodChips,
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                if ((counterparty ?? '').toString().trim().isNotEmpty)
-                  Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
-                if ((instrument ?? '').toString().trim().isNotEmpty)
-                  Text("Instrument: $instrument"),
-                if ((issuer ?? '').toString().trim().isNotEmpty)
-                  Text("Bank: $issuer"),
-                if ((network ?? '').toString().trim().isNotEmpty)
-                  Text("Network: $network"),
-                if ((last4 ?? '').toString().trim().isNotEmpty)
-                  Text("Card: ****$last4"),
-                if (isIntl) const Text("International: Yes"),
-                if (hasFees) const Text("Fees Detected: Yes"),
-                const SizedBox(height: 12),
-                Text(
-                  "Amount: ${_inCurrency.format((item.amount is num) ? (item.amount as num).toDouble() : 0.0)}",
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                Text("Date: ${DateFormat('d MMM yyyy, h:mm a').format(item.date)}"),
-                if ((item.note ?? '').toString().trim().isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text(item.note ?? ''),
-                ],
-                if (!isIncome && (item.friendIds != null) && item.friendIds.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  const Text("Split with:", style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text(item.friendIds.map((id) => widget.friendsById[id]?.name ?? "Friend").join(', ')),
-                ],
-                if (isIncome && (item.source ?? '').toString().isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  const Text("Source:", style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text(item.source ?? ''),
-                ],
-                const SizedBox(height: 16),
-                _inlineAdCard('txn_detail_sheet_modern'),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (!isIncome && widget.onSplit != null)
-                      TextButton.icon(
-                        icon: const Icon(Icons.group, color: Colors.deepPurple, size: 21),
-                        label: const Text("Split"),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          widget.onSplit?.call(item);
-                        },
+                    Center(
+                      child: Icon(
+                        getCategoryIcon(categoryResolved, isIncome: isIncome),
+                        size: 40,
+                        color: isIncome ? Colors.green : Colors.pink,
                       ),
-                    if (widget.onEdit != null)
-                      TextButton.icon(
-                        icon: const Icon(Icons.edit, color: Colors.blue, size: 21),
-                        label: const Text("Edit"),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          widget.onEdit?.call(item);
-                        },
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      "${isIncome ? 'Income' : 'Expense'} - $categoryResolved",
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
+                      textAlign: TextAlign.center,
+                    ),
+                    if (subcategory.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        "Subcategory: $subcategory",
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey,
+                        ),
                       ),
-                    if (widget.onDelete != null)
-                      TextButton.icon(
-                        icon: const Icon(Icons.delete, color: Colors.red, size: 21),
-                        label: const Text("Delete"),
-                        onPressed: () async {
-                          final confirmed = await _confirmDeleteTransaction(
-                            context,
-                            item,
-                            triggerAnchoredCallbacks: false,
-                          );
-                          if (!confirmed) return;
-                          Navigator.pop(context);
-                          widget.onDelete?.call(item);
-                        },
+                    ],
+                    const SizedBox(height: 8),
+                    if (methodChips.isNotEmpty) ...[
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: -6,
+                        alignment: WrapAlignment.center,
+                        children: methodChips,
                       ),
-                    TextButton(child: const Text("Close"), onPressed: () => Navigator.pop(context)),
+                      const SizedBox(height: 8),
+                    ],
+                    if ((counterparty ?? '').toString().trim().isNotEmpty)
+                      Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
+                    if ((instrument ?? '').toString().trim().isNotEmpty)
+                      Text("Instrument: $instrument"),
+                    if ((issuer ?? '').toString().trim().isNotEmpty)
+                      Text("Bank: $issuer"),
+                    if ((network ?? '').toString().trim().isNotEmpty)
+                      Text("Network: $network"),
+                    if ((last4 ?? '').toString().trim().isNotEmpty)
+                      Text("Card: ****$last4"),
+                    if (isIntl) const Text("International: Yes"),
+                    if (hasFees) const Text("Fees Detected: Yes"),
+                    const SizedBox(height: 12),
+                    Text(
+                      "Amount: ${_inCurrency.format((item.amount is num) ? (item.amount as num).toDouble() : 0.0)}",
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Text("Date: ${DateFormat('d MMM yyyy, h:mm a').format(item.date)}"),
+                    if ((item.note ?? '').toString().trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(item.note ?? ''),
+                    ],
+                    if (!isIncome && (item.friendIds != null) && item.friendIds.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Text("Split with:", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(item.friendIds.map((id) => widget.friendsById[id]?.name ?? "Friend").join(', ')),
+                    ],
+                    if (isIncome && (item.source ?? '').toString().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Text("Source:", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(item.source ?? ''),
+                    ],
+                    const SizedBox(height: 16),
+                    _inlineAdCard('txn_detail_sheet_modern'),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (!isIncome && widget.onSplit != null)
+                          TextButton.icon(
+                            icon: const Icon(Icons.group, color: Colors.deepPurple, size: 21),
+                            label: const Text("Split"),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              widget.onSplit?.call(item);
+                            },
+                          ),
+                        if (widget.onEdit != null)
+                          TextButton.icon(
+                            icon: const Icon(Icons.edit, color: Colors.blue, size: 21),
+                            label: const Text("Edit"),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              widget.onEdit?.call(item);
+                            },
+                          ),
+                        if (widget.onDelete != null)
+                          TextButton.icon(
+                            icon: const Icon(Icons.delete, color: Colors.red, size: 21),
+                            label: const Text("Delete"),
+                            onPressed: () async {
+                              final confirmed = await _confirmDeleteTransaction(
+                                context,
+                                item,
+                                triggerAnchoredCallbacks: false,
+                              );
+                              if (!confirmed) return;
+                              Navigator.pop(context);
+                              widget.onDelete?.call(item);
+                            },
+                          ),
+                        TextButton(
+                          child: const Text("Close"),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-                ],
               ),
             ),
           ),
