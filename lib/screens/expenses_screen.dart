@@ -1039,6 +1039,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       onRefresh: () async => _recompute(),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
         children: [
           _SummaryRingCard(
             spent: periodTotalExpense,
@@ -1074,8 +1076,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
           const SizedBox(height: 4),
 
-          // --- Bulk Actions Bar ---
-          if (_multiSelectMode)
+        // --- Bulk Actions Bar ---
+        if (_multiSelectMode)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
               child: Row(
@@ -1241,8 +1243,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           ),
           const SizedBox(height: 6),
 
-          // Transaction List Unified (Expense+Income)
-          AnimatedSwitcher(
+        // Transaction List Unified (Expense+Income)
+        SizedBox(
+          width: double.infinity,
+          child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 250),
             switchInCurve: Curves.easeOut,
             switchOutCurve: Curves.easeIn,
@@ -1258,9 +1262,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             child: KeyedSubtree(
               key: ValueKey(_transactionPanelKey()),
               child: UnifiedTransactionList(
-                expenses: _dataType == "Income" ? [] : filteredExpenses,
-                incomes: _dataType == "Expense" ? [] : filteredIncomes,
-                userPhone: widget.userPhone,
+                  expenses: _dataType == "Income" ? [] : filteredExpenses,
+                  incomes: _dataType == "Expense" ? [] : filteredIncomes,
+                  userPhone: widget.userPhone,
                 filterType: _dataType,
                 previewCount: 15,
                 friendsById: _friendsById,
@@ -1465,7 +1469,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           ),
 
           const SizedBox(height: 16),
-          AnimatedSwitcher(
+        SizedBox(
+          width: double.infinity,
+          child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 220),
             transitionBuilder: (child, animation) => FadeTransition(
               opacity: animation,
@@ -1776,27 +1782,29 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             ),
           ),
 
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
-          transitionBuilder: (child, animation) => FadeTransition(
-            opacity: animation,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.04),
-                end: Offset.zero,
-              ).animate(animation),
-              child: child,
+        SizedBox(
+          width: double.infinity,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.04),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
             ),
-          ),
-          child: CustomDiamondCard(
-            key: ValueKey('summary-${_transactionPanelKey()}-${filteredExpenses.length}-${filteredIncomes.length}-${_dataType}'),
-            borderRadius: 24,
-            glassGradient: [
-              Colors.white.withOpacity(0.23),
-              Colors.white.withOpacity(0.09)
-            ],
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
-            child: UnifiedTransactionList(
+            child: CustomDiamondCard(
+              key: ValueKey('summary-${_transactionPanelKey()}-${filteredExpenses.length}-${filteredIncomes.length}-${_dataType}'),
+              borderRadius: 24,
+              glassGradient: [
+                Colors.white.withOpacity(0.23),
+                Colors.white.withOpacity(0.09)
+              ],
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+              child: UnifiedTransactionList(
               expenses: _dataType == "Income" ? [] : filteredExpenses,
               incomes: _dataType == "Expense" ? [] : filteredIncomes,
               userPhone: widget.userPhone,
