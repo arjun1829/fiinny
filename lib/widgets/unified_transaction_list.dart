@@ -1927,565 +1927,564 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
     final groupCount = groupedEntries.length;
 
-    return CustomDiamondCard(
-      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
-      borderRadius: 21,
-      child: ListView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: groupCount + (shownCount < allTx.length ? 1 : 0),
-        itemBuilder: (context, idx) {
-          if (idx >= groupCount) {
-            return Column(
-              children: [
-                Center(
-                  child: TextButton(
-                    child: const Text("Show More"),
-                    onPressed: () {
-                      setState(() {
-                        shownCount += widget.showMoreStep;
-                      });
-                    },
-                  ),
-                ),
-                if (widget.showBottomBannerAd)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _adBanner('txn_list_bottom'),
-                  ),
-              ],
-            );
-          }
+    // Build all group sections into a flat list of widgets (no inner scrolling).
+    final List<Widget> children = [];
 
-          final entry = groupedEntries[idx];
-          final rawLabel = entry.key;
-          final txs = entry.value;
-          final dateLabel = _displayGroupLabel(rawLabel);
+    for (int idx = 0; idx < groupCount; idx++) {
+      final entry = groupedEntries[idx];
+      final rawLabel = entry.key;
+      final txs = entry.value;
+      final dateLabel = _displayGroupLabel(rawLabel);
 
-          final rows = <Widget>[];
+      final rows = <Widget>[];
 
-          if (idx == 0 && widget.showTopBannerAd) {
-            rows.add(Padding(
-              padding: const EdgeInsets.only(left: 10, right: 10, top: 10, bottom: 6),
-              child: _adBanner('txn_list_top'),
-            ));
-          }
+      // Top banner ad once at the very top
+      if (idx == 0 && widget.showTopBannerAd) {
+        rows.add(
+          Padding(
+            padding: const EdgeInsets.only(left: 10, right: 10, top: 10, bottom: 6),
+            child: _adBanner('txn_list_top'),
+          ),
+        );
+      }
 
-          if (dateLabel.isNotEmpty)
-            rows.add(
-              Container(
-                margin: const EdgeInsets.only(left: 14, right: 8, top: 8, bottom: 2),
-                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Text(
-                  dateLabel,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: Color(0xFF0F1E1C),
-                  ),
-                ),
+      // Date chip
+      if (dateLabel.isNotEmpty) {
+        rows.add(
+          Container(
+            margin: const EdgeInsets.only(left: 14, right: 8, top: 8, bottom: 2),
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Text(
+              dateLabel,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+                color: Color(0xFF0F1E1C),
               ),
-            );
+            ),
+          ),
+        );
+      }
 
-          for (int i = 0; i < txs.length; i++) {
-            final tx = txs[i];
-            final bool isIncome = tx['type'] == 'income';
-            final String id = (tx['id'] ?? '').toString();
-            final String category = (tx['category'] ?? (isIncome ? 'Income' : 'General')).toString();
-            final String note = (tx['note'] ?? '').toString();
-            final String? title = (tx['title'] as String?);
-            final List<String> labels = (tx['labels'] is List)
-                ? List<String>.from(tx['labels'])
-                : const <String>[];
-            final double amount = (tx['amount'] is num) ? (tx['amount'] as num).toDouble() : 0.0;
+      // Each transaction row
+      for (int i = 0; i < txs.length; i++) {
+        final tx = txs[i];
+        final bool isIncome = tx['type'] == 'income';
+        final String id = (tx['id'] ?? '').toString();
+        final String category = (tx['category'] ?? (isIncome ? 'Income' : 'General')).toString();
+        final String note = (tx['note'] ?? '').toString();
+        final String? title = (tx['title'] as String?);
+        final List<String> labels = (tx['labels'] is List)
+            ? List<String>.from(tx['labels'])
+            : const <String>[];
+        final double amount = (tx['amount'] is num) ? (tx['amount'] as num).toDouble() : 0.0;
 
-            final String? bankLogo = tx['bankLogo'] as String?;
-            final String? brandLogo = tx['brandLogo'] as String?;
-            final String? schemeLogo = tx['schemeLogo'] as String?;
-            final String? merchant = (tx['merchant'] as String?)?.trim();
-            final String? cardLast4 = tx['cardLast4'] as String?;
-            final String? channel = tx['channel'] as String?;
-            final String? instrument = (tx['instrument'] as String?) ?? channel;
-            final String? network = tx['network'] as String?;
-            final String? issuerBank = tx['issuerBank'] as String?;
-            final String? counterparty = tx['counterparty'] as String?;
-            final bool isInternational = (tx['isInternational'] == true);
-            final bool hasFees = (tx['hasFees'] == true);
-            final String? tags = (tx['tags'] as String?);
-            final double categoryConfidence = (tx['categoryConfidence'] is num)
-                ? (tx['categoryConfidence'] as num).toDouble()
-                : 0.0;
-            final String categorySource = (tx['categorySource'] ?? '').toString();
+        final String? bankLogo = tx['bankLogo'] as String?;
+        final String? brandLogo = tx['brandLogo'] as String?;
+        final String? schemeLogo = tx['schemeLogo'] as String?;
+        final String? merchant = (tx['merchant'] as String?)?.trim();
+        final String? cardLast4 = tx['cardLast4'] as String?;
+        final String? channel = tx['channel'] as String?;
+        final String? instrument = (tx['instrument'] as String?) ?? channel;
+        final String? network = tx['network'] as String?;
+        final String? issuerBank = tx['issuerBank'] as String?;
+        final String? counterparty = tx['counterparty'] as String?;
+        final bool isInternational = (tx['isInternational'] == true);
+        final bool hasFees = (tx['hasFees'] == true);
+        final String? tags = (tx['tags'] as String?);
+        final double categoryConfidence = (tx['categoryConfidence'] is num)
+            ? (tx['categoryConfidence'] as num).toDouble()
+            : 0.0;
+        final String categorySource = (tx['categorySource'] ?? '').toString();
 
-            final raw = tx['raw'];
+        final raw = tx['raw'];
 
-            String? friendsStr;
-            try {
-              if (tx['mode'] == 'legacy' && !isIncome && (raw.friendIds != null) && raw.friendIds.isNotEmpty) {
-                friendsStr = raw.friendIds
-                    .map((fid) => widget.friendsById[fid]?.name ?? "Friend")
-                    .join(', ');
+        String? friendsStr;
+        try {
+          if (tx['mode'] == 'legacy' && !isIncome && (raw.friendIds != null) && raw.friendIds.isNotEmpty) {
+            friendsStr = raw.friendIds
+                .map((fid) => widget.friendsById[fid]?.name ?? "Friend")
+                .join(', ');
+          }
+        } catch (_) {
+          friendsStr = null;
+        }
+
+        final String displayName = (counterparty ?? '').toString().trim().isNotEmpty
+            ? counterparty!.trim()
+            : (merchant != null && merchant.isNotEmpty ? merchant : 'Unknown');
+
+        final String showLine2 = () {
+          if (title != null && title.trim().isNotEmpty) return title.trim();
+          if (note.isNotEmpty) {
+            return note.length > 40 ? "${note.substring(0, 40)}..." : note;
+          }
+          return '';
+        }();
+
+        final bool isSelectable = widget.multiSelectEnabled && widget.onSelectTx != null;
+        final bool isSelected = isSelectable && widget.selectedIds.contains(id);
+
+        final dynamic payload = tx['mode'] == 'unified' ? tx : raw;
+
+        String billUrl = '';
+        if (widget.showBillIcon) {
+          if (tx['mode'] == 'unified') {
+            final rawMap = (tx['raw'] is Map<String, dynamic>) ? tx['raw'] as Map<String, dynamic> : <String, dynamic>{};
+            billUrl = _billUrlFromUnified(rawMap);
+          } else {
+            billUrl = _billUrlFromLegacy(raw);
+          }
+        }
+
+        Widget leadingVisual;
+        if (brandLogo != null && brandLogo.isNotEmpty) {
+          leadingVisual = ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: _logo(brandLogo, w: 32, h: 32),
+          );
+        } else if (bankLogo != null && bankLogo.isNotEmpty) {
+          leadingVisual = ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: _logo(bankLogo, w: 30, h: 30),
+          );
+        } else {
+          leadingVisual = CircleAvatar(
+            radius: 16,
+            backgroundColor: isIncome ? Colors.green[50] : Colors.pink[50],
+            child: Icon(
+              getCategoryIcon(category, isIncome: isIncome),
+              color: isIncome ? Colors.green[700] : Colors.pink[700],
+              size: 18,
+            ),
+          );
+        }
+
+        final sourceLabel = () {
+          final s = categorySource.toLowerCase();
+          if (s == 'llm') return 'LLM';
+          if (s == 'rules') return 'Rules';
+          if (s == 'user_override') return 'Manual';
+          if (s.isNotEmpty) return s.toUpperCase();
+          return null;
+        }();
+        final methodChipLabels = _methodChipLabels(
+          instrument: instrument,
+          channel: channel,
+          cardLast4: cardLast4,
+          network: network,
+          isInternational: isInternational,
+          hasFees: hasFees,
+          tags: tags,
+        );
+        final rowChips = <Widget>[];
+        if (labels.isNotEmpty) {
+          rowChips.addAll(labels.take(3).map((l) => _chip('#$l')));
+          if (labels.length > 3) {
+            rowChips.add(_chip('+${labels.length - 3}'));
+          }
+        }
+        if (sourceLabel != null) {
+          rowChips.add(_chip(sourceLabel));
+        }
+        if (categorySource == 'llm' && categoryConfidence > 0 && categoryConfidence < 0.6) {
+          rowChips.add(_chip('Review'));
+        }
+
+        final row = Dismissible(
+          key: ValueKey('dismiss_${id}_${tx.hashCode}_$i'),
+          direction: ((widget.onDelete != null || widget.onEdit != null) && widget.enableSwipeActions)
+              ? DismissDirection.horizontal
+              : DismissDirection.none,
+          background: (widget.enableSwipeActions && widget.onEdit != null)
+              ? _buildSwipeBackground(
+                  alignment: Alignment.centerLeft,
+                  icon: Icons.edit,
+                  label: 'Edit',
+                  color: Colors.blue.withOpacity(0.15),
+                )
+              : const SizedBox(),
+          secondaryBackground: (widget.enableSwipeActions && widget.onDelete != null)
+              ? _buildSwipeBackground(
+                  alignment: Alignment.centerRight,
+                  icon: Icons.delete,
+                  label: 'Delete',
+                  color: Colors.red.withOpacity(0.15),
+                )
+              : const SizedBox(),
+          confirmDismiss: (direction) async {
+            if (direction == DismissDirection.startToEnd) {
+              if (widget.onEdit != null) {
+                widget.onEdit!(payload);
               }
-            } catch (_) {
-              friendsStr = null;
+              return false;
             }
-
-            final String displayName = (counterparty ?? '').toString().trim().isNotEmpty
-                ? counterparty!.trim()
-                : (merchant != null && merchant.isNotEmpty ? merchant : 'Unknown');
-
-            final String showLine2 = () {
-              if (title != null && title.trim().isNotEmpty) return title.trim();
-              if (note.isNotEmpty) {
-                return note.length > 40 ? "${note.substring(0, 40)}..." : note;
-              }
-              return '';
-            }();
-
-            final bool isSelectable = widget.multiSelectEnabled && widget.onSelectTx != null;
-            final bool isSelected = isSelectable && widget.selectedIds.contains(id);
-
-            final dynamic payload = tx['mode'] == 'unified' ? tx : raw;
-
-            String billUrl = '';
-            if (widget.showBillIcon) {
-              if (tx['mode'] == 'unified') {
-                final rawMap = (tx['raw'] is Map<String, dynamic>) ? tx['raw'] as Map<String, dynamic> : <String, dynamic>{};
-                billUrl = _billUrlFromUnified(rawMap);
-              } else {
-                billUrl = _billUrlFromLegacy(raw);
+            if (direction == DismissDirection.endToStart) {
+              if (widget.onDelete == null) return false;
+              return _confirmDeleteTransaction(context, payload);
+            }
+            return false;
+          },
+          onDismissed: (direction) {
+            if (direction == DismissDirection.endToStart && widget.onDelete != null) {
+              final indexInAll = allTx.indexOf(tx);
+              if (indexInAll >= 0) {
+                _handleDelete(tx, indexInAll, payload);
               }
             }
-
-            Widget leadingVisual;
-            if (brandLogo != null && brandLogo.isNotEmpty) {
-              leadingVisual = ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: _logo(brandLogo, w: 32, h: 32),
-              );
-            } else if (bankLogo != null && bankLogo.isNotEmpty) {
-              leadingVisual = ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: _logo(bankLogo, w: 30, h: 30),
-              );
-            } else {
-              leadingVisual = CircleAvatar(
-                radius: 16,
-                backgroundColor: isIncome ? Colors.green[50] : Colors.pink[50],
-                child: Icon(
-                  getCategoryIcon(category, isIncome: isIncome),
-                  color: isIncome ? Colors.green[700] : Colors.pink[700],
-                  size: 18,
-                ),
-              );
-            }
-
-            final sourceLabel = () {
-              final s = categorySource.toLowerCase();
-              if (s == 'llm') return 'LLM';
-              if (s == 'rules') return 'Rules';
-              if (s == 'user_override') return 'Manual';
-              if (s.isNotEmpty) return s.toUpperCase();
-              return null;
-            }();
-            final methodChipLabels = _methodChipLabels(
-              instrument: instrument,
-              channel: channel,
-              cardLast4: cardLast4,
-              network: network,
-              isInternational: isInternational,
-              hasFees: hasFees,
-              tags: tags,
-            );
-            final rowChips = <Widget>[];
-            if (labels.isNotEmpty) {
-              rowChips.addAll(labels.take(3).map((l) => _chip('#$l')));
-              if (labels.length > 3) {
-                rowChips.add(_chip('+${labels.length - 3}'));
-              }
-            }
-            if (sourceLabel != null) {
-              rowChips.add(_chip(sourceLabel));
-            }
-            if (categorySource == 'llm' && categoryConfidence > 0 && categoryConfidence < 0.6) {
-              rowChips.add(_chip('Review'));
-            }
-
-            final canSwipe = widget.onDelete != null || widget.onEdit != null;
-            rows.add(
-              Dismissible(
-                key: ValueKey('dismiss_${id}_${tx.hashCode}_$i'),
-                direction: (canSwipe && widget.enableSwipeActions)
-                    ? DismissDirection.horizontal
-                    : DismissDirection.none,
-                background: (widget.enableSwipeActions && widget.onEdit != null)
-                    ? _buildSwipeBackground(
-                        alignment: Alignment.centerLeft,
-                        icon: Icons.edit,
-                        label: 'Edit',
-                        color: Colors.blue.withOpacity(0.15),
-                      )
-                    : const SizedBox(),
-                secondaryBackground: (widget.enableSwipeActions && widget.onDelete != null)
-                    ? _buildSwipeBackground(
-                        alignment: Alignment.centerRight,
-                        icon: Icons.delete,
-                        label: 'Delete',
-                        color: Colors.red.withOpacity(0.15),
-                      )
-                    : const SizedBox(),
-                confirmDismiss: (direction) async {
-                  if (direction == DismissDirection.startToEnd) {
-                    if (widget.onEdit != null) {
-                      widget.onEdit!(payload);
+          },
+          child: GestureDetector(
+            key: ValueKey(id),
+            behavior: HitTestBehavior.opaque,
+            onTap: isSelectable
+                ? () => widget.onSelectTx!(id, !isSelected)
+                : () {
+                    if (widget.onRowTapIntercept != null) {
+                      final handled = widget.onRowTapIntercept!(tx);
+                      if (handled == true) return;
                     }
-                    return false;
-                  }
-                  if (direction == DismissDirection.endToStart) {
-                    if (widget.onDelete == null) return false;
-                    return _confirmDeleteTransaction(context, payload);
-                  }
-                  return false;
-                },
-                onDismissed: (direction) {
-                  if (direction == DismissDirection.endToStart && widget.onDelete != null) {
-                    final indexInAll = allTx.indexOf(tx);
-                    if (indexInAll >= 0) {
-                      _handleDelete(tx, indexInAll, payload);
-                    }
-                  }
-                },
-                child: GestureDetector(
-                  key: ValueKey(id),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: isSelectable
-                      ? () => widget.onSelectTx!(id, !isSelected)
-                      : () {
-                          if (widget.onRowTapIntercept != null) {
-                            final handled = widget.onRowTapIntercept!(tx);
-                            if (handled == true) return;
-                          }
-                          if (!widget.enableDetailsSheet) return;
+                    if (!widget.enableDetailsSheet) return;
 
-                          if (tx['mode'] == 'unified') {
-                            _showDetailsScreenFromUnified(
-                              tx,
-                              context,
-                              methodChipLabels: methodChipLabels,
-                            );
-                          } else {
-                            _showDetailsScreenLegacy(
-                              raw,
-                              isIncome,
-                              context,
-                              methodChipLabels: methodChipLabels,
-                            );
-                          }
-                        },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    constraints: const BoxConstraints(minHeight: 58),
-                    margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 0.5),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? Colors.deepPurple.withOpacity(0.09)
-                          : Colors.white.withOpacity(0.93),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.028),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
+                    if (tx['mode'] == 'unified') {
+                      _showDetailsScreenFromUnified(
+                        tx,
+                        context,
+                        methodChipLabels: methodChipLabels,
+                      );
+                    } else {
+                      _showDetailsScreenLegacy(
+                        raw,
+                        isIncome,
+                        context,
+                        methodChipLabels: methodChipLabels,
+                      );
+                    }
+                  },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              constraints: const BoxConstraints(minHeight: 58),
+              margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 0.5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? Colors.deepPurple.withOpacity(0.09)
+                    : Colors.white.withOpacity(0.93),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.028),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+                border: isSelected
+                    ? Border.all(color: Colors.deepPurple, width: 1.4)
+                    : null,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (isSelectable)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Checkbox(
+                        value: isSelected,
+                        onChanged: (val) => widget.onSelectTx!(id, val ?? false),
+                        activeColor: Colors.deepPurple,
+                        visualDensity: VisualDensity.compact,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(7),
                         ),
-                      ],
-                      border: isSelected
-                          ? Border.all(color: Colors.deepPurple, width: 1.4)
-                          : null,
+                      ),
                     ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: leadingVisual,
+                    ),
+                  ),
+                  if (schemeLogo != null && schemeLogo.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: _logo(schemeLogo, w: 18, h: 18),
+                    ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (isSelectable)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: Checkbox(
-                              value: isSelected,
-                              onChanged: (val) => widget.onSelectTx!(id, val ?? false),
-                              activeColor: Colors.deepPurple,
-                              visualDensity: VisualDensity.compact,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(7),
-                              ),
-                            ),
+                        GestureDetector(
+                          onTap: () => _editCounterparty(
+                            txId: id,
+                            isIncome: isIncome,
+                            current: counterparty,
+                            payload: payload,
+                            normalized: tx,
                           ),
-                        SizedBox(
-                          width: 40,
-                          height: 40,
-                          child: Align(
-                            alignment: Alignment.center,
-                            child: leadingVisual,
-                          ),
-                        ),
-                        if (schemeLogo != null && schemeLogo.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 6),
-                            child: _logo(schemeLogo, w: 18, h: 18),
-                          ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.max,
                             children: [
-                              // 1) Big editable title: just the name (no "Paid to"/"Got from")
-                              GestureDetector(
-                                onTap: () => _editCounterparty(
-                                  txId: id,
-                                  isIncome: isIncome,
-                                  current: counterparty,
-                                  payload: payload,
-                                  normalized: tx,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.max,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        displayName,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 16.5,
-                                          fontWeight: FontWeight.w800,
-                                          color: Color(0xFF111827),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    const Icon(
-                                      Icons.edit_outlined,
-                                      size: 14,
-                                      color: Color(0xFF9CA3AF),
-                                    ),
-                                  ],
+                              Expanded(
+                                child: Text(
+                                  displayName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 16.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF111827),
+                                  ),
                                 ),
                               ),
-
-                              const SizedBox(height: 4),
-
-                              // 2) Category + Subcategory in one row, both dropdowns, responsive
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: widget.showCategoryDropdown
-                                        ? SizedBox(
-                                            height: 26,
-                                            child: _categoryDropdown(
-                                              txId: id,
-                                              current: category,
-                                              isIncome: isIncome,
-                                              payload: payload,
-                                              normalized: tx,
-                                            ),
-                                          )
-                                        : Text(
-                                            category,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 13.5,
-                                              color: Color(0xFF4B5563),
-                                            ),
-                                          ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: _subcategoryDropdown(
-                                      txId: id,
-                                      currentCategory: category,
-                                      currentSubcategory:
-                                          (tx['subcategory'] ?? '').toString(),
-                                      isIncome: isIncome,
-                                      payload: payload,
-                                      normalized: tx,
-                                    ),
-                                  ),
-                                ],
+                              const SizedBox(width: 4),
+                              const Icon(
+                                Icons.edit_outlined,
+                                size: 14,
+                                color: Color(0xFF9CA3AF),
                               ),
-
-                              // 3) Small secondary line (title or note)
-                              if (showLine2.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4.0),
-                                  child: Text(
-                                    showLine2,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      color: Colors.black.withOpacity(0.75),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-
-                              // 4) Chips row (tags, LLM/Rules/etc.) – unchanged
-                              if (rowChips.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4.0),
-                                  child: Wrap(
-                                    spacing: 6,
-                                    runSpacing: -6,
-                                    children: rowChips,
-                                  ),
-                                ),
-
-                              // 5) Legacy split/friends row – unchanged
-                              if (tx['mode'] == 'legacy')
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2.0),
-                                  child: Row(
-                                    children: [
-                                      if (friendsStr != null) ...[
-                                        Icon(Icons.person_2_rounded,
-                                            size: 15, color: Colors.deepPurple[500]),
-                                        Flexible(
-                                          child: Text(
-                                            " $friendsStr",
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 12.5,
-                                              color: Colors.deepPurple[700],
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                      if (tx['type'] == 'income' &&
-                                          (raw.source ?? '').toString().isNotEmpty) ...[
-                                        const SizedBox(width: 8),
-                                        Icon(Icons.input_rounded,
-                                            size: 15, color: Colors.teal[600]),
-                                        Flexible(
-                                          child: Text(
-                                            " ${raw.source}",
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 12.5,
-                                              color: Colors.teal[700],
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                        const SizedBox(height: 4),
+                        Row(
                           children: [
-                            _amountPill(amount, isIncome),
-                            const SizedBox(height: 10),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (widget.showBillIcon && billUrl.isNotEmpty)
-                                  IconButton(
-                                    icon: const Icon(Icons.receipt_long_rounded, size: 18, color: Colors.brown),
-                                    tooltip: 'View bill',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => _showBillImage(context, billUrl),
-                                  ),
-                                if (tx['mode'] == 'legacy' && !isIncome && widget.onSplit != null)
-                                  IconButton(
-                                    icon: const Icon(Icons.group, size: 18, color: Colors.deepPurple),
-                                    tooltip: 'Split',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => widget.onSplit?.call(payload),
-                                  ),
-                                if (widget.onEdit != null || widget.onDelete != null)
-                                  PopupMenuButton<_TxAction>(
-                                    icon: const Icon(Icons.more_horiz_rounded, color: Colors.blueGrey, size: 20),
-                                    tooltip: 'More actions',
-                                    onSelected: (action) async {
-                                      switch (action) {
-                                        case _TxAction.edit:
-                                          widget.onEdit?.call(payload);
-                                          break;
-                                        case _TxAction.delete:
-                                          if (widget.onDelete == null) break;
-                                          final confirmed = await _confirmDeleteTransaction(context, payload);
-                                          if (confirmed) widget.onDelete!(payload);
-                                          break;
-                                      }
-                                    },
-                                    itemBuilder: (ctx) {
-                                      return [
-                                        if (widget.onEdit != null)
-                                          PopupMenuItem<_TxAction>(
-                                            value: _TxAction.edit,
-                                            child: Row(
-                                              children: const [
-                                                Icon(Icons.edit, size: 18, color: Colors.blueGrey),
-                                                SizedBox(width: 8),
-                                                Text('Edit'),
-                                              ],
-                                            ),
-                                          ),
-                                        if (widget.onDelete != null)
-                                          PopupMenuItem<_TxAction>(
-                                            value: _TxAction.delete,
-                                            child: Row(
-                                              children: const [
-                                                Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                                                SizedBox(width: 8),
-                                                Text('Delete', style: TextStyle(color: Colors.redAccent)),
-                                              ],
-                                            ),
-                                          ),
-                                      ];
-                                    },
-                                  ),
-                              ],
+                            Expanded(
+                              child: widget.showCategoryDropdown
+                                  ? SizedBox(
+                                      height: 26,
+                                      child: _categoryDropdown(
+                                        txId: id,
+                                        current: category,
+                                        isIncome: isIncome,
+                                        payload: payload,
+                                        normalized: tx,
+                                      ),
+                                    )
+                                  : Text(
+                                      category,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13.5,
+                                        color: Color(0xFF4B5563),
+                                      ),
+                                    ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: _subcategoryDropdown(
+                                txId: id,
+                                currentCategory: category,
+                                currentSubcategory: (tx['subcategory'] ?? '').toString(),
+                                isIncome: isIncome,
+                                payload: payload,
+                                normalized: tx,
+                              ),
                             ),
                           ],
                         ),
+                        if (showLine2.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Text(
+                              showLine2,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                color: Colors.black.withOpacity(0.75),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        if (rowChips.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: -6,
+                              children: rowChips,
+                            ),
+                          ),
+                        if (tx['mode'] == 'legacy')
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2.0),
+                            child: Row(
+                              children: [
+                                if (friendsStr != null) ...[
+                                  Icon(Icons.person_2_rounded, size: 15, color: Colors.deepPurple[500]),
+                                  Flexible(
+                                    child: Text(
+                                      " $friendsStr",
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        color: Colors.deepPurple[700],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                if (tx['type'] == 'income' && (raw.source ?? '').toString().isNotEmpty) ...[
+                                  const SizedBox(width: 8),
+                                  Icon(Icons.input_rounded, size: 15, color: Colors.teal[600]),
+                                  Flexible(
+                                    child: Text(
+                                      " ${raw.source}",
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        color: Colors.teal[700],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _amountPill(amount, isIncome),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (widget.showBillIcon && billUrl.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.receipt_long_rounded, size: 18, color: Colors.brown),
+                              tooltip: 'View bill',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _showBillImage(context, billUrl),
+                            ),
+                          if (tx['mode'] == 'legacy' && !isIncome && widget.onSplit != null)
+                            IconButton(
+                              icon: const Icon(Icons.group, size: 18, color: Colors.deepPurple),
+                              tooltip: 'Split',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => widget.onSplit?.call(payload),
+                            ),
+                          if (widget.onEdit != null || widget.onDelete != null)
+                            PopupMenuButton<_TxAction>(
+                              icon: const Icon(Icons.more_horiz_rounded, color: Colors.blueGrey, size: 20),
+                              tooltip: 'More actions',
+                              onSelected: (action) async {
+                                switch (action) {
+                                  case _TxAction.edit:
+                                    widget.onEdit?.call(payload);
+                                    break;
+                                  case _TxAction.delete:
+                                    if (widget.onDelete == null) break;
+                                    final confirmed = await _confirmDeleteTransaction(context, payload);
+                                    if (confirmed) widget.onDelete!(payload);
+                                    break;
+                                }
+                              },
+                              itemBuilder: (ctx) {
+                                return [
+                                  if (widget.onEdit != null)
+                                    PopupMenuItem<_TxAction>(
+                                      value: _TxAction.edit,
+                                      child: Row(
+                                        children: const [
+                                          Icon(Icons.edit, size: 18, color: Colors.blueGrey),
+                                          SizedBox(width: 8),
+                                          Text('Edit'),
+                                        ],
+                                      ),
+                                    ),
+                                  if (widget.onDelete != null)
+                                    PopupMenuItem<_TxAction>(
+                                      value: _TxAction.delete,
+                                      child: Row(
+                                        children: const [
+                                          Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                          SizedBox(width: 8),
+                                          Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                                        ],
+                                      ),
+                                    ),
+                                ];
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            );
+            ),
+          ),
+        );
 
-            if (widget.enableInlineAds && i == widget.inlineAdAfterIndex) {
-              rows.add(
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: _inlineAdCard('txn_list_inline'),
-                ),
-              );
-            }
-          }
+        rows.add(row);
 
-          rows.add(const SizedBox(height: 2));
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: rows,
+        if (widget.enableInlineAds && i == widget.inlineAdAfterIndex) {
+          rows.add(
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: _inlineAdCard('txn_list_inline'),
+            ),
           );
-        },
+        }
+      }
+
+      rows.add(const SizedBox(height: 2));
+
+      children.add(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: rows,
+        ),
+      );
+    }
+
+    // Show More & bottom banner (same as your `idx >= groupCount` branch)
+    if (shownCount < allTx.length) {
+      children.add(
+        Column(
+          children: [
+            Center(
+              child: TextButton(
+                child: const Text("Show More"),
+                onPressed: () {
+                  setState(() {
+                    shownCount += widget.showMoreStep;
+                  });
+                },
+              ),
+            ),
+            if (widget.showBottomBannerAd)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _adBanner('txn_list_bottom'),
+              ),
+          ],
+        ),
+      );
+    }
+
+    return CustomDiamondCard(
+      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+      borderRadius: 21,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: children,
       ),
     );
   }
