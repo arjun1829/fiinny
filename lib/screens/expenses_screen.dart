@@ -1246,71 +1246,80 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             duration: const Duration(milliseconds: 250),
             switchInCurve: Curves.easeOut,
             switchOutCurve: Curves.easeIn,
-            child: _isLoading
-                ? _buildLoadingSkeleton()
-                : UnifiedTransactionList(
-                    key: ValueKey(_transactionPanelKey()),
-                    expenses: _dataType == "Income" ? [] : filteredExpenses,
-                    incomes: _dataType == "Expense" ? [] : filteredIncomes,
-                    userPhone: widget.userPhone,
-                    filterType: _dataType,
-                    previewCount: 15,
-                    friendsById: _friendsById,
-                    showBillIcon: true,
-                    multiSelectEnabled: _multiSelectMode,
-                    selectedIds: _selectedTxIds,
-                    onSelectTx: (txId, selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedTxIds.add(txId);
-                        } else {
-                          _selectedTxIds.remove(txId);
-                        }
-                      });
-                    },
-                    onEdit: (tx) async {
-                      if (_multiSelectMode) return;
-                      if (tx is ExpenseItem) {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => EditExpenseScreen(
-                              userPhone: widget.userPhone,
-                              expense: tx,
-                            ),
-                          ),
-                        );
-                        _recompute();
-                      }
-                    },
-                    onDelete: (tx) async {
-                      if (_multiSelectMode) return;
-                      if (tx is ExpenseItem) {
-                        await ExpenseService()
-                            .deleteExpense(widget.userPhone, tx.id);
-                      } else if (tx is IncomeItem) {
-                        await IncomeService()
-                            .deleteIncome(widget.userPhone, tx.id);
-                      }
-                      _recompute();
-                    },
-                    onSplit: (tx) async {
-                      if (_multiSelectMode) return;
-                      if (tx is ExpenseItem) {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => EditExpenseScreen(
-                              userPhone: widget.userPhone,
-                              expense: tx,
-                              initialStep: 1,
-                            ),
-                          ),
-                        );
-                        _recompute();
-                      }
-                    },
-                  ),
+            layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) {
+              return Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  ...previousChildren,
+                  if (currentChild != null) currentChild,
+                ],
+              );
+            },
+            child: KeyedSubtree(
+              key: ValueKey(_transactionPanelKey()),
+              child: UnifiedTransactionList(
+                expenses: _dataType == "Income" ? [] : filteredExpenses,
+                incomes: _dataType == "Expense" ? [] : filteredIncomes,
+                userPhone: widget.userPhone,
+                filterType: _dataType,
+                previewCount: 15,
+                friendsById: _friendsById,
+                showBillIcon: true,
+                multiSelectEnabled: _multiSelectMode,
+                selectedIds: _selectedTxIds,
+                onSelectTx: (txId, selected) {
+                  setState(() {
+                    if (selected) {
+                      _selectedTxIds.add(txId);
+                    } else {
+                      _selectedTxIds.remove(txId);
+                    }
+                  });
+                },
+                onEdit: (tx) async {
+                  if (_multiSelectMode) return;
+                  if (tx is ExpenseItem) {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => EditExpenseScreen(
+                          userPhone: widget.userPhone,
+                          expense: tx,
+                        ),
+                      ),
+                    );
+                    _recompute();
+                  }
+                },
+                onDelete: (tx) async {
+                  if (_multiSelectMode) return;
+                  if (tx is ExpenseItem) {
+                    await ExpenseService()
+                        .deleteExpense(widget.userPhone, tx.id);
+                  } else if (tx is IncomeItem) {
+                    await IncomeService()
+                        .deleteIncome(widget.userPhone, tx.id);
+                  }
+                  _recompute();
+                },
+                onSplit: (tx) async {
+                  if (_multiSelectMode) return;
+                  if (tx is ExpenseItem) {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => EditExpenseScreen(
+                          userPhone: widget.userPhone,
+                          expense: tx,
+                          initialStep: 1,
+                        ),
+                      ),
+                    );
+                    _recompute();
+                  }
+                },
+              ),
+            ),
           ),
         ],
       ),
