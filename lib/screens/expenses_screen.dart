@@ -1242,47 +1242,61 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           const SizedBox(height: 6),
 
           // Transaction List Unified (Expense+Income)
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            transitionBuilder: (child, animation) => FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.04),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.04),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
               ),
-            ),
-            child: CustomDiamondCard(
-              key: ValueKey(_transactionPanelKey()),
-              borderRadius: 22,
-              glassGradient: [
-                Colors.white.withOpacity(0.23),
-                Colors.white.withOpacity(0.09)
-              ],
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
-              child: UnifiedTransactionList(
-                expenses: _dataType == "Income" ? [] : filteredExpenses,
-                incomes: _dataType == "Expense" ? [] : filteredIncomes,
-                userPhone: widget.userPhone,
-                filterType: _dataType,
-                previewCount: 15,
-                friendsById: _friendsById,
-                showBillIcon: true,
-                multiSelectEnabled: _multiSelectMode,
-                selectedIds: _selectedTxIds,
-                onSelectTx: (txId, selected) {
-                  setState(() {
-                    if (selected) {
-                      _selectedTxIds.add(txId);
-                    } else {
-                      _selectedTxIds.remove(txId);
-                    }
-                  });
-                },
-                onEdit: (tx) async {
-                  if (_multiSelectMode) return;
+              layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) {
+                return Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    ...previousChildren,
+                    if (currentChild != null) currentChild,
+                  ],
+                );
+              },
+              child: KeyedSubtree(
+                key: ValueKey(_transactionPanelKey()),
+                child: CustomDiamondCard(
+                  key: ValueKey(_transactionPanelKey()),
+                  borderRadius: 22,
+                  glassGradient: [
+                    Colors.white.withOpacity(0.23),
+                    Colors.white.withOpacity(0.09)
+                  ],
+                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+                  child: UnifiedTransactionList(
+                    expenses: _dataType == "Income" ? [] : filteredExpenses,
+                    incomes: _dataType == "Expense" ? [] : filteredIncomes,
+                    userPhone: widget.userPhone,
+                    filterType: _dataType,
+                    previewCount: 15,
+                    friendsById: _friendsById,
+                    showBillIcon: true,
+                    multiSelectEnabled: _multiSelectMode,
+                    selectedIds: _selectedTxIds,
+                    onSelectTx: (txId, selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedTxIds.add(txId);
+                        } else {
+                          _selectedTxIds.remove(txId);
+                        }
+                      });
+                    },
+                    onEdit: (tx) async {
+                      if (_multiSelectMode) return;
                   if (tx is ExpenseItem) {
                     await Navigator.push(
                       context,
