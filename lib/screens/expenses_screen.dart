@@ -1035,297 +1035,314 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final bankCardStats = _computeBankCardStats();
     final periodLabel = _currentPeriodLabel();
     final txCount = filteredExpenses.length + filteredIncomes.length;
+
     return RefreshIndicator(
       onRefresh: () async => _recompute(),
-      child: ListView(
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        children: [
-          _SummaryRingCard(
-            spent: periodTotalExpense,
-            received: periodTotalIncome,
-            bankCount: bankCardStats.$1,
-            cardCount: bankCardStats.$2,
-            txCount: txCount,
-            periodLabel: periodLabel,
-            onTapPeriod: _showPeriodPickerBottomSheet,
-            onTap: () async {
-              await Navigator.pushNamed(
-                context,
-                '/analytics',
-                arguments: widget.userPhone,
-              );
-            },
-          ),
-
-          const SizedBox(height: 8),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Row(
-              children: [
-                _buildFiltersButton(),
-                const SizedBox(width: 8),
-                Expanded(child: _buildTxTypeChipsRow()),
-              ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _SummaryRingCard(
+              spent: periodTotalExpense,
+              received: periodTotalIncome,
+              bankCount: bankCardStats.$1,
+              cardCount: bankCardStats.$2,
+              txCount: txCount,
+              periodLabel: periodLabel,
+              onTapPeriod: _showPeriodPickerBottomSheet,
+              onTap: () async {
+                await Navigator.pushNamed(
+                  context,
+                  '/analytics',
+                  arguments: widget.userPhone,
+                );
+              },
             ),
-          ),
+            const SizedBox(height: 8),
 
-          _buildActiveFiltersWrap(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: Row(
+                children: [
+                  _buildFiltersButton(),
+                  const SizedBox(width: 8),
+                  Expanded(child: _buildTxTypeChipsRow()),
+                ],
+              ),
+            ),
 
-          const SizedBox(height: 4),
+            _buildActiveFiltersWrap(),
+            const SizedBox(height: 4),
 
-        // --- Bulk Actions Bar ---
-        if (_multiSelectMode)
+            // --- Bulk Actions Bar ---
+            if (_multiSelectMode)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+                child: Row(
+                  children: [
+                    Text(
+                      "${_selectedTxIds.length} selected",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.label, color: Colors.amber),
+                      tooltip: "Edit Label (Bulk)",
+                      onPressed: _selectedTxIds.isEmpty
+                          ? null
+                          : () async {
+                              final newLabel = await _showLabelDialog();
+                              if (newLabel != null && newLabel.trim().isNotEmpty) {
+                                // Expenses
+                                for (final tx in filteredExpenses.where(
+                                  (e) => _selectedTxIds.contains(e.id),
+                                )) {
+                                  await ExpenseService().updateExpense(
+                                    widget.userPhone,
+                                    tx.copyWith(label: newLabel),
+                                  );
+                                }
+                                // Incomes (only if your IncomeItem supports label)
+                                for (final inc in filteredIncomes.where(
+                                  (i) => _selectedTxIds.contains(i.id),
+                                )) {
+                                  await IncomeService().updateIncome(
+                                    widget.userPhone,
+                                    inc.copyWith(label: newLabel),
+                                  );
+                                }
+
+                                setState(() {
+                                  _selectedTxIds.clear();
+                                  _multiSelectMode = false;
+                                });
+                              }
+                            },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_forever, color: Colors.red),
+                      tooltip: "Delete Selected",
+                      onPressed: _selectedTxIds.isEmpty
+                          ? null
+                          : () async {
+                              final confirmed =
+                                  await _confirmBulkDelete(_selectedTxIds.length);
+                              if (!confirmed) return;
+
+                              for (final tx in filteredExpenses.where(
+                                (e) => _selectedTxIds.contains(e.id),
+                              )) {
+                                await ExpenseService()
+                                    .deleteExpense(widget.userPhone, tx.id);
+                              }
+                              for (final inc in filteredIncomes.where(
+                                (i) => _selectedTxIds.contains(i.id),
+                              )) {
+                                await IncomeService()
+                                    .deleteIncome(widget.userPhone, inc.id);
+                              }
+
+                              setState(() {
+                                _selectedTxIds.clear();
+                                _multiSelectMode = false;
+                              });
+                            },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      tooltip: "Exit Multi-Select",
+                      onPressed: () => setState(() {
+                        _multiSelectMode = false;
+                        _selectedTxIds.clear();
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+
+            // --- Search & Multi-select toggle ---
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
               child: Row(
                 children: [
-                  Text("${_selectedTxIds.length} selected",
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
                       style: const TextStyle(
-                          fontWeight: FontWeight.bold, color: Colors.white)),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.label, color: Colors.amber),
-                    tooltip: "Edit Label (Bulk)",
-                    onPressed: _selectedTxIds.isEmpty ? null : () async {
-                      final newLabel = await _showLabelDialog();
-                      if (newLabel != null && newLabel.trim().isNotEmpty) {
-                        // Expenses
-                        for (final tx in filteredExpenses.where((e) => _selectedTxIds.contains(e.id))) {
-                          await ExpenseService().updateExpense(
-                            widget.userPhone,
-                            tx.copyWith(label: newLabel),
-                          );
-                        }
-                        // Incomes (only if your IncomeItem supports label)
-                        for (final inc in filteredIncomes.where((i) => _selectedTxIds.contains(i.id))) {
-                          await IncomeService().updateIncome(
-                            widget.userPhone,
-                            inc.copyWith(label: newLabel),
-                          );
-                        }
-
-                        setState(() {
-                          _selectedTxIds.clear();
-                          _multiSelectMode = false;
-                        });
-                      }
-                    },
-
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_forever, color: Colors.red),
-                    tooltip: "Delete Selected",
-                    onPressed: _selectedTxIds.isEmpty
-                        ? null
-                        : () async {
-                            final confirmed = await _confirmBulkDelete(_selectedTxIds.length);
-                            if (!confirmed) return;
-
-                            for (final tx in filteredExpenses.where(
-                              (e) => _selectedTxIds.contains(e.id),
-                            )) {
-                              await ExpenseService().deleteExpense(widget.userPhone, tx.id);
-                            }
-                            for (final inc in filteredIncomes.where(
-                              (i) => _selectedTxIds.contains(i.id),
-                            )) {
-                              await IncomeService().deleteIncome(widget.userPhone, inc.id);
-                            }
-
-                            setState(() {
-                              _selectedTxIds.clear();
-                              _multiSelectMode = false;
-                            });
+                        color: Colors.black,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      cursorColor: Colors.black,
+                      decoration: InputDecoration(
+                        hintText: 'Search by note, label, type...',
+                        hintStyle: const TextStyle(
+                          color: Colors.black54,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        prefixIcon:
+                            const Icon(Icons.search, color: Colors.black54),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.close,
+                                    color: Colors.black45),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  _debounce?.cancel();
+                                  setState(() => _searchQuery = '');
+                                  _recompute();
+                                },
+                              )
+                            : null,
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(
+                            vertical: 0, horizontal: 6),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(13),
+                          borderSide: const BorderSide(color: Colors.black26),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(13),
+                          borderSide: const BorderSide(color: Colors.black54),
+                        ),
+                      ),
+                      onChanged: (val) {
+                        _debounce?.cancel();
+                        _debounce = Timer(
+                          const Duration(milliseconds: 200),
+                          () {
+                            if (!mounted) return;
+                            setState(() => _searchQuery = val);
+                            _recompute();
                           },
+                        );
+                      },
+                    ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    tooltip: "Exit Multi-Select",
-                    onPressed: () => setState(() {
-                      _multiSelectMode = false;
-                      _selectedTxIds.clear();
-                    }),
+                  const SizedBox(width: 7),
+                  SizedBox(
+                    width: 36,
+                    child: Center(
+                      child: Checkbox(
+                        value: _multiSelectMode,
+                        onChanged: (val) {
+                          setState(() {
+                            _multiSelectMode = val ?? false;
+                            if (!_multiSelectMode) {
+                              _selectedTxIds.clear();
+                            }
+                          });
+                        },
+                        checkColor: Colors.black,
+                        fillColor: MaterialStateProperty.resolveWith<Color>(
+                          (states) => Colors.white,
+                        ),
+                        side: const BorderSide(color: Color(0xFF7C3AED)),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize:
+                            MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 6),
 
-          // --- Search & Advanced Filter ---
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    cursorColor: Colors.black,
-                    decoration: InputDecoration(
-                      hintText: 'Search by note, label, type...',
-                      hintStyle: const TextStyle(
-                        color: Colors.black54,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      prefixIcon:
-                          const Icon(Icons.search, color: Colors.black54),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon:
-                                  const Icon(Icons.close, color: Colors.black45),
-                              onPressed: () {
-                                _searchController.clear();
-                                _debounce?.cancel();
-                                setState(() => _searchQuery = '');
-                                _recompute();
-                              },
-                            )
-                          : null,
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding:
-                          const EdgeInsets.symmetric(vertical: 0, horizontal: 6),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(13),
-                        borderSide: const BorderSide(color: Colors.black26),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(13),
-                        borderSide: const BorderSide(color: Colors.black54),
-                      ),
-                    ),
-                    onChanged: (val) {
-                      _debounce?.cancel();
-                      _debounce =
-                          Timer(const Duration(milliseconds: 200), () {
-                        if (!mounted) return;
-                        setState(() => _searchQuery = val);
-                        _recompute();
+            // --- Transaction List Unified (Expense+Income) ---
+            SizedBox(
+              width: double.infinity,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                layoutBuilder:
+                    (Widget? currentChild, List<Widget> previousChildren) {
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
+                      ...previousChildren,
+                      if (currentChild != null) currentChild,
+                    ],
+                  );
+                },
+                child: KeyedSubtree(
+                  key: ValueKey(_transactionPanelKey()),
+                  child: UnifiedTransactionList(
+                    expenses: _dataType == "Income" ? [] : filteredExpenses,
+                    incomes: _dataType == "Expense" ? [] : filteredIncomes,
+                    userPhone: widget.userPhone,
+                    filterType: _dataType,
+                    previewCount: 15,
+                    friendsById: _friendsById,
+                    showBillIcon: true,
+                    multiSelectEnabled: _multiSelectMode,
+                    selectedIds: _selectedTxIds,
+                    onSelectTx: (txId, selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedTxIds.add(txId);
+                        } else {
+                          _selectedTxIds.remove(txId);
+                        }
                       });
                     },
+                    onEdit: (tx) async {
+                      if (_multiSelectMode) return;
+                      if (tx is ExpenseItem) {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => EditExpenseScreen(
+                              userPhone: widget.userPhone,
+                              expense: tx,
+                            ),
+                          ),
+                        );
+                        _recompute();
+                      }
+                    },
+                    onDelete: (tx) async {
+                      if (_multiSelectMode) return;
+                      if (tx is ExpenseItem) {
+                        await ExpenseService()
+                            .deleteExpense(widget.userPhone, tx.id);
+                      } else if (tx is IncomeItem) {
+                        await IncomeService()
+                            .deleteIncome(widget.userPhone, tx.id);
+                      }
+                      _recompute();
+                    },
+                    onSplit: (tx) async {
+                      if (_multiSelectMode) return;
+                      if (tx is ExpenseItem) {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => EditExpenseScreen(
+                              userPhone: widget.userPhone,
+                              expense: tx,
+                              initialStep: 1,
+                            ),
+                          ),
+                        );
+                        _recompute();
+                      }
+                    },
                   ),
                 ),
-                const SizedBox(width: 7),
-                SizedBox(
-                  width: 36,
-                  child: Center(
-                    child: Checkbox(
-                      value: _multiSelectMode,
-                      onChanged: (val) {
-                        setState(() {
-                          _multiSelectMode = val ?? false;
-                          if (!_multiSelectMode) {
-                            _selectedTxIds.clear();
-                          }
-                        });
-                      },
-                      checkColor: Colors.black,
-                      fillColor:
-                          MaterialStateProperty.resolveWith<Color>((states) {
-                        return Colors.white;
-                      }),
-                      side: const BorderSide(color: Color(0xFF7C3AED)),
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 6),
-
-        // Transaction List Unified (Expense+Income)
-        SizedBox(
-          width: double.infinity,
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 250),
-            switchInCurve: Curves.easeOut,
-            switchOutCurve: Curves.easeIn,
-            layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) {
-              return Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  ...previousChildren,
-                  if (currentChild != null) currentChild,
-                ],
-              );
-            },
-            child: KeyedSubtree(
-              key: ValueKey(_transactionPanelKey()),
-              child: UnifiedTransactionList(
-                  expenses: _dataType == "Income" ? [] : filteredExpenses,
-                  incomes: _dataType == "Expense" ? [] : filteredIncomes,
-                  userPhone: widget.userPhone,
-                filterType: _dataType,
-                previewCount: 15,
-                friendsById: _friendsById,
-                showBillIcon: true,
-                multiSelectEnabled: _multiSelectMode,
-                selectedIds: _selectedTxIds,
-                onSelectTx: (txId, selected) {
-                  setState(() {
-                    if (selected) {
-                      _selectedTxIds.add(txId);
-                    } else {
-                      _selectedTxIds.remove(txId);
-                    }
-                  });
-                },
-                onEdit: (tx) async {
-                  if (_multiSelectMode) return;
-                  if (tx is ExpenseItem) {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EditExpenseScreen(
-                          userPhone: widget.userPhone,
-                          expense: tx,
-                        ),
-                      ),
-                    );
-                    _recompute();
-                  }
-                },
-                onDelete: (tx) async {
-                  if (_multiSelectMode) return;
-                  if (tx is ExpenseItem) {
-                    await ExpenseService()
-                        .deleteExpense(widget.userPhone, tx.id);
-                  } else if (tx is IncomeItem) {
-                    await IncomeService()
-                        .deleteIncome(widget.userPhone, tx.id);
-                  }
-                  _recompute();
-                },
-                onSplit: (tx) async {
-                  if (_multiSelectMode) return;
-                  if (tx is ExpenseItem) {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EditExpenseScreen(
-                          userPhone: widget.userPhone,
-                          expense: tx,
-                          initialStep: 1,
-                        ),
-                      ),
-                    );
-                    _recompute();
-                  }
-                },
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
