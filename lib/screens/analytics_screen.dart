@@ -85,6 +85,41 @@ class _CardGroup {
   double get netOutflow => debitTotal - creditTotal;
 }
 
+class _CategoryInsights {
+  final String? highestCategory;
+  final double highestAmount;
+  final String? lowestCategory;
+  final double lowestAmount;
+  final List<String> zeroCategories;
+  const _CategoryInsights({
+    required this.highestCategory,
+    required this.highestAmount,
+    required this.lowestCategory,
+    required this.lowestAmount,
+    required this.zeroCategories,
+  });
+}
+
+const List<String> _kMainExpenseCategories = <String>[
+  'Food & Dining',
+  'Groceries',
+  'Transport',
+  'Fuel',
+  'Shopping',
+  'Bills & Utilities',
+  'Rent',
+  'EMI & Loans',
+  'Subscriptions',
+  'Health',
+  'Education',
+  'Travel',
+  'Entertainment',
+  'Fees & Charges',
+  'Investments',
+  'Transfers (Self)',
+  'Other',
+];
+
 String _formatBankLabel(String bank) {
   if (bank.isEmpty || bank == 'UNKNOWN') return 'Unknown Bank';
   final parts = bank
@@ -385,6 +420,39 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ..sort((a, b) => b.value.compareTo(a.value));
       return Map.fromEntries(sorted);
     });
+  }
+
+  _CategoryInsights _buildCategoryInsightsForCurrentRange() {
+    final totals = sumExpenseByCategory();
+    String? highestCategory;
+    double highestAmount = 0;
+    String? lowestCategory;
+    double lowestAmount = 0;
+    final zeroCategories = <String>[];
+
+    for (final category in _kMainExpenseCategories) {
+      final amount = totals[category] ?? 0;
+      if (amount <= 0) {
+        zeroCategories.add(category);
+        continue;
+      }
+      if (highestCategory == null || amount > highestAmount) {
+        highestCategory = category;
+        highestAmount = amount;
+      }
+      if (lowestCategory == null || amount < lowestAmount) {
+        lowestCategory = category;
+        lowestAmount = amount;
+      }
+    }
+
+    return _CategoryInsights(
+      highestCategory: highestCategory,
+      highestAmount: highestAmount,
+      lowestCategory: lowestCategory,
+      lowestAmount: lowestAmount,
+      zeroCategories: zeroCategories,
+    );
   }
 
   Map<String, double> topMerchantsForCategory({
@@ -1967,6 +2035,127 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
+  Widget _categoryInsightTile({
+    required String label,
+    required String description,
+    required double amount,
+    required Color accentColor,
+  }) {
+    final compact = NumberFormat.compactCurrency(
+      locale: 'en_IN',
+      symbol: '₹',
+      decimalDigits: 0,
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: accentColor.withOpacity(.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accentColor.withOpacity(.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              color: accentColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: Fx.label.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Fx.text.withOpacity(.95),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: Fx.label.copyWith(
+                    color: Fx.text.withOpacity(.85),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            compact.format(amount),
+            style: Fx.number.copyWith(
+              fontWeight: FontWeight.w700,
+              color: Fx.text.withOpacity(.95),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Compact Highest / Lowest spend tiles for the current period,
+  /// suitable for showing inside the "Your spends" hero card.
+  Widget _highestLowestForCurrentPeriodInline() {
+    final insights = _buildCategoryInsightsForCurrentRange();
+
+    if (insights.highestCategory == null &&
+        insights.lowestCategory == null) {
+      return const SizedBox.shrink();
+    }
+
+    final tiles = <Widget>[];
+
+    if (insights.highestCategory != null &&
+        insights.highestAmount > 0) {
+      tiles.add(
+        _categoryInsightTile(
+          label: 'Highest spend',
+          description:
+              'You’ve spent highest on ${insights.highestCategory} in this period.',
+          amount: insights.highestAmount,
+          accentColor: Fx.bad,
+        ),
+      );
+    }
+
+    if (insights.lowestCategory != null &&
+        insights.lowestAmount > 0 &&
+        insights.lowestCategory != insights.highestCategory) {
+      if (tiles.isNotEmpty) {
+        tiles.add(const SizedBox(height: 8));
+      }
+      tiles.add(
+        _categoryInsightTile(
+          label: 'Lowest spend',
+          description:
+              'You’ve spent lowest on ${insights.lowestCategory} in this period.',
+          amount: insights.lowestAmount,
+          accentColor: Fx.good,
+        ),
+      );
+    }
+
+    if (tiles.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: tiles,
+    );
+  }
+
   // ---------- Last X months spends card (Axis-style hero) ----------
   Widget _lastMonthsSpendsCard() {
     // Decide how many months to show based on local window (this card only).
@@ -2100,23 +2289,25 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row: title + window chips
-          Row(
+          // Header: icon + title on first line, chips on second line
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    const Icon(Icons.show_chart_rounded, color: Colors.teal),
-                    const SizedBox(width: Fx.s8),
-                    Text(
+              Row(
+                children: [
+                  const Icon(Icons.show_chart_rounded, color: Colors.teal),
+                  const SizedBox(width: Fx.s8),
+                  Expanded(
+                    child: Text(
                       'Your spends – last $monthCount months',
                       style: Fx.title.copyWith(fontSize: 18),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+              const SizedBox(height: 8),
               Wrap(
                 spacing: 4,
                 children: [
@@ -2186,6 +2377,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ],
+            const SizedBox(height: 10),
+            _highestLowestForCurrentPeriodInline(),
           ],
         ],
       ),
