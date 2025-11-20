@@ -72,8 +72,13 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   Set<String> _groupFilterIds = {};
 
   // Subscriptions / Debounce
-  StreamSubscription? _expSub, _incSub, _friendSub, _groupSub;
+  StreamSubscription<List<ExpenseItem>>? _expSub;
+  StreamSubscription<List<IncomeItem>>? _incSub;
+  StreamSubscription<List<FriendModel>>? _friendSub;
+  StreamSubscription<List<GroupModel>>? _groupSub;
   Timer? _debounce;
+
+  bool _pendingRecompute = false;
 
   List<PieChartSectionData> _miniExpenseSections() {
     if (filteredExpenses.isEmpty) return [];
@@ -205,13 +210,13 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     _expSub = ExpenseService().getExpensesStream(widget.userPhone).listen((expenses) {
       if (!mounted) return;
       allExpenses = expenses;
-      _recompute();
+      _scheduleRecompute();
     });
 
     _incSub = IncomeService().getIncomesStream(widget.userPhone).listen((incomes) {
       if (!mounted) return;
       allIncomes = incomes;
-      _recompute();
+      _scheduleRecompute();
     });
 
     _friendSub = FriendService().streamFriends(widget.userPhone).listen((friends) {
@@ -229,11 +234,22 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     });
   }
 
-  void _recompute() {
+  void _recomputeInternal() {
     _applyFilter();
     _generateDailyTotals();
     _updateExpensesForSelectedDay(_selectedDay ?? DateTime.now());
-    if (mounted) setState(() {});
+  }
+
+  void _scheduleRecompute() {
+    if (!mounted) return;
+    if (_pendingRecompute) return;
+    _pendingRecompute = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _pendingRecompute = false;
+      _recomputeInternal();
+      setState(() {});
+    });
   }
 
   String _normalizeBank(String? bank) {
@@ -542,7 +558,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             _searchFrom = null;
             _searchTo = null;
           });
-          _recompute();
+          _scheduleRecompute();
         },
       ));
     }
@@ -555,7 +571,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         label: Text(label),
         onDeleted: () {
           setState(() => _selectedCategories = {});
-          _recompute();
+          _scheduleRecompute();
         },
       ));
     }
@@ -570,7 +586,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         label: Text(label),
         onDeleted: () {
           setState(() => _selectedMerchants = {});
-          _recompute();
+          _scheduleRecompute();
         },
       ));
     }
@@ -585,7 +601,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         label: Text(label),
         onDeleted: () {
           setState(() => _selectedBanks = {});
-          _recompute();
+          _scheduleRecompute();
         },
       ));
     }
@@ -600,7 +616,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           setState(() {
             _friendFilterPhones = {..._friendFilterPhones}..remove(phone);
           });
-          _recompute();
+          _scheduleRecompute();
         },
       ));
     }
@@ -614,7 +630,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           setState(() {
             _groupFilterIds = {..._groupFilterIds}..remove(groupId);
           });
-          _recompute();
+          _scheduleRecompute();
         },
       ));
     }
@@ -633,7 +649,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       _searchFrom = null;
       _searchTo = null;
     });
-    _recompute();
+    _scheduleRecompute();
   }
 
   Future<void> _showPeriodPickerBottomSheet() async {
@@ -743,7 +759,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                           _searchTo = null;
                         }
                       });
-                      _recompute();
+                      _scheduleRecompute();
                     },
                   );
                 }).toList(),
@@ -813,7 +829,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         _friendFilterPhones = {...config.friendPhones};
         _groupFilterIds = {...config.groupIds};
       });
-      _recompute();
+      _scheduleRecompute();
     }
   }
 
@@ -1200,7 +1216,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         _searchController.clear();
                         _debounce?.cancel();
                         setState(() => _searchQuery = '');
-                        _recompute();
+                        _scheduleRecompute();
                       },
                     )
                         : null,
@@ -1226,7 +1242,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                           () {
                         if (!mounted) return;
                         setState(() => _searchQuery = val);
-                        _recompute();
+                        _scheduleRecompute();
                       },
                     );
                   },
@@ -1298,7 +1314,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     ),
                   ),
                 );
-                _recompute();
+                _scheduleRecompute();
               }
             },
             onDelete: (tx) async {
@@ -1314,7 +1330,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   tx.id,
                 );
               }
-              _recompute();
+              _scheduleRecompute();
             },
             onSplit: (tx) async {
               if (_multiSelectMode) return;
@@ -1329,7 +1345,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     ),
                   ),
                 );
-                _recompute();
+                _scheduleRecompute();
               }
             },
           ),
@@ -1539,7 +1555,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                           ),
                         ),
                       );
-                      _recompute();
+                      _scheduleRecompute();
                     }
                   },
                   onDelete: (tx) async {
@@ -1547,7 +1563,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     if (tx is ExpenseItem) {
                       await ExpenseService()
                           .deleteExpense(widget.userPhone, tx.id);
-                      _recompute();
+                      _scheduleRecompute();
                     }
                   },
                   onSplit: (tx) async {
@@ -1563,7 +1579,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                           ),
                         ),
                       );
-                      _recompute();
+                      _scheduleRecompute();
                     }
                   },
                 ),
@@ -1841,47 +1857,47 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 onEdit: (tx) async {
                   if (_multiSelectMode) return;
                   if (tx is ExpenseItem) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditExpenseScreen(
+                        userPhone: widget.userPhone,
+                        expense: tx,
+                      ),
+                    ),
+                  );
+                  _scheduleRecompute();
+                }
+              },
+              onDelete: (tx) async {
+                if (_multiSelectMode) return;
+                if (tx is ExpenseItem) {
+                  await ExpenseService()
+                      .deleteExpense(widget.userPhone, tx.id);
+                } else if (tx is IncomeItem) {
+                  await IncomeService()
+                      .deleteIncome(widget.userPhone, tx.id);
+                }
+                _scheduleRecompute();
+              },
+              onSplit: (tx) async {
+                if (_multiSelectMode) return;
+                if (tx is ExpenseItem) {
                     await Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => EditExpenseScreen(
                           userPhone: widget.userPhone,
-                          expense: tx,
-                        ),
-                      ),
-                    );
-                    _recompute();
-                  }
-                },
-                onDelete: (tx) async {
-                  if (_multiSelectMode) return;
-                  if (tx is ExpenseItem) {
-                    await ExpenseService()
-                        .deleteExpense(widget.userPhone, tx.id);
-                  } else if (tx is IncomeItem) {
-                    await IncomeService()
-                        .deleteIncome(widget.userPhone, tx.id);
-                  }
-                  _recompute();
-                },
-                onSplit: (tx) async {
-                  if (_multiSelectMode) return;
-                  if (tx is ExpenseItem) {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EditExpenseScreen(
-                          userPhone: widget.userPhone,
-                          expense: tx,
-                          initialStep: 1,
-                        ),
-                      ),
-                    );
-                    _recompute();
-                  }
-                },
-              ),
-            ),
+                      expense: tx,
+                      initialStep: 1,
+                    ),
+                  ),
+                );
+                _scheduleRecompute();
+              }
+            },
+          ),
+        ),
           ),
         ),
       ],
