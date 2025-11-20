@@ -253,7 +253,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   //  'instrument':String?, 'network':String?, 'issuerBank':String?, 'counterparty':String?,
   //  'isInternational':bool, 'hasFees':bool,
   //  'tags':String?, 'labels': List<String>, 'title': String?}
-  late List<Map<String, dynamic>> allTx;
+  List<Map<String, dynamic>> allTx = [];
   int shownCount = 10;
   TransactionFilter _activeFilter = TransactionFilter.defaults();
 
@@ -584,29 +584,42 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   }
 
   void _combine() {
-    if (widget.unifiedDocs != null) {
-      allTx = _fromUnified(widget.unifiedDocs!);
-    } else {
-      allTx = _fromLegacy(widget.expenses, widget.incomes);
-    }
+    try {
+      debugPrint(
+        'UTL _combine: unified=${widget.unifiedDocs?.length}, exp=${widget.expenses.length}, inc=${widget.incomes.length}, filterType=${widget.filterType}, preview=${widget.previewCount}',
+      );
 
-    if (widget.filterType == "Income") {
-      allTx = allTx.where((t) => t['type'] == 'income').toList();
-    } else if (widget.filterType == "Expense") {
-      allTx = allTx.where((t) => t['type'] == 'expense').toList();
-    }
-    final base = List<Map<String, dynamic>>.from(allTx);
-    widget.onNormalized?.call(base);
+      final hasUnified = widget.unifiedDocs != null && widget.unifiedDocs!.isNotEmpty;
+      final combined = hasUnified
+          ? _fromUnified(widget.unifiedDocs!)
+          : _fromLegacy(widget.expenses, widget.incomes);
 
-    var f = widget.filter ?? TransactionFilter.defaults();
-    if (widget.sort != null && widget.sort != f.sort) {
-      f = f.copyWith(sort: widget.sort);
+      List<Map<String, dynamic>> working = combined;
+      if (widget.filterType == "Income") {
+        working = working.where((t) => t['type'] == 'income').toList();
+      } else if (widget.filterType == "Expense") {
+        working = working.where((t) => t['type'] == 'expense').toList();
+      }
+
+      final base = List<Map<String, dynamic>>.from(working);
+      widget.onNormalized?.call(base);
+
+      var f = widget.filter ?? TransactionFilter.defaults();
+      if (widget.sort != null && widget.sort != f.sort) {
+        f = f.copyWith(sort: widget.sort);
+      }
+      if (widget.groupBy != null && widget.groupBy != f.groupBy) {
+        f = f.copyWith(groupBy: widget.groupBy);
+      }
+      _activeFilter = f;
+      allTx = applyFilterAndSort(base, f);
+
+      debugPrint('UTL _combine final allTx len=${allTx.length}');
+    } catch (e, st) {
+      debugPrint('UTL _combine ERROR: $e\n$st');
+      allTx = [];
+      rethrow;
     }
-    if (widget.groupBy != null && widget.groupBy != f.groupBy) {
-      f = f.copyWith(groupBy: widget.groupBy);
-    }
-    _activeFilter = f;
-    allTx = applyFilterAndSort(base, f);
   }
 
   List<Map<String, dynamic>> _fromLegacy(
@@ -1914,8 +1927,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
   @override
   Widget build(BuildContext context) {
-    final groupedMap = groupTx(allTx.take(shownCount).toList(), _activeFilter.groupBy);
-    final groupedEntries = groupedMap.entries.toList();
+    debugPrint(
+      'UTL build: allTx=${allTx.length}, shown=$shownCount, groupBy=${_activeFilter.groupBy}',
+    );
 
     if (allTx.isEmpty) {
       if (widget.emptyBuilder != null) return widget.emptyBuilder!(context);
@@ -1924,6 +1938,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         child: Center(child: Text("No transactions found.")),
       );
     }
+
+    final groupedMap = groupTx(allTx.take(shownCount).toList(), _activeFilter.groupBy);
+    final groupedEntries = groupedMap.entries.toList();
 
     final groupCount = groupedEntries.length;
 
