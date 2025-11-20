@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 
 class CustomDiamondCard extends StatelessWidget {
@@ -21,7 +20,7 @@ class CustomDiamondCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final diamondShape = isDiamondCut
+    final shape = isDiamondCut
         ? BorderRadius.only(
       topLeft: Radius.circular(borderRadius * 0.4),
       topRight: Radius.circular(borderRadius * 1.2),
@@ -32,39 +31,31 @@ class CustomDiamondCard extends StatelessWidget {
 
     return Container(
       margin: margin ?? const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
-      child: ClipRRect(
-        borderRadius: diamondShape,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            padding: padding ?? const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: glassGradient ??
-                    [
-                      Colors.white.withOpacity(0.15),
-                      Colors.white.withOpacity(0.06)
-                    ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: diamondShape,
-              border: Border.all(
-                color: Colors.white.withOpacity(0.22),
-                width: isDiamondCut ? 2.0 : 1.0,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.14),
-                  blurRadius: isDiamondCut ? 18 : 9,
-                  offset: Offset(0, isDiamondCut ? 7 : 4),
-                ),
+      padding: padding ?? const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: shape,
+        gradient: LinearGradient(
+          colors: glassGradient ??
+              [
+                Colors.white.withOpacity(0.15),
+                Colors.white.withOpacity(0.06),
               ],
-            ),
-            child: child,
-          ),
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.22),
+          width: isDiamondCut ? 2.0 : 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.14),
+            blurRadius: isDiamondCut ? 18 : 9,
+            offset: Offset(0, isDiamondCut ? 7 : 4),
+          ),
+        ],
       ),
+      child: child,
     );
   }
 }
