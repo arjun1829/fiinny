@@ -398,7 +398,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       final out = <String, double>{};
       for (final e in _applyBankFiltersToExpenses(_allExp)) {
         if (!_inRange(e.date, range)) continue;
-        final cat = AnalyticsAgg.resolveExpenseCategory(e);
+        final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+        final cat = _normalizeMainCategory(legacy);
         out[cat] = (out[cat] ?? 0) + e.amount;
       }
       final sorted = out.entries.toList()
@@ -466,7 +467,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       if (expense) {
         for (final e in _applyBankFiltersToExpenses(_allExp)) {
           if (!_inRange(e.date, range)) continue;
-          final cat = AnalyticsAgg.resolveExpenseCategory(e);
+          final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+          final cat = _normalizeMainCategory(legacy);
           if (cat != category) continue;
           final merch = (e.counterparty ?? e.upiVpa ?? e.label ?? 'MERCHANT')
               .toString()
@@ -512,7 +514,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       final matches = _applyBankFiltersToExpenses(_allExp)
           .where((e) =>
               _inRange(e.date, range) &&
-              AnalyticsAgg.resolveExpenseCategory(e) == category)
+              _normalizeMainCategory(
+                AnalyticsAgg.resolveExpenseCategory(e),
+              ) ==
+                  category)
           .toList();
       await _openTxDrilldown(
         title: 'Expense • $category · ${INR.f(total)}',
@@ -815,7 +820,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                       ).where((e) {
                                         return !e.date.isBefore(start) &&
                                             e.date.isBefore(end) &&
-                                            AnalyticsAgg.resolveExpenseCategory(e) ==
+                                            _normalizeMainCategory(
+                                                  AnalyticsAgg
+                                                      .resolveExpenseCategory(e),
+                                                ) ==
                                                 category &&
                                             _resolveExpenseSubcategory(e) ==
                                                 bucket.name;
@@ -1044,6 +1052,263 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return raw?.trim().isEmpty == true ? 'Account' : (raw ?? '').trim();
   }
 
+  /// Map any legacy/old category label into one of our 10 main
+  /// categories: Fund Transfers, Payments, Shopping, Travel, Food,
+  /// Entertainment, Others, Healthcare, Education, Investments.
+  String _normalizeMainCategory(String raw) {
+    final key = raw.toLowerCase().trim();
+
+    bool hasAny(List<String> tokens) {
+      for (final t in tokens) {
+        if (key.contains(t)) return true;
+      }
+      return false;
+    }
+
+    // 1) Fund Transfers
+    if (hasAny([
+      'fund transfer',
+      'fund transfers',
+      'transfer',
+      'p2p',
+      'p2m',
+      'p2a',
+      'self transfer',
+      'remittance',
+      'cash withdrawal',
+      'cash withdraw',
+      'atm withdraw',
+    ])) {
+      return 'Fund Transfers';
+    }
+
+    // 2) Payments (loans, bills, recharges, fuel, rent, wallet, etc.)
+    if (hasAny([
+      'emi',
+      'loan',
+      'bill',
+      'utility',
+      'electric',
+      'electricity',
+      'water',
+      'gas',
+      'dth',
+      'recharge',
+      'mobile',
+      'postpaid',
+      'prepaid',
+      'fuel',
+      'petrol',
+      'diesel',
+      'wallet',
+      'rent',
+      'rental',
+      'real estate',
+      'payment',
+      'paytm recharge',
+      'phonepe recharge',
+    ])) {
+      return 'Payments';
+    }
+
+    // 3) Shopping (groceries, ecommerce, apparel, personal care, etc.)
+    if (hasAny([
+      'grocery',
+      'groceries',
+      'supermarket',
+      'mart',
+      'ecom',
+      'e-commerce',
+      'amazon',
+      'flipkart',
+      'myntra',
+      'nykaa',
+      'shop',
+      'shopping',
+      'fashion',
+      'apparel',
+      'clothes',
+      'electronics',
+      'mobile store',
+      'personal care',
+      'beauty',
+      'fitness',
+      'gym',
+      'gift',
+      'gifting',
+      'jewell',
+      'jewel',
+      'stationery',
+      'books',
+    ])) {
+      return 'Shopping';
+    }
+
+    // 4) Travel (flights, trains, cabs, hotels, forex, etc.)
+    if (hasAny([
+      'travel',
+      'trip',
+      'tour',
+      'holiday',
+      'flight',
+      'airline',
+      'air india',
+      'indigo',
+      'spicejet',
+      'vistara',
+      'rail',
+      'train',
+      'irctc',
+      'metro',
+      'bus',
+      'cab',
+      'taxi',
+      'uber',
+      'ola',
+      'rapido',
+      'hotel',
+      'stay',
+      'accommodation',
+      'resort',
+      'car rental',
+      'bike rental',
+      'forex',
+    ])) {
+      return 'Travel';
+    }
+
+    // 5) Food (restaurants, delivery, alcohol)
+    if (hasAny([
+      'food',
+      'restaurant',
+      'restro',
+      'cafe',
+      'coffee',
+      'swiggy',
+      'zomato',
+      'dining',
+      'hotel food',
+      'breakfast',
+      'lunch',
+      'dinner',
+      'bar',
+      'pub',
+      'alcohol',
+      'liquor',
+    ])) {
+      return 'Food';
+    }
+
+    // 6) Entertainment (OTT, movies, music, gaming)
+    if (hasAny([
+      'entertain',
+      'movie',
+      'cinema',
+      'pvr',
+      'inox',
+      'netflix',
+      'prime video',
+      'hotstar',
+      'sony liv',
+      'zee5',
+      'ott',
+      'spotify',
+      'wynk',
+      'music',
+      'gaming',
+      'game',
+      'playstation',
+      'xbox',
+    ])) {
+      return 'Entertainment';
+    }
+
+    // 8) Healthcare
+    if (hasAny([
+      'health',
+      'hospital',
+      'clinic',
+      'doctor',
+      'dentist',
+      'pharma',
+      'pharmacy',
+      'chemist',
+      'medicine',
+      'medical',
+      'lab',
+      'diagnostic',
+    ])) {
+      return 'Healthcare';
+    }
+
+    // 9) Education
+    if (hasAny([
+      'educat',
+      'school',
+      'college',
+      'university',
+      'tuition',
+      'coaching',
+      'course',
+      'udemy',
+      'coursera',
+      'byju',
+      'unacademy',
+      'fees',
+    ])) {
+      return 'Education';
+    }
+
+    // 10) Investments (mutual funds, stocks, fds, etc.)
+    if (hasAny([
+      'invest',
+      'mf',
+      'mutual fund',
+      'sip',
+      'stock',
+      'shares',
+      'equity',
+      'demat',
+      'broker',
+      'zerodha',
+      'groww',
+      'angel',
+      'upstox',
+      'fd',
+      'fixed deposit',
+      'rd',
+      'recurring deposit',
+      'ppf',
+      'nps',
+      'insurance premium',
+      'insurance',
+      'lic',
+    ])) {
+      return 'Investments';
+    }
+
+    // 7) Others (bank charges, govt, tax, misc)
+    if (hasAny([
+      'charge',
+      'fee',
+      'penalty',
+      'tax',
+      'tds',
+      'gst',
+      'govt',
+      'government',
+      'stamp duty',
+      'service charge',
+      'cheque',
+      'bank',
+    ])) {
+      return 'Others';
+    }
+
+    // Fallback: anything unknown becomes "Others".
+    return 'Others';
+  }
+
   IconData _iconForCategory(String category) {
     final c = category.toLowerCase();
     if (c.contains('fund transfer')) return Icons.swap_horiz_rounded;
@@ -1157,7 +1422,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       final totals = <String, double>{};
       for (final e in base) {
         if (!e.date.isBefore(start) && e.date.isBefore(end)) {
-          final cat = AnalyticsAgg.resolveExpenseCategory(e);
+          final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+          final cat = _normalizeMainCategory(legacy);
           totals[cat] = (totals[cat] ?? 0) + e.amount;
         }
       }
@@ -1185,7 +1451,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       final out = <String, double>{};
       for (final e in base) {
         if (!e.date.isBefore(start) && e.date.isBefore(end)) {
-          final cat = AnalyticsAgg.resolveExpenseCategory(e);
+          final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+          final cat = _normalizeMainCategory(legacy);
           out[cat] = (out[cat] ?? 0) + e.amount;
         }
       }
@@ -1224,7 +1491,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final end = DateTime(month.year, month.month + 1, 1);
 
     final filtered = _applyBankFiltersToExpenses(_allExp).where((e) {
-      if (AnalyticsAgg.resolveExpenseCategory(e) != category) return false;
+      final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+      if (_normalizeMainCategory(legacy) != category) return false;
       return !e.date.isBefore(start) && e.date.isBefore(end);
     });
 
@@ -2968,7 +3236,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ? <ExpenseItem>[]
         : srcExp
             .where((e) =>
-                AnalyticsAgg.resolveExpenseCategory(e).toLowerCase() ==
+                _normalizeMainCategory(
+                  AnalyticsAgg.resolveExpenseCategory(e),
+                ).toLowerCase() ==
                 category.toLowerCase())
             .toList();
 
