@@ -1385,7 +1385,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             _updateExpensesForSelectedDay(picked);
                           }
                         },
-
                       ),
                     ],
                   ),
@@ -1484,8 +1483,317 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               ),
             ),
           ),
-
           const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.04),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: CustomDiamondCard(
+                key: ValueKey(
+                  'day-${_selectedDay?.toIso8601String() ?? ''}-${_expensesForSelectedDay.length}-${_transactionPanelKey()}',
+                ),
+                borderRadius: 24,
+                glassGradient: const [
+                  Colors.white,
+                  Colors.white,
+                ],
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+                child: UnifiedTransactionList(
+                  expenses: _expensesForSelectedDay,
+                  incomes: const [],
+                  userPhone: widget.userPhone,
+                  previewCount: 15,
+                  filterType: "Expense",
+                  friendsById: _friendsById,
+                  showBillIcon: true,
+                  multiSelectEnabled: _multiSelectMode,
+                  selectedIds: _selectedTxIds,
+                  onSelectTx: (txId, selected) {
+                    setState(() {
+                      if (selected) {
+                        _selectedTxIds.add(txId);
+                      } else {
+                        _selectedTxIds.remove(txId);
+                      }
+                    });
+                  },
+                  onEdit: (tx) async {
+                    if (_multiSelectMode) return;
+                    if (tx is ExpenseItem) {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EditExpenseScreen(
+                            userPhone: widget.userPhone,
+                            expense: tx,
+                          ),
+                        ),
+                      );
+                      _recompute();
+                    }
+                  },
+                  onDelete: (tx) async {
+                    if (_multiSelectMode) return;
+                    if (tx is ExpenseItem) {
+                      await ExpenseService()
+                          .deleteExpense(widget.userPhone, tx.id);
+                      _recompute();
+                    }
+                  },
+                  onSplit: (tx) async {
+                    if (_multiSelectMode) return;
+                    if (tx is ExpenseItem) {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EditExpenseScreen(
+                            userPhone: widget.userPhone,
+                            expense: tx,
+                            initialStep: 1,
+                          ),
+                        ),
+                      );
+                      _recompute();
+                    }
+                  },
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chartsView(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+      children: [
+        CustomDiamondCard(
+          borderRadius: 24,
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+          glassGradient: [
+            Colors.white.withOpacity(0.16),
+            Colors.white.withOpacity(0.06),
+          ],
+          child: ChartSwitcherWidget(
+            chartType: _chartType,
+            dataType: _dataType,
+            onChartTypeChanged: (val) => setState(() => _chartType = val),
+            onDataTypeChanged: (val) => setState(() => _dataType = val),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        if ((_dataType == "All" || _dataType == "Expense") &&
+            filteredExpenses.isNotEmpty &&
+            _chartType == "Pie" &&
+            _hasExpenseCategoryData())
+          CustomDiamondCard(
+            borderRadius: 26,
+            padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
+            glassGradient: [
+              Colors.white.withOpacity(0.19),
+              Colors.white.withOpacity(0.08),
+            ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Expense Breakdown",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                ),
+                const SizedBox(height: 10),
+                AspectRatio(
+                  aspectRatio: 1.6,
+                  child: PieChart(
+                    PieChartData(
+                      sections: _expenseCategorySections(),
+                      sectionsSpace: 3,
+                      centerSpaceRadius: 28,
+                      pieTouchData: PieTouchData(
+                        touchCallback: (event, response) {},
+                      ),
+                    ),
+                    swapAnimationDuration: const Duration(milliseconds: 650),
+                    swapAnimationCurve: Curves.easeOutCubic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        if ((_dataType == "All" || _dataType == "Income") &&
+            filteredIncomes.isNotEmpty &&
+            _chartType == "Pie")
+          CustomDiamondCard(
+            borderRadius: 26,
+            padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
+            glassGradient: [
+              Colors.white.withOpacity(0.19),
+              Colors.white.withOpacity(0.08),
+            ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Income Breakdown",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                ),
+                const SizedBox(height: 10),
+                AspectRatio(
+                  aspectRatio: 1.6,
+                  child: PieChart(
+                    PieChartData(
+                      sections: _incomeCategorySections(),
+                      sectionsSpace: 3,
+                      centerSpaceRadius: 28,
+                      pieTouchData: PieTouchData(),
+                    ),
+                    swapAnimationDuration: const Duration(milliseconds: 650),
+                    swapAnimationCurve: Curves.easeOutCubic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        if ((_dataType == "All" || _dataType == "Expense") &&
+            filteredExpenses.isNotEmpty &&
+            _chartType == "Bar")
+          CustomDiamondCard(
+            borderRadius: 26,
+            padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
+            glassGradient: [
+              Colors.white.withOpacity(0.19),
+              Colors.white.withOpacity(0.08),
+            ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Expense by Category",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                ),
+                const SizedBox(height: 10),
+                AspectRatio(
+                  aspectRatio: 1.8,
+                  child: BarChart(
+                    BarChartData(
+                      barGroups: _expenseCategoryBarGroups(),
+                      titlesData: FlTitlesData(
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 36,
+                          ),
+                        ),
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            getTitlesWidget: (double value, TitleMeta meta) {
+                              final cats = _expenseCategories();
+                              if (value.toInt() >= 0 &&
+                                  value.toInt() < cats.length) {
+                                return Text(
+                                  cats[value.toInt()],
+                                  style: const TextStyle(fontSize: 12),
+                                  overflow: TextOverflow.ellipsis,
+                                );
+                              }
+                              return const SizedBox();
+                            },
+                          ),
+                        ),
+                      ),
+                      borderData: FlBorderData(show: false),
+                      gridData: FlGridData(
+                        show: true,
+                        horizontalInterval:
+                            (_expenseMaxAmount() / 4).clamp(1, double.infinity),
+                      ),
+                    ),
+                    swapAnimationDuration: const Duration(milliseconds: 650),
+                    swapAnimationCurve: Curves.easeOutCubic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        if ((_dataType == "All" || _dataType == "Income") &&
+            filteredIncomes.isNotEmpty &&
+            _chartType == "Bar")
+          CustomDiamondCard(
+            borderRadius: 26,
+            padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
+            glassGradient: [
+              Colors.white.withOpacity(0.19),
+              Colors.white.withOpacity(0.08),
+            ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Income by Category",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                ),
+                const SizedBox(height: 10),
+                AspectRatio(
+                  aspectRatio: 1.8,
+                  child: BarChart(
+                    BarChartData(
+                      barGroups: _incomeCategoryBarGroups(),
+                      titlesData: FlTitlesData(
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 36,
+                          ),
+                        ),
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            getTitlesWidget: (double value, TitleMeta meta) {
+                              final cats = _incomeCategories();
+                              if (value.toInt() >= 0 &&
+                                  value.toInt() < cats.length) {
+                                return Text(
+                                  cats[value.toInt()],
+                                  style: const TextStyle(fontSize: 12),
+                                  overflow: TextOverflow.ellipsis,
+                                );
+                              }
+                              return const SizedBox();
+                            },
+                          ),
+                        ),
+                      ),
+                      borderData: FlBorderData(show: false),
+                      gridData: FlGridData(
+                        show: true,
+                        horizontalInterval:
+                            (_incomeMaxAmount() / 4).clamp(1, double.infinity),
+                      ),
+                    ),
+                    swapAnimationDuration: const Duration(milliseconds: 650),
+                    swapAnimationCurve: Curves.easeOutCubic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
         SizedBox(
           width: double.infinity,
           child: AnimatedSwitcher(
@@ -1502,25 +1810,24 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             ),
             child: CustomDiamondCard(
               key: ValueKey(
-                'day-${_selectedDay?.toIso8601String() ?? ''}-${_expensesForSelectedDay.length}-${_transactionPanelKey()}',
+                'summary-${_transactionPanelKey()}-${filteredExpenses.length}-${filteredIncomes.length}-${_dataType}',
               ),
               borderRadius: 24,
-              glassGradient: const [
-                Colors.white,
-                Colors.white,
+              glassGradient: [
+                Colors.white.withOpacity(0.23),
+                Colors.white.withOpacity(0.09),
               ],
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
               child: UnifiedTransactionList(
-                expenses: _expensesForSelectedDay,
+                expenses: _dataType == "Income" ? [] : filteredExpenses,
+                incomes: _dataType == "Expense" ? [] : filteredIncomes,
                 userPhone: widget.userPhone,
-                incomes: const [],
+                filterType: _dataType,
                 previewCount: 15,
-                filterType: "Expense",
                 friendsById: _friendsById,
                 showBillIcon: true,
                 multiSelectEnabled: _multiSelectMode,
                 selectedIds: _selectedTxIds,
-
                 onSelectTx: (txId, selected) {
                   setState(() {
                     if (selected) {
@@ -1545,14 +1852,16 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     _recompute();
                   }
                 },
-
                 onDelete: (tx) async {
                   if (_multiSelectMode) return;
                   if (tx is ExpenseItem) {
                     await ExpenseService()
                         .deleteExpense(widget.userPhone, tx.id);
-                    _recompute();
+                  } else if (tx is IncomeItem) {
+                    await IncomeService()
+                        .deleteIncome(widget.userPhone, tx.id);
                   }
+                  _recompute();
                 },
                 onSplit: (tx) async {
                   if (_multiSelectMode) return;
@@ -1573,324 +1882,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _chartsView(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-      children: [
-        CustomDiamondCard(
-          borderRadius: 24,
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-          glassGradient: [
-            Colors.white.withOpacity(0.16),
-            Colors.white.withOpacity(0.06)
-          ],
-          child: ChartSwitcherWidget(
-            chartType: _chartType,
-            dataType: _dataType,
-            onChartTypeChanged: (val) => setState(() => _chartType = val),
-            onDataTypeChanged: (val) => setState(() => _dataType = val),
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        if ((_dataType == "All" || _dataType == "Expense") &&
-            filteredExpenses.isNotEmpty &&
-            _chartType == "Pie" &&
-            _hasExpenseCategoryData())
-          CustomDiamondCard(
-            borderRadius: 26,
-            padding:
-            const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
-            glassGradient: [
-              Colors.white.withOpacity(0.19),
-              Colors.white.withOpacity(0.08)
-            ],
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text("Expense Breakdown",
-                    style:
-                    TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-                const SizedBox(height: 10),
-                AspectRatio(
-                  aspectRatio: 1.6,
-                  child: PieChart(
-                    PieChartData(
-                      sections: _expenseCategorySections(),
-                      sectionsSpace: 3,
-                      centerSpaceRadius: 28,
-                      pieTouchData: PieTouchData(
-                        touchCallback: (event, response) {},
-                      ),
-                    ),
-                    swapAnimationDuration:
-                    const Duration(milliseconds: 650),
-                    swapAnimationCurve: Curves.easeOutCubic,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        if ((_dataType == "All" || _dataType == "Income") &&
-            filteredIncomes.isNotEmpty &&
-            _chartType == "Pie")
-          CustomDiamondCard(
-            borderRadius: 26,
-            padding:
-            const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
-            glassGradient: [
-              Colors.white.withOpacity(0.19),
-              Colors.white.withOpacity(0.08)
-            ],
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text("Income Breakdown",
-                    style:
-                    TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-                const SizedBox(height: 10),
-                AspectRatio(
-                  aspectRatio: 1.6,
-                  child: PieChart(
-                    PieChartData(
-                      sections: _incomeCategorySections(),
-                      sectionsSpace: 3,
-                      centerSpaceRadius: 28,
-                      pieTouchData: PieTouchData(),
-                    ),
-                    swapAnimationDuration:
-                    const Duration(milliseconds: 650),
-                    swapAnimationCurve: Curves.easeOutCubic,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        if ((_dataType == "All" || _dataType == "Expense") &&
-            filteredExpenses.isNotEmpty &&
-            _chartType == "Bar")
-          CustomDiamondCard(
-            borderRadius: 26,
-            padding:
-            const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
-            glassGradient: [
-              Colors.white.withOpacity(0.19),
-              Colors.white.withOpacity(0.08)
-            ],
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text("Expense by Category",
-                    style:
-                    TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-                const SizedBox(height: 10),
-                AspectRatio(
-                  aspectRatio: 1.8,
-                  child: BarChart(
-                    BarChartData(
-                      barGroups: _expenseCategoryBarGroups(),
-                      titlesData: FlTitlesData(
-                        leftTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                              showTitles: true, reservedSize: 36),
-                        ),
-                        bottomTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            getTitlesWidget:
-                                (double value, TitleMeta meta) {
-                              final cats = _expenseCategories();
-                              if (value.toInt() >= 0 &&
-                                  value.toInt() < cats.length) {
-                                return Text(
-                                  cats[value.toInt()],
-                                  style: const TextStyle(fontSize: 12),
-                                  overflow: TextOverflow.ellipsis,
-                                );
-                              }
-                              return const SizedBox();
-                            },
-                          ),
-                        ),
-                      ),
-                      borderData: FlBorderData(show: false),
-                      gridData: FlGridData(
-                        show: true,
-                        horizontalInterval:
-                        (_expenseMaxAmount() / 4).clamp(1, double.infinity),
-                      ),
-                    ),
-                    swapAnimationDuration:
-                    const Duration(milliseconds: 650),
-                    swapAnimationCurve: Curves.easeOutCubic,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        if ((_dataType == "All" || _dataType == "Income") &&
-            filteredIncomes.isNotEmpty &&
-            _chartType == "Bar")
-          CustomDiamondCard(
-            borderRadius: 26,
-            padding:
-            const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
-            glassGradient: [
-              Colors.white.withOpacity(0.19),
-              Colors.white.withOpacity(0.08)
-            ],
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text("Income by Category",
-                    style:
-                    TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-                const SizedBox(height: 10),
-                AspectRatio(
-                  aspectRatio: 1.8,
-                  child: BarChart(
-                    BarChartData(
-                      barGroups: _incomeCategoryBarGroups(),
-                      titlesData: FlTitlesData(
-                        leftTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                              showTitles: true, reservedSize: 36),
-                        ),
-                        bottomTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            getTitlesWidget:
-                                (double value, TitleMeta meta) {
-                              final cats = _incomeCategories();
-                              if (value.toInt() >= 0 &&
-                                  value.toInt() < cats.length) {
-                                return Text(
-                                  cats[value.toInt()],
-                                  style: const TextStyle(fontSize: 12),
-                                  overflow: TextOverflow.ellipsis,
-                                );
-                              }
-                              return const SizedBox();
-                            },
-                          ),
-                        ),
-                      ),
-                      borderData: FlBorderData(show: false),
-                      gridData: FlGridData(
-                        show: true,
-                        horizontalInterval:
-                        (_incomeMaxAmount() / 4).clamp(1, double.infinity),
-                      ),
-                    ),
-                    swapAnimationDuration:
-                    const Duration(milliseconds: 650),
-                    swapAnimationCurve: Curves.easeOutCubic,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        SizedBox(
-          width: double.infinity,
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            transitionBuilder: (child, animation) => FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.04),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              ),
-            ),
-            child: CustomDiamondCard(
-              key: ValueKey('summary-${_transactionPanelKey()}-${filteredExpenses.length}-${filteredIncomes.length}-${_dataType}'),
-              borderRadius: 24,
-              glassGradient: [
-                Colors.white.withOpacity(0.23),
-                Colors.white.withOpacity(0.09)
-              ],
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
-              child: UnifiedTransactionList(
-              expenses: _dataType == "Income" ? [] : filteredExpenses,
-              incomes: _dataType == "Expense" ? [] : filteredIncomes,
-              userPhone: widget.userPhone,
-              filterType: _dataType,
-              previewCount: 15,
-              friendsById: _friendsById,
-              showBillIcon: true,
-              multiSelectEnabled: _multiSelectMode,
-              selectedIds: _selectedTxIds,
-
-              onSelectTx: (txId, selected) {
-                setState(() {
-                  if (selected) {
-                    _selectedTxIds.add(txId);
-                  } else {
-                    _selectedTxIds.remove(txId);
-                  }
-                });
-              },
-              onEdit: (tx) async {
-                if (_multiSelectMode) return;
-                if (tx is ExpenseItem) {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => EditExpenseScreen(
-                        userPhone: widget.userPhone,
-                        expense: tx,
-                      ),
-                    ),
-                  );
-                  _recompute();
-                }
-              },
-
-              onDelete: (tx) async {
-                if (_multiSelectMode) return;
-                if (tx is ExpenseItem) {
-                  await ExpenseService()
-                      .deleteExpense(widget.userPhone, tx.id);
-                } else if (tx is IncomeItem) {
-                  await IncomeService()
-                      .deleteIncome(widget.userPhone, tx.id);
-                }
-                _recompute();
-              },
-              onSplit: (tx) async {
-                if (_multiSelectMode) return;
-                if (tx is ExpenseItem) {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => EditExpenseScreen(
-                        userPhone: widget.userPhone,
-                        expense: tx,
-                        initialStep: 1,
-                      ),
-                    ),
-                  );
-                  _recompute();
-                }
-              },
-            ),
-          ),
         ),
       ],
     );
   }
-
   // ---------- Chart helpers (with Top-N + "Other") ----------
   Map<String, double> _buildByCategory<T>(Iterable<T> items,
       String Function(T) typeOf, double Function(T) amountOf) {
