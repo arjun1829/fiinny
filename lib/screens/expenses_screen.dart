@@ -1036,401 +1036,417 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final periodLabel = _currentPeriodLabel();
     final txCount = filteredExpenses.length + filteredIncomes.length;
 
-    // 🔑 Single scrollable, no RefreshIndicator here
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
+    // 🔁 Whole summary view scrolls as a ListView.
+    // No inner Column+Expanded, so no re-entrant layout.
+    return ListView(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Summary ring card
-          _SummaryRingCard(
-            spent: periodTotalExpense,
-            received: periodTotalIncome,
-            bankCount: bankCardStats.$1,
-            cardCount: bankCardStats.$2,
-            txCount: txCount,
-            periodLabel: periodLabel,
-            onTapPeriod: _showPeriodPickerBottomSheet,
-            onTap: () async {
-              await Navigator.pushNamed(
-                context,
-                '/analytics',
-                arguments: widget.userPhone,
-              );
-            },
+      children: [
+        // --- Summary ring card ---
+        _SummaryRingCard(
+          spent: periodTotalExpense,
+          received: periodTotalIncome,
+          bankCount: bankCardStats.$1,
+          cardCount: bankCardStats.$2,
+          txCount: txCount,
+          periodLabel: periodLabel,
+          onTapPeriod: _showPeriodPickerBottomSheet,
+          onTap: () async {
+            await Navigator.pushNamed(
+              context,
+              '/analytics',
+              arguments: widget.userPhone,
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+
+        // --- Filters + tx type chips ---
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Row(
+            children: [
+              _buildFiltersButton(),
+              const SizedBox(width: 8),
+              Expanded(child: _buildTxTypeChipsRow()),
+            ],
           ),
-          const SizedBox(height: 8),
+        ),
 
-          // Filters + tx type chips
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Row(
-              children: [
-                _buildFiltersButton(),
-                const SizedBox(width: 8),
-                Expanded(child: _buildTxTypeChipsRow()),
-              ],
-            ),
-          ),
+        // --- Active filter chips row ---
+        _buildActiveFiltersWrap(),
+        const SizedBox(height: 4),
 
-          // Active filter chips row
-          _buildActiveFiltersWrap(),
-          const SizedBox(height: 4),
-
-          // --- Bulk Actions Bar ---
-          if (_multiSelectMode)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
-              child: Row(
-                children: [
-                  Text(
-                    "${_selectedTxIds.length} selected",
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.label, color: Colors.amber),
-                    tooltip: "Edit Label (Bulk)",
-                    onPressed: _selectedTxIds.isEmpty
-                        ? null
-                        : () async {
-                            final newLabel = await _showLabelDialog();
-                            if (newLabel != null &&
-                                newLabel.trim().isNotEmpty) {
-                              // Expenses
-                              for (final tx in filteredExpenses.where(
-                                (e) => _selectedTxIds.contains(e.id),
-                              )) {
-                                await ExpenseService().updateExpense(
-                                  widget.userPhone,
-                                  tx.copyWith(label: newLabel),
-                                );
-                              }
-                              // Incomes
-                              for (final inc in filteredIncomes.where(
-                                (i) => _selectedTxIds.contains(i.id),
-                              )) {
-                                await IncomeService().updateIncome(
-                                  widget.userPhone,
-                                  inc.copyWith(label: newLabel),
-                                );
-                              }
-
-                              setState(() {
-                                _selectedTxIds.clear();
-                                _multiSelectMode = false;
-                              });
-                            }
-                          },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_forever, color: Colors.red),
-                    tooltip: "Delete Selected",
-                    onPressed: _selectedTxIds.isEmpty
-                        ? null
-                        : () async {
-                            final confirmed = await _confirmBulkDelete(
-                              _selectedTxIds.length,
-                            );
-                            if (!confirmed) return;
-
-                            for (final tx in filteredExpenses.where(
-                              (e) => _selectedTxIds.contains(e.id),
-                            )) {
-                              await ExpenseService().deleteExpense(
-                                widget.userPhone,
-                                tx.id,
-                              );
-                            }
-                            for (final inc in filteredIncomes.where(
-                              (i) => _selectedTxIds.contains(i.id),
-                            )) {
-                              await IncomeService().deleteIncome(
-                                widget.userPhone,
-                                inc.id,
-                              );
-                            }
-
-                            setState(() {
-                              _selectedTxIds.clear();
-                              _multiSelectMode = false;
-                            });
-                          },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    tooltip: "Exit Multi-Select",
-                    onPressed: () {
-                      setState(() {
-                        _multiSelectMode = false;
-                        _selectedTxIds.clear();
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-
-          // --- Search & Multi-select toggle ---
+        // --- Bulk Actions Bar ---
+        if (_multiSelectMode)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
             child: Row(
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    cursorColor: Colors.black,
-                    decoration: InputDecoration(
-                      hintText: 'Search by note, label, type...',
-                      hintStyle: const TextStyle(
-                        color: Colors.black54,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      prefixIcon: const Icon(
-                        Icons.search,
-                        color: Colors.black54,
-                      ),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(
-                                Icons.close,
-                                color: Colors.black45,
-                              ),
-                              onPressed: () {
-                                _searchController.clear();
-                                _debounce?.cancel();
-                                setState(() => _searchQuery = '');
-                                _recompute();
-                              },
-                            )
-                          : null,
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(
-                        vertical: 0,
-                        horizontal: 6,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(13),
-                        borderSide:
-                            const BorderSide(color: Colors.black26),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(13),
-                        borderSide:
-                            const BorderSide(color: Colors.black54),
-                      ),
-                    ),
-                    onChanged: (val) {
-                      _debounce?.cancel();
-                      _debounce = Timer(
-                        const Duration(milliseconds: 200),
-                        () {
-                          if (!mounted) return;
-                          setState(() => _searchQuery = val);
-                          _recompute();
-                        },
-                      );
-                    },
+                Text(
+                  "${_selectedTxIds.length} selected",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
                 ),
-                const SizedBox(width: 7),
-                SizedBox(
-                  width: 36,
-                  child: Center(
-                    child: Checkbox(
-                      value: _multiSelectMode,
-                      onChanged: (val) {
-                        setState(() {
-                          _multiSelectMode = val ?? false;
-                          if (!_multiSelectMode) {
-                            _selectedTxIds.clear();
-                          }
-                        });
-                      },
-                      checkColor: Colors.black,
-                      fillColor: MaterialStateProperty.resolveWith<Color>(
-                        (states) => Colors.white,
-                      ),
-                      side:
-                          const BorderSide(color: Color(0xFF7C3AED)),
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize:
-                          MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.label, color: Colors.amber),
+                  tooltip: "Edit Label (Bulk)",
+                  onPressed: _selectedTxIds.isEmpty
+                      ? null
+                      : () async {
+                    final newLabel = await _showLabelDialog();
+                    if (newLabel != null && newLabel.trim().isNotEmpty) {
+                      // Expenses
+                      for (final tx in filteredExpenses
+                          .where((e) => _selectedTxIds.contains(e.id))) {
+                        await ExpenseService().updateExpense(
+                          widget.userPhone,
+                          tx.copyWith(label: newLabel),
+                        );
+                      }
+                      // Incomes
+                      for (final inc in filteredIncomes
+                          .where((i) => _selectedTxIds.contains(i.id))) {
+                        await IncomeService().updateIncome(
+                          widget.userPhone,
+                          inc.copyWith(label: newLabel),
+                        );
+                      }
+
+                      setState(() {
+                        _selectedTxIds.clear();
+                        _multiSelectMode = false;
+                      });
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_forever, color: Colors.red),
+                  tooltip: "Delete Selected",
+                  onPressed: _selectedTxIds.isEmpty
+                      ? null
+                      : () async {
+                    final confirmed =
+                    await _confirmBulkDelete(_selectedTxIds.length);
+                    if (!confirmed) return;
+
+                    for (final tx in filteredExpenses
+                        .where((e) => _selectedTxIds.contains(e.id))) {
+                      await ExpenseService().deleteExpense(
+                        widget.userPhone,
+                        tx.id,
+                      );
+                    }
+                    for (final inc in filteredIncomes
+                        .where((i) => _selectedTxIds.contains(i.id))) {
+                      await IncomeService().deleteIncome(
+                        widget.userPhone,
+                        inc.id,
+                      );
+                    }
+
+                    setState(() {
+                      _selectedTxIds.clear();
+                      _multiSelectMode = false;
+                    });
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  tooltip: "Exit Multi-Select",
+                  onPressed: () {
+                    setState(() {
+                      _multiSelectMode = false;
+                      _selectedTxIds.clear();
+                    });
+                  },
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 6),
 
-          // --- Transaction List Unified (Expense+Income) ---
-          SizedBox(
-            width: double.infinity,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              switchInCurve: Curves.easeOut,
-              switchOutCurve: Curves.easeIn,
-              layoutBuilder: (currentChild, previousChildren) {
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    ...previousChildren,
-                    if (currentChild != null) currentChild,
-                  ],
-                );
-              },
-              child: KeyedSubtree(
-                key: ValueKey(_transactionPanelKey()),
-                child: UnifiedTransactionList(
-                  expenses: _dataType == "Income" ? [] : filteredExpenses,
-                  incomes: _dataType == "Expense" ? [] : filteredIncomes,
-                  userPhone: widget.userPhone,
-                  filterType: _dataType,
-                  previewCount: 15,
-                  friendsById: _friendsById,
-                  showBillIcon: true,
-                  multiSelectEnabled: _multiSelectMode,
-                  selectedIds: _selectedTxIds,
-                  onSelectTx: (txId, selected) {
-                    setState(() {
-                      if (selected) {
-                        _selectedTxIds.add(txId);
-                      } else {
-                        _selectedTxIds.remove(txId);
-                      }
-                    });
-                  },
-                  onEdit: (tx) async {
-                    if (_multiSelectMode) return;
-                    if (tx is ExpenseItem) {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => EditExpenseScreen(
-                            userPhone: widget.userPhone,
-                            expense: tx,
-                          ),
-                        ),
-                      );
-                      _recompute();
-                    }
-                  },
-                  onDelete: (tx) async {
-                    if (_multiSelectMode) return;
-                    if (tx is ExpenseItem) {
-                      await ExpenseService()
-                          .deleteExpense(widget.userPhone, tx.id);
-                    } else if (tx is IncomeItem) {
-                      await IncomeService()
-                          .deleteIncome(widget.userPhone, tx.id);
-                    }
-                    _recompute();
-                  },
-                  onSplit: (tx) async {
-                    if (_multiSelectMode) return;
-                    if (tx is ExpenseItem) {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => EditExpenseScreen(
-                            userPhone: widget.userPhone,
-                            expense: tx,
-                            initialStep: 1,
-                          ),
-                        ),
-                      );
-                      _recompute();
-                    }
+        // --- Search & Multi-select toggle ---
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  cursorColor: Colors.black,
+                  decoration: InputDecoration(
+                    hintText: 'Search by note, label, type...',
+                    hintStyle: const TextStyle(
+                      color: Colors.black54,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.search,
+                      color: Colors.black54,
+                    ),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                      icon: const Icon(
+                        Icons.close,
+                        color: Colors.black45,
+                      ),
+                      onPressed: () {
+                        _searchController.clear();
+                        _debounce?.cancel();
+                        setState(() => _searchQuery = '');
+                        _recompute();
+                      },
+                    )
+                        : null,
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 0,
+                      horizontal: 6,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(13),
+                      borderSide: const BorderSide(color: Colors.black26),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(13),
+                      borderSide: const BorderSide(color: Colors.black54),
+                    ),
+                  ),
+                  onChanged: (val) {
+                    _debounce?.cancel();
+                    _debounce = Timer(
+                      const Duration(milliseconds: 200),
+                          () {
+                        if (!mounted) return;
+                        setState(() => _searchQuery = val);
+                        _recompute();
+                      },
+                    );
                   },
                 ),
               ),
-            ),
+              const SizedBox(width: 7),
+              SizedBox(
+                width: 36,
+                child: Center(
+                  child: Checkbox(
+                    value: _multiSelectMode,
+                    onChanged: (val) {
+                      setState(() {
+                        _multiSelectMode = val ?? false;
+                        if (!_multiSelectMode) {
+                          _selectedTxIds.clear();
+                        }
+                      });
+                    },
+                    checkColor: Colors.black,
+                    fillColor: MaterialStateProperty.resolveWith<Color>(
+                          (states) => Colors.white,
+                    ),
+                    side: const BorderSide(color: Color(0xFF7C3AED)),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 6),
+
+        // --- Transaction List Unified (Expense+Income) ---
+        KeyedSubtree(
+          key: ValueKey(_transactionPanelKey()),
+          child: UnifiedTransactionList(
+            expenses: _dataType == "Income" ? [] : filteredExpenses,
+            incomes: _dataType == "Expense" ? [] : filteredIncomes,
+            userPhone: widget.userPhone,
+            filterType: _dataType,
+            previewCount: 15,
+            friendsById: _friendsById,
+            showBillIcon: true,
+            multiSelectEnabled: _multiSelectMode,
+            selectedIds: _selectedTxIds,
+            onSelectTx: (txId, selected) {
+              setState(() {
+                if (selected) {
+                  _selectedTxIds.add(txId);
+                } else {
+                  _selectedTxIds.remove(txId);
+                }
+              });
+            },
+            onEdit: (tx) async {
+              if (_multiSelectMode) return;
+              if (tx is ExpenseItem) {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EditExpenseScreen(
+                      userPhone: widget.userPhone,
+                      expense: tx,
+                    ),
+                  ),
+                );
+                _recompute();
+              }
+            },
+            onDelete: (tx) async {
+              if (_multiSelectMode) return;
+              if (tx is ExpenseItem) {
+                await ExpenseService().deleteExpense(
+                  widget.userPhone,
+                  tx.id,
+                );
+              } else if (tx is IncomeItem) {
+                await IncomeService().deleteIncome(
+                  widget.userPhone,
+                  tx.id,
+                );
+              }
+              _recompute();
+            },
+            onSplit: (tx) async {
+              if (_multiSelectMode) return;
+              if (tx is ExpenseItem) {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EditExpenseScreen(
+                      userPhone: widget.userPhone,
+                      expense: tx,
+                      initialStep: 1,
+                    ),
+                  ),
+                );
+                _recompute();
+              }
+            },
+          ),
+        ),
+      ],
     );
   }
 
+
+
+
+
+
   Widget _calendarView(BuildContext context) {
-    return SingleChildScrollView(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 12, 10, 16),
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 12, left: 10, right: 10),
-            child: CustomDiamondCard(
-              borderRadius: 26,
-              padding: const EdgeInsets.all(10),
-              glassGradient: const [
-                Colors.white,
-                Colors.white,
-              ],
-              child: Column(
-                children: [
-                  // Date picker icon row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.today_rounded,
-                            color: Colors.teal, size: 24),
-                        tooltip: "Pick Date",
-                        onPressed: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: _focusedDay,
-                            firstDate: DateTime(2000),
-                            lastDate: DateTime(2100),
-                          );
-                          if (picked != null) {
-                            setState(() {
-                              _selectedDay = picked;
-                              _focusedDay = picked;
-                            });
-                            _updateExpensesForSelectedDay(picked);
-                          }
-                        },
+          CustomDiamondCard(
+            borderRadius: 26,
+            padding: const EdgeInsets.all(10),
+            glassGradient: const [
+              Colors.white,
+              Colors.white,
+            ],
+            child: Column(
+              children: [
+                // Date picker icon row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.today_rounded,
+                        color: Colors.teal,
+                        size: 24,
                       ),
-                    ],
-                  ),
-                  TableCalendar(
-                    focusedDay: _focusedDay,
-                    firstDay: DateTime(2000),
-                    lastDay: DateTime(2100),
-                    calendarFormat: CalendarFormat.month,
-                    availableCalendarFormats: const {
-                      CalendarFormat.month: 'Month',
+                      tooltip: "Pick Date",
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: _focusedDay,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            _selectedDay = picked;
+                            _focusedDay = picked;
+                          });
+                          _updateExpensesForSelectedDay(picked);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                TableCalendar(
+                  focusedDay: _focusedDay,
+                  firstDay: DateTime(2000),
+                  lastDay: DateTime(2100),
+                  calendarFormat: CalendarFormat.month,
+                  availableCalendarFormats: const {
+                    CalendarFormat.month: 'Month',
+                  },
+                  selectedDayPredicate: (day) {
+                    return _selectedDay != null &&
+                        day.year == _selectedDay!.year &&
+                        day.month == _selectedDay!.month &&
+                        day.day == _selectedDay!.day;
+                  },
+                  onDaySelected: (selectedDay, focusedDay) {
+                    setState(() {
+                      _selectedDay = selectedDay;
+                      _focusedDay = focusedDay;
+                    });
+                    _updateExpensesForSelectedDay(selectedDay);
+                  },
+                  calendarBuilders: CalendarBuilders(
+                    defaultBuilder: (context, date, focusedDay) {
+                      final key = _d(date);
+                      final total = _dailyTotals[key] ?? 0;
+                      return Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${date.day}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              if (total > 0)
+                                Text(
+                                  '₹${total.toStringAsFixed(0)}',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: Colors.red[400],
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
                     },
-                    selectedDayPredicate: (day) {
-                      return _selectedDay != null &&
-                          day.year == _selectedDay!.year &&
-                          day.month == _selectedDay!.month &&
-                          day.day == _selectedDay!.day;
-                    },
-                    onDaySelected: (selectedDay, focusedDay) {
-                      setState(() {
-                        _selectedDay = selectedDay;
-                        _focusedDay = focusedDay;
-                      });
-                      _updateExpensesForSelectedDay(selectedDay);
-                    },
-                    calendarBuilders: CalendarBuilders(
-                      defaultBuilder: (context, date, focusedDay) {
-                        final key = _d(date);
-                        final total = _dailyTotals[key] ?? 0;
-                        return Center(
+                    todayBuilder: (context, date, focusedDay) {
+                      final key = _d(date);
+                      final total = _dailyTotals[key] ?? 0;
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: Colors.teal[100],
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Column(
@@ -1439,7 +1455,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                                 Text(
                                   '${date.day}',
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
                                     fontSize: 13,
                                   ),
                                 ),
@@ -1448,61 +1465,26 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                                     '₹${total.toStringAsFixed(0)}',
                                     style: TextStyle(
                                       fontSize: 10.5,
-                                      color: Colors.red[400],
+                                      color: Colors.red[800],
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
                               ],
                             ),
                           ),
-                        );
-                      },
-                      todayBuilder: (context, date, focusedDay) {
-                        final key = _d(date);
-                        final total = _dailyTotals[key] ?? 0;
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: Colors.teal[100],
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    '${date.day}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  if (total > 0)
-                                    Text(
-                                      '₹${total.toStringAsFixed(0)}',
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        color: Colors.red[800],
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                        ),
+                      );
+                    },
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
+
           const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
+
+          // Day's transactions – scroll inside this card only
+          Expanded(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 220),
               transitionBuilder: (child, animation) => FadeTransition(
@@ -1524,11 +1506,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   Colors.white,
                   Colors.white,
                 ],
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+                padding:
+                const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
                 child: UnifiedTransactionList(
                   expenses: _expensesForSelectedDay,
-                  incomes: const [],
                   userPhone: widget.userPhone,
+                  incomes: const [],
                   previewCount: 15,
                   filterType: "Expense",
                   friendsById: _friendsById,
@@ -1591,6 +1574,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       ),
     );
   }
+
 
   Widget _chartsView(BuildContext context) {
     return ListView(
