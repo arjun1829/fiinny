@@ -78,6 +78,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   StreamSubscription<List<GroupModel>>? _groupSub;
   Timer? _debounce;
 
+  // Prevent multiple recomputes inside the same frame (avoids re-entrant layout)
   bool _pendingRecompute = false;
 
   List<PieChartSectionData> _miniExpenseSections() {
