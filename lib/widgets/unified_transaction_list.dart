@@ -2479,8 +2479,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       );
     }
 
-    // Let the parent (e.g. GlassCard / CustomDiamondCard on Analytics/Expenses screens)
-    // own the card background and constraints. We only return the content.
+    // Let the parent (GlassCard/CustomDiamondCard) own the card background.
+    // UnifiedTransactionList should only return the content.
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,

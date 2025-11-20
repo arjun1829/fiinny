@@ -243,7 +243,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   void _scheduleRecompute() {
     if (!mounted) return;
-    if (_pendingRecompute) return;
+    if (_pendingRecompute) return; // already scheduled this frame
     _pendingRecompute = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
