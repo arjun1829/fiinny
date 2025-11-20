@@ -2479,13 +2479,14 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       );
     }
 
-    return CustomDiamondCard(
-      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
-      borderRadius: 21,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: children,
-      ),
+    // IMPORTANT: Do not wrap the unified list in CustomDiamondCard here.
+    // The parent (e.g., GlassCard in Analytics / other screens) already provides
+    // the card container and constraints. Returning a simple Column avoids
+    // nested unconstrained Containers and fixes the "RenderBox was not laid out" crash.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
     );
   }
 
