@@ -112,6 +112,10 @@ class UnifiedTransactionList extends StatefulWidget {
   /// Enable/disable inline ad injection (default: true)
   final bool enableInlineAds;
 
+  /// When true, wraps the list in its own scroll view (for bottom sheets, etc.).
+  /// Defaults to false to allow the parent scroll view to handle scrolling.
+  final bool enableScrolling;
+
   const UnifiedTransactionList({
     Key? key,
     required this.expenses,
@@ -239,6 +243,7 @@ class UnifiedTransactionList extends StatefulWidget {
     this.emptyBuilder,
     this.onRowTapIntercept,
     this.enableInlineAds = true,
+    this.enableScrolling = false,
   }) : super(key: key);
 
   @override
@@ -2443,11 +2448,20 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     }
 
     // Build the core content as a flat Column of all group sections, rows, and ads.
-    return Column(
+    final column = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: children,
     );
+
+    if (widget.enableScrolling) {
+      return ListView(
+        padding: EdgeInsets.zero,
+        children: [column],
+      );
+    }
+
+    return column;
   }
 
   Widget _chip(String label) {
