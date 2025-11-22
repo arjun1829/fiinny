@@ -9,6 +9,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData, SystemUiOverlayStyle;
+import 'package:lifemap/screens/auth_gate.dart';
 
 import 'package:lifemap/themes/theme_provider.dart';
 import '../services/backup_service.dart';
@@ -447,7 +448,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (_) {
     } finally {
       if (nav.mounted) {
-        nav.pushNamedAndRemoveUntil(_AUTH_ROUTE, (route) => false);
+        nav.pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const AuthGate()),
+          (route) => false,
+        );
       }
       _signingOut = false;
     }
@@ -518,7 +522,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     setState(() => _saving = false);
     if (!mounted) return;
-    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthGate()),
+      (route) => false,
+    );
   }
 
   // ---------- UI helpers ----------
