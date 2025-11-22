@@ -112,13 +112,6 @@ class UnifiedTransactionList extends StatefulWidget {
   /// Enable/disable inline ad injection (default: true)
   final bool enableInlineAds;
 
-  /// If true (default), the widget wraps its content in an internal ListView
-  /// (shrink-wrapped, non-scrollable) so it can act like a standalone list.
-  ///
-  /// When embedding inside another scroll view (parent ListView/CustomScrollView),
-  /// set this to false so the widget just returns a Column (no extra sliver).
-  final bool wrapInListView;
-
   const UnifiedTransactionList({
     Key? key,
     required this.expenses,
@@ -246,7 +239,6 @@ class UnifiedTransactionList extends StatefulWidget {
     this.emptyBuilder,
     this.onRowTapIntercept,
     this.enableInlineAds = true,
-    this.wrapInListView = true, // 👈 NEW FLAG
   }) : super(key: key);
 
   @override
@@ -1898,20 +1890,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             child: Center(child: Text("No transactions found.")),
           );
 
-    if (allTx.isEmpty) {
-      if (!widget.wrapInListView) {
-        // Embedded mode: just return the content, no extra ListView wrapper.
-        return emptyContent;
-      }
-
-      // Standalone mode: keep a tiny internal ListView so it behaves like
-      // the old implementation when used as a full list.
-      return ListView(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        children: [emptyContent],
-      );
-    }
+    if (allTx.isEmpty) return emptyContent;
 
     final groupedMap = groupTx(allTx.take(shownCount).toList(), _activeFilter.groupBy);
     final groupedEntries = groupedMap.entries.toList();
@@ -2471,24 +2450,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     }
 
     // Build the core content as a flat Column of all group sections, rows, and ads.
-    final Widget content = Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: children,
-    );
-
-    // Embedded mode: parent is already a scroll view (e.g. ListView in ExpensesScreen),
-    // so just return the Column directly, no inner ListView.
-    if (!widget.wrapInListView) {
-      return content;
-    }
-
-    // Standalone mode: keep the internal shrink-wrapped ListView so this widget
-    // still works on screens that expect it to behave like a full list.
-    return ListView(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      children: [content],
     );
   }
 
