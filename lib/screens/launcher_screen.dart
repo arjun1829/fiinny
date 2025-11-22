@@ -66,10 +66,8 @@ class _LauncherScreenState extends State<LauncherScreen> {
 
     if (user == null) {
       if (_welcomeSeen) {
-        debugPrint('[Launcher] No user (welcome seen) → AuthGate');
         _go(const AuthGate());
       } else {
-        debugPrint('[Launcher] No user → WelcomeScreen');
         _go(const WelcomeScreen());
       }
       return;
@@ -94,10 +92,8 @@ class _LauncherScreenState extends State<LauncherScreen> {
 
     if (onboarded) {
       final who = phone.isNotEmpty ? phone : user.uid;
-      debugPrint('[Launcher] Onboarded → MainNavScreen($who)');
       _go(MainNavScreen(userPhone: who));
     } else {
-      debugPrint('[Launcher] Not onboarded → OnboardingScreen');
       _go(const OnboardingScreen());
     }
 
@@ -153,10 +149,8 @@ class _LauncherScreenState extends State<LauncherScreen> {
       if (!_navigated && mounted) {
         final currentUser = FirebaseAuth.instance.currentUser;
         if (_welcomeSeen || currentUser != null) {
-          debugPrint('[Launcher] Watchdog skip (session ready)');
           FirstSurfaceGate.markReady();
         } else {
-          debugPrint('[Launcher] Watchdog fired → WelcomeScreen');
           _go(const WelcomeScreen());
         }
       }
