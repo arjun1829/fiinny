@@ -87,6 +87,7 @@ flutter:
     - assets/presets/
     - assets/brands/
     - assets/icons/
+    - assets/icons/no_transaction.png
     - assets/avatars/
     - assets/diamond_overlay.png
     - assets/onboarding/
