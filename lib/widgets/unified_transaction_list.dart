@@ -2450,9 +2450,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
     // Let the parent (GlassCard/CustomDiamondCard) own the card background.
     // UnifiedTransactionList should only return the content.
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    //
+    // 🛠 Layout fix: wrap the content in a shrink-wrapped, non-scrollable
+    // ListView so it can safely sit inside parent ListViews without needing
+    // its own scroll controller or flex-based height.
+    return ListView(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       children: children,
     );
   }
