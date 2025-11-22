@@ -1554,87 +1554,80 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       options = [value, ...options];
     }
 
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(
-          minWidth: 0,
-          maxWidth: double.infinity,
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: value,
-            isExpanded: true, // prevent internal Row overflow
-            items: options
-                .map(
-                  (c) => DropdownMenuItem<String>(
-                    value: c,
-                    child: Text(
-                      c,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13.8,
-                        color: Color(0xFF0F1E1C),
-                      ),
+    return SizedBox(
+      width: double.infinity,
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true, // prevent internal Row overflow
+          items: options
+              .map(
+                (c) => DropdownMenuItem<String>(
+                  value: c,
+                  child: Text(
+                    c,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13.8,
+                      color: Color(0xFF0F1E1C),
                     ),
                   ),
-                )
-                .toList(),
-            onChanged: (newVal) async {
-              if (newVal == null || newVal == value) return;
+                ),
+              )
+              .toList(),
+          onChanged: (newVal) async {
+            if (newVal == null || newVal == value) return;
 
-              setState(() {
-                final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
-                if (idx != -1) allTx[idx]['category'] = newVal;
-              });
+            setState(() {
+              final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
+              if (idx != -1) allTx[idx]['category'] = newVal;
+            });
 
-              if (widget.onChangeCategory != null) {
-                try {
-                  await widget.onChangeCategory!(
-                    txId: txId,
-                    newCategory: newVal,
-                    payload: payload,
-                  );
+            if (widget.onChangeCategory != null) {
+              try {
+                await widget.onChangeCategory!(
+                  txId: txId,
+                  newCategory: newVal,
+                  payload: payload,
+                );
+                await _saveOverrideIfPossible(newVal, normalized);
+                return;
+              } catch (_) {}
+            } else {
+              try {
+                if (payload is ExpenseItem) {
+                  final e = payload as ExpenseItem;
+                  final updated = e.copyWith(type: newVal, category: newVal);
+                  await ExpenseService().updateExpense(widget.userPhone, updated);
                   await _saveOverrideIfPossible(newVal, normalized);
                   return;
-                } catch (_) {}
-              } else {
-                try {
-                  if (payload is ExpenseItem) {
-                    final e = payload as ExpenseItem;
-                    final updated = e.copyWith(type: newVal, category: newVal);
-                    await ExpenseService().updateExpense(widget.userPhone, updated);
-                    await _saveOverrideIfPossible(newVal, normalized);
-                    return;
-                  } else if (payload is IncomeItem) {
-                    final i = payload as IncomeItem;
-                    final updated = i.copyWith(type: newVal, category: newVal);
-                    await IncomeService().updateIncome(widget.userPhone, updated);
-                    await _saveOverrideIfPossible(newVal, normalized);
-                    return;
-                  }
-                  throw Exception('Unsupported payload for default saver');
-                } catch (_) {}
-              }
+                } else if (payload is IncomeItem) {
+                  final i = payload as IncomeItem;
+                  final updated = i.copyWith(type: newVal, category: newVal);
+                  await IncomeService().updateIncome(widget.userPhone, updated);
+                  await _saveOverrideIfPossible(newVal, normalized);
+                  return;
+                }
+                throw Exception('Unsupported payload for default saver');
+              } catch (_) {}
+            }
 
-              // rollback on error
-              setState(() {
-                final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
-                if (idx != -1) allTx[idx]['category'] = value;
-              });
-            },
-            isDense: true,
-            icon: const Icon(Icons.expand_more_rounded, size: 18),
-            borderRadius: BorderRadius.circular(12),
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 13.8,
-              color: Color(0xFF0F1E1C),
-            ),
-            menuMaxHeight: 300,
+            // rollback on error
+            setState(() {
+              final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
+              if (idx != -1) allTx[idx]['category'] = value;
+            });
+          },
+          isDense: true,
+          icon: const Icon(Icons.expand_more_rounded, size: 18),
+          borderRadius: BorderRadius.circular(12),
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 13.8,
+            color: Color(0xFF0F1E1C),
           ),
+          menuMaxHeight: 300,
         ),
       ),
     );
