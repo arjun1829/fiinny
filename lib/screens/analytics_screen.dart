@@ -19,6 +19,8 @@ import '../themes/tokens.dart';
 import '../widgets/charts/bar_chart_simple.dart';
 import '../widgets/unified_transaction_list.dart';
 import 'edit_expense_screen.dart';
+import 'expenses_screen.dart'
+    show ExpenseFilterConfig, ExpenseFiltersScreen;
 
 class _MonthSpend {
   final int year;
@@ -196,6 +198,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   // Banks & Cards selection (screen-wide filter)
   String? _bankFilter;   // normalized uppercase bank name
   String? _last4Filter;  // last 4 digits for specific account
+
+  // Filters from the expense Filters screen
+  Set<String> _selectedCategories = {};
+  Set<String> _selectedMerchants = {};
+  Set<String> _selectedBanks = {};
+  Set<String> _friendFilterPhones = {};
+  Set<String> _groupFilterIds = {};
   final ScrollController _scrollCtrl = ScrollController();
 
   String _slugBank(String s) {
@@ -244,6 +253,19 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     return candidates.isNotEmpty ? candidates.first : null;
   }
+
+  String _normalizeBank(String? bank) => (bank ?? '').trim().toUpperCase();
+
+  bool get _hasActiveFilters =>
+      _selectedCategories.isNotEmpty ||
+      _selectedMerchants.isNotEmpty ||
+      _selectedBanks.isNotEmpty ||
+      _friendFilterPhones.isNotEmpty ||
+      _groupFilterIds.isNotEmpty ||
+      _bankFilter != null ||
+      _last4Filter != null ||
+      _custom != null ||
+      _range != null;
 
   String _bankInitials(String? bank) {
     final safeBank = (bank ?? '').trim();
@@ -319,6 +341,169 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       case 'M':
       default:
         return Period.month;
+    }
+  }
+
+  ({DateTime start, DateTime end}) _rangeForFilterToken(
+    DateTime now,
+    String token,
+  ) {
+    switch (token) {
+      case 'Day':
+      case 'D':
+        final d0 = DateTime(now.year, now.month, now.day);
+        return (start: d0, end: d0);
+      case 'Yesterday':
+        final d0 = DateTime(now.year, now.month, now.day - 1);
+        return (start: d0, end: d0);
+      case '2D':
+        final d0 = DateTime(now.year, now.month, now.day);
+        final d1 = d0.subtract(const Duration(days: 1));
+        return (start: d1, end: d0);
+      case 'Week':
+      case 'W':
+        final start =
+            DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+        final end = start.add(const Duration(days: 6));
+        return (start: start, end: end);
+      case 'Month':
+      case 'M':
+        final start = DateTime(now.year, now.month, 1);
+        final end = DateTime(now.year, now.month + 1, 0);
+        return (start: start, end: end);
+      case 'Last Month':
+      case 'LM':
+        final prevStart = DateTime(now.year, now.month - 1, 1);
+        final prevEnd = DateTime(prevStart.year, prevStart.month + 1, 0);
+        return (start: prevStart, end: prevEnd);
+      case 'Quarter':
+      case 'Q':
+        final q = ((now.month - 1) ~/ 3) + 1;
+        final sm = (q - 1) * 3 + 1;
+        final start = DateTime(now.year, sm, 1);
+        final end = DateTime(now.year, sm + 3, 0);
+        return (start: start, end: end);
+      case 'Year':
+      case 'Y':
+        return (start: DateTime(now.year, 1, 1), end: DateTime(now.year, 12, 31));
+      case 'All':
+      default:
+        return (start: DateTime(2000), end: DateTime(2100));
+    }
+  }
+
+  String _mapExpensePeriodToAnalytics(String token) {
+    switch (token) {
+      case 'Day':
+      case 'D':
+        return 'D';
+      case 'Week':
+      case 'W':
+        return 'W';
+      case 'Year':
+      case 'Y':
+        return 'Y';
+      case 'All':
+        return 'All Time';
+      default:
+        return 'M';
+    }
+  }
+
+  String _mapAnalyticsPeriodToExpense() {
+    switch (_periodToken) {
+      case 'D':
+        return 'Day';
+      case 'W':
+        return 'Week';
+      case 'Y':
+        return 'Year';
+      case 'All Time':
+        return 'All';
+      default:
+        return 'Month';
+    }
+  }
+
+  DateTimeRange _inclusiveToExclusive(DateTimeRange range) {
+    return DateTimeRange(
+      start: range.start,
+      end: range.end.add(const Duration(days: 1)),
+    );
+  }
+
+  Future<void> _openFiltersScreen() async {
+    final initialRange = _range == null
+        ? null
+        : DateTimeRange(
+            start: _range!.start,
+            end: _range!.end.subtract(const Duration(days: 1)),
+          );
+
+    final config = await Navigator.push<ExpenseFilterConfig>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ExpenseFiltersScreen(
+          initialConfig: ExpenseFilterConfig(
+            periodToken: _mapAnalyticsPeriodToExpense(),
+            customRange: initialRange,
+            categories: _selectedCategories,
+            merchants: _selectedMerchants,
+            banks: _selectedBanks,
+            friendPhones: _friendFilterPhones,
+            groupIds: _groupFilterIds,
+          ),
+          expenses: _allExp,
+          incomes: _allInc,
+          friendsById: const {},
+          groups: const [],
+        ),
+      ),
+    );
+
+    if (config != null) {
+      final now = DateTime.now();
+      final inclusiveRange = config.customRange ??
+          DateTimeRange(
+            start: _rangeForFilterToken(now, config.periodToken).start,
+            end: _rangeForFilterToken(now, config.periodToken).end,
+          );
+
+      setState(() {
+        _periodToken = _mapExpensePeriodToAnalytics(config.periodToken);
+        _period =
+            config.customRange != null ? Period.custom : _periodForToken(_periodToken);
+        _custom = config.customRange != null
+            ? CustomRange(inclusiveRange.start, inclusiveRange.end)
+            : null;
+        _range = _inclusiveToExclusive(inclusiveRange);
+        _selectedCategories = {
+          for (final c in config.categories) _normalizeMainCategory(c)
+        };
+        _selectedMerchants = {
+          for (final m in config.merchants) m.trim().toUpperCase()
+        }..removeWhere((m) => m.isEmpty);
+        _selectedBanks = {
+          for (final b in config.banks) b.trim().toUpperCase()
+        }..removeWhere((b) => b.isEmpty);
+        _friendFilterPhones = {...config.friendPhones};
+        _groupFilterIds = {...config.groupIds};
+
+        // Keep the single bank chip in sync when only one selection exists.
+        if (_selectedBanks.length == 1) {
+          final only = _selectedBanks.first;
+          final parts = only.split('|');
+          _bankFilter = parts.first.trim().isEmpty ? null : parts.first.trim();
+          _last4Filter = parts.length > 1 && parts[1].trim().isNotEmpty
+              ? parts[1].trim()
+              : null;
+        } else {
+          _bankFilter = null;
+          _last4Filter = null;
+        }
+
+        _invalidateAggCache();
+      });
     }
   }
 
@@ -974,6 +1159,42 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           return false;
         }
       }
+      if (_selectedBanks.isNotEmpty) {
+        final normalized = _normalizeBank(e.issuerBank);
+        final last4 = (e.cardLast4 ?? '').trim();
+        bool bankMatch = false;
+        for (final bank in _selectedBanks) {
+          final parts = bank.split('|');
+          final bankPart = parts.first.trim();
+          final cardPart = parts.length > 1 ? parts[1].trim() : '';
+          if (bankPart.isNotEmpty && normalized != bankPart) continue;
+          if (cardPart.isNotEmpty && !last4.endsWith(cardPart)) continue;
+          bankMatch = true;
+          break;
+        }
+        if (!bankMatch) return false;
+      }
+      if (_selectedCategories.isNotEmpty) {
+        final cat = _normalizeMainCategory(
+          AnalyticsAgg.resolveExpenseCategory(e),
+        );
+        if (!_selectedCategories.contains(cat)) return false;
+      }
+      if (_selectedMerchants.isNotEmpty) {
+        final merch =
+            (e.counterparty ?? e.upiVpa ?? e.label ?? '').trim().toUpperCase();
+        if (merch.isEmpty || !_selectedMerchants.contains(merch)) return false;
+      }
+      if (_friendFilterPhones.isNotEmpty) {
+        final ids = e.friendIds.toSet();
+        if (ids.isEmpty || ids.intersection(_friendFilterPhones).isEmpty) {
+          return false;
+        }
+      }
+      if (_groupFilterIds.isNotEmpty) {
+        final gid = (e.groupId ?? '').trim();
+        if (gid.isEmpty || !_groupFilterIds.contains(gid)) return false;
+      }
       // NEW: transaction type / instrument filter
       if (!_matchesInstrumentFilter(e.instrument)) {
         return false;
@@ -989,10 +1210,29 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         return false;
       }
       if (_last4Filter != null) {
-        final String l4 = '';
-        if (l4.isEmpty || !l4.endsWith(_last4Filter!)) {
-          return false;
+        return false; // incomes don't have cardLast4 currently
+      }
+      if (_selectedBanks.isNotEmpty) {
+        final normalized = _normalizeBank(i.issuerBank);
+        bool bankMatch = false;
+        for (final bank in _selectedBanks) {
+          final parts = bank.split('|');
+          final bankPart = parts.first.trim();
+          if (bankPart.isEmpty || normalized == bankPart) {
+            bankMatch = true;
+            break;
+          }
         }
+        if (!bankMatch) return false;
+      }
+      if (_selectedMerchants.isNotEmpty) {
+        final merch =
+            (i.counterparty ?? i.label ?? i.source ?? '').trim().toUpperCase();
+        if (merch.isEmpty || !_selectedMerchants.contains(merch)) return false;
+      }
+      if (_selectedCategories.isNotEmpty) {
+        final cat = AnalyticsAgg.resolveIncomeCategory(i);
+        if (!_selectedCategories.contains(cat)) return false;
       }
       // NEW: transaction type / instrument filter
       if (!_matchesInstrumentFilter(i.instrument)) {
@@ -1853,6 +2093,31 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         elevation: 0,
         backgroundColor: Colors.transparent,
         foregroundColor: Fx.mintDark,
+        actions: [
+          IconButton(
+            tooltip: 'Filters',
+            onPressed: _openFiltersScreen,
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(Icons.filter_alt_rounded),
+                if (_hasActiveFilters)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
       body: Stack(
         children: [
@@ -3660,11 +3925,13 @@ class _StackedMonthlyBarsPainter extends CustomPainter {
     final double w = size.width;
     final double h = size.height;
     final double columnWidth = w / stacks.length;
-    final double barWidth = columnWidth * 0.55;
+    final double barWidth = columnWidth * 0.6;
+    final double gutter = (columnWidth - barWidth) / 2;
+    final Radius radius = Radius.circular(barWidth * 0.25);
 
     final Paint gridPaint = Paint()
-      ..color = Fx.text.withOpacity(.08)
-      ..strokeWidth = 1;
+      ..color = Fx.text.withOpacity(.06)
+      ..strokeWidth = 1.2;
     for (int i = 0; i <= yTicks; i++) {
       final double y = h - (h / yTicks) * i;
       canvas.drawLine(Offset(0, y), Offset(w, y), gridPaint);
@@ -3677,20 +3944,40 @@ class _StackedMonthlyBarsPainter extends CustomPainter {
       if (total <= 0) continue;
 
       double yOffset = h;
-      final double xCenter = columnWidth * i + columnWidth / 2;
-      final double left = xCenter - barWidth / 2;
+      final double left = columnWidth * i + gutter;
 
       for (final seg in stack.segments) {
         if (seg.value <= 0) continue;
         final double segHeight = (seg.value / safeMaxY) * h;
         yOffset -= segHeight;
         final Color color = (categoryColors[seg.category] ?? Colors.grey)
-            .withOpacity(.9);
-        canvas.drawRect(
-          Rect.fromLTWH(left, yOffset, barWidth, segHeight),
+            .withOpacity(.92);
+        final Rect rect = Rect.fromLTWH(left, yOffset, barWidth, segHeight);
+        final RRect rrect = RRect.fromRectAndRadius(rect, radius);
+
+        canvas.drawRRect(
+          rrect.inflate(2.5),
           Paint()
-            ..color = color
+            ..color = color.withOpacity(.12)
             ..style = PaintingStyle.fill,
+        );
+
+        canvas.drawRRect(
+          rrect,
+          Paint()
+            ..shader = LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [color, color.withOpacity(.7)],
+            ).createShader(rect),
+        );
+
+        canvas.drawRRect(
+          rrect,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.1
+            ..color = color.withOpacity(.9),
         );
       }
     }
