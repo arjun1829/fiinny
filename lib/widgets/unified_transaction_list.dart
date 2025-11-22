@@ -1648,79 +1648,31 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     required dynamic payload,
     required Map<String, dynamic> normalized,
   }) {
-    final baseOptions =
+    // Keep the signature for back-compat, but make this a read-only label.
+
+    final List<String> baseOptions =
         widget.subcategoryOptionsByCategory[currentCategory] ?? const <String>[];
 
-    // If no configured subcategories for this category, hide the control.
-    if (baseOptions.isEmpty) {
+    final String raw = (currentSubcategory ?? '').trim();
+
+    // If we have neither a subcategory nor configured options, hide the control.
+    if (raw.isEmpty && baseOptions.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final String value = (currentSubcategory ?? '').trim().isNotEmpty
-        ? currentSubcategory!.trim()
-        : baseOptions.first;
+    // Prefer explicit subcategory from data; otherwise show the first configured option as a hint.
+    final String display = raw.isNotEmpty ? raw : baseOptions.first;
 
-    var options = List<String>.from(baseOptions);
-    if (!options.contains(value)) {
-      options = [value, ...options];
-    }
-
-    return FittedBox(
-      fit: BoxFit.scaleDown,
+    return Align(
       alignment: Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(
-          minWidth: 0,
-          maxWidth: double.infinity,
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: value,
-            isExpanded: true, // avoid internal Row overflow
-            items: options
-                .map(
-                  (c) => DropdownMenuItem<String>(
-                    value: c,
-                    child: Text(
-                      c,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w500,
-                        fontSize: 13.0,
-                        color: Color(0xFF4B5563),
-                      ),
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (newVal) async {
-              if (newVal == null || newVal == value) return;
-
-              setState(() {
-                final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
-                if (idx != -1) allTx[idx]['subcategory'] = newVal;
-              });
-
-              if (widget.onChangeSubcategory != null) {
-                try {
-                  await widget.onChangeSubcategory!(
-                    txId: txId,
-                    newSubcategory: newVal,
-                    payload: payload,
-                  );
-                } catch (_) {}
-              }
-            },
-            isDense: true,
-            icon: const Icon(Icons.expand_more_rounded, size: 16),
-            borderRadius: BorderRadius.circular(12),
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
-              fontSize: 13.0,
-              color: Color(0xFF4B5563),
-            ),
-            menuMaxHeight: 260,
-          ),
+      child: Text(
+        display,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontWeight: FontWeight.w500,
+          fontSize: 13.0,
+          color: Color(0xFF4B5563),
         ),
       ),
     );
