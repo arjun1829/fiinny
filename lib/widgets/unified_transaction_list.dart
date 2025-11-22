@@ -112,6 +112,15 @@ class UnifiedTransactionList extends StatefulWidget {
   /// Enable/disable inline ad injection (default: true)
   final bool enableInlineAds;
 
+  /// If true (default), the widget wraps its rows in an internal ListView
+  /// (shrink-wrapped, non-scrollable) so it can be used as a standalone
+  /// scrolling block inside cards / screens.
+  ///
+  /// When embedding inside another scroll view (e.g., parent ListView /
+  /// CustomScrollView), set this to false so that the widget returns just
+  /// a Column with rows and lets the parent handle scrolling.
+  final bool wrapInListView;
+
   const UnifiedTransactionList({
     Key? key,
     required this.expenses,
@@ -239,6 +248,7 @@ class UnifiedTransactionList extends StatefulWidget {
     this.emptyBuilder,
     this.onRowTapIntercept,
     this.enableInlineAds = true,
+    this.wrapInListView = true,
   }) : super(key: key);
 
   @override
@@ -1884,10 +1894,24 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     );
 
     if (allTx.isEmpty) {
-      if (widget.emptyBuilder != null) return widget.emptyBuilder!(context);
-      return const Padding(
-        padding: EdgeInsets.all(16),
-        child: Center(child: Text("No transactions found.")),
+      final Widget emptyContent = widget.emptyBuilder != null
+          ? widget.emptyBuilder!(context)
+          : const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: Text("No transactions found.")),
+            );
+
+      // If we are embedded inside another scroll view, just return the content.
+      if (!widget.wrapInListView) {
+        return emptyContent;
+      }
+
+      // Otherwise, provide a small internal ListView so this widget
+      // can still be used standalone without exploding layout.
+      return ListView(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        children: [emptyContent],
       );
     }
 
@@ -2448,16 +2472,26 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       );
     }
 
-    // Let the parent (GlassCard/CustomDiamondCard) own the card background.
-    // UnifiedTransactionList should only return the content.
-    //
-    // 🛠 Layout fix: wrap the content in a shrink-wrapped, non-scrollable
-    // ListView so it can safely sit inside parent ListViews without needing
-    // its own scroll controller or flex-based height.
+    // Build a plain Column with all rows and groups. This is our core content.
+    final Widget content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
+    );
+
+    // If we are embedded inside another scroll view (parent ListView/CustomScrollView),
+    // do NOT introduce another ListView. Just return the Column so the parent
+    // controls scrolling and sliver layout stays sane.
+    if (!widget.wrapInListView) {
+      return content;
+    }
+
+    // Default behaviour (back-compat): internal shrink-wrapped ListView,
+    // non-scrollable by itself, suitable inside cards and standalone panels.
     return ListView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      children: children,
+      children: [content],
     );
   }
 
