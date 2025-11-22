@@ -1294,7 +1294,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             showBillIcon: true,
             multiSelectEnabled: _multiSelectMode,
             selectedIds: _selectedTxIds,
-            wrapInListView: false, // 🛠 IMPORTANT: no inner ListView here
+            wrapInListView: false, // 👈 NEW
             onSelectTx: (txId, selected) {
               setState(() {
                 if (selected) {
@@ -1847,7 +1847,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 showBillIcon: true,
                 multiSelectEnabled: _multiSelectMode,
                 selectedIds: _selectedTxIds,
-                wrapInListView: false, // 🛠 IMPORTANT here too
+                wrapInListView: false, // 👈 NEW
                 onSelectTx: (txId, selected) {
                   setState(() {
                     if (selected) {
