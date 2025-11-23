@@ -52,14 +52,13 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          #cache: true
+          cache: true
 
       - name: Cache Pub packages
         uses: actions/cache@v4
         with:
           path: ~/.pub-cache
-          # Use pubspec.yaml (always present) instead of pubspec.lock
-          key: ${{ runner.os }}-pub-${{ hashFiles('pubspec.yaml') }}
+          key: ${{ runner.os }}-pub-${{ hashFiles('pubspec.lock') }}
           restore-keys: ${{ runner.os }}-pub-
 
       - name: Cache CocoaPods
@@ -68,8 +67,7 @@ jobs:
           path: |
             ~/.cocoapods/repos
             ios/Pods
-          # Use Podfile (always present) instead of Podfile.lock
-          key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile') }}
+          key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile.lock') }}
           restore-keys: ${{ runner.os }}-pods-
 
       - name: Tool versions
