@@ -39,13 +39,7 @@ import '../themes/glass_card.dart';
 import '../themes/badge.dart';
 import '../widgets/net_worth_panel.dart';
 import '../core/formatters/inr.dart';
-import '../widgets/subscriptions/subs_bills_card.dart';
 import 'loans_screen.dart';
-import '../details/recurring/add_choice_sheet.dart';
-import '../details/recurring/add_recurring_basic_screen.dart';
-import '../details/recurring/add_subscription_screen.dart';
-import '../details/recurring/add_emi_link_sheet.dart';
-import '../details/recurring/add_custom_reminder_sheet.dart';
 import '../details/models/recurring_scope.dart';
 import '../details/models/shared_item.dart';
 import '../core/ads/ads_banner_card.dart';
@@ -69,8 +63,6 @@ import '../widgets/add_goal_dialog.dart';
 import '../services/notif_prefs_service.dart';
 import '../services/notifs/social_events_watch.dart';
 
-// Fiinnny Brain cards
-import '../widgets/fiinny_brain_diagnosis_card.dart';
 // (optional) quick monthly fees-only card if you also want it
 import '../widgets/hidden_charges_card.dart';
 import '../widgets/forex_charges_card.dart';
@@ -161,12 +153,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   late final AnimationController _ringShineController;
   bool _ringShineVisible = true;
 
-  // 🔴 NEW: live counters from Firestore
-  StreamSubscription? _subsSub, _sipsSub, _cardsSub;
-  int _activeSubs = 0;
-  int _activeSips = 0;
-  int _cardsDue = 0;
-  int _autopayCount = 0; // derived from current period
   bool? _hasSmsPermission = SmsPermissionHelper.lastKnownStatus;
   bool _requestingSmsPermission = false;
 
@@ -181,7 +167,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   int _animTxCount = 0;
   VoidCallback? _numbersListener;
 
-  // Toggle to render insight feed at the bottom (keep diagnosis card already at bottom)
+  // Toggle to render insight feed at the bottom of the dashboard
   static const bool _INSIGHTS_AT_BOTTOM = true;
 
   Widget _buildDashboardAdCard() {
@@ -314,7 +300,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       });
 
       await _loadPeriodLimit();
-      _recomputeAutopayCount();
       unawaited(_checkLimitWarnings());
     } catch (_) {}
   }
@@ -536,8 +521,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       await SyncCoordinator.instance.onAppStart(widget.userPhone);
     });
 
-    _wireLiveCounters(); // 🔴 start Firestore listeners
-
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future<void>.delayed(const Duration(milliseconds: 500));
       await NotificationService.initFull();
@@ -551,10 +534,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     WidgetsBinding.instance.removeObserver(this);
     SyncCoordinator.instance.onAppStop();
     unawaited(SocialEventsWatch.unbind());
-    _subsSub?.cancel();
     _sysNotifs?.unbind();
-    _sipsSub?.cancel();
-    _cardsSub?.cancel();
     _ringShineController.dispose();
     if (_numbersListener != null) {
       _numbersCtrl.removeListener(_numbersListener!);
@@ -565,197 +545,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
 
-  // 🔴 Firestore listeners for Subscriptions / SIPs / Cards
-  void _wireLiveCounters() {
-    final db = FirebaseFirestore.instance;
-    _subsSub = db
-        .collection('users').doc(widget.userPhone)
-        .collection('subscriptions')
-        .where('active', isEqualTo: true)
-        .snapshots()
-        .listen((snap) {
-      if (!mounted) return;
-      setState(() => _activeSubs = snap.size);
-    });
-
-    _sipsSub = db
-        .collection('users').doc(widget.userPhone)
-        .collection('sips')
-        .where('active', isEqualTo: true)
-        .snapshots()
-        .listen((snap) {
-      if (!mounted) return;
-      setState(() => _activeSips = snap.size);
-    });
-
-    _cardsSub = db
-        .collection('users')
-        .doc(widget.userPhone)
-        .collection('credit_cards')
-        .snapshots()
-        .listen((snap) {
-      if (!mounted) return;
-      int due = 0;
-      final now = DateTime.now();
-      for (final d in snap.docs) {
-        final data = d.data();
-        final status =
-            (data['currentCycleStatus'] ?? data['status'] ?? '').toString().toLowerCase();
-        final dueField = data['currentCycleDueDate'] ?? data['dueDate'];
-        DateTime? dueDate;
-        if (dueField is Timestamp) {
-          dueDate = dueField.toDate();
-        } else if (dueField is DateTime) {
-          dueDate = dueField;
-        } else if (dueField is String) {
-          dueDate = DateTime.tryParse(dueField);
-        }
-
-        if (status == 'paid') {
-          continue;
-        }
-
-        if (status == 'overdue') {
-          due++;
-          continue;
-        }
-
-        if (dueDate != null) {
-          final diff = dueDate.difference(now).inDays;
-          if (!now.isBefore(dueDate) || diff <= 7) {
-            due++;
-          }
-        }
-      }
-      if (!mounted) return;
-      setState(() => _cardsDue = due);
-    });
-  }
-
-  Future<void> _openSubscriptionsAndBills(BuildContext context) async {
-    await Navigator.pushNamed(
-      context,
-      '/subs-bills',
-      arguments: {'userPhone': widget.userPhone},
-    );
-    if (!mounted) return;
-    await _initDashboard();
-  }
-
-  Future<void> _openSubsAddQuick(BuildContext context) async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (sheetCtx) => AddChoiceSheet(
-        onPick: (key) => Navigator.pop(sheetCtx, key),
-      ),
-    );
-
-    if (choice == null) return;
-
-    final handled = await _handleSubsAddChoice(choice);
-    if (!mounted) return;
-    if (handled) {
-      await _initDashboard();
-    }
-  }
-
-  RecurringScope _defaultRecurringScope() =>
-      RecurringScope.friend(widget.userPhone, widget.userPhone);
-
-  Future<bool> _handleSubsAddChoice(String rawKey) async {
-    final key = rawKey == 'custom' ? 'reminder' : rawKey;
-    final scope = _defaultRecurringScope();
-    dynamic res;
-
-    try {
-      switch (key) {
-        case 'recurring':
-          res = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => AddRecurringBasicScreen(
-                userPhone: widget.userPhone,
-                scope: scope,
-                mirrorToFriend: false,
-              ),
-            ),
-          );
-          break;
-        case 'subscription':
-          res = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => AddSubscriptionScreen(
-                userPhone: widget.userPhone,
-                scope: scope,
-                mirrorToFriend: false,
-              ),
-            ),
-          );
-          break;
-        case 'emi':
-          res = await showModalBottomSheet<bool>(
-            context: context,
-            useSafeArea: true,
-            isScrollControlled: true,
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-            builder: (_) => AddEmiLinkSheet(
-              scope: scope,
-              currentUserId: widget.userPhone,
-            ),
-          );
-          break;
-        case 'reminder':
-          res = await showModalBottomSheet<SharedItem>(
-            context: context,
-            useSafeArea: true,
-            isScrollControlled: true,
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-            builder: (_) => AddCustomReminderSheet(
-              userPhone: widget.userPhone,
-              scope: scope,
-              mirrorToFriend: false,
-            ),
-          );
-          break;
-        default:
-          return false;
-      }
-    } catch (e) {
-      if (!mounted) return false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to open flow: $e')),
-      );
-      return false;
-    }
-
-    if (!mounted || res == null) {
-      return false;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Saved!')),
-    );
-    return true;
-  }
-
-  // --- recompute derived autopay count for current period filter
-  void _recomputeAutopayCount() {
-    final list = _filteredExpensesForPeriod(txPeriod);
-    if (!mounted) return;
-    setState(() {
-      _autopayCount = list.where((e) => (e.tags ?? const []).contains('autopay')).length;
-    });
-  }
 
   void _openInsightFeed() {
     final data = _insightUserData;
@@ -1329,8 +1118,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       // Fetch current limit for this period
       await _loadPeriodLimit();
 
-      // 🔴 recompute autopay derived count for the chosen period
-      _recomputeAutopayCount();
     } catch (e) {
       print('[Dashboard] ERROR: $e');
       SnackThrottle.show(context, "Dashboard error: $e");
@@ -1387,7 +1174,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     await _loadPeriodLimit();
     _resetLimitWarnings();
     unawaited(_checkLimitWarnings());
-    _recomputeAutopayCount();
     final summary = _getTxSummaryForPeriod(period);
     final credit = summary['credit'] ?? 0.0;
     final debit = summary['debit'] ?? 0.0;
@@ -2124,39 +1910,21 @@ class _DashboardScreenState extends State<DashboardScreen>
                               }
                               final loansTile = wrapTile(_buildLoansTile());
                               final assetsTile = wrapTile(_buildAssetsTile());
-                              final subsTile = isNarrow
-                                  ? _buildSubscriptionsTile()
-                                  : SizedBox(height: 388, child: _buildSubscriptionsTile());
                               if (isNarrow) {
                                 return Column(
                                   children: [
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Expanded(child: loansTile),
-                                        SizedBox(width: spacing),
-                                        Expanded(child: assetsTile),
-                                      ],
-                                    ),
+                                    loansTile,
                                     SizedBox(height: spacing),
-                                    subsTile,
+                                    assetsTile,
                                   ],
                                 );
                               }
                               return Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Expanded(
-                                    child: Column(
-                                      children: [
-                                        loansTile,
-                                        SizedBox(height: spacing),
-                                        assetsTile,
-                                      ],
-                                    ),
-                                  ),
+                                  Expanded(child: loansTile),
                                   SizedBox(width: spacing),
-                                  Expanded(child: subsTile),
+                                  Expanded(child: assetsTile),
                                 ],
                               );
                             },
@@ -2212,21 +1980,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ],
                         const SizedBox(height: 18),
-                        Padding(
-                          padding: horizontalPadding,
-                          // Always surface the full Fiinny Brain insights stack
-                          // after the rest of the dashboard so it is visible,
-                          // even when earlier sections are collapsed or gated.
-                          child: FiinnyBrainDiagnosisCard(
-                            key: const ValueKey('diag-v3'),
-                            userPhone: widget.userPhone,
-                            daysWindow: 180,
-                            initiallyExpanded: false,
-                            salaryEarlyDays: 3,
-                            margin: EdgeInsets.zero,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
                         if (_insightUserData != null && _INSIGHTS_AT_BOTTOM) ...[
                           _buildInsightFeedSection(horizontalPadding),
                           const SizedBox(height: 14),
@@ -2354,22 +2107,6 @@ class _DashboardScreenState extends State<DashboardScreen>
         }
         return card;
       },
-    );
-  }
-
-  Widget _buildSubscriptionsTile() {
-    final autopayTotal = _filteredExpensesForPeriod(txPeriod)
-        .where((e) => (e.tags ?? const []).contains('autopay') || (e.tags ?? const []).contains('bill'))
-        .fold<double>(0.0, (a, b) => a + b.amount);
-
-    return SubsBillsCard(
-      userPhone: widget.userPhone,
-      activeCount: _activeSubs + _activeSips,
-      overdueCount: _cardsDue,
-      monthTotal: autopayTotal,
-      nextDue: null,
-      onOpen: () => _openSubscriptionsAndBills(context),
-      onAdd: () => _openSubsAddQuick(context),
     );
   }
 

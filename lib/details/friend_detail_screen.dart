@@ -10,7 +10,6 @@ import 'package:firebase_storage/firebase_storage.dart' as fb_storage;
 import 'package:intl/intl.dart';
 import 'package:lifemap/ui/atoms/brand_avatar.dart';
 import 'package:lifemap/ui/tokens.dart';
-import 'package:lifemap/screens/subs_bills/widgets/brand_avatar_registry.dart';
 
 import 'recurring/friend_recurring_screen.dart';
 import 'recurring/add_choice_sheet.dart';
@@ -586,7 +585,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     final brandKey = (item.provider?.isNotEmpty == true)
         ? item.provider!
         : title;
-    final asset = BrandAvatarRegistry.assetFor(brandKey);
     final share = item.amountShareForUser(widget.userPhone);
     final due = item.nextDueAt;
     final now = DateTime.now();
@@ -613,7 +611,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
         child: Row(
           children: [
             BrandAvatar(
-              assetPath: asset,
+              assetPath: null,
               label: brandKey,
               size: 44,
               radius: 12,

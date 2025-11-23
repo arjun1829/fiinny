@@ -21,6 +21,10 @@ class TransactionAmountCard extends StatelessWidget {
   }) : super(key: key);
 
   String _labelForIndex(int idx) {
+    // For "All Time" we do not show x-axis labels at all.
+    // This avoids confusion when barData length (months) happens to be 28–31.
+    if (period == 'All Time') return '';
+
     if (barData.length == 24) {
       if (idx == 0) return '12AM';
       if (idx == 6) return '6AM';
@@ -32,8 +36,13 @@ class TransactionAmountCard extends StatelessWidget {
     } else if (barData.length == 12) {
       const months = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
       return months[idx];
-    } else if (barData.length >= 28 && barData.length <= 31) {
-      if (idx % 7 == 0) return '${idx + 1}';
+    } else if (
+        // Only treat 28–31 as "days of month" when the period
+        // is actually a month, not for "All Time".
+        (period == 'M' || period == 'This Month' || period == 'Last Month') &&
+        barData.length >= 28 &&
+        barData.length <= 31) {
+      if (idx % 7 == 0) return '${idx + 1}'; // 1, 8, 15, 22, 29...
     }
     return '';
   }
@@ -71,8 +80,10 @@ class TransactionAmountCard extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
         elevation: 4,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        clipBehavior: Clip.antiAlias, // ensure nothing paints outside the card
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+          // a bit more bottom padding so labels stay visually inside
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

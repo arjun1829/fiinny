@@ -148,7 +148,7 @@ class LocalNotifs {
 
     // New simple hosts
     if (host == 'subs' || host == 'sips') {
-      nav.pushNamed('/subs_bills'); // your Subscriptions & Bills screen
+      nav.pushNamed('/');
       return;
     }
     if (host == 'loans') {
@@ -156,8 +156,7 @@ class LocalNotifs {
       return;
     }
     if (host == 'cards') {
-      // If you later add a dedicated cards screen, change this route accordingly
-      nav.pushNamed('/subs_bills');
+      nav.pushNamed('/');
       return;
     }
 

@@ -17,9 +17,47 @@ import '../services/income_service.dart';
 import '../themes/glass_card.dart';
 import '../themes/tokens.dart';
 import '../widgets/charts/bar_chart_simple.dart';
-import '../widgets/charts/donut_chart_simple.dart';
 import '../widgets/unified_transaction_list.dart';
 import 'edit_expense_screen.dart';
+import 'expenses_screen.dart'
+    show ExpenseFilterConfig, ExpenseFiltersScreen;
+
+class _MonthSpend {
+  final int year;
+  final int month;
+  final double totalExpense;
+
+  const _MonthSpend(this.year, this.month, this.totalExpense);
+}
+
+class _CategoryStackSegment {
+  final String category;
+  final double value;
+
+  const _CategoryStackSegment(this.category, this.value);
+}
+
+class _MonthlyCategoryStack {
+  final int year;
+  final int month;
+  final List<_CategoryStackSegment> segments;
+
+  const _MonthlyCategoryStack(this.year, this.month, this.segments);
+}
+
+class _SubcategoryBucket {
+  final String name;
+  final double amount;
+  final int txCount;
+
+  const _SubcategoryBucket({
+    required this.name,
+    required this.amount,
+    required this.txCount,
+  });
+}
+
+enum _SubcategorySort { amountDesc, amountAsc, alphaAsc, alphaDesc }
 
 class _TrendAxisScale {
   final double maxY;
@@ -49,6 +87,41 @@ class _CardGroup {
   double get netOutflow => debitTotal - creditTotal;
 }
 
+class _CategoryInsights {
+  final String? highestCategory;
+  final double highestAmount;
+  final String? lowestCategory;
+  final double lowestAmount;
+  final List<String> zeroCategories;
+  const _CategoryInsights({
+    required this.highestCategory,
+    required this.highestAmount,
+    required this.lowestCategory,
+    required this.lowestAmount,
+    required this.zeroCategories,
+  });
+}
+
+const List<String> _kMainExpenseCategories = <String>[
+  'Food & Dining',
+  'Groceries',
+  'Transport',
+  'Fuel',
+  'Shopping',
+  'Bills & Utilities',
+  'Rent',
+  'EMI & Loans',
+  'Subscriptions',
+  'Health',
+  'Education',
+  'Travel',
+  'Entertainment',
+  'Fees & Charges',
+  'Investments',
+  'Transfers (Self)',
+  'Other',
+];
+
 String _formatBankLabel(String bank) {
   if (bank.isEmpty || bank == 'UNKNOWN') return 'Unknown Bank';
   final parts = bank
@@ -71,6 +144,8 @@ class AnalyticsScreen extends StatefulWidget {
   State<AnalyticsScreen> createState() => _AnalyticsScreenState();
 }
 
+enum SpendScope { all, savingsAccounts, creditCards }
+
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   final _expenseSvc = ExpenseService();
   final _incomeSvc = IncomeService();
@@ -82,23 +157,58 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   String _periodToken = 'M';
   DateTimeRange? _range;
 
+  // NEW: window for "Last X months spends" card (only for that card)
+  String _spendWindow = '1Y';
+
+  // NEW: view selector for last months spends card
+  String _lastMonthsView = 'Trend';
+
+  // NEW: selected month for "Spends by Category" list
+  DateTime? _selectedCategoryMonth;
+
   // Bottom list filter chips
   String _txnFilter = "All";
 
   // Calendar / custom filter
   CustomRange? _custom;
 
+  // NEW: transaction type / instrument filter (for this screen)
+  String _instrumentFilter = 'All';
+
+  SpendScope _scope = SpendScope.all;
+  bool _showFriendsOnlyInAll = false;
+
   int _aggRev = 0;
   final Map<String, Map<String, double>> _aggCache = {};
 
   // caches
-  final Map<String, List<SeriesPoint>> _seriesCache = {};
   final Map<String, Map<String, double>> _rollCache = {};
+  final Map<String, dynamic> _heavyAggCache = {};
   int _rev = 0;
+
+  static const Map<String, Color> _categoryColors = {
+    'Fund Transfers': Colors.deepPurple,
+    'Payments': Colors.indigo,
+    'Shopping': Colors.teal,
+    'Travel': Colors.orange,
+    'Food': Colors.redAccent,
+    'Entertainment': Colors.pink,
+    'Healthcare': Colors.green,
+    'Education': Colors.blueGrey,
+    'Investments': Colors.brown,
+    'Others': Colors.grey,
+  };
 
   // Banks & Cards selection (screen-wide filter)
   String? _bankFilter;   // normalized uppercase bank name
   String? _last4Filter;  // last 4 digits for specific account
+
+  // Filters from the expense Filters screen
+  Set<String> _selectedCategories = {};
+  Set<String> _selectedMerchants = {};
+  Set<String> _selectedBanks = {};
+  Set<String> _friendFilterPhones = {};
+  Set<String> _groupFilterIds = {};
   final ScrollController _scrollCtrl = ScrollController();
 
   String _slugBank(String s) {
@@ -147,6 +257,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     return candidates.isNotEmpty ? candidates.first : null;
   }
+
+  String _normalizeBank(String? bank) => (bank ?? '').trim().toUpperCase();
+
+  bool get _hasActiveFilters =>
+      _selectedCategories.isNotEmpty ||
+      _selectedMerchants.isNotEmpty ||
+      _selectedBanks.isNotEmpty ||
+      _friendFilterPhones.isNotEmpty ||
+      _groupFilterIds.isNotEmpty ||
+      _showFriendsOnlyInAll ||
+      _bankFilter != null ||
+      _last4Filter != null ||
+      _custom != null ||
+      _range != null;
 
   String _bankInitials(String? bank) {
     final safeBank = (bank ?? '').trim();
@@ -204,6 +328,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   void _invalidateAggCache() {
     _aggRev++;
     _aggCache.clear();
+    _rollCache.clear();
+    _heavyAggCache.clear();
+  }
+
+  void _changeScope(SpendScope scope) {
+    setState(() {
+      _scope = scope;
+      _instrumentFilter = 'All';
+      _showFriendsOnlyInAll = false;
+      if (scope != SpendScope.all) {
+        _bankFilter = null;
+        _last4Filter = null;
+      }
+      _invalidateAggCache();
+    });
   }
 
   Period _periodForToken(String token) {
@@ -219,6 +358,169 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       case 'M':
       default:
         return Period.month;
+    }
+  }
+
+  ({DateTime start, DateTime end}) _rangeForFilterToken(
+    DateTime now,
+    String token,
+  ) {
+    switch (token) {
+      case 'Day':
+      case 'D':
+        final d0 = DateTime(now.year, now.month, now.day);
+        return (start: d0, end: d0);
+      case 'Yesterday':
+        final d0 = DateTime(now.year, now.month, now.day - 1);
+        return (start: d0, end: d0);
+      case '2D':
+        final d0 = DateTime(now.year, now.month, now.day);
+        final d1 = d0.subtract(const Duration(days: 1));
+        return (start: d1, end: d0);
+      case 'Week':
+      case 'W':
+        final start =
+            DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+        final end = start.add(const Duration(days: 6));
+        return (start: start, end: end);
+      case 'Month':
+      case 'M':
+        final start = DateTime(now.year, now.month, 1);
+        final end = DateTime(now.year, now.month + 1, 0);
+        return (start: start, end: end);
+      case 'Last Month':
+      case 'LM':
+        final prevStart = DateTime(now.year, now.month - 1, 1);
+        final prevEnd = DateTime(prevStart.year, prevStart.month + 1, 0);
+        return (start: prevStart, end: prevEnd);
+      case 'Quarter':
+      case 'Q':
+        final q = ((now.month - 1) ~/ 3) + 1;
+        final sm = (q - 1) * 3 + 1;
+        final start = DateTime(now.year, sm, 1);
+        final end = DateTime(now.year, sm + 3, 0);
+        return (start: start, end: end);
+      case 'Year':
+      case 'Y':
+        return (start: DateTime(now.year, 1, 1), end: DateTime(now.year, 12, 31));
+      case 'All':
+      default:
+        return (start: DateTime(2000), end: DateTime(2100));
+    }
+  }
+
+  String _mapExpensePeriodToAnalytics(String token) {
+    switch (token) {
+      case 'Day':
+      case 'D':
+        return 'D';
+      case 'Week':
+      case 'W':
+        return 'W';
+      case 'Year':
+      case 'Y':
+        return 'Y';
+      case 'All':
+        return 'All Time';
+      default:
+        return 'M';
+    }
+  }
+
+  String _mapAnalyticsPeriodToExpense() {
+    switch (_periodToken) {
+      case 'D':
+        return 'Day';
+      case 'W':
+        return 'Week';
+      case 'Y':
+        return 'Year';
+      case 'All Time':
+        return 'All';
+      default:
+        return 'Month';
+    }
+  }
+
+  DateTimeRange _inclusiveToExclusive(DateTimeRange range) {
+    return DateTimeRange(
+      start: range.start,
+      end: range.end.add(const Duration(days: 1)),
+    );
+  }
+
+  Future<void> _openFiltersScreen() async {
+    final initialRange = _range == null
+        ? null
+        : DateTimeRange(
+            start: _range!.start,
+            end: _range!.end.subtract(const Duration(days: 1)),
+          );
+
+    final config = await Navigator.push<ExpenseFilterConfig>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ExpenseFiltersScreen(
+          initialConfig: ExpenseFilterConfig(
+            periodToken: _mapAnalyticsPeriodToExpense(),
+            customRange: initialRange,
+            categories: _selectedCategories,
+            merchants: _selectedMerchants,
+            banks: _selectedBanks,
+            friendPhones: _friendFilterPhones,
+            groupIds: _groupFilterIds,
+          ),
+          expenses: _allExp,
+          incomes: _allInc,
+          friendsById: const {},
+          groups: const [],
+        ),
+      ),
+    );
+
+    if (config != null) {
+      final now = DateTime.now();
+      final inclusiveRange = config.customRange ??
+          DateTimeRange(
+            start: _rangeForFilterToken(now, config.periodToken).start,
+            end: _rangeForFilterToken(now, config.periodToken).end,
+          );
+
+      setState(() {
+        _periodToken = _mapExpensePeriodToAnalytics(config.periodToken);
+        _period =
+            config.customRange != null ? Period.custom : _periodForToken(_periodToken);
+        _custom = config.customRange != null
+            ? CustomRange(inclusiveRange.start, inclusiveRange.end)
+            : null;
+        _range = _inclusiveToExclusive(inclusiveRange);
+        _selectedCategories = {
+          for (final c in config.categories) _normalizeMainCategory(c)
+        };
+        _selectedMerchants = {
+          for (final m in config.merchants) m.trim().toUpperCase()
+        }..removeWhere((m) => m.isEmpty);
+        _selectedBanks = {
+          for (final b in config.banks) b.trim().toUpperCase()
+        }..removeWhere((b) => b.isEmpty);
+        _friendFilterPhones = {...config.friendPhones};
+        _groupFilterIds = {...config.groupIds};
+
+        // Keep the single bank chip in sync when only one selection exists.
+        if (_selectedBanks.length == 1) {
+          final only = _selectedBanks.first;
+          final parts = only.split('|');
+          _bankFilter = parts.first.trim().isEmpty ? null : parts.first.trim();
+          _last4Filter = parts.length > 1 && parts[1].trim().isNotEmpty
+              ? parts[1].trim()
+              : null;
+        } else {
+          _bankFilter = null;
+          _last4Filter = null;
+        }
+
+        _invalidateAggCache();
+      });
     }
   }
 
@@ -281,6 +583,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       _periodToken,
       _bankFilter,
       _last4Filter,
+      _instrumentFilter, // NEW: make cache sensitive to instrument filter
     ].join('|');
 
     final cached = _aggCache[cacheKey];
@@ -297,7 +600,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       final out = <String, double>{};
       for (final e in _applyBankFiltersToExpenses(_allExp)) {
         if (!_inRange(e.date, range)) continue;
-        final cat = AnalyticsAgg.resolveExpenseCategory(e);
+        final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+        final cat = _normalizeMainCategory(legacy);
         out[cat] = (out[cat] ?? 0) + e.amount;
       }
       final sorted = out.entries.toList()
@@ -321,6 +625,39 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     });
   }
 
+  _CategoryInsights _buildCategoryInsightsForCurrentRange() {
+    final totals = sumExpenseByCategory();
+    String? highestCategory;
+    double highestAmount = 0;
+    String? lowestCategory;
+    double lowestAmount = 0;
+    final zeroCategories = <String>[];
+
+    for (final category in _kMainExpenseCategories) {
+      final amount = totals[category] ?? 0;
+      if (amount <= 0) {
+        zeroCategories.add(category);
+        continue;
+      }
+      if (highestCategory == null || amount > highestAmount) {
+        highestCategory = category;
+        highestAmount = amount;
+      }
+      if (lowestCategory == null || amount < lowestAmount) {
+        lowestCategory = category;
+        lowestAmount = amount;
+      }
+    }
+
+    return _CategoryInsights(
+      highestCategory: highestCategory,
+      highestAmount: highestAmount,
+      lowestCategory: lowestCategory,
+      lowestAmount: lowestAmount,
+      zeroCategories: zeroCategories,
+    );
+  }
+
   Map<String, double> topMerchantsForCategory({
     required bool expense,
     required String category,
@@ -332,7 +669,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       if (expense) {
         for (final e in _applyBankFiltersToExpenses(_allExp)) {
           if (!_inRange(e.date, range)) continue;
-          final cat = AnalyticsAgg.resolveExpenseCategory(e);
+          final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+          final cat = _normalizeMainCategory(legacy);
           if (cat != category) continue;
           final merch = (e.counterparty ?? e.upiVpa ?? e.label ?? 'MERCHANT')
               .toString()
@@ -367,55 +705,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         .join(' ');
   }
 
-  Widget _categoryChips({required bool expense}) {
-    final data = expense ? sumExpenseByCategory() : sumIncomeByCategory();
-    final entries = data.entries.toList();
-    if (entries.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.65),
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: Fx.soft,
-        ),
-        child: Text(
-          'No data for this selection',
-          style: Fx.label.copyWith(color: Fx.text.withOpacity(.7)),
-        ),
-      );
-    }
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final entry in entries)
-          ActionChip(
-            label: Text(
-              '${entry.key} • ${INR.c(entry.value)}',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            onPressed: () => _openCategoryDrilldown(
-              expense: expense,
-              category: entry.key,
-              total: entry.value,
-            ),
-          ),
-      ],
-    );
-  }
-
   Future<void> _openCategoryDrilldown({
     required bool expense,
     required String category,
     required double total,
+    DateTimeRange? overrideRange,
   }) async {
-    final range = _rangeOrDefault();
+    final range = overrideRange ?? _rangeOrDefault();
     if (expense) {
       final matches = _applyBankFiltersToExpenses(_allExp)
           .where((e) =>
               _inRange(e.date, range) &&
-              AnalyticsAgg.resolveExpenseCategory(e) == category)
+              _normalizeMainCategory(
+                AnalyticsAgg.resolveExpenseCategory(e),
+              ) ==
+                  category)
           .toList();
       await _openTxDrilldown(
         title: 'Expense • $category · ${INR.f(total)}',
@@ -436,75 +740,318 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     }
   }
 
-  Widget _categorySection({required bool expense}) {
-    final title = expense ? 'Expense by Category' : 'Income by Category';
-    final data = expense ? sumExpenseByCategory() : sumIncomeByCategory();
-    final entries = data.entries
-        .where((e) => e.value.isFinite && e.value != 0)
-        .toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final hasData = entries.isNotEmpty &&
-        entries.any((element) => element.value.abs() > 0);
+  Future<void> _openCategoryDetailForMonth({
+    required String category,
+    required DateTime month,
+  }) async {
+    final buckets = _buildLastMonthSpends(monthCount: 12);
+    if (buckets.isEmpty) return;
 
-    Widget _emptyCard() => Container(
-          key: ValueKey('empty-${expense ? 'exp' : 'inc'}'),
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: Fx.soft,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
-          child: Text(
-            'No data for this selection',
-            style: Fx.label.copyWith(color: Fx.text.withOpacity(.7)),
-          ),
-        );
+    final monthDates = <DateTime>[
+      for (final b in buckets) DateTime(b.year, b.month, 1),
+    ];
 
-    Widget _chart() => Container(
-          key: ValueKey('chart-${expense ? 'exp' : 'inc'}'),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: Fx.soft,
-          ),
-          padding: const EdgeInsets.all(12),
-          child: DonutChartSimple(
-            slices: [
-              for (final entry in entries)
-                DonutSlice(
-                  label: entry.key,
-                  value: entry.value.abs(),
+    DateTime selected = DateTime(month.year, month.month, 1);
+    if (!monthDates.any(
+        (m) => m.year == selected.year && m.month == selected.month)) {
+      selected = monthDates.last;
+    }
+
+    _SubcategorySort sort = _SubcategorySort.amountDesc;
+    Set<String> filter = <String>{};
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final monthLabel = DateFormat('MMM y').format(selected);
+            final monthTotals = _categoryTotalsForMonth(selected);
+            final monthTotal = monthTotals[category] ?? 0;
+
+            final subBuckets =
+                _subcategoryBucketsForMonthAndCategory(selected, category);
+            final allSubs = subBuckets.map((b) => b.name).toSet();
+
+            List<_SubcategoryBucket> visible = subBuckets
+                .where((b) => filter.isEmpty || filter.contains(b.name))
+                .toList();
+
+            int _cmp(String a, String b) => a.toLowerCase().compareTo(b.toLowerCase());
+
+            visible.sort((a, b) {
+              switch (sort) {
+                case _SubcategorySort.amountAsc:
+                  return a.amount.compareTo(b.amount);
+                case _SubcategorySort.alphaAsc:
+                  return _cmp(a.name, b.name);
+                case _SubcategorySort.alphaDesc:
+                  return _cmp(b.name, a.name);
+                case _SubcategorySort.amountDesc:
+                default:
+                  return b.amount.compareTo(a.amount);
+              }
+            });
+
+            Future<void> _pickSort() async {
+              final chosen = await showModalBottomSheet<_SubcategorySort>(
+                context: context,
+                builder: (context) {
+                  return SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          title: const Text('Amount: High to Low'),
+                          onTap: () => Navigator.pop(
+                              context, _SubcategorySort.amountDesc),
+                        ),
+                        ListTile(
+                          title: const Text('Amount: Low to High'),
+                          onTap: () => Navigator.pop(
+                              context, _SubcategorySort.amountAsc),
+                        ),
+                        ListTile(
+                          title: const Text('Alphabetical: A to Z'),
+                          onTap: () =>
+                              Navigator.pop(context, _SubcategorySort.alphaAsc),
+                        ),
+                        ListTile(
+                          title: const Text('Alphabetical: Z to A'),
+                          onTap: () =>
+                              Navigator.pop(context, _SubcategorySort.alphaDesc),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+              if (chosen != null && chosen != sort) {
+                setSheetState(() => sort = chosen);
+              }
+            }
+
+            Future<void> _pickFilters() async {
+              final temp = filter.isEmpty ? Set<String>.from(allSubs) : Set<String>.from(filter);
+              await showModalBottomSheet<void>(
+                context: context,
+                builder: (context) {
+                  return StatefulBuilder(
+                    builder: (context, setFilterState) {
+                      return SafeArea(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 10),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  TextButton(
+                                    onPressed: () {
+                                      setFilterState(() {
+                                        temp
+                                          ..clear()
+                                          ..addAll(allSubs);
+                                      });
+                                    },
+                                    child: const Text('Select all'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () {
+                                      setFilterState(temp.clear);
+                                    },
+                                    child: const Text('Clear all'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Divider(height: 1),
+                            SizedBox(
+                              height: math.min(360, allSubs.length * 56).toDouble(),
+                              child: ListView(
+                                children: [
+                                  for (final sub in allSubs)
+                                    CheckboxListTile(
+                                      value: temp.contains(sub),
+                                      title: Text(sub),
+                                      onChanged: (_) {
+                                        setFilterState(() {
+                                          if (temp.contains(sub)) {
+                                            temp.remove(sub);
+                                          } else {
+                                            temp.add(sub);
+                                          }
+                                        });
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  setSheetState(() {
+                                    if (temp.length == allSubs.length || temp.isEmpty) {
+                                      filter = <String>{};
+                                    } else {
+                                      filter = Set<String>.from(temp);
+                                    }
+                                  });
+                                },
+                                child: const Text('Apply filters'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              );
+            }
+
+            return SafeArea(
+              child: FractionallySizedBox(
+                heightFactor: 0.95,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    top: 14,
+                    bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              category,
+                              style: Fx.title.copyWith(fontSize: 20),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.sort_rounded),
+                            tooltip: 'Sort',
+                            onPressed: _pickSort,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.filter_alt_outlined),
+                            tooltip: 'Filter',
+                            onPressed: _pickFilters,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Total for $monthLabel: ${INR.f(monthTotal)}',
+                        style: Fx.label.copyWith(color: Fx.text.withOpacity(.75)),
+                      ),
+                      const SizedBox(height: 8),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final m in monthDates)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: ChoiceChip(
+                                  label: Text(DateFormat('MMM').format(m)),
+                                  selected: m.year == selected.year &&
+                                      m.month == selected.month,
+                                  onSelected: (_) {
+                                    setSheetState(() {
+                                      selected = m;
+                                      _selectedCategoryMonth = m;
+                                      filter = <String>{};
+                                    });
+                                    setState(() => _selectedCategoryMonth = m);
+                                  },
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: visible.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No subcategories for this month with current filters.',
+                                  style: Fx.label.copyWith(
+                                      color: Fx.text.withOpacity(.7)),
+                                ),
+                              )
+                            : ListView.separated(
+                                itemBuilder: (_, index) {
+                                  final bucket = visible[index];
+                                  final start =
+                                      DateTime(selected.year, selected.month, 1);
+                                  final end =
+                                      DateTime(selected.year, selected.month + 1, 1);
+                                  final range = DateTimeRange(
+                                      start: start, end: end);
+
+                                  return ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    title: Text(
+                                      bucket.name,
+                                      style: Fx.label
+                                          .copyWith(fontWeight: FontWeight.w600),
+                                    ),
+                                    subtitle: Text(
+                                      '${bucket.txCount} tx',
+                                      style: Fx.label
+                                          .copyWith(color: Fx.text.withOpacity(.7)),
+                                    ),
+                                    trailing: Text(
+                                      INR.f(bucket.amount),
+                                      style: Fx.number.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    onTap: () {
+                                      final matches = _applyBankFiltersToExpenses(
+                                        _allExp,
+                                      ).where((e) {
+                                        return !e.date.isBefore(start) &&
+                                            e.date.isBefore(end) &&
+                                            _normalizeMainCategory(
+                                                  AnalyticsAgg
+                                                      .resolveExpenseCategory(e),
+                                                ) ==
+                                                category &&
+                                            _resolveExpenseSubcategory(e) ==
+                                                bucket.name;
+                                      }).toList();
+
+                                      _openTxDrilldown(
+                                        title:
+                                            '$category • ${bucket.name} • $monthLabel · ${INR.f(bucket.amount)}',
+                                        exp: matches,
+                                        inc: const [],
+                                      );
+                                    },
+                                  );
+                                },
+                                separatorBuilder: (_, __) => const Divider(height: 1),
+                                itemCount: visible.length,
+                              ),
+                      ),
+                    ],
+                  ),
                 ),
-            ],
-            height: 220,
-            centerLabel: expense ? 'Spent' : 'Received',
-            showCenterTotal: true,
-            onSliceTap: (_, slice) => _openCategoryDrilldown(
-              expense: expense,
-              category: slice.label,
-              total: data[slice.label] ?? 0,
-            ),
-          ),
+              ),
+            );
+          },
         );
-
-    return GlassCard(
-      radius: Fx.r24,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionHeader(title, Icons.pie_chart_rounded),
-          const SizedBox(height: 8),
-          RepaintBoundary(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              child: hasData ? _chart() : _emptyCard(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (hasData) _categoryChips(expense: expense),
-        ],
-      ),
+      },
     );
   }
 
@@ -576,8 +1123,135 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
+  Widget _scopeFiltersRow(List<_CardGroup> cardGroups) {
+    if (_scope == SpendScope.all) {
+      final banks = <String>{
+        for (final group in cardGroups) group.bank.toUpperCase(),
+      }.toList()
+        ..sort();
+
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ChoiceChip(
+                label: const Text('All accounts'),
+                selected: _bankFilter == null && !_showFriendsOnlyInAll,
+                onSelected: (_) {
+                  setState(() {
+                    _bankFilter = null;
+                    _last4Filter = null;
+                    _showFriendsOnlyInAll = false;
+                    _invalidateAggCache();
+                  });
+                },
+              ),
+            ),
+            for (final bank in banks)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: ChoiceChip(
+                  label: Text(_formatBankLabel(bank)),
+                  selected: _bankFilter == bank.toUpperCase(),
+                  onSelected: (_) {
+                    setState(() {
+                      _bankFilter = bank.toUpperCase();
+                      _last4Filter = null;
+                      _showFriendsOnlyInAll = false;
+                      _invalidateAggCache();
+                    });
+                  },
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ChoiceChip(
+                label: const Text('Friends'),
+                selected: _showFriendsOnlyInAll,
+                onSelected: (_) {
+                  setState(() {
+                    _showFriendsOnlyInAll = true;
+                    _bankFilter = null;
+                    _last4Filter = null;
+                    _invalidateAggCache();
+                  });
+                },
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    const options = <String>['All', 'UPI', 'Debitcard', 'Others'];
+
+    return Row(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final opt in options)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(opt),
+                      selected: _instrumentFilter == opt,
+                      onSelected: (_) {
+                        if (_instrumentFilter == opt) return;
+                        setState(() {
+                          _instrumentFilter = opt;
+                          _invalidateAggCache();
+                        });
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Filters',
+          onPressed: _openFiltersScreen,
+          icon: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Icon(Icons.filter_alt_rounded),
+              if (_hasActiveFilters)
+                Positioned(
+                  right: -2,
+                  top: -2,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   List<ExpenseItem> _applyBankFiltersToExpenses(List<ExpenseItem> list) {
     return list.where((e) {
+      final normInstrument = _normInstrument(e.instrument).toUpperCase();
+      final bool isCreditCard = normInstrument == 'CREDIT CARD';
+      final bool hasFriends = e.friendIds.isNotEmpty;
+
+      if (_scope == SpendScope.savingsAccounts && isCreditCard) return false;
+      if (_scope == SpendScope.creditCards && !isCreditCard) return false;
+      if (_scope == SpendScope.all && _showFriendsOnlyInAll && !hasFriends) {
+        return false;
+      }
+
       if (_bankFilter != null &&
           (e.issuerBank ?? '').toUpperCase() != _bankFilter) {
         return false;
@@ -587,6 +1261,46 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         if (l4.isEmpty || !l4.endsWith(_last4Filter!)) {
           return false;
         }
+      }
+      if (_selectedBanks.isNotEmpty) {
+        final normalized = _normalizeBank(e.issuerBank);
+        final last4 = (e.cardLast4 ?? '').trim();
+        bool bankMatch = false;
+        for (final bank in _selectedBanks) {
+          final parts = bank.split('|');
+          final bankPart = parts.first.trim();
+          final cardPart = parts.length > 1 ? parts[1].trim() : '';
+          if (bankPart.isNotEmpty && normalized != bankPart) continue;
+          if (cardPart.isNotEmpty && !last4.endsWith(cardPart)) continue;
+          bankMatch = true;
+          break;
+        }
+        if (!bankMatch) return false;
+      }
+      if (_selectedCategories.isNotEmpty) {
+        final cat = _normalizeMainCategory(
+          AnalyticsAgg.resolveExpenseCategory(e),
+        );
+        if (!_selectedCategories.contains(cat)) return false;
+      }
+      if (_selectedMerchants.isNotEmpty) {
+        final merch =
+            (e.counterparty ?? e.upiVpa ?? e.label ?? '').trim().toUpperCase();
+        if (merch.isEmpty || !_selectedMerchants.contains(merch)) return false;
+      }
+      if (_friendFilterPhones.isNotEmpty) {
+        final ids = e.friendIds.toSet();
+        if (ids.isEmpty || ids.intersection(_friendFilterPhones).isEmpty) {
+          return false;
+        }
+      }
+      if (_groupFilterIds.isNotEmpty) {
+        final gid = (e.groupId ?? '').trim();
+        if (gid.isEmpty || !_groupFilterIds.contains(gid)) return false;
+      }
+      // NEW: transaction type / instrument filter
+      if (!_matchesInstrumentFilter(e.instrument)) {
+        return false;
       }
       return true;
     }).toList();
@@ -599,10 +1313,33 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         return false;
       }
       if (_last4Filter != null) {
-        final String l4 = '';
-        if (l4.isEmpty || !l4.endsWith(_last4Filter!)) {
-          return false;
+        return false; // incomes don't have cardLast4 currently
+      }
+      if (_selectedBanks.isNotEmpty) {
+        final normalized = _normalizeBank(i.issuerBank);
+        bool bankMatch = false;
+        for (final bank in _selectedBanks) {
+          final parts = bank.split('|');
+          final bankPart = parts.first.trim();
+          if (bankPart.isEmpty || normalized == bankPart) {
+            bankMatch = true;
+            break;
+          }
         }
+        if (!bankMatch) return false;
+      }
+      if (_selectedMerchants.isNotEmpty) {
+        final merch =
+            (i.counterparty ?? i.label ?? i.source ?? '').trim().toUpperCase();
+        if (merch.isEmpty || !_selectedMerchants.contains(merch)) return false;
+      }
+      if (_selectedCategories.isNotEmpty) {
+        final cat = AnalyticsAgg.resolveIncomeCategory(i);
+        if (!_selectedCategories.contains(cat)) return false;
+      }
+      // NEW: transaction type / instrument filter
+      if (!_matchesInstrumentFilter(i.instrument)) {
+        return false;
       }
       return true;
     }).toList();
@@ -658,17 +1395,484 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return raw?.trim().isEmpty == true ? 'Account' : (raw ?? '').trim();
   }
 
-  Map<String, double> _summaryFor(
-      List<ExpenseItem> expenses, List<IncomeItem> incomes) {
-    final debit = expenses.fold<double>(0, (sum, e) => sum + e.amount);
-    final credit = incomes.fold<double>(0, (sum, i) => sum + i.amount);
-    return {'credit': credit, 'debit': debit, 'net': credit - debit};
+  /// Map any legacy/old category label into one of our 10 main
+  /// categories: Fund Transfers, Payments, Shopping, Travel, Food,
+  /// Entertainment, Others, Healthcare, Education, Investments.
+  String _normalizeMainCategory(String raw) {
+    final key = raw.toLowerCase().trim();
+
+    bool hasAny(List<String> tokens) {
+      for (final t in tokens) {
+        if (key.contains(t)) return true;
+      }
+      return false;
+    }
+
+    // 1) Fund Transfers
+    if (hasAny([
+      'fund transfer',
+      'fund transfers',
+      'transfer',
+      'p2p',
+      'p2m',
+      'p2a',
+      'self transfer',
+      'remittance',
+      'cash withdrawal',
+      'cash withdraw',
+      'atm withdraw',
+    ])) {
+      return 'Fund Transfers';
+    }
+
+    // 2) Payments (loans, bills, recharges, fuel, rent, wallet, etc.)
+    if (hasAny([
+      'emi',
+      'loan',
+      'bill',
+      'utility',
+      'electric',
+      'electricity',
+      'water',
+      'gas',
+      'dth',
+      'recharge',
+      'mobile',
+      'postpaid',
+      'prepaid',
+      'fuel',
+      'petrol',
+      'diesel',
+      'wallet',
+      'rent',
+      'rental',
+      'real estate',
+      'payment',
+      'paytm recharge',
+      'phonepe recharge',
+    ])) {
+      return 'Payments';
+    }
+
+    // 3) Shopping (groceries, ecommerce, apparel, personal care, etc.)
+    if (hasAny([
+      'grocery',
+      'groceries',
+      'supermarket',
+      'mart',
+      'ecom',
+      'e-commerce',
+      'amazon',
+      'flipkart',
+      'myntra',
+      'nykaa',
+      'shop',
+      'shopping',
+      'fashion',
+      'apparel',
+      'clothes',
+      'electronics',
+      'mobile store',
+      'personal care',
+      'beauty',
+      'fitness',
+      'gym',
+      'gift',
+      'gifting',
+      'jewell',
+      'jewel',
+      'stationery',
+      'books',
+    ])) {
+      return 'Shopping';
+    }
+
+    // 4) Travel (flights, trains, cabs, hotels, forex, etc.)
+    if (hasAny([
+      'travel',
+      'trip',
+      'tour',
+      'holiday',
+      'flight',
+      'airline',
+      'air india',
+      'indigo',
+      'spicejet',
+      'vistara',
+      'rail',
+      'train',
+      'irctc',
+      'metro',
+      'bus',
+      'cab',
+      'taxi',
+      'uber',
+      'ola',
+      'rapido',
+      'hotel',
+      'stay',
+      'accommodation',
+      'resort',
+      'car rental',
+      'bike rental',
+      'forex',
+    ])) {
+      return 'Travel';
+    }
+
+    // 5) Food (restaurants, delivery, alcohol)
+    if (hasAny([
+      'food',
+      'restaurant',
+      'restro',
+      'cafe',
+      'coffee',
+      'swiggy',
+      'zomato',
+      'dining',
+      'hotel food',
+      'breakfast',
+      'lunch',
+      'dinner',
+      'bar',
+      'pub',
+      'alcohol',
+      'liquor',
+    ])) {
+      return 'Food';
+    }
+
+    // 6) Entertainment (OTT, movies, music, gaming)
+    if (hasAny([
+      'entertain',
+      'movie',
+      'cinema',
+      'pvr',
+      'inox',
+      'netflix',
+      'prime video',
+      'hotstar',
+      'sony liv',
+      'zee5',
+      'ott',
+      'spotify',
+      'wynk',
+      'music',
+      'gaming',
+      'game',
+      'playstation',
+      'xbox',
+    ])) {
+      return 'Entertainment';
+    }
+
+    // 8) Healthcare
+    if (hasAny([
+      'health',
+      'hospital',
+      'clinic',
+      'doctor',
+      'dentist',
+      'pharma',
+      'pharmacy',
+      'chemist',
+      'medicine',
+      'medical',
+      'lab',
+      'diagnostic',
+    ])) {
+      return 'Healthcare';
+    }
+
+    // 9) Education
+    if (hasAny([
+      'educat',
+      'school',
+      'college',
+      'university',
+      'tuition',
+      'coaching',
+      'course',
+      'udemy',
+      'coursera',
+      'byju',
+      'unacademy',
+      'fees',
+    ])) {
+      return 'Education';
+    }
+
+    // 10) Investments (mutual funds, stocks, fds, etc.)
+    if (hasAny([
+      'invest',
+      'mf',
+      'mutual fund',
+      'sip',
+      'stock',
+      'shares',
+      'equity',
+      'demat',
+      'broker',
+      'zerodha',
+      'groww',
+      'angel',
+      'upstox',
+      'fd',
+      'fixed deposit',
+      'rd',
+      'recurring deposit',
+      'ppf',
+      'nps',
+      'insurance premium',
+      'insurance',
+      'lic',
+    ])) {
+      return 'Investments';
+    }
+
+    // 7) Others (bank charges, govt, tax, misc)
+    if (hasAny([
+      'charge',
+      'fee',
+      'penalty',
+      'tax',
+      'tds',
+      'gst',
+      'govt',
+      'government',
+      'stamp duty',
+      'service charge',
+      'cheque',
+      'bank',
+    ])) {
+      return 'Others';
+    }
+
+    // Fallback: anything unknown becomes "Others".
+    return 'Others';
+  }
+
+  IconData _iconForCategory(String category) {
+    final c = category.toLowerCase();
+    if (c.contains('fund transfer')) return Icons.swap_horiz_rounded;
+    if (c.contains('payment')) return Icons.receipt_long_rounded;
+    if (c.contains('shopping')) return Icons.shopping_bag_rounded;
+    if (c.contains('travel')) return Icons.flight_takeoff_rounded;
+    if (c.contains('food')) return Icons.restaurant_rounded;
+    if (c.contains('entertainment')) return Icons.movie_filter_rounded;
+    if (c.contains('health')) return Icons.health_and_safety_rounded;
+    if (c.contains('educat')) return Icons.school_rounded;
+    if (c.contains('invest')) return Icons.trending_up_rounded;
+    if (c.contains('other')) return Icons.category_rounded;
+    return Icons.category_rounded;
+  }
+
+  bool _matchesInstrumentFilter(String? rawInstrument) {
+    if (_instrumentFilter == 'All') return true;
+
+    final norm = _normInstrument(rawInstrument).toUpperCase();
+
+    switch (_instrumentFilter) {
+      case 'UPI':
+        return norm == 'UPI';
+      case 'Debit Card':
+      case 'Debitcard':
+        return norm == 'DEBIT CARD';
+      case 'Credit Card':
+        return norm == 'CREDIT CARD';
+      case 'NetBanking':
+        return norm == 'NETBANKING';
+      case 'IMPS':
+        return norm == 'IMPS';
+      case 'NEFT':
+        return norm == 'NEFT';
+      case 'RTGS':
+        return norm == 'RTGS';
+      case 'ATM/POS':
+        return norm == 'ATM' || norm == 'POS';
+      case 'Others':
+        return norm != 'UPI' &&
+            norm != 'DEBIT CARD' &&
+            norm != 'CREDIT CARD' &&
+            norm != 'NETBANKING' &&
+            norm != 'IMPS' &&
+            norm != 'NEFT' &&
+            norm != 'RTGS' &&
+            norm != 'ATM' &&
+            norm != 'POS';
+      default:
+        return true;
+    }
+  }
+
+  /// Builds expense totals for the last [monthCount] months (including current month),
+  /// after applying the current bank/card filters.
+  /// Oldest month comes first in the returned list.
+  List<_MonthSpend> _buildLastMonthSpends({int monthCount = 12}) {
+    if (monthCount <= 0) return <_MonthSpend>[];
+
+    final now = DateTime.now();
+
+    // Apply only bank/card filters here; we want full history by month,
+    // not limited by the current _range.
+    final baseExp = _applyBankFiltersToExpenses(_allExp);
+
+    final List<_MonthSpend> out = <_MonthSpend>[];
+    for (int i = monthCount - 1; i >= 0; i--) {
+      final monthDate = DateTime(now.year, now.month - i, 1);
+      final start = DateTime(monthDate.year, monthDate.month, 1);
+      final end = DateTime(monthDate.year, monthDate.month + 1, 1);
+
+      double total = 0;
+      for (final e in baseExp) {
+        if (!e.date.isBefore(start) && e.date.isBefore(end)) {
+          total += e.amount;
+        }
+      }
+
+      out.add(_MonthSpend(monthDate.year, monthDate.month, total));
+    }
+
+    return out;
+  }
+
+  /// Convenience labels for month buckets, e.g. ["Dec", "Jan", "Feb", ...].
+  List<String> _labelsForMonthSpends(List<_MonthSpend> buckets) {
+    final fmt = DateFormat('MMM');
+    return buckets
+        .map((b) => fmt.format(DateTime(b.year, b.month, 1)))
+        .toList();
+  }
+
+  List<_MonthlyCategoryStack> _buildMonthlyCategoryStacks(int monthCount) {
+    if (monthCount <= 0) return const [];
+
+    final now = DateTime.now();
+    final base = _applyBankFiltersToExpenses(_allExp);
+
+    final List<_MonthlyCategoryStack> stacks = <_MonthlyCategoryStack>[];
+    for (int i = monthCount - 1; i >= 0; i--) {
+      final monthDate = DateTime(now.year, now.month - i, 1);
+      final start = DateTime(monthDate.year, monthDate.month, 1);
+      final end = DateTime(monthDate.year, monthDate.month + 1, 1);
+
+      final totals = <String, double>{};
+      for (final e in base) {
+        if (!e.date.isBefore(start) && e.date.isBefore(end)) {
+          final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+          final cat = _normalizeMainCategory(legacy);
+          totals[cat] = (totals[cat] ?? 0) + e.amount;
+        }
+      }
+
+      final segments = totals.entries
+          .map((entry) => _CategoryStackSegment(entry.key, entry.value))
+          .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+      stacks.add(_MonthlyCategoryStack(monthDate.year, monthDate.month, segments));
+    }
+
+    return stacks;
+  }
+
+  /// Category totals for a specific calendar month, after applying
+  /// current bank/card + instrument filters.
+  Map<String, double> _categoryTotalsForMonth(DateTime month) {
+    final key = 'expByCatMonth-${month.year}-${month.month}';
+    return _memo(key, () {
+      final base = _applyBankFiltersToExpenses(_allExp);
+      final start = DateTime(month.year, month.month, 1);
+      final end = DateTime(month.year, month.month + 1, 1);
+
+      final out = <String, double>{};
+      for (final e in base) {
+        if (!e.date.isBefore(start) && e.date.isBefore(end)) {
+          final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+          final cat = _normalizeMainCategory(legacy);
+          out[cat] = (out[cat] ?? 0) + e.amount;
+        }
+      }
+
+      final entries = out.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      return Map<String, double>.fromEntries(entries);
+    });
+  }
+
+  String _resolveExpenseSubcategory(ExpenseItem e) {
+    try {
+      final val = (e as dynamic).subcategory as String?;
+      if (val != null && val.trim().isNotEmpty) return val.trim();
+    } catch (_) {}
+
+    try {
+      final map = e.toJson();
+      final val = map['subcategory'];
+      if (val is String && val.trim().isNotEmpty) return val.trim();
+    } catch (_) {}
+
+    final metaSub = e.brainMeta?['subcategory'];
+    if (metaSub is String && metaSub.trim().isNotEmpty) return metaSub.trim();
+
+    return 'Uncategorized';
+  }
+
+  /// Subcategory buckets for a given month and main category, respecting
+  /// bank/card + instrument filters.
+  List<_SubcategoryBucket> _subcategoryBucketsForMonthAndCategory(
+    DateTime month,
+    String category,
+  ) {
+    final start = DateTime(month.year, month.month, 1);
+    final end = DateTime(month.year, month.month + 1, 1);
+
+    final filtered = _applyBankFiltersToExpenses(_allExp).where((e) {
+      final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+      if (_normalizeMainCategory(legacy) != category) return false;
+      return !e.date.isBefore(start) && e.date.isBefore(end);
+    });
+
+    final map = <String, _SubcategoryBucket>{};
+    for (final e in filtered) {
+      final sub = _resolveExpenseSubcategory(e);
+      final existing = map[sub];
+      if (existing == null) {
+        map[sub] = _SubcategoryBucket(name: sub, amount: e.amount, txCount: 1);
+      } else {
+        map[sub] = _SubcategoryBucket(
+          name: sub,
+          amount: existing.amount + e.amount,
+          txCount: existing.txCount + 1,
+        );
+      }
+    }
+
+    final buckets = map.values.toList()
+      ..sort((a, b) => b.amount.compareTo(a.amount));
+    return buckets;
   }
 
   List<_CardGroup> _cardGroupsForPeriod(
     List<ExpenseItem> exp,
     List<IncomeItem> inc,
+    DateTimeRange range,
   ) {
+    final cacheKey = [
+      'cardGroups',
+      _aggRev,
+      _rev,
+      range.start.millisecondsSinceEpoch,
+      range.end.millisecondsSinceEpoch,
+      _bankFilter,
+      _last4Filter,
+      _instrumentFilter,
+      exp.length,
+      inc.length,
+    ].join('|');
+    final cached = _heavyAggCache[cacheKey];
+    if (cached is List<_CardGroup>) return cached;
+
     final map = <String, _CardGroup>{};
 
     void addTxn({
@@ -749,6 +1953,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       if (diff != 0) return diff;
       return b.txCount.compareTo(a.txCount);
     });
+    _heavyAggCache[cacheKey] = groups;
     return groups;
   }
 
@@ -763,10 +1968,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     try {
       _allExp = await _expenseSvc.getExpenses(widget.userPhone);
       _allInc = await _incomeSvc.getIncomes(widget.userPhone);
+      // Analytics uses only last ~18 months of data for performance.
+      final now = DateTime.now();
+      final cutoff = DateTime(now.year, now.month - 18, 1);
+      _allExp =
+          _allExp.where((e) => !e.date.isBefore(cutoff)).toList();
+      _allInc =
+          _allInc.where((i) => !i.date.isBefore(cutoff)).toList();
       _rev++;
-      _seriesCache.clear();
-      _rollCache.clear();
       _invalidateAggCache();
+
+      // NEW: default selected month for category list (current month)
+      if (_selectedCategoryMonth == null) {
+        _selectedCategoryMonth = DateTime(now.year, now.month, 1);
+      }
     } catch (_) {}
     if (!mounted) return;
     setState(() => _loading = false);
@@ -810,6 +2025,28 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
+  String _activePeriodLabel(DateTimeRange range) {
+    switch (_periodToken) {
+      case 'D':
+        return 'Today';
+      case 'W':
+        return 'This week';
+      case 'M':
+        return 'This month';
+      case 'Y':
+        return 'This year';
+      case 'All Time':
+        return 'All time';
+      default:
+        break;
+    }
+
+    final start = DateFormat('d MMM').format(range.start);
+    final end = DateFormat('d MMM')
+        .format(range.end.subtract(const Duration(days: 1)));
+    return '$start - $end';
+  }
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
@@ -817,43 +2054,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     final activeRange = _range ?? _rangeOrDefault();
 
-    final expPeriod = _allExp
+    final expPeriodRaw = _allExp
         .where((e) => _inRange(e.date, activeRange))
         .toList()
       ..sort((a, b) => b.date.compareTo(a.date));
-    final incPeriod = _allInc
+    final incPeriodRaw = _allInc
         .where((i) => _inRange(i.date, activeRange))
         .toList()
       ..sort((a, b) => b.date.compareTo(a.date));
-    final cardGroups = _cardGroupsForPeriod(expPeriod, incPeriod);
+    final exp = _applyBankFiltersToExpenses(expPeriodRaw);
+    final inc = _applyBankFiltersToIncomes(incPeriodRaw);
 
-    var exp = expPeriod;
-    var inc = incPeriod;
-
-    exp = _applyBankFiltersToExpenses(exp);
-    inc = _applyBankFiltersToIncomes(inc);
-
-    final txSummary = _summaryFor(exp, inc);
-    final totalExp = txSummary['debit'] ?? 0.0;
-    final totalInc = txSummary['credit'] ?? 0.0;
-    final savings = txSummary['net'] ?? 0.0;
-
-    final seriesKey = '$_rev|$_period|series|${_custom?.start}-${_custom?.end}';
-    final series = _seriesCache[seriesKey] ??=
-        AnalyticsAgg.amountSeries(_period, exp, inc, now, custom: _custom);
-
-    // Robust category rollups (smart resolvers)
-    final merchKey = '$_rev|$_period|merch|${_custom?.start}-${_custom?.end}';
-    final byMerch = _rollCache[merchKey] ??= AnalyticsAgg.byMerchant(exp);
-
-    // Sparkline series reacts to the current filter/period
-    final spark = _sparkForPeriod(_period, exp, now, custom: _custom);
-    final sparkLabels =
-        _sparkLabelsForPeriod(_period, spark, now, custom: _custom);
-
-    // Calendar heatmap uses current month overview (tap -> set custom day)
-    final calData = _monthExpenseMap(
-        (_bankFilter == null && _last4Filter == null) ? _allExp : exp, now);
+    final hasTransactions = exp.isNotEmpty || inc.isNotEmpty;
+    final cardGroups = hasTransactions
+        ? _cardGroupsForPeriod(exp, inc, activeRange)
+        : const <_CardGroup>[];
 
     final bankExpansionTiles = <Widget>[];
     if (cardGroups.isNotEmpty) {
@@ -880,13 +2095,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             onTap: () => _toggleBankSelection(bank),
             leading: _bankLogo(bank, size: 32),
             minLeadingWidth: 40,
-            title: Text('All ${_formatBankLabel(bank)}'),
+            title: Text(
+              'All ${_formatBankLabel(bank)}',
+              style: Fx.label.copyWith(fontWeight: FontWeight.w700),
+            ),
             trailing: Text(
               INR.f(bankNet),
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: bankColor,
-              ),
+              style:
+                  Fx.number.copyWith(color: bankColor, fontWeight: FontWeight.w800),
             ),
           ),
         ];
@@ -922,14 +2138,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 size: 32,
               ),
               minLeadingWidth: 40,
-              title: Text(account.instrument),
-              subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+              title: Text(
+                account.instrument,
+                style: Fx.label.copyWith(fontWeight: FontWeight.w600),
+              ),
+              subtitle: subtitle.isNotEmpty
+                  ? Text(subtitle, style: Fx.label.copyWith(fontSize: 12))
+                  : null,
               trailing: Text(
                 INR.f(account.netOutflow),
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: accountColor,
-                ),
+                style: Fx.number
+                    .copyWith(color: accountColor, fontWeight: FontWeight.w800),
               ),
             ),
           );
@@ -947,15 +2166,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 Expanded(
                   child: Text(
                     _formatBankLabel(bank),
-                    style: const TextStyle(fontWeight: FontWeight.w800),
+                    style:
+                        Fx.label.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
                   ),
                 ),
                 Text(
                   INR.f(bankNet),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: bankColor,
-                  ),
+                  style: Fx.number
+                      .copyWith(color: bankColor, fontWeight: FontWeight.w800),
                 ),
               ],
             ),
@@ -967,10 +2185,35 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Analytics'),
+        title: const Text('Your Spends'),
         elevation: 0,
         backgroundColor: Colors.transparent,
         foregroundColor: Fx.mintDark,
+        actions: [
+          IconButton(
+            tooltip: 'Filters',
+            onPressed: _openFiltersScreen,
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(Icons.filter_alt_rounded),
+                if (_hasActiveFilters)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
       body: Stack(
         children: [
@@ -983,115 +2226,113 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     controller: _scrollCtrl,
                     padding: EdgeInsets.fromLTRB(16, 12, 16, bottomPadding),
                     children: [
+                      Text(
+                        'Your Spends',
+                        style: Fx.title.copyWith(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          ChoiceChip(
+                            label: const Text('All'),
+                            selected: _scope == SpendScope.all,
+                            onSelected: (_) => _changeScope(SpendScope.all),
+                          ),
+                          ChoiceChip(
+                            label: const Text('Savings accounts'),
+                            selected: _scope == SpendScope.savingsAccounts,
+                            onSelected: (_) =>
+                                _changeScope(SpendScope.savingsAccounts),
+                          ),
+                          ChoiceChip(
+                            label: const Text('Credit cards'),
+                            selected: _scope == SpendScope.creditCards,
+                            onSelected: (_) =>
+                                _changeScope(SpendScope.creditCards),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
                       _periodFilterRow(),
                       if (_bankFilter != null) ...[
                         const SizedBox(height: 8),
                         Align(
                           alignment: Alignment.centerLeft,
-                          child: InputChip(
-                            avatar: const Icon(
-                              Icons.filter_alt,
-                              size: 16,
-                              color: Colors.teal,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              // screen width minus the 16 px left/right list padding
+                              maxWidth:
+                                  MediaQuery.of(context).size.width - 32,
                             ),
-                            label: Text(
-                              _formatBankLabel(_bankFilter!) +
-                                  (_last4Filter != null
-                                      ? ' • ••${_last4Filter!}'
-                                      : ''),
-                              overflow: TextOverflow.ellipsis,
+                            child: InputChip(
+                              avatar: const Icon(
+                                Icons.filter_alt,
+                                size: 16,
+                                color: Colors.teal,
+                              ),
+                              label: Text(
+                                _formatBankLabel(_bankFilter!) +
+                                    (_last4Filter != null
+                                        ? ' • ••${_last4Filter!}'
+                                        : ''),
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              onPressed: () {}, // no-op
+                              onDeleted: () => setState(() {
+                                _bankFilter = null;
+                                _last4Filter = null;
+                                _invalidateAggCache();
+                              }),
+                              deleteIcon: const Icon(Icons.close, size: 16),
+                              backgroundColor:
+                                  Colors.teal.withOpacity(.10),
+                              shape: const StadiumBorder(),
+                              selected: true,
                             ),
-                            onPressed: () {}, // no-op
-                            onDeleted: () => setState(() {
-                              _bankFilter = null;
-                              _last4Filter = null;
-                              _invalidateAggCache();
-                            }),
-                            deleteIcon: const Icon(Icons.close, size: 16),
-                            backgroundColor: Colors.teal.withOpacity(.10),
-                            shape: const StadiumBorder(),
-                            selected: true,
                           ),
                         ),
                       ],
                       const SizedBox(height: 12),
+                      _scopeFiltersRow(cardGroups),
 
-                      // ===== OVERVIEW (Totals + counts + sparkline) =====
-                      _summaryCard(
-                        income: totalInc,
-                        expense: totalExp,
-                        savings: savings,
-                        txCount: exp.length + inc.length,
-                        expCount: exp.length,
-                        incCount: inc.length,
-                        spark: spark,
-                        onTapSpark: () => _showTrendPopup(
-                          spark,
-                          title: _period == Period.custom
-                              ? 'Trend • Custom'
-                              : 'Trend • ${_period.name.toUpperCase()}',
-                          labels: sparkLabels,
-                        ),
-                      ),
+                      const SizedBox(height: 12),
 
-                      // Small banner ad under Overview
+                      // NEW: Last X months spends card (Axis-style)
+                      _lastMonthsSpendsCard(),
+
+                      // Small banner ad
                       const SizedBox(height: 10),
                       _analyticsBannerCard(),
 
                       const SizedBox(height: 14),
 
-                      // ===== Calendar (tappable, shows amounts) =====
-                      GlassCard(
-                        radius: Fx.r24,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _sectionHeader('Calendar', Icons.calendar_month_rounded),
-                            const SizedBox(height: 8),
-                            _MiniCalendarHeatmap(
-                              month: DateTime(now.year, now.month, 1),
-                              amountsByDay: calData,
-                              onDayTap: (day, amt) {
-                                final date = DateTime(now.year, now.month, day);
-                                final start = DateTime(date.year, date.month, date.day);
-                                setState(() {
-                                  _period = Period.custom;
-                                  _custom = CustomRange(start, start);
-                                  _range = DateTimeRange(
-                                    start: start,
-                                    end: start.add(const Duration(days: 1)),
-                                  );
-                                  _invalidateAggCache();
-                                });
-                              },
-                              onDayLongPress: (day, amt) {
-                                final date = DateTime(now.year, now.month, day);
-                                final start = DateTime(date.year, date.month, date.day);
-                                final end = start.add(const Duration(days: 1));
-                                final rr = DateTimeRange(start: start, end: end);
-                                final expD = _allExp
-                                    .where((e) =>
-                                        !e.date.isBefore(rr.start) &&
-                                        e.date.isBefore(rr.end))
-                                    .toList();
-                                final incD = _allInc
-                                    .where((i) =>
-                                        !i.date.isBefore(rr.start) &&
-                                        i.date.isBefore(rr.end))
-                                    .toList();
-                                _openTxDrilldown(
-                                  title:
-                                      'Transactions • ${DateFormat('d MMM').format(date)}',
-                                  exp: expD,
-                                  inc: incD,
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
+                      // NEW: Monthly spends by category (with month selector)
+                      _monthlyCategoryListCard(),
 
                       const SizedBox(height: 14),
+
+                      if (!hasTransactions) ...[
+                        GlassCard(
+                          radius: Fx.r24,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 16),
+                            child: Text(
+                              'No transactions in this period with the current filters.',
+                              style: Fx.label
+                                  .copyWith(color: Fx.text.withOpacity(.7)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
 
                       if (bankExpansionTiles.isNotEmpty) ...[
                         GlassCard(
@@ -1111,31 +2352,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         ),
                         const SizedBox(height: 14),
                       ],
-
-                      // Expense by Category (donut + drill-down)
-                      _categorySection(expense: true),
-
-                      const SizedBox(height: 14),
-
-                      // Income by Category (donut + drill-down)
-                      _categorySection(expense: false),
-
-                      const SizedBox(height: 14),
-
-                      // Top Merchants (chips)
-                      GlassCard(
-                        radius: Fx.r24,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _sectionHeader('Top Merchants', Icons.store_rounded),
-                            const SizedBox(height: 8),
-                            ..._topMerchants(byMerch, exp),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 14),
 
                       // ===== Transactions (bottom) with filter chips =====
                       GlassCard(
@@ -1168,6 +2384,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                               showBillIcon: true,
                               onEdit: _handleEdit,
                               onDelete: _handleDelete,
+                              emptyBuilder: (context) =>
+                                  _analyticsNoTransactions(_txnFilter),
                             ),
                           ],
                         ),
@@ -1198,109 +2416,754 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ),
       );
 
-  // ---------- Section header ----------
-  Widget _sectionHeader(String title, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, color: Fx.mintDark),
-        const SizedBox(width: Fx.s8),
-        Text(title, style: Fx.title),
-      ],
-    );
-  }
+  Widget _analyticsNoTransactions(String filterLabel) {
+    final theme = Theme.of(context);
+    final label = filterLabel == 'All'
+        ? 'No transactions match this filter.'
+        : 'No ${filterLabel.toLowerCase()} transactions match this filter.';
 
-  // ---------- OVERVIEW card ----------
-  Widget _summaryCard({
-    required double income,
-    required double expense,
-    required double savings,
-    required int txCount,
-    required int expCount,
-    required int incCount,
-    required List<double> spark,
-    required VoidCallback onTapSpark,
-  }) {
-    return GlassCard(
-      radius: Fx.r24,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text('Overview', style: Fx.title),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: _statRow('Total Income', INR.f(income), Fx.good,
-                    Icons.south_west_rounded),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _statRow('Total Expense', INR.f(expense), Fx.bad,
-                    Icons.north_east_rounded),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(Icons.brightness_1_rounded, size: 10, color: Fx.warn),
-              const SizedBox(width: 6),
-              Text('Total Savings  ', style: Fx.label),
-              Text(INR.f(savings),
-                  style: Fx.number.copyWith(color: Fx.text)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Tx ${NumberFormat.decimalPattern().format(txCount)} '
-            '• Exp # ${NumberFormat.decimalPattern().format(expCount)} '
-            '• Inc # ${NumberFormat.decimalPattern().format(incCount)}',
-            style: Fx.label.copyWith(color: Fx.text.withOpacity(.85)),
-          ),
-          const SizedBox(height: 14),
-          GestureDetector(
-            onTap: onTapSpark,
-            behavior: HitTestBehavior.opaque,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  height: 66,
-                  child: _SparklineSimple(values: spark),
-                ),
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    'Tap graph to expand',
-                    style: Fx.label.copyWith(
-                      fontSize: 11,
-                      color: Fx.text.withOpacity(.75),
-                    ),
-                  ),
-                ),
-              ],
+          SizedBox(
+            height: 180,
+            child: Image.asset(
+              'assets/icons/no_transaction.png',
+              fit: BoxFit.contain,
             ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Nothing to show yet',
+            style:
+                theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(color: Colors.black54),
           ),
         ],
       ),
     );
   }
 
-  Widget _statRow(String label, String value, Color color, IconData icon) {
+  // ---------- Section header ----------
+  Widget _sectionHeader(String title, IconData icon) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        Icon(icon, color: Fx.mintDark),
+        const SizedBox(width: Fx.s8),
+        Text(title, style: Fx.title.copyWith(fontSize: 18)),
+      ],
+    );
+  }
+
+  // ---------- Monthly "Spends by Category" card ----------
+  Widget _monthlyCategoryListCard() {
+    final buckets = _buildLastMonthSpends(monthCount: 12);
+
+    if (buckets.isEmpty) {
+      // No history at all; show a soft empty card instead of nothing.
+      return GlassCard(
+        radius: Fx.r24,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+          child: Text(
+            'We’ll show your spends by category here once transactions are available.',
+            style: Fx.label.copyWith(color: Fx.text.withOpacity(.7)),
+          ),
+        ),
+      );
+    }
+
+    // Build list of month DateTimes from oldest -> newest.
+    final monthDates = <DateTime>[
+      for (final b in buckets) DateTime(b.year, b.month, 1),
+    ];
+
+    // Ensure selected month is valid; default to most recent if null/out of range.
+    DateTime selected =
+        _selectedCategoryMonth ?? monthDates.last; // latest in our buckets.
+    if (!monthDates.any(
+        (m) => m.year == selected.year && m.month == selected.month)) {
+      selected = monthDates.last;
+      _selectedCategoryMonth = selected;
+    }
+
+    final monthLabelFull = DateFormat('MMMM y').format(selected);
+    final monthShortFmt = DateFormat('MMM');
+
+    final byCat = _categoryTotalsForMonth(selected);
+    final entries = byCat.entries.toList();
+    final hasData =
+        entries.isNotEmpty && entries.any((e) => e.value.abs() > 0);
+    final monthTotal = entries.fold<double>(0, (sum, e) => sum + e.value);
+
+    return GlassCard(
+      radius: Fx.r24,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
             children: [
-              Text(label, style: Fx.label),
-              Text(value, style: Fx.number.copyWith(color: color)),
+              const Icon(Icons.category_rounded, color: Colors.teal),
+              const SizedBox(width: Fx.s8),
+              Expanded(
+                child: Text(
+                  'Spends by category',
+                  style: Fx.title.copyWith(fontSize: 18),
+                ),
+              ),
             ],
           ),
+          const SizedBox(height: 4),
+          Text(
+            '$monthLabelFull spends – ${INR.f(monthTotal)}',
+            style: Fx.label.copyWith(
+              fontWeight: FontWeight.w600,
+              color: Fx.text.withOpacity(.85),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 8),
+
+          // Month selector chips (last 12 months)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final m in monthDates)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(monthShortFmt.format(m)),
+                      selected:
+                          m.year == selected.year && m.month == selected.month,
+                      onSelected: (_) {
+                        setState(() {
+                          _selectedCategoryMonth = m;
+                        });
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          if (!hasData)
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
+              child: Text(
+                'No spends found for this month with the current filters.',
+                style: Fx.label.copyWith(color: Fx.text.withOpacity(.7)),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: entries.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, index) {
+                final entry = entries[index];
+                final cat = entry.key;
+                final amount = entry.value;
+
+                final start = DateTime(selected.year, selected.month, 1);
+                final end = DateTime(selected.year, selected.month + 1, 1);
+                final range = DateTimeRange(start: start, end: end);
+
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    _iconForCategory(cat),
+                    color: Fx.mintDark,
+                  ),
+                  title: Text(
+                    cat,
+                    style: Fx.label.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  trailing: Text(
+                    INR.f(amount),
+                    style: Fx.number.copyWith(fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => _openCategoryDetailForMonth(
+                    category: cat,
+                    month: selected,
+                  ),
+                  onLongPress: () => _openCategoryDrilldown(
+                    expense: true,
+                    category: cat,
+                    total: amount,
+                    overrideRange: range,
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _categoryInsightTile({
+    required String label,
+    required String description,
+    required double amount,
+    required Color accentColor,
+  }) {
+    final compact = NumberFormat.compactCurrency(
+      locale: 'en_IN',
+      symbol: '₹',
+      decimalDigits: 0,
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: accentColor.withOpacity(.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accentColor.withOpacity(.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              color: accentColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: Fx.label.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Fx.text.withOpacity(.95),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: Fx.label.copyWith(
+                    color: Fx.text.withOpacity(.85),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            compact.format(amount),
+            style: Fx.number.copyWith(
+              fontWeight: FontWeight.w700,
+              color: Fx.text.withOpacity(.95),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Compact Highest / Lowest spend tiles for the current period,
+  /// suitable for showing inside the "Your spends" hero card.
+  Widget _highestLowestForCurrentPeriodInline() {
+    final insights = _buildCategoryInsightsForCurrentRange();
+
+    if (insights.highestCategory == null &&
+        insights.lowestCategory == null) {
+      return const SizedBox.shrink();
+    }
+
+    final tiles = <Widget>[];
+
+    if (insights.highestCategory != null &&
+        insights.highestAmount > 0) {
+      tiles.add(
+        _categoryInsightTile(
+          label: 'Highest spend',
+          description:
+              'You’ve spent highest on ${insights.highestCategory} in this period.',
+          amount: insights.highestAmount,
+          accentColor: Fx.bad,
+        ),
+      );
+    }
+
+    if (insights.lowestCategory != null &&
+        insights.lowestAmount > 0 &&
+        insights.lowestCategory != insights.highestCategory) {
+      if (tiles.isNotEmpty) {
+        tiles.add(const SizedBox(height: 8));
+      }
+      tiles.add(
+        _categoryInsightTile(
+          label: 'Lowest spend',
+          description:
+              'You’ve spent lowest on ${insights.lowestCategory} in this period.',
+          amount: insights.lowestAmount,
+          accentColor: Fx.good,
+        ),
+      );
+    }
+
+    if (tiles.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: tiles,
+    );
+  }
+
+  // ---------- Last X months spends card (Axis-style hero) ----------
+  Widget _lastMonthsSpendsCard() {
+    // Decide how many months to show based on local window (this card only).
+    int monthCount;
+    String windowLabel;
+    switch (_spendWindow) {
+      case '6M':
+        monthCount = 6;
+        windowLabel = 'last 6 months';
+        break;
+      case '3M':
+        monthCount = 3;
+        windowLabel = 'last 3 months';
+        break;
+      case '1Y':
+      default:
+        monthCount = 12;
+        windowLabel = 'last 12 months';
+        break;
+    }
+
+    final buckets = _buildLastMonthSpends(monthCount: monthCount);
+    final labels = _labelsForMonthSpends(buckets);
+
+    final hasData =
+        buckets.isNotEmpty && buckets.any((b) => b.totalExpense > 0);
+
+    // Compute insights
+    double total = 0;
+    _MonthSpend? top;
+    for (final b in buckets) {
+      total += b.totalExpense;
+      if (top == null || b.totalExpense > top!.totalExpense) {
+        top = b;
+      }
+    }
+    final avg = monthCount > 0 ? total / monthCount : 0;
+
+    final compact = NumberFormat.compactCurrency(
+      locale: 'en_IN',
+      symbol: '₹',
+      decimalDigits: 0,
+    );
+    final fullFmt = NumberFormat.currency(
+      locale: 'en_IN',
+      symbol: '₹',
+      decimalDigits: 0,
+    );
+
+    String? topMonthLabel;
+    String? topAmountLabel;
+    if (hasData && top != null && top.totalExpense > 0) {
+      topMonthLabel =
+          DateFormat('MMMM').format(DateTime(top.year, top.month, 1));
+      topAmountLabel = fullFmt.format(top.totalExpense);
+    }
+
+    String? topInstrumentLabel;
+    if (buckets.isNotEmpty) {
+      final latest = buckets.last;
+      final start = DateTime(latest.year, latest.month, 1);
+      final end = DateTime(latest.year, latest.month + 1, 1);
+      final byInstrument = <String, double>{};
+      for (final e in _applyBankFiltersToExpenses(_allExp)) {
+        if (!e.date.isBefore(start) && e.date.isBefore(end)) {
+          final norm = _normInstrument(e.instrument).toUpperCase();
+          byInstrument[norm] = (byInstrument[norm] ?? 0) + e.amount;
+        }
+      }
+
+      String? maxInstrument;
+      double maxValue = 0;
+      byInstrument.forEach((key, value) {
+        if (maxInstrument == null || value > maxValue) {
+          maxInstrument = key;
+          maxValue = value;
+        }
+      });
+
+      String labelForInstrument(String key) {
+        switch (key) {
+          case 'UPI':
+            return 'UPI';
+          case 'DEBIT CARD':
+            return 'Debit Card';
+          case 'CREDIT CARD':
+            return 'Credit Card';
+          case 'NETBANKING':
+            return 'NetBanking';
+          case 'IMPS':
+            return 'IMPS';
+          case 'NEFT':
+            return 'NEFT';
+          case 'RTGS':
+            return 'RTGS';
+          case 'ATM':
+            return 'ATM';
+          case 'POS':
+            return 'POS';
+          default:
+            return 'Others';
+        }
+      }
+
+      if (maxInstrument != null && maxValue > 0) {
+        topInstrumentLabel = labelForInstrument(maxInstrument!);
+      }
+    }
+
+    Widget _chartBody() {
+      if (!hasData) {
+        return Container(
+          height: 160,
+          alignment: Alignment.center,
+          child: Text(
+            'No spends found for $windowLabel.',
+            style: Fx.label.copyWith(color: Fx.text.withOpacity(.7)),
+          ),
+        );
+      }
+
+      if (_lastMonthsView == 'Trend') {
+        return _monthlyTrendChart(buckets, labels);
+      }
+      final stacks = _buildMonthlyCategoryStacks(monthCount);
+      return _monthlyCategoryStackedChart(stacks, labels);
+    }
+
+    return GlassCard(
+      radius: Fx.r24,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header: icon + title on first line, chips on second line
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.show_chart_rounded, color: Colors.teal),
+                  const SizedBox(width: Fx.s8),
+                  Expanded(
+                    child: Text(
+                      'Your spends – last $monthCount months',
+                      style: Fx.title.copyWith(fontSize: 18),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 4,
+                children: [
+                  for (final w in const ['1Y', '6M', '3M'])
+                    ChoiceChip(
+                      label: Text(w),
+                      selected: _spendWindow == w,
+                      onSelected: (_) {
+                        if (_spendWindow == w) return;
+                        setState(() {
+                          _spendWindow = w;
+                        });
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            children: [
+              for (final view in const ['Trend', 'Categories'])
+                ChoiceChip(
+                  label: Text(view),
+                  selected: _lastMonthsView == view,
+                  onSelected: (_) {
+                    if (_lastMonthsView == view) return;
+                    setState(() {
+                      _lastMonthsView = view;
+                    });
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _chartBody(),
+          if (hasData) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Your average monthly spends in the $windowLabel is ${compact.format(avg)}.',
+              style: Fx.label.copyWith(
+                color: Fx.text.withOpacity(.9),
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (topMonthLabel != null && topAmountLabel != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'You spent most in $topMonthLabel with $topAmountLabel.',
+                style: Fx.label.copyWith(
+                  color: Fx.text.withOpacity(.9),
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            if (topInstrumentLabel != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'In the latest month, you spent most via $topInstrumentLabel.',
+                style: Fx.label.copyWith(
+                  color: Fx.text.withOpacity(.9),
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 10),
+            _highestLowestForCurrentPeriodInline(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _monthlyTrendChart(List<_MonthSpend> buckets, List<String> labels) {
+    const int yTicks = 4;
+    const double leftGutter = 52;
+    const double topPadding = 12;
+    const double bottomPadding = 32;
+
+    final series = buckets.map((b) => b.totalExpense).toList();
+    final scale = _trendAxisScale(series, yTicks);
+    final axisValues = List<double>.generate(
+      yTicks + 1,
+      (i) => (scale.maxY / yTicks) * i,
+    ).reversed.toList();
+
+    return SizedBox(
+      height: 220,
+      child: Stack(
+        children: [
+          Positioned(
+            left: leftGutter,
+            right: 0,
+            top: 0,
+            bottom: bottomPadding,
+            child: CustomPaint(
+              painter: _MonthlyTrendPainter(
+                series: series,
+                maxY: scale.maxY,
+                yTicks: yTicks,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: topPadding,
+            bottom: bottomPadding,
+            width: leftGutter - 8,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (final value in axisValues)
+                  Text(
+                    _formatTrendAxisValue(value, scale.tick),
+                    style: Fx.label.copyWith(
+                      fontSize: 10,
+                      color: Fx.text.withOpacity(.75),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: leftGutter,
+            right: 0,
+            bottom: 0,
+            height: bottomPadding,
+            child: _monthAxisLabels(labels),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _monthlyCategoryStackedChart(
+    List<_MonthlyCategoryStack> stacks,
+    List<String> labels,
+  ) {
+    const int yTicks = 4;
+    const double leftGutter = 52;
+    const double topPadding = 12;
+    const double bottomPadding = 32;
+
+    final totals = stacks
+        .map((s) => s.segments.fold<double>(0, (sum, seg) => sum + seg.value))
+        .toList();
+    final scale = _trendAxisScale(totals, yTicks);
+    final axisValues = List<double>.generate(
+      yTicks + 1,
+      (i) => (scale.maxY / yTicks) * i,
+    ).reversed.toList();
+
+    final categoryTotals = <String, double>{};
+    for (final stack in stacks) {
+      for (final seg in stack.segments) {
+        categoryTotals[seg.category] =
+            (categoryTotals[seg.category] ?? 0) + seg.value;
+      }
+    }
+    final legendEntries = categoryTotals.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 220,
+          child: Stack(
+            children: [
+              Positioned(
+                left: leftGutter,
+                right: 0,
+                top: 0,
+                bottom: bottomPadding,
+                child: CustomPaint(
+                  painter: _StackedMonthlyBarsPainter(
+                    stacks: stacks,
+                    maxY: scale.maxY,
+                    yTicks: yTicks,
+                    categoryColors: _categoryColors,
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 0,
+                top: topPadding,
+                bottom: bottomPadding,
+                width: leftGutter - 8,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (final value in axisValues)
+                      Text(
+                        _formatTrendAxisValue(value, scale.tick),
+                        style: Fx.label.copyWith(
+                          fontSize: 10,
+                          color: Fx.text.withOpacity(.75),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Positioned(
+                left: leftGutter,
+                right: 0,
+                bottom: 0,
+                height: bottomPadding,
+                child: _monthAxisLabels(labels),
+              ),
+            ],
+          ),
+        ),
+        if (legendEntries.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              for (final entry in legendEntries)
+                _categoryLegendChip(entry.key),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _monthAxisLabels(List<String> labels) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (labels.isEmpty) return const SizedBox.shrink();
+        final double slotWidth = constraints.maxWidth / labels.length;
+        return Row(
+          children: [
+            for (final label in labels)
+              SizedBox(
+                width: slotWidth,
+                child: Text(
+                  label.toUpperCase(),
+                  textAlign: TextAlign.center,
+                  style: Fx.label.copyWith(
+                    fontSize: 10,
+                    color: Fx.text.withOpacity(.75),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _categoryLegendChip(String category) {
+    final color = _categoryColors[category] ?? Colors.grey;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          category,
+          style: Fx.label.copyWith(color: Fx.text.withOpacity(.8)),
         ),
       ],
     );
@@ -1580,107 +3443,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     ).format(value);
   }
 
-  // ---------- Top merchants as compact chips (amount + tx count) ----------
-  List<Widget> _topMerchants(
-    Map<String, double> byMerch,
-    List<ExpenseItem> srcExp,
-  ) {
-    // Count transactions per merchant in the current filtered list
-    final Map<String, int> countMap = {};
-    for (final e in srcExp) {
-      final raw = (e.counterparty ?? e.upiVpa ?? e.label ?? '').trim();
-      if (raw.isEmpty) continue;
-      final key = AnalyticsAgg.displayMerchantKey(raw);
-      if (key.isEmpty) continue;
-      countMap[key] = (countMap[key] ?? 0) + 1;
-    }
-
-    final items = byMerch.entries
-        .where((e) => e.value.isFinite && e.value != 0)
-        .toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    if (items.isEmpty) {
-      return [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Text('No merchants to show for this period.', style: Fx.label),
-        ),
-      ];
-    }
-
-    final compact = NumberFormat.compactCurrency(
-      locale: 'en_IN',
-      symbol: '₹',
-      decimalDigits: 0,
-    );
-
-    final chips = <Widget>[];
-    for (final entry in items.take(8)) {
-      final name = entry.key;
-      final amount = entry.value.abs();
-      final txCount = countMap[name] ?? 0;
-
-      chips.add(
-        _merchantChip(
-          name: name,
-          displayAmount: compact.format(amount),
-          txCount: txCount,
-          onTap: () => _openMerchantSheet(name, srcExp),
-        ),
-      );
-    }
-
-    return [
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: chips,
-      ),
-    ];
-  }
-
-  Widget _merchantChip({
-    required String name,
-    required String displayAmount,
-    required int txCount,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Fx.mintDark.withOpacity(.10),
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.store_mall_directory_rounded,
-                  size: 14, color: Colors.teal),
-              const SizedBox(width: 6),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 140),
-                child: Text(
-                  name,
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                  style: Fx.label,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text('• $displayAmount',
-                  style: Fx.label.copyWith(color: Fx.text.withOpacity(.9))),
-              const SizedBox(width: 6),
-              Text('· ${txCount}x', style: Fx.label),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   // ---------- Drill-down helpers (reuse UnifiedTransactionList) ----------
   Future<void> _openTxDrilldown({
     required String title,
@@ -1732,6 +3494,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     incomes: incomes,
                     friendsById: const <String, FriendModel>{},
                     userPhone: widget.userPhone,
+                    enableScrolling: true,
                     previewCount: math.max(20, totalCount),
                     filterType: 'All',
                     showBillIcon: true,
@@ -1749,6 +3512,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         if (ctx.mounted) Navigator.pop(ctx);
                       }
                     },
+                    emptyBuilder: (context) =>
+                        _analyticsNoTransactions('All'),
                   ),
                 ),
               ],
@@ -1769,7 +3534,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ? <ExpenseItem>[]
         : srcExp
             .where((e) =>
-                AnalyticsAgg.resolveExpenseCategory(e).toLowerCase() ==
+                _normalizeMainCategory(
+                  AnalyticsAgg.resolveExpenseCategory(e),
+                ).toLowerCase() ==
                 category.toLowerCase())
             .toList();
 
@@ -1786,18 +3553,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       exp: exp,
       inc: inc,
     );
-  }
-
-  void _openMerchantSheet(String merchant, List<ExpenseItem> srcExp) {
-    final target = merchant.toLowerCase();
-    final matched = srcExp.where((e) {
-      final raw = (e.counterparty ?? e.upiVpa ?? e.label ?? '').trim();
-      if (raw.isEmpty) return false;
-      final key = AnalyticsAgg.displayMerchantKey(raw).toLowerCase();
-      return key == target;
-    }).toList();
-
-    _openTxDrilldown(title: 'Merchant • $merchant', exp: matched, inc: const []);
   }
 
   // ---------- Helpers for sparkline & calendar ----------
@@ -1975,18 +3730,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return projected;
   }
 
-  Map<int, double> _monthExpenseMap(List<ExpenseItem> all, DateTime now) {
-    final start = DateTime(now.year, now.month, 1);
-    final end = DateTime(now.year, now.month + 1, 1);
-    final map = <int, double>{};
-    for (final e in all) {
-      if (!e.date.isBefore(start) && e.date.isBefore(end)) {
-        map[e.date.day] = (map[e.date.day] ?? 0) + e.amount;
-      }
-    }
-    return map;
-  }
-
   bool _sameDayLocal(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
@@ -2070,9 +3813,181 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 }
 
+class _MonthlyTrendPainter extends CustomPainter {
+  final List<double> series;
+  final double maxY;
+  final int yTicks;
+
+  _MonthlyTrendPainter({
+    required this.series,
+    required this.maxY,
+    required this.yTicks,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (series.isEmpty || size.width <= 0 || size.height <= 0) return;
+
+    final double safeMaxY = maxY <= 0 ? 1.0 : maxY;
+    final double w = size.width;
+    final double h = size.height;
+    final Paint gridPaint = Paint()
+      ..color = Fx.text.withOpacity(.08)
+      ..strokeWidth = 1;
+
+    for (int i = 0; i <= yTicks; i++) {
+      final double y = h - (h / yTicks) * i;
+      canvas.drawLine(Offset(0, y), Offset(w, y), gridPaint);
+    }
+
+    final double xStep = series.length > 1 ? w / (series.length - 1) : w;
+    final Path path = Path();
+    for (int i = 0; i < series.length; i++) {
+      final double ratio = (series[i] / safeMaxY).clamp(0.0, 1.0);
+      final double x = i * xStep;
+      final double y = h - ratio * h;
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+
+    final Path fill = Path.from(path)
+      ..lineTo(w, h)
+      ..lineTo(0, h)
+      ..close();
+
+    final Color baseColor = Fx.mint;
+    canvas.drawPath(
+      fill,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [baseColor.withOpacity(.22), baseColor.withOpacity(.04)],
+        ).createShader(Rect.fromLTWH(0, 0, w, h)),
+    );
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.2
+        ..color = baseColor
+        ..isAntiAlias = true,
+    );
+
+    final Paint dotPaint = Paint()
+      ..color = baseColor
+      ..isAntiAlias = true;
+    for (int i = 0; i < series.length; i++) {
+      final double ratio = (series[i] / safeMaxY).clamp(0.0, 1.0);
+      final double x = i * xStep;
+      final double y = h - ratio * h;
+      canvas.drawCircle(Offset(x, y), 3.5, dotPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MonthlyTrendPainter oldDelegate) {
+    return oldDelegate.series != series ||
+        oldDelegate.maxY != maxY ||
+        oldDelegate.yTicks != yTicks;
+  }
+}
+
+class _StackedMonthlyBarsPainter extends CustomPainter {
+  final List<_MonthlyCategoryStack> stacks;
+  final double maxY;
+  final int yTicks;
+  final Map<String, Color> categoryColors;
+
+  _StackedMonthlyBarsPainter({
+    required this.stacks,
+    required this.maxY,
+    required this.yTicks,
+    required this.categoryColors,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (stacks.isEmpty || size.width <= 0 || size.height <= 0) return;
+
+    final double safeMaxY = maxY <= 0 ? 1.0 : maxY;
+    final double w = size.width;
+    final double h = size.height;
+    final double columnWidth = w / stacks.length;
+    final double barWidth = columnWidth * 0.6;
+    final double gutter = (columnWidth - barWidth) / 2;
+    final Radius radius = Radius.circular(barWidth * 0.25);
+
+    final Paint gridPaint = Paint()
+      ..color = Fx.text.withOpacity(.06)
+      ..strokeWidth = 1.2;
+    for (int i = 0; i <= yTicks; i++) {
+      final double y = h - (h / yTicks) * i;
+      canvas.drawLine(Offset(0, y), Offset(w, y), gridPaint);
+    }
+
+    for (int i = 0; i < stacks.length; i++) {
+      final stack = stacks[i];
+      final double total =
+          stack.segments.fold<double>(0, (sum, seg) => sum + seg.value);
+      if (total <= 0) continue;
+
+      double yOffset = h;
+      final double left = columnWidth * i + gutter;
+
+      for (final seg in stack.segments) {
+        if (seg.value <= 0) continue;
+        final double segHeight = (seg.value / safeMaxY) * h;
+        yOffset -= segHeight;
+        final Color color = (categoryColors[seg.category] ?? Colors.grey)
+            .withOpacity(.92);
+        final Rect rect = Rect.fromLTWH(left, yOffset, barWidth, segHeight);
+        final RRect rrect = RRect.fromRectAndRadius(rect, radius);
+
+        canvas.drawRRect(
+          rrect.inflate(2.5),
+          Paint()
+            ..color = color.withOpacity(.12)
+            ..style = PaintingStyle.fill,
+        );
+
+        canvas.drawRRect(
+          rrect,
+          Paint()
+            ..shader = LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [color, color.withOpacity(.7)],
+            ).createShader(rect),
+        );
+
+        canvas.drawRRect(
+          rrect,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.1
+            ..color = color.withOpacity(.9),
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _StackedMonthlyBarsPainter oldDelegate) {
+    return oldDelegate.stacks != stacks ||
+        oldDelegate.maxY != maxY ||
+        oldDelegate.yTicks != yTicks ||
+        oldDelegate.categoryColors != categoryColors;
+  }
+}
+
 
 // ================================================
-// Small, dependency-free sparkline for Overview card
+// Small, dependency-free sparkline used in analytics cards
 // ================================================
 class _SparklineSimple extends StatelessWidget {
   final List<double> values; // chronological (left->right)
@@ -2141,142 +4056,4 @@ class _SparkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SparkPainter old) => old.v != v;
-}
-
-// ==================================================
-// Mini Calendar Heatmap (current month only) with amounts & tap handlers
-// ==================================================
-class _MiniCalendarHeatmap extends StatelessWidget {
-  final DateTime month; // first day of month
-  final Map<int, double> amountsByDay;
-  final void Function(int day, double amount)? onDayTap;
-  final void Function(int day, double amount)? onDayLongPress;
-  const _MiniCalendarHeatmap({
-    required this.month,
-    required this.amountsByDay,
-    this.onDayTap,
-    this.onDayLongPress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final firstWeekday = DateTime(month.year, month.month, 1).weekday; // 1=Mon..7=Sun
-    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
-
-    const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4.0),
-          child: Row(
-            children: [
-              Text(DateFormat('MMMM').format(month), style: Fx.label),
-              const SizedBox(width: 6),
-              Text(DateFormat('y').format(month),
-                  style: Fx.label.copyWith(color: Fx.text.withOpacity(.7))),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: labels
-              .map((d) => Expanded(
-                    child: Center(
-                        child: Text(d, style: Fx.label.copyWith(fontSize: 11))),
-                  ))
-              .toList(),
-        ),
-        const SizedBox(height: 6),
-        _grid(firstWeekday, daysInMonth),
-      ],
-    );
-  }
-
-  Widget _grid(int firstWeekday, int daysInMonth) {
-    final startCol = firstWeekday % 7; // Sun=0
-    final totalCells = ((startCol + daysInMonth + 6) ~/ 7) * 7;
-
-    final maxVal =
-        amountsByDay.isEmpty ? 0.0 : amountsByDay.values.reduce((a, b) => a > b ? a : b);
-
-    final compact = NumberFormat.compactCurrency(
-        locale: 'en_IN', symbol: '₹', decimalDigits: 0);
-
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: totalCells,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 7,
-        mainAxisSpacing: 6,
-        crossAxisSpacing: 6,
-        childAspectRatio: 1.1,
-      ),
-      itemBuilder: (_, i) {
-        final dayNum = i - startCol + 1;
-        if (dayNum < 1 || dayNum > daysInMonth) return const SizedBox.shrink();
-
-        final amt = amountsByDay[dayNum] ?? 0.0;
-        final t = (maxVal <= 0) ? 0.0 : (amt / maxVal).clamp(0.0, 1.0);
-        final base = Fx.mintDark;
-        final fill = base.withOpacity(0.12 + t * 0.32);
-
-        final today = DateTime.now();
-        final isToday = (today.year == month.year &&
-            today.month == month.month &&
-            today.day == dayNum);
-
-        final cell = Container(
-          decoration: BoxDecoration(
-            color: fill,
-            borderRadius: BorderRadius.circular(10),
-            border: isToday
-                ? Border.all(color: base.withOpacity(.55), width: 1.2)
-                : Border.all(color: Colors.white.withOpacity(.25)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Align(
-                alignment: Alignment.topRight,
-                child: Text(
-                  '$dayNum',
-                  style: Fx.label.copyWith(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 11,
-                    color: Colors.black.withOpacity(.75),
-                  ),
-                ),
-              ),
-              if (amt > 0)
-                Align(
-                  alignment: Alignment.bottomLeft,
-                  child: Text(
-                    compact.format(amt),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Fx.label.copyWith(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black.withOpacity(.75),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        );
-
-        if (onDayTap == null && onDayLongPress == null) return cell;
-        return GestureDetector(
-          onTap: () => onDayTap?.call(dayNum, amt),
-          onLongPress: () => onDayLongPress?.call(dayNum, amt),
-          child: cell,
-        );
-      },
-    );
-  }
 }
