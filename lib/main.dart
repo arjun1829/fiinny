@@ -26,7 +26,7 @@ import 'services/sms/sms_ingestor.dart';
 
 // Toggle from CI: --dart-define=SAFE_MODE=true
 const bool SAFE_MODE = bool.fromEnvironment('SAFE_MODE', defaultValue: false);
-const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: true);
+const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: false);
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 const MethodChannel _systemUiChannel = MethodChannel('lifemap/system_ui');
 
@@ -85,50 +85,54 @@ void smsBackgroundDispatcher() {
   });
 }
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  await configureSystemUI();
-
-  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-    try {
-      await Workmanager().initialize(smsBackgroundDispatcher);
-    } catch (e) {
-      debugPrint('Workmanager init failed: $e');
-    }
-  }
-
-  if (SAFE_MODE) {
-    runApp(MaterialApp(
-      debugShowCheckedModeBanner: false,
-      builder: (context, child) => AdsShell(child: child),
-      home: const SafeModeScreen(),
-    ));
-    return;
-  }
-
-  // System ATT prompt only — no custom pre-prompt.
-  AdConfig.authorized = await ConsentService.requestATTIfNeeded();
-
-  await MobileAds.instance.initialize();
-  AdService.updateConsent(authorized: AdConfig.authorized);
-
+void main() {
   final tracer = _StartupTracer();
-  FlutterError.onError = (details) {
-    FlutterError.presentError(details);
-    tracer.add('FlutterError: ${details.exceptionAsString()}');
-    if (kReleaseMode) {
-      unawaited(FirebaseCrashlytics.instance.recordFlutterError(details));
-    }
-    Zone.current.handleUncaughtError(details.exception, details.stack ?? StackTrace.current);
-  };
 
-  await runZonedGuarded<Future<void>>(() async {
+  runZonedGuarded<Future<void>>(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+
+    await configureSystemUI();
+
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        await Workmanager().initialize(smsBackgroundDispatcher);
+      } catch (e) {
+        debugPrint('Workmanager init failed: $e');
+      }
+    }
+
+    if (SAFE_MODE) {
+      runApp(MaterialApp(
+        debugShowCheckedModeBanner: false,
+        builder: (context, child) => AdsShell(child: child),
+        home: const SafeModeScreen(),
+      ));
+      return;
+    }
+
+    // System ATT prompt only — no custom pre-prompt.
+    AdConfig.authorized = await ConsentService.requestATTIfNeeded();
+
+    await MobileAds.instance.initialize();
+    AdService.updateConsent(authorized: AdConfig.authorized);
+
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      tracer.add('FlutterError: ${details.exceptionAsString()}');
+      if (kReleaseMode) {
+        unawaited(FirebaseCrashlytics.instance.recordFlutterError(details));
+      }
+      Zone.current.handleUncaughtError(
+          details.exception, details.stack ?? StackTrace.current);
+    };
+
     runApp(_DiagApp(tracer: tracer));
     await _boot(tracer, attAllowed: AdConfig.authorized);
   }, (error, stack) async {
     tracer.add('Uncaught: $error');
-    try { await FirebaseCrashlytics.instance.recordError(error, stack, fatal: true); } catch (_) {}
+    try {
+      await FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    } catch (_) {}
   });
 }
 
@@ -318,12 +322,13 @@ class _DiagAppState extends State<_DiagApp> {
                         style: TextStyle(color: Colors.white)),
                   ),
                 ),
-                Positioned(
-                  left: 12,
-                  right: 12,
-                  bottom: 28,
-                  child: _LogCard(lines: widget.tracer.lines),
-                ),
+                if (kDiagBuild)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 28,
+                    child: _LogCard(lines: widget.tracer.lines),
+                  ),
               ],
             ),
           );

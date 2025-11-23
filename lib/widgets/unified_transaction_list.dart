@@ -41,6 +41,27 @@ class UnifiedTransactionList extends StatefulWidget {
   // Category dropdown options
   final List<String> categoryOptions;
 
+  /// Subcategory options per main category, e.g.
+  /// {
+  ///   "Food": ["restaurants", "food delivery"],
+  ///   "Investments": ["Mutual Fund – SIP", ...]
+  /// }
+  final Map<String, List<String>> subcategoryOptionsByCategory;
+
+  /// Persist subcategory changes (optional)
+  final Future<void> Function({
+    required String txId,
+    required String newSubcategory,
+    required dynamic payload,
+  })? onChangeSubcategory;
+
+  /// Persist counterparty changes (optional)
+  final Future<void> Function({
+    required String txId,
+    required String newCounterparty,
+    required dynamic payload,
+  })? onChangeCounterparty;
+
   // ✅ tell parent when a modal/sheet/dialog opens/closes (so it can hide the anchored banner)
   final VoidCallback? onBeginModal;
   final VoidCallback? onEndModal;
@@ -91,6 +112,10 @@ class UnifiedTransactionList extends StatefulWidget {
   /// Enable/disable inline ad injection (default: true)
   final bool enableInlineAds;
 
+  /// When true, wraps the list in its own scroll view (for bottom sheets, etc.).
+  /// Defaults to false to allow the parent scroll view to handle scrolling.
+  final bool enableScrolling;
+
   const UnifiedTransactionList({
     Key? key,
     required this.expenses,
@@ -108,23 +133,96 @@ class UnifiedTransactionList extends StatefulWidget {
     this.onSelectTx,
     this.unifiedDocs,
     this.categoryOptions = const [
-      "General",
-      "Fuel",
-      "Groceries",
-      "Food",
-      "Travel",
-      "Shopping",
-      "Bills",
-      "Recharge",
-      "Subscriptions",
-      "Healthcare",
-      "Education",
-      "Entertainment",
-      "Loan EMI",
-      "Fees/Charges",
-      "Income",
-      "Other",
+      'Fund Transfers',
+      'Payments',
+      'Shopping',
+      'Travel',
+      'Food',
+      'Entertainment',
+      'Others',
+      'Healthcare',
+      'Education',
+      'Investments',
     ],
+    this.subcategoryOptionsByCategory = const {
+      'Fund Transfers': [
+        'Fund Transfers – Others',
+        'Cash Withdrawals',
+        'Remittance',
+      ],
+      'Payments': [
+        'Loans/EMIs',
+        'Fuel',
+        'Mobile Bill',
+        'Auto Service',
+        'Bills / Utility',
+        'Credit Card',
+        'Logistics',
+        'Payment – Others',
+        'Rental and Real Estate',
+        'Wallet Payment',
+      ],
+      'Food': [
+        'Restaurants',
+        'Alcohol',
+        'Food Delivery',
+        'Food – Others',
+      ],
+      'Entertainment': [
+        'OTT Services',
+        'Gaming',
+        'Movies',
+        'Music',
+        'Entertainment – Others',
+      ],
+      'Shopping': [
+        'Groceries and Consumables',
+        'Electronics',
+        'Apparel',
+        'Books and Stationery',
+        'Ecommerce',
+        'Fitness',
+        'Gift',
+        'Home Furnishing & Gaming',
+        'Jewellery and Accessories',
+        'Personal Care',
+        'Shopping – Others',
+      ],
+      'Travel': [
+        'Car Rental',
+        'Travel and Tours',
+        'Travel – Others',
+        'Accommodation',
+        'Airlines',
+        'Cab / Bike Services',
+        'Forex',
+        'Railways',
+      ],
+      'Others': [
+        'Others',
+        'Business Services',
+        'Bank Charges',
+        'Cheque Reject',
+        'Government Services / Fire Department',
+        'Tax Payments',
+      ],
+      'Healthcare': [
+        'Medicine / Pharma',
+        'Healthcare – Others',
+        'Hospital',
+      ],
+      'Education': [
+        'Education',
+      ],
+      'Investments': [
+        'Mutual Fund – SIP',
+        'Mutual Fund – Lumpsum',
+        'Stocks / Brokerage',
+        'Investments – Others',
+      ],
+    },
+    this.onChangeSubcategory,
+    this.onChangeCounterparty,
     this.onChangeCategory,
     this.onBeginModal,
     this.onEndModal,
@@ -145,6 +243,7 @@ class UnifiedTransactionList extends StatefulWidget {
     this.emptyBuilder,
     this.onRowTapIntercept,
     this.enableInlineAds = true,
+    this.enableScrolling = false,
   }) : super(key: key);
 
   @override
@@ -159,7 +258,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   //  'instrument':String?, 'network':String?, 'issuerBank':String?, 'counterparty':String?,
   //  'isInternational':bool, 'hasFees':bool,
   //  'tags':String?, 'labels': List<String>, 'title': String?}
-  late List<Map<String, dynamic>> allTx;
+  List<Map<String, dynamic>> allTx = [];
   int shownCount = 10;
   TransactionFilter _activeFilter = TransactionFilter.defaults();
 
@@ -302,6 +401,65 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     return (m ?? '').trim();
   }
 
+  String? _merchantLogoAsset(String? merchant) {
+    if (merchant == null) return null;
+    final m = merchant.toLowerCase();
+
+    // Subscriptions & entertainment
+    if (m.contains('prime') && m.contains('video')) {
+      return 'assets/brands/prime_video.png';
+    }
+    if (m.contains('netflix')) return 'assets/brands/netflix.png';
+    if (m.contains('disney') || m.contains('hotstar')) {
+      return m.contains('hotstar')
+          ? 'assets/brands/hotstar.png'
+          : 'assets/brands/disney_plus.png';
+    }
+    if (m.contains('spotify')) return 'assets/brands/spotify.png';
+    if (m.contains('youtube') && m.contains('premium')) {
+      return 'assets/brands/youtube_premium.png';
+    }
+    if (m.contains('sonyliv') || (m.contains('sony') && m.contains('liv'))) {
+      return 'assets/brands/sonyliv.png';
+    }
+    if (m.contains('zee5')) return 'assets/brands/zee5.png';
+
+    // Ecommerce / shopping
+    if (m.contains('amazon')) return 'assets/brands/amazon.png';
+    if (m.contains('flipkart')) return 'assets/brands/flipkart_plus.png';
+    if (m.contains('myntra')) return 'assets/brands/myntra.png';
+    if (m.contains('nykaa')) return 'assets/brands/nykaa.png';
+    if (m.contains('ajio')) return 'assets/brands/ajio.png';
+
+    // Food & grocery
+    if (m.contains('zomato')) return 'assets/brands/zomato_gold.png';
+    if (m.contains('swiggy')) return 'assets/brands/swiggy_one.png';
+    if (m.contains('bigbasket')) return 'assets/brands/bigbasket.png';
+
+    // Mobility
+    if (m.contains('uber')) return 'assets/brands/uber.png';
+
+    // Productivity / SaaS
+    if (m.contains('notion')) return 'assets/brands/notion.png';
+    if (m.contains('slack')) return 'assets/brands/slack.png';
+    if (m.contains('dropbox')) return 'assets/brands/dropbox.png';
+    if (m.contains('onedrive')) return 'assets/brands/onedrive.png';
+    if (m.contains('icloud')) return 'assets/brands/icloud.png';
+    if (m.contains('googleone') || m.contains('google one')) {
+      return 'assets/brands/google_one.png';
+    }
+    if (m.contains('microsoft') || m.contains('office') || m.contains('365')) {
+      return 'assets/brands/microsoft_365.png';
+    }
+    if (m.contains('adobe')) return 'assets/brands/adobe_cc.png';
+
+    // Rent & home
+    if (m.contains('rentomojo')) return 'assets/brands/rentomojo.png';
+    if (m.contains('rent')) return 'assets/brands/rent.png';
+
+    return null;
+  }
+
   String _legacyTags(dynamic item) {
     try {
       final j = (item as dynamic).toJson?.call();
@@ -431,29 +589,42 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   }
 
   void _combine() {
-    if (widget.unifiedDocs != null) {
-      allTx = _fromUnified(widget.unifiedDocs!);
-    } else {
-      allTx = _fromLegacy(widget.expenses, widget.incomes);
-    }
+    try {
+      debugPrint(
+        'UTL _combine: unified=${widget.unifiedDocs?.length}, exp=${widget.expenses.length}, inc=${widget.incomes.length}, filterType=${widget.filterType}, preview=${widget.previewCount}',
+      );
 
-    if (widget.filterType == "Income") {
-      allTx = allTx.where((t) => t['type'] == 'income').toList();
-    } else if (widget.filterType == "Expense") {
-      allTx = allTx.where((t) => t['type'] == 'expense').toList();
-    }
-    final base = List<Map<String, dynamic>>.from(allTx);
-    widget.onNormalized?.call(base);
+      final hasUnified = widget.unifiedDocs != null && widget.unifiedDocs!.isNotEmpty;
+      final combined = hasUnified
+          ? _fromUnified(widget.unifiedDocs!)
+          : _fromLegacy(widget.expenses, widget.incomes);
 
-    var f = widget.filter ?? TransactionFilter.defaults();
-    if (widget.sort != null && widget.sort != f.sort) {
-      f = f.copyWith(sort: widget.sort);
+      List<Map<String, dynamic>> working = combined;
+      if (widget.filterType == "Income") {
+        working = working.where((t) => t['type'] == 'income').toList();
+      } else if (widget.filterType == "Expense") {
+        working = working.where((t) => t['type'] == 'expense').toList();
+      }
+
+      final base = List<Map<String, dynamic>>.from(working);
+      widget.onNormalized?.call(base);
+
+      var f = widget.filter ?? TransactionFilter.defaults();
+      if (widget.sort != null && widget.sort != f.sort) {
+        f = f.copyWith(sort: widget.sort);
+      }
+      if (widget.groupBy != null && widget.groupBy != f.groupBy) {
+        f = f.copyWith(groupBy: widget.groupBy);
+      }
+      _activeFilter = f;
+      allTx = applyFilterAndSort(base, f);
+
+      debugPrint('UTL _combine final allTx len=${allTx.length}');
+    } catch (e, st) {
+      debugPrint('UTL _combine ERROR: $e\n$st');
+      allTx = [];
+      rethrow;
     }
-    if (widget.groupBy != null && widget.groupBy != f.groupBy) {
-      f = f.copyWith(groupBy: widget.groupBy);
-    }
-    _activeFilter = f;
-    allTx = applyFilterAndSort(base, f);
   }
 
   List<Map<String, dynamic>> _fromLegacy(
@@ -472,6 +643,19 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final double confidence = _legacyCategoryConfidence(e);
       final String categorySource = _legacyCategorySource(e);
       final String merchantKey = _legacyMerchantKey(e, merchant);
+      final String? merchantLogo = _merchantLogoAsset(merchant);
+      final String? subcat =
+          _dyn<String>(e, 'subcategory') ??
+          (() {
+            try {
+              final json = (e as dynamic).toJson?.call();
+              if (json is Map<String, dynamic> && json['subcategory'] != null) {
+                final s = json['subcategory'].toString().trim();
+                return s.isNotEmpty ? s : null;
+              }
+            } catch (_) {}
+            return null;
+          })();
 
       return {
         'mode': 'legacy',
@@ -480,11 +664,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'date': e.date,
         'amount': (e.amount is num) ? (e.amount as num).toDouble() : 0.0,
         'category': cat,
+        'subcategory': subcat,
         'note': e.note,
         'raw': e,
         'merchant': merchant.isEmpty ? null : merchant,
         'bankLogo': e.bankLogo,
         'schemeLogo': null,
+        'brandLogo': merchantLogo,
         'cardLast4': last4.isEmpty ? null : last4,
         'channel': null,
         'instrument': _legacyInstrument(e),
@@ -511,6 +697,19 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final double confidence = _legacyCategoryConfidence(i);
       final String categorySource = _legacyCategorySource(i);
       final String merchantKey = _legacyMerchantKey(i, merchant);
+      final String? merchantLogo = _merchantLogoAsset(merchant);
+      final String? subcat =
+          _dyn<String>(i, 'subcategory') ??
+          (() {
+            try {
+              final json = (i as dynamic).toJson?.call();
+              if (json is Map<String, dynamic> && json['subcategory'] != null) {
+                final s = json['subcategory'].toString().trim();
+                return s.isNotEmpty ? s : null;
+              }
+            } catch (_) {}
+            return null;
+          })();
 
       return {
         'mode': 'legacy',
@@ -519,11 +718,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'date': i.date,
         'amount': (i.amount is num) ? (i.amount as num).toDouble() : 0.0,
         'category': cat,
+        'subcategory': subcat,
         'note': i.note,
         'raw': i,
         'merchant': merchant.isEmpty ? null : merchant,
         'bankLogo': i.bankLogo,
         'schemeLogo': null,
+        'brandLogo': merchantLogo,
         'cardLast4': null,
         'channel': null,
         'instrument': _legacyInstrument(i),
@@ -606,9 +807,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final String type = isDebit ? 'expense' : 'income';
 
       String? _pick(String? s) => (s == null || s.trim().isEmpty) ? null : s.trim();
-      final resolvedCat = _pick(doc['category']?.toString()) ??
-          _pick(doc['subcategory']?.toString()) ??
-          (isDebit ? 'General' : 'Income');
+      final categoryRaw = _pick(doc['category']?.toString());
+      final subcategoryRaw = _pick(doc['subcategory']?.toString());
+      final resolvedCat = categoryRaw ?? (isDebit ? 'General' : 'Income');
 
       final labelsArr = <String>[];
       final rawLabels = doc['labels'];
@@ -630,6 +831,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         if (merch != null && merch.isNotEmpty) return merch.toUpperCase();
         return '';
       })();
+      final String? brandLogo =
+          _readString(doc, ['badges', 'brandLogo']) ??
+          _readString(doc, ['badges', 'merchantLogo']) ??
+          _readString(doc, ['brandLogo']);
 
       tx.add({
         'mode': 'unified',
@@ -638,11 +843,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'date': _asDate(doc['date']),
         'amount': _asDouble(doc['amount']),
         'category': resolvedCat,
+        'subcategory': subcategoryRaw,
         'note': (doc['note'] ?? '').toString(),
         'raw': doc,
         'merchant': (doc['merchant'] ?? '').toString(),
         'bankLogo': _readString(doc, ['badges', 'bankLogo']),
         'schemeLogo': _readString(doc, ['badges', 'schemeLogo']),
+        'brandLogo': brandLogo,
         'cardLast4': _readString(doc, ['meta', 'cardLast4']),
         'channel': channel,
         'instrument': _pick(doc['instrument']?.toString()) ?? channel,
@@ -723,7 +930,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     if (path.startsWith('http')) {
       return Image.network(path, width: w, height: h, errorBuilder: (_, __, ___) => const SizedBox());
     }
-    return Image.asset(path, width: w, height: h);
+    return Image.asset(
+      path,
+      width: w,
+      height: h,
+      errorBuilder: (_, __, ___) => const SizedBox(),
+    );
   }
 
   Future<void> _showBillImage(BuildContext context, String imageUrl) async {
@@ -773,12 +985,32 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     widget.onEndModal?.call();
   }
 
-  Future<void> _showDetailsScreenFromUnified(Map<String, dynamic> doc, BuildContext context) async {
+  Future<void> _showDetailsScreenFromUnified(
+    Map<String, dynamic> doc,
+    BuildContext context, {
+    List<String>? methodChipLabels,
+  }) async {
     widget.onBeginModal?.call();
 
     final isIncome = (doc['type'] == 'income');
     final amount = (doc['amount'] is num) ? (doc['amount'] as num).toDouble() : 0.0;
     final category = (doc['category'] ?? (isIncome ? 'Income' : 'Expense')).toString();
+    final String subcategory = (() {
+      // First try normalized tx map
+      final rawSub = doc['subcategory']?.toString().trim();
+      if (rawSub != null && rawSub.isNotEmpty) return rawSub;
+
+      // Then try underlying raw unified doc, if present
+      try {
+        final raw = doc['raw'];
+        if (raw is Map<String, dynamic>) {
+          final v = raw['subcategory']?.toString().trim();
+          if (v != null && v.isNotEmpty) return v;
+        }
+      } catch (_) {}
+
+      return '';
+    })();
     final date = (doc['date'] as DateTime);
     final note = (doc['note'] ?? '').toString();
     final bankLogo = doc['bankLogo'] as String?;
@@ -793,127 +1025,182 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final counterparty = doc['counterparty']?.toString();
     final isIntl = (doc['isInternational'] == true);
     final hasFees = (doc['hasFees'] == true);
+    final tags = doc['tags'] as String?;
+
+    final labels = _methodChipLabels(
+      instrument: instrument,
+      channel: channel,
+      cardLast4: last4,
+      network: network,
+      isInternational: isIntl,
+      hasFees: hasFees,
+      tags: tags,
+    );
+    final methodChips = (labels.isNotEmpty ? labels : (methodChipLabels ?? const []))
+        .map(_chip)
+        .toList();
 
     await showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.all(18.0),
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (bankLogo != null && bankLogo.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: _logo(bankLogo, w: 28, h: 28),
+        final height = MediaQuery.of(ctx).size.height * 0.75;
+        return SizedBox(
+          height: height,
+          child: Padding(
+            padding: const EdgeInsets.all(18.0),
+            child: DefaultTextStyle.merge(
+              style: const TextStyle(color: Colors.black),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (bankLogo != null && bankLogo.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: _logo(bankLogo, w: 28, h: 28),
+                          ),
+                        Icon(
+                          getCategoryIcon(category, isIncome: isIncome),
+                          size: 40,
+                          color: isIncome ? Colors.green : Colors.pink,
+                        ),
+                        if (schemeLogo != null && schemeLogo.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: _logo(schemeLogo, w: 26, h: 26),
+                          ),
+                      ],
                     ),
-                  Icon(
-                    getCategoryIcon(category, isIncome: isIncome),
-                    size: 40,
-                    color: isIncome ? Colors.green : Colors.pink,
-                  ),
-                  if (schemeLogo != null && schemeLogo.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: _logo(schemeLogo, w: 26, h: 26),
+                    const SizedBox(height: 16),
+                    Text(
+                      "${isIncome ? 'Income' : 'Expense'} - $category",
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
+                      textAlign: TextAlign.center,
                     ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                "${isIncome ? 'Income' : 'Expense'} - $category",
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              if (counterparty != null && counterparty.isNotEmpty)
-                Text(isIncome ? "From: $counterparty" : "Paid to: $counterparty"),
-              if (instrument != null && instrument.isNotEmpty)
-                Text("Instrument: $instrument"),
-              if (issuer != null && issuer.isNotEmpty)
-                Text("Bank: $issuer"),
-              if (network != null && network.isNotEmpty)
-                Text("Network: $network"),
-              if (last4 != null && last4.isNotEmpty)
-                Text("Card: ****$last4"),
-              if (isIntl) const Text("International: Yes"),
-              if (hasFees) const Text("Fees Detected: Yes"),
-              const SizedBox(height: 12),
-              Text("Amount: ${_inCurrency.format(amount)}", style: const TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Text("Date: ${DateFormat('d MMM yyyy, h:mm a').format(date)}"),
-              if (note.trim().isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(note),
-              ],
-              const SizedBox(height: 16),
-              _inlineAdCard('txn_detail_sheet'),
-              const SizedBox(height: 12),
-              if (widget.showBillIcon && billUrl.isNotEmpty)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.receipt_long_rounded, color: Colors.brown),
-                    label: const Text("View bill/attachment"),
-                    onPressed: () => _showBillImage(context, billUrl),
-                  ),
+                    if (subcategory.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        "Subcategory: $subcategory",
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    if (methodChips.isNotEmpty) ...[
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: -6,
+                        alignment: WrapAlignment.center,
+                        children: methodChips,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (counterparty != null && counterparty.isNotEmpty)
+                      Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
+                    if (instrument != null && instrument.isNotEmpty)
+                      Text("Instrument: $instrument"),
+                    if (issuer != null && issuer.isNotEmpty)
+                      Text("Bank: $issuer"),
+                    if (network != null && network.isNotEmpty)
+                      Text("Network: $network"),
+                    if (last4 != null && last4.isNotEmpty)
+                      Text("Card: ****$last4"),
+                    if (isIntl) const Text("International: Yes"),
+                    if (hasFees) const Text("Fees Detected: Yes"),
+                    const SizedBox(height: 12),
+                    Text(
+                      "Amount: ${_inCurrency.format(amount)}",
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Text("Date: ${DateFormat('d MMM yyyy, h:mm a').format(date)}"),
+                    if (note.trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(note),
+                    ],
+                    const SizedBox(height: 16),
+                    _inlineAdCard('txn_detail_sheet'),
+                    const SizedBox(height: 12),
+                    if (widget.showBillIcon && billUrl.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          icon: const Icon(Icons.receipt_long_rounded, color: Colors.brown),
+                          label: const Text("View bill/attachment"),
+                          onPressed: () => _showBillImage(context, billUrl),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (!isIncome && widget.onSplit != null)
+                          TextButton.icon(
+                            icon: const Icon(Icons.group, color: Colors.deepPurple, size: 21),
+                            label: const Text("Split"),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              widget.onSplit?.call(doc);
+                            },
+                          ),
+                        if (widget.onEdit != null)
+                          TextButton.icon(
+                            icon: const Icon(Icons.edit, color: Colors.blue, size: 21),
+                            label: const Text("Edit"),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              widget.onEdit?.call(doc);
+                            },
+                          ),
+                        if (widget.onDelete != null)
+                          TextButton.icon(
+                            icon: const Icon(Icons.delete, color: Colors.red, size: 21),
+                            label: const Text("Delete"),
+                            onPressed: () async {
+                              final confirmed = await _confirmDeleteTransaction(
+                                context,
+                                doc,
+                                triggerAnchoredCallbacks: false,
+                              );
+                              if (!confirmed) return;
+                              Navigator.pop(context);
+                              widget.onDelete?.call(doc);
+                            },
+                          ),
+                        TextButton(
+                          child: const Text("Close"),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (!isIncome && widget.onSplit != null)
-                    TextButton.icon(
-                      icon: const Icon(Icons.group, color: Colors.deepPurple, size: 21),
-                      label: const Text("Split"),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        widget.onSplit?.call(doc);
-                      },
-                    ),
-                  if (widget.onEdit != null)
-                    TextButton.icon(
-                      icon: const Icon(Icons.edit, color: Colors.blue, size: 21),
-                      label: const Text("Edit"),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        widget.onEdit?.call(doc);
-                      },
-                    ),
-                  if (widget.onDelete != null)
-                    TextButton.icon(
-                      icon: const Icon(Icons.delete, color: Colors.red, size: 21),
-                      label: const Text("Delete"),
-                      onPressed: () async {
-                        final confirmed = await _confirmDeleteTransaction(
-                          context,
-                          doc,
-                          triggerAnchoredCallbacks: false,
-                        );
-                        if (!confirmed) return;
-                        Navigator.pop(context);
-                        widget.onDelete?.call(doc);
-                      },
-                    ),
-                  TextButton(child: const Text("Close"), onPressed: () => Navigator.pop(context)),
-                ],
               ),
-            ],
+            ),
           ),
         );
       },
     ).whenComplete(() => widget.onEndModal?.call());
   }
 
-  Future<void> _showDetailsScreenLegacy(dynamic item, bool isIncome, BuildContext context) async {
+  Future<void> _showDetailsScreenLegacy(
+    dynamic item,
+    bool isIncome,
+    BuildContext context, {
+    List<String>? methodChipLabels,
+  }) async {
     widget.onBeginModal?.call();
 
     final counterparty = _legacyCounterparty(item);
@@ -923,110 +1210,172 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final last4 = _legacyCardLast4(item);
     final isIntl = _legacyIsIntl(item);
     final hasFees = _legacyHasFees(item);
+    final categoryResolved = _legacyResolvedCategory(item, isIncome: isIncome);
+    final String subcategory = (() {
+      final direct = _dyn<String>(item, 'subcategory')?.toString().trim();
+      if (direct != null && direct.isNotEmpty) return direct;
+
+      try {
+        final json = (item as dynamic).toJson?.call();
+        if (json is Map<String, dynamic>) {
+          final v = json['subcategory']?.toString().trim();
+          if (v != null && v.isNotEmpty) return v;
+        }
+      } catch (_) {}
+
+      return '';
+    })();
+    final tags = _legacyTags(item);
+
+    final labels = _methodChipLabels(
+      instrument: instrument,
+      channel: null,
+      cardLast4: last4,
+      network: network,
+      isInternational: isIntl,
+      hasFees: hasFees,
+      tags: tags,
+    );
+    final methodChips = (labels.isNotEmpty ? labels : (methodChipLabels ?? const []))
+        .map(_chip)
+        .toList();
 
     await showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.all(18.0),
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              Center(
-                child: Icon(
-                  getCategoryIcon(_legacyResolvedCategory(item, isIncome: isIncome), isIncome: isIncome),
-                  size: 40,
-                  color: isIncome ? Colors.green : Colors.pink,
+        final height = MediaQuery.of(ctx).size.height * 0.75;
+        return SizedBox(
+          height: height,
+          child: Padding(
+            padding: const EdgeInsets.all(18.0),
+            child: DefaultTextStyle.merge(
+              style: const TextStyle(color: Colors.black),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Center(
+                      child: Icon(
+                        getCategoryIcon(categoryResolved, isIncome: isIncome),
+                        size: 40,
+                        color: isIncome ? Colors.green : Colors.pink,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      "${isIncome ? 'Income' : 'Expense'} - $categoryResolved",
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
+                      textAlign: TextAlign.center,
+                    ),
+                    if (subcategory.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        "Subcategory: $subcategory",
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    if (methodChips.isNotEmpty) ...[
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: -6,
+                        alignment: WrapAlignment.center,
+                        children: methodChips,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if ((counterparty ?? '').toString().trim().isNotEmpty)
+                      Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
+                    if ((instrument ?? '').toString().trim().isNotEmpty)
+                      Text("Instrument: $instrument"),
+                    if ((issuer ?? '').toString().trim().isNotEmpty)
+                      Text("Bank: $issuer"),
+                    if ((network ?? '').toString().trim().isNotEmpty)
+                      Text("Network: $network"),
+                    if ((last4 ?? '').toString().trim().isNotEmpty)
+                      Text("Card: ****$last4"),
+                    if (isIntl) const Text("International: Yes"),
+                    if (hasFees) const Text("Fees Detected: Yes"),
+                    const SizedBox(height: 12),
+                    Text(
+                      "Amount: ${_inCurrency.format((item.amount is num) ? (item.amount as num).toDouble() : 0.0)}",
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Text("Date: ${DateFormat('d MMM yyyy, h:mm a').format(item.date)}"),
+                    if ((item.note ?? '').toString().trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(item.note ?? ''),
+                    ],
+                    if (!isIncome && (item.friendIds != null) && item.friendIds.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Text("Split with:", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(item.friendIds.map((id) => widget.friendsById[id]?.name ?? "Friend").join(', ')),
+                    ],
+                    if (isIncome && (item.source ?? '').toString().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Text("Source:", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(item.source ?? ''),
+                    ],
+                    const SizedBox(height: 16),
+                    _inlineAdCard('txn_detail_sheet_modern'),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (!isIncome && widget.onSplit != null)
+                          TextButton.icon(
+                            icon: const Icon(Icons.group, color: Colors.deepPurple, size: 21),
+                            label: const Text("Split"),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              widget.onSplit?.call(item);
+                            },
+                          ),
+                        if (widget.onEdit != null)
+                          TextButton.icon(
+                            icon: const Icon(Icons.edit, color: Colors.blue, size: 21),
+                            label: const Text("Edit"),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              widget.onEdit?.call(item);
+                            },
+                          ),
+                        if (widget.onDelete != null)
+                          TextButton.icon(
+                            icon: const Icon(Icons.delete, color: Colors.red, size: 21),
+                            label: const Text("Delete"),
+                            onPressed: () async {
+                              final confirmed = await _confirmDeleteTransaction(
+                                context,
+                                item,
+                                triggerAnchoredCallbacks: false,
+                              );
+                              if (!confirmed) return;
+                              Navigator.pop(context);
+                              widget.onDelete?.call(item);
+                            },
+                          ),
+                        TextButton(
+                          child: const Text("Close"),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-              Text(
-                "${isIncome ? 'Income' : 'Expense'} - ${_legacyResolvedCategory(item, isIncome: isIncome)}",
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              if ((counterparty ?? '').toString().trim().isNotEmpty)
-                Text(isIncome ? "From: $counterparty" : "Paid to: $counterparty"),
-              if ((instrument ?? '').toString().trim().isNotEmpty)
-                Text("Instrument: $instrument"),
-              if ((issuer ?? '').toString().trim().isNotEmpty)
-                Text("Bank: $issuer"),
-              if ((network ?? '').toString().trim().isNotEmpty)
-                Text("Network: $network"),
-              if ((last4 ?? '').toString().trim().isNotEmpty)
-                Text("Card: ****$last4"),
-              if (isIntl) const Text("International: Yes"),
-              if (hasFees) const Text("Fees Detected: Yes"),
-              const SizedBox(height: 12),
-              Text(
-                "Amount: ${_inCurrency.format((item.amount is num) ? (item.amount as num).toDouble() : 0.0)}",
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              Text("Date: ${DateFormat('d MMM yyyy, h:mm a').format(item.date)}"),
-              if ((item.note ?? '').toString().trim().isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(item.note ?? ''),
-              ],
-              if (!isIncome && (item.friendIds != null) && item.friendIds.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text("Split with:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(item.friendIds.map((id) => widget.friendsById[id]?.name ?? "Friend").join(', ')),
-              ],
-              if (isIncome && (item.source ?? '').toString().isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text("Source:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(item.source ?? ''),
-              ],
-              const SizedBox(height: 16),
-              _inlineAdCard('txn_detail_sheet_modern'),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (!isIncome && widget.onSplit != null)
-                    TextButton.icon(
-                      icon: const Icon(Icons.group, color: Colors.deepPurple, size: 21),
-                      label: const Text("Split"),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        widget.onSplit?.call(item);
-                      },
-                    ),
-                  if (widget.onEdit != null)
-                    TextButton.icon(
-                      icon: const Icon(Icons.edit, color: Colors.blue, size: 21),
-                      label: const Text("Edit"),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        widget.onEdit?.call(item);
-                      },
-                    ),
-                  if (widget.onDelete != null)
-                    TextButton.icon(
-                      icon: const Icon(Icons.delete, color: Colors.red, size: 21),
-                      label: const Text("Delete"),
-                      onPressed: () async {
-                        final confirmed = await _confirmDeleteTransaction(
-                          context,
-                          item,
-                          triggerAnchoredCallbacks: false,
-                        );
-                        if (!confirmed) return;
-                        Navigator.pop(context);
-                        widget.onDelete?.call(item);
-                      },
-                    ),
-                  TextButton(child: const Text("Close"), onPressed: () => Navigator.pop(context)),
-                ],
-              ),
-            ],
+            ),
           ),
         );
       },
@@ -1102,8 +1451,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     }
   }
 
-  /// Turn raw "tags" string into extra chips, avoiding duplicates with existing chips
-  List<Widget> _meaningfulTagChips({
+  List<String> _meaningfulTagLabels({
     required String rawTags,
     required bool isInternational,
     required bool hasFees,
@@ -1142,9 +1490,60 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
     // Make chips in a stable order
     final order = ['EMI', 'Autopay', 'Subscription', 'Fuel', 'Charges', 'Intl'];
-    final sorted = order.where(out.contains).toList();
+    return order.where(out.contains).toList();
+  }
 
-    return sorted.map((t) => _chip(t)).toList();
+  /// Turn raw "tags" string into extra chips, avoiding duplicates with existing chips
+  List<Widget> _meaningfulTagChips({
+    required String rawTags,
+    required bool isInternational,
+    required bool hasFees,
+    required String? instrument,
+  }) {
+    return _meaningfulTagLabels(
+      rawTags: rawTags,
+      isInternational: isInternational,
+      hasFees: hasFees,
+      instrument: instrument,
+    ).map(_chip).toList();
+  }
+
+  List<String> _methodChipLabels({
+    String? instrument,
+    String? channel,
+    String? cardLast4,
+    String? network,
+    required bool isInternational,
+    required bool hasFees,
+    String? tags,
+  }) {
+    final chips = <String>[];
+    final primary = ((instrument ?? '').trim().isNotEmpty)
+        ? instrument!.trim()
+        : ((channel ?? '').trim());
+    if (primary != null && primary.isNotEmpty) {
+      chips.add(primary);
+    }
+    if ((cardLast4 ?? '').trim().isNotEmpty) {
+      chips.add('****${cardLast4!.trim()}');
+    }
+    if ((network ?? '').trim().isNotEmpty) {
+      chips.add(network!.trim());
+    }
+    if (isInternational) chips.add('INTL');
+    if (hasFees) chips.add('Fees');
+    if ((tags ?? '').trim().isNotEmpty) {
+      chips.addAll(
+        _meaningfulTagLabels(
+          rawTags: tags!,
+          isInternational: isInternational,
+          hasFees: hasFees,
+          instrument: instrument,
+        ),
+      );
+    }
+
+    return chips;
   }
 
   Widget _categoryDropdown({
@@ -1160,76 +1559,241 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       options = [value, ...options];
     }
 
-    return DropdownButtonHideUnderline(
-      child: DropdownButton<String>(
-        value: value,
-        items: options
-            .map((c) => DropdownMenuItem(
+    return SizedBox(
+      width: double.infinity,
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true, // prevent internal Row overflow
+          items: options
+              .map(
+                (c) => DropdownMenuItem<String>(
                   value: c,
                   child: Text(
                     c,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
-                      fontSize: 15.3,
+                      fontSize: 13.8,
                       color: Color(0xFF0F1E1C),
                     ),
                   ),
-                ))
-            .toList(),
-        onChanged: (newVal) async {
-          if (newVal == null || newVal == value) return;
+                ),
+              )
+              .toList(),
+          onChanged: (newVal) async {
+            if (newVal == null || newVal == value) return;
 
-          setState(() {
-            final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
-            if (idx != -1) allTx[idx]['category'] = newVal;
-          });
+            setState(() {
+              final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
+              if (idx != -1) allTx[idx]['category'] = newVal;
+            });
 
-          if (widget.onChangeCategory != null) {
-            try {
-              await widget.onChangeCategory!(
-                txId: txId,
-                newCategory: newVal,
-                payload: payload,
-              );
-              await _saveOverrideIfPossible(newVal, normalized);
-              return;
-            } catch (_) {}
-          } else {
-            try {
-              if (payload is ExpenseItem) {
-                final e = payload as ExpenseItem;
-                final updated = e.copyWith(type: newVal, category: newVal);
-                await ExpenseService().updateExpense(widget.userPhone, updated);
+            if (widget.onChangeCategory != null) {
+              try {
+                await widget.onChangeCategory!(
+                  txId: txId,
+                  newCategory: newVal,
+                  payload: payload,
+                );
                 await _saveOverrideIfPossible(newVal, normalized);
                 return;
-              } else if (payload is IncomeItem) {
-                final i = payload as IncomeItem;
-                final updated = i.copyWith(type: newVal, category: newVal);
-                await IncomeService().updateIncome(widget.userPhone, updated);
-                await _saveOverrideIfPossible(newVal, normalized);
-                return;
-              }
-              throw Exception('Unsupported payload for default saver');
-            } catch (_) {}
-          }
+              } catch (_) {}
+            } else {
+              try {
+                if (payload is ExpenseItem) {
+                  final e = payload as ExpenseItem;
+                  final updated = e.copyWith(type: newVal, category: newVal);
+                  await ExpenseService().updateExpense(widget.userPhone, updated);
+                  await _saveOverrideIfPossible(newVal, normalized);
+                  return;
+                } else if (payload is IncomeItem) {
+                  final i = payload as IncomeItem;
+                  final updated = i.copyWith(type: newVal, category: newVal);
+                  await IncomeService().updateIncome(widget.userPhone, updated);
+                  await _saveOverrideIfPossible(newVal, normalized);
+                  return;
+                }
+                throw Exception('Unsupported payload for default saver');
+              } catch (_) {}
+            }
 
-          setState(() {
-            final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
-            if (idx != -1) allTx[idx]['category'] = value;
-          });
-        },
-        isDense: true,
-        icon: const Icon(Icons.expand_more_rounded, size: 18),
-        borderRadius: BorderRadius.circular(12),
-        style: const TextStyle(
-          fontWeight: FontWeight.w700,
-          fontSize: 15.3,
-          color: Color(0xFF0F1E1C),
+            // rollback on error
+            setState(() {
+              final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
+              if (idx != -1) allTx[idx]['category'] = value;
+            });
+          },
+          isDense: true,
+          icon: const Icon(Icons.expand_more_rounded, size: 18),
+          borderRadius: BorderRadius.circular(12),
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 13.8,
+            color: Color(0xFF0F1E1C),
+          ),
+          menuMaxHeight: 300,
         ),
-        menuMaxHeight: 300,
       ),
     );
+  }
+
+  Widget _subcategoryDropdown({
+    required String txId,
+    required String currentCategory,
+    required String? currentSubcategory,
+    required bool isIncome,
+    required dynamic payload,
+    required Map<String, dynamic> normalized,
+  }) {
+    // Keep the signature for back-compat, but make this a read-only label.
+
+    final List<String> baseOptions =
+        widget.subcategoryOptionsByCategory[currentCategory] ?? const <String>[];
+
+    final String raw = (currentSubcategory ?? '').trim();
+
+    // If we have neither a subcategory nor configured options, hide the control.
+    if (raw.isEmpty && baseOptions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Prefer explicit subcategory from data; otherwise show the first configured option as a hint.
+    final String display = raw.isNotEmpty ? raw : baseOptions.first;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        display,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontWeight: FontWeight.w500,
+          fontSize: 13.0,
+          color: Color(0xFF4B5563),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editCounterparty({
+    required String txId,
+    required bool isIncome,
+    required String? current,
+    required dynamic payload,
+    required Map<String, dynamic> normalized,
+  }) async {
+    final controller = TextEditingController(text: current ?? '');
+    widget.onBeginModal?.call();
+
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.black87,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+          contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+          actionsPadding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+          title: Text(
+            isIncome ? 'Edit sender name' : 'Edit payee name',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 18,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                cursorColor: Colors.white70,
+                decoration: InputDecoration(
+                  labelText: isIncome ? 'Got from' : 'Paid to',
+                  labelStyle: const TextStyle(color: Colors.white70),
+                  filled: true,
+                  fillColor: Colors.white10,
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Colors.white24),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Colors.white60),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(null),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.white60),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Colors.tealAccent.withOpacity(0.15),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: Text(
+                  'Save',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    widget.onEndModal?.call();
+    if (newName == null) return;
+    if (newName.isEmpty) return;
+
+    // Update local state
+    setState(() {
+      final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
+      if (idx != -1) allTx[idx]['counterparty'] = newName;
+    });
+
+    // Try optional callback if you wired one (keep existing behaviour)
+    if (widget.onChangeCounterparty != null) {
+      try {
+        await widget.onChangeCounterparty!(
+          txId: txId,
+          newCounterparty: newName,
+          payload: payload,
+        );
+        return;
+      } catch (_) {}
+    }
+
+    // Default persistence for legacy models
+    try {
+      if (payload is ExpenseItem) {
+        final e = payload as ExpenseItem;
+        final updated = e.copyWith(counterparty: newName);
+        await ExpenseService().updateExpense(widget.userPhone, updated);
+      } else if (payload is IncomeItem) {
+        final i = payload as IncomeItem;
+        final updated = i.copyWith(counterparty: newName);
+        await IncomeService().updateIncome(widget.userPhone, updated);
+      }
+    } catch (_) {}
   }
 
   Widget _amountPill(double amount, bool isIncome) {
@@ -1313,531 +1877,607 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint(
+      'UTL build: allTx=${allTx.length}, shown=$shownCount, groupBy=${_activeFilter.groupBy}',
+    );
+
+    final Widget emptyContent = widget.emptyBuilder != null
+        ? widget.emptyBuilder!(context)
+        : const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: Text("No transactions found.")),
+          );
+
+    if (allTx.isEmpty) return emptyContent;
+
     final groupedMap = groupTx(allTx.take(shownCount).toList(), _activeFilter.groupBy);
     final groupedEntries = groupedMap.entries.toList();
 
-    if (allTx.isEmpty) {
-      if (widget.emptyBuilder != null) return widget.emptyBuilder!(context);
-      return const Padding(
-        padding: EdgeInsets.all(16),
-        child: Center(child: Text("No transactions found.")),
-      );
-    }
-
     final groupCount = groupedEntries.length;
 
-    return CustomDiamondCard(
-      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
-      borderRadius: 21,
-      child: ListView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: groupCount + (shownCount < allTx.length ? 1 : 0),
-        itemBuilder: (context, idx) {
-          if (idx >= groupCount) {
-            return Column(
-              children: [
-                Center(
-                  child: TextButton(
-                    child: const Text("Show More"),
-                    onPressed: () {
-                      setState(() {
-                        shownCount += widget.showMoreStep;
-                      });
-                    },
-                  ),
-                ),
-                if (widget.showBottomBannerAd)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _adBanner('txn_list_bottom'),
-                  ),
-              ],
-            );
-          }
+    // Build all group sections into a flat list of widgets (no inner scrolling).
+    final List<Widget> children = [];
 
-          final entry = groupedEntries[idx];
-          final rawLabel = entry.key;
-          final txs = entry.value;
-          final dateLabel = _displayGroupLabel(rawLabel);
+    for (int idx = 0; idx < groupCount; idx++) {
+      final entry = groupedEntries[idx];
+      final rawLabel = entry.key;
+      final txs = entry.value;
+      final dateLabel = _displayGroupLabel(rawLabel);
 
-          final rows = <Widget>[];
+      final rows = <Widget>[];
 
-          if (idx == 0 && widget.showTopBannerAd) {
-            rows.add(Padding(
-              padding: const EdgeInsets.only(left: 10, right: 10, top: 10, bottom: 6),
-              child: _adBanner('txn_list_top'),
-            ));
-          }
+      // Top banner ad once at the very top
+      if (idx == 0 && widget.showTopBannerAd) {
+        rows.add(
+          Padding(
+            padding: const EdgeInsets.only(left: 10, right: 10, top: 10, bottom: 6),
+            child: _adBanner('txn_list_top'),
+          ),
+        );
+      }
 
-          if (dateLabel.isNotEmpty)
-            rows.add(
-              Container(
-                margin: const EdgeInsets.only(left: 14, right: 8, top: 11, bottom: 4),
-                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Text(
-                  dateLabel,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: Color(0xFF0F1E1C),
-                  ),
-                ),
+      // Date chip
+      if (dateLabel.isNotEmpty) {
+        rows.add(
+          Container(
+            margin: const EdgeInsets.only(left: 14, right: 8, top: 8, bottom: 2),
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Text(
+              dateLabel,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+                color: Color(0xFF0F1E1C),
               ),
-            );
+            ),
+          ),
+        );
+      }
 
-          for (int i = 0; i < txs.length; i++) {
-            final tx = txs[i];
-            final bool isIncome = tx['type'] == 'income';
-            final String id = (tx['id'] ?? '').toString();
-            final String category = (tx['category'] ?? (isIncome ? 'Income' : 'General')).toString();
-            final String note = (tx['note'] ?? '').toString();
-            final String? title = (tx['title'] as String?);
-            final List<String> labels = (tx['labels'] is List)
-                ? List<String>.from(tx['labels'])
-                : const <String>[];
-            final double amount = (tx['amount'] is num) ? (tx['amount'] as num).toDouble() : 0.0;
+      // Each transaction row
+      for (int i = 0; i < txs.length; i++) {
+        final tx = txs[i];
+        final bool isIncome = tx['type'] == 'income';
+        final String id = (tx['id'] ?? '').toString();
+        final String category = (tx['category'] ?? (isIncome ? 'Income' : 'General')).toString();
+        final String note = (tx['note'] ?? '').toString();
+        final String? title = (tx['title'] as String?);
+        final List<String> labels = (tx['labels'] is List)
+            ? List<String>.from(tx['labels'])
+            : const <String>[];
+        final double amount = (tx['amount'] is num) ? (tx['amount'] as num).toDouble() : 0.0;
 
-            final String? bankLogo = tx['bankLogo'] as String?;
-            final String? schemeLogo = tx['schemeLogo'] as String?;
-            final String? merchant = (tx['merchant'] as String?)?.trim();
-            final String? cardLast4 = tx['cardLast4'] as String?;
-            final String? channel = tx['channel'] as String?;
-            final String? instrument = (tx['instrument'] as String?) ?? channel;
-            final String? network = tx['network'] as String?;
-            final String? issuerBank = tx['issuerBank'] as String?;
-            final String? counterparty = tx['counterparty'] as String?;
-            final bool isInternational = (tx['isInternational'] == true);
-            final bool hasFees = (tx['hasFees'] == true);
-            final String? tags = (tx['tags'] as String?);
-            final double categoryConfidence = (tx['categoryConfidence'] is num)
-                ? (tx['categoryConfidence'] as num).toDouble()
-                : 0.0;
-            final String categorySource = (tx['categorySource'] ?? '').toString();
+        final String? bankLogo = tx['bankLogo'] as String?;
+        final String? brandLogo = tx['brandLogo'] as String?;
+        final String? schemeLogo = tx['schemeLogo'] as String?;
+        final String? merchant = (tx['merchant'] as String?)?.trim();
+        final String? cardLast4 = tx['cardLast4'] as String?;
+        final String? channel = tx['channel'] as String?;
+        final String? instrument = (tx['instrument'] as String?) ?? channel;
+        final String? network = tx['network'] as String?;
+        final String? issuerBank = tx['issuerBank'] as String?;
+        final String? counterparty = tx['counterparty'] as String?;
+        final bool isInternational = (tx['isInternational'] == true);
+        final bool hasFees = (tx['hasFees'] == true);
+        final String? tags = (tx['tags'] as String?);
+        final double categoryConfidence = (tx['categoryConfidence'] is num)
+            ? (tx['categoryConfidence'] as num).toDouble()
+            : 0.0;
+        final String categorySource = (tx['categorySource'] ?? '').toString();
 
-            final raw = tx['raw'];
+        final raw = tx['raw'];
 
-            String? friendsStr;
-            try {
-              if (tx['mode'] == 'legacy' && !isIncome && (raw.friendIds != null) && raw.friendIds.isNotEmpty) {
-                friendsStr = raw.friendIds
-                    .map((fid) => widget.friendsById[fid]?.name ?? "Friend")
-                    .join(', ');
+        String? friendsStr;
+        try {
+          if (tx['mode'] == 'legacy' && !isIncome && (raw.friendIds != null) && raw.friendIds.isNotEmpty) {
+            friendsStr = raw.friendIds
+                .map((fid) => widget.friendsById[fid]?.name ?? "Friend")
+                .join(', ');
+          }
+        } catch (_) {
+          friendsStr = null;
+        }
+
+        final String displayName = (counterparty ?? '').toString().trim().isNotEmpty
+            ? counterparty!.trim()
+            : (merchant != null && merchant.isNotEmpty ? merchant : 'Unknown');
+
+        final String showLine2 = () {
+          if (title != null && title.trim().isNotEmpty) return title.trim();
+          if (note.isNotEmpty) {
+            return note.length > 40 ? "${note.substring(0, 40)}..." : note;
+          }
+          return '';
+        }();
+
+        final bool isSelectable = widget.multiSelectEnabled && widget.onSelectTx != null;
+        final bool isSelected = isSelectable && widget.selectedIds.contains(id);
+
+        final dynamic payload = tx['mode'] == 'unified' ? tx : raw;
+
+        String billUrl = '';
+        if (widget.showBillIcon) {
+          if (tx['mode'] == 'unified') {
+            final rawMap = (tx['raw'] is Map<String, dynamic>) ? tx['raw'] as Map<String, dynamic> : <String, dynamic>{};
+            billUrl = _billUrlFromUnified(rawMap);
+          } else {
+            billUrl = _billUrlFromLegacy(raw);
+          }
+        }
+
+        Widget leadingVisual;
+        if (brandLogo != null && brandLogo.isNotEmpty) {
+          leadingVisual = ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: _logo(brandLogo, w: 32, h: 32),
+          );
+        } else if (bankLogo != null && bankLogo.isNotEmpty) {
+          leadingVisual = ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: _logo(bankLogo, w: 30, h: 30),
+          );
+        } else {
+          leadingVisual = CircleAvatar(
+            radius: 16,
+            backgroundColor: isIncome ? Colors.green[50] : Colors.pink[50],
+            child: Icon(
+              getCategoryIcon(category, isIncome: isIncome),
+              color: isIncome ? Colors.green[700] : Colors.pink[700],
+              size: 18,
+            ),
+          );
+        }
+
+        final sourceLabel = () {
+          final s = categorySource.toLowerCase();
+          if (s == 'llm') return 'LLM';
+          if (s == 'rules') return 'Rules';
+          if (s == 'user_override') return 'Manual';
+          if (s.isNotEmpty) return s.toUpperCase();
+          return null;
+        }();
+        final methodChipLabels = _methodChipLabels(
+          instrument: instrument,
+          channel: channel,
+          cardLast4: cardLast4,
+          network: network,
+          isInternational: isInternational,
+          hasFees: hasFees,
+          tags: tags,
+        );
+        final rowChips = <Widget>[];
+        if (labels.isNotEmpty) {
+          rowChips.addAll(labels.take(3).map((l) => _chip('#$l')));
+          if (labels.length > 3) {
+            rowChips.add(_chip('+${labels.length - 3}'));
+          }
+        }
+        if (sourceLabel != null) {
+          rowChips.add(_chip(sourceLabel));
+        }
+        if (categorySource == 'llm' && categoryConfidence > 0 && categoryConfidence < 0.6) {
+          rowChips.add(_chip('Review'));
+        }
+
+        final row = Dismissible(
+          key: ValueKey('dismiss_${id}_${tx.hashCode}_$i'),
+          direction: ((widget.onDelete != null || widget.onEdit != null) && widget.enableSwipeActions)
+              ? DismissDirection.horizontal
+              : DismissDirection.none,
+          background: (widget.enableSwipeActions && widget.onEdit != null)
+              ? _buildSwipeBackground(
+                  alignment: Alignment.centerLeft,
+                  icon: Icons.edit,
+                  label: 'Edit',
+                  color: Colors.blue.withOpacity(0.15),
+                )
+              : const SizedBox(),
+          secondaryBackground: (widget.enableSwipeActions && widget.onDelete != null)
+              ? _buildSwipeBackground(
+                  alignment: Alignment.centerRight,
+                  icon: Icons.delete,
+                  label: 'Delete',
+                  color: Colors.red.withOpacity(0.15),
+                )
+              : const SizedBox(),
+          confirmDismiss: (direction) async {
+            if (direction == DismissDirection.startToEnd) {
+              if (widget.onEdit != null) {
+                widget.onEdit!(payload);
               }
-            } catch (_) {
-              friendsStr = null;
+              return false;
             }
-
-            final String showLine2 = () {
-              if (title != null && title.trim().isNotEmpty) return title.trim();
-              if ((counterparty ?? '').toString().trim().isNotEmpty) {
-                return isIncome ? "From ${counterparty!.trim()}" : "Paid to ${counterparty!.trim()}";
-              }
-              if (merchant != null && merchant.isNotEmpty) return merchant;
-              if (note.isNotEmpty) return note.length > 40 ? "${note.substring(0, 40)}..." : note;
-              return '';
-            }();
-
-            final bool isSelectable = widget.multiSelectEnabled && widget.onSelectTx != null;
-            final bool isSelected = isSelectable && widget.selectedIds.contains(id);
-
-            final dynamic payload = tx['mode'] == 'unified' ? tx : raw;
-
-            String billUrl = '';
-            if (widget.showBillIcon) {
-              if (tx['mode'] == 'unified') {
-                final rawMap = (tx['raw'] is Map<String, dynamic>) ? tx['raw'] as Map<String, dynamic> : <String, dynamic>{};
-                billUrl = _billUrlFromUnified(rawMap);
-              } else {
-                billUrl = _billUrlFromLegacy(raw);
+            if (direction == DismissDirection.endToStart) {
+              if (widget.onDelete == null) return false;
+              return _confirmDeleteTransaction(context, payload);
+            }
+            return false;
+          },
+          onDismissed: (direction) {
+            if (direction == DismissDirection.endToStart && widget.onDelete != null) {
+              final indexInAll = allTx.indexOf(tx);
+              if (indexInAll >= 0) {
+                _handleDelete(tx, indexInAll, payload);
               }
             }
-
-            final chipWidgets = <Widget>[];
-            if ((instrument ?? '').isNotEmpty) {
-              chipWidgets.add(_chip(instrument!));
-            } else if ((channel ?? '').isNotEmpty) {
-              chipWidgets.add(_chip(channel!));
-            }
-            if ((cardLast4 ?? '').isNotEmpty) chipWidgets.add(_chip("****$cardLast4"));
-            if ((network ?? '').isNotEmpty) chipWidgets.add(_chip(network!));
-            if (isInternational) chipWidgets.add(_chip("INTL"));
-            if (hasFees) chipWidgets.add(_chip("Fees"));
-            if ((tags ?? '').isNotEmpty) {
-              chipWidgets.addAll(
-                _meaningfulTagChips(
-                  rawTags: tags!,
-                  isInternational: isInternational,
-                  hasFees: hasFees,
-                  instrument: instrument,
-                ),
-              );
-            }
-            final sourceLabel = () {
-              final s = categorySource.toLowerCase();
-              if (s == 'llm') return 'LLM';
-              if (s == 'rules') return 'Rules';
-              if (s == 'user_override') return 'Manual';
-              if (s.isNotEmpty) return s.toUpperCase();
-              return null;
-            }();
-            if (sourceLabel != null) chipWidgets.add(_chip(sourceLabel));
-            if (categorySource == 'llm' && categoryConfidence > 0 && categoryConfidence < 0.6) {
-              chipWidgets.add(_chip('Review'));
-            }
-
-            final canSwipe = widget.onDelete != null || widget.onEdit != null;
-            rows.add(
-              Dismissible(
-                key: ValueKey('dismiss_${id}_${tx.hashCode}_$i'),
-                direction: (canSwipe && widget.enableSwipeActions)
-                    ? DismissDirection.horizontal
-                    : DismissDirection.none,
-                background: (widget.enableSwipeActions && widget.onEdit != null)
-                    ? _buildSwipeBackground(
-                        alignment: Alignment.centerLeft,
-                        icon: Icons.edit,
-                        label: 'Edit',
-                        color: Colors.blue.withOpacity(0.15),
-                      )
-                    : const SizedBox(),
-                secondaryBackground: (widget.enableSwipeActions && widget.onDelete != null)
-                    ? _buildSwipeBackground(
-                        alignment: Alignment.centerRight,
-                        icon: Icons.delete,
-                        label: 'Delete',
-                        color: Colors.red.withOpacity(0.15),
-                      )
-                    : const SizedBox(),
-                confirmDismiss: (direction) async {
-                  if (direction == DismissDirection.startToEnd) {
-                    if (widget.onEdit != null) {
-                      widget.onEdit!(payload);
+          },
+          child: GestureDetector(
+            key: ValueKey(id),
+            behavior: HitTestBehavior.opaque,
+            onTap: isSelectable
+                ? () => widget.onSelectTx!(id, !isSelected)
+                : () {
+                    if (widget.onRowTapIntercept != null) {
+                      final handled = widget.onRowTapIntercept!(tx);
+                      if (handled == true) return;
                     }
-                    return false;
-                  }
-                  if (direction == DismissDirection.endToStart) {
-                    if (widget.onDelete == null) return false;
-                    return _confirmDeleteTransaction(context, payload);
-                  }
-                  return false;
-                },
-                onDismissed: (direction) {
-                  if (direction == DismissDirection.endToStart && widget.onDelete != null) {
-                    final indexInAll = allTx.indexOf(tx);
-                    if (indexInAll >= 0) {
-                      _handleDelete(tx, indexInAll, payload);
-                    }
-                  }
-                },
-                child: GestureDetector(
-                  key: ValueKey(id),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: isSelectable
-                      ? () => widget.onSelectTx!(id, !isSelected)
-                      : () {
-                          if (widget.onRowTapIntercept != null) {
-                            final handled = widget.onRowTapIntercept!(tx);
-                            if (handled == true) return;
-                          }
-                          if (!widget.enableDetailsSheet) return;
+                    if (!widget.enableDetailsSheet) return;
 
-                          if (tx['mode'] == 'unified') {
-                            _showDetailsScreenFromUnified(tx, context);
-                          } else {
-                            _showDetailsScreenLegacy(raw, isIncome, context);
-                          }
-                        },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    constraints: const BoxConstraints(minHeight: 58),
-                    margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? Colors.deepPurple.withOpacity(0.09)
-                          : Colors.white.withOpacity(0.93),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.028),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
+                    if (tx['mode'] == 'unified') {
+                      _showDetailsScreenFromUnified(
+                        tx,
+                        context,
+                        methodChipLabels: methodChipLabels,
+                      );
+                    } else {
+                      _showDetailsScreenLegacy(
+                        raw,
+                        isIncome,
+                        context,
+                        methodChipLabels: methodChipLabels,
+                      );
+                    }
+                  },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              constraints: const BoxConstraints(minHeight: 58),
+              margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 0.5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? Colors.deepPurple.withOpacity(0.09)
+                    : Colors.white.withOpacity(0.93),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.028),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+                border: isSelected
+                    ? Border.all(color: Colors.deepPurple, width: 1.4)
+                    : null,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (isSelectable)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Checkbox(
+                        value: isSelected,
+                        onChanged: (val) => widget.onSelectTx!(id, val ?? false),
+                        activeColor: Colors.deepPurple,
+                        visualDensity: VisualDensity.compact,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(7),
                         ),
-                      ],
-                      border: isSelected
-                          ? Border.all(color: Colors.deepPurple, width: 1.4)
-                          : null,
+                      ),
                     ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: leadingVisual,
+                    ),
+                  ),
+                  if (schemeLogo != null && schemeLogo.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: _logo(schemeLogo, w: 18, h: 18),
+                    ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (isSelectable)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: Checkbox(
-                              value: isSelected,
-                              onChanged: (val) => widget.onSelectTx!(id, val ?? false),
-                              activeColor: Colors.deepPurple,
-                              visualDensity: VisualDensity.compact,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(7),
-                              ),
-                            ),
+                        GestureDetector(
+                          onTap: () => _editCounterparty(
+                            txId: id,
+                            isIncome: isIncome,
+                            current: counterparty,
+                            payload: payload,
+                            normalized: tx,
                           ),
-                        if (bankLogo != null && bankLogo.isNotEmpty) ...[
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: _logo(bankLogo, w: 22, h: 22),
-                          ),
-                        ],
-                        CircleAvatar(
-                          radius: 16,
-                          backgroundColor: isIncome ? Colors.green[50] : Colors.pink[50],
-                          child: Icon(
-                            getCategoryIcon(category, isIncome: isIncome),
-                            color: isIncome ? Colors.green[700] : Colors.pink[700],
-                            size: 18,
-                          ),
-                        ),
-                        if (schemeLogo != null && schemeLogo.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 6),
-                            child: _logo(schemeLogo, w: 18, h: 18),
-                          ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.max,
                             children: [
-                              if (widget.showCategoryDropdown)
-                                SizedBox(
-                                  height: 28,
-                                  child: _categoryDropdown(
-                                    txId: id,
-                                    current: category,
-                                    isIncome: isIncome,
-                                    payload: payload,
-                                    normalized: tx,
-                                  ),
-                                )
-                              else
-                                Text(
-                                  category,
+                              Expanded(
+                                child: Text(
+                                  displayName,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 15.3,
-                                    color: Color(0xFF0F1E1C),
+                                    fontSize: 16.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF111827),
                                   ),
                                 ),
-                              if (showLine2.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2.0),
-                                  child: Text(
-                                    showLine2,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      color: Colors.black.withOpacity(0.75),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              if (labels.isNotEmpty || chipWidgets.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4.0),
-                                  child: Wrap(
-                                    spacing: 6,
-                                    runSpacing: -6,
-                                    children: [
-                                      ...labels.take(3).map((l) => Chip(
-                                            label: Text(
-                                              '#$l',
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w700,
-                                                color: Colors.black87,
-                                              ),
-                                            ),
-                                            backgroundColor: Colors.teal.withOpacity(0.10),
-                                            visualDensity: VisualDensity.compact,
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                          )),
-                                      if (labels.length > 3)
-                                        Chip(
-                                          label: Text(
-                                            '+${labels.length - 3}',
-                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                                          ),
-                                          backgroundColor: Colors.teal.withOpacity(0.08),
-                                          visualDensity: VisualDensity.compact,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                        ),
-                                      ...chipWidgets,
-                                    ],
-                                  ),
-                                ),
-                              if (tx['mode'] == 'legacy')
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2.0),
-                                  child: Row(
-                                    children: [
-                                      if (friendsStr != null) ...[
-                                        Icon(Icons.person_2_rounded, size: 15, color: Colors.deepPurple[500]),
-                                        Flexible(
-                                          child: Text(
-                                            " $friendsStr",
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 12.5,
-                                              color: Colors.deepPurple[700],
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                      if (tx['type'] == 'income' &&
-                                          (raw.source ?? '').toString().isNotEmpty) ...[
-                                        const SizedBox(width: 8),
-                                        Icon(Icons.input_rounded, size: 15, color: Colors.teal[600]),
-                                        Flexible(
-                                          child: Text(
-                                            " ${raw.source}",
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 12.5,
-                                              color: Colors.teal[700],
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(
+                                Icons.edit_outlined,
+                                size: 14,
+                                color: Color(0xFF9CA3AF),
+                              ),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                        const SizedBox(height: 4),
+                        Row(
                           children: [
-                            _amountPill(amount, isIncome),
-                            const SizedBox(height: 10),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (widget.showBillIcon && billUrl.isNotEmpty)
-                                  IconButton(
-                                    icon: const Icon(Icons.receipt_long_rounded, size: 18, color: Colors.brown),
-                                    tooltip: 'View bill',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => _showBillImage(context, billUrl),
-                                  ),
-                                if (tx['mode'] == 'legacy' && !isIncome && widget.onSplit != null)
-                                  IconButton(
-                                    icon: const Icon(Icons.group, size: 18, color: Colors.deepPurple),
-                                    tooltip: 'Split',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => widget.onSplit?.call(payload),
-                                  ),
-                                if (widget.onEdit != null || widget.onDelete != null)
-                                  PopupMenuButton<_TxAction>(
-                                    icon: const Icon(Icons.more_horiz_rounded, color: Colors.blueGrey, size: 20),
-                                    tooltip: 'More actions',
-                                    onSelected: (action) async {
-                                      switch (action) {
-                                        case _TxAction.edit:
-                                          widget.onEdit?.call(payload);
-                                          break;
-                                        case _TxAction.delete:
-                                          if (widget.onDelete == null) break;
-                                          final confirmed = await _confirmDeleteTransaction(context, payload);
-                                          if (confirmed) widget.onDelete!(payload);
-                                          break;
-                                      }
-                                    },
-                                    itemBuilder: (ctx) {
-                                      return [
-                                        if (widget.onEdit != null)
-                                          PopupMenuItem<_TxAction>(
-                                            value: _TxAction.edit,
-                                            child: Row(
-                                              children: const [
-                                                Icon(Icons.edit, size: 18, color: Colors.blueGrey),
-                                                SizedBox(width: 8),
-                                                Text('Edit'),
-                                              ],
-                                            ),
-                                          ),
-                                        if (widget.onDelete != null)
-                                          PopupMenuItem<_TxAction>(
-                                            value: _TxAction.delete,
-                                            child: Row(
-                                              children: const [
-                                                Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                                                SizedBox(width: 8),
-                                                Text('Delete', style: TextStyle(color: Colors.redAccent)),
-                                              ],
-                                            ),
-                                          ),
-                                      ];
-                                    },
-                                  ),
-                              ],
+                            Expanded(
+                              child: widget.showCategoryDropdown
+                                  ? SizedBox(
+                                      height: 26,
+                                      child: _categoryDropdown(
+                                        txId: id,
+                                        current: category,
+                                        isIncome: isIncome,
+                                        payload: payload,
+                                        normalized: tx,
+                                      ),
+                                    )
+                                  : Text(
+                                      category,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13.5,
+                                        color: Color(0xFF4B5563),
+                                      ),
+                                    ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: _subcategoryDropdown(
+                                txId: id,
+                                currentCategory: category,
+                                currentSubcategory: (tx['subcategory'] ?? '').toString(),
+                                isIncome: isIncome,
+                                payload: payload,
+                                normalized: tx,
+                              ),
                             ),
                           ],
                         ),
+                        if (showLine2.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Text(
+                              showLine2,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                color: Colors.black.withOpacity(0.75),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        if (rowChips.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: -6,
+                              children: rowChips,
+                            ),
+                          ),
+                        if (tx['mode'] == 'legacy')
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2.0),
+                            child: Row(
+                              children: [
+                                if (friendsStr != null) ...[
+                                  Icon(Icons.person_2_rounded, size: 15, color: Colors.deepPurple[500]),
+                                  Flexible(
+                                    child: Text(
+                                      " $friendsStr",
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        color: Colors.deepPurple[700],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                if (tx['type'] == 'income' && (raw.source ?? '').toString().isNotEmpty) ...[
+                                  const SizedBox(width: 8),
+                                  Icon(Icons.input_rounded, size: 15, color: Colors.teal[600]),
+                                  Flexible(
+                                    child: Text(
+                                      " ${raw.source}",
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        color: Colors.teal[700],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _amountPill(amount, isIncome),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (widget.showBillIcon && billUrl.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.receipt_long_rounded, size: 18, color: Colors.brown),
+                              tooltip: 'View bill',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _showBillImage(context, billUrl),
+                            ),
+                          if (tx['mode'] == 'legacy' && !isIncome && widget.onSplit != null)
+                            IconButton(
+                              icon: const Icon(Icons.group, size: 18, color: Colors.deepPurple),
+                              tooltip: 'Split',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => widget.onSplit?.call(payload),
+                            ),
+                          if (widget.onEdit != null || widget.onDelete != null)
+                            PopupMenuButton<_TxAction>(
+                              icon: const Icon(Icons.more_horiz_rounded, color: Colors.blueGrey, size: 20),
+                              tooltip: 'More actions',
+                              onSelected: (action) async {
+                                switch (action) {
+                                  case _TxAction.edit:
+                                    widget.onEdit?.call(payload);
+                                    break;
+                                  case _TxAction.delete:
+                                    if (widget.onDelete == null) break;
+                                    final confirmed = await _confirmDeleteTransaction(context, payload);
+                                    if (confirmed) widget.onDelete!(payload);
+                                    break;
+                                }
+                              },
+                              itemBuilder: (ctx) {
+                                return [
+                                  if (widget.onEdit != null)
+                                    PopupMenuItem<_TxAction>(
+                                      value: _TxAction.edit,
+                                      child: Row(
+                                        children: const [
+                                          Icon(Icons.edit, size: 18, color: Colors.blueGrey),
+                                          SizedBox(width: 8),
+                                          Text('Edit'),
+                                        ],
+                                      ),
+                                    ),
+                                  if (widget.onDelete != null)
+                                    PopupMenuItem<_TxAction>(
+                                      value: _TxAction.delete,
+                                      child: Row(
+                                        children: const [
+                                          Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                          SizedBox(width: 8),
+                                          Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                                        ],
+                                      ),
+                                    ),
+                                ];
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            );
+            ),
+          ),
+        );
 
-            if (widget.enableInlineAds && i == widget.inlineAdAfterIndex) {
-              rows.add(
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: _inlineAdCard('txn_list_inline'),
-                ),
-              );
-            }
-          }
+        rows.add(row);
 
-          rows.add(const SizedBox(height: 4));
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: rows,
+        if (widget.enableInlineAds && i == widget.inlineAdAfterIndex) {
+          rows.add(
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: _inlineAdCard('txn_list_inline'),
+            ),
           );
-        },
-      ),
+        }
+      }
+
+      rows.add(const SizedBox(height: 2));
+
+      children.add(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: rows,
+        ),
+      );
+    }
+
+    // Show More & bottom banner (same as your `idx >= groupCount` branch)
+    if (shownCount < allTx.length) {
+      children.add(
+        Column(
+          children: [
+            Center(
+              child: TextButton(
+                child: const Text("Show More"),
+                onPressed: () {
+                  setState(() {
+                    shownCount += widget.showMoreStep;
+                  });
+                },
+              ),
+            ),
+            if (widget.showBottomBannerAd)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _adBanner('txn_list_bottom'),
+              ),
+          ],
+        ),
+      );
+    }
+
+    // Build the core content as a flat Column of all group sections, rows, and ads.
+    final column = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
     );
+
+    if (widget.enableScrolling) {
+      return ListView(
+        padding: EdgeInsets.zero,
+        children: [column],
+      );
+    }
+
+    return column;
   }
 
   Widget _chip(String label) {
     return Chip(
-      label: Text(label,
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black87)),
-      backgroundColor: Colors.blueGrey.withOpacity(0.12),
-      visualDensity: VisualDensity.compact,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+      label: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: Colors.black87,
+        ),
+      ),
+      backgroundColor: Colors.blueGrey.withOpacity(0.10),
+      visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
