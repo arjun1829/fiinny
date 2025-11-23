@@ -2185,6 +2185,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         expCount: exp.length,
                         incCount: inc.length,
                         spark: spark,
+                        periodRange: activeRange,
                         onTapSpark: () => _showTrendPopup(
                           spark,
                           title: _period == Period.custom
@@ -2355,6 +2356,126 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   // ---------- OVERVIEW card ----------
+  String _periodLabel(DateTimeRange range) {
+    if (_period == Period.custom && _custom != null) {
+      return '${DateFormat('dd MMM').format(_custom!.start)} –'
+          ' ${DateFormat('dd MMM').format(_custom!.end)}';
+    }
+
+    switch (_periodToken) {
+      case 'D':
+        return 'Today';
+      case 'W':
+        final start = DateFormat('dd MMM').format(range.start);
+        final end =
+            DateFormat('dd MMM').format(range.end.subtract(const Duration(days: 1)));
+        return '$start – $end';
+      case 'M':
+        return DateFormat('MMMM y').format(range.start);
+      case 'Y':
+        return DateFormat('y').format(range.start);
+      case 'All Time':
+        return 'All time';
+      default:
+        return 'Custom';
+    }
+  }
+
+  String? _filterLabel() {
+    final labels = <String>[];
+
+    if (_bankFilter != null) {
+      labels.add(_formatBankLabel(_bankFilter!));
+    }
+
+    if (_instrumentFilter != 'All') {
+      labels.add(_instrumentFilter);
+    }
+
+    if (_selectedCategories.isNotEmpty ||
+        _selectedMerchants.isNotEmpty ||
+        _selectedBanks.isNotEmpty ||
+        _friendFilterPhones.isNotEmpty ||
+        _groupFilterIds.isNotEmpty) {
+      labels.add('Filters applied');
+    }
+
+    if (_custom != null || _range != null) {
+      labels.add('Custom range');
+    }
+
+    if (labels.isEmpty) return null;
+    return labels.join(' • ');
+  }
+
+  Widget _badge(String label, {IconData? icon, Color? color}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: (color ?? Colors.white).withOpacity(.14),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 16, color: color ?? Colors.white),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            label,
+            style: Fx.label.copyWith(
+              fontWeight: FontWeight.w700,
+              color: color ?? Fx.text,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pillStat(String label, String value, Color color, IconData icon) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: Fx.soft,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: color, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: Fx.label.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: Fx.text.withOpacity(.9),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              value,
+              style: Fx.number.copyWith(
+                color: color,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _summaryCard({
     required double income,
     required double expense,
@@ -2364,87 +2485,313 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     required int incCount,
     required List<double> spark,
     required VoidCallback onTapSpark,
+    required DateTimeRange periodRange,
   }) {
-    return GlassCard(
-      radius: Fx.r24,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final netPositive = savings >= 0;
+    final periodLabel = _periodLabel(periodRange);
+    final filterLabel = _filterLabel();
+    final avgTicket = txCount == 0 ? 0 : (income.abs() + expense.abs()) / txCount;
+    final sparkMin = spark.isEmpty ? 0 : spark.reduce(math.min);
+    final sparkMax = spark.isEmpty ? 0 : spark.reduce(math.max);
+
+    final trendTone = netPositive ? Fx.good : Fx.bad;
+    final netLabel = netPositive ? 'You’re saving' : 'You’re overspending';
+    final netSub = netPositive
+        ? 'Solid cushion after covering your spends.'
+        : 'Spends are running ahead of earnings.';
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(Fx.r24),
+        gradient: LinearGradient(
+          colors: [
+            Colors.teal.shade600.withOpacity(.85),
+            Colors.teal.shade300.withOpacity(.75),
+            Colors.white,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: Fx.soft,
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      child: Stack(
         children: [
-          Text('Overview', style: Fx.title.copyWith(fontSize: 18)),
-          const SizedBox(height: 8),
-          Row(
+          Positioned(
+            right: -30,
+            top: -40,
+            child: Container(
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [Colors.white.withOpacity(.45), Colors.transparent],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: -40,
+            bottom: -50,
+            child: Container(
+              width: 160,
+              height: 160,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [Colors.white.withOpacity(.30), Colors.transparent],
+                ),
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: _statRow('Total Income', INR.f(income), Fx.good,
-                    Icons.south_west_rounded),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _statRow('Total Expense', INR.f(expense), Fx.bad,
-                    Icons.north_east_rounded),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(Icons.brightness_1_rounded, size: 10, color: Fx.warn),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  'Total Savings  ',
-                  style: Fx.label,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  INR.f(savings),
-                  style: Fx.number.copyWith(color: Fx.text),
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Tx ${NumberFormat.decimalPattern().format(txCount)} '
-            '• Exp # ${NumberFormat.decimalPattern().format(expCount)} '
-            '• Inc # ${NumberFormat.decimalPattern().format(incCount)}',
-            style: Fx.label.copyWith(color: Fx.text.withOpacity(.85)),
-            maxLines: 2,
-            softWrap: true,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 14),
-          GestureDetector(
-            onTap: onTapSpark,
-            behavior: HitTestBehavior.opaque,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  height: 66,
-                  child: _SparklineSimple(values: spark),
-                ),
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    'Tap graph to expand',
-                    style: Fx.label.copyWith(
-                      fontSize: 11,
-                      color: Fx.text.withOpacity(.75),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: Fx.soft,
+                    ),
+                    child:
+                        const Icon(Icons.auto_graph_rounded, color: Colors.teal),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Performance overview',
+                          style: Fx.title.copyWith(fontSize: 18),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Beautiful, high-signal glance at your money story.',
+                          style: Fx.label.copyWith(color: Fx.text.withOpacity(.82)),
+                        ),
+                      ],
                     ),
                   ),
-                ),
+                  _badge(periodLabel, icon: Icons.event_rounded, color: Colors.teal),
+                ],
+              ),
+              if (filterLabel != null) ...[
+                const SizedBox(height: 12),
+                _badge(filterLabel, icon: Icons.tune_rounded, color: Colors.black87),
               ],
-            ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            trendTone.withOpacity(.14),
+                            Colors.white.withOpacity(.92),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: Fx.soft,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                netPositive
+                                    ? Icons.savings_rounded
+                                    : Icons.warning_rounded,
+                                color: trendTone,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  netLabel,
+                                  style:
+                                      Fx.label.copyWith(fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                              Container(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: trendTone.withOpacity(.14),
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                child: Text(
+                                  netPositive ? 'Healthy' : 'Watchlist',
+                                  style: Fx.label.copyWith(
+                                    color: trendTone,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            INR.f(savings),
+                            style: Fx.number.copyWith(
+                              color: trendTone,
+                              fontSize: 26,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            netSub,
+                            style: Fx.label.copyWith(color: Fx.text.withOpacity(.8)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    width: 130,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: Fx.soft,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.confirmation_num_rounded,
+                                color: Colors.indigo),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Tickets',
+                              style:
+                                  Fx.label.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          NumberFormat.compact().format(txCount),
+                          style: Fx.number.copyWith(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 22,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Avg ${INR.f(avgTicket)}',
+                          style: Fx.label.copyWith(color: Colors.black54),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            _badge(
+                              '${NumberFormat.decimalPattern().format(expCount)} out',
+                              icon: Icons.north_east_rounded,
+                              color: Colors.redAccent,
+                            ),
+                            _badge(
+                              '${NumberFormat.decimalPattern().format(incCount)} in',
+                              icon: Icons.south_west_rounded,
+                              color: Colors.green,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  _pillStat('Total Income', INR.f(income), Fx.good, Icons.arrow_downward_rounded),
+                  const SizedBox(width: 12),
+                  _pillStat(
+                    'Total Expense',
+                    INR.f(expense),
+                    Fx.bad,
+                    Icons.arrow_upward_rounded,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              GestureDetector(
+                onTap: onTapSpark,
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.black.withOpacity(.06),
+                        Colors.teal.shade50.withOpacity(.8),
+                        Colors.white,
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.timeline_rounded, color: Colors.teal),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Flow over time',
+                              style: Fx.label.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          _badge('Tap to expand', icon: Icons.touch_app_rounded),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 70,
+                        child: _SparklineSimple(values: spark),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _badge(
+                              'Best spike: ${INR.f(sparkMax)}',
+                              icon: Icons.trending_up_rounded,
+                              color: Colors.indigo,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _badge(
+                              'Softest day: ${INR.f(sparkMin)}',
+                              icon: Icons.trending_down_rounded,
+                              color: Colors.deepOrange,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
