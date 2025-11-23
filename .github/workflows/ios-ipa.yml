@@ -58,7 +58,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.pub-cache
-          key: ${{ runner.os }}-pub-${{ hashFiles('pubspec.lock') }}
+          # Use pubspec.yaml (always present) instead of pubspec.lock
+          key: ${{ runner.os }}-pub-${{ hashFiles('pubspec.yaml') }}
           restore-keys: ${{ runner.os }}-pub-
 
       - name: Cache CocoaPods
@@ -67,7 +68,8 @@ jobs:
           path: |
             ~/.cocoapods/repos
             ios/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile.lock') }}
+          # Use Podfile (always present) instead of Podfile.lock
+          key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile') }}
           restore-keys: ${{ runner.os }}-pods-
 
       - name: Tool versions
