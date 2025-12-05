@@ -13,9 +13,7 @@ import '../../widgets/add_friend_expense_dialog.dart';
 import '../../widgets/add_group_expense_dialog.dart';
 import '../../widgets/add_group_dialog.dart';
 
-const Color _kPrimary = Color(0xFF09857a);
-const Color _kBg = Color(0xFFF8FAF9);
-const Color _kText = Color(0xFF0F1E1C);
+
 
 class ActivityScreen extends StatefulWidget {
   final String userPhone;
@@ -110,7 +108,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final prov = _friendImage(f);
     return CircleAvatar(
       radius: 18,
-      backgroundColor: _kPrimary.withOpacity(.10),
+      backgroundColor: Theme.of(context).primaryColor.withOpacity(.10),
       foregroundImage: prov,
       child: prov == null
           ? Text(
@@ -126,7 +124,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final prov = _groupImage(g);
     return CircleAvatar(
       radius: 18,
-      backgroundColor: _kPrimary.withOpacity(.10),
+      backgroundColor: Theme.of(context).primaryColor.withOpacity(.10),
       foregroundImage: prov,
       child: prov == null ? const Text('👥') : null,
     );
@@ -135,18 +133,18 @@ class _ActivityScreenState extends State<ActivityScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _kBg,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: _kBg,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
-        surfaceTintColor: _kBg,
+        surfaceTintColor: Theme.of(context).scaffoldBackgroundColor,
         leading: IconButton(
-          icon: const Icon(Icons.close_rounded, color: _kText),
+          icon: Icon(Icons.close_rounded, color: Theme.of(context).textTheme.bodyLarge?.color),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'Add an expense',
-          style: TextStyle(color: _kText, fontWeight: FontWeight.w800),
+          style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.w800),
         ),
       ),
       body: SafeArea(
@@ -233,7 +231,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(14),
-                                    borderSide: const BorderSide(color: _kPrimary),
+                                    borderSide: BorderSide(color: Theme.of(context).primaryColor),
                                   ),
                                 ),
                               ),
@@ -377,7 +375,7 @@ class _QuickChip extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: _kPrimary, size: 20),
+          Icon(icon, color: Theme.of(context).primaryColor, size: 20),
           const SizedBox(width: 8),
           Flexible(
             child: Text(

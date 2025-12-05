@@ -72,6 +72,10 @@ class TransactionAmountCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
+
     final double maxVal = barData.isEmpty ? 1.0 : barData.reduce((a, b) => a > b ? a : b);
 
     return GestureDetector(
@@ -89,10 +93,10 @@ class TransactionAmountCard extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
-                  color: Color(0xFF09857a),
+                  color: colorScheme.primary,
                 ),
               ),
               const SizedBox(height: 2),
@@ -100,10 +104,10 @@ class TransactionAmountCard extends StatelessWidget {
                 children: [
                   Text(
                     filterPeriodLabel(period),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 12,
-                      color: Color(0xFF09857a),
+                      color: colorScheme.primary,
                     ),
                   ),
                   const Spacer(),
@@ -113,9 +117,9 @@ class TransactionAmountCard extends StatelessWidget {
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.blue.withOpacity(0.13),
+                        color: colorScheme.primary.withOpacity(0.13),
                       ),
-                      child: const Icon(Icons.filter_list_rounded, color: Color(0xFF09857a), size: 19),
+                      child: Icon(Icons.filter_list_rounded, color: colorScheme.primary, size: 19),
                     ),
                   ),
                 ],
@@ -123,10 +127,10 @@ class TransactionAmountCard extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 "₹${amount.toStringAsFixed(0)}",
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 27,
                   fontWeight: FontWeight.bold,
-                  color: Colors.blueAccent,
+                  color: colorScheme.secondary,
                 ),
               ),
               const SizedBox(height: 6),
@@ -155,7 +159,7 @@ class TransactionAmountCard extends StatelessWidget {
                               margin: const EdgeInsets.symmetric(horizontal: 0.5),
                               height: barHeight,
                               decoration: BoxDecoration(
-                                color: barHeight > 0 ? Colors.blue[400] : Colors.blue[100],
+                                color: barHeight > 0 ? colorScheme.primary : colorScheme.primary.withOpacity(0.3),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                             );
@@ -190,7 +194,7 @@ class TransactionAmountCard extends StatelessWidget {
                                   ? Text(
                                 label,
                                 style: TextStyle(
-                                  color: Colors.blue[700],
+                                  color: textTheme.bodySmall?.color,
                                   fontSize: 9.5,
                                   fontWeight: FontWeight.w500,
                                   height: 1.0, // <-- Make sure this is here!

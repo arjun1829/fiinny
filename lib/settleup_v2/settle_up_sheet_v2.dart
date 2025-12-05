@@ -306,7 +306,7 @@ class _SettleUpSheetV2State extends State<SettleUpSheetV2> {
   Widget _buildAmountSection() {
     final summaryAmount = _controller.totalSelectedOutstanding.abs();
     final summaryLabel = _controller.isReceiveFlow ? 'You get back' : 'You owe';
-    final summaryColor = _controller.isReceiveFlow ? AppColors.mint : Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(.72) ?? AppColors.ink500;
+    final summaryColor = _controller.isReceiveFlow ? Theme.of(context).colorScheme.primary : Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(.72) ?? Theme.of(context).textTheme.bodyMedium?.color;
     final quickOptions = _buildQuickOptions();
 
     return Column(
@@ -367,7 +367,7 @@ class _SettleUpSheetV2State extends State<SettleUpSheetV2> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppRadii.md),
-                    borderSide: const BorderSide(color: AppColors.mint, width: 1.6),
+                    borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.6),
                   ),
                   filled: true,
                   fillColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(.4),
@@ -383,7 +383,7 @@ class _SettleUpSheetV2State extends State<SettleUpSheetV2> {
           const SizedBox(height: 6),
           Text(
             _controller.errorText!,
-            style: const TextStyle(color: AppColors.bad, fontSize: 12),
+            style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
           ),
         ],
         const SizedBox(height: AppSpacing.l),
@@ -530,7 +530,7 @@ class _FriendHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final neutralColor = textTheme.bodySmall?.color?.withOpacity(.72) ?? AppColors.ink500;
+    final neutralColor = textTheme.bodySmall?.color?.withOpacity(.72) ?? textTheme.bodyMedium?.color;
 
     Widget buildChip(String label, double amount, Color color) {
       return Container(
@@ -560,13 +560,13 @@ class _FriendHeader extends StatelessWidget {
         ? CircleAvatar(radius: 28, backgroundImage: NetworkImage(avatarUrl!))
         : CircleAvatar(
             radius: 28,
-            backgroundColor: AppColors.mint.withOpacity(.16),
+            backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(.16),
             child: Text(
               name.characters.isNotEmpty ? name.characters.first.toUpperCase() : '👤',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
-                color: AppColors.mint,
+                color: Theme.of(context).colorScheme.primary,
               ),
             ),
           );
@@ -588,7 +588,7 @@ class _FriendHeader extends StatelessWidget {
                 side: BorderSide(color: Theme.of(context).dividerColor.withOpacity(.5)),
                 fillColor: MaterialStateProperty.resolveWith((states) {
                   if (states.contains(MaterialState.selected)) {
-                    return AppColors.mint;
+                    return Theme.of(context).colorScheme.primary;
                   }
                   return Theme.of(context).colorScheme.surfaceVariant;
                 }),
@@ -631,8 +631,8 @@ class _FriendHeader extends StatelessWidget {
                     spacing: AppSpacing.s,
                     runSpacing: AppSpacing.s,
                     children: [
-                      buildChip('You get back', getBackAmount, AppColors.mint),
-                      buildChip('You owe', oweAmount, neutralColor),
+                      buildChip('You get back', getBackAmount, Theme.of(context).colorScheme.primary),
+                      buildChip('You owe', oweAmount, neutralColor ?? Colors.black),
                     ],
                   ),
                 ],
@@ -668,8 +668,8 @@ class _SummaryBar extends StatelessWidget {
         ? 'MARK ₹${amount.toStringAsFixed(2)} AS RECEIVED'
         : 'MARK ₹${amount.toStringAsFixed(2)} AS PAID';
     final valueColor = isReceiveFlow
-        ? AppColors.mint
-        : theme.textTheme.bodyLarge?.color?.withOpacity(.72) ?? AppColors.ink500;
+        ? theme.colorScheme.primary
+        : theme.textTheme.bodyLarge?.color?.withOpacity(.72) ?? theme.textTheme.bodyMedium?.color;
 
     return Material(
       color: Colors.transparent,
@@ -723,21 +723,21 @@ class _SummaryBar extends StatelessWidget {
               FilledButton(
                 onPressed: canSubmit && !isLoading ? onSubmit : null,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.mint,
-                  foregroundColor: Colors.white,
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                   textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
                 ),
                 child: isLoading
                     ? Row(
                         mainAxisSize: MainAxisSize.min,
-                        children: const [
+                        children: [
                           SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.onPrimary),
                             ),
                           ),
                           SizedBox(width: 12),

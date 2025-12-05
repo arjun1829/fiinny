@@ -9,19 +9,18 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'app_theme.dart';
+import '../ui/theme.dart';
+import '../ui/tokens.dart';
 
 enum FiinnyTheme {
-  fresh,
-  royal,
-  sunny,
-  midnight,
-  classic,
-  pureDark,
-  lightMinimal,
+  teal,
+  black,
+  white,
 }
 
+
 class ThemeProvider extends ChangeNotifier {
-  FiinnyTheme _theme = FiinnyTheme.fresh;
+  FiinnyTheme _theme = FiinnyTheme.teal;
   StreamSubscription<User?>? _authSub;
 
   // Optional DI (useful for tests or early init)
@@ -33,20 +32,41 @@ class ThemeProvider extends ChangeNotifier {
 
   ThemeData get themeData {
     switch (_theme) {
-      case FiinnyTheme.royal:
-        return royalTheme;
-      case FiinnyTheme.sunny:
-        return sunnyTheme;
-      case FiinnyTheme.midnight:
-        return midnightTheme;
-      case FiinnyTheme.classic:
-        return classicTheme;
-      case FiinnyTheme.pureDark:
-        return pureDarkTheme;
-      case FiinnyTheme.lightMinimal:
-        return lightMinimalTheme;
+      case FiinnyTheme.teal:
+        return buildAppTheme(
+          const ColorScheme.light(
+            primary: tealPrimary,
+            secondary: Colors.tealAccent,
+            surface: Colors.white,
+            onSurface: AppColors.ink900,
+            onPrimary: Colors.white,
+          ),
+          scaffoldBackgroundColor: AppColors.mintSoft,
+        );
+
+      case FiinnyTheme.black:
+        return buildAppTheme(
+          const ColorScheme.dark(
+            primary: Colors.white,
+            secondary: Colors.white,
+            surface: Colors.black,
+            onSurface: Colors.white,
+            onPrimary: Colors.black, // Ensure text on white buttons is black
+          ),
+          scaffoldBackgroundColor: Colors.black,
+        );
+      case FiinnyTheme.white:
       default:
-        return freshTheme;
+        return buildAppTheme(
+          const ColorScheme.light(
+            primary: Colors.black,
+            secondary: Colors.black,
+            surface: Colors.white,
+            onPrimary: Colors.white,
+          ),
+          scaffoldBackgroundColor: Colors.white,
+        );
+
     }
   }
 
@@ -89,8 +109,8 @@ class ThemeProvider extends ChangeNotifier {
     if (Firebase.apps.isEmpty) return; // hard guard
     if (user == null) {
       // Anonymous / signed out → default theme
-      if (_theme != FiinnyTheme.fresh) {
-        _theme = FiinnyTheme.fresh;
+      if (_theme != FiinnyTheme.teal) {
+        _theme = FiinnyTheme.teal;
         if (notify) notifyListeners();
       }
       return;
@@ -98,9 +118,10 @@ class ThemeProvider extends ChangeNotifier {
 
     try {
       final fs = _fsOverride ?? FirebaseFirestore.instance;
+      final docId = user.phoneNumber ?? user.uid;
       final doc =
-          await fs.collection('users').doc(user.uid).get(const GetOptions());
-      final key = doc.data()?['selectedTheme'];
+          await fs.collection('users').doc(docId).get(const GetOptions());
+      final key = doc.data()?['theme_key'];
       if (key is String) {
         final match = FiinnyTheme.values.firstWhere(
           (t) => t.name == key,
@@ -130,23 +151,23 @@ class ThemeProvider extends ChangeNotifier {
 
     try {
       final fs = _fsOverride ?? FirebaseFirestore.instance;
+      final docId = user.phoneNumber ?? user.uid;
       await fs
           .collection('users')
-          .doc(user.uid)
-          .set({'selectedTheme': newTheme.name}, SetOptions(merge: true));
+          .doc(docId)
+          .set({'theme_key': newTheme.name}, SetOptions(merge: true));
     } catch (e) {
       debugPrint('Theme persist failed: $e');
     }
   }
 
-  bool get isDarkMode =>
-      _theme == FiinnyTheme.midnight || _theme == FiinnyTheme.pureDark;
+  bool get isDarkMode => _theme == FiinnyTheme.black;
 
   void toggleTheme() {
     if (isDarkMode) {
-      unawaited(setTheme(FiinnyTheme.fresh));
+      unawaited(setTheme(FiinnyTheme.teal));
     } else {
-      unawaited(setTheme(FiinnyTheme.midnight));
+      unawaited(setTheme(FiinnyTheme.black));
     }
   }
 

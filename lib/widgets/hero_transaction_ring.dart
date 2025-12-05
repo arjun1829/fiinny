@@ -35,16 +35,20 @@ class HeroTransactionRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
+
     final maxValue = (credit > debit ? credit : debit);
     final safeMax = maxValue <= 0 ? 1.0 : maxValue;
     final pCredit = (credit / safeMax).clamp(0.0, 1.0);
     final pDebit = (debit / safeMax).clamp(0.0, 1.0);
     final isCompact = MediaQuery.of(context).size.width < 360;
     final radius = BorderRadius.circular(Fx.r28);
-    final defaultTitleStyle = Fx.title.copyWith(
+    final defaultTitleStyle = textTheme.titleLarge?.copyWith(
       fontSize: isCompact ? 16.5 : 18,
       fontWeight: FontWeight.w700,
-    );
+    ) ?? const TextStyle(fontSize: 18, fontWeight: FontWeight.w700);
     final resolvedTitleStyle = titleStyle ?? defaultTitleStyle;
 
     return Material(
@@ -52,9 +56,15 @@ class HeroTransactionRing extends StatelessWidget {
       borderRadius: radius,
       child: Ink(
         decoration: BoxDecoration(
-          color: Fx.card,
+          color: theme.cardColor,
           borderRadius: radius,
-          boxShadow: Fx.soft,
+          boxShadow: [
+            BoxShadow(
+              color: theme.shadowColor.withOpacity(0.1),
+              blurRadius: 18,
+              offset: const Offset(0, 7),
+            ),
+          ],
         ),
         child: InkWell(
           borderRadius: radius,
@@ -88,17 +98,17 @@ class HeroTransactionRing extends StatelessWidget {
                             const SizedBox(height: 6),
                             Text(
                               subtitle!,
-                              style: Fx.label.copyWith(
+                              style: textTheme.bodyMedium?.copyWith(
                                 fontSize: 12.5,
-                                color: Colors.black.withOpacity(0.55),
+                                color: textTheme.bodyMedium?.color?.withOpacity(0.55),
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],
                           SizedBox(height: subtitle == null || subtitle!.isEmpty ? Fx.s10 : Fx.s14),
-                          _rowAmount(label: 'Credit', amount: credit, color: Fx.good, compact: isCompact),
+                          _rowAmount(label: 'Credit', amount: credit, color: Colors.green, compact: isCompact, textTheme: textTheme),
                           const SizedBox(height: 8),
-                          _rowAmount(label: 'Debit', amount: debit, color: Fx.bad, compact: isCompact),
+                          _rowAmount(label: 'Debit', amount: debit, color: Colors.red, compact: isCompact, textTheme: textTheme),
                           const SizedBox(height: 14),
                           Align(
                             alignment: Alignment.centerLeft,
@@ -113,7 +123,7 @@ class HeroTransactionRing extends StatelessWidget {
                                     vertical: Fx.s8,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Fx.mintDark.withOpacity(0.08),
+                                    color: colorScheme.primary.withOpacity(0.08),
                                     borderRadius: BorderRadius.circular(Fx.r12),
                                   ),
                                   child: Row(
@@ -121,14 +131,14 @@ class HeroTransactionRing extends StatelessWidget {
                                     children: [
                                       Text(
                                         period,
-                                        style: Fx.label.copyWith(
+                                        style: textTheme.labelLarge?.copyWith(
                                           fontWeight: FontWeight.w800,
-                                          color: Fx.mintDark,
+                                          color: colorScheme.primary,
                                           fontSize: isCompact ? 12 : 13.5,
                                         ),
                                       ),
                                       const SizedBox(width: 4),
-                                      const Icon(Icons.expand_more_rounded, size: 18, color: Fx.mintDark),
+                                      Icon(Icons.expand_more_rounded, size: 18, color: colorScheme.primary),
                                     ],
                                   ),
                                 ),
@@ -148,16 +158,16 @@ class HeroTransactionRing extends StatelessWidget {
                                       vertical: Fx.s8,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Fx.mintDark.withOpacity(0.10),
+                                      color: colorScheme.primary.withOpacity(0.10),
                                       borderRadius: BorderRadius.circular(Fx.r12),
                                     ),
                                     child: Text(
                                       limitInfo!,
                                       maxLines: 3,
                                       overflow: TextOverflow.ellipsis,
-                                      style: Fx.label.copyWith(
+                                      style: textTheme.labelMedium?.copyWith(
                                         fontWeight: FontWeight.w700,
-                                        color: Fx.mintDark,
+                                        color: colorScheme.primary,
                                         fontSize: isCompact ? 12 : 13.5,
                                       ),
                                     ),
@@ -170,8 +180,8 @@ class HeroTransactionRing extends StatelessWidget {
                                     onTap: onEditLimit,
                                     child: CircleAvatar(
                                       radius: 16,
-                                      backgroundColor: Fx.mintDark.withOpacity(0.12),
-                                      child: const Icon(Icons.edit_rounded, size: 17, color: Fx.mintDark),
+                                      backgroundColor: colorScheme.primary.withOpacity(0.12),
+                                      child: Icon(Icons.edit_rounded, size: 17, color: colorScheme.primary),
                                     ),
                                   ),
                                 ],
@@ -196,17 +206,17 @@ class HeroTransactionRing extends StatelessWidget {
                           width: 28,
                           height: 28,
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: theme.cardColor,
                             borderRadius: BorderRadius.circular(14),
-                            boxShadow: const [
+                            boxShadow: [
                               BoxShadow(
-                                color: Color(0x1A000000),
+                                color: theme.shadowColor.withOpacity(0.15),
                                 blurRadius: 6,
-                                offset: Offset(0, 3),
+                                offset: const Offset(0, 3),
                               ),
                             ],
                           ),
-                          child: const Icon(Icons.speed, size: 18, color: Colors.black87),
+                          child: Icon(Icons.speed, size: 18, color: textTheme.bodyLarge?.color),
                         ),
                       ),
                     ),
@@ -224,12 +234,13 @@ class HeroTransactionRing extends StatelessWidget {
     required double amount,
     required Color color,
     required bool compact,
+    required TextTheme textTheme,
   }) {
     return Row(
       children: [
         Text(
           '₹${amount.toStringAsFixed(0)}',
-          style: Fx.number.copyWith(
+          style: textTheme.headlineSmall?.copyWith(
             color: color,
             fontSize: compact ? 22 : 24,
             fontWeight: FontWeight.w700,
@@ -238,7 +249,7 @@ class HeroTransactionRing extends StatelessWidget {
         const SizedBox(width: Fx.s6),
         Text(
           label,
-          style: Fx.label.copyWith(
+          style: textTheme.bodyMedium?.copyWith(
             color: color,
             fontWeight: FontWeight.w700,
             fontSize: compact ? 12.5 : 13.5,

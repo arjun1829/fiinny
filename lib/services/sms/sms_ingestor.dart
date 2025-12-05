@@ -15,6 +15,7 @@ import '../enrich/counterparty_extractor.dart';
 
 import '../../config/app_config.dart';
 import '../ai/tx_extractor.dart';
+import '../ingest/enrichment_service.dart';
 
 import 'sms_permission_helper.dart';
 import '../ingest_index_service.dart';
@@ -31,6 +32,10 @@ import '../recurring/recurring_engine.dart';
 import '../ingest/cross_source_reconcile.dart';
 // Merchant alias normalization (collapse gateway descriptors)
 import '../merchants/merchant_alias_service.dart';
+
+import '../../core/ingestion/connectors/android_sms_connector.dart';
+import '../../core/config/region_profile.dart';
+import '../../core/ingestion/raw_transaction_event.dart';
 
 // Merge policy shared with Gmail ingestion for consistent behavior.
 enum ReconcilePolicy { off, mergeEnrich, mergeSilent }
@@ -735,8 +740,52 @@ class SmsIngestor {
       );
       _scheduledTaskId = taskId;
       _log('scheduled daily 48h SMS sync');
-    } catch (e) {
       _log('workmanager schedule failed: $e');
+    }
+  }
+
+  Future<void> _processRawEvents(List<RawTransactionEvent> events, String userPhone) async {
+    for (final event in events) {
+      try {
+        // 1. Enrich
+        final enriched = await EnrichmentService.instance.enrichTransaction(
+          userId: userPhone,
+          rawText: event.rawText,
+          amount: event.amount,
+          date: event.timestamp,
+          currency: event.currency,
+          regionCode: 'IN', // TODO: Get from user profile
+        );
+
+        // 2. Map to Legacy Item
+        if (event.direction == TransactionDirection.debit) {
+          final expense = ExpenseItem(
+            id: event.eventId,
+            amount: event.amount,
+            date: event.timestamp,
+            category: enriched.category,
+            subcategory: enriched.subcategory,
+            merchant: enriched.merchantName,
+            note: event.rawText,
+            isInternational: event.currency != 'INR',
+            // ... other fields
+          );
+          await _expense.addExpense(userPhone, expense);
+        } else if (event.direction == TransactionDirection.credit) {
+          final income = IncomeItem(
+            id: event.eventId,
+            amount: event.amount,
+            date: event.timestamp,
+            category: enriched.category,
+            merchant: enriched.merchantName,
+            note: event.rawText,
+            // ... other fields
+          );
+          await _income.addIncome(userPhone, income);
+        }
+      } catch (e) {
+        _log('Error processing event ${event.eventId}: $e');
+      }
     }
   }
 
@@ -749,62 +798,32 @@ class SmsIngestor {
       _log('skip SMS sync (not Android)');
       return;
     }
-    final granted = await SmsPermissionHelper.hasPermissions();
-    if (!granted) return;
+    
+    // Use the new AndroidSmsConnector
+    // TODO: Fetch actual region from user profile
+    final region = RegionProfile.getByCode('IN');
+    final connector = AndroidSmsConnector(region: region, userId: userPhone);
 
-    final telephony = _ensureTelephony();
-    if (telephony == null) return;
-
-    final overlap = overlapHours ?? lookbackHours ?? 24;
-
-    final st = await IngestStateService.instance.get(userPhone);
-    final now = DateTime.now();
-
-    DateTime since;
-    final last = st.lastSmsAt;
-
-    if (last == null) {
-      final daysBack = INITIAL_HISTORY_DAYS.clamp(1, MAX_BACKFILL_DAYS);
-      since = now.subtract(Duration(days: daysBack));
-    } else {
-      final gapDays = now.difference(last).inDays;
-      if (gapDays > LONG_GAP_DAYS) {
-        // User came back after a long time → widen window aggressively
-        since = now.subtract(Duration(days: MAX_BACKFILL_DAYS));
-      } else {
-        // Normal delta sync + small overlap
-        since = last.subtract(Duration(hours: overlap));
+    try {
+      await connector.initialize();
+      
+      // Calculate last sync time
+      final st = await IngestStateService.instance.get(userPhone);
+      final lastSync = st.lastSmsAt;
+      
+      final events = await connector.syncDelta(lastSync: lastSync);
+      
+      if (events.isNotEmpty) {
+        await _processRawEvents(events, userPhone);
+        
+        // Update progress
+        final newest = events.map((e) => e.timestamp).reduce((a, b) => a.isAfter(b) ? a : b);
+        await IngestStateService.instance.setProgress(userPhone, lastSmsTs: newest);
       }
-    }
-
-    final msgs = await telephony.getInboxSms(
-      columns: [SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE],
-      sortOrder: [OrderBy(SmsColumn.DATE, sort: Sort.DESC)],
-    );
-
-    DateTime? lastSeen;
-    for (final m in msgs) {
-      final ts = DateTime.fromMillisecondsSinceEpoch(
-        m.date ?? now.millisecondsSinceEpoch,
-      );
-      if (ts.isBefore(since)) break;
-
-      final localKey = '${ts.millisecondsSinceEpoch}|${(m.address ?? '')}|${(m.body ?? '').hashCode}';
-      if (_seenRecently(localKey)) continue;
-
-      await _handleOne(
-        userPhone: userPhone,
-        body: m.body ?? '',
-        ts: ts,
-        address: m.address,
-        ingestState: st,
-      );
-
-      if (lastSeen == null || ts.isAfter(lastSeen)) lastSeen = ts;
-    }
-
-    if (lastSeen != null) {
-      await IngestStateService.instance.setProgress(userPhone, lastSmsTs: lastSeen);
+      
+      _log('syncDelta done: ${events.length} events processed');
+    } catch (e) {
+      _log('syncDelta failed: $e');
     }
   }
 
@@ -1017,7 +1036,7 @@ class SmsIngestor {
       return;
     }
 
-    // ===== Categorization pipeline: overrides → rules → LLM fallback =====
+    // ===== NEW: Enrichment via EnrichmentService (LLM Primary) =====
     final hintParts = <String>[
       'HINTS: dir=$direction',
       if (isEmiAutopay) 'cues=emi,autopay',
@@ -1025,128 +1044,32 @@ class SmsIngestor {
         'instrument=${instrument!.toLowerCase().replaceAll(' ', '_')}',
       if (upiVpa != null && upiVpa.trim().isNotEmpty)
         'upi=${upiVpa!.trim()}',
-      if (merchantNorm.isNotEmpty)
-        'merchant_norm=${merchantNorm.toLowerCase().replaceAll(' ', '_')}',
     ];
-    final enrichedDesc = hintParts.join('; ') + '; ' + preview;
+    
+    final enriched = await EnrichmentService.instance.enrichTransaction(
+      userId: userPhone,
+      rawText: _maskSensitive(body),
+      amount: amount,
+      date: ts,
+      hints: hintParts,
+    );
 
-    String finalCategory = 'Other';
-    String finalSubcategory = '';
-    double finalConfidence = 0.0;
-    String categorySource = 'rules';
-    bool categoryLocked = false;
-    bool emiLocked = false;
-    final Set<String> labelSet = <String>{};
+    merchantNorm = enriched.merchantName;
+    merchantKey = merchantNorm.toUpperCase();
+    final finalCategory = enriched.category;
+    final finalSubcategory = enriched.subcategory;
+    final finalConfidence = enriched.confidence;
+    final categorySource = enriched.source;
+    final labelSet = enriched.tags.toSet();
+    final emiLocked = isEmiAutopay; // Keep this flag for later logic
 
-    // 1) User overrides (highest priority)
-    final overrideCat = await UserOverrides.getCategoryForMerchant(userPhone, merchantKey);
-    if (overrideCat != null && overrideCat.isNotEmpty) {
-      finalCategory = overrideCat;
-      finalConfidence = 1.0;
-      categorySource = 'user_override';
-      categoryLocked = true;
-    }
-
-    // 2) EMI/autopay cues for debits
-    if (!categoryLocked && isEmiAutopay && direction == 'debit') {
-      finalCategory = 'Loan EMI';
-      finalSubcategory = '';
-      finalConfidence = 0.95;
-      categorySource = 'rules';
-      categoryLocked = true;
-      emiLocked = true;
-      labelSet.addAll({'loan_emi', 'autopay'});
-    }
-
-    // 3) Rules-based categorization FIRST
-    if (!categoryLocked) {
-      try {
-        final cat = CategoryRules.categorizeMerchant(body, merchantKey);
-        finalCategory = cat.category;
-        finalSubcategory = cat.subcategory;
-        finalConfidence = cat.confidence;
-        labelSet.addAll(cat.tags);
-        categorySource = 'rules';
-
-        final lowerCat = finalCategory.toLowerCase();
-        if (lowerCat != 'other' &&
-            lowerCat != 'uncategorized' &&
-            lowerCat != 'general' &&
-            finalConfidence >= 0.55) {
-          categoryLocked = true;
-        }
-      } catch (e) {
-        _log('rules categorization error: $e');
-      }
-    }
-
-    // 4) LLM fallback ONLY if rules are weak or undecided
-    bool needsLlm = AiConfig.llmOn;
-    if (needsLlm) {
-      final lowerCat = finalCategory.toLowerCase();
-      needsLlm = !categoryLocked ||
-          lowerCat == 'other' ||
-          lowerCat == 'uncategorized' ||
-          lowerCat == 'general' ||
-          finalConfidence < AiConfig.confThresh;
-    }
-
-    if (needsLlm) {
-      try {
-        final labels = await TxExtractor.labelUnknown([
-          TxRaw(
-            amount: amount,
-            merchant: merchantNorm.isNotEmpty
-                ? merchantNorm
-                : (merchantRaw ?? 'MERCHANT'),
-            desc: enrichedDesc,
-            date: ts.toIso8601String(),
-          ),
-        ]);
-
-        if (labels.isNotEmpty) {
-          final l = labels.first;
-          if (l.labels.isNotEmpty) {
-            labelSet.addAll(l.labels);
-          }
-          if (l.merchantNorm.isNotEmpty) {
-            merchantNorm = l.merchantNorm;
-            merchantKey = merchantNorm.toUpperCase();
-          }
-
-          final llmEligible = l.category.isNotEmpty &&
-              l.category.toLowerCase() != 'other' &&
-              l.confidence >= AiConfig.confThresh;
-
-          if (llmEligible && !categoryLocked) {
-            finalCategory = l.category;
-            finalSubcategory = l.subcategory;
-            finalConfidence = l.confidence;
-            categorySource = 'llm';
-            categoryLocked = true;
-          } else if (!categoryLocked && l.subcategory.isNotEmpty) {
-            finalSubcategory = l.subcategory;
-          }
-        }
-      } catch (e) {
-        _log('LLM error: $e');
-      }
-    }
-
+    // Use the clean merchant name from EnrichmentService as the counterparty
+    final counterparty = merchantNorm.isNotEmpty ? merchantNorm : 'Unknown';
+    
     final extractedCounterparty = direction == 'debit'
         ? CounterpartyExtractor.extractForDebit(body)
         : CounterpartyExtractor.extractForCredit(body);
 
-    final counterparty = _deriveCounterparty(
-      merchantNorm: merchantNorm,
-      upiVpa: upiVpa,
-      last4: last4,
-      bank: bank,
-      address: address,
-      extracted: extractedCounterparty,
-      direction: direction,
-      body: body,
-    );
     final counterpartyType = _deriveCounterpartyType(
       merchantNorm: merchantNorm,
       upiVpa: upiVpa,

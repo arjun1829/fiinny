@@ -59,6 +59,7 @@ class FiinnyBrainService {
   static List<InsightModel> generateInsights(
       UserData userData, {
         String? userId,
+        String currencySymbol = '₹',
       }) {
     final insights = <InsightModel>[];
 
@@ -73,7 +74,7 @@ class FiinnyBrainService {
       insights.add(_createInsight(
         title: '🔥 Spending exceeds income',
         description:
-            'Your expenses of ₹${totalExpenses.toStringAsFixed(0)} are outpacing your income of ₹${totalIncome.toStringAsFixed(0)}.',
+            'Your expenses of $currencySymbol${totalExpenses.toStringAsFixed(0)} are outpacing your income of $currencySymbol${totalIncome.toStringAsFixed(0)}.',
         type: InsightType.critical,
         userId: userId,
         category: 'expense',
@@ -111,7 +112,7 @@ class FiinnyBrainService {
         insights.add(_createInsight(
           title: '🍕 Food spending spike',
           description:
-              "You've spent ₹${foodExpense.toStringAsFixed(0)} on food — that's ${(foodShare * 100).toStringAsFixed(0)}% of income.",
+              "You've spent $currencySymbol${foodExpense.toStringAsFixed(0)} on food — that's ${(foodShare * 100).toStringAsFixed(0)}% of income.",
           type: InsightType.warning,
           userId: userId,
           category: 'expense',
@@ -135,7 +136,7 @@ class FiinnyBrainService {
       final severe = bill >= 10000 ? _criticalSeverity : 2;
       insights.add(_createInsight(
         title: '💳 Credit card bill alert',
-        description: 'Outstanding card bill of ₹${bill.toStringAsFixed(0)} detected.',
+        description: 'Outstanding card bill of $currencySymbol${bill.toStringAsFixed(0)} detected.',
         type: severe >= _criticalSeverity ? InsightType.critical : InsightType.warning,
         userId: userId,
         category: 'credit_card',
@@ -148,7 +149,7 @@ class FiinnyBrainService {
       insights.add(_createInsight(
         title: '⚠️ Weekly limit crossed',
         description:
-            "You've crossed your weekly limit of ₹${userData.weeklyLimit.toStringAsFixed(0)} by spending ₹${weeklySpent.toStringAsFixed(0)}.",
+            "You've crossed your weekly limit of $currencySymbol${userData.weeklyLimit.toStringAsFixed(0)} by spending $currencySymbol${weeklySpent.toStringAsFixed(0)}.",
         type: InsightType.warning,
         userId: userId,
         category: 'expense',
@@ -177,7 +178,7 @@ class FiinnyBrainService {
       insights.add(_createInsight(
         title: '📺 Subscriptions check-in',
         description:
-            '${subscriptionExpenses.length} active subscriptions total ₹${subsTotal.toStringAsFixed(0)} / month.',
+            '${subscriptionExpenses.length} active subscriptions total $currencySymbol${subsTotal.toStringAsFixed(0)} / month.',
         type: severity >= 2 ? InsightType.warning : InsightType.info,
         userId: userId,
         category: 'subscription',
@@ -204,7 +205,7 @@ class FiinnyBrainService {
     if (savings > 0) {
       insights.add(_createInsight(
         title: '💚 You are saving',
-        description: 'Saved ₹${savings.toStringAsFixed(0)} this month. Keep it rolling!',
+        description: 'Saved $currencySymbol${savings.toStringAsFixed(0)} this month. Keep it rolling!',
         type: InsightType.positive,
         userId: userId,
         category: 'expense',
@@ -213,7 +214,7 @@ class FiinnyBrainService {
     } else if (savings < 0) {
       insights.add(_createInsight(
         title: '📉 Spending more than you earn',
-        description: 'You are short by ₹${savings.abs().toStringAsFixed(0)} this month. Plan a catch-up.',
+        description: 'You are short by $currencySymbol${savings.abs().toStringAsFixed(0)} this month. Plan a catch-up.',
         type: InsightType.warning,
         userId: userId,
         category: 'expense',
@@ -249,7 +250,7 @@ class FiinnyBrainService {
             category: 'loan',
             severity: 2,
             relatedLoanId: loan.id,
-          ));
+            ));
         }
         if ((loan.reminderEnabled ?? true) == false) {
           insights.add(_createInsight(
@@ -290,7 +291,7 @@ class FiinnyBrainService {
       if (totalAssetValue > 0) {
         insights.add(_createInsight(
           title: '🏦 Wealth update',
-          description: 'Assets tracked at ₹${totalAssetValue.toStringAsFixed(0)}.',
+          description: 'Assets tracked at $currencySymbol${totalAssetValue.toStringAsFixed(0)}.',
           type: InsightType.info,
           userId: userId,
           category: 'asset',
@@ -328,7 +329,7 @@ class FiinnyBrainService {
         insights.add(_createInsight(
           title: '⏰ Goal at risk: ${goal.title}',
           description:
-              '${goal.daysRemaining} days left. Save ₹${goal.requiredPerMonth.toStringAsFixed(0)} per month to catch up.',
+              '${goal.daysRemaining} days left. Save $currencySymbol${goal.requiredPerMonth.toStringAsFixed(0)} per month to catch up.',
           type: InsightType.warning,
           userId: userId,
           category: 'goal',
@@ -353,7 +354,7 @@ class FiinnyBrainService {
     final netWorth = totalAssets - totalLoan;
     insights.add(_createInsight(
       title: '💡 Net worth update',
-      description: 'Your net worth is ₹${netWorth.toStringAsFixed(0)}.',
+      description: 'Your net worth is $currencySymbol${netWorth.toStringAsFixed(0)}.',
       type: netWorth >= 0 ? InsightType.positive : InsightType.warning,
       userId: userId,
       category: 'netWorth',
@@ -369,8 +370,9 @@ class FiinnyBrainService {
     Map<String, dynamic>? notificationPrefs,
     bool respectQuietHours = true,
     bool sendNotifications = true,
+    String currencySymbol = '₹',
   }) async {
-    final insights = generateInsights(userData, userId: userId);
+    final insights = generateInsights(userData, userId: userId, currencySymbol: currencySymbol);
     if (!sendNotifications) return insights;
 
     final prefs = notificationPrefs != null

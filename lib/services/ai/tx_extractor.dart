@@ -5,12 +5,16 @@ import 'ai_client.dart';
 
 class TxRaw {
   final double amount;
+  final String currency; // NEW
+  final String regionCode; // NEW
   final String merchant;
   final String desc;
   final String date; // ISO 8601
 
   TxRaw({
     required this.amount,
+    required this.currency,
+    required this.regionCode,
     required this.merchant,
     required this.desc,
     required this.date,
@@ -18,6 +22,8 @@ class TxRaw {
 
   Map<String, dynamic> toJson() => {
         'amount': amount,
+        'currency': currency,
+        'regionCode': regionCode,
         'merchant': merchant,
         'desc': desc,
         'date': date,
@@ -99,7 +105,8 @@ class TxReviewer {
   static Future<TxReview> reviewFinding({
     required String type,
     required String text,
-    double? amountInr,
+    double? amount,
+    String? currency,
     String? merchant,
     Map<String, dynamic>? extra,
   }) async {
@@ -107,7 +114,8 @@ class TxReviewer {
       final payload = {
         'type': type,
         'text': text,
-        if (amountInr != null) 'amountInr': amountInr,
+        if (amount != null) 'amount': amount,
+        if (currency != null) 'currency': currency,
         if (merchant != null && merchant.isNotEmpty) 'merchant': merchant,
         'extra': extra ?? {},
       };

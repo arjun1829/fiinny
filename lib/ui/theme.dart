@@ -2,14 +2,22 @@
 import 'package:flutter/material.dart';
 import 'tokens.dart';
 
-ThemeData buildAppTheme() {
+ThemeData buildAppTheme(ColorScheme colorScheme, {Color? scaffoldBackgroundColor}) {
+  final isDark = colorScheme.brightness == Brightness.dark;
+  final bgColor = scaffoldBackgroundColor ?? colorScheme.surface;
+  final surfaceColor = isDark ? colorScheme.surface : Colors.white;
+  final cardColor = isDark ? colorScheme.surface.withOpacity(0.8) : Colors.white;
+  final inputFillColor = isDark ? colorScheme.surface.withOpacity(0.5) : Colors.white;
+  final textColor = isDark ? Colors.white : AppColors.ink900;
+  final iconColor = isDark ? Colors.white : colorScheme.primary;
+
   final base = ThemeData(
     useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: AppColors.mint,
-      brightness: Brightness.light,
-    ),
+    colorScheme: colorScheme,
     visualDensity: VisualDensity.standard,
+    scaffoldBackgroundColor: bgColor,
+    splashFactory: InkSparkle.splashFactory,
+    fontFamily: 'Montserrat',
   );
 
   // shared radii
@@ -18,17 +26,16 @@ ThemeData buildAppTheme() {
   const rLg = Radius.circular(AppRadii.lg);
 
   return base.copyWith(
-    scaffoldBackgroundColor: Colors.white,
-    splashFactory: InkSparkle.splashFactory,
-
+    scaffoldBackgroundColor: bgColor,
+    
     appBarTheme: base.appBarTheme.copyWith(
       backgroundColor: Colors.transparent,
       elevation: 0,
       surfaceTintColor: Colors.transparent,
-      foregroundColor: AppColors.ink900,
-      iconTheme: const IconThemeData(color: AppColors.mint),
-      titleTextStyle: const TextStyle(
-        color: AppColors.ink900,
+      foregroundColor: textColor,
+      iconTheme: IconThemeData(color: iconColor),
+      titleTextStyle: TextStyle(
+        color: textColor,
         fontSize: 18,
         fontWeight: FontWeight.w900,
       ),
@@ -37,8 +44,8 @@ ThemeData buildAppTheme() {
     // Buttons
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.mint,
-        foregroundColor: Colors.white,
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
         shape: const StadiumBorder(),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         textStyle: const TextStyle(fontWeight: FontWeight.w800),
@@ -48,14 +55,15 @@ ThemeData buildAppTheme() {
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         shape: const StadiumBorder(),
-        side: BorderSide(color: AppColors.ink300.withOpacity(.6)),
+        side: BorderSide(color: isDark ? Colors.white24 : AppColors.ink300.withOpacity(.6)),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         textStyle: const TextStyle(fontWeight: FontWeight.w800),
+        foregroundColor: colorScheme.primary,
       ),
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        foregroundColor: AppColors.mint,
+        foregroundColor: colorScheme.primary,
         textStyle: const TextStyle(fontWeight: FontWeight.w800),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       ),
@@ -65,20 +73,20 @@ ThemeData buildAppTheme() {
     inputDecorationTheme: InputDecorationTheme(
       isDense: true,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: inputFillColor,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      hintStyle: TextStyle(color: Colors.black.withOpacity(.45)),
+      hintStyle: TextStyle(color: isDark ? Colors.white54 : Colors.black.withOpacity(.45)),
       border: OutlineInputBorder(
         borderRadius: const BorderRadius.all(rSm),
-        borderSide: BorderSide(color: Colors.black12.withOpacity(.25)),
+        borderSide: BorderSide(color: isDark ? Colors.white12 : Colors.black12.withOpacity(.25)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: const BorderRadius.all(rSm),
-        borderSide: BorderSide(color: Colors.black12.withOpacity(.2)),
+        borderSide: BorderSide(color: isDark ? Colors.white10 : Colors.black12.withOpacity(.2)),
       ),
-      focusedBorder: const OutlineInputBorder(
-        borderRadius: BorderRadius.all(rSm),
-        borderSide: BorderSide(color: AppColors.mint, width: 1.5),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: const BorderRadius.all(rSm),
+        borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
       ),
     ),
 
@@ -87,31 +95,32 @@ ThemeData buildAppTheme() {
       labelStyle: const TextStyle(fontWeight: FontWeight.w700),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       shape: const StadiumBorder(),
-      side: BorderSide(color: Colors.black12.withOpacity(.2)),
-      secondarySelectedColor: AppColors.mint.withOpacity(.16),
-      selectedColor: AppColors.mint.withOpacity(.16),
-      backgroundColor: Colors.white.withOpacity(.75),
+      side: BorderSide(color: isDark ? Colors.white12 : Colors.black12.withOpacity(.2)),
+      secondarySelectedColor: colorScheme.primary.withOpacity(.16),
+      selectedColor: colorScheme.primary.withOpacity(.16),
+      backgroundColor: isDark ? Colors.white10 : Colors.white.withOpacity(.75),
+      labelPadding: EdgeInsets.zero,
     ),
 
     // Cards
     cardTheme: base.cardTheme.copyWith(
-      color: Colors.white,
+      color: cardColor,
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.lg)),
-      surfaceTintColor: Colors.white,
+      surfaceTintColor: cardColor,
     ),
 
     // Progress indicators (tiny bars etc.)
     progressIndicatorTheme: base.progressIndicatorTheme.copyWith(
-      color: AppColors.mint,
+      color: colorScheme.primary,
     ),
 
     // Dividers / borders
     dividerTheme: base.dividerTheme.copyWith(
       space: 0,
       thickness: 1,
-      color: Colors.black.withOpacity(.08),
+      color: isDark ? Colors.white10 : Colors.black.withOpacity(.08),
     ),
 
     // ListTiles spacing/look
@@ -119,22 +128,27 @@ ThemeData buildAppTheme() {
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.md)),
-      iconColor: AppColors.mint,
-      titleTextStyle: const TextStyle(
+      iconColor: iconColor,
+      titleTextStyle: TextStyle(
         fontWeight: FontWeight.w700,
-        color: AppColors.ink900,
+        color: textColor,
       ),
       subtitleTextStyle: TextStyle(
         fontWeight: FontWeight.w600,
-        color: Colors.black.withOpacity(.55),
+        color: isDark ? Colors.white60 : Colors.black.withOpacity(.55),
       ),
     ),
 
     // Common text tweaks
     textTheme: base.textTheme.copyWith(
-      bodyMedium: const TextStyle(height: 1.2),
+      bodyMedium: TextStyle(height: 1.2, color: textColor),
+      titleMedium: TextStyle(color: textColor),
+      titleLarge: TextStyle(fontWeight: FontWeight.w800, color: textColor),
+      titleSmall: TextStyle(fontWeight: FontWeight.w800, color: textColor),
       labelLarge: const TextStyle(fontWeight: FontWeight.w800),
-      titleSmall: const TextStyle(fontWeight: FontWeight.w800),
+    ).apply(
+      bodyColor: textColor,
+      displayColor: textColor,
     ),
   );
 }

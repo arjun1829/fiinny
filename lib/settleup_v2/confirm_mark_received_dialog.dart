@@ -14,7 +14,7 @@ class ConfirmMarkReceivedDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: AppColors.ink800,
+      backgroundColor: Theme.of(context).dialogBackgroundColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xl),
@@ -25,7 +25,7 @@ class ConfirmMarkReceivedDialog extends StatelessWidget {
             Text(
               'Are you sure you received $amountText outside Fiinny?',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Colors.white,
+                    color: Theme.of(context).textTheme.titleMedium?.color,
                     fontWeight: FontWeight.w700,
                   ),
             ),
@@ -33,7 +33,7 @@ class ConfirmMarkReceivedDialog extends StatelessWidget {
             Text(
               '$friendName will see this as settled in Fiinny. No money movement will happen due to this action.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.white.withOpacity(.72),
+                    color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(.72),
                     height: 1.4,
                   ),
             ),
@@ -43,13 +43,13 @@ class ConfirmMarkReceivedDialog extends StatelessWidget {
               children: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  style: TextButton.styleFrom(foregroundColor: AppColors.bad),
+                  style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
                   child: const Text('CANCEL'),
                 ),
                 const SizedBox(width: AppSpacing.m),
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(true),
-                  style: TextButton.styleFrom(foregroundColor: AppColors.mint),
+                  style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.primary),
                   child: const Text('CONFIRM'),
                 ),
               ],

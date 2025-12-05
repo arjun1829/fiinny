@@ -8,10 +8,7 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web - '
-            'you can reconfigure this by running the FlutterFire CLI again.',
-      );
+      return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
@@ -52,5 +49,14 @@ class DefaultFirebaseOptions {
     androidClientId: '1085936196639-11mjkb68f4k99m8ebs7g0rn5hr0ee2cn.apps.googleusercontent.com',
     iosClientId: '1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00.apps.googleusercontent.com',
     iosBundleId: 'com.KaranArjunTechnologies.fiinny',
+  );
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyABuimmTbHwrxY-w7xhRrf-LWOu4gLVfnk',
+    appId: '1:1085936196639:web:b74ffa7e9ded49e616492a',
+    messagingSenderId: '1085936196639',
+    projectId: 'lifemap-72b21',
+    authDomain: 'lifemap-72b21.firebaseapp.com',
+    storageBucket: 'lifemap-72b21.firebasestorage.app',
   );
 }

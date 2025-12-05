@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #0f172a;
+  /* Slate 900 */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-brand: var(--primary);
+  --color-brand-light: var(--primary-light);
+  --color-brand-dark: var(--primary-dark);
+}
+
+/* Base Theme (Teal) */
+:root {
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --primary: #0d9488;       /* Teal 600 */
+  --primary-light: #ccfbf1; /* Teal 100 */
+  --primary-dark: #115e59;  /* Teal 800 */
+  --accent: #f43f5e;        /* Rose 500 */
+}
+
+/* Mint Theme */
+.theme-mint {
+  --background: #f0fdfa;    /* Teal 50 */
+  --foreground: #134e4a;    /* Teal 900 */
+  --primary: #10b981;       /* Emerald 500 */
+  --primary-light: #d1fae5; /* Emerald 100 */
+  --primary-dark: #065f46;  /* Emerald 800 */
+  --accent: #f59e0b;        /* Amber 500 */
+}
+
+/* Black Theme */
+.theme-black {
+  --background: #000000;
+  --foreground: #ffffff;
+  --primary: #ffffff;
+  --primary-light: #333333;
+  --primary-dark: #cccccc;
+  --accent: #ffffff;
+}
+
+/* White Theme */
+.theme-white {
+  --background: #ffffff;
+  --foreground: #000000;
+  --primary: #000000;
+  --primary-light: #e5e5e5;
+  --primary-dark: #333333;
+  --accent: #000000;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

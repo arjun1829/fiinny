@@ -13,6 +13,12 @@ import '../models/income_item.dart';
 // 🔗 LLM config + extractor (LLM-first)
 import '../config/app_config.dart';
 import './ai/tx_extractor.dart';
+import './ingest/enrichment_service.dart';
+import './categorization/category_rules.dart';
+import './user_overrides.dart';
+import './merchants/merchant_alias_service.dart';
+import './ingest/cross_source_reconcile.dart';
+import './recurring/recurring_engine.dart';
 
 import './ingest_index_service.dart';
 import './tx_key.dart';
@@ -1099,18 +1105,7 @@ class GmailService {
     }
 
     // Merchant extraction & normalization (initial)
-    final merchantRaw = paidTo ?? _guessMerchantSmart(combined) ?? upiSender;
-    var merchantNorm = MerchantAlias.normalizeFromContext(
-      raw: merchantRaw,
-      upiVpa: upiVpa,
-      emailDomain: emailDomain,
-    );
-    var merchantKey = (merchantNorm.isNotEmpty
-            ? merchantNorm
-            : (emailDomain ?? cardLast4 ?? bank ?? 'UNKNOWN'))
-        .toUpperCase();
-
-    // ===== Categorization pipeline: overrides → rules → LLM fallback =====
+    // ===== NEW: Enrichment via EnrichmentService (LLM Primary) =====
     final preview = _preview(_maskSensitive(combined));
     final hintParts = <String>[
       'HINTS: dir=$direction',
@@ -1118,114 +1113,24 @@ class GmailService {
       if (instrument != null && instrument!.isNotEmpty)
         'instrument=${instrument!.toLowerCase().replaceAll(' ', '_')}',
       if (upiVpa != null && upiVpa.trim().isNotEmpty) 'upi=${upiVpa!.trim()}',
-      if (merchantNorm.isNotEmpty)
-        'merchant_norm=${merchantNorm.toLowerCase().replaceAll(' ', '_')}',
     ];
-    final enrichedDesc = hintParts.join('; ') + '; ' + preview;
+    
+    final enriched = await EnrichmentService.instance.enrichTransaction(
+      userId: userId,
+      rawText: _maskSensitive(combined),
+      amount: amount,
+      date: msgDate,
+      hints: hintParts,
+    );
 
-    var finalCategory = 'Other';
-    var finalSubcategory = '';
-    double finalConfidence = 0.0;
-    String categorySource = 'rules';
-    bool categoryLocked = false;
-    bool emiLocked = false;
-    final Set<String> labelSet = <String>{};
-
-    // 1) User overrides (highest priority)
-    final overrideCat = await UserOverrides.getCategoryForMerchant(userId, merchantKey);
-    if (overrideCat != null && overrideCat.isNotEmpty) {
-      finalCategory = overrideCat;
-      finalConfidence = 1.0;
-      categorySource = 'user_override';
-      categoryLocked = true;
-    }
-
-    // 2) EMI autopay cues → force Loan EMI category if not overridden
-    if (!categoryLocked && isEmiAutopay) {
-      finalCategory = 'Loan EMI';
-      finalSubcategory = '';
-      finalConfidence = 0.95;
-      categorySource = 'rules';
-      categoryLocked = true;
-      emiLocked = true;
-      labelSet.addAll({'loan_emi', 'autopay'});
-    }
-
-    // 3) Rules-based categorization (CategoryRules) FIRST
-    if (!categoryLocked) {
-      try {
-        final cat = CategoryRules.categorizeMerchant(combined, merchantKey);
-        finalCategory = cat.category;
-        finalSubcategory = cat.subcategory;
-        finalConfidence = cat.confidence;
-        labelSet.addAll(cat.tags);
-        categorySource = 'rules';
-
-        final lowerCat = finalCategory.toLowerCase();
-        if (lowerCat != 'other' &&
-            lowerCat != 'uncategorized' &&
-            lowerCat != 'general' &&
-            finalConfidence >= 0.55) {
-          categoryLocked = true;
-        }
-      } catch (e) {
-        _log('rules categorization error: $e');
-      }
-    }
-
-    // 4) LLM fallback ONLY if rules are weak or undecided
-    bool needsLlm = AiConfig.llmOn;
-    if (needsLlm) {
-      final lowerCat = finalCategory.toLowerCase();
-      needsLlm = !categoryLocked ||
-          lowerCat == 'other' ||
-          lowerCat == 'uncategorized' ||
-          lowerCat == 'general' ||
-          finalConfidence < AiConfig.confThresh;
-    }
-
-    if (needsLlm) {
-      try {
-        final labels = await TxExtractor.labelUnknown([
-          TxRaw(
-            amount: amount,
-            merchant: merchantNorm.isNotEmpty
-                ? merchantNorm
-                : (merchantRaw ?? 'MERCHANT'),
-            desc: enrichedDesc,
-            date: msgDate.toIso8601String(),
-          )
-        ]);
-
-        if (labels.isNotEmpty) {
-          final l = labels.first;
-          if (l.labels.isNotEmpty) {
-            labelSet.addAll(l.labels);
-          }
-          if (l.merchantNorm.isNotEmpty) {
-            merchantNorm = l.merchantNorm;
-            merchantKey = merchantNorm.toUpperCase();
-          }
-
-          final llmEligible = l.category.isNotEmpty &&
-              l.category.toLowerCase() != 'other' &&
-              l.confidence >= AiConfig.confThresh;
-
-          if (llmEligible && !categoryLocked) {
-            finalCategory = l.category;
-            finalSubcategory = l.subcategory;
-            finalConfidence = l.confidence;
-            categorySource = 'llm';
-            categoryLocked = true;
-          } else if (!categoryLocked && l.subcategory.isNotEmpty) {
-            // Even if we don't fully trust the category, we can still accept a useful subcategory.
-            finalSubcategory = l.subcategory;
-          }
-        }
-      } catch (e) {
-        _log('LLM error: $e');
-      }
-    }
+    var merchantNorm = enriched.merchantName;
+    var merchantKey = merchantNorm.toUpperCase();
+    final finalCategory = enriched.category;
+    final finalSubcategory = enriched.subcategory;
+    final finalConfidence = enriched.confidence;
+    final categorySource = enriched.source;
+    final labelSet = enriched.tags.toSet();
+    final emiLocked = isEmiAutopay; // Keep this flag for later logic
 
     // txKey + claim for idempotency
     final key = buildTxKey(
@@ -2129,6 +2034,8 @@ class GmailService {
           docRef: doc.reference,
           raw: TxRaw(
             amount: amount,
+            currency: 'INR',
+            regionCode: 'IN',
             merchant:
                 merchantField.isNotEmpty ? merchantField : 'MERCHANT',
             desc: enrichedDesc,

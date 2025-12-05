@@ -288,14 +288,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Widget _bankLogoFallback(String? bank) {
+    final theme = Theme.of(context);
     return ColoredBox(
-      color: Colors.teal.shade50,
+      color: theme.colorScheme.primaryContainer,
       child: Center(
         child: Text(
           _bankInitials(bank),
-          style: const TextStyle(
+          style: TextStyle(
             fontWeight: FontWeight.w700,
-            color: Colors.teal,
+            color: theme.colorScheme.primary,
           ),
         ),
       ),
@@ -309,8 +310,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white,
-        border: Border.all(color: Colors.black12),
+        color: Theme.of(context).cardColor,
+        border: Border.all(color: Theme.of(context).dividerColor),
       ),
       clipBehavior: Clip.antiAlias,
       child: ClipOval(
@@ -2616,1444 +2617,428 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  Widget _categoryInsightTile({
-    required String label,
-    required String description,
-    required double amount,
-    required Color accentColor,
-  }) {
-    final compact = NumberFormat.compactCurrency(
-      locale: 'en_IN',
-      symbol: '₹',
-      decimalDigits: 0,
-    );
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: accentColor.withOpacity(.07),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: accentColor.withOpacity(.35)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            margin: const EdgeInsets.only(top: 4),
-            decoration: BoxDecoration(
-              color: accentColor,
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: Fx.label.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: Fx.text.withOpacity(.95),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: Fx.label.copyWith(
-                    color: Fx.text.withOpacity(.85),
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            compact.format(amount),
-            style: Fx.number.copyWith(
-              fontWeight: FontWeight.w700,
-              color: Fx.text.withOpacity(.95),
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Compact Highest / Lowest spend tiles for the current period,
-  /// suitable for showing inside the "Your spends" hero card.
-  Widget _highestLowestForCurrentPeriodInline() {
-    final insights = _buildCategoryInsightsForCurrentRange();
-
-    if (insights.highestCategory == null &&
-        insights.lowestCategory == null) {
-      return const SizedBox.shrink();
-    }
-
-    final tiles = <Widget>[];
-
-    if (insights.highestCategory != null &&
-        insights.highestAmount > 0) {
-      tiles.add(
-        _categoryInsightTile(
-          label: 'Highest spend',
-          description:
-              'You’ve spent highest on ${insights.highestCategory} in this period.',
-          amount: insights.highestAmount,
-          accentColor: Fx.bad,
-        ),
-      );
-    }
-
-    if (insights.lowestCategory != null &&
-        insights.lowestAmount > 0 &&
-        insights.lowestCategory != insights.highestCategory) {
-      if (tiles.isNotEmpty) {
-        tiles.add(const SizedBox(height: 8));
-      }
-      tiles.add(
-        _categoryInsightTile(
-          label: 'Lowest spend',
-          description:
-              'You’ve spent lowest on ${insights.lowestCategory} in this period.',
-          amount: insights.lowestAmount,
-          accentColor: Fx.good,
-        ),
-      );
-    }
-
-    if (tiles.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: tiles,
-    );
-  }
-
-  // ---------- Last X months spends card (Axis-style hero) ----------
+  // ---------- Last X months spends card (Axis-style) ----------
   Widget _lastMonthsSpendsCard() {
-    // Decide how many months to show based on local window (this card only).
-    int monthCount;
-    String windowLabel;
-    switch (_spendWindow) {
-      case '6M':
-        monthCount = 6;
-        windowLabel = 'last 6 months';
-        break;
-      case '3M':
-        monthCount = 3;
-        windowLabel = 'last 3 months';
-        break;
-      case '1Y':
-      default:
-        monthCount = 12;
-        windowLabel = 'last 12 months';
-        break;
-    }
+    // 1) Gather data for last 12 months
+    final buckets = _buildLastMonthSpends(monthCount: 12);
+    if (buckets.isEmpty) return const SizedBox.shrink();
 
-    final buckets = _buildLastMonthSpends(monthCount: monthCount);
-    final labels = _labelsForMonthSpends(buckets);
+    // Calculate average
+    final totalAll = buckets.fold<double>(0, (sum, b) => sum + b.totalExpense);
+    final avg = buckets.isEmpty ? 0.0 : totalAll / buckets.length;
 
-    final hasData =
-        buckets.isNotEmpty && buckets.any((b) => b.totalExpense > 0);
+    // Current month spend
+    final currentSpend = buckets.last.totalExpense;
 
-    // Compute insights
-    double total = 0;
-    _MonthSpend? top;
-    for (final b in buckets) {
-      total += b.totalExpense;
-      if (top == null || b.totalExpense > top!.totalExpense) {
-        top = b;
-      }
-    }
-    final avg = monthCount > 0 ? total / monthCount : 0;
-
-    final compact = NumberFormat.compactCurrency(
-      locale: 'en_IN',
-      symbol: '₹',
-      decimalDigits: 0,
-    );
-    final fullFmt = NumberFormat.currency(
-      locale: 'en_IN',
-      symbol: '₹',
-      decimalDigits: 0,
-    );
-
-    String? topMonthLabel;
-    String? topAmountLabel;
-    if (hasData && top != null && top.totalExpense > 0) {
-      topMonthLabel =
-          DateFormat('MMMM').format(DateTime(top.year, top.month, 1));
-      topAmountLabel = fullFmt.format(top.totalExpense);
-    }
-
-    String? topInstrumentLabel;
-    if (buckets.isNotEmpty) {
-      final latest = buckets.last;
-      final start = DateTime(latest.year, latest.month, 1);
-      final end = DateTime(latest.year, latest.month + 1, 1);
-      final byInstrument = <String, double>{};
-      for (final e in _applyBankFiltersToExpenses(_allExp)) {
-        if (!e.date.isBefore(start) && e.date.isBefore(end)) {
-          final norm = _normInstrument(e.instrument).toUpperCase();
-          byInstrument[norm] = (byInstrument[norm] ?? 0) + e.amount;
-        }
-      }
-
-      String? maxInstrument;
-      double maxValue = 0;
-      byInstrument.forEach((key, value) {
-        if (maxInstrument == null || value > maxValue) {
-          maxInstrument = key;
-          maxValue = value;
-        }
-      });
-
-      String labelForInstrument(String key) {
-        switch (key) {
-          case 'UPI':
-            return 'UPI';
-          case 'DEBIT CARD':
-            return 'Debit Card';
-          case 'CREDIT CARD':
-            return 'Credit Card';
-          case 'NETBANKING':
-            return 'NetBanking';
-          case 'IMPS':
-            return 'IMPS';
-          case 'NEFT':
-            return 'NEFT';
-          case 'RTGS':
-            return 'RTGS';
-          case 'ATM':
-            return 'ATM';
-          case 'POS':
-            return 'POS';
-          default:
-            return 'Others';
-        }
-      }
-
-      if (maxInstrument != null && maxValue > 0) {
-        topInstrumentLabel = labelForInstrument(maxInstrument!);
+    // Comparison text
+    String comparisonText;
+    if (avg == 0) {
+      comparisonText = 'No previous data to compare.';
+    } else {
+      final diff = currentSpend - avg;
+      final pct = (diff / avg * 100).abs().toStringAsFixed(0);
+      if (diff > 0) {
+        comparisonText = '$pct% more than your monthly average.';
+      } else if (diff < 0) {
+        comparisonText = '$pct% less than your monthly average.';
+      } else {
+        comparisonText = 'Same as your monthly average.';
       }
     }
 
-    Widget _chartBody() {
-      if (!hasData) {
-        return Container(
-          height: 160,
-          alignment: Alignment.center,
-          child: Text(
-            'No spends found for $windowLabel.',
-            style: Fx.label.copyWith(color: Fx.text.withOpacity(.7)),
-          ),
-        );
-      }
-
-      if (_lastMonthsView == 'Trend') {
-        return _monthlyTrendChart(buckets, labels);
-      }
-      final stacks = _buildMonthlyCategoryStacks(monthCount);
-      return _monthlyCategoryStackedChart(stacks, labels);
-    }
+    // Prepare chart data
+    // We'll show bar chart or line chart based on _lastMonthsView
+    // For simplicity, let's implement a nice Bar Chart using fl_chart or custom painter.
+    // Reusing BarChartSimple if possible, or building a custom one.
+    // Let's use a custom small bar chart for "Trend".
 
     return GlassCard(
       radius: Fx.r24,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: icon + title on first line, chips on second line
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.show_chart_rounded, color: Colors.teal),
-                  const SizedBox(width: Fx.s8),
-                  Expanded(
-                    child: Text(
-                      'Your spends – last $monthCount months',
-                      style: Fx.title.copyWith(fontSize: 18),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 4,
-                children: [
-                  for (final w in const ['1Y', '6M', '3M'])
-                    ChoiceChip(
-                      label: Text(w),
-                      selected: _spendWindow == w,
-                      onSelected: (_) {
-                        if (_spendWindow == w) return;
-                        setState(() {
-                          _spendWindow = w;
-                        });
-                      },
-                    ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 6,
-            children: [
-              for (final view in const ['Trend', 'Categories'])
-                ChoiceChip(
-                  label: Text(view),
-                  selected: _lastMonthsView == view,
-                  onSelected: (_) {
-                    if (_lastMonthsView == view) return;
-                    setState(() {
-                      _lastMonthsView = view;
-                    });
-                  },
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _chartBody(),
-          if (hasData) ...[
-            const SizedBox(height: 10),
-            Text(
-              'Your average monthly spends in the $windowLabel is ${compact.format(avg)}.',
-              style: Fx.label.copyWith(
-                color: Fx.text.withOpacity(.9),
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (topMonthLabel != null && topAmountLabel != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                'You spent most in $topMonthLabel with $topAmountLabel.',
-                style: Fx.label.copyWith(
-                  color: Fx.text.withOpacity(.9),
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-            if (topInstrumentLabel != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                'In the latest month, you spent most via $topInstrumentLabel.',
-                style: Fx.label.copyWith(
-                  color: Fx.text.withOpacity(.9),
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-            const SizedBox(height: 10),
-            _highestLowestForCurrentPeriodInline(),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _monthlyTrendChart(List<_MonthSpend> buckets, List<String> labels) {
-    const int yTicks = 4;
-    const double leftGutter = 52;
-    const double topPadding = 12;
-    const double bottomPadding = 32;
-
-    final series = buckets.map((b) => b.totalExpense).toList();
-    final scale = _trendAxisScale(series, yTicks);
-    final axisValues = List<double>.generate(
-      yTicks + 1,
-      (i) => (scale.maxY / yTicks) * i,
-    ).reversed.toList();
-
-    return SizedBox(
-      height: 220,
-      child: Stack(
-        children: [
-          Positioned(
-            left: leftGutter,
-            right: 0,
-            top: 0,
-            bottom: bottomPadding,
-            child: CustomPaint(
-              painter: _MonthlyTrendPainter(
-                series: series,
-                maxY: scale.maxY,
-                yTicks: yTicks,
-              ),
-            ),
-          ),
-          Positioned(
-            left: 0,
-            top: topPadding,
-            bottom: bottomPadding,
-            width: leftGutter - 8,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (final value in axisValues)
-                  Text(
-                    _formatTrendAxisValue(value, scale.tick),
-                    style: Fx.label.copyWith(
-                      fontSize: 10,
-                      color: Fx.text.withOpacity(.75),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Positioned(
-            left: leftGutter,
-            right: 0,
-            bottom: 0,
-            height: bottomPadding,
-            child: _monthAxisLabels(labels),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _monthlyCategoryStackedChart(
-    List<_MonthlyCategoryStack> stacks,
-    List<String> labels,
-  ) {
-    const int yTicks = 4;
-    const double leftGutter = 52;
-    const double topPadding = 12;
-    const double bottomPadding = 32;
-
-    final totals = stacks
-        .map((s) => s.segments.fold<double>(0, (sum, seg) => sum + seg.value))
-        .toList();
-    final scale = _trendAxisScale(totals, yTicks);
-    final axisValues = List<double>.generate(
-      yTicks + 1,
-      (i) => (scale.maxY / yTicks) * i,
-    ).reversed.toList();
-
-    final categoryTotals = <String, double>{};
-    for (final stack in stacks) {
-      for (final seg in stack.segments) {
-        categoryTotals[seg.category] =
-            (categoryTotals[seg.category] ?? 0) + seg.value;
-      }
-    }
-    final legendEntries = categoryTotals.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          height: 220,
-          child: Stack(
-            children: [
-              Positioned(
-                left: leftGutter,
-                right: 0,
-                top: 0,
-                bottom: bottomPadding,
-                child: CustomPaint(
-                  painter: _StackedMonthlyBarsPainter(
-                    stacks: stacks,
-                    maxY: scale.maxY,
-                    yTicks: yTicks,
-                    categoryColors: _categoryColors,
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                top: topPadding,
-                bottom: bottomPadding,
-                width: leftGutter - 8,
+              Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final value in axisValues)
-                      Text(
-                        _formatTrendAxisValue(value, scale.tick),
-                        style: Fx.label.copyWith(
-                          fontSize: 10,
-                          color: Fx.text.withOpacity(.75),
-                        ),
+                    Text(
+                      'Last 12 months',
+                      style: Fx.label.copyWith(
+                        color: Fx.text.withOpacity(0.6),
+                        fontWeight: FontWeight.w600,
                       ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      INR.f(currentSpend),
+                      style: Fx.title.copyWith(fontSize: 24),
+                    ),
                   ],
                 ),
               ),
-              Positioned(
-                left: leftGutter,
-                right: 0,
-                bottom: 0,
-                height: bottomPadding,
-                child: _monthAxisLabels(labels),
+              // View selector (Trend / Stacked)
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                padding: const EdgeInsets.all(4),
+                child: Row(
+                  children: [
+                    _chartViewBtn('Trend', Icons.bar_chart_rounded),
+                    _chartViewBtn('Breakdown', Icons.pie_chart_rounded),
+                  ],
+                ),
               ),
             ],
           ),
-        ),
-        if (legendEntries.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              for (final entry in legendEntries)
-                _categoryLegendChip(entry.key),
-            ],
+          Text(
+            comparisonText,
+            style: Fx.label.copyWith(color: Fx.text.withOpacity(0.7)),
+          ),
+          const SizedBox(height: 24),
+
+          // Chart Area
+          SizedBox(
+            height: 220,
+            child: _lastMonthsView == 'Trend'
+                ? _buildTrendChart(buckets, avg)
+                : _buildStackedChart(),
           ),
         ],
-      ],
+      ),
     );
   }
 
-  Widget _monthAxisLabels(List<String> labels) {
+  Widget _chartViewBtn(String label, IconData icon) {
+    final selected = _lastMonthsView == label;
+    return InkWell(
+      onTap: () => setState(() => _lastMonthsView = label),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              : [],
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: selected ? Colors.black : Colors.black54,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                color: selected ? Colors.black : Colors.black54,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrendChart(List<_MonthSpend> buckets, double avg) {
+    if (buckets.isEmpty) return const SizedBox.shrink();
+
+    // Find max for scaling
+    double maxY = avg;
+    for (final b in buckets) {
+      if (b.totalExpense > maxY) maxY = b.totalExpense;
+    }
+    if (maxY == 0) maxY = 100;
+
+    // We want to show bars.
+    // If a bar is above avg, color it red-ish? Or just standard color?
+    // Axis style: bars are grey, current month is highlighted.
+    // Let's use Mint for below avg, Red for above avg? Or just uniform.
+    // Let's stick to a nice Teal/Mint gradient.
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (labels.isEmpty) return const SizedBox.shrink();
-        final double slotWidth = constraints.maxWidth / labels.length;
+        final width = constraints.maxWidth;
+        final barWidth = (width / (buckets.length * 2)).clamp(8.0, 24.0);
+
         return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            for (final label in labels)
-              SizedBox(
-                width: slotWidth,
-                child: Text(
-                  label.toUpperCase(),
-                  textAlign: TextAlign.center,
-                  style: Fx.label.copyWith(
-                    fontSize: 10,
-                    color: Fx.text.withOpacity(.75),
-                  ),
-                ),
+            for (int i = 0; i < buckets.length; i++) ...[
+              _singleTrendBar(
+                buckets[i],
+                maxY,
+                barWidth,
+                i == buckets.length - 1, // is current
               ),
+            ],
           ],
         );
       },
     );
   }
 
-  Widget _categoryLegendChip(String category) {
-    final color = _categoryColors[category] ?? Colors.grey;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+  Widget _singleTrendBar(
+    _MonthSpend bucket,
+    double maxY,
+    double width,
+    bool isCurrent,
+  ) {
+    final h = (bucket.totalExpense / maxY).clamp(0.0, 1.0);
+    final label = DateFormat('MMM').format(DateTime(bucket.year, bucket.month));
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.end,
       children: [
+        if (isCurrent)
+          Container(
+            margin: const EdgeInsets.only(bottom: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              INR.c(bucket.totalExpense),
+              style: const TextStyle(color: Colors.white, fontSize: 10),
+            ),
+          ),
         Container(
-          width: 10,
-          height: 10,
+          height: 140 * h, // max height 140 inside the 220 container
+          width: width,
           decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(4),
+            color: isCurrent ? Fx.mintDark : Colors.grey.shade300,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
           ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(height: 8),
         Text(
-          category,
-          style: Fx.label.copyWith(color: Fx.text.withOpacity(.8)),
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: isCurrent ? Colors.black87 : Colors.black45,
+            fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500,
+          ),
         ),
       ],
     );
   }
 
-  // ---------- Trend popup (axes/grid using BarChartSimple) ----------
-  void _showTrendPopup(
-    List<double> series, {
-    required String title,
-    List<String>? labels,
-  }) {
-    final safeLabels = (labels != null && labels.length == series.length)
-        ? labels
-        : List.generate(series.length, (i) => '${i + 1}');
-    final total = series.fold<double>(0, (sum, value) => sum + value);
-    final peak = series.isEmpty
-        ? 0.0
-        : series.reduce((a, b) => a > b ? a : b);
-    final avg = series.isEmpty ? 0.0 : total / series.length;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (_) => SizedBox(
-        height: MediaQuery.of(context).size.height * 0.85,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-          child: Column(
+  Widget _buildStackedChart() {
+    // Show breakdown of top categories per month
+    final stacks = _buildMonthlyCategoryStacks(6); // last 6 months only for space
+    if (stacks.isEmpty) return const SizedBox.shrink();
+
+    // Normalize to 100%? Or absolute?
+    // Let's do absolute stacked bars.
+    double maxY = 0;
+    for (final s in stacks) {
+      final total = s.segments.fold<double>(0, (sum, seg) => sum + seg.value);
+      if (total > maxY) maxY = total;
+    }
+    if (maxY == 0) maxY = 100;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final barWidth = (width / (stacks.length * 2)).clamp(12.0, 32.0);
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            for (final stack in stacks)
+              _singleStackedBar(stack, maxY, barWidth),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _singleStackedBar(
+    _MonthlyCategoryStack stack,
+    double maxY,
+    double width,
+  ) {
+    final label = DateFormat('MMM').format(DateTime(stack.year, stack.month));
+    final total = stack.segments.fold<double>(0, (sum, seg) => sum + seg.value);
+    final hFactor = (total / maxY).clamp(0.0, 1.0);
+    final totalH = 140 * hFactor;
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        SizedBox(
+          height: 140,
+          width: width,
+          child: Stack(
+            alignment: Alignment.bottomCenter,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                      child: Text(title,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 18))),
-                  IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context)),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Daily expense trend',
-                  style: Fx.label.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: Fx.text.withOpacity(.85),
-                  ),
+              // Background track
+              Container(
+                width: width,
+                height: 140,
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(4),
                 ),
               ),
-              const SizedBox(height: 6),
-              Expanded(child: _trendChartWithAxis(series, safeLabels)),
-              const SizedBox(height: 16),
-              _trendStatsRow(total: total, avg: avg, peak: peak),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'These bars show only expenses for the selected period. '
-                  'Income insights live in the Income analytics tab.',
-                  style: Fx.label.copyWith(
-                    fontSize: 12,
-                    color: Fx.text.withOpacity(.65),
-                  ),
-                ),
-              ),
+              // Segments
+              _buildStackedSegments(stack.segments, totalH, width),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _trendStatsRow({
-    required double total,
-    required double avg,
-    required double peak,
-  }) {
-    final labelStyle = Fx.label.copyWith(color: Fx.text.withOpacity(.65));
-    final valueStyle = Fx.number.copyWith(fontWeight: FontWeight.w700);
-    final surface = Theme.of(context).colorScheme.surface;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: surface.withOpacity(.8),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Expanded(
-              child: _trendStatTile(
-                label: 'Total',
-                value: INR.f(total),
-                labelStyle: labelStyle,
-                valueStyle: valueStyle,
-              ),
-            ),
-            Container(
-              width: 1,
-              height: 36,
-              color: Fx.text.withOpacity(.08),
-            ),
-            Expanded(
-              child: _trendStatTile(
-                label: 'Average',
-                value: INR.f(avg),
-                labelStyle: labelStyle,
-                valueStyle: valueStyle,
-              ),
-            ),
-            Container(
-              width: 1,
-              height: 36,
-              color: Fx.text.withOpacity(.08),
-            ),
-            Expanded(
-              child: _trendStatTile(
-                label: 'Highest day',
-                value: INR.f(peak),
-                labelStyle: labelStyle,
-                valueStyle: valueStyle,
-              ),
-            ),
-          ],
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: Colors.black54),
         ),
-      ),
-    );
-  }
-
-  Widget _trendStatTile({
-    required String label,
-    required String value,
-    required TextStyle labelStyle,
-    required TextStyle valueStyle,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: labelStyle),
-        const SizedBox(height: 4),
-        Text(value, style: valueStyle),
       ],
     );
   }
 
-  Widget _trendChartWithAxis(List<double> series, List<String> labels) {
-    const int yTicks = 5;
-    const double leftGutter = 52;
-    const double topPadding = 12;
-    const double bottomPadding = 28;
+  Widget _buildStackedSegments(
+    List<_CategoryStackSegment> segments,
+    double totalHeight,
+    double width,
+  ) {
+    if (totalHeight <= 0) return const SizedBox.shrink();
+    final totalVal = segments.fold<double>(0, (sum, s) => sum + s.value);
+    if (totalVal <= 0) return const SizedBox.shrink();
 
-    final _TrendAxisScale scale = _trendAxisScale(series, yTicks);
+    final children = <Widget>[];
+    for (final seg in segments) {
+      final pct = seg.value / totalVal;
+      final h = totalHeight * pct;
+      final color = _categoryColors[seg.category] ?? Colors.grey;
 
-    final List<String> effectiveLabels = (labels.length == series.length)
-        ? labels
-        : List.generate(series.length, (i) => i < labels.length ? labels[i] : '${i + 1}');
+      children.add(
+        Container(
+          width: width,
+          height: h,
+          color: color,
+        ),
+      );
+    }
 
-    final List<SeriesPoint> points = List.generate(
-      series.length,
-      (i) => SeriesPoint(effectiveLabels[i], series[i]),
-    );
+    // Reverse so largest/first is at bottom? Or top?
+    // Usually stacks build up.
+    // If we use Column(mainAxisAlignment: end), the first child is at top.
+    // We want the first segment at the bottom.
+    // So we should reverse the list if we use Column.
+    // Or just use Flex.
 
-    final axisValues = List<double>.generate(
-      yTicks + 1,
-      (i) => (scale.maxY / yTicks) * i,
-    ).reversed.toList();
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Stack(
-          children: [
-            Positioned(
-              left: leftGutter,
-              right: 0,
-              top: 0,
-              bottom: 0,
-              child: BarChartSimple(
-                data: points,
-                showGrid: true,
-                yTickCount: yTicks,
-                targetXTicks: 7,
-                showValues: false,
-                maxYOverride: scale.maxY,
-                padding: const EdgeInsets.fromLTRB(12, topPadding, 12, bottomPadding),
-              ),
-            ),
-            Positioned(
-              left: 0,
-              top: topPadding,
-              bottom: bottomPadding,
-              width: leftGutter - 8,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  for (final value in axisValues)
-                    Text(
-                      _formatTrendAxisValue(value, scale.tick),
-                      style: Fx.label.copyWith(
-                        fontSize: 10,
-                        color: Fx.text.withOpacity(.75),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: children.reversed.toList(),
+      ),
     );
   }
 
-  static _TrendAxisScale _trendAxisScale(List<double> series, int tickCount) {
-    double rawMax = 0;
-    for (final value in series) {
-      if (value.isFinite && value > rawMax) {
-        rawMax = value;
-      }
-    }
-
-    final double baseMax = rawMax > 0 ? rawMax : 1.0;
-    final double tick = _trendNiceNum(baseMax / tickCount, true);
-    final double niceMax = _trendNiceNum(tick * tickCount, false);
-    return _TrendAxisScale(niceMax, tick);
-  }
-
-  static double _trendNiceNum(double range, bool round) {
-    final double safeRange = (range.isFinite && range > 0) ? range : 1.0;
-    final double exponent = (math.log(safeRange) / math.ln10).floorToDouble();
-    final double expv = math.pow(10, exponent).toDouble();
-    final double f = safeRange / expv;
-    double nf;
-    if (round) {
-      if (f < 1.5) {
-        nf = 1;
-      } else if (f < 3) {
-        nf = 2;
-      } else if (f < 7) {
-        nf = 5;
-      } else {
-        nf = 10;
-      }
-    } else {
-      if (f <= 1) {
-        nf = 1;
-      } else if (f <= 2) {
-        nf = 2;
-      } else if (f <= 5) {
-        nf = 5;
-      } else {
-        nf = 10;
-      }
-    }
-    return nf * expv;
-  }
-
-  static String _formatTrendAxisValue(double value, double tick) {
-    if (tick >= 1) {
-      return NumberFormat.compactCurrency(
-        locale: 'en_IN',
-        symbol: '₹',
-        decimalDigits: 0,
-      ).format(value);
-    }
-
-    final int decimals = tick >= 0.1 ? 1 : 2;
-    return NumberFormat.currency(
-      locale: 'en_IN',
-      symbol: '₹',
-      decimalDigits: decimals,
-    ).format(value);
-  }
-
-  // ---------- Drill-down helpers (reuse UnifiedTransactionList) ----------
   Future<void> _openTxDrilldown({
     required String title,
     required List<ExpenseItem> exp,
     required List<IncomeItem> inc,
   }) async {
-    final expenses = List<ExpenseItem>.from(exp)
-      ..sort((a, b) => b.date.compareTo(a.date));
-    final incomes = List<IncomeItem>.from(inc)
-      ..sort((a, b) => b.date.compareTo(a.date));
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(
+            title: Text(title),
+            elevation: 0,
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black,
+          ),
+          body: UnifiedTransactionList(
+            expenses: exp,
+            incomes: inc,
+            friendsById: const {},
+            userPhone: widget.userPhone,
+            onEdit: _handleEdit,
+            onDelete: _handleDelete,
+          ),
+        ),
       ),
-      builder: (ctx) {
-        final totalCount = expenses.length + incomes.length;
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 42,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-                Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(ctx)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: UnifiedTransactionList(
-                    expenses: expenses,
-                    incomes: incomes,
-                    friendsById: const <String, FriendModel>{},
-                    userPhone: widget.userPhone,
-                    enableScrolling: true,
-                    previewCount: math.max(20, totalCount),
-                    filterType: 'All',
-                    showBillIcon: true,
-                    onEdit: (tx) async {
-                      final updated = await _editTransaction(ctx, tx);
-                      if (updated) {
-                        await _bootstrap();
-                        if (ctx.mounted) Navigator.pop(ctx);
-                      }
-                    },
-                    onDelete: (tx) async {
-                      final deleted = await _deleteTransaction(ctx, tx);
-                      if (deleted) {
-                        await _bootstrap();
-                        if (ctx.mounted) Navigator.pop(ctx);
-                      }
-                    },
-                    emptyBuilder: (context) =>
-                        _analyticsNoTransactions('All'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 
-  void _openCategorySheet({
-    required bool isIncome,
-    required String category,
-    required List<ExpenseItem> srcExp,
-    required List<IncomeItem> srcInc,
-  }) {
-    final exp = isIncome
-        ? <ExpenseItem>[]
-        : srcExp
-            .where((e) =>
-                _normalizeMainCategory(
-                  AnalyticsAgg.resolveExpenseCategory(e),
-                ).toLowerCase() ==
-                category.toLowerCase())
-            .toList();
-
-    final inc = isIncome
-        ? srcInc
-            .where((i) =>
-                AnalyticsAgg.resolveIncomeCategory(i).toLowerCase() ==
-                category.toLowerCase())
-            .toList()
-        : <IncomeItem>[];
-
-    _openTxDrilldown(
-      title: isIncome ? 'Income • $category' : 'Expense • $category',
-      exp: exp,
-      inc: inc,
-    );
-  }
-
-  // ---------- Helpers for sparkline & calendar ----------
-  List<String> _sparkLabelsForPeriod(
-    Period p,
-    List<double> data,
-    DateTime now, {
-    CustomRange? custom,
-  }) {
-    if (data.isEmpty) return const [];
-
-    final shortMonth = DateFormat('MMM');
-    final shortDay = DateFormat('d MMM');
-
-    switch (p) {
-      case Period.day:
-        return List<String>.generate(
-          data.length,
-          (i) => '${i.toString().padLeft(2, '0')}h',
-        );
-      case Period.week:
-        const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-        return List<String>.generate(
-          data.length,
-          (i) => names[i % names.length],
-        );
-      case Period.month:
-        return List<String>.generate(
-          data.length,
-          (i) => '${i + 1}',
-        );
-      case Period.lastMonth:
-        return List<String>.generate(
-          data.length,
-          (i) => '${i + 1}',
-        );
-      case Period.quarter:
-        final qStartMonth = ((now.month - 1) ~/ 3) * 3 + 1;
-        return List<String>.generate(data.length, (i) {
-          final monthDate = DateTime(now.year, qStartMonth + i, 1);
-          return shortMonth.format(monthDate);
-        });
-      case Period.year:
-        return List<String>.generate(data.length, (i) {
-          final monthDate = DateTime(now.year, i + 1, 1);
-          return shortMonth.format(monthDate);
-        });
-      case Period.last2:
-        return [
-          shortDay.format(now.subtract(const Duration(days: 1))),
-          shortDay.format(now),
-        ];
-      case Period.last5:
-        return List<String>.generate(data.length, (i) {
-          final target = now.subtract(Duration(days: data.length - 1 - i));
-          return shortDay.format(target);
-        });
-      case Period.all:
-        return List<String>.generate(data.length, (i) {
-          final monthDate = DateTime(now.year, i + 1, 1);
-          return shortMonth.format(monthDate);
-        });
-      case Period.custom:
-        if (custom == null) {
-          return List<String>.generate(data.length, (i) => '${i + 1}');
-        }
-        return List<String>.generate(data.length, (i) {
-          final day = custom.start.add(Duration(days: i));
-          return shortDay.format(day);
-        });
-      default:
-        throw UnimplementedError('Unhandled period $p');
-    }
-  }
-
-  List<double> _sparkForPeriod(Period p, List<ExpenseItem> exp, DateTime now,
-      {CustomRange? custom}) {
-    switch (p) {
-      case Period.day:
-        final v = List<double>.filled(24, 0);
-        for (final e in exp) v[e.date.hour] += e.amount;
-        return v;
-      case Period.week:
-        final v = List<double>.filled(7, 0);
-        for (final e in exp) v[e.date.weekday - 1] += e.amount;
-        return v;
-      case Period.month:
-        final days = DateTime(now.year, now.month + 1, 0).day;
-        final v = List<double>.filled(days, 0);
-        for (final e in exp) v[e.date.day - 1] += e.amount;
-        return v;
-      case Period.lastMonth:
-        final prevStart = DateTime(now.year, now.month - 1, 1);
-        final prevDays = DateTime(prevStart.year, prevStart.month + 1, 0).day;
-        final vPrev = List<double>.filled(prevDays, 0);
-        for (final e in exp) {
-          if (e.date.year == prevStart.year && e.date.month == prevStart.month) {
-            vPrev[e.date.day - 1] += e.amount;
-          }
-        }
-        return vPrev;
-      case Period.quarter:
-        final qStartMonth = ((now.month - 1) ~/ 3) * 3 + 1;
-        final buckets = List<double>.filled(3, 0);
-        for (final e in exp) {
-          final idx = e.date.month - qStartMonth;
-          if (idx >= 0 && idx < buckets.length) buckets[idx] += e.amount;
-        }
-        return buckets;
-      case Period.year:
-        final v = List<double>.filled(12, 0);
-        for (final e in exp) v[e.date.month - 1] += e.amount;
-        return v;
-      case Period.last2:
-        final y = now.subtract(const Duration(days: 1));
-        return [
-          exp
-              .where((e) => _sameDayLocal(e.date, y))
-              .fold(0.0, (s, e) => s + e.amount),
-          exp
-              .where((e) => _sameDayLocal(e.date, now))
-              .fold(0.0, (s, e) => s + e.amount),
-        ];
-      case Period.last5:
-        final v = List<double>.filled(5, 0);
-        for (int d = 0; d < 5; d++) {
-          final target = now.subtract(Duration(days: 4 - d));
-          for (final e in exp) {
-            if (_sameDayLocal(e.date, target)) v[d] += e.amount;
-          }
-        }
-        return v;
-      case Period.all:
-        final v = List<double>.filled(12, 0);
-        for (final e in exp) v[e.date.month - 1] += e.amount;
-        return v;
-      case Period.custom:
-        if (custom == null) return const [];
-        final totalDays = custom.end
-                .difference(DateTime(
-                    custom.start.year, custom.start.month, custom.start.day))
-                .inDays +
-            1;
-        final n = totalDays.clamp(1, 31);
-        final v = List<double>.filled(n, 0);
-        for (final e in exp) {
-          final d = DateTime(e.date.year, e.date.month, e.date.day)
-              .difference(DateTime(custom.start.year, custom.start.month,
-                  custom.start.day))
-              .inDays;
-          if (d >= 0 && d < n) v[d] += e.amount;
-        }
-        return v;
-      default:
-        throw UnimplementedError('Unhandled period $p');
-    }
-  }
-
-  double _projectMonthEnd(
-      List<ExpenseItem> exp, List<IncomeItem> inc, DateTime now) {
-    final monthStart = DateTime(now.year, now.month, 1);
-    final daysElapsed = now.difference(monthStart).inDays + 1;
-    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
-
-    double expToDate = 0, incToDate = 0;
-    for (final e in exp) {
-      if (!e.date.isBefore(monthStart) && !e.date.isAfter(now)) expToDate += e.amount;
-    }
-    for (final i in inc) {
-      if (!i.date.isBefore(monthStart) && !i.date.isAfter(now)) incToDate += i.amount;
-    }
-    final netPerDay = (incToDate - expToDate) / (daysElapsed.clamp(1, 31));
-    final projected = (incToDate - expToDate) +
-        netPerDay * (daysInMonth - daysElapsed);
-    return projected;
-  }
-
-  bool _sameDayLocal(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
-
-  Future<bool> _deleteTransaction(BuildContext ctx, dynamic tx) async {
-    try {
-      if (tx is ExpenseItem) {
-        await _expenseSvc.deleteExpense(
-          widget.userPhone,
-          tx.id,
-          friendPhones: tx.friendIds,
-        );
-      } else if (tx is IncomeItem) {
-        await _incomeSvc.deleteIncome(widget.userPhone, tx.id);
-      } else {
-        return false;
-      }
-      return true;
-    } catch (err) {
-      if (ctx.mounted) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(content: Text('Delete failed: $err')),
-        );
-      }
-      return false;
-    }
-  }
-
-  Future<bool> _editTransaction(BuildContext ctx, dynamic tx) async {
-    try {
-      if (tx is ExpenseItem) {
-        await Navigator.of(ctx).push(
-          MaterialPageRoute(
-            builder: (_) => EditExpenseScreen(
-              userPhone: widget.userPhone,
-              expense: tx,
-            ),
+  Future<void> _handleDelete(dynamic item) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Transaction?'),
+        content: const Text('This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
           ),
-        );
-        return true;
-      }
-      if (tx is IncomeItem) {
-        try {
-          final result = await Navigator.pushNamed(
-            ctx,
-            '/edit-income',
-            arguments: {'userPhone': widget.userPhone, 'income': tx},
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() => _loading = true);
+      try {
+        if (item is ExpenseItem) {
+          await _expenseSvc.deleteExpense(widget.userPhone, item.id);
+        } else if (item is IncomeItem) {
+          await _incomeSvc.deleteIncome(widget.userPhone, item.id);
+        }
+        await _bootstrap();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error deleting: $e')),
           );
-          return result == true;
-        } catch (_) {
-          if (ctx.mounted) {
-            ScaffoldMessenger.of(ctx).showSnackBar(
-              const SnackBar(
-                content: Text("Edit Income screen not found. Set '/edit-income' route."),
-              ),
-            );
-          }
         }
+      } finally {
+        if (mounted) setState(() => _loading = false);
       }
-    } catch (_) {
-      if (ctx.mounted) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(content: Text('Unable to open editor.')),
-        );
-      }
-    }
-    return false;
-  }
-
-  Future<void> _handleDelete(dynamic tx) async {
-    final deleted = await _deleteTransaction(context, tx);
-    if (deleted) {
-      await _bootstrap();
     }
   }
 
   Future<void> _handleEdit(dynamic tx) async {
-    final edited = await _editTransaction(context, tx);
-    if (edited) {
+    // EditExpenseScreen only handles ExpenseItem, not IncomeItem
+    if (tx is! ExpenseItem) return;
+
+    final edited = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditExpenseScreen(
+          expense: tx,
+          userPhone: widget.userPhone,
+        ),
+      ),
+    );
+
+    if (edited == true) {
       await _bootstrap();
     }
   }
 }
 
-class _MonthlyTrendPainter extends CustomPainter {
-  final List<double> series;
-  final double maxY;
-  final int yTicks;
-
-  _MonthlyTrendPainter({
-    required this.series,
-    required this.maxY,
-    required this.yTicks,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (series.isEmpty || size.width <= 0 || size.height <= 0) return;
-
-    final double safeMaxY = maxY <= 0 ? 1.0 : maxY;
-    final double w = size.width;
-    final double h = size.height;
-    final Paint gridPaint = Paint()
-      ..color = Fx.text.withOpacity(.08)
-      ..strokeWidth = 1;
-
-    for (int i = 0; i <= yTicks; i++) {
-      final double y = h - (h / yTicks) * i;
-      canvas.drawLine(Offset(0, y), Offset(w, y), gridPaint);
-    }
-
-    final double xStep = series.length > 1 ? w / (series.length - 1) : w;
-    final Path path = Path();
-    for (int i = 0; i < series.length; i++) {
-      final double ratio = (series[i] / safeMaxY).clamp(0.0, 1.0);
-      final double x = i * xStep;
-      final double y = h - ratio * h;
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-
-    final Path fill = Path.from(path)
-      ..lineTo(w, h)
-      ..lineTo(0, h)
-      ..close();
-
-    final Color baseColor = Fx.mint;
-    canvas.drawPath(
-      fill,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [baseColor.withOpacity(.22), baseColor.withOpacity(.04)],
-        ).createShader(Rect.fromLTWH(0, 0, w, h)),
-    );
-
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.2
-        ..color = baseColor
-        ..isAntiAlias = true,
-    );
-
-    final Paint dotPaint = Paint()
-      ..color = baseColor
-      ..isAntiAlias = true;
-    for (int i = 0; i < series.length; i++) {
-      final double ratio = (series[i] / safeMaxY).clamp(0.0, 1.0);
-      final double x = i * xStep;
-      final double y = h - ratio * h;
-      canvas.drawCircle(Offset(x, y), 3.5, dotPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _MonthlyTrendPainter oldDelegate) {
-    return oldDelegate.series != series ||
-        oldDelegate.maxY != maxY ||
-        oldDelegate.yTicks != yTicks;
-  }
-}
-
-class _StackedMonthlyBarsPainter extends CustomPainter {
-  final List<_MonthlyCategoryStack> stacks;
-  final double maxY;
-  final int yTicks;
-  final Map<String, Color> categoryColors;
-
-  _StackedMonthlyBarsPainter({
-    required this.stacks,
-    required this.maxY,
-    required this.yTicks,
-    required this.categoryColors,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (stacks.isEmpty || size.width <= 0 || size.height <= 0) return;
-
-    final double safeMaxY = maxY <= 0 ? 1.0 : maxY;
-    final double w = size.width;
-    final double h = size.height;
-    final double columnWidth = w / stacks.length;
-    final double barWidth = columnWidth * 0.6;
-    final double gutter = (columnWidth - barWidth) / 2;
-    final Radius radius = Radius.circular(barWidth * 0.25);
-
-    final Paint gridPaint = Paint()
-      ..color = Fx.text.withOpacity(.06)
-      ..strokeWidth = 1.2;
-    for (int i = 0; i <= yTicks; i++) {
-      final double y = h - (h / yTicks) * i;
-      canvas.drawLine(Offset(0, y), Offset(w, y), gridPaint);
-    }
-
-    for (int i = 0; i < stacks.length; i++) {
-      final stack = stacks[i];
-      final double total =
-          stack.segments.fold<double>(0, (sum, seg) => sum + seg.value);
-      if (total <= 0) continue;
-
-      double yOffset = h;
-      final double left = columnWidth * i + gutter;
-
-      for (final seg in stack.segments) {
-        if (seg.value <= 0) continue;
-        final double segHeight = (seg.value / safeMaxY) * h;
-        yOffset -= segHeight;
-        final Color color = (categoryColors[seg.category] ?? Colors.grey)
-            .withOpacity(.92);
-        final Rect rect = Rect.fromLTWH(left, yOffset, barWidth, segHeight);
-        final RRect rrect = RRect.fromRectAndRadius(rect, radius);
-
-        canvas.drawRRect(
-          rrect.inflate(2.5),
-          Paint()
-            ..color = color.withOpacity(.12)
-            ..style = PaintingStyle.fill,
-        );
-
-        canvas.drawRRect(
-          rrect,
-          Paint()
-            ..shader = LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [color, color.withOpacity(.7)],
-            ).createShader(rect),
-        );
-
-        canvas.drawRRect(
-          rrect,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.1
-            ..color = color.withOpacity(.9),
-        );
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _StackedMonthlyBarsPainter oldDelegate) {
-    return oldDelegate.stacks != stacks ||
-        oldDelegate.maxY != maxY ||
-        oldDelegate.yTicks != yTicks ||
-        oldDelegate.categoryColors != categoryColors;
-  }
-}
-
-
-// ================================================
-// Small, dependency-free sparkline used in analytics cards
-// ================================================
-class _SparklineSimple extends StatelessWidget {
-  final List<double> values; // chronological (left->right)
-  const _SparklineSimple({required this.values});
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(painter: _SparkPainter(values));
-  }
-}
-
-class _SparkPainter extends CustomPainter {
-  final List<double> v;
-  _SparkPainter(this.v);
-
-  @override
-  void paint(Canvas c, Size s) {
-    if (v.isEmpty) return;
-    final maxV = v.reduce((a, b) => a > b ? a : b);
-    final minV = 0.0;
-    final pad = 6.0;
-    final w = s.width - pad * 2;
-    final h = s.height - pad * 2;
-    if (w <= 0 || h <= 0) return;
-
-    double xStep = v.length > 1 ? w / (v.length - 1) : w;
-    final path = Path();
-    for (int i = 0; i < v.length; i++) {
-      final x = pad + i * xStep;
-      final t = (maxV <= minV) ? 0.0 : ((v[i] - minV) / (maxV - minV));
-      final y = pad + (1 - t) * h;
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-
-    // fill
-    final fill = Path.from(path)
-      ..lineTo(pad + (v.length - 1) * xStep, s.height - pad)
-      ..lineTo(pad, s.height - pad)
-      ..close();
-
-    final mint = Fx.mint;
-    c.drawPath(
-      fill,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [mint.withOpacity(.22), mint.withOpacity(.04)],
-        ).createShader(Rect.fromLTWH(0, 0, s.width, s.height)),
-    );
-
-    // line
-    c.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.2
-        ..color = mint.withOpacity(.85)
-        ..isAntiAlias = true,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _SparkPainter old) => old.v != v;
-}

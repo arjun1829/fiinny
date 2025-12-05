@@ -11,6 +11,8 @@ const Color sunnyLemon  = Color(0xFFFFF475);
 const Color sunnyCoral  = Color(0xFFFF7F50);
 const Color midnight    = Color(0xFF131E2A);
 const Color midnightBlue= Color(0xFF2D4D5B);
+const Color deepTealBackground = Color(0xFF00423D);
+const Color tealPrimary = Color(0xFF006D64);
 
 // --- THEME DATA VARIANTS ---
 
@@ -206,4 +208,41 @@ final ThemeData lightMinimalTheme = ThemeData.light().copyWith(
     bodyMedium: TextStyle(color: Colors.black),
   ),
   dialogTheme: DialogThemeData(backgroundColor: Colors.white),
+);
+
+final ThemeData tealTheme = ThemeData(
+  brightness: Brightness.dark,
+  primaryColor: tealPrimary,
+  scaffoldBackgroundColor: deepTealBackground,
+  fontFamily: 'Montserrat',
+  appBarTheme: const AppBarTheme(
+    backgroundColor: deepTealBackground,
+    elevation: 0,
+    iconTheme: IconThemeData(color: Colors.white),
+    titleTextStyle: TextStyle(
+      color: Colors.white,
+      fontWeight: FontWeight.bold,
+      fontSize: 22,
+      fontFamily: 'Montserrat',
+      letterSpacing: 0.6,
+    ),
+  ),
+  floatingActionButtonTheme: const FloatingActionButtonThemeData(
+    backgroundColor: Colors.white,
+    foregroundColor: tealPrimary,
+    elevation: 6,
+  ),
+  cardColor: tealPrimary,
+  dialogBackgroundColor: deepTealBackground,
+  colorScheme: ColorScheme.dark(
+    primary: tealPrimary,
+    secondary: Colors.tealAccent,
+    onPrimary: Colors.white,
+    onSurface: Colors.white,
+    surface: deepTealBackground,
+  ),
+  textTheme: const TextTheme(
+    titleLarge: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+    bodyMedium: TextStyle(color: Colors.white),
+  ),
 );

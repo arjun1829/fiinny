@@ -61,7 +61,7 @@ class _SettleSuccessDialogState extends State<SettleSuccessDialog> {
                   borderRadius: BorderRadius.circular(28),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(.16),
+                      color: Theme.of(context).shadowColor.withOpacity(.16),
                       blurRadius: 24,
                       offset: const Offset(0, 12),
                     ),
@@ -73,11 +73,11 @@ class _SettleSuccessDialogState extends State<SettleSuccessDialog> {
                     Container(
                       width: 84,
                       height: 84,
-                      decoration: const BoxDecoration(
-                        color: AppColors.mint,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.check_rounded, color: Colors.white, size: 42),
+                      child: Icon(Icons.check_rounded, color: Theme.of(context).colorScheme.onPrimary, size: 42),
                     ),
                     const SizedBox(height: AppSpacing.l),
                     Text(

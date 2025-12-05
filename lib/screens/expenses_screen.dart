@@ -944,25 +944,33 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   // ------- Build -------
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // Check if we are in "Teal" theme (dark teal background)
+    // We can check primaryColor or scaffoldBackgroundColor
+    final isTealTheme = theme.scaffoldBackgroundColor == const Color(0xFF00423D);
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       floatingActionButton: _buildFAB(context),
       body: Stack(
         children: [
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF00423D),
-                  Color(0xFF006D64),
-                  Colors.white,
-                ],
-                stops: const [0.0, 0.45, 1.0],
+          if (isTealTheme)
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFF00423D),
+                    Color(0xFF006D64),
+                    Colors.white,
+                  ],
+                  stops: [0.0, 0.45, 1.0],
+                ),
               ),
-            ),
-          ),
+            )
+          else
+            Container(color: theme.scaffoldBackgroundColor),
           SafeArea(
             child: Column(
               children: [
@@ -1040,6 +1048,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final mq = MediaQuery.of(context);
     final viewInsets = mq.viewInsets.bottom;
     final bottomInset = viewInsets > 0 ? viewInsets : mq.padding.bottom;
+    final theme = Theme.of(context);
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
@@ -1051,15 +1060,13 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             arguments: widget.userPhone,
           );
         },
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.teal,
         elevation: 6,
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(100),
             boxShadow: [
               BoxShadow(
-                color: Colors.tealAccent.withOpacity(0.45),
+                color: theme.primaryColor.withOpacity(0.45),
                 blurRadius: 12,
                 offset: const Offset(0, 6),
               )

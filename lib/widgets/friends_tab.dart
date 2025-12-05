@@ -47,26 +47,26 @@ class _FriendsTabState extends State<FriendsTab> {
     Map<String, DateTime> lastActivity = {};
     for (var f in friendList) {
       final related = widget.expenses.where((e) =>
-      e.payerId == f.id || e.friendIds.contains(f.id));
-      lastActivity[f.id] = related.isNotEmpty
+      e.payerId == f.phone || e.friendIds.contains(f.phone));
+      lastActivity[f.phone] = related.isNotEmpty
           ? related.map((e) => e.date).reduce((a, b) => a.isAfter(b) ? a : b)
           : DateTime(2000);
     }
     if (_sortBy == 'recent') {
-      friendList.sort((a, b) => lastActivity[b.id]!.compareTo(lastActivity[a.id]!));
+      friendList.sort((a, b) => lastActivity[b.phone]!.compareTo(lastActivity[a.phone]!));
     } else {
-      friendList.sort((a, b) => (widget.netBalances[b.id] ?? 0).abs().compareTo(
-          (widget.netBalances[a.id] ?? 0).abs()));
+      friendList.sort((a, b) => (widget.netBalances[b.phone] ?? 0).abs().compareTo(
+          (widget.netBalances[a.phone] ?? 0).abs()));
     }
 
-    final unsettled = friendList.where((f) => (widget.netBalances[f.id] ?? 0).abs() > 0.5).toList();
-    final settled = friendList.where((f) => (widget.netBalances[f.id] ?? 0).abs() <= 0.5).toList();
+    final unsettled = friendList.where((f) => (widget.netBalances[f.phone] ?? 0).abs() > 0.5).toList();
+    final settled = friendList.where((f) => (widget.netBalances[f.phone] ?? 0).abs() <= 0.5).toList();
 
     final owingFriends = widget.friends
-        .where((f) => (widget.netBalances[f.id] ?? 0) > 0)
+        .where((f) => (widget.netBalances[f.phone] ?? 0) > 0)
         .toList()
       ..sort((a, b) =>
-          (widget.netBalances[b.id] ?? 0).compareTo(widget.netBalances[a.id] ?? 0));
+          (widget.netBalances[b.phone] ?? 0).compareTo(widget.netBalances[a.phone] ?? 0));
     final topOwing = owingFriends.take(2).toList();
 
     return ListView(
@@ -151,7 +151,7 @@ class _FriendsTabState extends State<FriendsTab> {
                           (f) => Padding(
                         padding: const EdgeInsets.only(left: 10, top: 2),
                         child: Text(
-                          "${f.name} owes you ₹${widget.netBalances[f.id]!.toStringAsFixed(0)}",
+                          "${f.name} owes you ₹${widget.netBalances[f.phone]!.toStringAsFixed(0)}",
                           style: TextStyle(
                             color: theme.primaryColorDark,
                             fontSize: 14,
@@ -196,7 +196,7 @@ class _FriendsTabState extends State<FriendsTab> {
         ),
         // --- Unsettled Friends ---
         ...unsettled.map((friend) {
-          final net = widget.netBalances[friend.id] ?? 0;
+          final net = widget.netBalances[friend.phone] ?? 0;
           final balColor = net > 0
               ? Colors.green
               : net < 0

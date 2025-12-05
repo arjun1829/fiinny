@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../core/services/fx_service.dart'; // Import FxService
 
 // ✅ for inline ads inside the details sheet
 import '../core/ads/ads_banner_card.dart';
@@ -81,6 +82,8 @@ class UnifiedTransactionList extends StatefulWidget {
   // ---------- NEW (all optional, back-compat defaults) ----------
   /// Override currency symbol (default: ₹)
   final String? currencySymbol;
+  /// Target currency code for conversion (default: INR)
+  final String? currencyCode;
 
   /// Allow/disallow swipe edit/delete (default: true)
   final bool enableSwipeActions;
@@ -90,6 +93,153 @@ class UnifiedTransactionList extends StatefulWidget {
 
   /// Open details sheet on tap (default: true)
   final bool enableDetailsSheet;
+
+  /// Inject inline ad inside each group after Nth row (default: 2 → 3rd row, same as old behavior)
+  final int inlineAdAfterIndex;
+
+  /// Show top banner ad (default: true)
+  final bool showTopBannerAd;
+
+  /// Show bottom banner ad (default: true)
+  final bool showBottomBannerAd;
+
+  /// Increment when user taps "Show More" (default: 10)
+  final int showMoreStep;
+
+  /// Custom empty-state builder; fallback to simple text when null
+  final Widget Function(BuildContext context)? emptyBuilder;
+
+  /// Intercept row tap; return true to mark as handled (no default sheet)
+  final bool Function(Map<String, dynamic> normalized)? onRowTapIntercept;
+
+  /// Enable/disable inline ad injection (default: true)
+  final bool enableInlineAds;
+
+  /// When true, wraps the list in its own scroll view (for bottom sheets, etc.).
+  /// Defaults to false to allow the parent scroll view to handle scrolling.
+  final bool enableScrolling;
+
+  const UnifiedTransactionList({
+    Key? key,
+    required this.expenses,
+    required this.incomes,
+    required this.friendsById,
+    required this.userPhone,
+    this.previewCount = 10,
+    this.filterType = "All",
+    this.onEdit,
+    this.onDelete,
+    this.onSplit,
+    this.showBillIcon = false,
+    this.multiSelectEnabled = false,
+    this.selectedIds = const {},
+    this.onSelectTx,
+    this.unifiedDocs,
+    this.categoryOptions = const [
+      'Fund Transfers',
+      'Payments',
+      'Shopping',
+      'Travel',
+      'Food',
+      'Entertainment',
+      'Others',
+      'Healthcare',
+      'Education',
+      'Investments',
+    ],
+    this.subcategoryOptionsByCategory = const {
+      'Fund Transfers': [
+        'Fund Transfers – Others',
+        'Cash Withdrawals',
+        'Remittance',
+      ],
+      'Payments': [
+        'Loans/EMIs',
+        'Fuel',
+        'Mobile Bill',
+        'Auto Service',
+        'Bills / Utility',
+        'Credit Card',
+        'Logistics',
+        'Payment – Others',
+        'Rental and Real Estate',
+        'Wallet Payment',
+      ],
+      'Food': [
+        'Restaurants',
+        'Alcohol',
+        'Food Delivery',
+        'Food – Others',
+      ],
+      'Entertainment': [
+        'OTT Services',
+        'Gaming',
+        'Movies',
+        'Music',
+        'Entertainment – Others',
+      ],
+      'Shopping': [
+        'Groceries and Consumables',
+        'Electronics',
+        'Apparel',
+        'Books and Stationery',
+        'Ecommerce',
+        'Fitness',
+        'Gift',
+        'Home Furnishing & Gaming',
+        'Jewellery and Accessories',
+        'Personal Care',
+        'Shopping – Others',
+      ],
+      'Travel': [
+        'Car Rental',
+        'Travel and Tours',
+        'Travel – Others',
+        'Accommodation',
+        'Airlines',
+        'Cab / Bike Services',
+        'Forex',
+        'Railways',
+      ],
+      'Others': [
+        'Others',
+        'Business Services',
+        'Bank Charges',
+        'Cheque Reject',
+        'Government Services / Fire Department',
+        'Tax Payments',
+      ],
+      'Healthcare': [
+        'Medicine / Pharma',
+        'Healthcare – Others',
+        'Hospital',
+      ],
+      'Education': [
+        'Education',
+      ],
+      'Investments': [
+        'Mutual Fund – SIP',
+        'Mutual Fund – Lumpsum',
+        'Stocks / Brokerage',
+        'Investments – Others',
+      ],
+    },
+    this.onChangeSubcategory,
+    this.onChangeCounterparty,
+    this.onChangeCategory,
+    this.onBeginModal,
+    this.onEndModal,
+    this.filter,
+    this.sort,
+    this.groupBy,
+    this.onNormalized,
+
+    // NEW optional args (safe defaults)
+    this.currencySymbol,
+    this.currencyCode,
+    this.enableSwipeActions = true,
+    this.showCategoryDropdown = true,
+    this.enableDetailsSheet = true,
 
   /// Inject inline ad inside each group after Nth row (default: 2 → 3rd row, same as old behavior)
   final int inlineAdAfterIndex;
@@ -291,9 +441,11 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             oldWidget.filter != widget.filter ||
             oldWidget.sort != widget.sort ||
             oldWidget.groupBy != widget.groupBy ||
-            oldWidget.currencySymbol != widget.currencySymbol;
+            oldWidget.currencySymbol != widget.currencySymbol ||
+            oldWidget.currencyCode != widget.currencyCode;
 
-    if (oldWidget.currencySymbol != widget.currencySymbol) {
+    if (oldWidget.currencySymbol != widget.currencySymbol || 
+        oldWidget.currencyCode != widget.currencyCode) {
       _inCurrency = NumberFormat.currency(
         locale: 'en_IN',
         symbol: widget.currencySymbol ?? '₹',
@@ -657,12 +809,30 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             return null;
           })();
 
+      // --- FX CONVERSION ---
+      final Map<String, dynamic>? fx = (e.fx != null && e.fx!.isNotEmpty) ? e.fx : null;
+      String itemCurrency = 'INR'; // Legacy default
+      if (fx != null && fx['currency'] != null) {
+        itemCurrency = fx['currency'].toString();
+      }
+      
+      final targetCurrency = widget.currencyCode ?? 'INR';
+      final double rawAmount = (e.amount is num) ? (e.amount as num).toDouble() : 0.0;
+      
+      // Perform conversion
+      // NOTE: This runs synchronously, so it relies on FxService cached rates.
+      double amount = rawAmount;
+      if (itemCurrency != targetCurrency) {
+         amount = FxService().convert(rawAmount, itemCurrency, targetCurrency);
+      }
+      // ---------------------
+
       return {
         'mode': 'legacy',
         'type': 'expense',
         'id': e.id,
         'date': e.date,
-        'amount': (e.amount is num) ? (e.amount as num).toDouble() : 0.0,
+        'amount': amount, // Converted Amount
         'category': cat,
         'subcategory': subcat,
         'note': e.note,
@@ -685,6 +855,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'categorySource': categorySource,
         'merchantKey': merchantKey.isEmpty ? null : merchantKey,
         'title': (title != null && title.trim().isNotEmpty) ? title.trim() : null,
+        'displayCurrency': targetCurrency, 
+        'origCurrency': itemCurrency,
+        'origAmount': rawAmount,
       };
     }));
 
@@ -711,12 +884,28 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             return null;
           })();
 
+      // --- FX CONVERSION ---
+      final Map<String, dynamic>? fx = (i.fx != null && i.fx!.isNotEmpty) ? i.fx : null;
+      String itemCurrency = 'INR'; // Legacy default for Incomes as well
+      if (fx != null && fx['currency'] != null) {
+        itemCurrency = fx['currency'].toString();
+      }
+      
+      final targetCurrency = widget.currencyCode ?? 'INR';
+      final double rawAmount = (i.amount is num) ? (i.amount as num).toDouble() : 0.0;
+      
+      double amount = rawAmount;
+      if (itemCurrency != targetCurrency) {
+         amount = FxService().convert(rawAmount, itemCurrency, targetCurrency);
+      }
+      // ---------------------
+
       return {
         'mode': 'legacy',
         'type': 'income',
         'id': i.id,
         'date': i.date,
-        'amount': (i.amount is num) ? (i.amount as num).toDouble() : 0.0,
+        'amount': amount, // Converted
         'category': cat,
         'subcategory': subcat,
         'note': i.note,
@@ -739,6 +928,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'categorySource': categorySource,
         'merchantKey': merchantKey.isEmpty ? null : merchantKey,
         'title': (title != null && title.trim().isNotEmpty) ? title.trim() : null,
+        'displayCurrency': targetCurrency, 
+        'origCurrency': itemCurrency,
+        'origAmount': rawAmount,
       };
     }));
 
@@ -953,7 +1145,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 width: double.infinity,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
-                  color: Colors.black87,
+                  color: Theme.of(context).cardColor,
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
@@ -1043,7 +1235,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
@@ -1054,7 +1247,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           child: Padding(
             padding: const EdgeInsets.all(18.0),
             child: DefaultTextStyle.merge(
-              style: const TextStyle(color: Colors.black),
+              style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1090,9 +1283,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                       Text(
                         "Subcategory: $subcategory",
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: Colors.grey,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
                         ),
                       ),
                     ],
@@ -1243,7 +1436,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
@@ -1254,7 +1448,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           child: Padding(
             padding: const EdgeInsets.all(18.0),
             child: DefaultTextStyle.merge(
-              style: const TextStyle(color: Colors.black),
+              style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1277,9 +1471,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                       Text(
                         "Subcategory: $subcategory",
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: Colors.grey,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
                         ),
                       ),
                     ],
@@ -1572,10 +1766,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                   child: Text(
                     c,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 13.8,
-                      color: Color(0xFF0F1E1C),
+                      color: Theme.of(context).textTheme.bodyMedium?.color,
                     ),
                   ),
                 ),
@@ -1627,10 +1821,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           isDense: true,
           icon: const Icon(Icons.expand_more_rounded, size: 18),
           borderRadius: BorderRadius.circular(12),
-          style: const TextStyle(
+          style: TextStyle(
             fontWeight: FontWeight.w700,
             fontSize: 13.8,
-            color: Color(0xFF0F1E1C),
+            color: Theme.of(context).textTheme.bodyMedium?.color,
           ),
           menuMaxHeight: 300,
         ),
@@ -1667,10 +1861,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         display,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
+        style: TextStyle(
           fontWeight: FontWeight.w500,
           fontSize: 13.0,
-          color: Color(0xFF4B5563),
+          color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
         ),
       ),
     );
@@ -1690,7 +1884,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          backgroundColor: Colors.black87,
+          backgroundColor: Theme.of(context).dialogBackgroundColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),

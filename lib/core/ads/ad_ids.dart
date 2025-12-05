@@ -1,5 +1,6 @@
 // lib/core/ads/ad_ids.dart
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 /// Toggle to force TEST ads even in release (handy for QA/internal builds).
 /// Use: --dart-define=FORCE_TEST_ADS=true
@@ -33,9 +34,9 @@ class AdIds {
 
   // ---------- Switch logic: prefer real identifiers whenever configured ----------
   static bool get _useReal {
-    if (forceTestAds) return false;
-    if (!_hasRealIdsForCurrentPlatform) return false;
-    return true;
+    // Always try to use real IDs first for "original ads"
+    if (_hasRealIdsForCurrentPlatform) return true;
+    return false;
   }
 
   /// Whether production AdMob identifiers are present for the current platform.
@@ -45,6 +46,7 @@ class AdIds {
   static bool get isUsingTestIds => !_useReal;
 
   static bool get _hasRealIdsForCurrentPlatform {
+    if (kIsWeb) return false;
     if (Platform.isAndroid) {
       return _looksConfigured(_androidAppIdReal, isAppId: true) &&
           _looksConfigured(_androidBannerReal) &&
@@ -69,19 +71,19 @@ class AdIds {
     return pattern.hasMatch(value);
   }
 
-  static String get appId => Platform.isAndroid
+  static String get appId => kIsWeb ? '' : (Platform.isAndroid
       ? (_useReal ? _androidAppIdReal : _androidAppIdTest)
-      : (_useReal ? _iosAppIdReal : _iosAppIdTest);
+      : (_useReal ? _iosAppIdReal : _iosAppIdTest));
 
-  static String get banner => Platform.isAndroid
+  static String get banner => kIsWeb ? '' : (Platform.isAndroid
       ? (_useReal ? _androidBannerReal : _androidBannerTest)
-      : (_useReal ? _iosBannerReal : _iosBannerTest);
+      : (_useReal ? _iosBannerReal : _iosBannerTest));
 
-  static String get interstitial => Platform.isAndroid
+  static String get interstitial => kIsWeb ? '' : (Platform.isAndroid
       ? (_useReal ? _androidInterReal : _androidInterTest)
-      : (_useReal ? _iosInterReal : _iosInterTest);
+      : (_useReal ? _iosInterReal : _iosInterTest));
 
-  static String get rewarded => Platform.isAndroid
+  static String get rewarded => kIsWeb ? '' : (Platform.isAndroid
       ? (_useReal ? _androidRewardReal : _androidRewardTest)
-      : (_useReal ? _iosRewardReal : _iosRewardTest);
+      : (_useReal ? _iosRewardReal : _iosRewardTest));
 }

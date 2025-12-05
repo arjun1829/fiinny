@@ -122,6 +122,7 @@ class _SharingScreenState extends State<SharingScreen> {
   }
 
   void _refreshAll() {
+    if (!mounted) return;
     setState(() {
       _partnersFuture = PartnerService().fetchSharedPartnersWithStats(widget.currentUserPhone);
       _selectedPartner = null;
@@ -137,6 +138,7 @@ class _SharingScreenState extends State<SharingScreen> {
         .get();
 
     final data = userDoc.data() ?? {};
+    if (!mounted) return;
     setState(() {
       final n = (data['name'] as String?)?.trim();
       userName = (n != null && n.isNotEmpty) ? n : 'You';

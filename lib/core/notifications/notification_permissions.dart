@@ -5,7 +5,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationPermissions {
   static Future<bool> ensureEnabled(FlutterLocalNotificationsPlugin plugin) async {
-    if (!Platform.isAndroid) return true;
+    if (kIsWeb || !Platform.isAndroid) return true;
 
     final android =
     plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();

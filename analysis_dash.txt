@@ -1,0 +1,41 @@
+Analyzing dashboard_screen.dart...                              
+
+warning - Unused import: '../widgets/dashboard_activity_tab.dart' - lib\screens\dashboard_screen.dart:30:8 - unused_import
+warning - Unused import: 'dashboard_activity_screen.dart' - lib\screens\dashboard_screen.dart:33:8 - unused_import
+warning - Unused import: 'insight_feed_screen.dart' - lib\screens\dashboard_screen.dart:34:8 - unused_import
+warning - Unused import: '../themes/tokens.dart' - lib\screens\dashboard_screen.dart:37:8 - unused_import
+warning - Unused import: '../themes/glass_card.dart' - lib\screens\dashboard_screen.dart:38:8 - unused_import
+warning - Unused import: '../themes/badge.dart' - lib\screens\dashboard_screen.dart:39:8 - unused_import
+warning - Unused import: '../details/models/recurring_scope.dart' - lib\screens\dashboard_screen.dart:43:8 - unused_import
+warning - Unused import: '../details/models/shared_item.dart' - lib\screens\dashboard_screen.dart:44:8 - unused_import
+warning - Unused import: '../widgets/shimmer.dart' - lib\screens\dashboard_screen.dart:48:8 - unused_import
+warning - Unused import: '../widgets/hidden_charges_card.dart' - lib\screens\dashboard_screen.dart:67:8 - unused_import
+warning - Unused import: '../widgets/forex_charges_card.dart' - lib\screens\dashboard_screen.dart:68:8 - unused_import
+warning - Unused import: '../widgets/salary_predictor_card.dart' - lib\screens\dashboard_screen.dart:69:8 - unused_import
+warning - Unused import: '../widgets/hidden_charges_review_sheet.dart' - lib\screens\dashboard_screen.dart:74:8 - unused_import
+warning - Unused import: '../widgets/forex_findings_sheet.dart' - lib\screens\dashboard_screen.dart:75:8 - unused_import
+warning - Unused import: '../screens/review_inbox_screen.dart' - lib\screens\dashboard_screen.dart:77:8 - unused_import
+warning - Unused import: '../services/review_queue_service.dart' - lib\screens\dashboard_screen.dart:78:8 - unused_import
+warning - Unused import: '../models/ingest_draft_model.dart' - lib\screens\dashboard_screen.dart:79:8 - unused_import
+warning - The value of the field '_scanningLoans' isn't used - lib\screens\dashboard_screen.dart:152:8 - unused_field
+warning - The left operand can't be null, so the right operand is never executed - lib\screens\dashboard_screen.dart:275:60 - dead_null_aware_expression
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\screens\dashboard_screen.dart:351:35 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\screens\dashboard_screen.dart:359:70 - deprecated_member_use
+warning - The left operand can't be null, so the right operand is never executed - lib\screens\dashboard_screen.dart:1066:60 - dead_null_aware_expression
+   info - Don't invoke 'print' in production code - lib\screens\dashboard_screen.dart:1122:7 - avoid_print
+   info - Local variables should be final - lib\screens\dashboard_screen.dart:1494:7 - prefer_final_locals
+   info - Local variables should be final - lib\screens\dashboard_screen.dart:1513:7 - prefer_final_locals
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\screens\dashboard_screen.dart:1652:53 - deprecated_member_use
+warning - The declaration '_wrapRingWithShine' isn't referenced - lib\screens\dashboard_screen.dart:2113:10 - unused_element
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\screens\dashboard_screen.dart:2145:46 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\screens\dashboard_screen.dart:2146:46 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\screens\dashboard_screen.dart:2147:46 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\screens\dashboard_screen.dart:2208:49 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\screens\dashboard_screen.dart:2210:68 - deprecated_member_use
+warning - The declaration '_AnimatedMintBackground' isn't referenced - lib\screens\dashboard_screen.dart:2241:7 - unused_element
+warning - A value for optional parameter 'key' isn't ever given - lib\screens\dashboard_screen.dart:2242:40 - unused_element_parameter
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\screens\dashboard_screen.dart:2261:36 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\screens\dashboard_screen.dart:2262:36 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\screens\dashboard_screen.dart:2263:47 - deprecated_member_use
+
+37 issues found. (ran in 12.0s)

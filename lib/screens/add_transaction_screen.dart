@@ -19,11 +19,7 @@ import '../services/group_service.dart';
 import '../widgets/add_friend_dialog.dart';
 
 /// Light finance palette
-const Color kBg = Color(0xFFF8FAF9);
-const Color kPrimary = Color(0xFF09857a);
-const Color kText = Color(0xFF0F1E1C);
-const Color kSubtle = Color(0xFF6B7A76);
-const Color kLine = Color(0x14000000);
+// Light finance palette removed in favor of Theme.of(context)
 
 class AddTransactionScreen extends StatefulWidget {
   final String userId; // phone (E.164), e.g., +91xxxx
@@ -55,7 +51,8 @@ class _DarkPillButton extends StatelessWidget {
         ),
       ),
       style: TextButton.styleFrom(
-        backgroundColor: const Color(0xFF0F1E1C), // darker pill
+        backgroundColor: Theme.of(context).colorScheme.onSurface, // darker pill
+        foregroundColor: Theme.of(context).colorScheme.onInverseSurface,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         shape: const StadiumBorder(),
         overlayColor: Colors.white10,
@@ -348,29 +345,29 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     final base = Theme.of(context);
     final blacky = base.copyWith(
       colorScheme: base.colorScheme.copyWith(
-        primary: kText,           // controls focused indicators, selection, etc.
-        secondary: kText,
-        surface: Colors.white,
+        primary: base.colorScheme.onSurface,           // controls focused indicators, selection, etc.
+        secondary: base.colorScheme.onSurface,
+        surface: base.colorScheme.surface,
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: kText),
+        style: TextButton.styleFrom(foregroundColor: base.colorScheme.onSurface),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: kText, foregroundColor: Colors.white,
+          backgroundColor: base.colorScheme.onSurface, foregroundColor: base.colorScheme.onInverseSurface,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
       checkboxTheme: CheckboxThemeData(
-        fillColor: MaterialStatePropertyAll(kText),
-        checkColor: MaterialStatePropertyAll(Colors.white),
+        fillColor: MaterialStatePropertyAll(base.colorScheme.onSurface),
+        checkColor: MaterialStatePropertyAll(base.colorScheme.onInverseSurface),
       ),
       radioTheme: RadioThemeData(
-        fillColor: MaterialStatePropertyAll(kText),
+        fillColor: MaterialStatePropertyAll(base.colorScheme.onSurface),
       ),
       switchTheme: SwitchThemeData(
-        thumbColor: MaterialStateProperty.resolveWith((s) => kText),
-        trackColor: MaterialStateProperty.resolveWith((s) => kText.withOpacity(0.25)),
+        thumbColor: MaterialStateProperty.resolveWith((s) => base.colorScheme.onSurface),
+        trackColor: MaterialStateProperty.resolveWith((s) => base.colorScheme.onSurface.withOpacity(0.25)),
       ),
     );
 
@@ -393,25 +390,25 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     final base = Theme.of(context);
     final blacky = base.copyWith(
       colorScheme: base.colorScheme.copyWith(
-        primary: kText, secondary: kText, surface: Colors.white,
+        primary: base.colorScheme.onSurface, secondary: base.colorScheme.onSurface, surface: base.colorScheme.surface,
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: kText),
+        style: TextButton.styleFrom(foregroundColor: base.colorScheme.onSurface),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: kText, foregroundColor: Colors.white,
+          backgroundColor: base.colorScheme.onSurface, foregroundColor: base.colorScheme.onInverseSurface,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
       checkboxTheme: CheckboxThemeData(
-        fillColor: MaterialStatePropertyAll(kText),
-        checkColor: MaterialStatePropertyAll(Colors.white),
+        fillColor: MaterialStatePropertyAll(base.colorScheme.onSurface),
+        checkColor: MaterialStatePropertyAll(base.colorScheme.onInverseSurface),
       ),
-      radioTheme: RadioThemeData(fillColor: MaterialStatePropertyAll(kText)),
+      radioTheme: RadioThemeData(fillColor: MaterialStatePropertyAll(base.colorScheme.onSurface)),
       switchTheme: SwitchThemeData(
-        thumbColor: MaterialStateProperty.resolveWith((s) => kText),
-        trackColor: MaterialStateProperty.resolveWith((s) => kText.withOpacity(0.25)),
+        thumbColor: MaterialStateProperty.resolveWith((s) => base.colorScheme.onSurface),
+        trackColor: MaterialStateProperty.resolveWith((s) => base.colorScheme.onSurface.withOpacity(0.25)),
       ),
     );
 
@@ -535,17 +532,17 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   Widget build(BuildContext context) {
     final steps = ['Amount', 'Category', 'Details', 'Review'];
     return Scaffold(
-      backgroundColor: kBg,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: kBg,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kText),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: Theme.of(context).textTheme.bodyMedium?.color),
           onPressed: _back,
         ),
         centerTitle: true,
-        title: const Text('Add Transaction',
-            style: TextStyle(color: kText, fontWeight: FontWeight.w700)),
+        title: Text('Add Transaction',
+            style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color, fontWeight: FontWeight.w700)),
         actions: [
           if (_loadingFG) const Padding(
             padding: EdgeInsets.only(right: 12),
@@ -724,7 +721,7 @@ class _StepAmountType extends StatelessWidget {
                       enabled: !saving,
                       maxLength: 4,
                       keyboardType: TextInputType.number,
-                      decoration: _inputDec().copyWith(counterText: ''),
+                      decoration: _inputDec(context).copyWith(counterText: ''),
                       inputFormatters: [
                         FilteringTextInputFormatter.digitsOnly,
                         LengthLimitingTextInputFormatter(4),
@@ -783,14 +780,14 @@ class _StepCategory extends StatelessWidget {
                 onSelected: (_) => onChanged(c),
                 label: Text(c),
                 labelStyle: TextStyle(
-                  color: sel ? Colors.white : kText.withOpacity(0.9),
+                  color: sel ? Theme.of(context).colorScheme.onPrimary : Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.9),
                   fontWeight: FontWeight.w700,
                 ),
-                selectedColor: kPrimary,
-                backgroundColor: Colors.white,
+                selectedColor: Theme.of(context).colorScheme.primary,
+                backgroundColor: Theme.of(context).cardColor,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: sel ? kPrimary : kLine),
+                  side: BorderSide(color: sel ? Theme.of(context).colorScheme.primary : Theme.of(context).dividerColor),
                 ),
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               );
@@ -933,7 +930,7 @@ class _StepDetails extends StatelessWidget {
             child: TextField(
               controller: noteCtrl,
               maxLines: 2,
-              decoration: _inputDec(),
+              decoration: _inputDec(context),
             ),
           ),
           if (showSplit) ...[
@@ -946,17 +943,17 @@ class _StepDetails extends StatelessWidget {
                     child: Theme(
                       data: Theme.of(context).copyWith(
                         colorScheme: Theme.of(context).colorScheme.copyWith(
-                          primary: kText,        // selection + focus = black
+                          primary: Theme.of(context).textTheme.bodyLarge?.color,        // selection + focus = black
                           onPrimary: Colors.white,
                         ),
                       ),
                       child: DropdownButtonFormField<String>(
                         value: friendId,
                         isExpanded: true,
-                        decoration: _inputDec().copyWith(
+                        decoration: _inputDec(context).copyWith(
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: kText, width: 1.4), // black border
+                            borderSide: BorderSide(color: Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black, width: 1.4), // black border
                           ),
                         ),
                         items: [
@@ -965,7 +962,7 @@ class _StepDetails extends StatelessWidget {
                             value: f['id'],
                             child: Text(
                               f['name'] ?? '',
-                              style: const TextStyle(color: kText), // black list text
+                              style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color), // black list text
                             ),
                           )),
                         ],
@@ -983,23 +980,23 @@ class _StepDetails extends StatelessWidget {
                     child: Theme(
                       data: Theme.of(context).copyWith(
                         colorScheme: Theme.of(context).colorScheme.copyWith(
-                          primary: kText, onPrimary: Colors.white,
+                          primary: Theme.of(context).textTheme.bodyLarge?.color, onPrimary: Colors.white,
                         ),
                       ),
                       child: DropdownButtonFormField<String>(
                         value: groupId,
                         isExpanded: true,
-                        decoration: _inputDec().copyWith(
+                        decoration: _inputDec(context).copyWith(
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: kText, width: 1.4),
+                            borderSide: BorderSide(color: Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black, width: 1.4),
                           ),
                         ),
                         items: [
                           const DropdownMenuItem(value: null, child: Text('None')),
                           ...groups.map((g) => DropdownMenuItem(
                             value: g.id,
-                            child: Text(g.name, style: const TextStyle(color: kText)),
+                            child: Text(g.name, style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color)),
                           )),
                         ],
                         onChanged: onGroup,
@@ -1076,12 +1073,12 @@ class _StepDetails extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: kPrimary.withOpacity(0.10),
+                            color: Theme.of(context).primaryColor.withOpacity(0.10),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
                             sumText,
-                            style: const TextStyle(fontWeight: FontWeight.w700, color: kText),
+                            style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).textTheme.bodyLarge?.color),
                           ),
                         ),
                       ],
@@ -1093,16 +1090,16 @@ class _StepDetails extends StatelessWidget {
                       child: Theme(
                         data: Theme.of(context).copyWith(
                           colorScheme: Theme.of(context).colorScheme.copyWith(
-                            primary: kText, onPrimary: Colors.white,
+                            primary: Theme.of(context).textTheme.bodyLarge?.color, onPrimary: Colors.white,
                           ),
                         ),
                         child: DropdownButtonFormField<String>(
                           value: payerPhone,
                           isExpanded: true,
-                          decoration: _inputDec().copyWith(
+                          decoration: _inputDec(context).copyWith(
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: kText, width: 1.4),
+                              borderSide: BorderSide(color: Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black, width: 1.4),
                             ),
                           ),
                           items: participants.map((p) {
@@ -1113,7 +1110,7 @@ class _StepDetails extends StatelessWidget {
                             final display = (p == mePhone) ? 'You' : (f['name'] ?? p);
                             return DropdownMenuItem(
                               value: p,
-                              child: Text(display, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kText)),
+                              child: Text(display, overflow: TextOverflow.ellipsis, style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color)),
                             );
                           }).toList(),
                           onChanged: onPayerChanged,
@@ -1139,10 +1136,10 @@ class _StepDetails extends StatelessWidget {
                             children: [
                               CircleAvatar(
                                 radius: 14,
-                                backgroundColor: kPrimary.withOpacity(0.10),
+                                backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
                                 child: Text(
                                   _initialsFor(display),
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: kText),
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(context).textTheme.bodyLarge?.color),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -1151,7 +1148,7 @@ class _StepDetails extends StatelessWidget {
                                   display,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: kText, fontWeight: FontWeight.w700),
+                                  style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.w700),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -1164,7 +1161,7 @@ class _StepDetails extends StatelessWidget {
                                     FilteringTextInputFormatter.allow(RegExp(r'^\d{0,7}(\.\d{0,2})?$')),
                                   ],
                                   textAlign: TextAlign.right,
-                                  decoration: _inputDec().copyWith(labelText: '₹'),
+                                  decoration: _inputDec(context).copyWith(labelText: '₹'),
                                 ),
                               ),
                             ],
@@ -1194,7 +1191,7 @@ class _StepDetails extends StatelessWidget {
                   child: DropdownButtonFormField<String>(
                     value: selectedLabel,
                     isExpanded: true,
-                    decoration: _inputDec(),
+                    decoration: _inputDec(context),
                     items: [
                       const DropdownMenuItem(value: null, child: Text('No label')),
                       ...labels.map((l) => DropdownMenuItem(value: l, child: Text(l))),
@@ -1209,7 +1206,7 @@ class _StepDetails extends StatelessWidget {
                   label: 'Or type new label',
                   child: TextField(
                     controller: labelCtrl,
-                    decoration: _inputDec().copyWith(hintText: 'Eg: Goa Trip'),
+                    decoration: _inputDec(context).copyWith(hintText: 'Eg: Goa Trip'),
                     onChanged: (v){ if (v.isNotEmpty) onLabelSelect(null); },
                   ),
                 ),
@@ -1221,10 +1218,10 @@ class _StepDetails extends StatelessWidget {
             children: [
               OutlinedButton.icon(
                 onPressed: onPickBill,
-                icon: const Icon(Icons.attach_file_rounded, color: kPrimary),
-                label: const Text('Attach Bill', style: TextStyle(color: kPrimary, fontWeight: FontWeight.w700)),
+                icon: Icon(Icons.attach_file_rounded, color: Theme.of(context).primaryColor),
+                label: Text('Attach Bill', style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.w700)),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: kPrimary),
+                  side: BorderSide(color: Theme.of(context).primaryColor),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   backgroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1404,7 +1401,7 @@ class _StepperBar extends StatelessWidget {
                 height: 6,
                 margin: EdgeInsets.only(right: i == total - 1 ? 0 : 6),
                 decoration: BoxDecoration(
-                  color: active ? kPrimary : const Color(0x22000000),
+                  color: active ? Theme.of(context).primaryColor : const Color(0x22000000),
                   borderRadius: BorderRadius.circular(6),
                 ),
               ),
@@ -1422,7 +1419,7 @@ class _StepperBar extends StatelessWidget {
                 t,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: active ? kPrimary : kSubtle,
+                  color: active ? Theme.of(context).primaryColor : Theme.of(context).textTheme.bodySmall?.color,
                   fontWeight: active ? FontWeight.w800 : FontWeight.w600,
                   fontSize: 12,
                 ),
@@ -1447,25 +1444,25 @@ class _AmountField extends StatelessWidget {
         controller: controller,
         enabled: enabled,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        style: const TextStyle(
-          fontSize: 24, fontWeight: FontWeight.w800, color: kText, letterSpacing: 0.3,
+        style: TextStyle(
+          fontSize: 24, fontWeight: FontWeight.w800, color: Theme.of(context).textTheme.bodyLarge?.color, letterSpacing: 0.3,
         ),
         decoration: InputDecoration(
           prefixText: '₹ ',
-          prefixStyle: const TextStyle(
-              fontSize: 24, fontWeight: FontWeight.w800, color: kText),
+          prefixStyle: TextStyle(
+              fontSize: 24, fontWeight: FontWeight.w800, color: Theme.of(context).textTheme.bodyLarge?.color),
           hintText: '0.00',
-          hintStyle: const TextStyle(fontSize: 24, color: kSubtle, fontWeight: FontWeight.w700),
+          hintStyle: TextStyle(fontSize: 24, color: Theme.of(context).textTheme.bodySmall?.color, fontWeight: FontWeight.w700),
           filled: true,
           fillColor: Colors.white,
           contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: kLine),
+            borderSide: BorderSide(color: Theme.of(context).dividerColor),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: kPrimary, width: 1.6),
+            borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 1.6),
           ),
         ),
       ),
@@ -1495,20 +1492,20 @@ class _TypeChips extends StatelessWidget {
           label: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(o.icon, size: 18, color: sel ? Colors.white : kText.withOpacity(0.75)),
+              Icon(o.icon, size: 18, color: sel ? Colors.white : Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.75)),
               const SizedBox(width: 6),
               Text(o.label),
             ],
           ),
           labelStyle: TextStyle(
-            color: sel ? Colors.white : kText.withOpacity(0.9),
+            color: sel ? Colors.white : Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.9),
             fontWeight: FontWeight.w700,
           ),
-          selectedColor: kPrimary,
+          selectedColor: Theme.of(context).primaryColor,
           backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: sel ? kPrimary : kLine),
+            side: BorderSide(color: sel ? Theme.of(context).primaryColor : Theme.of(context).dividerColor),
           ),
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         );
@@ -1535,13 +1532,13 @@ class _ReviewCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(kv.k,
-                      style: const TextStyle(color: kSubtle, fontWeight: FontWeight.w700),
+                      style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontWeight: FontWeight.w700),
                     ),
                   ),
                   Expanded(
                     child: Text(kv.v,
                       textAlign: TextAlign.right,
-                      style: const TextStyle(color: kText, fontWeight: FontWeight.w800),
+                      style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.w800),
                     ),
                   ),
                 ],
@@ -1568,7 +1565,7 @@ class _H2 extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       t,
-      style: const TextStyle(color: kText, fontWeight: FontWeight.w800, fontSize: 16),
+      style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.w800, fontSize: 16),
     );
   }
 }
@@ -1584,7 +1581,7 @@ class _Box extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: kLine),
+        border: Border.all(color: Theme.of(context).dividerColor),
         boxShadow: const [BoxShadow(color: Color(0x0F000000), blurRadius: 10, offset: Offset(0,4))],
       ),
       child: child,
@@ -1593,7 +1590,7 @@ class _Box extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label!, style: const TextStyle(color: kText, fontWeight: FontWeight.w700, fontSize: 13.5)),
+        Text(label!, style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.w700, fontSize: 13.5)),
         const SizedBox(height: 6),
         box,
       ],
@@ -1611,7 +1608,7 @@ class _PrimaryButton extends StatelessWidget {
     return ElevatedButton(
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(
-        backgroundColor: kPrimary,
+        backgroundColor: Theme.of(context).primaryColor,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 14),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -1638,8 +1635,8 @@ class _GhostButton extends StatelessWidget {
     return OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
-        side: const BorderSide(color: kLine),
-        foregroundColor: kText,
+        side: BorderSide(color: Theme.of(context).dividerColor),
+        foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
@@ -1656,7 +1653,7 @@ class _GlassCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white, borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: kLine, width: 1),
+        border: Border.all(color: Theme.of(context).dividerColor, width: 1),
         boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0,8))],
       ),
       child: ClipRRect(
@@ -1674,17 +1671,17 @@ class _ChipOpt {
 
 class _KV { final String k; final String v; const _KV(this.k, this.v); }
 
-InputDecoration _inputDec() {
+InputDecoration _inputDec(BuildContext context) {
   final base = OutlineInputBorder(
     borderRadius: BorderRadius.circular(12),
-    borderSide: const BorderSide(color: kLine, width: 1),
+    borderSide: BorderSide(color: Theme.of(context).dividerColor, width: 1),
   );
   return InputDecoration(
     filled: true, fillColor: Colors.white,
-    hintStyle: const TextStyle(color: kSubtle),
+    hintStyle: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
     contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
     enabledBorder: base,
-    focusedBorder: base.copyWith(borderSide: const BorderSide(color: kPrimary, width: 1.4)),
+    focusedBorder: base.copyWith(borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 1.4)),
   );
 }
 
@@ -1724,11 +1721,11 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
               Container(width: 42, height: 4,
                   decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
               const SizedBox(height: 10),
-              const Text('Create Group', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: kText)),
+              Text('Create Group', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Theme.of(context).textTheme.bodyLarge?.color)),
               const SizedBox(height: 12),
               TextField(
                 controller: _nameCtrl,
-                decoration: _inputDec().copyWith(labelText: 'Group name'),
+                decoration: _inputDec(context).copyWith(labelText: 'Group name'),
               ),
               const SizedBox(height: 12),
               Align(
@@ -1784,7 +1781,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
                     label: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Text('Create'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: kPrimary, foregroundColor: Colors.white,
+                      backgroundColor: Theme.of(context).primaryColor, foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
