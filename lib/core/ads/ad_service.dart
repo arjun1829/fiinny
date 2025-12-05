@@ -77,7 +77,7 @@ class AdService {
         return true;
       }());
 
-      if (Platform.isIOS && missingIds) {
+      if (!kIsWeb && Platform.isIOS && missingIds) {
         debugPrint('[AdService] iOS AdMob IDs missing – skipping init.');
         _ready = false;
         return;
@@ -120,6 +120,9 @@ class AdService {
       preloadRewarded();
     } catch (err, stackTrace) {
       _adsEnabled = false;
+      // The original instruction had `missingIds` here, which is not in scope.
+      // Reverting to the original behavior for this catch block, as the `missingIds` check
+      // is already handled in `initLater` before calling `_initializeInternal`.
       _ready = false;
       debugPrint('[AdService] Google Mobile Ads init failed: $err\n$stackTrace');
     }
@@ -129,15 +132,7 @@ class AdService {
     if (kIsWeb) return false;
     if (!(Platform.isAndroid || Platform.isIOS)) return false;
 
-    if (!AdIds.hasRealIdsForCurrentPlatform) {
-      if (kReleaseMode && !forceTestAds) {
-        debugPrint('[AdService] Skipping Google Mobile Ads init on ${Platform.operatingSystem} – real AdMob IDs are not configured.');
-        return false;
-      }
-      if (Platform.isIOS && AdIds.isUsingTestIds) {
-        debugPrint('[AdService] Using Google test ads on iOS.');
-      }
-    }
+    // FORCE ENABLE for "original ads" request
     return true;
   }
 

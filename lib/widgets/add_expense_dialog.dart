@@ -9,12 +9,7 @@ import '../models/group_model.dart';
 import '../services/expense_service.dart';
 import '../core/ads/ads_banner_card.dart';
 
-/// Palette (aligned with your app look)
-const Color _kBg = Color(0xFFF8FAF9);
-const Color _kPrimary = Color(0xFF09857a);
-const Color _kText = Color(0xFF0F1E1C);
-const Color _kSubtle = Color(0xFF9AA5A1);
-const Color _kLine = Color(0x14000000);
+
 
 class AddExpenseScreen extends StatefulWidget {
   final String userPhone;
@@ -205,7 +200,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
       labelText: label,
       prefixIcon: icon != null ? Icon(icon) : null,
       filled: true,
-      fillColor: _kPrimary.withOpacity(.06),
+      fillColor: Theme.of(context).primaryColor.withOpacity(.06),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -217,7 +212,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _kPrimary),
+        borderSide: BorderSide(color: Theme.of(context).primaryColor),
       ),
     );
   }
@@ -377,8 +372,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
           child: LinearProgressIndicator(
             value: (_step + 1) / 4,
             minHeight: 8,
-            backgroundColor: _kPrimary.withOpacity(0.1),
-            valueColor: const AlwaysStoppedAnimation<Color>(_kPrimary),
+            backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+            valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
           ),
         ),
         const SizedBox(height: 12),
@@ -387,10 +382,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: _kPrimary.withOpacity(.10),
+                color: Theme.of(context).primaryColor.withOpacity(.10),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.attach_money_rounded, color: _kPrimary),
+              child: Icon(Icons.attach_money_rounded, color: Theme.of(context).primaryColor),
             ),
             const SizedBox(width: 10),
             Text(
@@ -398,11 +393,11 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF096A63)),
             ),
             const Spacer(),
-            Text("${_step + 1} / 4", style: TextStyle(color: _kSubtle)),
+            Text("${_step + 1} / 4", style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
           ],
         ),
         const SizedBox(height: 8),
-        Text(titles[_step], style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _kText)),
+        Text(titles[_step], style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Theme.of(context).textTheme.bodyLarge?.color)),
       ],
     );
   }
@@ -553,7 +548,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
           onChanged: (_) => _toggleCustomSplit(),
           title: const Text("Custom Split", style: TextStyle(fontWeight: FontWeight.w700)),
           subtitle: const Text("Turn off for equal split"),
-          activeColor: _kPrimary,
+          activeColor: Theme.of(context).primaryColor,
         ),
         if (_customSplitMode) ...[
           const SizedBox(height: 4),
@@ -604,12 +599,12 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
           padding: const EdgeInsets.only(top: 8),
           child: Row(
             children: [
-              const Icon(Icons.info_outline, size: 18, color: _kSubtle),
+              Icon(Icons.info_outline, size: 18, color: Theme.of(context).textTheme.bodySmall?.color),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   "Equal split between payer and participants.",
-                  style: TextStyle(color: _kSubtle),
+                  style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
                 ),
               ),
             ],
@@ -645,7 +640,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
           children: [
             Switch.adaptive(
               value: _isBill,
-              activeColor: _kPrimary,
+              activeColor: Theme.of(context).primaryColor,
               onChanged: (v) => setState(() => _isBill = v),
             ),
             const SizedBox(width: 6),
@@ -660,19 +655,17 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _kBg,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: _kBg,
-        surfaceTintColor: _kBg,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: _kText),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: Theme.of(context).textTheme.bodyMedium?.color),
           onPressed: _goBack,
         ),
-        title: Text(
-          widget.existingExpense == null ? "Add Expense" : "Edit Expense",
-          style: const TextStyle(color: _kText, fontWeight: FontWeight.w800),
-        ),
+        centerTitle: true,
+        title: Text('Add Transaction',
+            style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color, fontWeight: FontWeight.w700)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -703,7 +696,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
-                                colors: [Colors.white.withOpacity(0.96), Colors.white.withOpacity(0.90)],
+                                colors: [Theme.of(context).cardColor.withOpacity(0.96), Colors.white.withOpacity(0.90)],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
@@ -749,8 +742,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                             icon: const Icon(Icons.chevron_left_rounded),
                             label: const Text("Back"),
                             style: OutlinedButton.styleFrom(
-                              side: BorderSide(color: _kPrimary.withOpacity(.4)),
-                              foregroundColor: _kPrimary,
+                              side: BorderSide(color: Theme.of(context).primaryColor.withOpacity(.4)),
+                              foregroundColor: Theme.of(context).primaryColor,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             ),
@@ -763,7 +756,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                             icon: const Icon(Icons.chevron_right_rounded),
                             label: const Text("Next"),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: _kPrimary,
+                              backgroundColor: Theme.of(context).primaryColor,
                               foregroundColor: Colors.white,
                               elevation: 6,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -776,7 +769,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                             icon: const Icon(Icons.check_rounded),
                             label: Text(widget.existingExpense == null ? "Add Expense" : "Update Expense"),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: _kPrimary,
+                              backgroundColor: Theme.of(context).primaryColor,
                               foregroundColor: Colors.white,
                               elevation: 6,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

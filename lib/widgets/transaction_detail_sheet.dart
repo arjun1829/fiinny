@@ -216,7 +216,7 @@ class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
                 height: 4,
                 width: 40,
                 decoration: BoxDecoration(
-                  color: Colors.black12,
+                  color: theme.dividerColor,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 margin: const EdgeInsets.only(bottom: 12),
@@ -310,7 +310,7 @@ class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
                       decoration: BoxDecoration(
                         color: theme.colorScheme.surface,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.black12),
+                        border: Border.all(color: theme.dividerColor),
                       ),
                       child: Text(_parsedNote()!, style: theme.textTheme.bodySmall),
                     ),
@@ -457,9 +457,9 @@ class _AttachmentsBlock extends StatelessWidget {
                       url,
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => Container(
-                        color: Colors.black12,
+                        color: theme.colorScheme.surfaceContainerHighest,
                         alignment: Alignment.center,
-                        child: const Icon(Icons.broken_image_outlined),
+                        child: Icon(Icons.broken_image_outlined, color: theme.colorScheme.onSurfaceVariant),
                       ),
                     ),
                   ),
@@ -499,7 +499,7 @@ class _FileTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.black12),
+        border: Border.all(color: theme.dividerColor),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: Row(
@@ -517,7 +517,7 @@ class _FileTile extends StatelessWidget {
           ),
           if (size.isNotEmpty) ...[
             const SizedBox(width: 6),
-            Text(size, style: theme.textTheme.bodySmall?.copyWith(color: Colors.black54)),
+            Text(size, style: theme.textTheme.bodySmall?.copyWith(color: theme.textTheme.bodySmall?.color?.withOpacity(0.7))),
           ]
         ],
       ),

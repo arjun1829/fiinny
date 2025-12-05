@@ -31,7 +31,7 @@ final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 const MethodChannel _systemUiChannel = MethodChannel('lifemap/system_ui');
 
 Future<void> configureSystemUI() async {
-  if (!Platform.isAndroid) {
+  if (kIsWeb || !Platform.isAndroid) {
     return;
   }
 
@@ -113,13 +113,15 @@ void main() {
     // System ATT prompt only — no custom pre-prompt.
     AdConfig.authorized = await ConsentService.requestATTIfNeeded();
 
-    await MobileAds.instance.initialize();
+    if (!kIsWeb) {
+      await MobileAds.instance.initialize();
+    }
     AdService.updateConsent(authorized: AdConfig.authorized);
 
     FlutterError.onError = (details) {
       FlutterError.presentError(details);
       tracer.add('FlutterError: ${details.exceptionAsString()}');
-      if (kReleaseMode) {
+      if (kReleaseMode && !kIsWeb) {
         unawaited(FirebaseCrashlytics.instance.recordFlutterError(details));
       }
       Zone.current.handleUncaughtError(
@@ -131,14 +133,21 @@ void main() {
   }, (error, stack) async {
     tracer.add('Uncaught: $error');
     try {
-      await FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      if (!kIsWeb) {
+        await FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      }
     } catch (_) {}
   });
 }
 
 Future<void> _boot(_StartupTracer tracer, {required bool attAllowed}) async {
   tracer.add('BOOT start');
-  tracer.add('Platform=${Platform.operatingSystem} diag=$kDiagBuild');
+  if (!kIsWeb && !Platform.isAndroid) {
+    // This block is intentionally left empty as per the instruction's placeholder.
+    // It serves as a guard for platform-specific code that might be added here.
+  }
+
+  tracer.add('Platform=${kIsWeb ? "web" : Platform.operatingSystem} diag=$kDiagBuild');
 
   await _ensureNavigatorReady();
 
@@ -153,20 +162,22 @@ Future<void> _boot(_StartupTracer tracer, {required bool attAllowed}) async {
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)
         .timeout(const Duration(seconds: 8));
     tracer.add('Firebase ✅');
-    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+    if (!kIsWeb) {
+      await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+    }
     unawaited(AdService.initLater());
 
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.presentError(details);
       tracer.add('FlutterError: ${details.exceptionAsString()}');
-      if (kReleaseMode) {
+      if (kReleaseMode && !kIsWeb) {
         FirebaseCrashlytics.instance.recordFlutterError(details);
       }
       Zone.current.handleUncaughtError(details.exception, details.stack ?? StackTrace.current);
     };
 
     PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
-      if (kReleaseMode) {
+      if (kReleaseMode && !kIsWeb) {
         FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
       }
       return true;
@@ -318,8 +329,7 @@ class _DiagAppState extends State<_DiagApp> {
                 const Scaffold(
                   backgroundColor: Colors.black,
                   body: Center(
-                    child: Text('Fiinny is starting…',
-                        style: TextStyle(color: Colors.white)),
+                    child: CircularProgressIndicator(color: Colors.white),
                   ),
                 ),
                 if (kDiagBuild)

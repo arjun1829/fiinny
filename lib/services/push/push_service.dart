@@ -183,7 +183,7 @@ class PushService {
   /// - Android: prompt for POST_NOTIFICATIONS on 13+
   /// - iOS: prompts user via Firebase Messaging
   static Future<bool> ensurePermissions() async {
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       try {
         final status = await Permission.notification.status;
         if (status.isGranted || status.isLimited) {
@@ -210,7 +210,7 @@ class PushService {
       }
     }
 
-    if (!Platform.isIOS) {
+    if (kIsWeb || !Platform.isIOS) {
       _lastKnownPermissionStatus = true;
       return true;
     }
@@ -376,7 +376,7 @@ class PushService {
   // ---- helpers ----
 
   static Future<void> _ensureAndroidChannels() async {
-    if (!Platform.isAndroid) return;
+    if (kIsWeb || !Platform.isAndroid) return;
     final android =
     _fln.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (android == null) return;

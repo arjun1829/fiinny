@@ -1,0 +1,22 @@
+Analyzing theme_provider.dart...                                
+
+warning - The declaration '<unnamed>' isn't referenced - lib\themes\theme_provider.dart:1:1 - unused_element
+  error - Variables must be declared using the keywords 'const', 'final', 'var' or a type name - lib\themes\theme_provider.dart:15:3 - missing_const_final_var_or_type
+  error - Expected an identifier - lib\themes\theme_provider.dart:18:1 - missing_identifier
+  error - Expected to find ';' - lib\themes\theme_provider.dart:18:1 - expected_token
+  error - Undefined class 'FiinnyTheme' - lib\themes\theme_provider.dart:22:3 - undefined_class
+  error - Undefined name 'FiinnyTheme' - lib\themes\theme_provider.dart:22:24 - undefined_identifier
+  error - Undefined class 'FiinnyTheme' - lib\themes\theme_provider.dart:29:3 - undefined_class
+  error - Undefined class 'FiinnyTheme' - lib\themes\theme_provider.dart:30:3 - undefined_class
+  error - Undefined name 'FiinnyTheme' - lib\themes\theme_provider.dart:34:12 - undefined_identifier
+  error - Undefined name 'FiinnyTheme' - lib\themes\theme_provider.dart:46:12 - undefined_identifier
+  error - Undefined name 'FiinnyTheme' - lib\themes\theme_provider.dart:57:12 - undefined_identifier
+  error - Undefined name 'FiinnyTheme' - lib\themes\theme_provider.dart:111:21 - undefined_identifier
+  error - Undefined name 'FiinnyTheme' - lib\themes\theme_provider.dart:112:18 - undefined_identifier
+  error - Undefined name 'FiinnyTheme' - lib\themes\theme_provider.dart:125:23 - undefined_identifier
+  error - Undefined class 'FiinnyTheme' - lib\themes\theme_provider.dart:140:25 - undefined_class
+  error - Undefined name 'FiinnyTheme' - lib\themes\theme_provider.dart:163:36 - undefined_identifier
+  error - Undefined name 'FiinnyTheme' - lib\themes\theme_provider.dart:167:26 - undefined_identifier
+  error - Undefined name 'FiinnyTheme' - lib\themes\theme_provider.dart:169:26 - undefined_identifier
+
+18 issues found. (ran in 5.8s)

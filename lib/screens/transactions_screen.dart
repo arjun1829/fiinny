@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../core/services/fx_service.dart';
 
 import '../core/filters/saved_views_store.dart';
 import '../core/filters/transaction_filter.dart';
@@ -43,12 +45,31 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   StreamSubscription<List<ExpenseItem>>? _expSub;
   StreamSubscription<List<IncomeItem>>? _incSub;
   StreamSubscription<List<FriendModel>>? _friendSub;
+  String? _currencySymbol;
+  String _currencyCode = 'INR'; // Default
 
   @override
   void initState() {
     super.initState();
     _savedViews = SavedViewsStore(userPhone: widget.userPhone);
+    FxService().init(); // Initialize FX
     _listenToStreams();
+    _fetchCurrency();
+  }
+
+  Future<void> _fetchCurrency() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(widget.userPhone).get();
+      if (doc.exists) {
+        final code = doc.data()?['currency'] as String?;
+        if (code != null) {
+          setState(() {
+            _currencyCode = code;
+            _currencySymbol = code == 'USD' ? '\$' : (code == 'GBP' ? '£' : (code == 'EUR' ? '€' : '₹'));
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -336,6 +357,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         _handleDelete(tx);
       },
       onNormalized: _handleNormalized,
+      currencySymbol: _currencySymbol,
+      currencyCode: _currencyCode,
     );
 
     if (isWide) {

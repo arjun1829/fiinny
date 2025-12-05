@@ -75,17 +75,17 @@ class _TinyPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFF09857a).withOpacity(.08),
+        color: Theme.of(context).primaryColor.withOpacity(.08),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: const Color(0xFFE0ECE9)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: const Color(0xFF09857a)),
+          Icon(icon, size: 14, color: Theme.of(context).primaryColor),
           const SizedBox(width: 6),
-          Text(text, style: const TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF09857a))),
+          Text(text, style: TextStyle(
+              fontSize: 12, fontWeight: FontWeight.w600, color: Theme.of(context).primaryColor)),
         ],
       ),
     );
@@ -142,11 +142,11 @@ class _SettleSmartCTAState extends State<_SettleSmartCTA>
               child: InkWell(
                 borderRadius: BorderRadius.circular(14),
                 onTap: widget.onTap,
-                splashColor: const Color(0xFF09857a).withOpacity(0.16),
-                highlightColor: const Color(0xFF09857a).withOpacity(0.08),
+                splashColor: Theme.of(context).primaryColor.withOpacity(0.16),
+                highlightColor: Theme.of(context).primaryColor.withOpacity(0.08),
                 child: Ink(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF09857a).withOpacity(0.12),
+                    color: Theme.of(context).primaryColor.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: const Color(0xFFE0ECE9)),
                   ),
@@ -192,15 +192,15 @@ class _SettleSmartCTAState extends State<_SettleSmartCTA>
         },
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.auto_mode_rounded, size: 18, color: Color(0xFF09857a)),
+          children: [
+            Icon(Icons.auto_mode_rounded, size: 18, color: Theme.of(context).primaryColor),
             SizedBox(width: 6),
             Text(
               'Settle smart',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
-                color: Color(0xFF09857a),
+                color: Theme.of(context).primaryColor,
                 letterSpacing: 0.15,
               ),
             ),
@@ -218,8 +218,8 @@ class _ActionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       leading: CircleAvatar(
-          backgroundColor: const Color(0xFF09857a).withOpacity(.10),
-          child: Icon(icon, color: const Color(0xFF09857a))),
+          backgroundColor: Theme.of(context).primaryColor.withOpacity(.10),
+          child: Icon(icon, color: Theme.of(context).primaryColor)),
       title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
@@ -432,7 +432,7 @@ class _FriendsScreenState extends State<FriendsScreen>
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: Theme.of(context).cardColor,
               borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
@@ -453,21 +453,21 @@ class _FriendsScreenState extends State<FriendsScreen>
                 }) {
                   return ChoiceChip(
                     avatar: Icon(icon, size: 16,
-                        color: selected ? Colors.white : const Color(0xFF09857a)),
+                        color: selected ? Colors.white : Theme.of(context).primaryColor),
                     label: Text(label),
                     selected: selected,
                     onSelected: (_) => setModalState(onTap),
                     labelStyle: TextStyle(
                       fontWeight: FontWeight.w600,
-                      color: selected ? Colors.white : const Color(0xFF09857a),
+                      color: selected ? Colors.white : Theme.of(context).primaryColor,
                     ),
-                    backgroundColor: const Color(0xFF09857a).withOpacity(.08),
-                    selectedColor: const Color(0xFF09857a),
+                    backgroundColor: Theme.of(context).primaryColor.withOpacity(.08),
+                    selectedColor: Theme.of(context).primaryColor,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                       side: BorderSide(
                         color: selected
-                            ? const Color(0xFF09857a)
+                            ? Theme.of(context).primaryColor
                             : const Color(0xFFE0ECE9),
                       ),
                     ),
@@ -491,8 +491,8 @@ class _FriendsScreenState extends State<FriendsScreen>
                       const SizedBox(height: 14),
 
                       Row(
-                        children: const [
-                          Icon(Icons.tune_rounded, color: Color(0xFF09857a)),
+                        children: [
+                          Icon(Icons.tune_rounded, color: Theme.of(context).primaryColor),
                           SizedBox(width: 8),
                           Text('Filters',
                               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
@@ -538,16 +538,16 @@ class _FriendsScreenState extends State<FriendsScreen>
 
                       Container(
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF6FBF9),
+                          color: Theme.of(context).cardColor,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE4EFEC)),
+                          border: Border.all(color: Theme.of(context).dividerColor),
                         ),
                         child: SwitchListTile.adaptive(
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                           title: const Text('Open only',
                               style: TextStyle(fontWeight: FontWeight.w600)),
                           value: tmpOpenOnly,
-                          activeColor: const Color(0xFF09857a),
+                          activeColor: Theme.of(context).primaryColor,
                           onChanged: (v) => setModalState(() => tmpOpenOnly = v),
                         ),
                       ),
@@ -567,7 +567,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                           const Spacer(),
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF09857a),
+                              backgroundColor: Theme.of(context).primaryColor,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               shape: RoundedRectangleBorder(
@@ -621,7 +621,7 @@ class _FriendsScreenState extends State<FriendsScreen>
           builder: (context, scrollCtrl) {
             return Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Theme.of(context).cardColor,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
                 boxShadow: [
                   BoxShadow(
@@ -660,10 +660,10 @@ class _FriendsScreenState extends State<FriendsScreen>
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(16),
-                            gradient: const LinearGradient(
+                            gradient: LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                              colors: [Color(0xFFFFFFFF), Color(0xFFF3FBF9)],
+                              colors: [Theme.of(context).cardColor, Theme.of(context).scaffoldBackgroundColor],
                             ),
                             border: Border.all(color: Color(0xFFE6ECEA)),
                             boxShadow: [
@@ -707,7 +707,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                           Expanded(
                             child: ElevatedButton(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF09857a),
+                                backgroundColor: Theme.of(context).primaryColor,
                                 foregroundColor: Colors.white,
                               ),
                               onPressed: () => Navigator.pop(context),
@@ -904,7 +904,7 @@ class _FriendsScreenState extends State<FriendsScreen>
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         elevation: 2,
         actions: [
           // <-- toggle first so it sits LEFT of the summary icon
@@ -915,7 +915,7 @@ class _FriendsScreenState extends State<FriendsScreen>
               child: Switch.adaptive(
                 value: _openOnly,
                 onChanged: (v) => setState(() => _openOnly = v),
-                activeColor: const Color(0xFF09857a),
+                activeColor: Theme.of(context).primaryColor,
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
@@ -940,9 +940,9 @@ class _FriendsScreenState extends State<FriendsScreen>
                 controller: _tabController,
                 isScrollable: false,
                 labelPadding: EdgeInsets.zero,
-                labelColor: const Color(0xFF09857a),
+                labelColor: Theme.of(context).primaryColor,
                 unselectedLabelColor: Colors.grey[600],
-                indicatorColor: const Color(0xFF09857a),
+                indicatorColor: Theme.of(context).primaryColor,
                 tabs: tabs.map((t) => Tab(text: t)).toList(),
               ),
               // search row inside app bar (unchanged)
@@ -958,7 +958,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: const Color(0xFF09857a).withOpacity(0.06),
+                        color: Theme.of(context).primaryColor.withOpacity(0.06),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: Colors.grey.shade200),
                       ),
@@ -1013,12 +1013,8 @@ class _FriendsScreenState extends State<FriendsScreen>
         clipBehavior: Clip.none,
         children: [
           Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFFF7FBFF), Color(0xFFEFF7F4)],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
+            decoration: BoxDecoration(
+              color: Theme.of(context).scaffoldBackgroundColor,
             ),
             child: TabBarView(
               controller: _tabController,
@@ -1516,7 +1512,7 @@ class AllTab extends StatelessWidget {
                           padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
                           child: Container(
                             decoration: BoxDecoration(
-                              gradient: const LinearGradient(
+                              gradient: LinearGradient(
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                                 colors: [Color(0xFFF6FBF9), Color(0xFFE9F4F1)],
@@ -2486,19 +2482,19 @@ class _GlassyChatTile extends StatelessWidget {
     return null;
   }
 
-  Widget _friendAvatar() {
+  Widget _friendAvatar(BuildContext context) {
     final direct = _imgFromPath(item.imageUrl);
     if (direct != null) {
       return CircleAvatar(
         radius: 22,
-        backgroundColor: const Color(0xFF09857a).withOpacity(0.10),
+        backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
         foregroundImage: direct,
       );
     }
     if (item.phone == null) {
       return CircleAvatar(
         radius: 22,
-        backgroundColor: const Color(0xFF09857a).withOpacity(0.10),
+        backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
         child: Text(item.fallbackEmoji, style: const TextStyle(fontSize: 20)),
       );
     }
@@ -2509,27 +2505,27 @@ class _GlassyChatTile extends StatelessWidget {
         if (prov != null) {
           return CircleAvatar(
             radius: 22,
-            backgroundColor: const Color(0xFF09857a).withOpacity(0.10),
+            backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
             foregroundImage: prov,
           );
         }
         return CircleAvatar(
           radius: 22,
-          backgroundColor: const Color(0xFF09857a).withOpacity(0.10),
+          backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
           child: Text(item.fallbackEmoji, style: const TextStyle(fontSize: 20)),
         );
       },
     );
   }
 
-  Widget _miniMember(String phone) {
+  Widget _miniMember(BuildContext context, String phone) {
     return FutureBuilder<String?>(
       future: _AvatarCache.getUrl(phone),
       builder: (context, snap) {
         final prov = _imgFromPath(snap.data);
         return CircleAvatar(
           radius: 16,
-          backgroundColor: const Color(0xFF09857a).withOpacity(0.10),
+          backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
           foregroundImage: prov,
           child: prov == null
               ? const Text('👤', style: TextStyle(fontSize: 14))
@@ -2539,15 +2535,15 @@ class _GlassyChatTile extends StatelessWidget {
     );
   }
 
-  Widget _avatar() {
-    if (!item.isGroup) return _friendAvatar();
+  Widget _avatar(BuildContext context) {
+    if (!item.isGroup) return _friendAvatar(context);
 
     // 1) Prefer the group's logo if available (matches GroupDetailScreen)
     final groupImg = _imgFromPath(item.imageUrl);
     if (groupImg != null) {
       return CircleAvatar(
         radius: 22,
-        backgroundColor: const Color(0xFF09857a).withOpacity(0.10),
+        backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
         foregroundImage: groupImg,
       );
     }
@@ -2561,7 +2557,7 @@ class _GlassyChatTile extends StatelessWidget {
         child: Stack(
           children: List.generate(phones.length, (i) {
             final left = i * 18.0;
-            return Positioned(left: left, top: 2, child: _miniMember(phones[i]));
+            return Positioned(left: left, top: 2, child: _miniMember(context, phones[i]));
           }),
         ),
       );
@@ -2570,7 +2566,7 @@ class _GlassyChatTile extends StatelessWidget {
     // 3) Final fallback: emoji/icon
     return CircleAvatar(
       radius: 22,
-      backgroundColor: const Color(0xFF09857a).withOpacity(0.10),
+      backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
       child: Text(item.fallbackEmoji, style: const TextStyle(fontSize: 20)),
     );
   }
@@ -2586,10 +2582,10 @@ class _GlassyChatTile extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFFFFFFFF), Color(0xFFF3FBF9)],
+              colors: [Theme.of(context).cardColor, Theme.of(context).scaffoldBackgroundColor],
             ),
             boxShadow: [
               BoxShadow(
@@ -2604,7 +2600,7 @@ class _GlassyChatTile extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
-                _avatar(),
+                _avatar(context),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -2618,11 +2614,11 @@ class _GlassyChatTile extends StatelessWidget {
                               item.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 16.5,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: .2,
-                                color: Color(0xFF09857a),
+                                color: Theme.of(context).primaryColor,
                               ),
                             ),
                           ),
@@ -2684,7 +2680,7 @@ class _GlassyChatTile extends StatelessWidget {
                     PopupMenuItem(value: 'settle', child: Text('Settle up')),
                     PopupMenuItem(value: 'open', child: Text('Open details')),
                   ],
-                  child: const Icon(Icons.more_vert, color: Color(0xFF09857a)),
+                  child: Icon(Icons.more_vert, color: Theme.of(context).primaryColor),
                 ),
               ],
             ),
@@ -2808,14 +2804,14 @@ class _BottomCTAButtonState extends State<_BottomCTAButton>
                 height: 64,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(20),
-                  gradient: const LinearGradient(
+                  gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [Color(0xFFE9F6F3), Color(0xFFD7EFE9)],
+                    colors: [Theme.of(context).cardColor, Theme.of(context).scaffoldBackgroundColor],
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0x3309857a),
+                      color: Theme.of(context).primaryColor.withOpacity(0.2),
                       blurRadius: blur,
                       spreadRadius: spread,
                       offset: const Offset(0, 10),
@@ -2826,16 +2822,16 @@ class _BottomCTAButtonState extends State<_BottomCTAButton>
                       offset: Offset(0, -2),
                     ),
                   ],
-                  border: Border.all(color: const Color(0xFFE5F1EE), width: 1.2),
+                  border: Border.all(color: Theme.of(context).dividerColor, width: 1.2),
                 ),
                 child: Container(
                   margin: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
-                    color: const Color(0xFF09857a),
+                    color: Theme.of(context).primaryColor,
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0x7009857a).withOpacity(0.65),
+                        color: Theme.of(context).primaryColor.withOpacity(0.45),
                         blurRadius: 18 + 6 * glowT,
                         offset: const Offset(0, 10),
                       ),
@@ -3000,13 +2996,13 @@ class _QuickPickerSheetState extends State<_QuickPickerSheet> {
         child: Container(
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: active ? const Color(0xFF09857a) : Colors.transparent,
+            color: active ? Theme.of(context).primaryColor : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
             text,
             style: TextStyle(
-              color: active ? Colors.white : const Color(0xFF09857a),
+              color: active ? Colors.white : Theme.of(context).primaryColor,
               fontWeight: FontWeight.w600,
             ),
           ),

@@ -20,17 +20,19 @@ class DashboardHeroCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     double maxValue = credit > debit ? credit : debit;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 10),
       padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 0),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.93),
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: Colors.teal.withOpacity(0.13),
+            color: theme.shadowColor.withOpacity(0.08),
             blurRadius: 28,
             offset: const Offset(0, 9),
           ),
@@ -44,10 +46,8 @@ class DashboardHeroCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 26),
             child: Text(
               "Hello $userName",
-              style: const TextStyle(
-                fontSize: 22,
+              style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: Colors.white,
                 letterSpacing: 0.2,
               ),
             ),
@@ -63,6 +63,7 @@ class DashboardHeroCard extends StatelessWidget {
                 maxValue: maxValue,
                 color: Colors.greenAccent.shade400,
                 icon: Icons.arrow_downward_rounded,
+                textColor: theme.textTheme.bodyMedium?.color,
               ),
               const SizedBox(width: 26),
               _RingStat(
@@ -71,6 +72,7 @@ class DashboardHeroCard extends StatelessWidget {
                 maxValue: maxValue,
                 color: Colors.redAccent.shade200,
                 icon: Icons.arrow_upward_rounded,
+                textColor: theme.textTheme.bodyMedium?.color,
               ),
             ],
           ),
@@ -82,10 +84,10 @@ class DashboardHeroCard extends StatelessWidget {
               children: [
                 Text(
                   "$period Summary",
-                  style: const TextStyle(
+                  style: theme.textTheme.bodyMedium?.copyWith(
                     fontSize: 15,
-                    color: Colors.white70,
                     fontWeight: FontWeight.w500,
+                    color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7),
                   ),
                 ),
                 const Spacer(),
@@ -95,7 +97,7 @@ class DashboardHeroCard extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.07),
+                      color: theme.colorScheme.onSurface.withOpacity(0.07),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
@@ -136,7 +138,10 @@ class _RingStat extends StatelessWidget {
     required this.maxValue,
     required this.color,
     required this.icon,
+    this.textColor,
   });
+
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
@@ -172,13 +177,13 @@ class _RingStat extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           label,
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: color),
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textColor ?? color),
         ),
         Text(
           "₹${value.toStringAsFixed(0)}",
           style: TextStyle(
             fontWeight: FontWeight.bold,
-            color: color,
+            color: textColor ?? color,
             fontSize: 18,
           ),
         ),

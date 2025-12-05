@@ -1,5 +1,6 @@
 // lib/screens/profile_screen.dart
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -32,7 +33,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   // Accent agreed
-  static const Color _accent = Color(0xFF159E8A);
+  // Accent removed in favor of Theme.of(context).primaryColor
 
   // ---- Logout helpers ----
   static bool _signingOut = false;
@@ -78,13 +79,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
 
   final Map<FiinnyTheme, Map<String, dynamic>> themeOptions = {
-    FiinnyTheme.classic: {"name": "Classic", "color": Colors.deepPurple},
-    FiinnyTheme.fresh: {"name": "Fresh Mint", "color": Color(0xFF81e6d9)},
-    FiinnyTheme.royal: {"name": "Royal Gold", "color": Color(0xFF2E3192)},
-    FiinnyTheme.sunny: {"name": "Sunny Coral", "color": Color(0xFFFFF475)},
-    FiinnyTheme.midnight: {"name": "Midnight", "color": Color(0xFF131E2A)},
-    FiinnyTheme.lightMinimal: {"name": "Minimal Light", "color": Colors.white},
-    FiinnyTheme.pureDark: {"name": "Pure Dark", "color": Colors.black},
+    FiinnyTheme.teal: {"name": "Teal", "color": Color(0xFF006D64)},
+    FiinnyTheme.black: {"name": "Black", "color": Colors.black},
+    FiinnyTheme.white: {"name": "White", "color": Colors.white},
   };
 
   String _getUserPhone(User user) => user.phoneNumber ?? '';
@@ -92,27 +89,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // --- Theme key helpers (persist/read) ---
   String _themeKey(FiinnyTheme t) {
     switch (t) {
-      case FiinnyTheme.classic: return 'classic';
-      case FiinnyTheme.fresh: return 'fresh';
-      case FiinnyTheme.royal: return 'royal';
-      case FiinnyTheme.sunny: return 'sunny';
-      case FiinnyTheme.midnight: return 'midnight';
-      case FiinnyTheme.lightMinimal: return 'lightMinimal';
-      case FiinnyTheme.pureDark: return 'pureDark';
+      case FiinnyTheme.teal: return 'teal';
+      case FiinnyTheme.black: return 'black';
+      case FiinnyTheme.white: return 'white';
     }
   }
 
   FiinnyTheme _themeFromKey(String? key) {
     switch (key) {
-      case 'fresh': return FiinnyTheme.fresh;
-      case 'royal': return FiinnyTheme.royal;
-      case 'sunny': return FiinnyTheme.sunny;
-      case 'midnight': return FiinnyTheme.midnight;
-      case 'lightMinimal': return FiinnyTheme.lightMinimal;
-      case 'pureDark': return FiinnyTheme.pureDark;
-      case 'classic':
+      case 'teal': return FiinnyTheme.teal;
+      case 'black': return FiinnyTheme.black;
+      case 'white': return FiinnyTheme.white;
       default:
-        return FiinnyTheme.classic;
+        return FiinnyTheme.white;
     }
   }
 
@@ -153,22 +142,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _analyticsOptIn = (data['analytics_opt_in'] as bool?) ?? true;
         _personalizeTips = (data['personalize_tips'] as bool?) ?? true;
 
-        // Load & apply theme if present
-        final savedThemeKey = data['theme_key'] as String?;
-        final savedDark = data['dark_mode'] as bool?;
-        if (mounted) {
-          final tp = Provider.of<ThemeProvider>(context, listen: false);
-          if (savedThemeKey != null) {
-            final ft = _themeFromKey(savedThemeKey);
-            if (tp.theme != ft) {
-              tp.setTheme(ft);
-            }
-          }
-          // Your ThemeProvider has toggleTheme(), not setDarkMode()
-          if (savedDark != null && tp.isDarkMode != savedDark) {
-            tp.toggleTheme();
-          }
-        }
+        // Load privacy prefs if present
+        _analyticsOptIn = (data['analytics_opt_in'] as bool?) ?? true;
+        _personalizeTips = (data['personalize_tips'] as bool?) ?? true;
+
+        // Theme is handled by ThemeProvider automatically via auth listener
+        // We don't need to manually set it here anymore.
       } else {
         userPhone = phoneId; // show phone even if doc missing
       }
@@ -197,19 +176,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _saving = false);
   }
 
+  // Theme persistence is now handled by ThemeProvider
   Future<void> _persistThemeChange(FiinnyTheme theme, bool dark) async {
-    if (userPhone.isEmpty) return;
-    if (_persistingTheme) return;
-    _persistingTheme = true;
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(userPhone).set({
-        'theme_key': _themeKey(theme),
-        'dark_mode': dark,
-        'theme_updated_at': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } finally {
-      _persistingTheme = false;
-    }
+    // No-op, handled by provider
   }
 
   Future<void> _setPrivacyFlag({bool? analyticsOptIn, bool? personalizeTips}) async {
@@ -536,10 +505,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontWeight: FontWeight.bold,
           fontSize: 15,
-          color: Colors.black87,
+          color: Theme.of(context).textTheme.titleMedium?.color,
         ),
       ),
     );
@@ -549,12 +518,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.98),
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 14, offset: Offset(0, 6)),
+        boxShadow: [
+          BoxShadow(color: Theme.of(context).shadowColor.withOpacity(0.1), blurRadius: 14, offset: const Offset(0, 6)),
         ],
-        border: Border.all(color: Colors.black12.withOpacity(0.06)),
+        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.1)),
       ),
       child: child,
     );
@@ -582,13 +551,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: ExpansionTile(
           initiallyExpanded: _expandAvatar,
           onExpansionChanged: (v) => setState(() => _expandAvatar = v),
-          leading: Icon(Icons.emoji_emotions, color: _accent),
-          title: const Text(
+          leading: Icon(Icons.emoji_emotions, color: Theme.of(context).colorScheme.primary),
+          title: Text(
             "Profile Photo & Avatar",
-            style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black87),
+            style: TextStyle(fontWeight: FontWeight.w800, color: Theme.of(context).textTheme.bodyLarge?.color),
           ),
-          iconColor: _accent,
-          collapsedIconColor: _accent,
+          iconColor: Theme.of(context).colorScheme.primary,
+          collapsedIconColor: Theme.of(context).colorScheme.primary,
           childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           children: [
             const Divider(height: 1),
@@ -601,8 +570,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     label: const Text("Upload Photo"),
                     onPressed: _pickProfileImage,
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.black87,
-                      side: BorderSide(color: _accent.withOpacity(0.35)),
+                      foregroundColor: Theme.of(context).textTheme.bodyMedium?.color,
+                      side: BorderSide(color: Theme.of(context).colorScheme.primary.withOpacity(0.35)),
                     ),
                   ),
                 ),
@@ -613,8 +582,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     label: const Text("Choose Avatar"),
                     onPressed: _pickAvatar,
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.black87,
-                      side: BorderSide(color: _accent.withOpacity(0.35)),
+                      foregroundColor: Theme.of(context).textTheme.bodyMedium?.color,
+                      side: BorderSide(color: Theme.of(context).colorScheme.primary.withOpacity(0.35)),
                     ),
                   ),
                 ),
@@ -652,10 +621,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1.5), // slightly tighter
                           decoration: BoxDecoration(
-                            color: isSelected ? _accent.withOpacity(0.15) : Colors.transparent,
+                            color: isSelected ? Theme.of(context).colorScheme.primary.withOpacity(0.15) : Colors.transparent,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: isSelected ? _accent : Colors.black12,
+                              color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).dividerColor,
                               width: isSelected ? 1.2 : 1,
                             ),
                           ),
@@ -663,7 +632,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             isSelected ? "Selected" : "Use",
                             style: TextStyle(
                               fontSize: 11, // was 12
-                              color: isSelected ? Colors.black : Colors.black87,
+                              color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).textTheme.bodyMedium?.color,
                               fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                             ),
                           ),
@@ -688,13 +657,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: ExpansionTile(
           initiallyExpanded: _expandNotifications,
           onExpansionChanged: (v) => setState(() => _expandNotifications = v),
-          leading: Icon(Icons.notifications_active_rounded, color: _accent),
-          title: const Text(
+          leading: Icon(Icons.notifications_active_rounded, color: Theme.of(context).colorScheme.primary),
+          title: Text(
             "Notifications & Reviews",
-            style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black87),
+            style: TextStyle(fontWeight: FontWeight.w800, color: Theme.of(context).textTheme.bodyLarge?.color),
           ),
-          iconColor: _accent,
-          collapsedIconColor: _accent,
+          iconColor: Theme.of(context).colorScheme.primary,
+          collapsedIconColor: Theme.of(context).colorScheme.primary,
           childrenPadding: const EdgeInsets.only(bottom: 8),
           children: [
             const Divider(height: 1),
@@ -702,14 +671,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               leading: Container(
                 width: 40, height: 40,
                 decoration: BoxDecoration(
-                  color: _accent.withOpacity(0.12),
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.tune_rounded, color: Colors.black87),
+                child: Icon(Icons.tune_rounded, color: Theme.of(context).textTheme.bodyMedium?.color),
               ),
-              title: const Text("Notification Preferences", style: TextStyle(fontWeight: FontWeight.w600, color: Colors.black87)),
-              subtitle: const Text("Control daily/weekly/monthly nudges, overspend alerts & more", style: TextStyle(color: Colors.black87)),
-              trailing: const Icon(Icons.chevron_right_rounded, color: Colors.black87),
+              title: Text("Notification Preferences", style: TextStyle(fontWeight: FontWeight.w600, color: Theme.of(context).textTheme.bodyMedium?.color)),
+              subtitle: Text("Control daily/weekly/monthly nudges, overspend alerts & more", style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
+              trailing: Icon(Icons.chevron_right_rounded, color: Theme.of(context).textTheme.bodyMedium?.color),
               onTap: () async {
                 await NotifPrefsService.ensureDefaultPrefs();
                 if (!mounted) return;
@@ -723,7 +692,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _privacyDataSection(BuildContext context) {
-    final isAndroid = Platform.isAndroid;
+    final isAndroid = !kIsWeb && Platform.isAndroid;
 
     return _cardContainer(
       child: Theme(
@@ -731,20 +700,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: ExpansionTile(
           initiallyExpanded: _expandPrivacy,
           onExpansionChanged: (v) => setState(() => _expandPrivacy = v),
-          leading: Icon(Icons.privacy_tip_rounded, color: _accent),
+          leading: Icon(Icons.privacy_tip_rounded, color: Theme.of(context).colorScheme.primary),
           title: const Text(
             "Privacy & Data Controls",
             style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black87),
           ),
-          iconColor: _accent,
-          collapsedIconColor: _accent,
+          iconColor: Theme.of(context).colorScheme.primary,
+          collapsedIconColor: Theme.of(context).colorScheme.primary,
           children: [
             const Divider(height: 1),
             SwitchListTile.adaptive(
-              activeColor: _accent,
+              activeColor: Theme.of(context).colorScheme.primary,
               value: _analyticsOptIn,
-              title: const Text("Share anonymous analytics", style: TextStyle(color: Colors.black87)),
-              subtitle: const Text("Helps us improve features and reliability", style: TextStyle(color: Colors.black87)),
+              title: Text("Share anonymous analytics", style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color)),
+              subtitle: Text("Helps us improve features and reliability", style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
               onChanged: (v) async {
                 setState(() => _analyticsOptIn = v);
                 await _setPrivacyFlag(analyticsOptIn: v);
@@ -752,10 +721,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const Divider(height: 1),
             SwitchListTile.adaptive(
-              activeColor: _accent,
+              activeColor: Theme.of(context).colorScheme.primary,
               value: _personalizeTips,
-              title: const Text("Personalized tips & insights", style: TextStyle(color: Colors.black87)),
-              subtitle: const Text("Use your data locally to tailor advice", style: TextStyle(color: Colors.black87)),
+              title: Text("Personalized tips & insights", style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color)),
+              subtitle: Text("Use your data locally to tailor advice", style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
               onChanged: (v) async {
                 setState(() => _personalizeTips = v);
                 await _setPrivacyFlag(personalizeTips: v);
@@ -765,15 +734,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             // SMS Permissions (Android only)
             ListTile(
-              leading: Icon(Icons.sms, color: isAndroid ? _accent : Colors.grey),
-              title: const Text("SMS Permissions", style: TextStyle(color: Colors.black87)),
+              leading: Icon(Icons.sms, color: isAndroid ? Theme.of(context).colorScheme.primary : Colors.grey),
+              title: Text("SMS Permissions", style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color)),
               subtitle: Text(
                 isAndroid
                     ? "Read-only for bank/UPI alerts to auto-track — never shared without consent"
                     : "Not required on iOS",
-                style: TextStyle(color: isAndroid ? Colors.black87 : Colors.grey),
+                style: TextStyle(color: isAndroid ? Theme.of(context).textTheme.bodySmall?.color : Colors.grey),
               ),
-              trailing: const Icon(Icons.chevron_right_rounded, color: Colors.black87),
+              trailing: Icon(Icons.chevron_right_rounded, color: Theme.of(context).textTheme.bodyMedium?.color),
               onTap: isAndroid
                   ? () {
                 showModalBottomSheet(
@@ -785,18 +754,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text("SMS Access", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.black87)),
+                        children: [
+                          Text("SMS Access", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Theme.of(context).textTheme.bodyLarge?.color)),
                           SizedBox(height: 8),
                           Text(
                             "Fiinny only reads bank/UPI alert SMS on your device to auto-add transactions. "
                                 "Nothing is uploaded unless you enable cloud backup.",
-                            style: TextStyle(color: Colors.black87),
+                            style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color),
                           ),
                           SizedBox(height: 12),
-                          Text("To enable/disable:", style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
+                          Text("To enable/disable:", style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).textTheme.bodyLarge?.color)),
                           SizedBox(height: 4),
-                          Text("Settings ▸ Apps ▸ Fiinny ▸ Permissions ▸ SMS", style: TextStyle(color: Colors.black87)),
+                          Text("Settings ▸ Apps ▸ Fiinny ▸ Permissions ▸ SMS", style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color)),
                           SizedBox(height: 8),
                         ],
                       ),
@@ -810,8 +779,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             // Gmail link / fetch
             ListTile(
-              leading: Icon(Icons.mail_rounded, color: _accent),
-              title: const Text("Email (bank statements)", style: TextStyle(color: Colors.black87)),
+              leading: Icon(Icons.mail_rounded, color: Theme.of(context).colorScheme.primary),
+              title: Text("Email (bank statements)", style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color)),
               subtitle: Text(
                 userEmail.isNotEmpty ? "Linked: $userEmail" : "Link your email to parse statement emails",
                 maxLines: 2,
@@ -844,7 +813,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ElevatedButton.icon(
                                 icon: const Icon(Icons.sync),
                                 label: const Text("How to fetch"),
-                                style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.white),
+                                style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.white),
                                 onPressed: () {
                                   Navigator.pop(ctx);
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -872,7 +841,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             // Export/Share data
             ListTile(
-              leading: Icon(Icons.archive_rounded, color: _accent),
+              leading: Icon(Icons.archive_rounded, color: Theme.of(context).colorScheme.primary),
               title: const Text("Export / Share my data", style: TextStyle(color: Colors.black87)),
               subtitle: const Text("Download a copy of your transactions", style: TextStyle(color: Colors.black87)),
               trailing: const Icon(Icons.chevron_right_rounded, color: Colors.black87),
@@ -891,13 +860,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: ExpansionTile(
           initiallyExpanded: _expandHelp,
           onExpansionChanged: (v) => setState(() => _expandHelp = v),
-          leading: Icon(Icons.help_center_rounded, color: _accent),
+          leading: Icon(Icons.help_center_rounded, color: Theme.of(context).colorScheme.primary),
           title: const Text(
             "Help & Support",
             style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black87),
           ),
-          iconColor: _accent,
-          collapsedIconColor: _accent,
+          iconColor: Theme.of(context).colorScheme.primary,
+          collapsedIconColor: Theme.of(context).colorScheme.primary,
           childrenPadding: const EdgeInsets.only(bottom: 10),
           children: [
             const Divider(height: 1),
@@ -951,10 +920,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return ExpansionTile(
       tilePadding: const EdgeInsets.symmetric(horizontal: 14),
       childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      leading: Icon(icon ?? Icons.help_outline_rounded, color: _accent),
+      leading: Icon(icon ?? Icons.help_outline_rounded, color: Theme.of(context).colorScheme.primary),
       title: Text(q, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87)),
-      iconColor: _accent,
-      collapsedIconColor: _accent,
+      iconColor: Theme.of(context).colorScheme.primary,
+      collapsedIconColor: Theme.of(context).colorScheme.primary,
       children: [
         Align(
           alignment: Alignment.centerLeft,
@@ -966,7 +935,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             alignment: Alignment.centerLeft,
             child: ElevatedButton(
               onPressed: cta,
-              style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.white),
               child: Text(ctaLabel ?? "Open"),
             ),
           ),
@@ -1019,7 +988,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       value: percent.clamp(0, 100) / 100.0,
                       strokeWidth: 6,
                       backgroundColor: Colors.black12,
-                      valueColor: const AlwaysStoppedAnimation<Color>(_accent),
+                      valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
                     ),
                   ),
                   CircleAvatar(
@@ -1054,7 +1023,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: _accent.withOpacity(0.08),
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -1080,7 +1049,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: _accent,
+        backgroundColor: Theme.of(context).colorScheme.primary,
         elevation: 0,
         // 👇 set title style to white
         title: const Text(
@@ -1190,34 +1159,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: ExpansionTile(
                 initiallyExpanded: _expandTheme,
                 onExpansionChanged: (v) => setState(() => _expandTheme = v),
-                leading: Icon(Icons.color_lens_rounded, color: _accent),
+                leading: Icon(Icons.color_lens_rounded, color: Theme.of(context).colorScheme.primary),
                 title: const Text(
                   "App Theme",
                   style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black87),
                 ),
-                iconColor: _accent,
-                collapsedIconColor: _accent,
+                iconColor: Theme.of(context).colorScheme.primary,
+                collapsedIconColor: Theme.of(context).colorScheme.primary,
                 children: [
                   const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.dark_mode_rounded, color: Colors.black87),
-                    title: const Text("Dark Mode", style: TextStyle(color: Colors.black87)),
-                    trailing: Switch(
-                      value: themeProvider.isDarkMode,
-                      onChanged: (val) async {
-                        if (val != themeProvider.isDarkMode) {
-                          themeProvider.toggleTheme(); // match your API
-                          await _persistThemeChange(themeProvider.theme, themeProvider.isDarkMode);
-                        }
-                      },
-                      activeColor: _accent,
-                    ),
-                    onTap: () async {
-                      themeProvider.toggleTheme();
-                      await _persistThemeChange(themeProvider.theme, themeProvider.isDarkMode);
-                    },
-                  ),
-                  const Divider(height: 1),
+
+
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
                     child: SizedBox(

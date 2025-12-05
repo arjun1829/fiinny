@@ -55,10 +55,9 @@ class FinancialRingWidget extends StatelessWidget {
       child: CustomDiamondCard(
         isDiamondCut: true,
         borderRadius: 22,
-        glassGradient: [
-          Colors.white.withOpacity(0.28),
-          Colors.white.withOpacity(0.06)
-        ],
+        glassGradient: Theme.of(context).brightness == Brightness.dark
+            ? [Colors.white.withOpacity(0.28), Colors.white.withOpacity(0.06)]
+            : [Colors.black.withOpacity(0.05), Colors.black.withOpacity(0.01)],
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 9),
         child: SizedBox(
           width: ringSize + 14,

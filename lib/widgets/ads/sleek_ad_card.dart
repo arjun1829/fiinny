@@ -74,30 +74,12 @@ class _SleekAdCardState extends State<SleekAdCard> {
     }
 
     Future<void>.microtask(() async {
-      try {
-        final fallback = await _computeFallback();
-        if (!mounted) return;
-        setState(() {
-          _flagResolved = true;
-          _flagEnabled = fallback;
-        });
-
-        _flagSubscription = RemoteFlags.instance
-            .on<bool>('adsEnabledAddFlows', fallback: fallback)
-            .listen((enabled) {
-          if (!mounted) return;
-          setState(() {
-            _flagResolved = true;
-            _flagEnabled = enabled;
-          });
-        });
-      } catch (_) {
-        if (!mounted) return;
-        setState(() {
-          _flagResolved = true;
-          _flagEnabled = true;
-        });
-      }
+      // FORCE ENABLE ADS
+      if (!mounted) return;
+      setState(() {
+        _flagResolved = true;
+        _flagEnabled = true;
+      });
     });
   }
 

@@ -69,7 +69,7 @@ class LocalNotifs {
     // Ensure channel exists (no-op on iOS).
     await androidSpecific?.createNotificationChannel(_channel);
 
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       try {
         final enabled = await androidSpecific?.areNotificationsEnabled();
         debugPrint('[LocalNotifs] areNotificationsEnabled? $enabled');
@@ -85,7 +85,7 @@ class LocalNotifs {
 
   /// Helper (user-initiated only): may open OEM Alarms & reminders screen.
   static Future<void> requestExactAlarmPermissionIfUserInitiated() async {
-    if (!Platform.isAndroid) return;
+    if (kIsWeb || !Platform.isAndroid) return;
     final androidSpecific = _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     try {
@@ -97,7 +97,7 @@ class LocalNotifs {
 
   /// Optional helper to check notifications enabled (no UI).
   static Future<bool?> areNotificationsEnabled() async {
-    if (!Platform.isAndroid) return true;
+    if (kIsWeb || !Platform.isAndroid) return true;
     final androidSpecific = _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     try {

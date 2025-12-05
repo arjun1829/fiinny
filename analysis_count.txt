@@ -1,0 +1,6 @@
+Analyzing transaction_count_card.dart...                        
+
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\widgets\transaction_count_card.dart:113:52 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\widgets\transaction_count_card.dart:168:98 - deprecated_member_use
+
+2 issues found. (ran in 6.5s)

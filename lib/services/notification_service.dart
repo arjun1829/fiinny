@@ -1,5 +1,6 @@
 // lib/services/notification_service.dart
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -18,7 +19,7 @@ class NotificationService {
   NotificationService._internal();
 
   static Future<void> requestPermissionLight() async {
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       try {
         final status = await Permission.notification.status;
         if (!status.isGranted && !status.isLimited) {
@@ -33,7 +34,7 @@ class NotificationService {
       return;
     }
 
-    if (!Platform.isIOS) return;
+    if (kIsWeb || !Platform.isIOS) return;
     try {
       await FirebaseMessaging.instance.requestPermission(
         alert: true,
@@ -50,7 +51,7 @@ class NotificationService {
   }
 
   static Future<void> initFull() async {
-    if (kDiagBuild && Platform.isIOS) {
+    if (!kIsWeb && kDiagBuild && Platform.isIOS) {
       debugPrint('[NotificationService] Skipping full init on diagnostic iOS build.');
       return;
     }

@@ -5,23 +5,17 @@ import 'app_theme.dart';
 
 class ThemeSelectorWidget extends StatelessWidget {
   final Map<FiinnyTheme, String> themeNames = {
-    FiinnyTheme.fresh: "Fresh Mint",
-    FiinnyTheme.royal: "Royal Blue",
-    FiinnyTheme.sunny: "Sunny Coral",
-    FiinnyTheme.midnight: "Midnight",
-    FiinnyTheme.classic: "Classic Purple",
-    FiinnyTheme.pureDark: "Pure Dark",
-    FiinnyTheme.lightMinimal: "Minimal Light",
+    FiinnyTheme.teal: "Teal",
+    FiinnyTheme.mint: "Mint",
+    FiinnyTheme.black: "Black",
+    FiinnyTheme.white: "White",
   };
 
   final Map<FiinnyTheme, List<Color>> themeSwatches = {
-    FiinnyTheme.fresh: [tiffanyBlue, mintGreen, deepTeal],
-    FiinnyTheme.royal: [royalBlue, royalGold, Colors.white],
-    FiinnyTheme.sunny: [sunnyLemon, sunnyCoral, Colors.orangeAccent],
-    FiinnyTheme.midnight: [midnight, midnightBlue, Colors.white],
-    FiinnyTheme.classic: [Colors.deepPurple, Colors.purple, Colors.white],
-    FiinnyTheme.pureDark: [Colors.black, Colors.white, Colors.grey],
-    FiinnyTheme.lightMinimal: [Colors.white, Colors.black, Colors.grey],
+    FiinnyTheme.teal: [tealPrimary, Colors.tealAccent, Colors.white],
+    FiinnyTheme.mint: [tiffanyBlue, mintGreen, deepTeal],
+    FiinnyTheme.black: [Colors.black, Colors.white, Colors.grey],
+    FiinnyTheme.white: [Colors.white, Colors.black, Colors.grey],
   };
 
   @override

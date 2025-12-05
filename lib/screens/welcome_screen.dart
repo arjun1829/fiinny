@@ -278,10 +278,10 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
     return Scaffold(
       // FORCE pure white so images blend seamlessly
-      backgroundColor: Colors.white,
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
         child: Container(
-          color: Colors.white, // no gradient
+          color: theme.scaffoldBackgroundColor, // no gradient
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -302,7 +302,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                       tooltip: "Quick tour",
                       onPressed: _openQuickTour,
                       icon: const Icon(Icons.help_outline),
-                      color: Colors.black,
+                      color: theme.iconTheme.color,
                     ),
                     if (!isLast)
                       TextButton(
@@ -337,13 +337,13 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
-                                Container(color: Colors.black.withOpacity(0.08)),
+                                Container(color: theme.textTheme.bodyMedium?.color?.withOpacity(0.08)),
                                 if (i < _currentPage)
                                   FractionallySizedBox(
                                     widthFactor: 1,
                                     alignment: Alignment.centerLeft,
                                     child: Container(
-                                      color: Colors.black.withOpacity(0.85),
+                                      color: theme.textTheme.bodyMedium?.color?.withOpacity(0.85),
                                     ),
                                   ),
                                 if (isActive)
@@ -353,7 +353,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                       widthFactor: _progressCtl.value,
                                       alignment: Alignment.centerLeft,
                                       child: Container(
-                                        color: Colors.black.withOpacity(0.85),
+                                        color: theme.textTheme.bodyMedium?.color?.withOpacity(0.85),
                                       ),
                                     ),
                                   ),
@@ -427,7 +427,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                 children: [
                                   Icon(Icons.swipe,
                                       size: 18,
-                                      color: Colors.black.withOpacity(0.55)),
+                                      color: theme.textTheme.bodySmall?.color?.withOpacity(0.55)),
                                   const SizedBox(width: 6),
                                   Text(
                                     "Swipe to continue",
@@ -436,7 +436,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                         .bodySmall
                                         ?.copyWith(
                                       color:
-                                      Colors.black.withOpacity(0.55),
+                                      theme.textTheme.bodySmall?.color?.withOpacity(0.55),
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -468,7 +468,10 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                     onPressed: _openAuth,
                     buttonStyle: primaryBtnStyle,
                     height: _kCtaHeight,
-                    gradientColors: const [kMintDeep, kMintBase],
+                    gradientColors: [
+                      theme.colorScheme.primary,
+                      theme.colorScheme.secondary,
+                    ],
                   ),
                 )
                     : const SizedBox.shrink(),
@@ -595,15 +598,15 @@ class _OnboardCard extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             // ✅ Full white card background (matches pure-white screen & image matte)
-            color: Colors.white,
+            color: theme.cardColor,
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
-              color: Colors.white.withOpacity(0.08),
+              color: theme.dividerColor.withOpacity(0.08),
               width: 1.0,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.white.withOpacity(0.08),
+                color: theme.shadowColor.withOpacity(0.08),
                 blurRadius: 22,
                 offset: const Offset(0, 12),
               ),

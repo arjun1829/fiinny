@@ -66,7 +66,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
         bottom: TabBar(
           controller: _tabs,
           labelColor: Theme.of(context).colorScheme.primary,
-          unselectedLabelColor: Colors.grey[600],
+          unselectedLabelColor: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
           indicatorColor: Theme.of(context).colorScheme.primary,
           tabs: const [
             Tab(text: 'Activity'),
@@ -93,19 +93,15 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                 return Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(18),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFFFFFFFF), Color(0xFFF7FAFF)],
-                    ),
+                    color: Theme.of(context).cardColor,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
+                        color: Theme.of(context).shadowColor.withOpacity(0.06),
                         blurRadius: 14,
                         offset: const Offset(0, 8),
                       ),
                     ],
-                    border: Border.all(color: Colors.grey.shade200),
+                    border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.5)),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),

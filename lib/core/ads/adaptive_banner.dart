@@ -1,6 +1,6 @@
 // lib/core/ads/adaptive_banner.dart
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -220,21 +220,7 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> {
   Widget build(BuildContext context) {
     if (!AdService.isReady) return const SizedBox.shrink();
 
-    if (Platform.isIOS) {
-      return StreamBuilder<bool>(
-        stream: RemoteFlags.instance.on<bool>(
-          'adsEnabledIOS',
-          userId: widget.userId,
-          // fallback TRUE so ads show unless remotely disabled
-          fallback: true,
-        ),
-        builder: (_, snap) {
-          final enabled = snap.data ?? true;
-          if (!enabled) return const SizedBox.shrink();
-          return _buildBanner();
-        },
-      );
-    }
+    // Bypass remote flags check
     return _buildBanner();
   }
 
