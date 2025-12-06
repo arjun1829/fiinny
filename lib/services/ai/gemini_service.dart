@@ -97,8 +97,9 @@ Task: Identify the user's intent.
   Future<String> chat(String prompt, String userContext) async {
 
     try {
+      final systemPrompt = "You are Fiinny. Context: $userContext\nUser: $prompt";
       final content = [Content.text(systemPrompt)];
-      final response = await _model.generateContent(content);
+      final response = await _model!.generateContent(content);
       return response.text ?? "My brain froze. Try again?";
     } catch (e) {
       if (kDebugMode) print("Gemini Error: $e");
@@ -118,7 +119,7 @@ Task: Identify the user's intent.
       final prompt = textPart("Extract the Merchant Name, Total Amount, Date, and a list of items from this receipt. Return ONLY valid JSON format: {merchant: str, total: double, date: 'YYYY-MM-DD', items: [{name: str, price: double}]}");
       final image = DataPart('image/jpeg', bytes); // Assuming JPEG for now
 
-      final response = await _visionModel.generateContent([
+      final response = await _visionModel!.generateContent([
         Content.multi([prompt, image])
       ]);
 

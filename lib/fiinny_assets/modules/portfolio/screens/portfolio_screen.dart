@@ -6,7 +6,15 @@ import '../services/asset_service.dart';
 import '../services/market_data_real.dart';
 import '../services/market_data_yahoo.dart';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/holding_row.dart';
+import '../../../../services/expense_service.dart';
+import '../../../../services/income_service.dart';
+import '../../../../services/user_data.dart';
+import '../../../../widgets/dashboard/bank_cards_carousel.dart';
+import '../../../../models/expense_item.dart';
+import '../../../../models/income_item.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 /// Portfolio list + quick totals (refactored to use HoldingRow widget)
 class PortfolioScreen extends StatefulWidget {
@@ -23,6 +31,9 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   bool _loading = true;
   List<AssetModel> _assets = [];
   Map<String, PriceQuote> _quotes = {};
+  List<ExpenseItem> _expenses = [];
+  List<IncomeItem> _incomes = [];
+  String _userName = 'User';
 
   @override
   void initState() {
@@ -32,7 +43,28 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
 
   Future<void> _loadAll() async {
     setState(() => _loading = true);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    
+    // Fetch Assets
     final assets = await _assetService.loadAssets();
+    
+    // Fetch User, Expenses, Incomes if user is logged in
+    List<ExpenseItem> expenses = [];
+    List<IncomeItem> incomes = [];
+    String userName = 'User';
+
+    if (uid != null) {
+      try {
+        expenses = await ExpenseService().getExpenses(uid);
+        incomes = await IncomeService().getIncomes(uid);
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        if (userDoc.exists) {
+           userName = userDoc.data()?['name'] ?? 'User';
+        }
+      } catch (e) {
+        debugPrint('Failed to load aux data in Portfolio: $e');
+      }
+    }
 
     // Build the symbol list for quotes:
     // - stocks -> use their symbol uppercased
@@ -44,11 +76,16 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     final quotes =
     symbols.isEmpty ? <String, PriceQuote>{} : await _market.fetchQuotes(symbols);
 
-    setState(() {
-      _assets = assets;
-      _quotes = quotes;
-      _loading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _assets = assets;
+        _quotes = quotes;
+        _expenses = expenses;
+        _incomes = incomes;
+        _userName = userName;
+        _loading = false;
+      });
+    }
   }
 
   PriceQuote? _quoteFor(AssetModel a) {
@@ -126,6 +163,13 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
             _TotalsCard(
               invested: _totalInvested,
               current: _totalCurrent,
+            ),
+            const SizedBox(height: 24),
+            BankCardsCarousel(
+              expenses: _expenses,
+              incomes: _incomes,
+              userName: _userName,
+              onAddCard: _addFlow, // Using Asset add flow temporarily or just placeholder
             ),
             const SizedBox(height: 12),
 

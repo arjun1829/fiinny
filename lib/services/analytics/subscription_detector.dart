@@ -44,7 +44,7 @@ class SubscriptionDetector {
     final Map<String, ExpenseItem> latestTx = {};
 
     for (var e in expenses) {
-      final lower = e.title.toLowerCase();
+      final lower = (e.title ?? '').toLowerCase();
       // Check if it's a known sub
       final match = _subscriptionKeywords.firstWhere(
         (k) => lower.contains(k), 
@@ -79,10 +79,10 @@ class SubscriptionDetector {
   static List<HiddenChargeModel> detectHiddenCharges(List<ExpenseItem> expenses) {
     final List<HiddenChargeModel> charges = [];
     for (var e in expenses) {
-      final lower = e.title.toLowerCase();
+      final lower = (e.title ?? '').toLowerCase();
       if (_hiddenChargeKeywords.any((k) => lower.contains(k))) {
         charges.add(HiddenChargeModel(
-          description: e.title,
+          description: e.title ?? '',
           amount: e.amount,
           date: e.date,
         ));

@@ -64,7 +64,10 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
   List<GroupModel> _groups = [];
 
   // Shared category options used across add/edit flows
-  final List<String> _categories = kExpenseCategories;
+  // Shared category options used across add/edit flows
+  final List<String> _categories = kExpenseSubcategories.keys.toList();
+  String? _subcategory;
+  List<String> _subcategories = [];
 
   // Labels
   List<String> _labels = ["Goa Trip", "Birthday", "Office", "Emergency", "Rent"];
@@ -97,8 +100,19 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
     _date = widget.expense.date;
     _category = widget.expense.type;
     if (!_categories.contains(_category) && _category.trim().isNotEmpty) {
-      _customCategory = _category;
-      _category = 'Other';
+      if (_category == 'Other' && _categories.contains('Others')) {
+         _category = 'Others';
+      } else {
+         _customCategory = _category;
+         _category = 'Others'; 
+      }
+    }
+    if (!_categories.contains(_category)) {
+      _category = _categories.isNotEmpty ? _categories.first : 'Others';
+    }
+    _subcategory = widget.expense.subtype;
+    if (_category.isNotEmpty && _category != 'Other') {
+      _subcategories = kExpenseSubcategories[_category] ?? [];
     }
     _selectedPayerPhone = widget.expense.payerId;
     _selectedGroupId = widget.expense.groupId;
@@ -389,6 +403,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       final updated = ExpenseItem(
         id: widget.expense.id,
         type: effectiveCategory,
+        subtype: _subcategory, // Add subtype
         amount: double.parse(_amountCtrl.text.trim()),
         note: combinedNote,
         date: _date,
@@ -491,8 +506,13 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                     amountCtrl: _amountCtrl,
                     category: _category,
                     categories: _categories,
+                    subcategory: _subcategory,
+                    subcategories: _subcategories,
+                    onSubcategory: (v) => setState(() => _subcategory = v),
                     onCategory: (v) => setState(() {
                       _category = v;
+                      _subcategories = kExpenseSubcategories[v] ?? [];
+                      _subcategory = _subcategories.isNotEmpty ? _subcategories.first : null;
                       if (v != 'Other') {
                         _customCategory = '';
                         _customCategoryCtrl.clear();
@@ -617,7 +637,10 @@ class _StepBasics extends StatelessWidget {
   final TextEditingController amountCtrl;
   final String category;
   final List<String> categories;
+  final String? subcategory;
+  final List<String> subcategories;
   final ValueChanged<String> onCategory;
+  final ValueChanged<String> onSubcategory;
   final DateTime date;
   final VoidCallback onPickDate;
   final TextEditingController noteCtrl;
@@ -642,8 +665,12 @@ class _StepBasics extends StatelessWidget {
     required this.bankRefText,
     required this.showBankReference,
     required this.customCategoryCtrl,
+
     required this.onCustomCategoryChanged,
     required this.isActive,
+    required this.subcategory,
+    required this.subcategories,
+    required this.onSubcategory,
   });
 
   @override
@@ -661,11 +688,11 @@ class _StepBasics extends StatelessWidget {
           const SizedBox(height: 8),
           _Box(
             child: DropdownButtonFormField<String>(
-              value: categories.contains(category) ? category : 'Other',
+              value: categories.contains(category) ? category : (categories.contains('Others') ? 'Others' : categories.firstOrNull),
               isExpanded: true,
               decoration: _inputDec(),
               items: categories.map((c) {
-                final meta = _kCatMeta[c] ?? _kCatMeta['Other']!;
+                final meta = _kCatMeta[c] ?? _kCatMeta['Other'] ?? _kCatMeta['Others']!;
                 return DropdownMenuItem<String>(
                   value: c,
                   child: Row(
@@ -689,7 +716,31 @@ class _StepBasics extends StatelessWidget {
                       }
                     },
             ),
-          ),
+              ),
+
+          if (subcategories.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _Box(
+              child: DropdownButtonFormField<String>(
+                value: subcategory,
+                isExpanded: true,
+                decoration: _inputDec().copyWith(labelText: 'Subcategory'),
+                items: subcategories.map((s) {
+                  return DropdownMenuItem<String>(
+                    value: s,
+                    child: Text(s, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  );
+                }).toList(),
+                onChanged: saving
+                    ? null
+                    : (value) {
+                  if (value != null) {
+                    onSubcategory(value);
+                  }
+                },
+              ),
+            ),
+          ],
           if (category == 'Other') ...[
             const SizedBox(height: 10),
             _Box(

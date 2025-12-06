@@ -395,31 +395,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _logout() async {
     if (_signingOut) return;
-    _signingOut = true;
+    setState(() => _signingOut = true); // Update UI to show loading if needed
 
     final nav = Navigator.of(context);
 
     try {
+      // 1. Sign out from Google (silent failure is fine)
       try {
-        await GoogleSignIn(scopes: <String>[]).signOut();
-      } catch (_) {}
+        await GoogleSignIn().signOut();
+      } catch (e) {
+        debugPrint("Google SignOut error: $e");
+      }
 
+      // 2. Delete FCM Token (best effort)
       try {
-        final notif = await FirebaseMessaging.instance.getNotificationSettings();
-        final ok = notif.authorizationStatus == AuthorizationStatus.authorized ||
-            notif.authorizationStatus == AuthorizationStatus.provisional;
-        if (ok) {
-          await FirebaseMessaging.instance.deleteToken();
-        }
-      } catch (_) {}
+        await FirebaseMessaging.instance.deleteToken();
+      } catch (e) {
+        debugPrint("FCM deleteToken error: $e");
+      }
 
+      // 3. Firebase Auth SignOut (Critical)
       await FirebaseAuth.instance.signOut();
-    } catch (_) {
+
+    } catch (e) {
+      debugPrint("Logout error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Logout notice: $e")),
+        );
+      }
     } finally {
+      // 4. Force navigation to AuthGate regardless of errors
       if (nav.mounted) {
         nav.pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const AuthGate()),
-          (route) => false,
+              (route) => false,
         );
       }
       _signingOut = false;

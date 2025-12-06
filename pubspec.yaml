@@ -22,6 +22,7 @@ dependencies:
   path: ^1.8.3
   sqflite: ^2.3.3
   flutter_svg: ^2.0.10+1
+  timeago: ^3.6.1
 
   # Firebase & Google
   firebase_core: ^3.15.2
