@@ -8,9 +8,8 @@ class MainActivity : FlutterActivity() {
     private val CHANNEL = "lifemap/system_ui"
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Enable edge-to-edge for Android 15+ (SDK 35) compliance
-        // This replaces the manual WindowCompat approach and handles deprecations
-        androidx.activity.enableEdgeToEdge()
+        // Enable edge-to-edge using WindowCompat (User Request Step 66)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         super.onCreate(savedInstanceState)
     }
 
