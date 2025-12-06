@@ -33,7 +33,10 @@ import {
     User,
     LogOut,
     Loader2,
-    Flag
+    Flag,
+    Diamond,
+    Play,
+    AlertCircle
 } from "lucide-react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
@@ -53,6 +56,18 @@ import GoalsScreen from "@/components/screens/GoalsScreen";
 import LoansScreen from "@/components/screens/LoansScreen";
 
 import AnalyticsScreen from "@/components/screens/AnalyticsScreen";
+import BankCard from "@/components/finance/BankCard";
+import AddCardModal from "@/components/finance/AddCardModal";
+import BankDetailsModal from "@/components/finance/BankDetailsModal";
+import { aggregateBanksFromTransactions, BankGroup, InferredCard } from "@/lib/utils/bankUtils";
+
+// Transaction Management Imports
+import TransactionModal from "@/components/dashboard/transactions/TransactionModal";
+import SplitExpenseModal from "@/components/dashboard/transactions/SplitExpenseModal";
+import TransactionDetailsModal from "@/components/dashboard/transactions/TransactionDetailsModal";
+import { deleteExpense, deleteIncome } from "@/lib/firestore";
+import { doc, setDoc, collection, Timestamp } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 export default function Dashboard() {
     const { user, loading } = useAuth();
@@ -75,6 +90,85 @@ export default function Dashboard() {
     const [activePeriod, setActivePeriod] = useState("M"); // Month by default
     const [dataLoading, setDataLoading] = useState(true);
     const [gmailConnecting, setGmailConnecting] = useState(false);
+    const [showAddCard, setShowAddCard] = useState(false);
+    const [selectedBankGroup, setSelectedBankGroup] = useState<BankGroup | null>(null);
+    const [manualCards, setManualCards] = useState<any[]>([]);
+
+    const [filteredExpensesState, setFilteredExpensesState] = useState<ExpenseItem[]>([]);
+    const [filteredIncomesState, setFilteredIncomesState] = useState<IncomeItem[]>([]);
+
+    // Transaction Management State
+    const [isAddTxModalOpen, setIsAddTxModalOpen] = useState(false);
+    const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
+    const [editingTx, setEditingTx] = useState<ExpenseItem | IncomeItem | null>(null);
+    const [splitTx, setSplitTx] = useState<ExpenseItem | null>(null);
+    const [viewingTx, setViewingTx] = useState<ExpenseItem | IncomeItem | null>(null);
+
+    const handleSaveTransaction = async (data: any) => {
+        if (!user || (!user.phoneNumber && !user.uid)) return;
+        const userId = user.phoneNumber || user.uid;
+
+        try {
+            const isExpense = data.type === "expense";
+            const collectionName = isExpense ? "expenses" : "incomes";
+            const id = editingTx?.id || doc(collection(db, "users", userId, collectionName)).id;
+            const docRef = doc(db, "users", userId, collectionName, id);
+
+            const payload = {
+                ...data,
+                id,
+                date: Timestamp.fromDate(new Date(data.date)),
+                amount: parseFloat(data.amount),
+                payerId: userId,
+            };
+            delete payload.type;
+
+            await setDoc(docRef, payload, { merge: true });
+
+            setIsAddTxModalOpen(false);
+            setEditingTx(null);
+            loadDashboardData(userId); // Refresh data
+        } catch (error) {
+            console.error("Error saving transaction:", error);
+            alert("Failed to save transaction.");
+        }
+    };
+
+    const handleDeleteTransaction = async (id: string, type: "expense" | "income") => {
+        if (!user || (!user.phoneNumber && !user.uid)) return;
+        const userId = user.phoneNumber || user.uid;
+
+        if (!confirm("Are you sure?")) return;
+
+        try {
+            if (type === "expense") await deleteExpense(userId, id);
+            else await deleteIncome(userId, id);
+
+            loadDashboardData(userId);
+            if (viewingTx?.id === id) setViewingTx(null);
+        } catch (error) {
+            console.error("Error deleting:", error);
+            alert("Failed to delete transaction.");
+        }
+    };
+
+    const handleSplitSave = async (expenseId: string, friendIds: string[]) => {
+        if (!user || (!user.phoneNumber && !user.uid)) return;
+        const userId = user.phoneNumber || user.uid;
+        try {
+            const ref = doc(db, "users", userId, "expenses", expenseId);
+            await setDoc(ref, { friendIds }, { merge: true });
+            setIsSplitModalOpen(false);
+            setSplitTx(null);
+            loadDashboardData(userId);
+        } catch (error) {
+            console.error("Error saving split:", error);
+            alert("Failed to save split.");
+        }
+    };
+
+    // Derived filtered data logic moved up here to be shared if needed
+
 
     useEffect(() => {
         if (!loading && !user) {
@@ -176,6 +270,10 @@ export default function Dashboard() {
         }
     };
 
+    const handleAddCard = (card: any) => {
+        setManualCards([...manualCards, card]);
+    };
+
     const handleGmailConnect = async () => {
         const userId = user?.phoneNumber || user?.uid;
         if (!userId) return;
@@ -253,6 +351,11 @@ export default function Dashboard() {
             filteredIncomes: incomes.filter(i => i.date >= start && i.date <= end)
         };
     }, [expenses, incomes, activePeriod]);
+
+    // Group Banks based on FILTERED data
+    const bankGroups = useMemo(() => {
+        return aggregateBanksFromTransactions(filteredExpenses, filteredIncomes);
+    }, [filteredExpenses, filteredIncomes]);
 
     const totalIncome = filteredIncomes.reduce((sum, i) => sum + i.amount, 0);
     const totalExpense = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
@@ -469,6 +572,34 @@ export default function Dashboard() {
                                     <User className="w-5 h-5" />
                                     <span>Profile</span>
                                 </button>
+
+                                <div className="pt-4 mt-4 border-t border-slate-100">
+                                    <Link href="/subscription">
+                                        <div className="w-full bg-slate-900 rounded-xl p-4 cursor-pointer hover:shadow-lg transition-all group relative overflow-hidden">
+                                            <div className="absolute top-0 right-0 w-24 h-24 bg-teal-500/20 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2" />
+                                            <div className="relative z-10">
+                                                <div className="flex items-center gap-2 text-teal-400 mb-2">
+                                                    <Play className="w-4 h-4 fill-current" />
+                                                    <span className="text-xs font-bold tracking-wider">ACTIVE SUBS</span>
+                                                </div>
+                                                <div className="flex items-baseline gap-1 text-white mb-1">
+                                                    <span className="text-2xl font-bold">₹898</span>
+                                                    <span className="text-xs text-slate-400">/mo</span>
+                                                </div>
+                                                <p className="text-xs text-slate-400">Netflix, Spotify +1</p>
+                                            </div>
+                                        </div>
+                                    </Link>
+
+                                    {/* Mock Hidden Charge Alert */}
+                                    <div className="mt-3 bg-red-50 border border-red-100 rounded-xl p-3 flex items-start gap-3">
+                                        <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+                                        <div>
+                                            <p className="text-xs font-bold text-red-700">Hidden Fee Detected</p>
+                                            <p className="text-[10px] text-red-600 leading-tight">Forex Markup of ₹45 on recent transaction.</p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -529,6 +660,98 @@ export default function Dashboard() {
                                     </div>
                                     <div className="absolute top-0 right-0 w-64 h-64 bg-teal-50/50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
                                 </motion.div>
+
+                                {/* My Cards Section */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-4 px-1">
+                                        <h2 className="text-xl font-bold text-slate-900">My Cards</h2>
+                                        <button
+                                            onClick={() => setShowAddCard(true)}
+                                            className="text-sm font-semibold text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg transition-colors"
+                                        >
+                                            + Add Card
+                                        </button>
+                                    </div>
+                                    <div className="flex gap-6 overflow-x-auto pb-6 scrollbar-hide snap-x max-w-[72rem]">
+                                        {bankGroups.length === 0 ? (
+                                            <div
+                                                onClick={() => setShowAddCard(true)}
+                                                className="w-80 h-48 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/50 transition-all group shrink-0"
+                                            >
+                                                <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3 group-hover:bg-teal-100 group-hover:text-teal-600 transition-colors">
+                                                    <CreditCard className="w-6 h-6 text-slate-400 group-hover:text-teal-600" />
+                                                </div>
+                                                <p className="font-semibold text-slate-600 group-hover:text-teal-700">Add your first card</p>
+                                            </div>
+                                        ) : (
+                                            bankGroups.map((group, i) => (
+                                                <BankCard
+                                                    key={i}
+                                                    bankName={group.bankName}
+                                                    cardType={group.cards.length > 1 ? `${group.cards.length} Cards` : group.cards[0]?.cardType || 'Card'}
+                                                    last4={group.cards.length > 1 ? '••••' : group.cards[0]?.last4 || 'XXXX'}
+                                                    name={userName}
+                                                    colorTheme={i % 2 === 0 ? 'black' : 'blue'}
+                                                    logoUrl={group.logoUrl}
+                                                    stats={group.stats}
+                                                    onClick={() => setSelectedBankGroup(group)}
+                                                />
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+
+                                <BankDetailsModal
+                                    isOpen={!!selectedBankGroup}
+                                    onClose={() => setSelectedBankGroup(null)}
+                                    bankName={selectedBankGroup?.bankName || ''}
+                                    cards={selectedBankGroup?.cards || []}
+                                    userName={userName}
+                                    expenses={filteredExpenses}
+                                    incomes={filteredIncomes}
+                                    onDeleteTransaction={handleDeleteTransaction}
+                                    onEditTransaction={(tx) => { setEditingTx(tx); setIsAddTxModalOpen(true); }}
+                                    onSplitTransaction={(tx) => { setSplitTx(tx as ExpenseItem); setIsSplitModalOpen(true); }}
+                                    onViewTransactionDetails={(tx) => setViewingTx(tx)}
+                                />
+
+                                {/* Shared Transaction Modals */}
+                                {isAddTxModalOpen && (
+                                    <TransactionModal
+                                        isOpen={isAddTxModalOpen}
+                                        onClose={() => { setIsAddTxModalOpen(false); setEditingTx(null); }}
+                                        initialData={editingTx}
+                                        onSave={handleSaveTransaction}
+                                        friends={friends}
+                                        groups={groups}
+                                    />
+                                )}
+                                {isSplitModalOpen && splitTx && (
+                                    <SplitExpenseModal
+                                        isOpen={isSplitModalOpen}
+                                        onClose={() => { setIsSplitModalOpen(false); setSplitTx(null); }}
+                                        expense={splitTx}
+                                        friends={friends}
+                                        onSave={handleSplitSave}
+                                    />
+                                )}
+                                {viewingTx && (
+                                    <TransactionDetailsModal
+                                        isOpen={!!viewingTx}
+                                        onClose={() => setViewingTx(null)}
+                                        transaction={viewingTx}
+                                        onEdit={(tx) => { setViewingTx(null); setEditingTx(tx); setIsAddTxModalOpen(true); }}
+                                        onDelete={handleDeleteTransaction}
+                                    />
+                                )}
+
+
+
+                                <AddCardModal
+                                    isOpen={showAddCard}
+                                    onClose={() => setShowAddCard(false)}
+                                    onAdd={handleAddCard}
+                                />
 
                                 {/* Period Filter */}
                                 <PeriodFilterBar
@@ -648,6 +871,6 @@ export default function Dashboard() {
                     </div>
                 </div>
             </div>
-        </div >
+        </div>
     );
 }

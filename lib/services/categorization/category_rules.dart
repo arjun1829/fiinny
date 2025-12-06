@@ -58,6 +58,8 @@ class CategoryRules {
     'APPLE': ['Entertainment', 'entertainment others', ['apple','subscription']],
     'ADOBE': ['Payments', 'Payment others', ['saas','subscription']],
     'MICROSOFT': ['Payments', 'Payment others', ['saas','subscription']],
+    'OPENAI': ['Payments', 'Payment others', ['saas','subscription']],
+    'CHATGPT': ['Payments', 'Payment others', ['saas','subscription']],
 
     // Telecom / Internet / DTH
     'JIO': ['Payments', 'Mobile bill', ['telecom']],

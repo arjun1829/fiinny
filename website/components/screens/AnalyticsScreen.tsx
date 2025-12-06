@@ -14,6 +14,9 @@ import SpendTrendChart from "../dashboard/analytics/SpendTrendChart";
 import TopMerchantsList from "../dashboard/analytics/TopMerchantsList";
 import TransactionFilterBar from "../dashboard/transactions/TransactionFilterBar";
 import { FilterState } from "../dashboard/transactions/FilterModal";
+import BankCard from "../finance/BankCard";
+import AddCardModal from "../finance/AddCardModal";
+import { CreditCard, Plus } from "lucide-react";
 
 interface AnalyticsScreenProps {
     expenses: ExpenseItem[];
@@ -44,6 +47,9 @@ export default function AnalyticsScreen({
         sortDir: "desc",
         groupBy: "none"
     });
+
+    const [showAddCard, setShowAddCard] = useState(false);
+    const [myCards, setMyCards] = useState<any[]>([]); // Mock state
 
     // Combine transactions for filtering
     const transactions = useMemo(() => {
@@ -228,6 +234,52 @@ export default function AnalyticsScreen({
             </div>
 
             {/* Dashboard Content */}
+
+            {/* My Cards Horizontal Section */}
+            <div className="px-4 md:px-0 mb-8">
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl font-bold text-slate-900">My Cards</h2>
+                    <button
+                        onClick={() => setShowAddCard(true)}
+                        className="flex items-center gap-1 text-sm font-semibold text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                        <Plus size={16} /> Add Card
+                    </button>
+                </div>
+                <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-hide">
+                    {myCards.length === 0 ? (
+                        <div
+                            onClick={() => setShowAddCard(true)}
+                            className="w-80 h-48 flex-shrink-0 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/50 transition-all group"
+                        >
+                            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3 group-hover:bg-teal-100 group-hover:text-teal-600 transition-colors">
+                                <CreditCard className="w-6 h-6 text-slate-400 group-hover:text-teal-600" />
+                            </div>
+                            <p className="font-semibold text-slate-600 group-hover:text-teal-700">Add your first card</p>
+                        </div>
+                    ) : (
+                        myCards.map((card, i) => (
+                            <div key={i} className="flex-shrink-0">
+                                <BankCard
+                                    bankName={card.bank}
+                                    cardType={card.cardType || 'Visa'}
+                                    last4={card.last4}
+                                    name={card.name}
+                                    expiry={card.expiry}
+                                    colorTheme={i % 2 !== 0 ? 'black' : 'purple'}
+                                />
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+
+            <AddCardModal
+                isOpen={showAddCard}
+                onClose={() => setShowAddCard(false)}
+                onAdd={(card) => setMyCards([...myCards, card])}
+            />
+
             <div className="px-4 md:px-0 grid grid-cols-1 md:grid-cols-3 gap-6 pb-24">
 
                 {/* Left Column: Charts */}

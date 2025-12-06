@@ -1,6 +1,8 @@
 import { GoogleAuthProvider, signInWithPopup, linkWithPopup, User } from "firebase/auth";
 import { auth, db } from "./firebase";
 import { collection, doc, setDoc, getDoc, Timestamp, arrayUnion, increment } from "firebase/firestore";
+import { SubscriptionDetector } from "./subscription_detector";
+import { SmartParser } from "./smart_parser";
 
 // --- Types ---
 
@@ -143,6 +145,13 @@ export class GmailService {
                     headers: { Authorization: `Bearer ${this.accessToken}` }
                 });
 
+                if (listResp.status === 401) {
+                    console.error("Gmail Token Expired or Invalid (401). Clearing storage.");
+                    this.accessToken = null;
+                    localStorage.removeItem('gmail_access_token');
+                    throw new Error("Auth Token Expired. Please reconnect Gmail.");
+                }
+
                 if (!listResp.ok) throw new Error(`Gmail API error: ${listResp.statusText}`);
 
                 const listData = await listResp.json();
@@ -221,7 +230,15 @@ export class GmailService {
         const instrument = this._inferInstrument(combined);
         const cardLast4 = this._extractCardLast4(combined);
         const upiVpa = this._extractUpiVpa(combined);
-        const merchant = this._guessMerchantSmart(combined) || (upiVpa ? upiVpa.toUpperCase() : 'UNKNOWN');
+        // Extraction via SmartParser
+        const merchantInfo = SmartParser.extractMerchant(combined, direction || 'debit');
+        const merchant = merchantInfo?.name || (upiVpa ? upiVpa.toUpperCase() : 'UNKNOWN');
+
+        // Categorization
+        const categoryInfo = SmartParser.categorize(combined, merchant);
+
+        // [NEW] Subscription & Hidden Charge Analysis
+        const analysis = SubscriptionDetector.analyzeTransaction(combined);
 
         const data = {
             id: docId,
@@ -233,10 +250,20 @@ export class GmailService {
             issuerBank: bank,
             instrument: instrument,
             upiVpa: upiVpa,
+
+            // Smart Fields
             counterparty: merchant,
-            counterpartyType: 'MERCHANT',
+            counterpartyType: merchantInfo?.type || 'MERCHANT',
+            category: categoryInfo.category,
+            subcategory: categoryInfo.subcategory,
+            tags: arrayUnion(...categoryInfo.tags),
+
             source: 'Email',
             ingestSources: arrayUnion('gmail'),
+            // New Fields
+            isSubscription: analysis.isSubscription,
+            isHiddenCharge: analysis.isHiddenCharge,
+            subscriptionName: analysis.subscriptionName || null,
             sourceRecord: {
                 gmail: {
                     gmailId: msg.id,
@@ -245,6 +272,10 @@ export class GmailService {
                 }
             }
         };
+
+        if (analysis.isHiddenCharge) {
+            console.warn(`⚠️ Hidden charge detected in email from ${emailDomain}: ${note}`);
+        }
 
         await setDoc(docRef, data, { merge: true });
         return msgDate;
@@ -381,11 +412,6 @@ export class GmailService {
         if (upper.includes('DEBIT CARD')) return 'Debit Card';
         if (upper.includes('NETBANKING')) return 'NetBanking';
         return null;
-    }
-
-    private _guessMerchantSmart(text: string): string | null {
-        const match = text.match(/(?:at|to|for)\s+([A-Z0-9&\.\-\* ]{3,40})/i);
-        return match ? match[1].trim().toUpperCase() : null;
     }
 
     private _cleanNoteSimple(text: string): string {

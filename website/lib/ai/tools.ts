@@ -1,5 +1,5 @@
 import { Tool } from "./ai_types";
-import { ExpenseItem, IncomeItem, deleteExpense, deleteIncome } from "@/lib/firestore";
+import { ExpenseItem, IncomeItem, deleteExpense, deleteIncome, addExpense, addIncome } from "@/lib/firestore";
 import { ChartConfig } from "./chart_service";
 import { createAction } from "./action_service";
 import { updateUserProfile } from "./personalization_service";
@@ -225,58 +225,86 @@ export const TOOLS: Record<string, Tool> = {
                 amount: { type: "number", description: "Amount of the transaction" },
                 category: { type: "string", description: "Category (e.g. Food, Travel, Salary)" },
                 description: { type: "string", description: "Description or title" },
-                date: { type: "string", description: "Date of transaction (YYYY-MM-DD)" }
+                date: { type: "string", description: "Date of transaction (YYYY-MM-DD)" },
+                splitWith: { type: "string", description: "Name of the friend to split with" }
             },
             required: ["type", "amount", "category"]
         },
-        execute: async ({ type, amount, category, description, date }, context) => {
-            const { setPendingAction, userId } = context;
+        execute: async ({ type, amount, category, description, date, splitWith }, context) => {
+            const { setPendingAction, userId, friends } = context;
             if (!setPendingAction || !userId) return { error: "Cannot perform action." };
 
             const action = createAction(
                 'SAFE',
                 `Add ${type === 'expense' ? 'Expense' : 'Income'}`,
-                `Add ${type} of ${amount} for ${category}?`,
+                `Add ${type} of ${amount} for ${category}${splitWith ? ` split with ${splitWith}` : ''}?`,
                 async () => {
-                    const { addExpense, addIncome } = await import("@/lib/firestore");
-                    const dateObj = date ? new Date(date) : new Date();
-                    const id = Date.now().toString();
+                    try {
+                        console.log("[Tool] confirming add_transaction for user:", userId);
+                        // Using static imports for better reliability
+                        const dateObj = date ? new Date(date) : new Date();
+                        const id = Date.now().toString();
 
-                    if (type === 'expense') {
-                        const expense: any = {
-                            id,
-                            type: 'expense',
-                            amount,
-                            note: '',
-                            date: dateObj,
-                            friendIds: [],
-                            settledFriendIds: [],
-                            payerId: userId,
-                            isBill: false,
-                            labels: [],
-                            attachments: [],
-                            category: category || 'Uncategorized',
-                            title: description || category || 'Expense',
-                        };
-                        await addExpense(userId, expense);
-                    } else {
-                        const income: any = {
-                            id,
-                            type: 'income',
-                            amount,
-                            note: '',
-                            date: dateObj,
-                            source: 'Manual',
-                            labels: [],
-                            attachments: [],
-                            category: category || 'Income',
-                            title: description || category || 'Income',
-                        };
-                        await addIncome(userId, income);
+                        let friendIds: string[] = [];
+                        if (splitWith && friends) {
+                            // Simple fuzzy name match
+                            const target = friends.find((f: any) =>
+                                f.name.toLowerCase().includes(splitWith.toLowerCase()) ||
+                                f.email.toLowerCase().includes(splitWith.toLowerCase())
+                            );
+                            if (target) {
+                                console.log("[Tool] Found friend for split:", target.name);
+                                friendIds.push(target.id);
+                            } else {
+                                console.log("[Tool] Could not find friend:", splitWith);
+                            }
+                        }
+
+                        if (type === 'expense') {
+                            const expense: any = {
+                                id,
+                                type: 'expense',
+                                amount,
+                                note: '',
+                                date: dateObj,
+                                friendIds: friendIds,
+                                settledFriendIds: [],
+                                payerId: userId,
+                                isBill: false,
+                                labels: [],
+                                attachments: [],
+                                category: category || 'Uncategorized',
+                                title: description || category || 'Expense',
+                            };
+                            console.log("[Tool] Adding Expense:", expense);
+                            await addExpense(userId, expense);
+                        } else {
+                            const income: any = {
+                                id,
+                                type: 'income',
+                                amount,
+                                note: '',
+                                date: dateObj,
+                                source: 'Manual',
+                                labels: [],
+                                attachments: [],
+                                category: category || 'Income',
+                                title: description || category || 'Income',
+                            };
+                            console.log("[Tool] Adding Income:", income);
+                            await addIncome(userId, income);
+                        }
+
+                        // Refresh Dashboard
+                        if (context.triggerRefresh) {
+                            console.log("[Tool] Triggering refresh...");
+                            context.triggerRefresh();
+                        }
+                    } catch (e) {
+                        console.error("[Tool] Failed to add transaction:", e);
+                        // We can't really bubble up to UI easily here unless we throw
+                        throw e;
                     }
-
-                    // Refresh Dashboard
-                    if (context.triggerRefresh) context.triggerRefresh();
                 }
             );
 

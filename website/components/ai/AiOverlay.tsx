@@ -16,7 +16,7 @@ export default function AiOverlay() {
         isOpen, openAi, closeAi, messages, sendMessage, isTyping,
         isPremium, togglePremium,
         isModelLoaded, isModelLoading, modelProgress, loadModel,
-        pendingAction, confirmAction, cancelAction
+        pendingAction, confirmAction, cancelAction, clearChat
     } = useAi();
 
     const [query, setQuery] = useState("");
@@ -218,10 +218,10 @@ export default function AiOverlay() {
                             }}
                             exit={{ opacity: 0, scale: 0.95, y: 20 }}
                             transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                            className={`z-50 bg-white shadow-2xl overflow-hidden flex flex-col border border-slate-100 ${!isWidgetMode ? "h-[85vh] md:h-[650px]" : ""}`}
+                            className={`z-50 bg-white shadow-2xl overflow-hidden flex flex-col border border-slate-100 ${!isWidgetMode ? "h-[85vh] md:h-[650px] max-h-[90vh]" : ""}`}
                         >
                             {/* Header */}
-                            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-50 bg-gradient-to-b from-white to-slate-50/50">
+                            <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-slate-50 bg-gradient-to-b from-white to-slate-50/50">
                                 <div className="flex items-center gap-3">
                                     <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-inner ${isPremium ? "bg-gradient-to-tr from-amber-100 to-orange-100 text-amber-600" : "bg-gradient-to-tr from-indigo-100 to-purple-100 text-indigo-600"}`}>
                                         <Sparkles className="w-5 h-5" />
@@ -244,6 +244,15 @@ export default function AiOverlay() {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={clearChat}
+                                        className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-indigo-600 transition-colors"
+                                        title="New Chat"
+                                    >
+                                        <Bot className="w-5 h-5" />
+                                        <span className="sr-only">New Chat</span>
+                                    </button>
+
                                     {/* Widget Toggle */}
                                     <button
                                         onClick={() => setIsWidgetMode(!isWidgetMode)}
@@ -517,7 +526,6 @@ export default function AiOverlay() {
                                             >
                                                 {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                                             </button>
-
                                             <div className="flex-1 relative">
                                                 <input
                                                     ref={inputRef}
@@ -526,7 +534,7 @@ export default function AiOverlay() {
                                                     onChange={(e) => setQuery(e.target.value)}
                                                     onKeyDown={handleKeyDown}
                                                     placeholder={isListening ? "Listening..." : "Ask Fiinny..."}
-                                                    className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400 text-sm"
+                                                    className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400 text-sm text-slate-900"
                                                     disabled={isProcessingImage || isProcessingVoice}
                                                 />
                                                 <button
@@ -548,7 +556,7 @@ export default function AiOverlay() {
                         </motion.div>
                     </>
                 )}
-            </AnimatePresence>
+            </AnimatePresence >
         </>
     );
 }

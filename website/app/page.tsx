@@ -104,7 +104,7 @@ function MainContent() {
             <div className="hidden lg:flex items-center gap-8">
               <a href="#features" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.features}</a>
               <a href="#how-it-works" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.howItWorks}</a>
-              <a href="#pricing" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.pricing}</a>
+              <Link href="/subscription" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.pricing}</Link>
 
               <div className="ml-4 pl-4 border-l border-slate-200">
                 <LanguageSelector />
