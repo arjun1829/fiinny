@@ -8,4 +8,5 @@ export interface UserProfile {
     partnerId?: string;
     partnerStatus?: 'pending' | 'connected';
     partnerName?: string;
+    currency?: string;
 }

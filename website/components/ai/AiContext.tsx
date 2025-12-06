@@ -39,24 +39,64 @@ interface AiContextType {
     // Refresh Trigger for Dashboard
     refreshTrigger: number;
     triggerRefresh: () => void;
+
+    // Chat Management
+    clearChat: () => void;
 }
 
 const AiContext = createContext<AiContextType | undefined>(undefined);
 
 export const AiProvider = ({ children }: { children: ReactNode }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const [messages, setMessages] = useState<Message[]>([
+
+    // Initialize messages from localStorage if available, otherwise default welcome
+    const [messages, setMessages] = useState<Message[]>([]);
+
+    const DEFAULT_WELCOME_MSG: Message[] = [
         {
             id: "welcome",
-            role: "assistant",
+            role: "assistant", // Explicitly typed by Message[] annotation
             content: "Hi! I'm **Fiinny**, your financial wellness coach. 🎩\n\nI can help you analyze spending, track habits, and feel good about your money. What's on your mind?",
             timestamp: new Date()
         }
-    ]);
+    ];
+
+    useEffect(() => {
+        const saved = localStorage.getItem("fiinny_chat_history");
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                // Convert string timestamps back to Date objects
+                const hydrated = parsed.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
+                setMessages(hydrated as Message[]);
+            } catch (e) {
+                console.error("Failed to parse chat history", e);
+                setMessages(DEFAULT_WELCOME_MSG);
+            }
+        } else {
+            setMessages(DEFAULT_WELCOME_MSG);
+        }
+    }, []);
+
+    // Save messages to localStorage whenever they change
+    useEffect(() => {
+        if (messages.length > 0) {
+            localStorage.setItem("fiinny_chat_history", JSON.stringify(messages));
+        }
+    }, [messages]);
+
     const { user } = useAuth();
     const [isTyping, setIsTyping] = useState(false);
     const [contextData, setContextDataState] = useState<{ expenses: ExpenseItem[]; incomes: IncomeItem[] }>({ expenses: [], incomes: [] });
     const [isPremium, setIsPremium] = useState(false); // Default to Free
+
+    // ... (rest of state)
+
+    const clearChat = () => {
+        setMessages(DEFAULT_WELCOME_MSG);
+        localStorage.removeItem("fiinny_chat_history");
+    };
+
 
     // Local Brain State
     const [isModelLoaded, setIsModelLoaded] = useState(false);
@@ -84,6 +124,17 @@ export const AiProvider = ({ children }: { children: ReactNode }) => {
     const closeAi = () => setIsOpen(false);
     const toggleAi = () => setIsOpen(prev => !prev);
     const togglePremium = () => setIsPremium(prev => !prev);
+
+    // Friends Context
+    const [friends, setFriends] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (user?.uid) {
+            import("@/lib/firestore").then(({ getFriends }) => {
+                getFriends(user.uid).then(setFriends);
+            });
+        }
+    }, [user, refreshTrigger]);
 
     const setContextData = (data: { expenses: ExpenseItem[]; incomes: IncomeItem[] }) => {
         setContextDataState(data);
@@ -166,7 +217,7 @@ export const AiProvider = ({ children }: { children: ReactNode }) => {
             // Call the LLM Service (Simulated or Local)
             const response = await generateResponse(
                 [...messages, userMsg],
-                { ...contextData, userId: user?.uid, profile, triggerRefresh },
+                { ...contextData, userId: user?.uid, profile, triggerRefresh, friends }, // Pass friends here
                 isPremium,
                 isModelLoaded,
                 setPendingAction
@@ -208,7 +259,8 @@ export const AiProvider = ({ children }: { children: ReactNode }) => {
             cancelAction,
             profile,
             refreshTrigger,
-            triggerRefresh
+            triggerRefresh,
+            clearChat
         }}>
             {children}
         </AiContext.Provider>

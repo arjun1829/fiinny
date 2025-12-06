@@ -21,6 +21,10 @@ import '../widgets/unified_transaction_list.dart';
 import 'edit_expense_screen.dart';
 import 'expenses_screen.dart'
     show ExpenseFilterConfig, ExpenseFiltersScreen;
+import '../widgets/finance/bank_card_widget.dart';
+import '../widgets/finance/add_card_sheet.dart';
+import '../services/credit_card_service.dart';
+import '../models/credit_card_model.dart';
 
 class _MonthSpend {
   final int year;
@@ -149,6 +153,8 @@ enum SpendScope { all, savingsAccounts, creditCards }
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   final _expenseSvc = ExpenseService();
   final _incomeSvc = IncomeService();
+  final _cardSvc = CreditCardService(); // NEW
+  List<CreditCardModel> _myCards = []; // NEW
   bool _loading = true;
 
   List<ExpenseItem> _allExp = [];
@@ -2471,12 +2477,19 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       // No history at all; show a soft empty card instead of nothing.
       return GlassCard(
         radius: Fx.r24,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-          child: Text(
-            'We’ll show your spends by category here once transactions are available.',
-            style: Fx.label.copyWith(color: Fx.text.withOpacity(.7)),
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildMyCardsSection(), // NEW
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'We’ll show your spends by category here once transactions are available.',
+                style: Fx.label.copyWith(color: Fx.text.withOpacity(.7)),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -3039,6 +3052,77 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     if (edited == true) {
       await _bootstrap();
     }
+  }
+  Widget _buildMyCardsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'My Cards',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: () async {
+                   final added = await showModalBottomSheet<bool>(
+                    context: context,
+                    isScrollControlled: true,
+                    useSafeArea: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => AddCardSheet(userId: widget.userPhone),
+                  );
+                  if (added == true) {
+                     final cards = await _cardSvc.getUserCards(widget.userPhone);
+                     if (mounted) setState(() => _myCards = cards);
+                  }
+                },
+              )
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 220,
+          child: _myCards.isEmpty
+              ? Center(
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add your first card'),
+                    onPressed: () async {
+                       final added = await showModalBottomSheet<bool>(
+                        context: context,
+                        isScrollControlled: true,
+                        useSafeArea: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => AddCardSheet(userId: widget.userPhone),
+                      );
+                      if (added == true) {
+                         final cards = await _cardSvc.getUserCards(widget.userPhone);
+                         if (mounted) setState(() => _myCards = cards);
+                      }
+                    },
+                  ),
+                )
+              : ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  itemCount: _myCards.length,
+                  itemBuilder: (ctx, i) {
+                    return BankCardWidget(
+                      card: _myCards[i],
+                      onTap: () {
+                         // Optional: show details
+                      },
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
   }
 }
 

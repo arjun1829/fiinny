@@ -14,6 +14,10 @@ export interface IncomeItem {
     bankLogo?: string;
     category?: string;
 
+    // Card basics
+    cardType?: string;
+    cardLast4?: string;
+
     // NEW: Context
     counterparty?: string;
     counterpartyType?: string;

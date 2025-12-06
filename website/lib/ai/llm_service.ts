@@ -141,21 +141,49 @@ const generateSimulatedResponse = async (
 
     const categoryInQuery = findCategory(query);
     const specificDate = extractDate(query);
+    // 1. Intent Recognition (The "Lobe")
 
-    // INTENT: Add Transaction
-    if (query.includes("add") && (query.includes("expense") || query.includes("income") || query.includes("spent") || query.includes("earned") || query.includes("paid"))) {
+    const lowerQuery = query.toLowerCase();
+
+    // INTENT: Check Duplicate (Prioritzed over create)
+    if (lowerQuery.includes("check if") || lowerQuery.includes("already added") || lowerQuery.includes("duplicate")) {
+        // This is a complex query. We should search first.
+        toolToCall = "get_recent_transactions";
+        const amountMatch = query.match(/(\d+)/);
+        toolArgs = {
+            limit: 5,
+            type: 'expense' // Default to expense search
+        };
+        // We'll let the response generation handle the "I found these similar items" part
+        // But for now, we just map it to get_recent_transactions
+    }
+    // INTENT: Add Transaction (Prioritized)
+    // Keywords: add, new, create, log, record, plus, spent, paid, bought, purchase, income, earned, received, had, got, ate, drank
+    const addKeywords = ["add", "new", "create", "log", "record", "plus", "spent", "paid", "bought", "purchase", "income", "earned", "received", "had", "got", "ate", "drank"];
+    const isAddIntent = addKeywords.some(k => lowerQuery.includes(k));
+
+    // Currency Check: (e.g. "10 rs", "$5", "500") if combined with add keywords or just looks like a purchase
+    const hasCurrency = /(\d+)\s*(rs|inr|\$|rupees)/i.test(query) || /(rs|inr|\$)\s*(\d+)/i.test(query) || /(\d+)\s*(k)\b/i.test(query);
+
+    if ((isAddIntent || hasCurrency) && !lowerQuery.includes("show") && !lowerQuery.includes("find") && !lowerQuery.includes("search") && !lowerQuery.includes("what") && !lowerQuery.includes("check")) {
         toolToCall = "add_transaction";
-        const type = (query.includes("income") || query.includes("earned")) ? "income" : "expense";
-        // Extract amount
+
+        const type = (lowerQuery.includes("income") || lowerQuery.includes("earned") || lowerQuery.includes("received")) ? "income" : "expense";
+
         const amountMatch = query.match(/(\d+)/);
         const amount = amountMatch ? parseInt(amountMatch[0]) : 0;
+
+        // Extract Split
+        const splitMatch = query.match(/split with\s+([a-zA-Z]+)/i);
+        const splitWith = splitMatch ? splitMatch[1] : undefined;
 
         toolArgs = {
             type,
             amount,
             category: categoryInQuery || "Uncategorized",
-            description: query, // Use full query as description for now
-            date: specificDate || new Date().toISOString().split('T')[0]
+            description: query,
+            date: specificDate || new Date().toISOString().split('T')[0],
+            splitWith
         };
     }
     // PREMIUM FEATURE: Deep Category Analysis / Highest Expense
@@ -180,9 +208,9 @@ const generateSimulatedResponse = async (
         toolArgs = { period: extractPeriod(query) };
     }
     // BASIC FEATURE: Recent Transactions OR Specific Date Transactions
-    else if (query.includes("recent") || query.includes("last") || query.includes("transaction") || specificDate) {
+    else if (query.includes("recent") || query.includes("show") || query.includes("list") || query.includes("what") || specificDate) {
         toolToCall = "get_recent_transactions";
-        toolArgs = { limit: specificDate ? 20 : 5, date: specificDate }; // Fetch more if date specific
+        toolArgs = { limit: specificDate ? 20 : 5, date: specificDate };
     }
 
     // 2. Tool Execution (The "Nervous System")
@@ -202,7 +230,9 @@ const generateSimulatedResponse = async (
     if (toolResult) {
         // Generate response based on tool result
         if (toolToCall === "add_transaction") {
-            responseText = toolResult.message || "I've asked for confirmation to add that transaction.";
+            const { type, amount, category } = toolArgs; // Use args from intent detection
+            const debugUser = contextData.userId ? `(Debug: ${contextData.userId})` : "(Debug: No User)";
+            responseText = `I've drafted a **${type || 'transaction'}** of **${amount}** for **${category || 'Uncategorized'}**. Does this look correct to you? ${debugUser}`;
         }
         else if (toolToCall === "get_spending_summary") {
             const { totalIncome, totalExpense, savings, period } = toolResult;
