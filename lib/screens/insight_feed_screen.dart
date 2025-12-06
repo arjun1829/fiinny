@@ -337,6 +337,81 @@ class _InsightFeedScreenState extends State<InsightFeedScreen> with SingleTicker
       default: return Colors.blueGrey.shade600;
     }
   }
+  Widget _buildChatTab() {
+    return Column(
+      children: [
+        Expanded(
+          child: StreamBuilder<List<AiMessage>>(
+            stream: _chatService.streamMessages(widget.userId),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final messages = snapshot.data ?? [];
+              if (messages.isEmpty) return _buildEmptyState();
+
+              return ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(16),
+                itemCount: messages.length,
+                itemBuilder: (context, index) => _buildMessageBubble(messages[index]),
+              );
+            },
+          ),
+        ),
+        _buildInputArea(),
+      ],
+    );
+  }
+
+  Widget _buildInputArea() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, -2)),
+        ],
+      ),
+      child: SafeArea(
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.camera_alt_outlined),
+              color: Colors.grey.shade600,
+              onPressed: _onCameraTap,
+            ),
+            IconButton(
+              icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
+              color: _isListening ? Colors.red : Colors.grey.shade600,
+              onPressed: _onMicTap,
+            ),
+            Expanded(
+              child: TextField(
+                controller: _inputController,
+                decoration: InputDecoration(
+                  hintText: "Ask Fiinny...",
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  filled: true,
+                  fillColor: Colors.grey.shade100,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                ),
+                onSubmitted: (_) => _sendMessage(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            CircleAvatar(
+              backgroundColor: Colors.teal,
+              child: IconButton(
+                icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                onPressed: _sendMessage,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _SuggestionChip extends StatelessWidget {

@@ -23,12 +23,14 @@ import { UserProfile } from "./models/UserProfile";
 import { GoalModel, goalConverter, GoalStatus, GoalType } from "./models/GoalModel";
 import { LoanModel, loanConverter, LoanInterestMethod, LoanShareMode } from "./models/LoanModel";
 import { AssetModel, assetConverter } from "./models/AssetModel";
+import { PartnerModel, partnerConverter, PartnerStatus } from "./models/PartnerModel";
+import { PartnerService } from "./services/PartnerService"; // Import Service
 
 // Re-export for backward compatibility
 export type { ExpenseItem, IncomeItem, FriendModel, GroupModel, UserProfile, AttachmentMeta };
-export type { GoalModel, LoanModel, AssetModel };
-export { expenseConverter, incomeConverter, goalConverter, loanConverter, assetConverter };
-export type { GoalStatus, GoalType, LoanInterestMethod, LoanShareMode };
+export type { GoalModel, LoanModel, AssetModel, PartnerModel };
+export { expenseConverter, incomeConverter, goalConverter, loanConverter, assetConverter, partnerConverter };
+export type { GoalStatus, GoalType, LoanInterestMethod, LoanShareMode, PartnerStatus };
 
 // --- Services (Re-exported) ---
 import { AuthService } from "./services/AuthService";
@@ -75,6 +77,8 @@ export const deleteLoan = LoanService.deleteLoan;
 
 export const getAssets = AssetService.getAssets;
 export const streamAssets = AssetService.streamAssets;
+
+export { PartnerService };
 
 // Legacy exports for backward compatibility if needed (though we're replacing them)
 export {

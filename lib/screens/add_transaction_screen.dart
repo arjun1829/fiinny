@@ -76,6 +76,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   String _type = 'debit'; // debit | credit | cc_spend | cc_bill
   String _category = 'General';
+  String? _subcategory;
 
   // Optional
   File? _billImage;
@@ -505,6 +506,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           groupId: groupId,
           imageUrl: billUrl,
           label: label,
+          category: _category,
+          subtype: _subcategory, // Added subtype
           customSplits: (_customSplit && _participants.isNotEmpty) ? _normalizedSplits() : null,
         );
 
@@ -584,7 +587,15 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                     expenseCategories: _expenseCategories,
                     incomeCategories: _incomeCategories,
                     value: _category,
-                    onChanged: (v){ setState(() => _category = v); },
+                    onChanged: (v){ setState(() {
+                      _category = v;
+                      _subcategory = null; // Reset subcat
+                      // Default subcat if exists?
+                      final subs = kExpenseSubcategories[v];
+                      if (subs != null && subs.isNotEmpty) _subcategory = subs.first;
+                    }); },
+                    subcategory: _subcategory,
+                    onSubcategory: (v) => setState(() => _subcategory = v),
                     onNext: _next,
                     onBack: _back,
                   ),
@@ -747,7 +758,9 @@ class _StepCategory extends StatelessWidget {
   final List<String> expenseCategories;
   final List<String> incomeCategories;
   final String value;
+  final String? subcategory;
   final ValueChanged<String> onChanged;
+  final ValueChanged<String?> onSubcategory;
   final VoidCallback onNext;
   final VoidCallback onBack;
 
@@ -756,7 +769,9 @@ class _StepCategory extends StatelessWidget {
     required this.expenseCategories,
     required this.incomeCategories,
     required this.value,
+    required this.subcategory,
     required this.onChanged,
+    required this.onSubcategory,
     required this.onNext,
     required this.onBack,
   });
@@ -793,6 +808,31 @@ class _StepCategory extends StatelessWidget {
               );
             }).toList(),
           ),
+          if (type != 'credit' && kExpenseSubcategories[value] != null && kExpenseSubcategories[value]!.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            const _H2('Subcategory'),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Theme.of(context).dividerColor),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: subcategory,
+                  isExpanded: true,
+                  hint: const Text('Select Subcategory'),
+                  items: kExpenseSubcategories[value]!.map((s) => DropdownMenuItem(
+                    value: s,
+                    child: Text(s, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  )).toList(),
+                  onChanged: onSubcategory,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 28),
           Row(
             children: [

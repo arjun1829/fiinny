@@ -913,17 +913,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   Widget _buildFiltersButton() {
-    return ElevatedButton.icon(
-      icon: const Icon(Icons.filter_alt_rounded, size: 18),
-      label: const Text('Filters'),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Fx.mintDark,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
-        ),
-      ),
+    return ActionChip(
+      avatar: const Icon(Icons.filter_alt_rounded, size: 16, color: Colors.white),
+      label: const Text('Filters', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+      backgroundColor: Fx.mintDark,
+      side: BorderSide.none,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       onPressed: _openFiltersScreen,
     );
   }
@@ -950,96 +945,65 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final isTealTheme = theme.scaffoldBackgroundColor == const Color(0xFF00423D);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      floatingActionButton: _buildFAB(context),
-      body: Stack(
-        children: [
-          if (isTealTheme)
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xFF00423D),
-                    Color(0xFF006D64),
-                    Colors.white,
-                  ],
-                  stops: [0.0, 0.45, 1.0],
-                ),
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+
+        title: const Text("Expenses", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        actions: [
+          Tooltip(
+            message: "Calendar View",
+            child: IconButton(
+              icon: Icon(
+                Icons.calendar_today,
+                color: _viewMode == 'calendar' ? Fx.mintDark : Colors.black54,
+                size: 24,
               ),
-            )
-          else
-            Container(color: theme.scaffoldBackgroundColor),
-          SafeArea(
-            child: Column(
-              children: [
-                // HEADER ROW (unchanged)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 18, 12, 4),
-                  child: Row(
-                    children: [
-                      const Text(
-                        "Expenses",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 24,
-                          letterSpacing: 0.4,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const Spacer(),
-                      Tooltip(
-                        message: "Calendar View",
-                        child: IconButton(
-                          icon: Icon(
-                            Icons.calendar_today,
-                            color:
-                                _viewMode == 'calendar' ? Colors.white : Colors.white70,
-                            size: 26,
-                          ),
-                          onPressed: () => setState(() => _viewMode = 'calendar'),
-                        ),
-                      ),
-                      Tooltip(
-                        message: "Summary",
-                        child: IconButton(
-                          icon: Icon(
-                            Icons.dashboard,
-                            color:
-                                _viewMode == 'summary' ? Colors.white : Colors.white70,
-                            size: 26,
-                          ),
-                          onPressed: () => setState(() => _viewMode = 'summary'),
-                        ),
-                      ),
-                      const SizedBox(width: 2),
-                      Tooltip(
-                        message: "Analytics",
-                        child: IconButton(
-                          icon: const Icon(
-                            Icons.insights_rounded,
-                            color: Colors.white,
-                            size: 26,
-                          ),
-                          onPressed: () async {
-                            await Navigator.pushNamed(
-                              context,
-                              '/analytics',
-                              arguments: widget.userPhone,
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Expanded(child: _getCurrentView(context)),
-              ],
+              onPressed: () {
+                setState(() => _viewMode = _viewMode == 'calendar' ? 'list' : 'calendar');
+              },
             ),
           ),
+          Tooltip(
+            message: "Summary",
+            child: IconButton(
+              icon: Icon(
+                Icons.dashboard_rounded,
+                color: _viewMode == 'summary' ? Fx.mintDark : Colors.black54,
+                size: 24,
+              ),
+              onPressed: () => setState(() => _viewMode = 'summary'),
+            ),
+          ),
+          Tooltip(
+            message: "Analytics",
+            child: IconButton(
+              icon: const Icon(
+                Icons.insights_rounded,
+                color: Colors.black54,
+                size: 24,
+              ),
+              onPressed: () async {
+                await Navigator.pushNamed(
+                  context,
+                  '/analytics',
+                  arguments: widget.userPhone,
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
         ],
+      ),
+      floatingActionButton: _buildFAB(context),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(child: _getCurrentView(context)),
+          ],
+        ),
       ),
     );
   }

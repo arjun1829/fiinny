@@ -130,7 +130,7 @@ class TransactionAmountCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 27,
                   fontWeight: FontWeight.bold,
-                  color: colorScheme.secondary,
+                  color: colorScheme.primary,
                 ),
               ),
               const SizedBox(height: 6),

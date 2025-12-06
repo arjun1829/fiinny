@@ -9,6 +9,7 @@ import {
     startOfYear, endOfYear, format, eachDayOfInterval, isSameDay
 } from "date-fns";
 import BankCardStats from "../dashboard/analytics/BankCardStats";
+import { aggregateBanksFromTransactions } from "@/lib/utils/bankUtils";
 import CategoryPieChart from "../dashboard/analytics/CategoryPieChart";
 import SpendTrendChart from "../dashboard/analytics/SpendTrendChart";
 import TopMerchantsList from "../dashboard/analytics/TopMerchantsList";
@@ -247,7 +248,36 @@ export default function AnalyticsScreen({
                     </button>
                 </div>
                 <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-hide">
-                    {myCards.length === 0 ? (
+                    {/* Combine automatic and manual cards */}
+                    {aggregateBanksFromTransactions(filteredData.filter(t => 'type' in t && t.type !== 'Income'), filteredData.filter(t => 'type' in t && t.type === 'Income'))
+                        .map((group, i) => (
+                            <div key={i} className="flex-shrink-0">
+                                <BankCard
+                                    bankName={group.bankName}
+                                    cardType={group.cards[0]?.cardType || 'Card'}
+                                    last4={group.cards[0]?.last4 || 'XXXX'}
+                                    name={"User"} // You might want to pass user name prop
+                                    colorTheme={i % 2 === 0 ? 'black' : 'blue'}
+                                    logoUrl={group.logoUrl}
+                                    stats={group.stats}
+                                />
+                            </div>
+                        ))}
+
+                    {myCards.map((card, i) => (
+                        <div key={`manual-${i}`} className="flex-shrink-0">
+                            <BankCard
+                                bankName={card.bank}
+                                cardType={card.cardType || 'Visa'}
+                                last4={card.last4}
+                                name={card.name}
+                                expiry={card.expiry}
+                                colorTheme={'purple'}
+                            />
+                        </div>
+                    ))}
+
+                    {(aggregateBanksFromTransactions(filteredData.filter(t => 'type' in t && t.type !== 'Income'), filteredData.filter(t => 'type' in t && t.type === 'Income')).length === 0 && myCards.length === 0) && (
                         <div
                             onClick={() => setShowAddCard(true)}
                             className="w-80 h-48 flex-shrink-0 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/50 transition-all group"
@@ -257,19 +287,6 @@ export default function AnalyticsScreen({
                             </div>
                             <p className="font-semibold text-slate-600 group-hover:text-teal-700">Add your first card</p>
                         </div>
-                    ) : (
-                        myCards.map((card, i) => (
-                            <div key={i} className="flex-shrink-0">
-                                <BankCard
-                                    bankName={card.bank}
-                                    cardType={card.cardType || 'Visa'}
-                                    last4={card.last4}
-                                    name={card.name}
-                                    expiry={card.expiry}
-                                    colorTheme={i % 2 !== 0 ? 'black' : 'purple'}
-                                />
-                            </div>
-                        ))
                     )}
                 </div>
             </div>

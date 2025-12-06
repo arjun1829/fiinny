@@ -75,7 +75,7 @@ class ActionRouter {
       final totalSpent = userData.getWeeklySpending();
       final limit = userData.weeklyLimit;
       final isOverBudget = userData.isWeeklyLimitExceeded();
-      final goalsList = userData.goals.map((g) => "${g.name} (Target: ${g.targetAmount}, Saved: ${g.currentAmount})").join(", ");
+      final goalsList = userData.goals.map((g) => "${g.title} (Target: ${g.targetAmount}, Saved: ${g.savedAmount})").join(", ");
       
       final context = """
 User ID: $userId

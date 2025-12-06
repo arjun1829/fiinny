@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/ads/ads_banner_card.dart';
 import '../core/ads/ads_shell.dart';
@@ -25,6 +26,9 @@ import '../widgets/finance/bank_card_widget.dart';
 import '../widgets/finance/add_card_sheet.dart';
 import '../services/credit_card_service.dart';
 import '../models/credit_card_model.dart';
+import '../widgets/dashboard/bank_cards_carousel.dart';
+import '../widgets/dashboard/bank_overview_dialog.dart';
+import '../services/user_data.dart';
 
 class _MonthSpend {
   final int year;
@@ -151,10 +155,79 @@ class AnalyticsScreen extends StatefulWidget {
 enum SpendScope { all, savingsAccounts, creditCards }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
+  // ---------- CUSTOM SOFT PILL ----------
+  Widget _buildSoftPill({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+    IconData? icon,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(30),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF1A1A1A) : Colors.grey[100],
+          borderRadius: BorderRadius.circular(30),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? Colors.white : Colors.grey[700],
+              ),
+              const SizedBox(width: 8),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.grey[700],
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonthSelector({
+    required List<DateTime> months,
+    required DateTime selected,
+    required ValueChanged<DateTime> onSelect,
+  }) {
+    final fmt = DateFormat('MMM');
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final m in months)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: _buildSoftPill(
+                label: fmt.format(m),
+                isSelected:
+                    m.year == selected.year && m.month == selected.month,
+                onTap: () => onSelect(m),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   final _expenseSvc = ExpenseService();
   final _incomeSvc = IncomeService();
   final _cardSvc = CreditCardService(); // NEW
   List<CreditCardModel> _myCards = []; // NEW
+  String? _userName;
   bool _loading = true;
 
   List<ExpenseItem> _allExp = [];
@@ -961,29 +1034,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         style: Fx.label.copyWith(color: Fx.text.withOpacity(.75)),
                       ),
                       const SizedBox(height: 8),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            for (final m in monthDates)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 6),
-                                child: ChoiceChip(
-                                  label: Text(DateFormat('MMM').format(m)),
-                                  selected: m.year == selected.year &&
-                                      m.month == selected.month,
-                                  onSelected: (_) {
-                                    setSheetState(() {
-                                      selected = m;
-                                      _selectedCategoryMonth = m;
-                                      filter = <String>{};
-                                    });
-                                    setState(() => _selectedCategoryMonth = m);
-                                  },
-                                ),
-                              ),
-                          ],
-                        ),
+                      _buildMonthSelector(
+                        months: monthDates,
+                        selected: selected,
+                        onSelect: (m) {
+                          setSheetState(() {
+                            selected = m;
+                            _selectedCategoryMonth = m;
+                            filter = <String>{};
+                          });
+                        },
                       ),
                       const SizedBox(height: 12),
                       Expanded(
@@ -1066,68 +1126,121 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     const periods = ['D', 'W', 'M', 'Y', 'All Time'];
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Flexible(
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final token in periods)
-                  ChoiceChip(
-                    label: Text(token == 'All Time' ? 'All' : token),
-                    selected: _range == null && _periodToken == token,
-                    onSelected: (_) {
-                      setState(() {
-                        _periodToken = token;
-                        _period = _periodForToken(token);
-                        _range = null;
-                        _custom = null;
-                        _invalidateAggCache();
-                      });
-                    },
-                  ),
-              ],
-            ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: Colors.grey.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(16),
           ),
-          IconButton(
-            tooltip: 'Custom range',
-            icon: const Icon(Icons.calendar_month_rounded),
-            onPressed: () async {
-              final now = DateTime.now();
-              final firstDate = now.subtract(const Duration(days: 180));
-              final active = _range ?? _rangeOrDefault();
-              final initial = DateTimeRange(
-                start: active.start,
-                end: active.end.subtract(const Duration(days: 1)),
-              );
-
-              final picked = await showDateRangePicker(
-                context: context,
-                firstDate: firstDate,
-                lastDate: now.add(const Duration(days: 1)),
-                initialDateRange: initial,
-                helpText: 'Pick date range',
-              );
-
-              if (picked != null) {
-                final start = DateTime(picked.start.year, picked.start.month, picked.start.day);
-                final endInclusive = DateTime(picked.end.year, picked.end.month, picked.end.day);
-                setState(() {
-                  _range = DateTimeRange(
-                    start: start,
-                    end: endInclusive.add(const Duration(days: 1)),
-                  );
-                  _period = Period.custom;
-                  _custom = CustomRange(start, endInclusive);
-                  _invalidateAggCache();
-                });
-              }
-            },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final token in periods)
+                _buildPeriodDockItem(token),
+              _buildPeriodDockIcon(),
+            ],
           ),
-        ],
+        ),
       ),
     );
+  }
+
+  Widget _buildPeriodDockItem(String token) {
+     final bool isSelected = _range == null && _periodToken == token;
+     final label = token == 'All Time' ? 'All' : token;
+     return InkWell(
+       onTap: () {
+          setState(() {
+            _periodToken = token;
+            _range = null;
+            _custom = null;
+            _period = _periodForToken(token);
+            _invalidateAggCache();
+          });
+       },
+       borderRadius: BorderRadius.circular(12),
+       child: AnimatedContainer(
+         duration: const Duration(milliseconds: 200),
+         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+         decoration: BoxDecoration(
+           color: isSelected ? Colors.white : Colors.transparent,
+           borderRadius: BorderRadius.circular(12),
+           boxShadow: isSelected ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))] : [],
+         ),
+         child: Text(
+           label,
+           style: TextStyle(
+             color: isSelected ? Colors.black : Colors.grey[600],
+             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+             fontSize: 13,
+           ),
+         ),
+       ),
+     );
+  }
+
+  Widget _buildPeriodDockIcon() {
+     final bool isSelected = _range != null;
+     return InkWell(
+       onTap: () async {
+          final now = DateTime.now();
+          final firstDate = DateTime(now.year - 5);
+          final lastDate = DateTime(now.year + 2);
+
+          final picked = await showDateRangePicker(
+            context: context,
+            firstDate: firstDate,
+            lastDate: lastDate,
+            initialDateRange: _range,
+            builder: (context, child) {
+              return Theme(
+                data: Theme.of(context).copyWith(
+                  colorScheme: const ColorScheme.light(
+                    primary: Fx.mintDark,
+                    onPrimary: Colors.white,
+                    surface: Colors.white,
+                    onSurface: Colors.black,
+                  ),
+                ),
+                child: child!,
+              );
+            },
+          );
+
+          if (picked != null) {
+            final start = DateTime(
+                picked.start.year, picked.start.month, picked.start.day);
+            final endInclusive = DateTime(
+                picked.end.year, picked.end.month, picked.end.day);
+            setState(() {
+              _range = DateTimeRange(
+                start: start,
+                end: endInclusive.add(const Duration(days: 1)),
+              );
+              _period = Period.custom;
+              _custom = CustomRange(start, endInclusive);
+              _invalidateAggCache();
+            });
+          }
+       },
+       borderRadius: BorderRadius.circular(12),
+       child: AnimatedContainer(
+         duration: const Duration(milliseconds: 200),
+         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+         decoration: BoxDecoration(
+           color: isSelected ? Colors.white : Colors.transparent,
+           borderRadius: BorderRadius.circular(12),
+           boxShadow: isSelected ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))] : [],
+         ),
+         child: Icon(
+           Icons.calendar_today_rounded,
+           size: 16,
+           color: isSelected ? Colors.black : Colors.grey[600],
+         ),
+       ),
+     );
   }
 
   Widget _scopeFiltersRow(List<_CardGroup> cardGroups) {
@@ -1143,10 +1256,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.only(right: 6),
-              child: ChoiceChip(
-                label: const Text('All accounts'),
-                selected: _bankFilter == null && !_showFriendsOnlyInAll,
-                onSelected: (_) {
+              child: _buildSoftPill(
+                label: 'All accounts',
+                isSelected: _bankFilter == null && !_showFriendsOnlyInAll,
+                onTap: () {
                   setState(() {
                     _bankFilter = null;
                     _last4Filter = null;
@@ -1159,10 +1272,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             for (final bank in banks)
               Padding(
                 padding: const EdgeInsets.only(right: 6),
-                child: ChoiceChip(
-                  label: Text(_formatBankLabel(bank)),
-                  selected: _bankFilter == bank.toUpperCase(),
-                  onSelected: (_) {
+                child: _buildSoftPill(
+                  label: _formatBankLabel(bank),
+                  isSelected: _bankFilter == bank.toUpperCase(),
+                  onTap: () {
                     setState(() {
                       _bankFilter = bank.toUpperCase();
                       _last4Filter = null;
@@ -1174,10 +1287,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               ),
             Padding(
               padding: const EdgeInsets.only(right: 6),
-              child: ChoiceChip(
-                label: const Text('Friends'),
-                selected: _showFriendsOnlyInAll,
-                onSelected: (_) {
+              child: _buildSoftPill(
+                label: 'Friends',
+                isSelected: _showFriendsOnlyInAll,
+                onTap: () {
                   setState(() {
                     _showFriendsOnlyInAll = true;
                     _bankFilter = null;
@@ -1204,10 +1317,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 for (final opt in options)
                   Padding(
                     padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
-                      label: Text(opt),
-                      selected: _instrumentFilter == opt,
-                      onSelected: (_) {
+                    child: _buildSoftPill(
+                      label: opt,
+                      isSelected: _instrumentFilter == opt,
+                      onTap: () {
                         if (_instrumentFilter == opt) return;
                         setState(() {
                           _instrumentFilter = opt;
@@ -1985,9 +2098,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       _rev++;
       _invalidateAggCache();
 
-      // NEW: default selected month for category list (current month)
       if (_selectedCategoryMonth == null) {
         _selectedCategoryMonth = DateTime(now.year, now.month, 1);
+      }
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(widget.userPhone).get();
+      if (mounted) {
+        setState(() {
+             _userName = userDoc.data()?['name'];
+        });
       }
     } catch (_) {}
     if (!mounted) return;
@@ -2192,10 +2310,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Your Spends'),
+        title: Text(
+          'Analytics',
+          style: Fx.title.copyWith(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blueGrey[900]),
+        ),
+        centerTitle: false,
         elevation: 0,
         backgroundColor: Colors.transparent,
-        foregroundColor: Fx.mintDark,
+        foregroundColor: Colors.blueGrey[900],
         actions: [
           IconButton(
             tooltip: 'Filters',
@@ -2203,7 +2325,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             icon: Stack(
               clipBehavior: Clip.none,
               children: [
-                const Icon(Icons.filter_alt_rounded),
+                Icon(Icons.filter_list_rounded, color: Colors.blueGrey[800]),
                 if (_hasActiveFilters)
                   Positioned(
                     right: -2,
@@ -2233,6 +2355,32 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     controller: _scrollCtrl,
                     padding: EdgeInsets.fromLTRB(16, 12, 16, bottomPadding),
                     children: [
+                      BankCardsCarousel(
+                        expenses: _allExp,
+                        incomes: _allInc,
+                        userName: _userName ?? 'User',
+                        onAddCard: () {
+                          // TODO: Implement add card
+                          ScaffoldMessenger.of(context).showSnackBar(
+                             const SnackBar(content: Text("Add Card feature coming soon!")),
+                           );
+                        },
+                        onCardSelected: (slug) {
+                           final bankName = slug.toUpperCase();
+                           showDialog(
+                             context: context,
+                             builder: (_) => BankOverviewDialog(
+                               bankSlug: slug,
+                               bankName: bankName,
+                               allExpenses: _allExp,
+                               allIncomes: _allInc,
+                               userPhone: widget.userPhone,
+                               userName: _userName ?? 'User',
+                             ),
+                           );
+                        },
+                      ),
+                      const SizedBox(height: 24),
                       Text(
                         'Your Spends',
                         style: Fx.title.copyWith(
@@ -2245,22 +2393,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         spacing: 8,
                         runSpacing: 6,
                         children: [
-                          ChoiceChip(
-                            label: const Text('All'),
-                            selected: _scope == SpendScope.all,
-                            onSelected: (_) => _changeScope(SpendScope.all),
+                          _buildSoftPill(
+                            label: 'All',
+                            isSelected: _scope == SpendScope.all,
+                            onTap: () => _changeScope(SpendScope.all),
                           ),
-                          ChoiceChip(
-                            label: const Text('Savings accounts'),
-                            selected: _scope == SpendScope.savingsAccounts,
-                            onSelected: (_) =>
-                                _changeScope(SpendScope.savingsAccounts),
+                          _buildSoftPill(
+                            label: 'Savings accounts',
+                            isSelected: _scope == SpendScope.savingsAccounts,
+                            onTap: () => _changeScope(SpendScope.savingsAccounts),
                           ),
-                          ChoiceChip(
-                            label: const Text('Credit cards'),
-                            selected: _scope == SpendScope.creditCards,
-                            onSelected: (_) =>
-                                _changeScope(SpendScope.creditCards),
+                          _buildSoftPill(
+                            label: 'Credit cards',
+                            isSelected: _scope == SpendScope.creditCards,
+                            onTap: () => _changeScope(SpendScope.creditCards),
                           ),
                         ],
                       ),
@@ -2341,24 +2487,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         const SizedBox(height: 14),
                       ],
 
-                      if (bankExpansionTiles.isNotEmpty) ...[
-                        GlassCard(
-                          radius: Fx.r24,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _sectionHeader('Banks & Cards', Icons.credit_card_rounded),
-                              const SizedBox(height: 8),
-                              ListView(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                children: bankExpansionTiles,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                      ],
+
 
                       // ===== Transactions (bottom) with filter chips =====
                       GlassCard(
@@ -2372,11 +2501,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                               spacing: 8,
                               children: ['All', 'Income', 'Expense'].map((f) {
                                 final sel = _txnFilter == f;
-                                return ChoiceChip(
-                                  label: Text(f),
-                                  selected: sel,
-                                  onSelected: (_) =>
-                                      setState(() => _txnFilter = f),
+                                return _buildSoftPill(
+                                  label: f,
+                                  isSelected: sel,
+                                  onTap: () => setState(() => _txnFilter = f),
                                 );
                               }).toList(),
                             ),
@@ -2409,15 +2537,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Widget _bg() => IgnorePointer(
         ignoring: true,
         child: Container(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
               colors: [
-                Fx.mint.withOpacity(0.10),
-                Fx.mintDark.withOpacity(0.06),
-                Colors.white.withOpacity(0.60),
+                Color(0xFFE0F2F1), // Teal 50
+                Color(0xFFF0FDF4), // Mint 50
+                Colors.white,
+                Colors.white,
               ],
-              center: Alignment.topLeft,
-              radius: 0.9,
+              stops: [0.0, 0.3, 0.6, 1.0],
             ),
           ),
         ),
@@ -2548,26 +2678,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           const SizedBox(height: 8),
 
           // Month selector chips (last 12 months)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (final m in monthDates)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
-                      label: Text(monthShortFmt.format(m)),
-                      selected:
-                          m.year == selected.year && m.month == selected.month,
-                      onSelected: (_) {
-                        setState(() {
-                          _selectedCategoryMonth = m;
-                        });
-                      },
-                    ),
-                  ),
-              ],
-            ),
+          _buildMonthSelector(
+            months: monthDates,
+            selected: selected,
+            onSelect: (m) {
+              setState(() {
+                _selectedCategoryMonth = m;
+              });
+            },
           ),
           const SizedBox(height: 10),
 
@@ -2665,8 +2783,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     // Reusing BarChartSimple if possible, or building a custom one.
     // Let's use a custom small bar chart for "Trend".
 
-    return GlassCard(
-      radius: Fx.r24,
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.65), // Stronger opacity for contrast against new background
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF004D40).withOpacity(0.08), // Teal shadow
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2837,8 +2967,27 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           height: 140 * h, // max height 140 inside the 220 container
           width: width,
           decoration: BoxDecoration(
-            color: isCurrent ? Fx.mintDark : Colors.grey.shade300,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+            gradient: isCurrent
+                ? const LinearGradient(
+                    colors: [Color(0xFF004D40), Color(0xFF00796B)], // Deep Teal
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                  )
+                : LinearGradient(
+                    colors: [Colors.grey.shade400, Colors.grey.shade300],
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                  ),
+            borderRadius: BorderRadius.circular(width / 2),
+            boxShadow: isCurrent
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFF004D40).withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    )
+                  ]
+                : null,
           ),
         ),
         const SizedBox(height: 8),
@@ -2989,6 +3138,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             userPhone: widget.userPhone,
             onEdit: _handleEdit,
             onDelete: _handleDelete,
+            enableScrolling: true,
           ),
         ),
       ),

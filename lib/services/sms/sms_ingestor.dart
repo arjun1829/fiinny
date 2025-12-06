@@ -740,6 +740,7 @@ class SmsIngestor {
       );
       _scheduledTaskId = taskId;
       _log('scheduled daily 48h SMS sync');
+    } catch (e) {
       _log('workmanager schedule failed: $e');
     }
   }
@@ -764,11 +765,12 @@ class SmsIngestor {
             amount: event.amount,
             date: event.timestamp,
             category: enriched.category,
-            subcategory: enriched.subcategory,
-            merchant: enriched.merchantName,
+            // subcategory removed as it's not in ExpenseItem
+            counterparty: enriched.merchantName,
             note: event.rawText,
             isInternational: event.currency != 'INR',
-            // ... other fields
+            payerId: userPhone, // Added missing required field
+            type: 'SMS Debit', // Added missing required field
           );
           await _expense.addExpense(userPhone, expense);
         } else if (event.direction == TransactionDirection.credit) {
@@ -777,8 +779,10 @@ class SmsIngestor {
             amount: event.amount,
             date: event.timestamp,
             category: enriched.category,
-            merchant: enriched.merchantName,
+            counterparty: enriched.merchantName,
             note: event.rawText,
+            source: 'SMS', // Added missing required field
+            type: 'SMS Credit', // Added missing required field
             // ... other fields
           );
           await _income.addIncome(userPhone, income);

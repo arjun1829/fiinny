@@ -332,7 +332,7 @@ class _DiagAppState extends State<_DiagApp> {
                     child: CircularProgressIndicator(color: Colors.white),
                   ),
                 ),
-                if (kDiagBuild)
+                if (kDebugMode && kDiagBuild)
                   Positioned(
                     left: 12,
                     right: 12,

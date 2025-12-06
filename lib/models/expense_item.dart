@@ -61,6 +61,7 @@ class ExpenseItem {
   // Legacy tagging
   final String? label;             // legacy single label (kept)
   final String? category;
+  final String? subtype;
   final String? bankLogo;
 
   // --- Legacy single-attachment fields (kept) ---
@@ -125,6 +126,7 @@ class ExpenseItem {
     this.imageUrl,
     this.label,
     this.category,
+    this.subtype,
     this.bankLogo,
     this.attachmentUrl,
     this.attachmentName,
@@ -173,6 +175,7 @@ class ExpenseItem {
     String? imageUrl,
     String? label,
     String? category,
+    String? subtype,
     String? bankLogo,
     String? attachmentUrl,
     String? attachmentName,
@@ -221,6 +224,7 @@ class ExpenseItem {
       imageUrl: imageUrl ?? this.imageUrl,
       label: label ?? this.label,
       category: category ?? this.category,
+      subtype: subtype ?? this.subtype,
       bankLogo: bankLogo ?? this.bankLogo,
       attachmentUrl: attachmentUrl ?? this.attachmentUrl,
       attachmentName: attachmentName ?? this.attachmentName,
@@ -293,6 +297,7 @@ class ExpenseItem {
       if (imageUrl != null) 'imageUrl': imageUrl,
       if (label != null) 'label': label, // legacy
       if (category != null) 'category': category,
+      if (subtype != null) 'subtype': subtype,
       'bankLogo': bankLogo,
       // NEW context
       if (counterparty != null && counterparty!.trim().isNotEmpty) 'counterparty': counterparty,
@@ -398,6 +403,7 @@ class ExpenseItem {
       imageUrl: json['imageUrl'],
       label: json['label'],
       category: json['category'],
+      subtype: json['subtype'],
       bankLogo: json['bankLogo'],
       attachmentUrl: json['attachmentUrl'],
       attachmentName: json['attachmentName'],
@@ -499,6 +505,7 @@ class ExpenseItem {
       imageUrl: data['imageUrl'],
       label: data['label'],
       category: data['category'],
+      subtype: data['subtype'],
       bankLogo: data['bankLogo'],
       attachmentUrl: data['attachmentUrl'],
       attachmentName: data['attachmentName'],

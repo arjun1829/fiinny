@@ -136,7 +136,7 @@ class TransactionCountCard extends StatelessWidget {
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 27,
-                  color: colorScheme.secondary,
+                  color: colorScheme.primary,
                 ),
               ),
               const SizedBox(height: 6),

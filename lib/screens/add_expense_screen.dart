@@ -36,7 +36,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   bool _loading = true;
   bool _submitting = false;
 
-  final List<String> _categories = kExpenseCategories;
+  final List<String> _categories = kExpenseSubcategories.keys.toList();
+  String? _selectedSubcategory;
+  List<String> _subcategories = [];
+
 
   // --- New: Local label list for this user session ---
   List<String> _labels = [
@@ -115,6 +118,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       id: '',
       amount: amount,
       type: _selectedType,
+      subtype: _selectedSubcategory,
       note: desc,
       date: DateTime.now(),
       payerId: widget.userId,
@@ -181,13 +185,40 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               ))
                   .toList(),
               onChanged: (val) {
-                if (val != null) setState(() => _selectedType = val);
+                if (val != null) {
+                  setState(() {
+                    _selectedType = val;
+                    final subs = kExpenseSubcategories[val] ?? [];
+                    _subcategories = subs;
+                    _selectedSubcategory = subs.isNotEmpty ? subs.first : null;
+                  });
+                }
               },
               decoration: const InputDecoration(
                 labelText: "Category",
                 prefixIcon: Icon(Icons.category),
               ),
             ),
+            const SizedBox(height: 12),
+            if (_subcategories.isNotEmpty) ...[
+              DropdownButtonFormField<String>(
+                value: _selectedSubcategory,
+                items: _subcategories
+                    .map((sub) => DropdownMenuItem(
+                          value: sub,
+                          child: Text(sub),
+                        ))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) setState(() => _selectedSubcategory = val);
+                },
+                decoration: const InputDecoration(
+                  labelText: "Subcategory",
+                  prefixIcon: Icon(Icons.subdirectory_arrow_right),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             const SizedBox(height: 12),
 
             // -------- LABEL DROPDOWN + ADD --------

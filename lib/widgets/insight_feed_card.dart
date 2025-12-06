@@ -105,7 +105,7 @@ class InsightFeedCard extends StatelessWidget {
       'netWorth' => 'Net Worth',
       'crisis' => 'Crisis',
       'expense' => 'Expense',
-      _ => '',
+      _ => c ?? '',
     };
   }
 
@@ -129,114 +129,161 @@ class InsightFeedCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (showHeader) ...[
-              Row(
-                children: [
-                  const Icon(Icons.psychology_alt_rounded, color: Fx.mintDark),
-                  const SizedBox(width: Fx.s8),
-                  Text("Smart Insights", style: Fx.title),
-                  const Spacer(),
-                  if (showUpsell) ...[
-                    PremiumChip(
-                      onTap: () {
-                        if (userId != null) {
-                          Navigator.pushNamed(context, '/premium', arguments: userId);
-                        }
-                      },
-                      label: 'Go Premium',
-                    ),
-                    const SizedBox(width: Fx.s6),
-                  ],
-                  PillBadge("${list.length}", color: Fx.mintDark, icon: Icons.insights_rounded),
-                ],
-              ),
-              const SizedBox(height: Fx.s12),
-            ],
-            ...list.map((insight) {
-              final color = _color(insight.type, insight.severity);
-              final icon = _icon(insight.type, insight.category);
-              final fallback = InsightMicrocopy.fallback();
-
-              return Padding(
-                key: ValueKey('${insight.title}|${insight.timestamp.toIso8601String()}'),
-                padding: const EdgeInsets.symmetric(vertical: Fx.s6),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(Fx.r12),
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: Row(children: [
-                          Icon(icon, color: color),
-                          const SizedBox(width: Fx.s8),
-                          Expanded(child: Text(insight.title.isEmpty ? "Insight" : insight.title)),
-                        ]),
-                        content: Text(insight.description.isEmpty ? fallback : insight.description),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Close'),
-                          ),
-                        ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.psychology_alt_rounded, color: Fx.mintDark),
+                    const SizedBox(width: Fx.s8),
+                    Text("Smart Insights", style: Fx.title),
+                    const Spacer(),
+                    if (showUpsell) ...[
+                      PremiumChip(
+                        onTap: () {
+                          if (userId != null) {
+                            Navigator.pushNamed(context, '/premium', arguments: userId);
+                          }
+                        },
+                        label: 'Go Premium',
                       ),
-                    );
-                  },
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(icon, color: color, size: 22),
-                      const SizedBox(width: Fx.s10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(children: [
-                              Expanded(
-                                child: Text(
-                                  insight.title.isEmpty ? "No Title" : insight.title,
-                                  style: TextStyle(
-                                    color: color,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 15,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if ((insight.category ?? '').isNotEmpty) ...[
-                                const SizedBox(width: Fx.s8),
-                                PillBadge(_categoryLabel(insight.category), color: color),
-                              ],
-                            ]),
-                            const SizedBox(height: Fx.s4),
-                            Text(
-                              insight.description.isEmpty ? fallback : insight.description,
-                              style: Fx.label.copyWith(fontSize: 13.5, color: Colors.black87),
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
+                      const SizedBox(width: Fx.s6),
+                    ],
+                    PillBadge("${list.length}", color: Fx.mintDark, icon: Icons.insights_rounded),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+            ],
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: list.length,
+              separatorBuilder: (context, index) => const Divider(height: 1, indent: 56),
+              itemBuilder: (context, index) {
+                final insight = list[index];
+                final color = _color(insight.type, insight.severity);
+                final icon = _icon(insight.type, insight.category);
+                final fallback = InsightMicrocopy.fallback();
+
+                // Determine badge style
+                Color badgeBg = color.withOpacity(0.1);
+                Color badgeText = color;
+                
+                return Padding(
+                  key: ValueKey('${insight.title}|${insight.timestamp.toIso8601String()}'),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(Fx.r12),
+                    onTap: () {
+                        // Keep tap logic for detail if needed, or remove if just display
+                        showDialog(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: Row(children: [
+                            Icon(icon, color: color),
+                            const SizedBox(width: Fx.s8),
+                            Expanded(child: Text(insight.title.isEmpty ? "Insight" : insight.title)),
+                          ]),
+                          content: Text(insight.description.isEmpty ? fallback : insight.description),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Close'),
                             ),
-                            const SizedBox(height: Fx.s4),
-                            Row(children: [
-                              if (insight.severity != null)
-                                PillBadge("Severity: ${insight.severity}", color: color),
-                              const Spacer(),
-                              Text(
-                                _timeAgo(insight.timestamp),
-                                style: Fx.label.copyWith(fontSize: 11, color: Colors.grey[600]),
-                              ),
-                              const SizedBox(width: Fx.s6),
-                              Text(
-                                _dt.format(insight.timestamp),
-                                style: Fx.label.copyWith(fontSize: 10.5, color: Colors.grey[500]),
-                              ),
-                            ]),
                           ],
                         ),
-                      ),
-                    ],
+                      );
+                    },
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Left Icon
+                        Container(
+                            padding: const EdgeInsets.all(8),
+                           /* decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: Offset(0,2))]
+                            ),*/
+                            child: Icon(icon, color: color, size: 24)
+                        ),
+                        const SizedBox(width: Fx.s12),
+                        
+                        // Center Content
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                insight.title.isEmpty ? "No Title" : insight.title,
+                                style: TextStyle(
+                                  color: color, 
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                  height: 1.2
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                insight.description.isEmpty ? fallback : insight.description,
+                                style: Fx.label.copyWith(fontSize: 13, color: Colors.black87, height: 1.4),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 8),
+                              if (insight.severity != null && insight.severity! > 0)
+                                Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                        color: badgeBg,
+                                        borderRadius: BorderRadius.circular(12)
+                                    ),
+                                    child: Text(
+                                        "Severity: ${insight.severity}",
+                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: badgeText)
+                                    )
+                                )
+                            ],
+                          ),
+                        ),
+                        
+                        const SizedBox(width: 8),
+
+                        // Right Meta
+                        Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                                if ((insight.category ?? '').isNotEmpty)
+                                    Container(
+                                        margin: const EdgeInsets.only(bottom: 6),
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                         decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            border: Border.all(color: Colors.grey.shade300),
+                                            borderRadius: BorderRadius.circular(12)
+                                        ),
+                                        child: Text(
+                                            _categoryLabel(insight.category),
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.orange.shade800)
+                                        )
+                                    ),
+                                Text(
+                                    _timeAgo(insight.timestamp),
+                                    style: TextStyle(fontSize: 11, color: Colors.grey[500], fontWeight: FontWeight.w500)
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                    _dt.format(insight.timestamp),
+                                    style: TextStyle(fontSize: 10, color: Colors.grey[400])
+                                )
+                            ]
+                        )
+                      ],
+                    ),
                   ),
-                ),
-              );
-            }),
+                );
+              },
+            ),
           ],
         ),
       );
