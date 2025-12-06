@@ -90,6 +90,8 @@
   <string>We use the camera to scan receipts and documents.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Required only if you record videos (not used by default).</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Fiinny uses speech recognition to let you add transactions or search using your voice.</string>
   <key>NSUserTrackingUsageDescription</key>
   <string>Fiinny asks permission to use your device’s identifier to show more relevant ads and measure performance. You can continue even if you don’t allow.</string>
   <key>FirebaseCrashlyticsCollectionEnabled</key>

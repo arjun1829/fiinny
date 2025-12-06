@@ -1,7 +1,7 @@
 name: lifemap
 description: A premium personal finance & social app (2025)
 publish_to: "none"
-version: 1.0.0+352
+version: 1.0.0+7331
 
 environment:
   sdk: ">=3.2.0 <4.0.0"
@@ -54,7 +54,7 @@ dependencies:
 
   # Device Access
   permission_handler: ^11.3.1
-  speech_to_text: ^6.6.0
+  speech_to_text: ^7.0.0
   flutter_contacts: ^1.1.9+2
   intl_phone_field: ^3.2.0
   url_launcher: ^6.2.6
