@@ -66,9 +66,27 @@ class _GroupAnalyticsTabState extends State<GroupAnalyticsTab> {
             children: [
               for (final option in _periodOptions)
                 ChoiceChip(
-                  label: Text(_labelFor(option)),
+                  label: Text(
+                    _labelFor(option),
+                    style: TextStyle(
+                      color: _period == option ? Colors.white : Colors.black87,
+                      fontWeight: _period == option ? FontWeight.w700 : FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
                   selected: _period == option,
                   onSelected: (_) => setState(() => _period = option),
+                  selectedColor: Colors.black,
+                  backgroundColor: Colors.white,
+                  showCheckmark: false,
+                  shape: StadiumBorder(
+                    side: BorderSide(
+                      color: _period == option ? Colors.transparent : Colors.grey.shade300,
+                    ),
+                  ),
+                  elevation: _period == option ? 2 : 0,
+                  pressElevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
             ],
           ),

@@ -351,6 +351,27 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     final friends = <FriendModel>[];
     FriendModel? creator;
 
+    // Helper for fuzzy lookup
+    String? findNameFuzzy(String phone) {
+      // 1. Exact match
+      if (displayNames.containsKey(phone)) return displayNames[phone];
+      
+      // 2. Normalized match (strip non-digits)
+      final norm = phone.replaceAll(RegExp(r'\D'), '');
+      if (norm.isEmpty) return null;
+
+      for (final entry in displayNames.entries) {
+        final keyNorm = entry.key.replaceAll(RegExp(r'\D'), '');
+        // Check if one contains the other (handle +91 vs 0 vs raw)
+        // Usually suffix match is safest for phones (last 10 digits)
+        if (keyNorm == norm) return entry.value;
+        if (keyNorm.length >= 10 && norm.length >= 10) {
+           if (keyNorm.endsWith(norm) || norm.endsWith(keyNorm)) return entry.value;
+        }
+      }
+      return null;
+    }
+
     for (final phone in activeGroup.memberPhones) {
       final fetched = await FriendService().getFriendByPhone(widget.userId, phone);
       if (fetched != null) {
@@ -359,12 +380,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         continue;
       }
 
-      final fallbackName = displayNames[phone]?.trim();
+      final fuzzyName = findNameFuzzy(phone);
+      final fallbackName = (fuzzyName != null && fuzzyName.trim().isNotEmpty) 
+          ? fuzzyName.trim() 
+          : phone; // Show phone instead of "Member (xxxx)"
+
       final placeholder = FriendModel(
         phone: phone,
-        name: (fallbackName != null && fallbackName.isNotEmpty)
-            ? fallbackName
-            : _maskPhoneForDisplay(phone),
+        name: fallbackName,
         avatar: "👤",
       );
       friends.add(placeholder);

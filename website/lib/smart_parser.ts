@@ -134,7 +134,9 @@ export class SmartParser {
 
         // 1. Brand Map
         for (const [key, value] of Object.entries(BRAND_MAP)) {
-            if (combined.includes(key)) {
+            // Use word boundary for short keys to avoid "VI" matching "Movies"
+            const regex = new RegExp(`\\b${key}\\b`, 'i');
+            if (regex.test(combined)) {
                 return {
                     category: value[0],
                     subcategory: value[1],
@@ -152,7 +154,7 @@ export class SmartParser {
         }
 
         // Food / Dining
-        if (/\b(restaurant|dine|meal|kitchen|caf[eé]|coffee|bistro)\b/i.test(lower)) {
+        if (/\b(restaurant|dine|meal|kitchen|caf[eé]|coffee|bistro|lunch|dinner|breakfast|snacks?|food)\b/i.test(lower)) {
             return { category: 'Food', subcategory: 'restaurants', confidence: 0.75, tags: ['food'] };
         }
 
@@ -162,8 +164,13 @@ export class SmartParser {
             return { category: 'Travel', subcategory: 'travel others', confidence: 0.7, tags: ['travel'] };
         }
 
+        // Entertainment
+        if (/\b(movies?|cinemas?|films?|theatres?|shows?|tickets?)\b/i.test(lower)) {
+            return { category: 'Entertainment', subcategory: 'entertainment others', confidence: 0.8, tags: ['entertainment'] };
+        }
+
         // Groceries
-        if (/\b(grocery|kirana|mart|supermarket|fresh)\b/i.test(lower)) {
+        if (/\b(grocery|groceries|kirana|mart|supermarket|fresh|vegetables?|fruits?)\b/i.test(lower)) {
             return { category: 'Shopping', subcategory: 'groceries and consumables', confidence: 0.75, tags: ['groceries'] };
         }
 
@@ -174,5 +181,111 @@ export class SmartParser {
 
         // Default
         return { category: 'Others', subcategory: 'others', confidence: 0.1, tags: [] };
+    }
+    // --- Natural Language Parsing (Phase 1) ---
+
+    /**
+     * Parses a simple natural language string into a structured transaction guess.
+     * Examples:
+     * - "Lunch 200" -> { category: 'Food', amount: 200, ... }
+     * - "Uber 450" -> { category: 'Travel', amount: 450, ... }
+     * - "Salary 50000" -> { type: 'income', amount: 50000, ... }
+     * - "Paid 500 for Movies" -> { category: 'Entertainment', amount: 500, ... }
+     */
+    static parseNaturalLanguage(text: string): {
+        amount: number;
+        type: 'expense' | 'income';
+        category: string;
+        subcategory: string;
+        description: string;
+        confidence: number;
+        date?: string;
+    } | null {
+        const t = text.trim();
+        if (!t) return null;
+
+        // 1. Extract Amount
+        // Added \b to ensure 'k' or 'l' aren't start of another word (like 'last')
+        const amountRegex = /(?:rs\.?|inr|₹)?\s*(\d+(?:,\d+)*(?:\.\d{1,2})?)(?:\s*(?:k|l)\b)?/i;
+        const match = t.match(amountRegex);
+
+        if (!match) return null; // No amount found, can't be a transaction
+
+        let amountStr = match[1].replace(/,/g, '');
+        let amount = parseFloat(amountStr);
+
+        // Handle 'k' (thousand) or 'l' (lakh) suffix
+        if (match[0].toLowerCase().includes('k')) amount *= 1000;
+        else if (match[0].toLowerCase().includes('l')) amount *= 100000;
+
+        // 2. Extract Description (remove amount from string)
+        let description = t.replace(match[0], '').trim();
+
+        // Cleanup common prepositions if they are at the start
+        description = description.replace(/^(for|on|at|to)\s+/i, '');
+        // Cleanup "paid" or "spent" prefixes
+        description = description.replace(/^(paid|spent|bought|received|got)\s+/i, '');
+
+        if (!description) description = "Unspecified Transaction";
+
+        // 3. Determine Type (Income vs Expense)
+        let type: 'expense' | 'income' = 'expense';
+        if (/\b(income|salary|earned|received|credit|deposit)\b/i.test(t)) {
+            type = 'income';
+        }
+
+        // 4. Guess Category (Refined logic)
+        let categoryGuess = this.categorize(description);
+
+        // Special handling for "Salary"
+        if (type === 'income' && description.toLowerCase().includes('salary')) {
+            return {
+                amount,
+                type: 'income',
+                category: 'Income',
+                subcategory: 'Salary',
+                description: 'Salary Credit',
+                confidence: 1.0
+            };
+        }
+
+        // 5. Extract Date (Relative)
+        let date = new Date();
+        const lowerT = t.toLowerCase();
+
+        if (lowerT.includes('yesterday')) {
+            date.setDate(date.getDate() - 1);
+            description = description.replace(/yesterday/i, '').trim();
+        } else if (lowerT.match(/last\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i)) {
+            const match = lowerT.match(/last\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i);
+            if (match) {
+                const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+                const targetDay = days.indexOf(match[1]);
+                const currentDay = date.getDay();
+                let diff = currentDay - targetDay;
+                if (diff <= 0) diff += 7; // Ensure looking back
+                date.setDate(date.getDate() - diff);
+                // Fix: Use Regex for case-insensitive replacement
+                const dateRegex = new RegExp(match[0], 'i');
+                description = description.replace(dateRegex, '').trim();
+            }
+        }
+
+        // Cleanup trailing prepositions after removing date
+        description = description.replace(/\s+(on|at|for)$/, '');
+
+        return {
+            amount,
+            type,
+            category: categoryGuess.category,
+            subcategory: categoryGuess.subcategory,
+            description: this._capitalize(description),
+            confidence: categoryGuess.confidence,
+            date: date.toISOString()
+        };
+    }
+
+    private static _capitalize(s: string): string {
+        return s.charAt(0).toUpperCase() + s.slice(1);
     }
 }

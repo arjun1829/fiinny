@@ -440,12 +440,12 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                 // weekly 7 mini rings (Mon -> Sun)
                 if (_weekData.isNotEmpty)
                   SizedBox(
-                    height: 98,
+                    height: 84,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
                       itemCount: _weekData.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 10),
+                      separatorBuilder: (_, __) => const SizedBox(width: 6),
                       itemBuilder: (ctx, i) {
                         final d = _weekData[i]['date'] as DateTime;
                         final c = (_weekData[i]['credit'] as num).toDouble();
@@ -460,8 +460,8 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             SizedBox(
-                              width: 56,
-                              height: 56,
+                              width: 46,
+                              height: 46,
                               child: Material(
                                 color: isSelected ? Colors.black.withOpacity(.04) : Colors.transparent,
                                 borderRadius: BorderRadius.circular(999),
@@ -472,15 +472,15 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                                     _recomputeForDay();
                                   },
                                   child: Center(
-                                    child: DashboardHeroRing(
-                                      credit: c,
-                                      debit: deb,
-                                      period: "",
-                                      showHeader: false,
-                                      ringSize: 54,
-                                      strokeWidth: 6,
-                                      tappable: false,
-                                    ),
+                                      child: DashboardHeroRing(
+                                        credit: c,
+                                        debit: deb,
+                                        period: "",
+                                        showHeader: false,
+                                        ringSize: 44,
+                                        strokeWidth: 4,
+                                        tappable: false,
+                                      ),
                                   ),
                                 ),
                               ),
@@ -489,7 +489,7 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                             Text(
                               DateFormat('dd/MM').format(d),
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: FontWeight.w700,
                                 color: isSelected ? Colors.black : Colors.grey[700],
                               ),

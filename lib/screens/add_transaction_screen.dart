@@ -795,7 +795,7 @@ class _StepCategory extends StatelessWidget {
                 onSelected: (_) => onChanged(c),
                 label: Text(c),
                 labelStyle: TextStyle(
-                  color: sel ? Theme.of(context).colorScheme.onPrimary : Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.9),
+                  color: sel ? Theme.of(context).colorScheme.onPrimary : Colors.black,
                   fontWeight: FontWeight.w700,
                 ),
                 selectedColor: Theme.of(context).colorScheme.primary,

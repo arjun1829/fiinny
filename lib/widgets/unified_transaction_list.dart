@@ -1155,6 +1155,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                       ),
                       const SizedBox(height: 8),
                     ],
+                      Text("Category: $category"),
+                    if (subcategory.isNotEmpty)
+                      Text("Subcategory: $subcategory"),
                     if (counterparty != null && counterparty.isNotEmpty)
                       Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
                     if (instrument != null && instrument.isNotEmpty)
@@ -1343,6 +1346,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                       ),
                       const SizedBox(height: 8),
                     ],
+                      Text("Category: $categoryResolved"),
+                    if (subcategory.isNotEmpty)
+                      Text("Subcategory: $subcategory"),
                     if ((counterparty ?? '').toString().trim().isNotEmpty)
                       Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
                     if ((instrument ?? '').toString().trim().isNotEmpty)
@@ -1698,8 +1704,11 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   }) {
     // Keep the signature for back-compat, but make this a read-only label.
 
+    String lookup = currentCategory;
+    if (lookup == 'Other' || lookup == 'General') lookup = 'Others';
+
     final List<String> baseOptions =
-        widget.subcategoryOptionsByCategory[currentCategory] ?? const <String>[];
+        widget.subcategoryOptionsByCategory[lookup] ?? const <String>[];
 
     final String raw = (currentSubcategory ?? '').trim();
 
@@ -1739,18 +1748,21 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final newName = await showDialog<String>(
       context: context,
       builder: (dialogContext) {
+        final theme = Theme.of(context);
+        final isDark = theme.brightness == Brightness.dark;
+        
         return AlertDialog(
-          backgroundColor: Theme.of(context).dialogBackgroundColor,
+          backgroundColor: theme.dialogBackgroundColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
           titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-          contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+          contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
           actionsPadding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
           title: Text(
             isIncome ? 'Edit sender name' : 'Edit payee name',
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: theme.textTheme.titleLarge?.color,
               fontWeight: FontWeight.w600,
               fontSize: 18,
             ),
@@ -1761,20 +1773,20 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
               TextField(
                 controller: controller,
                 autofocus: true,
-                style: const TextStyle(color: Colors.white),
-                cursorColor: Colors.white70,
+                style: TextStyle(color: theme.textTheme.bodyMedium?.color),
+                cursorColor: theme.colorScheme.primary,
                 decoration: InputDecoration(
                   labelText: isIncome ? 'Got from' : 'Paid to',
-                  labelStyle: const TextStyle(color: Colors.white70),
+                  labelStyle: TextStyle(color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7)),
                   filled: true,
-                  fillColor: Colors.white10,
+                  fillColor: isDark ? Colors.white10 : Colors.grey.shade100,
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.white24),
+                    borderSide: BorderSide(color: isDark ? Colors.white24 : Colors.grey.shade300),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.white60),
+                    borderSide: BorderSide(color: theme.colorScheme.primary),
                   ),
                 ),
               ),
@@ -1783,16 +1795,16 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(null),
-              child: const Text(
+              child: Text(
                 'Cancel',
-                style: TextStyle(color: Colors.white60),
+                style: TextStyle(color: theme.textTheme.bodyMedium?.color?.withOpacity(0.6)),
               ),
             ),
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
               style: TextButton.styleFrom(
-                foregroundColor: Colors.white,
-                backgroundColor: Colors.tealAccent.withOpacity(0.15),
+                foregroundColor: theme.colorScheme.onPrimary,
+                backgroundColor: theme.colorScheme.primary,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -2185,7 +2197,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 120),
               constraints: const BoxConstraints(minHeight: 58),
-              margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 0.5),
+              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
                 color: isSelected
@@ -2295,7 +2307,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                       ),
                                     ),
                             ),
-                            const SizedBox(width: 6),
+                            Container(
+                              width: 1,
+                              height: 14,
+                              color: Colors.grey.withOpacity(0.3),
+                              margin: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
                             Expanded(
                               child: _subcategoryDropdown(
                                 txId: id,
@@ -2449,6 +2466,19 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             ),
           ),
         );
+
+        // Add separator between items (except the first one)
+        if (i > 0) {
+          rows.add(
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: Colors.grey.withOpacity(0.15),
+              indent: 20,
+              endIndent: 20,
+            ),
+          );
+        }
 
         rows.add(row);
 

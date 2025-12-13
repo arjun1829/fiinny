@@ -3,6 +3,7 @@ import { TOOLS } from "./tools";
 // import { remember, recall } from "./memory_service";
 import { generateWebLLMResponse, isWebLLMLoaded } from "./providers/webllm_client";
 import { PendingAction } from "./action_service";
+import { SmartParser } from "@/lib/smart_parser";
 
 // Main Entry Point
 export const generateResponse = async (
@@ -141,12 +142,31 @@ const generateSimulatedResponse = async (
 
     const categoryInQuery = findCategory(query);
     const specificDate = extractDate(query);
-    // 1. Intent Recognition (The "Lobe")
-
     const lowerQuery = query.toLowerCase();
 
+    // PHASE 1 UPGRADE: Use SmartParser for Natural Language Transactions (High Priority)
+    // This handles "Lunch 200", "Spent 50 on Coffee", "Salary 50k" etc.
+    const nlpResult = SmartParser.parseNaturalLanguage(lastMessage.content);
+
+    // We only use NLP result if it's an 'ADD' intent or strictly looks like a transaction
+    // (SmartParser is aggressive, so we ensure user isn't just chatting)
+    const isAddKeywords = ["add", "new", "create", "log", "record", "plus", "spent", "paid", "bought", "purchase", "income", "earned", "received", "had", "got", "ate", "drank"].some(k => lowerQuery.includes(k));
+    const isPureTransaction = /^\s*([a-zA-Z\s]+)\s+(\d+)/.test(query) || /^\s*(\d+)\s+([a-zA-Z\s]+)/.test(query); // "Coffee 200" or "200 Coffee"
+
+    if (nlpResult && (isAddKeywords || isPureTransaction) && !lowerQuery.includes("show") && !lowerQuery.includes("find") && !lowerQuery.includes("search")) {
+        console.log("[Fiinny] NLP Triggered:", nlpResult);
+        toolToCall = "add_transaction";
+        toolArgs = {
+            type: nlpResult.type,
+            amount: nlpResult.amount,
+            category: nlpResult.category,
+            description: nlpResult.description,
+            date: nlpResult.date || specificDate || new Date().toISOString().split('T')[0],
+            splitWith: undefined // TODO: Add split support to SmartParser in future
+        };
+    }
     // INTENT: Check Duplicate (Prioritzed over create)
-    if (lowerQuery.includes("check if") || lowerQuery.includes("already added") || lowerQuery.includes("duplicate")) {
+    else if (lowerQuery.includes("check if") || lowerQuery.includes("already added") || lowerQuery.includes("duplicate")) {
         // This is a complex query. We should search first.
         toolToCall = "get_recent_transactions";
         const amountMatch = query.match(/(\d+)/);
@@ -154,37 +174,13 @@ const generateSimulatedResponse = async (
             limit: 5,
             type: 'expense' // Default to expense search
         };
-        // We'll let the response generation handle the "I found these similar items" part
-        // But for now, we just map it to get_recent_transactions
     }
-    // INTENT: Add Transaction (Prioritized)
-    // Keywords: add, new, create, log, record, plus, spent, paid, bought, purchase, income, earned, received, had, got, ate, drank
-    const addKeywords = ["add", "new", "create", "log", "record", "plus", "spent", "paid", "bought", "purchase", "income", "earned", "received", "had", "got", "ate", "drank"];
-    const isAddIntent = addKeywords.some(k => lowerQuery.includes(k));
-
-    // Currency Check: (e.g. "10 rs", "$5", "500") if combined with add keywords or just looks like a purchase
-    const hasCurrency = /(\d+)\s*(rs|inr|\$|rupees)/i.test(query) || /(rs|inr|\$)\s*(\d+)/i.test(query) || /(\d+)\s*(k)\b/i.test(query);
-
-    if ((isAddIntent || hasCurrency) && !lowerQuery.includes("show") && !lowerQuery.includes("find") && !lowerQuery.includes("search") && !lowerQuery.includes("what") && !lowerQuery.includes("check")) {
-        toolToCall = "add_transaction";
-
-        const type = (lowerQuery.includes("income") || lowerQuery.includes("earned") || lowerQuery.includes("received")) ? "income" : "expense";
-
-        const amountMatch = query.match(/(\d+)/);
-        const amount = amountMatch ? parseInt(amountMatch[0]) : 0;
-
-        // Extract Split
-        const splitMatch = query.match(/split with\s+([a-zA-Z]+)/i);
-        const splitWith = splitMatch ? splitMatch[1] : undefined;
-
-        toolArgs = {
-            type,
-            amount,
-            category: categoryInQuery || "Uncategorized",
-            description: query,
-            date: specificDate || new Date().toISOString().split('T')[0],
-            splitWith
-        };
+    // FALLBACK INTENT: Manual Regex (Legacy - keep for edge cases SmartParser misses)
+    else if ((isAddKeywords) && !lowerQuery.includes("show")) {
+        // ... Keep existing logic or rely on SmartParser?
+        // SmartParser should cover most, but let's keep a simplified fallback if SmartParser returned null
+        // Actually, if SmartParser returned null, it means no Amount found.
+        // If no amount found, we can't add anyway.
     }
     // PREMIUM FEATURE: Deep Category Analysis / Highest Expense
     else if (categoryInQuery || query.includes("category") || query.includes("breakdown") || query.includes("highest") || query.includes("most")) {
@@ -206,6 +202,37 @@ const generateSimulatedResponse = async (
     else if (query.includes("spend") || query.includes("expense") || query.includes("cost") || query.includes("income") || query.includes("earn") || query.includes("save") || query.includes("doing") || query.includes("health") || query.includes("loan")) {
         toolToCall = "get_spending_summary";
         toolArgs = { period: extractPeriod(query) };
+    }
+    // GOAL TRACKING (Simulated)
+    else if (query.includes("goal") || query.includes("target")) {
+        // Mock a tool call or handle directly. Ideally we'd have a 'get_goals' tool.
+        // For now, let's just pretend we called a tool and return a comprehensive response
+        // accessing the profile data directly in the response generation phase.
+        // But to pass data to response generation, we might need to 'mock' a tool result?
+        // Actually, we can just return the message directly here if we want, OR use a dummy tool.
+        // Let's use 'update_financial_profile' as a proxy if we want to *set* goals, 
+        // but for *reading* goals, let's just fall through to a custom response block?
+        // Easier: Just return a direct response object here for the Simulated Brain 
+        // without pretending to call a tool, since we have contextData.
+
+        await new Promise(resolve => setTimeout(resolve, 600));
+        const goals = contextData.profile?.financialGoals || [];
+
+        if (goals.length === 0) {
+            return {
+                id: Date.now().toString(),
+                role: "assistant",
+                content: "You haven't set any financial goals yet! 🎯\n\nTry saying: \"My goal is to buy a car\" or \"I want to save for a trip\".",
+                timestamp: new Date()
+            };
+        } else {
+            return {
+                id: Date.now().toString(),
+                role: "assistant",
+                content: `Here are your current goals: 🎯\n\n${goals.map((g: string) => `- **${g}**`).join("\n")}\n\nTo check if you're on track, I need to know your target amount and date. (Goal Tracking V2 coming soon!)`,
+                timestamp: new Date()
+            };
+        }
     }
     // BASIC FEATURE: Recent Transactions OR Specific Date Transactions
     else if (query.includes("recent") || query.includes("show") || query.includes("list") || query.includes("what") || specificDate) {

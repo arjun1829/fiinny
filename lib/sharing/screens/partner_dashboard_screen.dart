@@ -7,6 +7,9 @@ import '../../core/ads/ads_shell.dart';
 import '../models/partner_model.dart';
 import '../widgets/weekly_partner_rings_widget.dart';
 import '../widgets/partner_chat_tab.dart';
+import '../widgets/unified_tx_tile.dart';
+import '../widgets/dashboard_widgets.dart';
+import 'partner_chat_full_screen.dart';
 
 class PartnerDashboardScreen extends StatefulWidget {
   final PartnerModel partner;
@@ -30,6 +33,13 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late Map<String, bool> permissions;
+
+  final GlobalKey<PartnerChatTabState> _chatKey = GlobalKey();
+  
+  // Multi-select & Discuss
+  bool _isSelectionMode = false;
+  final Set<String> _selectedTxIds = {}; // using date timestamp string as ID for now
+
 
   String? partnerAvatar;
   String partnerName = "";
@@ -219,12 +229,61 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
     });
   }
 
+
+
   void _onRingTap(int ringIndex) async {
     if (ringIndex < 0 || ringIndex >= last8Days.length) return;
+    // Clear selection on day change
+    if (_isSelectionMode) {
+      setState(() {
+        _isSelectionMode = false;
+        _selectedTxIds.clear();
+      });
+    }
     await _loadDayStats(last8Days[ringIndex]);
   }
 
-  // ---------- Tx details bottom sheet ----------
+  // ---------- Selection & Discuss ----------
+  void _toggleSelection(Map<String, dynamic> tx) {
+    // Unique key: ideally use doc ID but here using date string as proxy
+    final id = tx['date'].toString();
+    setState(() {
+      if (_selectedTxIds.contains(id)) {
+        _selectedTxIds.remove(id);
+        if (_selectedTxIds.isEmpty) _isSelectionMode = false;
+      } else {
+        _selectedTxIds.add(id);
+        _isSelectionMode = true;
+      }
+    });
+  }
+
+  void _onLongPressTx(Map<String, dynamic> tx) {
+    if (!_isSelectionMode) {
+      setState(() => _isSelectionMode = true);
+    }
+    _toggleSelection(tx);
+  }
+
+  void _onDiscussSelected() {
+    if (_selectedTxIds.isEmpty) return;
+    
+    // gather selected tx objects
+    final selected = selTxList.where((tx) => _selectedTxIds.contains(tx['date'].toString())).toList();
+    
+    // Pass to chat
+    _chatKey.currentState?.attachTransactions(selected);
+    
+    // Switch tab
+    _tabController.animateTo(1);
+    
+    // Clear selection
+    setState(() {
+      _isSelectionMode = false;
+      _selectedTxIds.clear();
+    });
+  }
+
   void _showTxDetails(Map<String, dynamic> tx) {
     final isIncome = (tx['type']?.toString() ?? '') == 'income';
     final amount = (tx['amount'] as num? ?? 0).toDouble();
@@ -260,7 +319,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
             const SizedBox(height: 12),
             Row(
               children: [
-                _TxIconBubble(isIncome: isIncome),
+                TxIconBubble(isIncome: isIncome),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -324,6 +383,26 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                 ),
               ),
             ],
+            const SizedBox(height: 20),
+            
+            // Discuss Button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context); // Close sheet
+                  _tabController.animateTo(1); // Switch to Chat
+                  // Attach this tx
+                  _chatKey.currentState?.attachTransactions([tx]);
+                },
+                icon: const Icon(Icons.chat_bubble_outline, size: 20),
+                label: const Text("Discuss this transaction"),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -336,7 +415,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
     Navigator.of(context).push(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => _PartnerChatFullScreen(
+        builder: (_) => PartnerChatFullScreen(
           partnerName: partnerName.isNotEmpty ? partnerName : "Partner",
           partnerUserId: widget.partner.partnerId,
           currentUserId: widget.currentUserId,
@@ -427,9 +506,9 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _StatMini(label: "Credit", value: selCredit, color: Colors.green[700]),
-                      const SizedBox(width: 24),
-                      _StatMini(label: "Debit", value: selDebit, color: Colors.red[700]),
+                      StatMini(label: "CREDIT", value: selCredit, color: Colors.green),
+                      const SizedBox(height: 6),
+                      StatMini(label: "DEBIT", value: selDebit, color: Colors.deepOrange),
                     ],
                   ),
 
@@ -520,48 +599,96 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
               controller: _tabController,
               children: [
                 // ---------------- Transactions (Unified, tappable) ----------------
+
+                // ---------------- Transactions (Unified, tappable) ----------------
                 if (!_canReadTx)
                   const Center(child: Text("You don't have permission to view transactions."))
                 else if (selTxList.isEmpty)
                   const Center(child: Text("No transactions for this day"))
                 else
-                  ListView.separated(
-                    padding: EdgeInsets.fromLTRB(4, 10, 4, safeBottom + 16),
-                    itemCount: selTxList.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (ctx, i) {
-                      final tx = selTxList[i];
-                      final isIncome = (tx['type']?.toString() ?? '') == 'income';
-                      final amount = (tx['amount'] as num? ?? 0).toDouble();
-                      final category = (tx['category'] as String?)?.trim() ?? 'General';
-                      final note = (tx['note'] as String?)?.trim() ?? '';
-                      final ts = tx['date'] as Timestamp?;
-                      final dt = ts?.toDate();
-                      final time = dt == null
-                          ? ''
-                          : "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+                  Stack(
+                    children: [
+                      ListView.separated(
+                        padding: EdgeInsets.fromLTRB(4, 10, 4, safeBottom + 80), // extra padding for FAB/Discuss bar
+                        itemCount: selTxList.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (ctx, i) {
+                          final tx = selTxList[i];
+                          final isIncome = (tx['type']?.toString() ?? '') == 'income';
+                          final amount = (tx['amount'] as num? ?? 0).toDouble();
+                          final category = (tx['category'] as String?)?.trim() ?? 'General';
+                          final note = (tx['note'] as String?)?.trim() ?? '';
+                          final ts = tx['date'] as Timestamp?;
+                          final dt = ts?.toDate();
+                          final time = dt == null
+                              ? ''
+                              : "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+                          
+                          final id = tx['date'].toString();
+                          final isSelected = _selectedTxIds.contains(id);
 
-                      return _UnifiedTxTile(
-                        isIncome: isIncome,
-                        amount: amount,
-                        category: category,
-                        note: note,
-                        time: time,
-                        onTap: () => _showTxDetails(tx),
-                      );
-                    },
+                          return UnifiedTxTile(
+                            isIncome: isIncome,
+                            amount: amount,
+                            category: category,
+                            note: note,
+                            time: time,
+                            selectionMode: _isSelectionMode,
+                            isSelected: isSelected,
+                            onTap: () {
+                              if (_isSelectionMode) {
+                                _toggleSelection(tx);
+                              } else {
+                                _showTxDetails(tx);
+                              }
+                            },
+                            onLongPress: () => _onLongPressTx(tx),
+                          );
+                        },
+                      ),
+                      // Discuss Selection Floating Bar
+                      if (_isSelectionMode)
+                        Positioned(
+                          bottom: safeBottom + 16,
+                          left: 20,
+                          right: 20,
+                          child: Material(
+                            elevation: 8,
+                            borderRadius: BorderRadius.circular(50),
+                            color: Colors.teal[800],
+                            child: InkWell(
+                              onTap: _onDiscussSelected,
+                              borderRadius: BorderRadius.circular(50),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.chat_bubble_outline, color: Colors.white),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      "Discuss (${_selectedTxIds.length})",
+                                      style: const TextStyle(
+                                          color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
+
 
                 // ---------------- Chat (compact) ----------------
                 SafeArea(
                   top: false,
                   bottom: false,
-                  child: Padding(
-                    padding: EdgeInsets.only(bottom: safeBottom),
-                    child: PartnerChatTab(
-                      partnerUserId: widget.partner.partnerId,
-                      currentUserId: widget.currentUserId,
-                    ),
+                  child: PartnerChatTab(
+                    key: _chatKey,
+                    partnerUserId: widget.partner.partnerId,
+                    currentUserId: widget.currentUserId,
                   ),
                 ),
               ],
@@ -605,349 +732,8 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
   }
 }
 
-class PartnerRingSummary extends StatelessWidget {
-  final double credit;
-  final double debit;
-  final double ringSize;
-  final double? totalAmount;
 
-  const PartnerRingSummary({
-    required this.credit,
-    required this.debit,
-    this.ringSize = 110,
-    this.totalAmount,
-    super.key,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final total = totalAmount ?? credit + debit;
-
-    final incomePercent = (total > 0) ? (credit / total) : 0.0;
-    final expensePercent = (total > 0) ? (debit / total) : 0.0;
-
-    return SizedBox(
-      width: ringSize,
-      height: ringSize,
-      child: CustomPaint(
-        painter: _SplitRingPainter(
-          incomePercent: incomePercent,
-          expensePercent: expensePercent,
-        ),
-        child: Center(
-          child: Text(
-            '₹${total.toStringAsFixed(0)}',
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 23,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SplitRingPainter extends CustomPainter {
-  final double incomePercent;
-  final double expensePercent;
-
-  _SplitRingPainter({
-    required this.incomePercent,
-    required this.expensePercent,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const strokeWidth = 15.0;
-    final radius = (size.width - strokeWidth) / 2;
-    final center = Offset(size.width / 2, size.height / 2);
-
-    final bgPaint = Paint()
-      ..color = Colors.grey[300]!
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-
-    // background ring
-    canvas.drawCircle(center, radius, bgPaint);
-
-    // income arc (green)
-    if (incomePercent > 0) {
-      final paint = Paint()
-        ..color = Colors.green
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth
-        ..strokeCap = StrokeCap.round;
-      final sweepAngle = 2 * 3.14159265359 * incomePercent;
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius),
-        -3.14159265359 / 2,
-        sweepAngle,
-        false,
-        paint,
-      );
-    }
-
-    // expense arc (red)
-    if (expensePercent > 0) {
-      final paint = Paint()
-        ..color = Colors.red
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth
-        ..strokeCap = StrokeCap.round;
-      final sweepAngle = 2 * 3.14159265359 * expensePercent;
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius),
-        -3.14159265359 / 2 + 2 * 3.14159265359 * incomePercent,
-        sweepAngle,
-        false,
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
-
-class _StatMini extends StatelessWidget {
-  final String label;
-  final double value;
-  final Color? color;
-  const _StatMini({required this.label, required this.value, this.color});
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: TextStyle(fontSize: 11, color: color ?? Colors.teal),
-        ),
-        Text(
-          "₹${value.toStringAsFixed(0)}",
-          style: TextStyle(
-              fontWeight: FontWeight.bold, fontSize: 14, color: color ?? Colors.teal[900]),
-        ),
-      ],
-    );
-  }
-}
-
-// ---------------- Unified Transaction Tile (tappable & glossy) ----------------
-
-class _UnifiedTxTile extends StatelessWidget {
-  final bool isIncome;
-  final double amount;
-  final String category;
-  final String note;
-  final String time;
-  final VoidCallback? onTap;
-
-  const _UnifiedTxTile({
-    required this.isIncome,
-    required this.amount,
-    required this.category,
-    required this.note,
-    required this.time,
-    this.onTap,
-  });
-
-  Color get _side => isIncome ? const Color(0xFF1DB954) : const Color(0xFFE53935);
-  Color get _iconBg => isIncome ? const Color(0x221DB954) : const Color(0x22E53935);
-  IconData get _icon => isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
-
-  String _money(double v) => "₹${v.toStringAsFixed(0)}";
-
-  @override
-  Widget build(BuildContext context) {
-    final textPrimary = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87;
-    final textMuted = Colors.black.withOpacity(.55);
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Colors.white, Colors.white.withOpacity(.96)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.black.withOpacity(.05)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(.05),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              // Colored side bar
-              Container(
-                width: 6,
-                height: 68,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [_side.withOpacity(.95), _side.withOpacity(.7)],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(18),
-                    bottomLeft: Radius.circular(18),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-
-              // Icon bubble
-              Container(
-                width: 44,
-                height: 44,
-                margin: const EdgeInsets.only(left: 2),
-                decoration: BoxDecoration(
-                  color: _iconBg,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(_icon, color: _side),
-              ),
-              const SizedBox(width: 10),
-
-              // Content
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Amount + time
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              _money(amount),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 17.5,
-                                fontWeight: FontWeight.w900,
-                                color: isIncome ? _side : const Color(0xFFB71C1C),
-                                letterSpacing: .2,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          if (time.isNotEmpty)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.withOpacity(.14),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(time, style: TextStyle(fontSize: 11.5, color: textMuted)),
-                            ),
-                          const SizedBox(width: 10),
-                          Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey[500]),
-                          const SizedBox(width: 6),
-                        ],
-                      ),
-                      const SizedBox(height: 5),
-
-                      // Category • Note
-                      Text(
-                        note.isNotEmpty ? "$category  •  $note" : category,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: textPrimary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TxIconBubble extends StatelessWidget {
-  final bool isIncome;
-  const _TxIconBubble({required this.isIncome});
-  @override
-  Widget build(BuildContext context) {
-    final color = isIncome ? const Color(0xFF1DB954) : const Color(0xFFE53935);
-    final bg = isIncome ? const Color(0x221DB954) : const Color(0x22E53935);
-    final icon = isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-      child: Icon(icon, color: color),
-    );
-  }
-}
 
 // ---------------- Fullscreen chat route ----------------
 
-class _PartnerChatFullScreen extends StatelessWidget {
-  final String partnerName;
-  final String partnerUserId;
-  final String currentUserId;
-  final String? partnerAvatar;
 
-  const _PartnerChatFullScreen({
-    Key? key,
-    required this.partnerName,
-    required this.partnerUserId,
-    required this.currentUserId,
-    this.partnerAvatar,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    final avatar = (partnerAvatar != null && partnerAvatar!.isNotEmpty)
-        ? partnerAvatar!
-        : "assets/images/profile_default.png";
-    return Scaffold(
-      appBar: AppBar(
-        elevation: 0,
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundImage: avatar.startsWith('http')
-                  ? NetworkImage(avatar)
-                  : AssetImage(avatar) as ImageProvider,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                partnerName,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
-      body: SafeArea(
-        child: PartnerChatTab(
-          partnerUserId: partnerUserId,
-          currentUserId: currentUserId,
-        ),
-      ),
-    );
-  }
-}

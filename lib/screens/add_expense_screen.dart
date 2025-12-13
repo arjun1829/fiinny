@@ -126,6 +126,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       settledFriendIds: [],
       groupId: widget.groupId,
       label: label,
+      createdAt: DateTime.now(),
+      createdBy: 'user',
+      updatedAt: DateTime.now(),
+      updatedBy: 'user',
     );
 
     try {

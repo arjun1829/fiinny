@@ -7,8 +7,13 @@ import TransactionCard from "../widgets/TransactionCard";
 import { motion, AnimatePresence } from "framer-motion";
 import AddExpenseModal from "../modals/AddExpenseModal";
 import ExpenseDetailsModal from "../modals/ExpenseDetailsModal";
+import EditExpenseModal from "../modals/EditExpenseModal";
+import SettleUpModal from "../modals/SettleUpModal";
 import ChartsTab from "../tabs/ChartsTab";
+import ChatTab from "../tabs/ChatTab";
+import RecurringExpensesTab from "../tabs/RecurringExpensesTab";
 import { ExpenseService } from "@/lib/services/ExpenseService";
+import { computePairwiseBreakdown, getPairwiseExpenses } from "@/lib/logic/pairwiseMath";
 
 interface FriendDetailsScreenProps {
     friend: FriendModel;
@@ -27,16 +32,39 @@ export default function FriendDetailsScreen({
     onSettleUp,
     isLoading = false
 }: FriendDetailsScreenProps) {
-    const [activeTab, setActiveTab] = useState<"transactions" | "charts" | "settle">("transactions");
+    const [activeTab, setActiveTab] = useState<"transactions" | "charts" | "settle" | "chat" | "recurring">("transactions");
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [selectedExpense, setSelectedExpense] = useState<ExpenseItem | null>(null);
 
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [expenseToEdit, setExpenseToEdit] = useState<ExpenseItem | null>(null);
+
+    const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
+
+    // Filter pairwise expenses (robustly)
+    const pairwiseExpenses = useMemo(() => {
+        return getPairwiseExpenses(currentUserId, friend.phone, expenses);
+    }, [currentUserId, friend.phone, expenses]);
+
+    // Calculate Balance using robust logic
+    const breakdown = useMemo(() => {
+        return computePairwiseBreakdown(currentUserId, friend.phone, pairwiseExpenses);
+    }, [currentUserId, friend.phone, pairwiseExpenses]);
+
+    const { net, owe, owed } = breakdown.totals;
+
+    // Chat Channel ID
+    const channelId = useMemo(() => {
+        // Sort IDs to ensure same thread regardless of who is viewing
+        const pId = (friend.phone || '').trim();
+        const cId = (currentUserId || '').trim();
+        return [cId, pId].sort().join('_');
+    }, [friend.phone, currentUserId]);
+
     const handleAddExpense = async (expense: Partial<ExpenseItem>) => {
-        // Add ID and other required fields
         const newExpense = {
             ...expense,
-            id: "", // Will be generated
-            // Ensure other required fields from ExpenseItem are present if missing
+            id: "", // Will be generated or handled by Service
         } as ExpenseItem;
 
         await ExpenseService.addExpense(currentUserId, newExpense);
@@ -50,34 +78,21 @@ export default function FriendDetailsScreen({
         }
     };
 
-    // Calculate Balance
-    const balance = useMemo(() => {
-        let total = 0;
-        expenses.forEach(e => {
-            // Simplified split logic: assuming equal split for now or using customSplits if available
-            // In a real app, we'd use the robust computeSplits logic from the Flutter app
+    const handleEditExpense = async (expense: ExpenseItem) => {
+        await ExpenseService.updateExpense(currentUserId, expense);
+        onAddExpense(); // Refresh
+        setIsEditModalOpen(false);
+    };
 
-            const amount = e.amount;
-            const payerId = e.payerId;
-
-            // If I paid
-            if (payerId === currentUserId) {
-                // Friend owes me their share
-                // Assuming 50/50 split if no custom splits
-                const myShare = e.customSplits?.[currentUserId] ?? (amount / 2);
-                const friendShare = amount - myShare;
-                total += friendShare;
-            }
-            // If friend paid
-            else if (payerId === friend.phone) {
-                // I owe friend my share
-                const friendShare = e.customSplits?.[friend.phone] ?? (amount / 2);
-                const myShare = amount - friendShare;
-                total -= myShare;
-            }
-        });
-        return total;
-    }, [expenses, currentUserId, friend.phone]);
+    const handleSettleUp = async (payment: Partial<ExpenseItem>) => {
+        const newPayment = {
+            ...payment,
+            id: "",
+        } as ExpenseItem;
+        await ExpenseService.addExpense(currentUserId, newPayment);
+        onAddExpense();
+        setIsSettleModalOpen(false);
+    };
 
     return (
         <div className="space-y-8">
@@ -101,18 +116,23 @@ export default function FriendDetailsScreen({
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200 relative overflow-hidden">
                 <div className="relative z-10">
                     <p className="text-slate-500 font-medium mb-1">
-                        {balance > 0 ? "Owes you" : balance < 0 ? "You owe" : "Settled up"}
+                        {net > 0 ? "Owes you" : net < 0 ? "You owe" : "Settled up"}
                     </p>
-                    <h2 className={`text-4xl font-bold ${balance > 0 ? "text-green-600" : balance < 0 ? "text-red-600" : "text-slate-900"}`}>
-                        ₹{Math.abs(balance).toLocaleString('en-IN')}
+                    <h2 className={`text-4xl font-bold ${net > 0 ? "text-green-600" : net < 0 ? "text-red-600" : "text-slate-900"}`}>
+                        ₹{Math.abs(net).toLocaleString('en-IN')}
                     </h2>
-                    {balance !== 0 && (
-                        <p className="text-slate-400 text-sm mt-2">
-                            {balance > 0 ? "You paid more in shared expenses." : "They paid more in shared expenses."}
-                        </p>
+                    {(net !== 0 || owe > 0 || owed > 0) && (
+                        <div className="text-slate-400 text-sm mt-2">
+                            {/* Show breakdown if both owe each other */}
+                            {owe > 0 && owed > 0 ? (
+                                <span>You owe ₹{owe} • They owe ₹{owed}</span>
+                            ) : (
+                                net > 0 ? "You paid more in shared expenses." : net < 0 ? "They paid more in shared expenses." : "All settled."
+                            )}
+                        </div>
                     )}
                 </div>
-                <div className={`absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 opacity-20 ${balance > 0 ? "bg-green-500" : balance < 0 ? "bg-red-500" : "bg-slate-200"}`} />
+                <div className={`absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 opacity-20 ${net > 0 ? "bg-green-500" : net < 0 ? "bg-red-500" : "bg-slate-200"}`} />
 
                 <div className="relative z-10 mt-6 flex gap-3">
                     <PrimaryButton
@@ -123,7 +143,7 @@ export default function FriendDetailsScreen({
                         Add Expense
                     </PrimaryButton>
                     <button
-                        onClick={onSettleUp}
+                        onClick={() => setIsSettleModalOpen(true)}
                         className="px-6 py-2 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors flex items-center gap-2"
                     >
                         <CheckCircle2 className="w-5 h-5" />
@@ -147,6 +167,18 @@ export default function FriendDetailsScreen({
                     Charts
                 </button>
                 <button
+                    onClick={() => setActiveTab("chat")}
+                    className={`px-6 py-3 font-medium text-sm transition-all border-b-2 ${activeTab === "chat" ? "border-teal-600 text-teal-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+                >
+                    Chat
+                </button>
+                <button
+                    onClick={() => setActiveTab("recurring")}
+                    className={`px-6 py-3 font-medium text-sm transition-all border-b-2 ${activeTab === "recurring" ? "border-teal-600 text-teal-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+                >
+                    Recurring
+                </button>
+                <button
                     onClick={() => setActiveTab("settle")}
                     className={`px-6 py-3 font-medium text-sm transition-all border-b-2 ${activeTab === "settle" ? "border-teal-600 text-teal-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}
                 >
@@ -161,10 +193,18 @@ export default function FriendDetailsScreen({
                         <p className="text-slate-500">Loading transactions...</p>
                     </div>
                 ) : activeTab === "charts" ? (
-                    <ChartsTab expenses={expenses} currentUserId={currentUserId} friends={[friend]} />
+                    <ChartsTab expenses={pairwiseExpenses} currentUserId={currentUserId} friends={[friend]} />
+                ) : activeTab === "chat" ? (
+                    <ChatTab channelId={channelId} currentUserId={currentUserId} />
+                ) : activeTab === "recurring" ? (
+                    <RecurringExpensesTab
+                        currentUserId={currentUserId}
+                        filterType="friend"
+                        filterId={friend.phone}
+                    />
                 ) : activeTab === "transactions" ? (
                     <div className="divide-y divide-slate-100">
-                        {expenses.length === 0 ? (
+                        {pairwiseExpenses.length === 0 ? (
                             <div className="p-12 text-center">
                                 <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <Receipt className="w-8 h-8 text-slate-400" />
@@ -176,7 +216,7 @@ export default function FriendDetailsScreen({
                             </div>
                         ) : (
                             <div className="divide-y divide-slate-100">
-                                {expenses.map((expense) => (
+                                {pairwiseExpenses.map((expense) => (
                                     <TransactionCard
                                         key={expense.id}
                                         tx={expense}
@@ -191,16 +231,53 @@ export default function FriendDetailsScreen({
                         )}
                     </div>
                 ) : (
-                    <div className="p-12 text-center">
-                        <p className="text-slate-500">Settle up history coming soon!</p>
+                    <div className="divide-y divide-slate-100">
+                        {pairwiseExpenses.filter(e => e.category?.toLowerCase() === 'payment' || e.isSettlement).length === 0 ? (
+                            <div className="p-12 text-center">
+                                <p className="text-slate-500">No settlement history yet.</p>
+                            </div>
+                        ) : (
+                            pairwiseExpenses
+                                .filter(e => e.category?.toLowerCase() === 'payment' || e.isSettlement)
+                                .map((expense) => (
+                                    <TransactionCard
+                                        key={expense.id}
+                                        tx={expense}
+                                        isSelected={false}
+                                        onToggleSelect={() => { }}
+                                        onDelete={(id) => handleDeleteExpense(id)}
+                                        onEdit={() => setSelectedExpense(expense)}
+                                        onViewDetails={() => setSelectedExpense(expense)}
+                                    />
+                                ))
+                        )}
                     </div>
                 )}
             </div>
+
+            <SettleUpModal
+                isOpen={isSettleModalOpen}
+                onClose={() => setIsSettleModalOpen(false)}
+                onSubmit={handleSettleUp}
+                currentUser={{ uid: currentUserId, phoneNumber: currentUserId }}
+                friend={friend}
+                suggestedAmount={Math.abs(breakdown.totals.net)} // The net amount
+                userOwesFriend={breakdown.totals.net < 0} // net < 0 means "You owe"
+            />
 
             <AddExpenseModal
                 isOpen={isAddModalOpen}
                 onClose={() => setIsAddModalOpen(false)}
                 onSubmit={handleAddExpense}
+                friends={[friend]}
+                currentUser={{ uid: currentUserId, phoneNumber: currentUserId }}
+            />
+
+            <EditExpenseModal
+                isOpen={isEditModalOpen}
+                onClose={() => setIsEditModalOpen(false)}
+                onSubmit={handleEditExpense}
+                expense={expenseToEdit}
                 friends={[friend]}
                 currentUser={{ uid: currentUserId, phoneNumber: currentUserId }}
             />
@@ -213,12 +290,11 @@ export default function FriendDetailsScreen({
                 friends={[friend]}
                 onDelete={handleDeleteExpense}
                 onEdit={(expense) => {
-                    // TODO: Implement Edit Modal
-                    console.log("Edit expense:", expense);
+                    setExpenseToEdit(expense);
                     setSelectedExpense(null);
-                    // setIsEditModalOpen(true);
+                    setIsEditModalOpen(true);
                 }}
             />
-        </div >
+        </div>
     );
 }

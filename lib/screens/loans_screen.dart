@@ -7,8 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../core/ads/ads_shell.dart';
-import '../models/loan_model.dart';
 import '../services/loan_service.dart';
+import '../widgets/critical_alert_banner.dart';
+import '../models/loan_model.dart';
 
 /// Finance UI palette (shared with Add Transaction)
 const Color kBg = Color(0xFFF8FAF9);
@@ -435,6 +436,16 @@ class _LoansScreenState extends State<LoansScreen> {
                           quoteText: _quotes[_quoteIndex],
                           quoteIndex: _quoteIndex,
                         ),
+                      ),
+                      
+                      SliverToBoxAdapter(
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: CriticalAlertBanner(userId: widget.userId),
+                          ),
+                        )
                       ),
 
 

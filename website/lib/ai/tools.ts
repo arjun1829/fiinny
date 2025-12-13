@@ -500,5 +500,27 @@ export const TOOLS: Record<string, Tool> = {
                 return { error: "Failed to fetch price." };
             }
         }
+    },
+    smart_categorizer: {
+        name: "smart_categorizer",
+        description: "Intelligently categorize a transaction description when no obvious rule exists. Use your world knowledge.",
+        parameters: {
+            type: "object",
+            properties: {
+                description: { type: "string", description: "The transaction description (e.g. 'The Flying Elephant', 'Steam Games')" },
+                amount: { type: "number", description: "The amount (helps with context, e.g. small amounts might be Food)" }
+            },
+            required: ["description"]
+        },
+        execute: async ({ description, amount }, context) => {
+            // This is a 'Reflection Tool'. The LLM calls this to indicate it wants to categorize something.
+            // But since the LLM *is* the intelligence, we just return a confirmation so the LLM can output the final answer.
+            // Actually, we can return suggestions if we had a database, but here we just echo.
+            // The value of this tool is forcing the LLM to 'think' about the category explicitly.
+            return {
+                suggested_category: "Unknown",
+                message: "Use your internal world knowledge to assign the best category from: Food, Travel, Shopping, Entertainment, Bills, Health, Education, Investments."
+            };
+        }
     }
 };

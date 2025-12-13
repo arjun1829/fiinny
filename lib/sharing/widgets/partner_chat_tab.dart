@@ -21,13 +21,16 @@ class PartnerChatTab extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<PartnerChatTab> createState() => _PartnerChatTabState();
+  State<PartnerChatTab> createState() => PartnerChatTabState();
 }
 
-class _PartnerChatTabState extends State<PartnerChatTab> {
+class PartnerChatTabState extends State<PartnerChatTab> {
   final _msgController = TextEditingController();
   final _scrollController = ScrollController();
   final _imagePicker = ImagePicker();
+
+  List<Map<String, dynamic>> _attachedTxs = [];
+
 
   bool _pickingEmoji = false;
   bool _pickingSticker = false;
@@ -102,6 +105,25 @@ class _PartnerChatTabState extends State<PartnerChatTab> {
     _ensureThreadDoc();
   }
 
+  void attachTransactions(List<Map<String, dynamic>> txs) {
+    setState(() {
+      for (final tx in txs) {
+        // avoid duplicates
+        final id = tx['date'].toString(); // ideally use a real ID if available
+        if (!_attachedTxs.any((e) => e['date'].toString() == id)) {
+          _attachedTxs.add(tx);
+        }
+      }
+    });
+  }
+
+  void _removeAttachment(int index) {
+    setState(() {
+      _attachedTxs.removeAt(index);
+    });
+  }
+
+
   Future<void> _ensureThreadDoc() async {
     final doc = await _threadRef.get();
     if (!doc.exists) {
@@ -137,7 +159,7 @@ class _PartnerChatTabState extends State<PartnerChatTab> {
       'to': widget.partnerUserId,
       'message': msg,
       'timestamp': now,
-      'type': type, // 'text' | 'sticker' | 'image' | 'file'
+      'type': type, // 'text' | 'sticker' | 'image' | 'file' | 'discussion'
       'edited': false,
       ...extra,
     });
@@ -145,7 +167,10 @@ class _PartnerChatTabState extends State<PartnerChatTab> {
     final lastPreview = switch (type) {
       'image' => '[photo]',
       'file' => extra['fileName'] ?? '[file]',
+      'image' => '[photo]',
+      'file' => extra['fileName'] ?? '[file]',
       'sticker' => msg,
+      'discussion' => 'Discussing transactions',
       _ => msg,
     };
 
@@ -156,7 +181,12 @@ class _PartnerChatTabState extends State<PartnerChatTab> {
       'lastType': type,
     }, SetOptions(merge: true));
 
-    if (type == 'text') _msgController.clear();
+    if (type == 'text' || type == 'discussion') {
+      _msgController.clear();
+      setState(() {
+        _attachedTxs.clear();
+      });
+    }
 
     await Future.delayed(const Duration(milliseconds: 50));
     if (_scrollController.hasClients) {
@@ -749,6 +779,24 @@ class _PartnerChatTabState extends State<PartnerChatTab> {
                         ],
                       ),
                     );
+                  } else if (type == 'discussion') {
+                    final txs = List.from(data['transactions'] ?? []);
+                    content = Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (txs.isNotEmpty)
+                          ...txs.map((tx) => _buildEmbeddedTxCard(tx)).toList(),
+                        if (msg.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            msg,
+                            style: TextStyle(
+                              color: isMe ? Colors.teal[900] : Colors.grey[900],
+                            ),
+                          ),
+                        ]
+                      ],
+                    );
                   } else {
                     content = Text(
                       msg,
@@ -818,86 +866,221 @@ class _PartnerChatTabState extends State<PartnerChatTab> {
         const Divider(height: 1),
 
         // Composer (compact + overflow-safe)
+        // Input area
+        _buildContextArea(),
         SafeArea(
           top: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Colors.grey[200]!)),
+            ),
+            child: Column(
               children: [
-                _miniIcon(
-                  icon: Icons.attach_file_rounded,
-                  tooltip: 'Attach',
-                  onPressed: _showAttachmentSheet,
-                ),
-                _miniIcon(
-                  icon: Icons.emoji_emotions_outlined,
-                  tooltip: 'Emoji',
-                  onPressed: () {
-                    setState(() {
-                      _pickingSticker = false;
-                      _pickingEmoji = !_pickingEmoji;
-                    });
-                  },
-                ),
-                _miniIcon(
-                  icon: Icons.auto_awesome,
-                  tooltip: 'Stickers',
-                  onPressed: () {
-                    setState(() {
-                      _pickingEmoji = false;
-                      _pickingSticker = !_pickingSticker;
-                    });
-                  },
-                ),
 
-                // Text input expands to fill remaining space
-                Expanded(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 40),
-                    child: TextField(
-                      controller: _msgController,
-                      keyboardType: TextInputType.multiline,
-                      textInputAction: TextInputAction.newline,
-                      minLines: 1,
-                      maxLines: 6,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: const InputDecoration(
-                        hintText: "Type a message…",
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(12)),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _smallIconButton(
+                      icon: Icons.add_circle_outline_rounded,
+                      tooltip: "Attach",
+                      color: Colors.grey[600]!,
+                      onPressed: _showAttachmentSheet,
+                    ),
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                (_pickingEmoji)
+                                    ? Icons.keyboard_rounded
+                                    : Icons.emoji_emotions_outlined,
+                                color: Colors.grey[600],
+                              ),
+                              iconSize: 22,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                              onPressed: () {
+                                setState(() {
+                                  _pickingSticker = false;
+                                  _pickingEmoji = !_pickingEmoji;
+                                });
+                              },
+                            ),
+                            Expanded(
+                              child: TextField(
+                                controller: _msgController,
+                                minLines: 1,
+                                maxLines: 5,
+                                textCapitalization: TextCapitalization.sentences,
+                                decoration: const InputDecoration(
+                                  hintText: "Type a message",
+                                  border: InputBorder.none,
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                                ),
+                                onTap: () {
+                                  setState(() {
+                                    _pickingEmoji = false;
+                                    _pickingSticker = false;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ),
-                ),
-
-                _miniIcon(
-                  icon: Icons.send_rounded,
-                  tooltip: 'Send',
-                  onPressed: () => _sendMessage(text: _msgController.text),
-                ),
-
-                // Tiny overflow menu
-                PopupMenuButton<String>(
-                  padding: EdgeInsets.zero,
-                  iconSize: 18,
-                  constraints: const BoxConstraints(minWidth: 140),
-                  icon: const Icon(Icons.more_vert, color: Colors.teal, size: 18),
-                  onSelected: (v) { if (v == 'clear') _clearChat(); },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'clear', child: Text('Clear chat')),
+                    _smallIconButton(
+                      icon: Icons.send_rounded,
+                      tooltip: "Send",
+                      color: Colors.teal,
+                      onPressed: () {
+                        if (_attachedTxs.isNotEmpty) {
+                          _sendMessage(
+                            text: _msgController.text,
+                            type: 'discussion',
+                            extra: {'transactions': _attachedTxs},
+                          );
+                        } else {
+                          _sendMessage(text: _msgController.text, type: 'text');
+                        }
+                      },
+                    ),
                   ],
                 ),
               ],
             ),
           ),
-        )
+        ),
 
 
       ],
+    );
+  }
+
+  Widget _buildContextArea() {
+    if (_attachedTxs.isEmpty) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      color: Colors.grey[50],
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: _attachedTxs.asMap().entries.map((entry) {
+            final i = entry.key;
+            final tx = entry.value;
+            final amount = (tx['amount'] as num? ?? 0).toDouble();
+            final isIncome = (tx['type'] == 'income');
+            final category = tx['category'] ?? 'General';
+
+            return Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[300]!),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 2,
+                    offset: Offset(0, 1),
+                  )
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isIncome ? Icons.arrow_downward : Icons.arrow_upward,
+                    size: 14,
+                    color: isIncome ? Colors.green : Colors.red,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    "₹${amount.toStringAsFixed(0)}",
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(category, style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+                  const SizedBox(width: 6),
+                  InkWell(
+                    onTap: () => _removeAttachment(i),
+                    child: Icon(Icons.close_rounded, size: 16, color: Colors.grey[500]),
+                  )
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmbeddedTxCard(Map<String, dynamic> tx) {
+    final amount = (tx['amount'] as num? ?? 0).toDouble();
+    final isIncome = (tx['type'] == 'income');
+    final category = tx['category'] ?? 'General';
+    final note = tx['note'] ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: isIncome ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isIncome ? Icons.arrow_downward : Icons.arrow_upward,
+                  size: 16,
+                  color: isIncome ? Colors.green : Colors.red,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "₹${amount.toStringAsFixed(0)}",
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  Text(
+                    category,
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          if (note.toString().isNotEmpty) ...[
+             const SizedBox(height: 4),
+             Text(note, style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+          ]
+        ],
+      ),
     );
   }
 }

@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import '../gmail_service.dart'; // Gmail-only pipeline
 import '../sms/sms_ingestor.dart';
 import '../sms/sms_permission_helper.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:workmanager/workmanager.dart';
 
 class SyncCoordinator {
   SyncCoordinator._();
@@ -16,13 +18,45 @@ class SyncCoordinator {
   Future<void> onAppStart(String userPhone) async {
     if (_running) return;
     _running = true;
+    _trackActivity(); // Track valid session
     SmsIngestor.instance.init();
     await _ensureSmsPipelines(userPhone, coldStart: true);
+    // Register daily Gmail sync check
+    _scheduleDailyGmailSync(userPhone);
   }
 
   Future<void> onAppResume(String userPhone) async {
     _running = true;
+     _trackActivity(); // Track valid session
     await _ensureSmsPipelines(userPhone, coldStart: false);
+  }
+
+  Future<void> _trackActivity() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('last_active_timestamp', DateTime.now().millisecondsSinceEpoch);
+    } catch (_) {}
+  }
+
+  void _scheduleDailyGmailSync(String userPhone) {
+    if (kIsWeb) return;
+    try {
+      Workmanager().registerPeriodicTask(
+        "daily-gmail-sync-task",
+        "dailyGmailSync",
+        inputData: {"userPhone": userPhone},
+        constraints: Constraints(
+          networkType: NetworkType.connected,
+          requiresBatteryNotLow: true,
+        ),
+        frequency: const Duration(hours: 24),
+        existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+        backoffPolicy: BackoffPolicy.linear,
+        backoffPolicyDelay: const Duration(minutes: 10),
+      );
+    } catch (e) {
+      debugPrint("Failed to schedule daily gmail sync: $e");
+    }
   }
 
   void onAppStop() {

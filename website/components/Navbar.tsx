@@ -108,6 +108,13 @@ export default function Navbar() {
                                                                 <span>Profile Settings</span>
                                                             </button>
                                                         </Link>
+                                                        <Link href="/dashboard/simulator" onClick={() => setIsDropdownOpen(false)}>
+                                                            <button className="w-full flex items-center space-x-3 px-3 py-2 rounded-xl hover:bg-indigo-50 text-indigo-600 transition-colors text-sm font-medium">
+                                                                <LayoutDashboard className="w-4 h-4" />
+                                                                {/* Using LayoutDashboard as placeholder, or could use Sparkles */}
+                                                                <span>Simulator 🔮</span>
+                                                            </button>
+                                                        </Link>
                                                     </div>
 
                                                     <div className="px-4 py-2">

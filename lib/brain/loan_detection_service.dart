@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/expense_item.dart';
+import '../services/notification_service.dart';
 
 class LoanSuggestion {
   final String key;          // stable: merchant|last4
@@ -150,6 +151,128 @@ class LoanDetectionService {
   Future<void> dismiss(String userId, String id) async {
     await _fs.collection('users').doc(userId)
         .collection('loan_suggestions').doc(id).update({'status':'dismissed'});
+  }
+
+  // ---------------------------------------------------------------------------
+  // NEW: Immediate Link/Suggest from Gmail/SMS Parser
+  // ---------------------------------------------------------------------------
+
+  Future<void> checkLoanTransaction(String userId, Map<String, dynamic> txn) async {
+    // 1. Validate inputs
+    final amount = (txn['amount'] as num?)?.toDouble() ?? 0.0;
+    if (amount <= 0) return;
+    
+    final merchant = (txn['merchant'] ?? txn['description'] ?? '').toString();
+    final category = (txn['category'] ?? '').toString();
+    final subCategory = (txn['subcategory'] ?? '').toString();
+    final note = (txn['note'] ?? '').toString();
+    final date = (txn['date'] as Timestamp?)?.toDate() ?? DateTime.now();
+
+    // 2. Must be a loan-related transaction to proceed
+    final isLoan = category == 'Payments' &&
+        (subCategory.contains('Loan') || subCategory.contains('EMI') || subCategory.contains('Repayment'));
+    // Or stricter keyword check if category isn't set yet (though parser usually sets it)
+    final strictKw = RegExp(r'\b(loan|repayment|emi)\b', caseSensitive: false);
+    if (!isLoan && !strictKw.hasMatch(merchant) && !strictKw.hasMatch(note)) {
+      return; 
+    }
+
+    // 3. Try Auto-Link to Existing Loan
+    // We fetch ACTIVE loans only
+    final loansSnap = await _fs.collection('loans')
+        .where('userId', isEqualTo: userId)
+        .where('isClosed', isEqualTo: false)
+        .get();
+        
+    // Simple matching heuristic
+    // We use a dummy doc as fallback because firstWhere throws
+    final matchedLoan = loansSnap.docs.cast<DocumentSnapshot<Map<String, dynamic>>?>().firstWhere((d) {
+      if (d == null) return false;
+      final data = d.data();
+      if (data == null) return false;
+      final lName = (data['lenderName'] ?? data['title'] ?? '').toString().toLowerCase();
+      final lAcc = (data['accountLast4'] ?? '').toString();
+      
+      // A. Exact Account Match (Strongest)
+      // If txn has "Loan Account XX1234", extract 1234 and match
+      if (lAcc.isNotEmpty && note.contains(lAcc)) return true;
+      
+      // B. Lender Name Match
+      // normalized check
+      if (lName.isNotEmpty && merchant.toLowerCase().contains(lName)) {
+        // Double check amount approx match? (Optional: if EMI is defined)
+        final emi = (data['emi'] as num?)?.toDouble();
+        if (emi != null && (emi - amount).abs() < 50) return true; // match within ₹50
+        
+        // If no EMI defined, trust the name match
+        return true; 
+      }
+      
+      return false;
+    }, orElse: () => null);
+    
+    if (matchedLoan != null) {
+      // --> FOUND! Record payment (reduce outstanding)
+      await _recordPaymentRaw(matchedLoan.reference, amount, date);
+      return;
+    }
+
+    // 4. No Match -> Create Suggestion
+    // This is a "Single Shot" suggestion
+    final key = 'SINGLE|${merchant.toLowerCase()}|${amount.toInt()}';
+    
+    final sug = LoanSuggestion(
+      key: key,
+      lender: _title(merchant.isEmpty ? 'Unknown Lender' : merchant),
+      emi: amount,
+      firstSeen: date,
+      lastSeen: date,
+      occurrences: 1, // It's new
+      autopay: note.toLowerCase().contains('auto'),
+      paymentDay: date.day,
+      confidence: 0.85, // High confidence because parser said it's a LOAN
+    );
+
+
+
+    // Write if not dismissed/accepted
+    final ref = _fs.collection('users').doc(userId)
+        .collection('loan_suggestions').doc(key);
+    final existing = await ref.get();
+    if (!existing.exists || (existing.data()?['status'] ?? 'new') == 'new') {
+        await ref.set(sug.toJson(), SetOptions(merge: true));
+        
+        // NOTIFY USER
+        if (!existing.exists) { // Only notify if it's truly new
+           NotificationService().showNotification(
+             title: 'New Loan Detected',
+             body: 'Found potential loan from $merchant. Tap to review.',
+           );
+        }
+    }
+  }
+
+  Future<void> _recordPaymentRaw(DocumentReference ref, double amount, DateTime date) async {
+    await _fs.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (!snap.exists) return; // race condition
+      
+      final data = snap.data() as Map<String, dynamic>;
+      final curr = (data['amount'] as num?)?.toDouble() ?? 0.0;
+      final closed = data['isClosed'] == true;
+      
+      if (closed) return; // Don't reduce closed loans
+      
+      final newAmt = (curr - amount).clamp(0.0, double.infinity);
+      final update = <String, dynamic>{
+        'amount': newAmt,
+        'lastPaymentDate': Timestamp.fromDate(date),
+        'lastPaymentAmount': amount,
+      };
+      if (newAmt <= 0) update['isClosed'] = true;
+      
+      tx.update(ref, update);
+    });
   }
 }
 

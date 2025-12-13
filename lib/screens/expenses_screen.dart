@@ -24,6 +24,8 @@ import '../widgets/unified_transaction_list.dart';
 import '../themes/custom_card.dart';
 import '../themes/tokens.dart';
 
+import '../services/user_data.dart'; // Needed for data passing
+
 class ExpensesScreen extends StatefulWidget {
   final String userPhone;
   const ExpensesScreen({required this.userPhone, Key? key}) : super(key: key);
@@ -936,6 +938,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     _expensesForSelectedDay = allExpenses.where((e) => _d(e.date) == d).toList();
   }
 
+
+
   // ------- Build -------
   @override
   Widget build(BuildContext context) {
@@ -994,6 +998,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               },
             ),
           ),
+
           const SizedBox(width: 8),
         ],
       ),

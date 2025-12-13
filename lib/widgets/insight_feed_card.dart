@@ -122,7 +122,7 @@ class InsightFeedCard extends StatelessWidget {
     final prepared = _prepare(insights);
     if (prepared.isEmpty) return const SizedBox.shrink();
 
-    Widget buildCard(List<InsightModel> list, {required bool showUpsell}) {
+    Widget buildCard(List<InsightModel> list) {
       return GlassCard(
         radius: Fx.r24,
         child: Column(
@@ -137,17 +137,6 @@ class InsightFeedCard extends StatelessWidget {
                     const SizedBox(width: Fx.s8),
                     Text("Smart Insights", style: Fx.title),
                     const Spacer(),
-                    if (showUpsell) ...[
-                      PremiumChip(
-                        onTap: () {
-                          if (userId != null) {
-                            Navigator.pushNamed(context, '/premium', arguments: userId);
-                          }
-                        },
-                        label: 'Go Premium',
-                      ),
-                      const SizedBox(width: Fx.s6),
-                    ],
                     PillBadge("${list.length}", color: Fx.mintDark, icon: Icons.insights_rounded),
                   ],
                 ),
@@ -200,11 +189,6 @@ class InsightFeedCard extends StatelessWidget {
                         // Left Icon
                         Container(
                             padding: const EdgeInsets.all(8),
-                           /* decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: Offset(0,2))]
-                            ),*/
                             child: Icon(icon, color: color, size: 24)
                         ),
                         const SizedBox(width: Fx.s12),
@@ -291,16 +275,21 @@ class InsightFeedCard extends StatelessWidget {
 
     if (userId == null) {
       final display = prepared.take(maxItems).toList();
-      return buildCard(display, showUpsell: false);
+      return buildCard(display);
     }
 
     return FutureBuilder<bool>(
       future: PremiumGate.instance.isPremium(userId!),
       builder: (context, snapshot) {
+        // Always behave as "Pro" (free for now), or just ignore premium check for UI
         final isPro = snapshot.data == true;
+        // We can still keep the item limit logic if desired, or just show maxItems.
+        // User asked to remove the badge, implying "give insights in free only".
+        // Let's keep the limit logic for now but remove visual upsell, 
+        // to avoid overwhelming the UI if there are too many.
         final limit = (isPro ? maxItems.clamp(5, 20) : maxItems.clamp(3, 6)).toInt();
         final display = prepared.take(limit).toList();
-        return buildCard(display, showUpsell: !isPro);
+        return buildCard(display);
       },
     );
   }

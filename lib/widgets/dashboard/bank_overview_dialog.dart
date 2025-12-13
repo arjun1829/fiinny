@@ -134,7 +134,7 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
         child: Container(
           width: 900, // Max width for web modal feel
           height: MediaQuery.of(context).size.height * 0.85,
-          margin: const EdgeInsets.all(32),
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
           decoration: BoxDecoration(
             color: const Color(0xFFF3F4F6), // Gray-100/50ish
             borderRadius: BorderRadius.circular(24),
@@ -152,7 +152,7 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
             children: [
               // Header
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
                 color: Colors.white,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -192,7 +192,7 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
               // Scrollable Content
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(32),
+                  padding: const EdgeInsets.all(20),
                   physics: const BouncingScrollPhysics(),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

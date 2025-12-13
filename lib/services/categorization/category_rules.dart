@@ -92,6 +92,7 @@ class CategoryRules {
     'MEESHO': ['Shopping', 'ecommerce', ['shopping']],
     'NYKAA': ['Shopping', 'personal care', ['shopping']],
     'TATA CLIQ': ['Shopping', 'ecommerce', ['shopping']],
+    'IKEA': ['Shopping', 'home furnishing and gaming', ['furniture', 'shopping']],
 
     // Travel & Transport
     'IRCTC': ['Travel', 'railways', ['travel']],

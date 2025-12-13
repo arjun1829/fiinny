@@ -22,7 +22,7 @@ class TransactionCountCard extends StatelessWidget {
 
   String _labelForIndex(int idx) {
     if (barData.length == 24) {
-      if (idx == 0) return '12AM';
+      if (idx == 0) return '0AM';
       if (idx == 6) return '6AM';
       if (idx == 12) return '12PM';
       if (idx == 18) return '6PM';
@@ -140,82 +140,56 @@ class TransactionCountCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              // --- BAR CHART (SCROLLABLE) ---
+              // --- FIT-WIDTH BAR CHART ---
               SizedBox(
                 height: 48,
                 width: double.infinity,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final totalBarWidth = barData.length * 13.0;
-                    final showScroll = totalBarWidth > constraints.maxWidth;
-                    return SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minWidth: constraints.maxWidth,
-                          maxWidth: showScroll ? totalBarWidth : constraints.maxWidth,
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: List.generate(barData.length, (idx) {
-                            final val = barData[idx].toDouble();
-                            final barHeight = maxVal == 0 ? 0.0 : (val / maxVal) * 42.0;
-                            return Container(
-                              width: 12,
-                              margin: const EdgeInsets.symmetric(horizontal: 0.5),
-                              height: barHeight,
-                              decoration: BoxDecoration(
-                                color: barHeight > 0 ? colorScheme.primary : colorScheme.primary.withOpacity(0.3),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            );
-                          }),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: List.generate(barData.length, (idx) {
+                    final val = barData[idx].toDouble();
+                    final barHeight = maxVal == 0 ? 0.0 : (val / maxVal) * 42.0;
+
+                    // Expanded + Margin ensures they fit and have tiny gaps
+                    return Expanded(
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 1),
+                        alignment: Alignment.bottomCenter,
+                        child: Container(
+                          height: barHeight < 2 && val > 0 ? 2 : barHeight, // Min height for visibility
+                          decoration: BoxDecoration(
+                            color: barHeight > 0 ? colorScheme.primary : colorScheme.primary.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(2), // slightly rounder
+                          ),
                         ),
                       ),
                     );
-                  },
+                  }),
                 ),
               ),
-              // --- TIME LABELS (SCROLLABLE) ---
+              // --- TIME LABELS ---
               Padding(
                 padding: const EdgeInsets.only(top: 2),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final totalBarWidth = barData.length * 13.0;
-                    final showScroll = totalBarWidth > constraints.maxWidth;
-                    return SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minWidth: constraints.maxWidth,
-                          maxWidth: showScroll ? totalBarWidth : constraints.maxWidth,
-                        ),
-                        child: Row(
-                          children: List.generate(barData.length, (idx) {
-                            final label = _labelForIndex(idx);
-                            return Container(
-                              width: 12,
-                              alignment: Alignment.center,
-                              child: label.isNotEmpty
-                                  ? Text(
-                                      label,
-                                      style: TextStyle(
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.w500,
-                                        height: 1.0,
-                                        color: textTheme.bodySmall?.color,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                      overflow: TextOverflow.visible,
-                                      softWrap: false,
-                                    )
-                                  : const SizedBox.shrink(),
-                            );
-                          }),
-                        ),
-                      ),
+                child: Row(
+                  children: List.generate(barData.length, (idx) {
+                    final label = _labelForIndex(idx);
+                    return Expanded(
+                      child: label.isNotEmpty
+                          ? Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 9, // smaller
+                                fontWeight: FontWeight.w600,
+                                height: 1.0,
+                                color: textTheme.bodySmall?.color,
+                              ),
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.visible,
+                              softWrap: false,
+                            )
+                          : const SizedBox.shrink(),
                     );
-                  },
+                  }),
                 ),
               ),
             ],

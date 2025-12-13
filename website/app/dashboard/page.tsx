@@ -1,24 +1,9 @@
 "use client";
 
 import { useAuth } from "@/components/AuthProvider";
-import {
-    getExpenses,
-    getIncomes,
-    getGoals,
-    getLoans,
-    getAssets,
-    getGroups,
-    getFriends,
-    getUserProfile,
-    ExpenseItem,
-    IncomeItem,
-    GoalModel,
-    LoanModel,
-    AssetModel,
-    GroupModel,
-    FriendModel,
-    UserProfile
-} from "@/lib/firestore";
+import { generateInsights, Insight } from "@/lib/ai/insight_engine";
+
+
 import { GmailService } from "@/lib/gmail";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
@@ -60,14 +45,35 @@ import BankCard from "@/components/finance/BankCard";
 import AddCardModal from "@/components/finance/AddCardModal";
 import BankDetailsModal from "@/components/finance/BankDetailsModal";
 import { aggregateBanksFromTransactions, BankGroup, InferredCard } from "@/lib/utils/bankUtils";
+import MagicInput from "@/components/dashboard/MagicInput";
 
 // Transaction Management Imports
 import TransactionModal from "@/components/dashboard/transactions/TransactionModal";
 import SplitExpenseModal from "@/components/dashboard/transactions/SplitExpenseModal";
 import TransactionDetailsModal from "@/components/dashboard/transactions/TransactionDetailsModal";
-import { deleteExpense, deleteIncome } from "@/lib/firestore";
+import {
+    getExpenses,
+    getIncomes,
+    getGoals,
+    getLoans,
+    getAssets,
+    getGroups,
+    getFriends,
+    getUserProfile,
+    ExpenseItem,
+    IncomeItem,
+    GoalModel,
+    LoanModel,
+    AssetModel,
+    GroupModel,
+    FriendModel,
+    UserProfile,
+    deleteExpense,
+    deleteIncome
+} from "@/lib/firestore";
 import { doc, setDoc, collection, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import AiAssistant from "@/components/dashboard/AiAssistant";
 
 export default function Dashboard() {
     const { user, loading } = useAuth();
@@ -84,6 +90,7 @@ export default function Dashboard() {
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [userName, setUserName] = useState<string>("there");
     const [userEmail, setUserEmail] = useState<string | null>(null);
+    const [insights, setInsights] = useState<Insight[]>([]);
 
     // UI states
     const [activeTab, setActiveTab] = useState("overview");
@@ -96,6 +103,7 @@ export default function Dashboard() {
 
     const [filteredExpensesState, setFilteredExpensesState] = useState<ExpenseItem[]>([]);
     const [filteredIncomesState, setFilteredIncomesState] = useState<IncomeItem[]>([]);
+
 
     // Transaction Management State
     const [isAddTxModalOpen, setIsAddTxModalOpen] = useState(false);
@@ -225,6 +233,20 @@ export default function Dashboard() {
             await FxService.getInstance().init();
             const targetCurrency = profileData?.currency || 'INR';
 
+            // GENERATE INSIGHTS 🧠
+            try {
+                if (Array.isArray(expensesData) && Array.isArray(incomesData)) {
+                    const generatedInsights = generateInsights(
+                        expensesData,
+                        incomesData,
+                        Array.isArray(goalsData) ? goalsData : [],
+                        Array.isArray(loansData) ? loansData : []
+                    );
+                    setInsights(generatedInsights);
+                }
+            } catch (err) {
+                console.error("Failed to generate insights:", err);
+            }
             // Convert Expenses
             const convertedExpenses = expensesData.map(e => {
                 const itemCurrency = e.fx?.currency || 'INR';
@@ -661,45 +683,12 @@ export default function Dashboard() {
                                     <div className="absolute top-0 right-0 w-64 h-64 bg-teal-50/50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
                                 </motion.div>
 
-                                {/* My Cards Section */}
-                                <div>
-                                    <div className="flex items-center justify-between mb-4 px-1">
-                                        <h2 className="text-xl font-bold text-slate-900">My Cards</h2>
-                                        <button
-                                            onClick={() => setShowAddCard(true)}
-                                            className="text-sm font-semibold text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg transition-colors"
-                                        >
-                                            + Add Card
-                                        </button>
-                                    </div>
-                                    <div className="flex gap-6 overflow-x-auto pb-6 scrollbar-hide snap-x max-w-[72rem]">
-                                        {bankGroups.length === 0 ? (
-                                            <div
-                                                onClick={() => setShowAddCard(true)}
-                                                className="w-80 h-48 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/50 transition-all group shrink-0"
-                                            >
-                                                <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3 group-hover:bg-teal-100 group-hover:text-teal-600 transition-colors">
-                                                    <CreditCard className="w-6 h-6 text-slate-400 group-hover:text-teal-600" />
-                                                </div>
-                                                <p className="font-semibold text-slate-600 group-hover:text-teal-700">Add your first card</p>
-                                            </div>
-                                        ) : (
-                                            bankGroups.map((group, i) => (
-                                                <BankCard
-                                                    key={i}
-                                                    bankName={group.bankName}
-                                                    cardType={group.cards.length > 1 ? `${group.cards.length} Cards` : group.cards[0]?.cardType || 'Card'}
-                                                    last4={group.cards.length > 1 ? '••••' : group.cards[0]?.last4 || 'XXXX'}
-                                                    name={userName}
-                                                    colorTheme={i % 2 === 0 ? 'black' : 'blue'}
-                                                    logoUrl={group.logoUrl}
-                                                    stats={group.stats}
-                                                    onClick={() => setSelectedBankGroup(group)}
-                                                />
-                                            ))
-                                        )}
-                                    </div>
+                                {/* Magic Input (Kept at top) */}
+                                <div className="mt-8 mb-6">
+                                    <MagicInput onAdd={handleSaveTransaction} />
                                 </div>
+
+
 
                                 <BankDetailsModal
                                     isOpen={!!selectedBankGroup}
@@ -796,18 +785,46 @@ export default function Dashboard() {
                                     </div>
                                 </div>
 
-                                {/* Stats Cards (Summary) */}
-                                <StatsCards
-                                    totalIncome={totalIncome}
-                                    totalExpense={totalExpense}
-                                    savings={savings}
-                                    savingsRate={savingsRate}
-                                    goalsProgress={goalsProgress}
-                                    totalLoans={totalLoans}
-                                    totalAssets={totalAssets}
-                                    netWorth={netWorth}
-                                    onTabChange={setActiveTab}
-                                />
+                                {/* My Cards Section (Show Full Width) */}
+                                <div className="mt-8">
+                                    <div className="flex items-center justify-between mb-4 px-1">
+                                        <h2 className="text-xl font-bold text-slate-900">My Cards</h2>
+                                        <button
+                                            onClick={() => setShowAddCard(true)}
+                                            className="text-sm font-semibold text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg transition-colors"
+                                        >
+                                            + Add Card
+                                        </button>
+                                    </div>
+                                    <div className="flex gap-6 overflow-x-auto pb-6 scrollbar-hide snap-x max-w-[72rem]">
+                                        {bankGroups.length === 0 ? (
+                                            <div
+                                                onClick={() => setShowAddCard(true)}
+                                                className="w-80 h-48 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/50 transition-all group shrink-0"
+                                            >
+                                                <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3 group-hover:bg-teal-100 group-hover:text-teal-600 transition-colors">
+                                                    <CreditCard className="w-6 h-6 text-slate-400 group-hover:text-teal-600" />
+                                                </div>
+                                                <p className="font-semibold text-slate-600 group-hover:text-teal-700">Add your first card</p>
+                                            </div>
+                                        ) : (
+                                            bankGroups.map((group, i) => (
+                                                <BankCard
+                                                    key={i}
+                                                    bankName={group.bankName}
+                                                    cardType={group.cards.length > 1 ? `${group.cards.length} Cards` : group.cards[0]?.cardType || 'Card'}
+                                                    last4={group.cards.length > 1 ? '••••' : group.cards[0]?.last4 || 'XXXX'}
+                                                    name={userName}
+                                                    colorTheme={i % 2 === 0 ? 'black' : 'blue'}
+                                                    logoUrl={group.logoUrl}
+                                                    stats={group.stats}
+                                                    onClick={() => setSelectedBankGroup(group)}
+                                                />
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+
 
                                 {/* Banners & Insights */}
                                 <div className="space-y-4">
@@ -827,11 +844,7 @@ export default function Dashboard() {
                                     />
 
                                     <SmartInsightCard
-                                        income={totalIncome}
-                                        expense={totalExpense}
-                                        savings={savings}
-                                        totalLoan={totalLoans}
-                                        totalAssets={totalAssets}
+                                        insights={insights}
                                     />
                                 </div>
 
@@ -869,8 +882,10 @@ export default function Dashboard() {
                             </>
                         )}
                     </div>
+
                 </div>
             </div>
-        </div>
+            <AiAssistant />
+        </div >
     );
 }

@@ -203,6 +203,32 @@ class AdService {
     _actionsSinceInter = 0;
   }
 
+  /// Forces an interstitial to show if loaded, bypassing frequency caps.
+  /// Returns [true] if shown, [false] if not ready/enabled.
+  Future<bool> showInterstitialForce() async {
+    if (!_adsEnabled) return false;
+    final ad = _inter;
+    if (ad == null) {
+      preloadInterstitial();
+      return false;
+    }
+    _inter = null;
+    // We wrap show in a completer or just await it. 
+    // The Google Mobile Ads SDK `show()` returns Future<void>.
+    // It doesn't tell us when it's closed easily here without the full screen content callback logic, 
+    // BUT the callback handled in preloadInterstitial is what reloads the ad.
+    // For blocking flow (await until closed), the SDK's show() DOES NOT wait for close. It just shows.
+    // However, usually we want to wait for user to close it.
+    // The SDK doc says: "The Future completes when the ad is shown."
+    // So we can't await dismissal here easily without more complex logic.
+    // user said: "watch add for that ... 5 second". Interstitials are appropriate.
+    // We will return true immediately and let the ad overlay.
+    await ad.show();
+    _lastInterShown = DateTime.now();
+    _actionsSinceInter = 0; 
+    return true;
+  }
+
   // ---------- Rewarded logic ----------
   Future<bool> showRewarded({required void Function(int, String) onReward}) async {
     if (!_adsEnabled) return false;

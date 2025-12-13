@@ -82,6 +82,12 @@ class IncomeItem {
   final double? confidence;                // 0..1
   final List<String>? tags;                // ["fixed_income","refund","cashback",...]
 
+  // Audit
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
   IncomeItem({
     required this.id,
     required this.type,
@@ -116,6 +122,11 @@ class IncomeItem {
     this.brainMeta,
     this.confidence,
     this.tags,
+    // Audit
+    this.createdAt,
+    this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
   });
 
   IncomeItem copyWith({
@@ -152,6 +163,11 @@ class IncomeItem {
     Map<String, dynamic>? brainMeta,
     double? confidence,
     List<String>? tags,
+    // Audit
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? createdBy,
+    String? updatedBy,
   }) {
     return IncomeItem(
       id: id ?? this.id,
@@ -187,6 +203,11 @@ class IncomeItem {
       brainMeta: brainMeta ?? this.brainMeta,
       confidence: confidence ?? this.confidence,
       tags: tags ?? this.tags,
+      // Audit
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdBy: createdBy ?? this.createdBy,
+      updatedBy: updatedBy ?? this.updatedBy,
     );
   }
 
@@ -206,6 +227,8 @@ class IncomeItem {
           ? AttachmentMeta(
           url: attachmentUrl, name: attachmentName, size: attachmentSize)
           : null);
+          
+  bool get isUserEdited => (updatedBy?.contains('user') ?? false) || (createdBy?.contains('user') ?? false);
 
   Map<String, dynamic> toJson() {
     final map = <String, dynamic>{
@@ -243,6 +266,11 @@ class IncomeItem {
       if (brainMeta != null) 'brainMeta': brainMeta,
       if (confidence != null) 'confidence': confidence,
       if (tags != null) 'tags': tags,
+      // Audit
+      if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
+      if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
+      if (createdBy != null) 'createdBy': createdBy,
+      if (updatedBy != null) 'updatedBy': updatedBy,
     };
 
     // Mirror first attachment into legacy fields if legacy fields absent
@@ -399,6 +427,11 @@ class IncomeItem {
       brainMeta: (data['brainMeta'] as Map?)?.cast<String, dynamic>(),
       confidence: (data['confidence'] as num?)?.toDouble(),
       tags: (data['tags'] is List) ? List<String>.from(data['tags']) : null,
+      // Audit
+      createdAt: _asDate(data['createdAt']),
+      updatedAt: _asDate(data['updatedAt']),
+      createdBy: data['createdBy'],
+      updatedBy: data['updatedBy'],
     );
   }
 }

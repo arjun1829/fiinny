@@ -143,12 +143,16 @@ class _GmailLinkScreenState extends State<GmailLinkScreen> {
                     Row(children: [
                       const Icon(Icons.mail_rounded, color: Fx.mintDark),
                       const SizedBox(width: Fx.s8),
-                      Text('Status', style: Fx.title),
+                      Text('Linked Accounts', style: Fx.title),
                     ]),
-                    const SizedBox(height: 6),
-                    _linked
-                        ? Text('Linked as: ${_email!}', style: Fx.label)
-                        : Text('Not linked', style: Fx.label.copyWith(color: Colors.redAccent)),
+                    const SizedBox(height: 12),
+                    if (_linked && _email != null)
+                      _buildAccountRow(_email!, 'Gmail'),
+                    if (!_linked)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text('No accounts linked yet.', style: Fx.label.copyWith(color: Colors.grey)),
+                      ),
                   ],
                 ),
               ),
@@ -161,31 +165,46 @@ class _GmailLinkScreenState extends State<GmailLinkScreen> {
                     Row(children: [
                       const Icon(Icons.info_outline_rounded, color: Fx.mintDark),
                       const SizedBox(width: Fx.s8),
-                      Text('What we read', style: Fx.title),
+                      Text('How it works', style: Fx.title),
                     ]),
                     const SizedBox(height: 6),
-                    Text('Read-only Gmail statements to detect income/expenses (no sending, no deletion).', style: Fx.label),
+                    Text('We read statements to detect expenses purely on your device/cloud. No data is shared with third parties.', style: Fx.label),
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
-              if (!_linked)
-                FilledButton.icon(
-                  onPressed: _busy ? null : _link,
-                  icon: const Icon(Icons.link_rounded),
-                  label: const Text('Link Gmail'),
-                ),
+              const SizedBox(height: 24),
+              
+              // Actions
               if (_linked) ...[
-                FilledButton.icon(
+                 FilledButton.icon(
                   onPressed: _busy ? null : _retryImport,
                   icon: const Icon(Icons.sync_rounded),
-                  label: const Text('Retry Import'),
+                  label: const Text('Sync Now'),
+                  style: FilledButton.styleFrom(backgroundColor: Fx.mintDark),
                 ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : _disconnect,
-                  icon: const Icon(Icons.link_off_rounded),
-                  label: const Text('Disconnect'),
+                const SizedBox(height: 12),
+              ],
+
+              // Add Account Buttons
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _link,
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Add Gmail Account'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _showOutlookInfo,
+                icon: const Icon(Icons.mail_outline_rounded),
+                label: const Text('Add Outlook Account (Beta)'),
+              ),
+              
+              if (_linked) ...[
+                const SizedBox(height: 24),
+                Center(
+                  child: TextButton(
+                    onPressed: _busy ? null : _disconnect,
+                    child: const Text('Unlink all accounts', style: TextStyle(color: Colors.redAccent)),
+                  ),
                 ),
               ],
             ],
@@ -195,20 +214,63 @@ class _GmailLinkScreenState extends State<GmailLinkScreen> {
     );
   }
 
-  Widget _bg() => IgnorePointer(
-        ignoring: true,
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              colors: [
-                Fx.mint.withOpacity(.10),
-                Fx.mintDark.withOpacity(.06),
-                Colors.white.withOpacity(.60),
+  Widget _buildAccountRow(String email, String provider) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Fx.mint.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: Colors.white,
+            radius: 16,
+            backgroundImage: provider == 'Gmail' 
+                ? const NetworkImage('https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg') 
+                : null,
+            child: provider == 'Outlook' ? const Icon(Icons.mail, size: 16) : null,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(email, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(provider, style: const TextStyle(fontSize: 12, color: Colors.grey)),
               ],
-              center: Alignment.topLeft,
-              radius: .9,
             ),
           ),
+          const Icon(Icons.check_circle_rounded, color: Colors.green, size: 20),
+        ],
+      ),
+    );
+  }
+
+  void _showOutlookInfo() {
+    showDialog(
+      context: context, 
+      builder: (_) => AlertDialog(
+        title: const Text('Outlook Support'),
+        content: const Text('Outlook integration is currently in Beta and free for all users.\n\nTo enable it, we need to register a Microsoft App. This feature will be rolled out in the next update automatically!'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Got it')),
+        ],
+      ),
+    );
+  }
+
+  Widget _bg() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.white, Color(0xFFE0F2F1)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
         ),
-      );
+      ),
+    );
+  }
 }
