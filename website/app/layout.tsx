@@ -5,7 +5,6 @@ import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { AiProvider } from "@/components/ai/AiContext";
-import AiOverlay from "@/components/ai/AiOverlay";
 
 export const metadata: Metadata = {
   title: "Your personal finance companion",
@@ -25,7 +24,6 @@ export default function RootLayout({
           <ThemeProvider>
             <AiProvider>
               {children}
-              <AiOverlay />
             </AiProvider>
           </ThemeProvider>
         </AuthProvider>

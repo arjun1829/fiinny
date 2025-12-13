@@ -23,6 +23,8 @@ import {
     startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
     startOfYear, endOfYear, format, eachDayOfInterval, isSameDay
 } from "date-fns";
+import { generateSankeyData } from "@/lib/analytics/sankeyData";
+import MoneyFlow from "@/components/analytics/MoneyFlow";
 
 export default function AnalyticsPage() {
     const { user, loading } = useAuth();
@@ -230,6 +232,40 @@ export default function AnalyticsPage() {
         };
     }, [filteredData]);
 
+    // Sankey Data (Respects Period, ignores Type filter to show full flow)
+    const sankeyData = useMemo(() => {
+        let result = transactions;
+
+        // 1. Period Filter (Reuse logic or copy)
+        const now = new Date();
+        let start: Date | null = null;
+        let end: Date | null = null;
+
+        switch (filters.period) {
+            case "D": start = startOfDay(now); end = endOfDay(now); break;
+            case "W": start = startOfWeek(now); end = endOfWeek(now); break;
+            case "M": start = startOfMonth(now); end = endOfMonth(now); break;
+            case "Y": start = startOfYear(now); end = endOfYear(now); break;
+        }
+
+        if (start && end) {
+            result = result.filter(tx => tx.date >= start! && tx.date <= end!);
+        }
+
+        const inc = result.filter(t => (t as IncomeItem).type === 'income') as IncomeItem[];
+        // Note: Check if 'type' check matches your firestore data structure. 
+        // Firestore ExpenseItem/IncomeItem usually have a 'type' field which is 'expense' or 'income' (case sensitive?)
+        // In filteredData I saw: (tx as IncomeItem).type === 'Income'.
+        // So I should use 'Income' and 'Expense' (Capitalized) if that's what the data has.
+        // Let's assume Capitalized based on line 132 of previous view.
+
+        const exp = result.filter(t => (t as ExpenseItem).type === 'Expense' || (t as any).type === 'expense') as ExpenseItem[];
+        // Safe check for both case
+
+        return generateSankeyData(inc, exp);
+    }, [transactions, filters.period]);
+
+
     if (!user) return null;
 
     return (
@@ -269,6 +305,9 @@ export default function AnalyticsPage() {
 
                             {/* Left Column: Charts */}
                             <div className="md:col-span-2 space-y-6">
+                                {/* VISIONARY: Money Flow */}
+                                <MoneyFlow data={sankeyData} />
+
                                 <SpendTrendChart
                                     data={aggregations.trendData}
                                     period={filters.period === "M" ? "day" : "month"}

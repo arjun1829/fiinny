@@ -69,7 +69,7 @@ class GroupSettingsSheet extends StatelessWidget {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(6, 6, 12, 4),
+            padding: const EdgeInsets.fromLTRB(6, 16, 12, 4),
             child: Row(
               children: [
                 IconButton(

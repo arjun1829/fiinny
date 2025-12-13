@@ -37,8 +37,15 @@ export class ExpenseService {
     }
 
     static async addExpense(userId: string, expense: ExpenseItem) {
-        console.log(`[ExpenseService] Adding expense for ${userId}:`, expense);
-        const ref = doc(db, "users", userId, "expenses", expense.id);
+        let ref;
+        if (!expense.id) {
+            ref = doc(collection(db, "users", userId, "expenses"));
+            expense.id = ref.id;
+        } else {
+            ref = doc(db, "users", userId, "expenses", expense.id);
+        }
+
+        console.log(`[ExpenseService] Save/Update expense ${expense.id} for ${userId}`);
         try {
             await setDoc(ref, expenseConverter.toFirestore(expense));
             console.log(`[ExpenseService] Successfully wrote expense ${expense.id}`);
@@ -46,6 +53,10 @@ export class ExpenseService {
             console.error(`[ExpenseService] Failed to write expense`, e);
             throw e;
         }
+    }
+
+    static async updateExpense(userId: string, expense: ExpenseItem) {
+        return this.addExpense(userId, expense);
     }
 
     static async getExpensesByFriend(userId: string, friendId: string): Promise<ExpenseItem[]> {

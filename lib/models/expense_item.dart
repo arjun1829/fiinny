@@ -109,6 +109,12 @@ class ExpenseItem {
   final double? confidence;
   final List<String>? tags;              // ["fee","subscription","loan_emi","autopay","forex",...]
 
+  // --- Audit ---
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final String? createdBy; // 'parser:gmail', 'user', etc.
+  final String? updatedBy;
+
   ExpenseItem({
     required this.id,
     required this.type,
@@ -156,6 +162,11 @@ class ExpenseItem {
     this.brainMeta,
     this.confidence,
     this.tags,
+    // audit
+    this.createdAt,
+    this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
   });
 
   ExpenseItem copyWith({
@@ -205,6 +216,11 @@ class ExpenseItem {
     Map<String, dynamic>? brainMeta,
     double? confidence,
     List<String>? tags,
+    // audit
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? createdBy,
+    String? updatedBy,
   }) {
     return ExpenseItem(
       id: id ?? this.id,
@@ -254,6 +270,11 @@ class ExpenseItem {
       brainMeta: brainMeta ?? this.brainMeta,
       confidence: confidence ?? this.confidence,
       tags: tags ?? this.tags,
+      // audit
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdBy: createdBy ?? this.createdBy,
+      updatedBy: updatedBy ?? this.updatedBy,
     );
   }
 
@@ -266,6 +287,7 @@ class ExpenseItem {
   }
 
   // Convenience getters
+  bool get isUserEdited => (updatedBy?.contains('user') ?? false) || (createdBy?.contains('user') ?? false);
   bool hasTag(String t) => tags?.contains(t) ?? false;
   bool get isFee => hasTag('fee') || (brainMeta?['feeType'] != null) || ((fees ?? const {}).isNotEmpty);
   bool get hasAttachments => attachments.isNotEmpty || attachmentUrl != null;
@@ -329,6 +351,11 @@ class ExpenseItem {
       if (brainMeta != null) 'brainMeta': brainMeta,
       if (confidence != null) 'confidence': confidence,
       if (tags != null) 'tags': tags,
+      // Audit
+      if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
+      if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
+      if (createdBy != null) 'createdBy': createdBy,
+      if (updatedBy != null) 'updatedBy': updatedBy,
     };
 
     // Mirror first attachment into legacy fields if legacy fields absent
@@ -539,6 +566,11 @@ class ExpenseItem {
           : null,
       confidence: (data['confidence'] as num?)?.toDouble(),
       tags: (data['tags'] is List) ? List<String>.from(data['tags']) : null,
+      // Audit
+      createdAt: _asDate(data['createdAt']),
+      updatedAt: _asDate(data['updatedAt']),
+      createdBy: data['createdBy'],
+      updatedBy: data['updatedBy'],
     );
   }
 }

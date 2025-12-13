@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 import '../core/ads/ads_banner_card.dart';
 import '../core/ads/ads_shell.dart';
@@ -266,16 +267,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   int _rev = 0;
 
   static const Map<String, Color> _categoryColors = {
-    'Fund Transfers': Colors.deepPurple,
-    'Payments': Colors.indigo,
-    'Shopping': Colors.teal,
-    'Travel': Colors.orange,
-    'Food': Colors.redAccent,
-    'Entertainment': Colors.pink,
-    'Healthcare': Colors.green,
-    'Education': Colors.blueGrey,
-    'Investments': Colors.brown,
-    'Others': Colors.grey,
+    'Fund Transfers': Color(0xFFAB47BC), // Purple
+    'Payments': Color(0xFF29B6F6), // Light Blue
+    'Shopping': Color(0xFF6C63FF), // Indigo/Purple
+    'Travel': Color(0xFF38A3A5), // Teal
+    'Food': Color(0xFFFF6584), // Pinkish Red
+    'Entertainment': Color(0xFFFFC045), // Amber
+    'Healthcare': Color(0xFF66BB6A), // Green
+    'Education': Color(0xFFFFA726), // Orange
+    'Investments': Color(0xFF8D6E63), // Brown
+    'Others': Color(0xFFBDBDBD), // Grey
   };
 
   // Banks & Cards selection (screen-wide filter)
@@ -2717,7 +2718,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(
                     _iconForCategory(cat),
-                    color: Fx.mintDark,
+                    color: _categoryColors[cat] ?? Fx.mintDark,
                   ),
                   title: Text(
                     cat,
@@ -2852,6 +2853,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ? _buildTrendChart(buckets, avg)
                 : _buildStackedChart(),
           ),
+          if (_lastMonthsView == 'Breakdown') ...[
+            const SizedBox(height: 16),
+            _buildBreakdownLegend(buckets),
+          ],
         ],
       ),
     );
@@ -2902,105 +2907,180 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Widget _buildTrendChart(List<_MonthSpend> buckets, double avg) {
     if (buckets.isEmpty) return const SizedBox.shrink();
 
-    // Find max for scaling
     double maxY = avg;
     for (final b in buckets) {
       if (b.totalExpense > maxY) maxY = b.totalExpense;
     }
     if (maxY == 0) maxY = 100;
+    maxY = maxY * 1.25; // Add headroom
 
-    // We want to show bars.
-    // If a bar is above avg, color it red-ish? Or just standard color?
-    // Axis style: bars are grey, current month is highlighted.
-    // Let's use Mint for below avg, Red for above avg? Or just uniform.
-    // Let's stick to a nice Teal/Mint gradient.
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final barWidth = (width / (buckets.length * 2)).clamp(8.0, 24.0);
-
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          crossAxisAlignment: CrossAxisAlignment.end,
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 1000),
+      curve: Curves.easeOutQuart,
+      builder: (context, anim, child) {
+        final double minX = -0.5;
+        final double maxX = buckets.length - 0.5;
+        
+        return Stack(
           children: [
-            for (int i = 0; i < buckets.length; i++) ...[
-              _singleTrendBar(
-                buckets[i],
-                maxY,
-                barWidth,
-                i == buckets.length - 1, // is current
+            BarChart(
+              BarChartData(
+                minY: 0,
+                maxY: maxY,
+                barTouchData: BarTouchData(
+                  touchTooltipData: BarTouchTooltipData(
+                    tooltipBgColor: Colors.black87,
+                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                       return BarTooltipItem(
+                         INR.f(rod.toY),
+                         const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                       );
+                    }
+                  ),
+                ),
+                titlesData: FlTitlesData(
+                  show: true,
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 24,
+                      interval: 1, // Ensure one title per integer index
+                      getTitlesWidget: (val, meta) {
+                        final index = val.toInt();
+                        if (index < 0 || index >= buckets.length) {
+                          return const SizedBox.shrink();
+                        }
+                        if (val != index.toDouble()) return const SizedBox.shrink();
+
+                        final b = buckets[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            DateFormat('MMM').format(DateTime(b.year, b.month)),
+                            style: TextStyle(
+                              fontSize: 10, 
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                ),
+                gridData: const FlGridData(show: false),
+                borderData: FlBorderData(show: false),
+                barGroups: [
+                  for (int i = 0; i < buckets.length; i++)
+                    BarChartGroupData(
+                      x: i,
+                      barRods: [
+                        BarChartRodData(
+                          toY: buckets[i].totalExpense * anim,
+                          color: i == buckets.length - 1
+                              ? const Color(0xFF004D40)
+                              : Colors.grey[300],
+                          width: 12,
+                          borderRadius: BorderRadius.circular(4),
+                          backDrawRodData: BackgroundBarChartRodData(
+                             show: true,
+                             toY: maxY,
+                             color: Colors.grey.withOpacity(0.05),
+                          )
+                        ),
+                      ],
+                    ),
+                ],
               ),
-            ],
+            ),
+            IgnorePointer(
+              child: LineChart(
+                LineChartData(
+                  minY: 0,
+                  maxY: maxY,
+                  minX: minX,
+                  maxX: maxX,
+                  lineTouchData: const LineTouchData(enabled: false),
+                  titlesData: const FlTitlesData(show: false),
+                  gridData: const FlGridData(show: false),
+                  borderData: FlBorderData(show: false),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: [
+                        for (int i = 0; i < buckets.length; i++)
+                          FlSpot(i.toDouble(), buckets[i].totalExpense * anim),
+                      ],
+                      isCurved: true,
+                      curveSmoothness: 0.25, // Gentle curve
+                      color: const Color(0xFF004D40),
+                      barWidth: 2,
+                      isStrokeCapRound: true,
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            const Color(0xFF004D40).withOpacity(0.15 * anim),
+                            const Color(0xFF004D40).withOpacity(0.0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         );
       },
     );
   }
 
-  Widget _singleTrendBar(
-    _MonthSpend bucket,
-    double maxY,
-    double width,
-    bool isCurrent,
-  ) {
-    final h = (bucket.totalExpense / maxY).clamp(0.0, 1.0);
-    final label = DateFormat('MMM').format(DateTime(bucket.year, bucket.month));
+  Widget _buildBreakdownLegend(List<_MonthSpend> buckets) {
+     // Identify all categories present in the current view (last 6 months stacks essentially)
+     final stacks = _buildMonthlyCategoryStacks(12);
+     final categories = <String>{};
+     for (final s in stacks) {
+        for (final seg in s.segments) {
+           if (seg.value > 0) categories.add(seg.category);
+        }
+     }
+     final list = categories.toList()..sort();
 
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        if (isCurrent)
-          Container(
-            margin: const EdgeInsets.only(bottom: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.black87,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              INR.c(bucket.totalExpense),
-              style: const TextStyle(color: Colors.white, fontSize: 10),
-            ),
-          ),
-        Container(
-          height: 140 * h, // max height 140 inside the 220 container
-          width: width,
-          decoration: BoxDecoration(
-            gradient: isCurrent
-                ? const LinearGradient(
-                    colors: [Color(0xFF004D40), Color(0xFF00796B)], // Deep Teal
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                  )
-                : LinearGradient(
-                    colors: [Colors.grey.shade400, Colors.grey.shade300],
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                  ),
-            borderRadius: BorderRadius.circular(width / 2),
-            boxShadow: isCurrent
-                ? [
-                    BoxShadow(
-                      color: const Color(0xFF004D40).withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
+     return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        alignment: WrapAlignment.center,
+        children: list.map((cat) {
+           return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                 Container(
+                    width: 8, height: 8,
+                    decoration: BoxDecoration(
+                       color: _categoryColors[cat] ?? Colors.grey,
+                       shape: BoxShape.circle,
+                    ),
+                 ),
+                 const SizedBox(width: 4),
+                 Text(
+                    cat, 
+                    style: TextStyle(
+                       fontSize: 11, 
+                       color: Colors.grey[700],
+                       fontWeight: FontWeight.w500
                     )
-                  ]
-                : null,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            color: isCurrent ? Colors.black87 : Colors.black45,
-            fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500,
-          ),
-        ),
-      ],
-    );
+                 ),
+              ],
+           );
+        }).toList(),
+     );
   }
 
   Widget _buildStackedChart() {

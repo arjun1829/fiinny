@@ -27,6 +27,7 @@ export interface ExpenseItem {
     cardLast4?: string;
     isBill: boolean;
     imageUrl?: string;
+    isSettlement?: boolean;
 
     // Legacy tagging
     label?: string;

@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import '../models/expense_item.dart';
 import '../models/income_item.dart';
@@ -23,6 +24,7 @@ import '../widgets/insight_feed_card.dart';
 import '../widgets/smart_nudge_widget.dart';
 import '../widgets/crisis_alert_banner.dart';
 import '../widgets/loans_summary_card.dart';
+import '../widgets/critical_alert_banner.dart';
 import '../widgets/assets_summary_card.dart';
 import '../widgets/tx_filter_bar.dart';
 import '../widgets/dashboard/bank_overview_dialog.dart';
@@ -35,6 +37,8 @@ import 'dashboard_activity_screen.dart';
 import 'insight_feed_screen.dart';
 import '../widgets/transaction_count_card.dart';
 import '../widgets/transaction_amount_card.dart';
+import '../widgets/goals_summary_card.dart';
+import '../widgets/add_goal_dialog.dart';
 import '../themes/tokens.dart';
 import '../themes/glass_card.dart';
 import '../themes/badge.dart';
@@ -54,17 +58,8 @@ import '../fiinny_assets/modules/portfolio/services/asset_service.dart' as PAsse
 import '../fiinny_assets/modules/portfolio/models/asset_model.dart' as PAssetModel;
 import '../fiinny_assets/modules/portfolio/models/price_quote.dart';
 import '../fiinny_assets/modules/portfolio/services/market_data_yahoo.dart';
-
-import '../services/sync/sync_coordinator.dart';
-
-// Use your **old** Gmail service (the snippet-based one you pasted)
-import '../services/gmail_service.dart' as OldGmail;
-import '../widgets/goals_summary_card.dart';
-import '../widgets/add_goal_dialog.dart';
 import '../services/notif_prefs_service.dart';
 import '../services/notifs/social_events_watch.dart';
-
-// (optional) quick monthly fees-only card if you also want it
 import '../widgets/hidden_charges_card.dart';
 import '../widgets/forex_charges_card.dart';
 import '../widgets/salary_predictor_card.dart';
@@ -85,6 +80,10 @@ import '../core/notifications/local_notifications.dart'
     show SystemRecurringLocalScheduler;
 
 import '../services/sms/sms_permission_helper.dart';
+import '../services/gmail_service.dart' as OldGmail;
+import '../services/sms/sms_ingestor.dart';
+import '../services/sync/sync_coordinator.dart';
+import '../services/sync/sync_coordinator.dart';
 
 
 // --- Helper getters for dynamic model ---
@@ -248,12 +247,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   Future<void> _refreshBackgroundJobs() async {
     try {
       if (_isEmailLinked && (_userEmail?.isNotEmpty ?? false)) {
-        await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
-        if (mounted) {
-          SnackThrottle.show(context, "Synced Gmail transactions", color: Colors.green);
-        }
+        // Use unified handler
+        await _handleManualSync();
       } else {
-        await _fetchEmailTx();
+        // Just try manual sync (which handles both, but primarily SMS if email not linked)
+        await _handleManualSync();
       }
     } catch (_) {}
 
@@ -682,25 +680,80 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  Future<void> _fetchEmailTx() async {
+  // UNIFIED MANUAL SYNC (GMAIL + SMS)
+  // Limited to 3 free syncs/day, then Ad-gated.
+  Future<void> _handleManualSync() async {
     if (!mounted) return;
+
+    // --- MANUAL SYNC LIMIT LOGIC ---
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now();
+      final todayKey = 'manual_sync_count_${now.year}_${now.month}_${now.day}';
+      int count = prefs.getInt(todayKey) ?? 0;
+
+      // Limit: 3 free syncs per day
+      if (count >= 3) {
+        // Force watch Ad
+        final shown = await AdService.I.showInterstitialForce();
+        if (shown) {
+          // Success (monetized)
+        } else {
+           // Ad not ready or failed? Let them sync anyway (generous).
+        }
+      } else {
+        // Free sync
+        await prefs.setInt(todayKey, count + 1);
+      }
+    } catch (_) {
+      // ignore prefs error (always allow if storage fails)
+    }
+    // -------------------------------
+
+    // Trigger UI State
     await _setGmailStatus('running');
-    setState(() => _isFetchingEmail = true);
+    setState(() {
+      _isFetchingEmail = true; // Use same flag for spinner
+    });
+
+    final List<String> errors = [];
+
+    // 1. Gmail Fetch
     try {
       await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
-      await _initDashboard();
+    } catch (e) {
+      errors.add("Gmail: $e");
+    }
+
+    // 2. SMS Realtime Sync (Delta)
+    try {
+      // Delta sync checks recent messages since last sync
+      await SmsIngestor.instance.syncDelta(userPhone: widget.userPhone, lookbackHours: 24);
+    } catch (e) {
+      if (kIsWeb || (defaultTargetPlatform != TargetPlatform.android)) {
+        // Ignore SMS error on non-Android
+      } else {
+        errors.add("SMS: $e");
+      }
+    }
+
+    // Refresh Dashboard Data
+    await _initDashboard();
+    
+    // Status update
+    if (errors.isEmpty) {
       await _setGmailStatus('ok');
       if (mounted) {
-        SnackThrottle.show(context, "Fetched Gmail transactions!", color: Colors.green);
+        SnackThrottle.show(context, "Synced Gmail & SMS transactions!", color: Colors.green);
       }
-    } catch (e) {
-      await _setGmailStatus('error', error: e.toString());
+    } else {
+      await _setGmailStatus('error', error: errors.join(', '));
       if (mounted) {
-        SnackThrottle.show(context, "Failed to fetch email data: $e", color: Colors.red);
+        SnackThrottle.show(context, "Sync completed with warnings: ${errors.join(', ')}", color: Colors.orange);
       }
-    } finally {
-      if (mounted) setState(() => _isFetchingEmail = false);
     }
+
+    if (mounted) setState(() => _isFetchingEmail = false);
   }
 
   Future<void> _loadPortfolioTotals() async {
@@ -1620,25 +1673,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                         tooltip: 'Fetch Email Data',
                         onPressed: _isFetchingEmail
                             ? null
-                            : () async {
-                                if (!mounted) return;
-                                setState(() => _isFetchingEmail = true);
-                                try {
-                                  await OldGmail.GmailService()
-                                      .fetchAndStoreTransactionsFromGmail(widget.userPhone);
-                                  await _initDashboard();
-                                  if (mounted) {
-                                    SnackThrottle.show(context, 'Fetched Gmail transactions!', color: Colors.green);
-                                  }
-                                } catch (e) {
-                                  if (mounted) {
-                                    SnackThrottle.show(context, 'Sync error: $e', color: Colors.red);
-                                  }
-                                } finally {
-                                  if (mounted) setState(() => _isFetchingEmail = false);
-                                }
-                              },
+                            : _handleManualSync,
                       ),
+
                       GestureDetector(
                         onTap: () {
                           Navigator.pushNamed(context, '/profile', arguments: widget.userPhone);
@@ -1695,6 +1732,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   (() {
                     final sections = <Widget>[
                       const SizedBox(height: 6),
+                      CriticalAlertBanner(userId: widget.userPhone),
                       Padding(
                         padding: horizontalPadding,
                         child: _buildDashboardAdCard(),
@@ -1865,22 +1903,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                             isLinked: _isEmailLinked,
                             onRetry: _isFetchingEmail
                                 ? null
-                                : () async {
-                                    try {
-                                      setState(() => _isFetchingEmail = true);
-                                      await _setGmailStatus('running');
-                                      await OldGmail.GmailService()
-                                          .fetchAndStoreTransactionsFromGmail(widget.userPhone);
-                                      await _setGmailStatus('ok');
-                                      await _initDashboard();
-                                    } catch (e) {
-                                      await _setGmailStatus('error', error: e.toString());
-                                    } finally {
-                                      if (mounted) {
-                                        setState(() => _isFetchingEmail = false);
-                                      }
-                                    }
-                                  },
+                                : _handleManualSync,
                           ),
                         ),
                         const SizedBox(height: 10),
@@ -1990,7 +2013,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 'Fetch Email Data',
                                 style: TextStyle(color: Colors.white, fontSize: 15),
                               ),
-                              onPressed: _fetchEmailTx,
+                              onPressed: _handleManualSync,
                             ),
                           ),
                         ],

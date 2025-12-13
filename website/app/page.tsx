@@ -24,6 +24,7 @@ import { useState } from "react";
 import LanguageSelector from "@/components/LanguageSelector";
 import { LanguageProvider, useLanguage } from "./i18n/LanguageContext";
 import { translations } from "./i18n/translations";
+import AiOverlay from "@/components/ai/AiOverlay";
 
 // Feature Data for Expansion
 // Feature Data for Expansion moved inside component
@@ -38,6 +39,7 @@ export default function Home() {
 
 function MainContent() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const { language } = useLanguage();
   const t = translations[language];
 
@@ -105,6 +107,16 @@ function MainContent() {
               <a href="#features" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.features}</a>
               <a href="#how-it-works" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.howItWorks}</a>
               <Link href="/subscription" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.pricing}</Link>
+
+              <Link href="#fiinny-ai" className="relative group flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 hover:border-teal-300 transition-all hover:shadow-md hover:-translate-y-0.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500"></span>
+                </span>
+                <span className="text-sm font-bold bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text text-transparent group-hover:from-teal-500 group-hover:to-emerald-500">
+                  Fiinny AI
+                </span>
+              </Link>
 
               <div className="ml-4 pl-4 border-l border-slate-200">
                 <LanguageSelector />
@@ -188,7 +200,10 @@ function MainContent() {
                 >
                   {t.hero.getStarted}
                 </Link>
-                <button className="inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-slate-700 transition-all duration-200 bg-white border border-slate-200 rounded-full hover:bg-slate-50 hover:border-slate-300 hover:-translate-y-1 active:scale-95">
+                <button
+                  onClick={() => setSelectedVideo("/assets/videos/demo.mp4")}
+                  className="inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-slate-700 transition-all duration-200 bg-white border border-slate-200 rounded-full hover:bg-slate-50 hover:border-slate-300 hover:-translate-y-1 active:scale-95"
+                >
                   <Play className="w-5 h-5 mr-2 fill-current" />
                   {t.hero.watchDemo}
                 </button>
@@ -360,6 +375,80 @@ function MainContent() {
         </div>
       </section>
 
+      {/* Watch Videos Section */}
+      <section id="fiinny-ai" className="py-24 bg-slate-900 text-white overflow-hidden scroll-mt-24">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <h2 className="text-4xl lg:text-6xl font-bold mb-6 tracking-tight">
+              The <span className="text-teal-400">Vision.</span>
+            </h2>
+            <p className="text-xl text-slate-400 leading-relaxed max-w-2xl mx-auto">
+              A glimpse into the future of intelligent finance. This is what we are building.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-8">
+            {[
+              {
+                src: "/assets/videos/Boy_s_Happy_Ball_Adventure.mp4",
+                title: "Joyful Tracking",
+                desc: "Finance doesn't have to be boring."
+              },
+              {
+                src: "/assets/videos/Video_Generation_From_Image.mp4",
+                title: "Visual Intelligence",
+                desc: "From receipt to insights in a blink."
+              },
+              {
+                src: "/assets/videos/Video_Generation_Request_and_Completion.mp4",
+                title: "Instant Answers",
+                desc: "Your personal financial genius."
+              }
+            ].map((video, idx) => (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: idx * 0.1 }}
+                onClick={() => setSelectedVideo(video.src)}
+                className="group relative rounded-2xl overflow-hidden bg-slate-800 border border-slate-700 hover:border-teal-500/50 transition-colors cursor-pointer"
+                onMouseEnter={(e) => {
+                  const vid = e.currentTarget.querySelector('video');
+                  if (vid) vid.play();
+                }}
+                onMouseLeave={(e) => {
+                  const vid = e.currentTarget.querySelector('video');
+                  if (vid) {
+                    vid.pause();
+                    vid.currentTime = 0;
+                  }
+                }}
+              >
+                <div className="aspect-[9/16] relative bg-black">
+                  <video
+                    src={video.src}
+                    className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-500"
+                    muted
+                    loop
+                    playsInline
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none group-hover:opacity-0 transition-opacity">
+                    <div className="w-16 h-16 rounded-full bg-white/10 backdrop-blur flex items-center justify-center">
+                      <Play className="w-8 h-8 text-white fill-current ml-1" />
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6">
+                  <h3 className="text-xl font-bold mb-2 group-hover:text-teal-400 transition-colors">{video.title}</h3>
+                  <p className="text-slate-400 text-sm">{video.desc}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Social Proof Section - Moved Below Features */}
       <section className="py-20 border-t border-slate-100 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -527,6 +616,41 @@ function MainContent() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Video Modal */}
+      <AnimatePresence>
+        {selectedVideo && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 lg:p-10"
+            onClick={() => setSelectedVideo(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-6xl max-h-[90vh] bg-black rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center"
+            >
+              <button
+                onClick={() => setSelectedVideo(null)}
+                className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors z-20 backdrop-blur-sm"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              <video
+                src={selectedVideo}
+                controls
+                autoPlay
+                className="w-full h-full max-h-[85vh] object-contain bg-black"
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AiOverlay />
     </div>
   );
 }

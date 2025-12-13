@@ -1174,6 +1174,12 @@ class SmsIngestor {
           .collection('users').doc(userPhone)
           .collection('expenses').doc(_docIdFromKey(key));
 
+      // PARSER LOCK: Read first to check for user edits
+      final docSnap = await expRef.get();
+      final data = docSnap.data();
+      final isUserEdited = (data?['updatedBy'] as String?)?.contains('user') ?? 
+                           (data?['createdBy'] as String?)?.contains('user') ?? false;
+
       final e = ExpenseItem(
         id: expRef.id,
         type: 'SMS Debit',
@@ -1187,41 +1193,64 @@ class SmsIngestor {
         instrument: instrument,
         instrumentNetwork: network,
         upiVpa: upiVpa,
-        counterparty: counterparty,     // ✅ "Paid to OPENAI" when present
+        counterparty: counterparty, 
         counterpartyType: counterpartyType,
         isInternational: isIntlResolved,
         fx: fx,
         fees: fees.isNotEmpty ? fees : null,
         tags: tags,
+        // Audit fields (explicit retention)
+        createdAt: (data?['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        createdBy: (data?['createdBy'] as String?) ?? 'parser:sms',
+        updatedAt: DateTime.now(),
+        updatedBy: 'parser:sms',
       );
 
       if (USE_SERVICE_WRITES) {
         await _expense.addExpense(userPhone, e);
       } else {
-        await expRef.set(e.toJson(), SetOptions(merge: true));
+        var jsonToWrite = e.toJson();
+        
+        // LOCK LOGIC
+        if (isUserEdited) {
+          _log('Skipping update for locked fields on ${expRef.id} (SMS)');
+          jsonToWrite.remove('category');
+          jsonToWrite.remove('subcategory');
+          jsonToWrite.remove('counterparty'); // merchant info
+          jsonToWrite.remove('note');
+          // Also protect createdBy/At if we just set them (though we preserved them above)
+        }
+        await expRef.set(jsonToWrite, SetOptions(merge: true));
       }
 
       final labelsForDoc = labelSet.toList();
       final combinedTags = <String>{};
       combinedTags.addAll(e.tags ?? const []);
       combinedTags.addAll(labelSet);
-      await expRef.set({
+      
+      // Secondary update for enrichment metadata
+      final metaUpdate = {
         'sourceRecord': sourceMeta,
         'merchantKey': merchantKey,
         if (merchantNorm.isNotEmpty) 'merchant': merchantNorm,
-        'txKey': key, // flat for updaters
-        'category': finalCategory,
-        'subcategory': finalSubcategory,
+        'txKey': key,
         'categoryConfidence': finalConfidence,
         'categorySource': categorySource,
         'tags': combinedTags.toList(),
         'labels': labelsForDoc,
-      }, SetOptions(merge: true));
+      };
+      
+      if (!isUserEdited) {
+         metaUpdate['category'] = finalCategory;
+         metaUpdate['subcategory'] = finalSubcategory;
+      }
+      
+      await expRef.set(metaUpdate, SetOptions(merge: true));
 
       await expRef.set({
         'ingestSources': FieldValue.arrayUnion(['sms']),
       }, SetOptions(merge: true));
-
+      
       await expRef.set({'source': 'SMS'}, SetOptions(merge: true));
 
       try {
@@ -1265,6 +1294,12 @@ class SmsIngestor {
           .collection('users').doc(userPhone)
           .collection('incomes').doc(_docIdFromKey(key));
 
+      // PARSER LOCK: Read first
+      final docSnap = await incRef.get();
+      final data = docSnap.data();
+      final isUserEdited = (data?['updatedBy'] as String?)?.contains('user') ?? 
+                           (data?['createdBy'] as String?)?.contains('user') ?? false;
+
       final i = IncomeItem(
         id: incRef.id,
         type: 'SMS Credit',
@@ -1282,30 +1317,48 @@ class SmsIngestor {
         fx: fx,
         fees: fees.isNotEmpty ? fees : null,
         tags: tags,
+        // Audit fields (explicit retention)
+        createdAt: (data?['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        createdBy: (data?['createdBy'] as String?) ?? 'parser:sms',
+        updatedAt: DateTime.now(),
+        updatedBy: 'parser:sms',
       );
 
       if (USE_SERVICE_WRITES) {
         await _income.addIncome(userPhone, i);
       } else {
-        await incRef.set(i.toJson(), SetOptions(merge: true));
+        var jsonToWrite = i.toJson();
+        if (isUserEdited) {
+          _log('Skipping update for locked fields on ${incRef.id} (SMS)');
+          jsonToWrite.remove('category');
+          jsonToWrite.remove('subcategory');
+          jsonToWrite.remove('counterparty');
+          jsonToWrite.remove('note');
+        }
+        await incRef.set(jsonToWrite, SetOptions(merge: true));
       }
 
       final labelsForDoc = labelSet.toList();
       final combinedTags = <String>{};
       combinedTags.addAll(i.tags ?? const []);
       combinedTags.addAll(labelSet);
-      await incRef.set({
+      
+      final metaUpdate = {
         'sourceRecord': sourceMeta,
         'merchantKey': merchantKey,
         if (merchantNorm.isNotEmpty) 'merchant': merchantNorm,
         'txKey': key,
-        'category': finalCategory,
-        'subcategory': finalSubcategory,
         'categoryConfidence': finalConfidence,
         'categorySource': categorySource,
         'tags': combinedTags.toList(),
         'labels': labelsForDoc,
-      }, SetOptions(merge: true));
+      };
+       if (!isUserEdited) {
+         metaUpdate['category'] = finalCategory;
+         metaUpdate['subcategory'] = finalSubcategory;
+      }
+
+      await incRef.set(metaUpdate, SetOptions(merge: true));
 
       await incRef.set({
         'ingestSources': FieldValue.arrayUnion(['sms']),
@@ -1383,7 +1436,9 @@ class SmsIngestor {
       caseSensitive: false,
     );
     final balanceCue = RegExp(
-      r'(A/?c\.?\s*Bal(?:ance)?|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance|\bBal\b)',
+      r'(A/?c\.?\s*Bal(?:ance)?|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance|\bBal\b|'
+      r'Total\s*Due|Min(imum)?\s*Due|Difference\s*Due|'
+      r'(?:Avail(?:able)?|Total|Credit|Cc)\s*(?:Limit|Lmt|Amt))',
       caseSensitive: false,
     );
     final creditCues = RegExp(

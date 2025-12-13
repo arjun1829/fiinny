@@ -1,6 +1,7 @@
 // lib/services/gmail_service.dart
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
@@ -13,8 +14,9 @@ import '../models/income_item.dart';
 // 🔗 LLM config + extractor (LLM-first)
 import '../config/app_config.dart';
 import './ai/tx_extractor.dart';
-import './ingest/enrichment_service.dart';
-import './categorization/category_rules.dart';
+import 'ingest/enrichment_service.dart';
+import '../brain/loan_detection_service.dart';
+import 'package:html_unescape/html_unescape.dart';
 import './user_overrides.dart';
 import './merchants/merchant_alias_service.dart';
 import './ingest/cross_source_reconcile.dart';
@@ -22,6 +24,7 @@ import './recurring/recurring_engine.dart';
 
 import './ingest_index_service.dart';
 import './tx_key.dart';
+import 'notification_service.dart';
 import './ingest_state_service.dart';
 import './ingest_job_queue.dart';
 import './ingest/cross_source_reconcile.dart';   // merge
@@ -202,6 +205,7 @@ class GmailService {
       domains: ['indusind.com'],
       headerHints: ['indusind bank', 'indusind'],
     ),
+
     _BankProfile(
       code: 'YES',
       display: 'Yes Bank',
@@ -243,9 +247,16 @@ class GmailService {
           b.domains.any((d) => normalizedDomain.endsWith(d.toLowerCase()))) {
         return _DetectedBank(code: b.code, display: b.display, tier: _BankTier.major);
       }
-      if (b.headerHints.any((h) => all.contains(h.toLowerCase()))) {
+      if (b.headerHints.any((h) => fromHdr.toLowerCase().contains(h.toLowerCase()))) {
         return _DetectedBank(code: b.code, display: b.display, tier: _BankTier.major);
       }
+    }
+
+    // Fallback: Check body for strong bank cues if headers failed
+    for (final b in _MAJOR_BANKS) {
+       if (all.contains(b.display.toLowerCase()) || all.contains(' ${b.code.toLowerCase()} ')) {
+         return _DetectedBank(code: b.code, display: b.display, tier: _BankTier.major);
+       }
     }
 
     // Fallback: reuse existing header/body guessers and treat as "other"
@@ -396,7 +407,10 @@ class GmailService {
   void _log(String s) { if (_DEBUG) print('[GmailService] $s'); }
 
   static final _scopes = [gmail.GmailApi.gmailReadonlyScope];
-  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: _scopes);
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: _scopes,
+    clientId: kIsWeb ? '1085936196639-ffl2rshle55b6ukgq22u5agku68mqpr1.apps.googleusercontent.com' : null,
+  );
   GoogleSignInAccount? _currentUser;
 
   final IngestIndexService _index = IngestIndexService();
@@ -461,107 +475,168 @@ class GmailService {
     return re.firstMatch(text)?.group(0);
   }
 
+  String? _cleanMerchantName(String? raw) {
+    if (raw == null) return null;
+    var cleaned = raw
+        .replaceAll(RegExp(r"""["'`]+"""), ' ')
+        .replaceAll(RegExp(r'[^A-Za-z0-9 .&/@-]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    
+    // aggressive noise cleaning
+    cleaned = cleaned.replaceAll(RegExp(r'\b(Value Date|Txn Date|Ref No|Reference|Bal|Avl Bal|Ledger|Balance|NEFT|IMPS|RTGS|UPI|MMT/IMPS|Rev|Msg)\b.*', caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'\d{2}/\d{2}/\d{2,4}'), ''); // Remove dates
+    cleaned = cleaned.replaceAll(RegExp(r'\d{2}:\d{2}:\d{2}'), '');   // Remove times
+    cleaned = cleaned.trim();
+
+    if (cleaned.length < 3) return null;
+    final upper = cleaned.toUpperCase();
+    const skipPhrases = [
+      'INFORM YOU THAT',
+      'INFORM YOU',
+      'INFORM THAT',
+      'DEAR',
+      'THANK YOU',
+      'THANKS',
+      'THIS IS TO INFORM',
+      'WE INFORM YOU',
+      'WE WOULD LIKE TO INFORM',
+      'TRANSACTION ALERT',
+      'ALERT:',
+      'TOTAL CREDIT LIMIT',
+      'AVAILABLE LIMIT',
+      'CREDIT LIMIT',
+      'TOTAL DUE',
+      'MINIMUM DUE',
+      'TAL CREDIT LIMIT', // Handle the specific chopped case
+      'BLOCK UPI',
+      'SMS BLOCK',
+      'CALL US',
+      'CLICK HERE',
+      'UNSUBSCRIBE',
+      'TO BLOCK',
+      'TO CANCEL',
+      'HELP YOU',
+      'ALWAYS OPEN TO HELP YOU',
+    ];
+    for (final phrase in skipPhrases) {
+      if (upper.contains(phrase)) return null; // Changed from startsWith to contains for safety
+    }
+
+    const stopwords = {
+      'INFORM', 'YOU', 'YOUR', 'THAT', 'ACCOUNT', 'ACC', 'A', 'THE', 'WE', 'ARE', 'IS', 'TO', 'FROM',
+      'PAYMENT', 'PAID', 'THANK', 'CUSTOMER', 'CARD', 'CREDIT', 'DEBIT', 'BANK', 'REF', 'REFERENCE',
+      'TRANSACTION', 'DETAILS', 'INFO', 'NOTICE', 'BALANCE', 'AMOUNT', 'THIS', 'MESSAGE', 'SPENT', 'PURCHASE', 'AT', 'FOR', 'WITH'
+    };
+    final tokens = upper.split(RegExp(r'[^A-Z0-9]+')).where((e) => e.isNotEmpty).toList();
+    if (tokens.isEmpty) return null;
+    final nonStop = tokens.where((w) => !stopwords.contains(w)).length;
+    // slightly relaxed ratio for short names like 'Uber'
+    if (nonStop == 0) return null; 
+    
+    if (upper.contains('ACCOUNT') || upper.contains('ACC.')) return null;
+    return upper.trim();
+  }
+
   String? _extractPaidToName(String text) {
     if (text.isEmpty) return null;
-
-    String? sanitize(String? raw) {
-      if (raw == null) return null;
-      final cleaned = raw
-          .replaceAll(RegExp(r"""["'`]+"""), ' ')
-          .replaceAll(RegExp(r'[^A-Za-z0-9 .&/@-]'), ' ')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
-      if (cleaned.length < 3) return null;
-      final upper = cleaned.toUpperCase();
-      const skipPhrases = [
-        'INFORM YOU THAT',
-        'INFORM YOU',
-        'INFORM THAT',
-        'DEAR',
-        'THANK YOU',
-        'THANKS',
-        'THIS IS TO INFORM',
-        'WE INFORM YOU',
-        'WE WOULD LIKE TO INFORM',
-      ];
-      for (final phrase in skipPhrases) {
-        if (upper.startsWith(phrase)) return null;
-      }
-
-      const stopwords = {
-        'INFORM',
-        'YOU',
-        'YOUR',
-        'THAT',
-        'ACCOUNT',
-        'ACC',
-        'A',
-        'THE',
-        'WE',
-        'ARE',
-        'IS',
-        'TO',
-        'FROM',
-        'PAYMENT',
-        'PAID',
-        'THANK',
-        'CUSTOMER',
-        'CARD',
-        'CREDIT',
-        'DEBIT',
-        'BANK',
-        'REF',
-        'REFERENCE',
-        'TRANSACTION',
-        'DETAILS',
-        'INFO',
-        'NOTICE',
-        'BALANCE',
-        'AMOUNT',
-        'THIS',
-        'MESSAGE',
-      };
-      final tokens = upper.split(RegExp(r'[^A-Z0-9]+')).where((e) => e.isNotEmpty).toList();
-      if (tokens.isEmpty) return null;
-      final nonStop = tokens.where((w) => !stopwords.contains(w)).length;
-      if (nonStop == 0 || nonStop / tokens.length < 0.4) return null;
-      if (upper.contains('ACCOUNT') || upper.contains('ACC.')) return null;
-      return upper;
-    }
-
     final candidates = <String>[];
 
-    final byPattern = RegExp(
-      r'\bby\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})',
-      caseSensitive: false,
-    );
-    for (final m in byPattern.allMatches(text)) {
-      final cleaned = sanitize(m.group(1));
-      if (cleaned != null) {
-        candidates.add(cleaned);
+    // ─────────────────────────────────────────────────────────────────────────
+    // TYPE A: POS / Swipe / Explicit Purchase
+    // "Spent at STARBUCKS", "Purchase at AMAZON", "Trxn at DMART"
+    // ─────────────────────────────────────────────────────────────────────────
+    final posPatterns = [
+      RegExp(r'\b(?:spent|purchase|transact(?:ion|ed)?|swiped)\s+(?:at|on|with)\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
+      RegExp(r'\b(?:payment|txn)\s+(?:at|to)\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
+    ];
+    for (final p in posPatterns) {
+      for (final m in p.allMatches(text)) {
+        final cleaned = _cleanMerchantName(m.group(1));
+        if (cleaned != null) candidates.add(cleaned);
       }
     }
 
-    final toPattern = RegExp(
-      r'\b(?:paid|payment)?\s*to\s*[:\-]?\s*([A-Za-z][A-Za-z0-9 .&/@-]{2,40})',
-      caseSensitive: false,
-    );
-    for (final m in toPattern.allMatches(text)) {
-      final cleaned = sanitize(m.group(1));
-      if (cleaned != null) {
-        candidates.add(cleaned);
+    // ─────────────────────────────────────────────────────────────────────────
+    // TYPE B: Online / Digital / P2P
+    // "Paid to SWIGGY", "Transfer to RAMESH", "Sent to ZOMATO"
+    // ─────────────────────────────────────────────────────────────────────────
+    final onlinePatterns = [
+      RegExp(r'\b(?:paid|sent|transfer(?:red)?)\s+(?:to|for)\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
+      RegExp(r'\b(?:towards|for)\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
+    ];
+    for (final p in onlinePatterns) {
+      for (final m in p.allMatches(text)) {
+        // "Towards" often captures "towards your Loan", filter that
+        final raw = m.group(1) ?? '';
+        if (raw.toLowerCase().contains('loan') || raw.toLowerCase().contains('emi')) continue;
+        
+        final cleaned = _cleanMerchantName(raw);
+        if (cleaned != null) candidates.add(cleaned);
       }
     }
 
-    final upiPattern = RegExp(
-      r'UPI(?:/[A-Za-z0-9]+)?/[A-Za-z0-9.@_-]{2,}/([A-Za-z0-9 .&@-]{2,40})',
-      caseSensitive: false,
-    );
-    for (final m in upiPattern.allMatches(text)) {
-      final cleaned = sanitize(m.group(1));
-      if (cleaned != null) {
-        candidates.add(cleaned);
+    // ─────────────────────────────────────────────────────────────────────────
+    // TYPE C: Bills / Utilities / Recharges
+    // "Bill for ELECTRICITY", "Recharge of JIO"
+    // ─────────────────────────────────────────────────────────────────────────
+    final billPatterns = [
+      RegExp(r'\b(?:bill|payment)\s+for\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
+      RegExp(r'\b(?:recharge|topup)\s+(?:of|for)\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
+    ];
+    for (final p in billPatterns) {
+      for (final m in p.allMatches(text)) {
+        final cleaned = _cleanMerchantName(m.group(1));
+        if (cleaned != null) candidates.add(cleaned);
       }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TYPE D: Credits / Income (Strict)
+    // "Received from ANKIT", "Credited from SALARY"
+    // ─────────────────────────────────────────────────────────────────────────
+    final creditPatterns = [
+      RegExp(r'\b(?:received|credited)\s+(?:from|by)\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
+      RegExp(r'\bby\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
+    ];
+    for (final p in creditPatterns) {
+      for (final m in p.allMatches(text)) {
+        final cleaned = _cleanMerchantName(m.group(1));
+        if (cleaned != null) candidates.add(cleaned);
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TYPE E: Special Formats (UPI, Info tags, KV Pairs)
+    // ─────────────────────────────────────────────────────────────────────────
+    final metaPatterns = [
+      RegExp(r'\bMerchant\s*Name\s*[:\-]\s*([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
+      // TYPE D: Loan Repayment context
+      RegExp(r'credited\s+to\s+(?:your\s+)?(Loan\s+account)', caseSensitive: false),
+      RegExp(r'\bInfo:\s*([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
+      RegExp(r'UPI(?:/[A-Za-z0-9]+)?/[A-Za-z0-9.@_-]{2,}/([A-Za-z0-9 .&@-]{2,40})', caseSensitive: false),
+    ];
+    for (final p in metaPatterns) {
+      for (final m in p.allMatches(text)) {
+        final cleaned = _cleanMerchantName(m.group(1));
+        if (cleaned != null) candidates.add(cleaned);
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FALLBACK: Safe "At" check
+    // Last resort for "Transaction at X" where verbs are missing/weird
+    // ─────────────────────────────────────────────────────────────────────────
+    if (candidates.isEmpty) {
+       final fallback = RegExp(r'\bat\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false);
+       for (final m in fallback.allMatches(text)) {
+          final raw = m.group(1) ?? '';
+          // Filter common false positives for "at"
+          if (RegExp(r'^(the|my|your|ends|ending|ac|account|txn|ref|rs|inr|usd|home|office)', caseSensitive: false).hasMatch(raw)) continue;
+          
+          final cleaned = _cleanMerchantName(raw);
+          if (cleaned != null) candidates.add(cleaned);
+       }
     }
 
     return candidates.isNotEmpty ? candidates.first : null;
@@ -739,18 +814,37 @@ class GmailService {
       String userId, {
         int newerThanDays = INITIAL_HISTORY_DAYS,
         int maxResults = 300,
+        bool isAutoBg = false, // Flag to indicate background auto-sync
       }) async {
     final st = await IngestStateService.instance.get(userId);
     final now = DateTime.now();
     DateTime since;
+    
+    // SMART SYNC WINDOW:
+    // If we have a last sync time, resume from there (minus buffer).
+    // If user hasn't synced in 4 days, we fetch 4 days.
+    // Safety buffer: 24h to catch late-arriving emails for the previous day.
+    
     try {
       final last = (st as dynamic)?.lastGmailTs;
-      if (last is Timestamp) {
-        since = last.toDate().subtract(const Duration(hours: DEFAULT_OVERLAP_HOURS));
-      } else if (last is DateTime) {
-        since = last.subtract(const Duration(hours: DEFAULT_OVERLAP_HOURS));
+      if (last != null) {
+        final DateTime lastDt = (last is Timestamp) ? last.toDate() : (last as DateTime);
+        // "Resume" from last sync minus 24h buffer
+        since = lastDt.subtract(const Duration(hours: 24));
+        
+        // Safety cap: even if resuming, don't go back further than MAX_BACKFILL (e.g. 1000 days could be too huge)
+        // But mainly we want to ensure we don't accidentally fetch *too* little if they missed 3 days.
+        // The above `subtract(24h)` handles the 3-day gap automatically (since = 3 days ago).
+        
+        // However, if the gap is HUGE (e.g. > 60 days), we might treat it as a fresh backfill or cap it.
+        // For now, let's respect the user request: "pull from where it was left last time".
+        // functionality logic is satisfied.
+
+        _log('Smart Sync: Resuming from ${since.toIso8601String()} (Last: $lastDt)');
       } else {
+        // No last sync? Use default lookback (e.g. 120 days for fresh)
         since = now.subtract(Duration(days: newerThanDays));
+        _log('Smart Sync: No history, using default lookback: $since');
       }
     } catch (_) {
       since = now.subtract(Duration(days: newerThanDays));
@@ -836,8 +930,21 @@ class GmailService {
     required DateTime since,
     int pageSize = 300,
   }) async {
-    _currentUser = await _googleSignIn.signInSilently();
-    _currentUser ??= await _googleSignIn.signIn();
+    try {
+      _currentUser = await _googleSignIn.signInSilently();
+      if (_currentUser == null) {
+         _log('signInSilently returned null, attempting interactive signIn...');
+         _currentUser = await _googleSignIn.signIn();
+      }
+    } catch (e) {
+      _log('Google Sign-In error: $e');
+      final errStr = e.toString();
+      if (errStr.contains('People API has not been used') || errStr.contains('PEOPLE_API_NOT_ENABLED')) {
+        throw Exception('Please enable the "People API" in your Google Cloud Console. This is required for Web Sign-In.\n\nCheck the console link in the error details.');
+      }
+      rethrow;
+    }
+  _log('Sign-in result: ${_currentUser?.email}');
     if (_currentUser == null) throw Exception('Google Sign-In failed');
 
     final headers = await _currentUser!.authHeaders;
@@ -1280,6 +1387,13 @@ class GmailService {
           .collection('users').doc(userId)
           .collection('expenses').doc(_docIdFromKey(key));
 
+      // READ existing to check for Manual Lock
+      final existingSnap = await expRef.get();
+      final existingData = existingSnap.exists ? (existingSnap.data() as Map<String, dynamic>) : <String, dynamic>{};
+      final existingCreatedBy = existingData['createdBy'] as String?;
+      final existingUpdatedBy = existingData['updatedBy'] as String?;
+      final isUserEdited = (existingUpdatedBy?.contains('user') ?? false) || (existingCreatedBy?.contains('user') ?? false);
+
       final e = ExpenseItem(
         id: expRef.id,
         type: 'Email Debit',
@@ -1299,15 +1413,32 @@ class GmailService {
         fx: amountFx,
         fees: fees.isNotEmpty ? fees : null,
         tags: tags,
+        // AUDIT
+        createdAt: (existingData['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        createdBy: existingCreatedBy ?? 'parser:gmail',
+        updatedAt: DateTime.now(),
+        updatedBy: 'parser:gmail',
       );
+      
+      var jsonToWrite = e.toJson();
+      
+      // PARSER LOCK: If user edited this, DO NOT overwrite critical fields
+      if (isUserEdited) {
+          _log('Skipping update for locked fields on ${expRef.id}');
+          jsonToWrite.remove('category');
+          jsonToWrite.remove('subcategory');
+          jsonToWrite.remove('counterparty'); // merchant info
+          jsonToWrite.remove('note');
+          // We still let other technical fields update (like bill meta if new info found)
+      }
 
-      await expRef.set(e.toJson(), SetOptions(merge: true));
+      await expRef.set(jsonToWrite, SetOptions(merge: true));
       await expRef.set({'source': 'Email'}, SetOptions(merge: true));
       final labelsForDoc = labelSet.toList();
       final combinedTags = <String>{};
       combinedTags.addAll(e.tags ?? const []);
       combinedTags.addAll(labelSet);
-      await expRef.set({
+      var enrichmentData = {
         'sourceRecord': sourceMeta,
         'merchantKey': merchantKey,
         if (merchantNorm.isNotEmpty) 'merchant': merchantNorm,
@@ -1318,7 +1449,15 @@ class GmailService {
         'categorySource': categorySource,
         'tags': combinedTags.toList(),
         'labels': labelsForDoc,
-      }, SetOptions(merge: true));
+      };
+      
+      if (isUserEdited) {
+         enrichmentData.remove('category');
+         enrichmentData.remove('subcategory');
+         enrichmentData.remove('merchant');
+      }
+
+      await expRef.set(enrichmentData, SetOptions(merge: true));
 
       await expRef.set({
         'ingestSources': FieldValue.arrayUnion(['gmail']),
@@ -1345,6 +1484,10 @@ class GmailService {
           docPath: 'users/$userId/expenses/${expRef.id}',
           enabled: true,
         );
+        
+        // AUTO-RESOLVE: If we just paid X, check if there was a critical alert for X recently
+        await _resolveAlertsForAmount(userId, amount);
+        
       } catch (_) {}
       if (_looksLikeCardBillPayment(combined, bank: bank, last4: cardLast4)) {
         await _maybeAttachToCardBillPayment(
@@ -1358,11 +1501,49 @@ class GmailService {
         );
       }
 
+      // -----------------------------------------------------------------------
+      // NEW: Check Single Loan Transaction (Link or Suggest)
+      // -----------------------------------------------------------------------
+      if (finalCategory == 'Payments' &&
+          (finalSubcategory?.contains('Loans') == true ||
+           finalSubcategory?.contains('EMI') == true ||
+           finalSubcategory?.contains('Repayment') == true)) {
+         
+         await LoanDetectionService().checkLoanTransaction(userId, {
+           'amount': amount,
+           'merchant': merchantNorm,
+           'category': finalCategory,
+           'subcategory': finalSubcategory,
+           'note': note, 
+           'description': merchantNorm, // fallback
+           'date': Timestamp.fromDate(msgDate),
+         });
+      }
+
 
     } else {
+      // -----------------------------------------------------------------------
+      // NEW: Critical Alert Check (e.g. Failed SI/EMI)
+      // -----------------------------------------------------------------------
+      final alertId = await _checkForCriticalAlerts(userId, combined, msgDate, amount);
+      if (alertId != null) {
+        // If it's a critical alert (failed payment), check if we should ALSO skip creating a transaction?
+        // Usually failed txns are NOT expenses, so we should NOT create an expense record.
+        // Returning here prevents the "Expense" from being created, which is correct (money didn't go out).
+        _log('Skipped transaction creation due to CRITICAL ALERT: $alertId');
+        return msgDate; 
+      }
+
       final incRef = FirebaseFirestore.instance
           .collection('users').doc(userId)
           .collection('incomes').doc(_docIdFromKey(key));
+
+      // READ existing to check for Manual Lock
+      final existingSnap = await incRef.get();
+      final existingData = existingSnap.exists ? (existingSnap.data() as Map<String, dynamic>) : <String, dynamic>{};
+      final existingCreatedBy = existingData['createdBy'] as String?;
+      final existingUpdatedBy = existingData['updatedBy'] as String?;
+      final isUserEdited = (existingUpdatedBy?.contains('user') ?? false) || (existingCreatedBy?.contains('user') ?? false);
 
       final i = IncomeItem(
         id: incRef.id,
@@ -1381,14 +1562,29 @@ class GmailService {
         fx: amountFx,
         fees: fees.isNotEmpty ? fees : null,
         tags: tags,
+        // AUDIT
+        createdAt: (existingData['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        createdBy: existingCreatedBy ?? 'parser:gmail',
+        updatedAt: DateTime.now(),
+        updatedBy: 'parser:gmail',
       );
 
-      await incRef.set(i.toJson(), SetOptions(merge: true));
+      var jsonToWrite = i.toJson();
+      if (isUserEdited) {
+         _log('Skipping update for locked fields on ${incRef.id}');
+         // IncomeItem constructor (above) doesn't set category, so we are safe from overwriting it here
+         // But we remove counterparty just in case user renamed "Paid from"
+         jsonToWrite.remove('counterparty'); 
+         jsonToWrite.remove('note');
+      }
+
+      await incRef.set(jsonToWrite, SetOptions(merge: true));
       final labelsForDoc = labelSet.toList();
       final combinedTags = <String>{};
       combinedTags.addAll(i.tags ?? const []);
       combinedTags.addAll(labelSet);
-      await incRef.set({
+      
+      var enrichmentData = {
         'sourceRecord': sourceMeta,
         'merchantKey': merchantKey,
         if (merchantNorm.isNotEmpty) 'merchant': merchantNorm,
@@ -1399,7 +1595,15 @@ class GmailService {
         'categorySource': categorySource,
         'tags': combinedTags.toList(),
         'labels': labelsForDoc,
-      }, SetOptions(merge: true));
+      };
+
+      if (isUserEdited) {
+         enrichmentData.remove('category');
+         enrichmentData.remove('subcategory');
+         enrichmentData.remove('merchant');
+      }
+
+      await incRef.set(enrichmentData, SetOptions(merge: true));
 
       await incRef.set({
         'ingestSources': FieldValue.arrayUnion(['gmail']),
@@ -1775,6 +1979,15 @@ class GmailService {
   // infer debit/credit from common cues (ignore "credit card"/"debit card" noise, treat autopay as debit)
   String? _inferDirection(String body) {
     final lower = body.toLowerCase();
+
+    // SPECIAL CASE: Loan Repayment ("credited to your loan account")
+    // This looks like a credit/income but is actually an expense (user paid the loan).
+    if (lower.contains('credited to your loan') || 
+        lower.contains('credited to loan') || 
+        lower.contains('payment of') && lower.contains('loan account')) {
+      return 'debit';
+    }
+
     // strip card type tokens so "credit" inside "credit card" doesn't influence direction
     final cleaned = lower
         .replaceAll(RegExp(r'\bcredit\s+card\b'), '')
@@ -2323,6 +2536,123 @@ class GmailService {
     } catch (_) {
       return null;
     }
+  }
+
+  Future<void> _resolveAlertsForAmount(String userId, double amount) async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users').doc(userId)
+          .collection('alerts')
+          .where('isRead', isEqualTo: false)
+          .where('severity', isEqualTo: 'critical')
+          .get();
+          
+      for (final doc in snap.docs) {
+        final alertAmt = (doc.data()['amount'] as num?)?.toDouble() ?? 0.0;
+        if ((alertAmt - amount).abs() < 10) { // fuzzy match ₹10
+           await doc.reference.update({
+             'isRead': true, 
+             'resolution': 'auto_resolved_by_payment',
+             'resolvedAt': FieldValue.serverTimestamp()
+           });
+           _log('Auto-resolved alert ${doc.id} with payment of $amount');
+           
+           final msgs = [
+             "Crisis averted! 😮💨 Payment detected, alert cleared.",
+             "Phew! We saw that ₹${amount.toInt()}. You're all good now! ✨",
+             "Payment spotted! 🚀 That red alert is gone.",
+             "Smooth move. 😎 Payment confirmed, alert dismissed.",
+             "All clear! 🌈 We matched your payment to the alert.",
+           ];
+           final msg = msgs[DateTime.now().millisecond % msgs.length];
+           
+           await NotificationService().showNotification(
+             title: 'EMI Paid! Alert Resolved',
+             body: msg,
+             payload: '/loans',
+           );
+        }
+      }
+    } catch (e) {
+      _log('Error auto-resolving alerts: $e');
+    }
+  }
+
+  Future<String?> _checkForCriticalAlerts(String userId, String rawText, DateTime date, double amount) async {
+    // FRESHNESS CHECK: Skip alerts older than the start of last month (avoids spam during backfill)
+    final now = DateTime.now();
+    final startOfLastMonth = DateTime(now.year, now.month - 1, 1);
+    if (date.isBefore(startOfLastMonth)) {
+      return null;
+    }
+
+    final lower = rawText.toLowerCase();
+    
+    // Patterns
+    final isSiFail = lower.contains('si attempt') && lower.contains('failed');
+    final isEmiFail = lower.contains('emi') && lower.contains('failed');
+    final isInsufficient = lower.contains('insufficient change') || lower.contains('insufficient bal') || lower.contains('insufficient fund');
+    
+    if (isSiFail || isEmiFail || isInsufficient) {
+      // It's a failure!
+      String title = '⚠️ Transaction Failed';
+      String body = 'A transaction could not be completed.';
+      
+      if (isSiFail) {
+        title = '⚠️ Auto-Pay Failed';
+        body = 'Your Standing Instruction (SI) attempt has failed.';
+        if (amount > 0) body += ' Amount: ₹$amount';
+      } else if (isEmiFail) {
+        title = '⚠️ EMI Payment Failed';
+        body = 'Your EMI payment could not be processed.';
+         if (amount > 0) body += ' Amount: ₹$amount';
+      }
+      
+      if (isInsufficient) {
+        body += ' Reason: Insufficient Balance.';
+      }
+      
+      final key = 'ALERT|${date.millisecondsSinceEpoch}|${amount.toInt()}';
+      final ref = FirebaseFirestore.instance
+          .collection('users').doc(userId)
+          .collection('alerts').doc(key);
+          
+      // Idempotent write
+      await ref.set({
+        'title': title,
+        'body': body,
+        'date': Timestamp.fromDate(date),
+        'severity': 'critical', // critical | warning | info
+        'isRead': false,
+        'amount': amount,
+        'raw': _maskSensitive(rawText),
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      
+      // TRIGGER LOAN SUGGESTION ON FAILURE TOO
+      if (isSiFail || isEmiFail) {
+         await LoanDetectionService().checkLoanTransaction(userId, {
+           'amount': amount,
+           'merchant': 'Loan Repayment Alert', 
+           'category': 'Payments',
+           'subcategory': 'Loan Repayment',
+           'note': 'Detected via Failed Alert: $rawText', 
+           'description': 'Loan Repayment', 
+           'date': Timestamp.fromDate(date),
+         });
+      }
+
+      // Notify User
+      await NotificationService().showNotification(
+        title: title,
+        body: body,
+        payload: '/loans',
+      );
+      
+      return key;
+    }
+    
+    return null;
   }
 }
 

@@ -4,8 +4,8 @@ import { PendingAction } from "../action_service";
 import { TOOLS } from "../tools";
 import { getSystemPrompt } from "../system_prompt";
 
-// We use a lightweight but capable model
-const SELECTED_MODEL = "Llama-3.2-3B-Instruct-q4f16_1-MLC";
+// We use a lightweight but capable model (~550MB) - The "Silent Edge"
+const SELECTED_MODEL = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
 
 let engine: MLCEngine | null = null;
 
@@ -122,12 +122,12 @@ export const generateWebLLMResponse = async (
             timestamp: new Date()
         };
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("WebLLM Error:", error);
         return {
             id: Date.now().toString(),
             role: "assistant",
-            content: "My local brain hiccuped. 😵‍💫 Try again?",
+            content: `My local brain hiccuped. 😵‍💫 Error: ${error.message || error}`,
             timestamp: new Date()
         };
     }

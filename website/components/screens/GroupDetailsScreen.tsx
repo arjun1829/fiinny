@@ -1,13 +1,18 @@
 import { GroupModel, ExpenseItem, FriendModel } from "@/lib/firestore";
-import { ArrowLeft, Plus, Users, Receipt, Settings } from "lucide-react";
+import { ArrowLeft, Plus, Users, Receipt, Settings, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import PrimaryButton from "../widgets/PrimaryButton";
 import TransactionCard from "../widgets/TransactionCard";
 import AddExpenseModal from "../modals/AddExpenseModal";
 import ExpenseDetailsModal from "../modals/ExpenseDetailsModal";
+import EditExpenseModal from "../modals/EditExpenseModal";
+import SettleUpModal from "../modals/SettleUpModal";
 import ChartsTab from "../tabs/ChartsTab";
+import ChatTab from "../tabs/ChatTab";
+import RecurringExpensesTab from "../tabs/RecurringExpensesTab";
 import { ExpenseService } from "@/lib/services/ExpenseService";
+import { computeNetByMember } from "@/lib/logic/balanceMath";
 
 interface GroupDetailsScreenProps {
     group: GroupModel;
@@ -26,9 +31,20 @@ export default function GroupDetailsScreen({
     onAddExpense,
     isLoading = false
 }: GroupDetailsScreenProps) {
-    const [activeTab, setActiveTab] = useState<"expenses" | "charts" | "balances" | "members">("expenses");
+    const [activeTab, setActiveTab] = useState<"expenses" | "charts" | "balances" | "members" | "chat" | "recurring">("expenses");
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [selectedExpense, setSelectedExpense] = useState<ExpenseItem | null>(null);
+
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [expenseToEdit, setExpenseToEdit] = useState<ExpenseItem | null>(null);
+
+    const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
+    const [settleFriend, setSettleFriend] = useState<FriendModel | null>(null);
+
+    const memberBalances = useMemo(() => {
+        return computeNetByMember(expenses);
+    }, [expenses]);
+
 
     const handleAddExpense = async (expense: Partial<ExpenseItem>) => {
         const newExpense = {
@@ -41,11 +57,34 @@ export default function GroupDetailsScreen({
         onAddExpense(); // Trigger refresh
     };
 
+    const handleEditExpense = async (expense: ExpenseItem) => {
+        await ExpenseService.updateExpense(currentUserId, expense);
+        onAddExpense(); // Trigger refresh
+        setIsEditModalOpen(false);
+    };
+
     const handleDeleteExpense = async (id: string) => {
         if (confirm("Are you sure you want to delete this expense?")) {
             await ExpenseService.deleteExpense(currentUserId, id);
             onAddExpense(); // Trigger refresh
         }
+    };
+
+    const handleSettleUp = async (payment: Partial<ExpenseItem>) => {
+        const newPayment = {
+            ...payment,
+            id: "",
+            groupId: group.id, // Settle up in group context usually logged in group
+        } as ExpenseItem;
+        await ExpenseService.addExpense(currentUserId, newPayment);
+        onAddExpense();
+        setIsSettleModalOpen(false);
+        setSettleFriend(null);
+    };
+
+    const openSettleModal = (friend: FriendModel) => {
+        setSettleFriend(friend);
+        setIsSettleModalOpen(true);
     };
 
     return (
@@ -66,9 +105,6 @@ export default function GroupDetailsScreen({
                         </div>
                     </div>
                 </div>
-                <button className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500">
-                    <Settings className="w-6 h-6" />
-                </button>
             </div>
 
             {/* Tabs */}
@@ -90,6 +126,18 @@ export default function GroupDetailsScreen({
                     className={`px-6 py-3 font-medium text-sm transition-all border-b-2 ${activeTab === "balances" ? "border-teal-600 text-teal-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}
                 >
                     Balances
+                </button>
+                <button
+                    onClick={() => setActiveTab("chat")}
+                    className={`px-6 py-3 font-medium text-sm transition-all border-b-2 ${activeTab === "chat" ? "border-teal-600 text-teal-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+                >
+                    Chat
+                </button>
+                <button
+                    onClick={() => setActiveTab("recurring")}
+                    className={`px-6 py-3 font-medium text-sm transition-all border-b-2 ${activeTab === "recurring" ? "border-teal-600 text-teal-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+                >
+                    Recurring
                 </button>
                 <button
                     onClick={() => setActiveTab("members")}
@@ -145,6 +193,51 @@ export default function GroupDetailsScreen({
                     </>
                 ) : activeTab === "charts" ? (
                     <ChartsTab expenses={expenses} currentUserId={currentUserId} friends={members} />
+                ) : activeTab === "chat" ? (
+                    <ChatTab channelId={group.id} currentUserId={currentUserId} />
+                ) : activeTab === "recurring" ? (
+                    <RecurringExpensesTab
+                        currentUserId={currentUserId}
+                        filterType="group"
+                        filterId={group.id}
+                    />
+                ) : activeTab === "balances" ? (
+                    <div className="divide-y divide-slate-100">
+                        {members.map(m => {
+                            const net = memberBalances[m.phone] || 0;
+                            const myNet = memberBalances[currentUserId] || 0;
+                            const showSettle = m.phone !== currentUserId && Math.abs(net) > 0.1;
+
+                            return (
+                                <div key={m.phone} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                                    <div className="flex items-center space-x-4">
+                                        <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center text-slate-600 font-bold">
+                                            {m.avatar === "👤" ? m.name[0] : <img src={m.avatar} alt={m.name} className="w-full h-full rounded-full object-cover" />}
+                                        </div>
+                                        <div>
+                                            <div className="font-bold text-slate-900">
+                                                {m.phone === currentUserId ? "You" : m.name}
+                                            </div>
+                                            <div className="text-xs text-slate-500">{m.phone}</div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <div className={`font-bold ${net > 0 ? "text-green-600" : net < 0 ? "text-red-600" : "text-slate-400"}`}>
+                                            {net > 0 ? `gets back ₹${net.toFixed(2)}` : net < 0 ? `owes ₹${Math.abs(net).toFixed(2)}` : "settled"}
+                                        </div>
+                                        {showSettle && (
+                                            <button
+                                                onClick={() => openSettleModal(m)}
+                                                className="px-3 py-1 rounded-full text-xs font-bold border border-slate-300 text-slate-600 hover:bg-slate-100 transition-colors"
+                                            >
+                                                Settle
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
                 ) : activeTab === "members" ? (
                     <div className="divide-y divide-slate-100">
                         {members.map((member) => (
@@ -163,7 +256,7 @@ export default function GroupDetailsScreen({
                     </div>
                 ) : (
                     <div className="p-12 text-center">
-                        <p className="text-slate-500">Balances feature coming soon!</p>
+                        <p className="text-slate-500">Feature coming soon!</p>
                     </div>
                 )}
             </div>
@@ -177,6 +270,27 @@ export default function GroupDetailsScreen({
                 defaultGroupId={group.id}
             />
 
+            <EditExpenseModal
+                isOpen={isEditModalOpen}
+                onClose={() => setIsEditModalOpen(false)}
+                onSubmit={handleEditExpense}
+                expense={expenseToEdit}
+                friends={members}
+                currentUser={{ uid: currentUserId, phoneNumber: currentUserId }}
+            />
+
+            {settleFriend && (
+                <SettleUpModal
+                    isOpen={isSettleModalOpen}
+                    onClose={() => { setIsSettleModalOpen(false); setSettleFriend(null); }}
+                    onSubmit={handleSettleUp}
+                    currentUser={{ uid: currentUserId, phoneNumber: currentUserId }}
+                    friend={settleFriend}
+                    suggestedAmount={0}
+                    userOwesFriend={true}
+                />
+            )}
+
             <ExpenseDetailsModal
                 isOpen={!!selectedExpense}
                 onClose={() => setSelectedExpense(null)}
@@ -185,9 +299,9 @@ export default function GroupDetailsScreen({
                 friends={members}
                 onDelete={handleDeleteExpense}
                 onEdit={(expense) => {
-                    // TODO: Implement Edit Modal
-                    console.log("Edit expense:", expense);
+                    setExpenseToEdit(expense);
                     setSelectedExpense(null);
+                    setIsEditModalOpen(true);
                 }}
             />
         </div>

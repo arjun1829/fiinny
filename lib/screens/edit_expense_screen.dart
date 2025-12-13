@@ -414,6 +414,11 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         customSplits: widget.expense.customSplits,
         label: label,
         comments: personalNote.isNotEmpty ? personalNote : null,
+        // Audit preservation & update
+        createdAt: widget.expense.createdAt,
+        createdBy: widget.expense.createdBy,
+        updatedAt: DateTime.now(),
+        updatedBy: 'user',
       );
       await ExpenseService().updateExpense(widget.userPhone, updated);
       if (!mounted) return;
