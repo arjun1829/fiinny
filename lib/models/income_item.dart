@@ -51,6 +51,7 @@ class IncomeItem {
   final String? label;      // legacy single label (kept)
   final String? bankLogo;
   final String? category;   // "Income", "Salary", "Refund", etc.
+  final String? subcategory; // Added to match Firestore
 
   // --- NEW: Counterparty / Instrument / Banking context (mirrors expense) ---
   /// Display-ready "Received from" (employer/merchant/UPI VPA/person)
@@ -99,6 +100,8 @@ class IncomeItem {
     this.label,
     this.bankLogo,
     this.category,
+    this.subcategory,
+    // NEW context
     // NEW context
     this.counterparty,
     this.counterpartyType,
@@ -140,6 +143,8 @@ class IncomeItem {
     String? label,
     String? bankLogo,
     String? category,
+    String? subcategory,
+    // NEW context
     // NEW context
     String? counterparty,
     String? counterpartyType,
@@ -180,6 +185,8 @@ class IncomeItem {
       label: label ?? this.label,
       bankLogo: bankLogo ?? this.bankLogo,
       category: category ?? this.category,
+      subcategory: subcategory ?? this.subcategory,
+      // NEW context
       // NEW context
       counterparty: counterparty ?? this.counterparty,
       counterpartyType: counterpartyType ?? this.counterpartyType,
@@ -242,6 +249,8 @@ class IncomeItem {
       if (label != null) 'label': label, // legacy
       'bankLogo': bankLogo,
       if (category != null) 'category': category,
+      if (subcategory != null) 'subcategory': subcategory,
+      // NEW context
       // NEW context
       if (counterparty != null && counterparty!.trim().isNotEmpty) 'counterparty': counterparty,
       if (counterpartyType != null) 'counterpartyType': counterpartyType,
@@ -329,6 +338,8 @@ class IncomeItem {
       label: json['label'], // legacy single
       bankLogo: json['bankLogo'],
       category: json['category'],
+      subcategory: json['subcategory'],
+      // NEW context
       // NEW context
       counterparty: json['counterparty'],
       counterpartyType: json['counterpartyType'],
@@ -404,6 +415,8 @@ class IncomeItem {
       label: data['label'], // legacy
       bankLogo: data['bankLogo'],
       category: data['category'],
+      subcategory: data['subcategory'],
+      // NEW context
       // NEW context
       counterparty: data['counterparty'],
       counterpartyType: data['counterpartyType'],

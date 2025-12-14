@@ -44,6 +44,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
   // ---------------------- State ----------------------
   double _amount = 0.0;
   String _note = '';
+  String _counterparty = '';
   DateTime _date = DateTime.now();
   String _label = '';
   String _type = 'General';
@@ -93,6 +94,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
       final e = widget.existingExpense!;
       _amount = e.amount;
       _note = e.note;
+      _counterparty = e.counterparty ?? '';
       _date = e.date;
       _label = e.label ?? '';
       _type = e.type;
@@ -350,6 +352,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
       customSplits: splits,
       isBill: _isBill,
       label: _label,
+      counterparty: _counterparty.trim().isNotEmpty ? _counterparty.trim() : null,
     );
 
     if (widget.existingExpense == null) {
@@ -622,6 +625,12 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
           initialValue: _note,
           decoration: _pillDec(label: "Note", icon: Icons.sticky_note_2),
           onChanged: (v) => setState(() => _note = v),
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          initialValue: _counterparty,
+          decoration: _pillDec(label: "Paid to (optional)", icon: Icons.storefront_rounded),
+          onChanged: (v) => setState(() => _counterparty = v),
         ),
         const SizedBox(height: 12),
         TextFormField(

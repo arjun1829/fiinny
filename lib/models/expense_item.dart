@@ -61,6 +61,7 @@ class ExpenseItem {
   // Legacy tagging
   final String? label;             // legacy single label (kept)
   final String? category;
+  final String? subcategory; // Added to match Firestore
   final String? subtype;
   final String? bankLogo;
 
@@ -132,6 +133,7 @@ class ExpenseItem {
     this.imageUrl,
     this.label,
     this.category,
+    this.subcategory,
     this.subtype,
     this.bankLogo,
     this.attachmentUrl,
@@ -186,6 +188,7 @@ class ExpenseItem {
     String? imageUrl,
     String? label,
     String? category,
+    String? subcategory,
     String? subtype,
     String? bankLogo,
     String? attachmentUrl,
@@ -240,6 +243,7 @@ class ExpenseItem {
       imageUrl: imageUrl ?? this.imageUrl,
       label: label ?? this.label,
       category: category ?? this.category,
+      subcategory: subcategory ?? this.subcategory,
       subtype: subtype ?? this.subtype,
       bankLogo: bankLogo ?? this.bankLogo,
       attachmentUrl: attachmentUrl ?? this.attachmentUrl,
@@ -319,6 +323,7 @@ class ExpenseItem {
       if (imageUrl != null) 'imageUrl': imageUrl,
       if (label != null) 'label': label, // legacy
       if (category != null) 'category': category,
+      if (subcategory != null) 'subcategory': subcategory,
       if (subtype != null) 'subtype': subtype,
       'bankLogo': bankLogo,
       // NEW context
@@ -430,6 +435,7 @@ class ExpenseItem {
       imageUrl: json['imageUrl'],
       label: json['label'],
       category: json['category'],
+      subcategory: json['subcategory'],
       subtype: json['subtype'],
       bankLogo: json['bankLogo'],
       attachmentUrl: json['attachmentUrl'],
@@ -532,6 +538,7 @@ class ExpenseItem {
       imageUrl: data['imageUrl'],
       label: data['label'],
       category: data['category'],
+      subcategory: data['subcategory'],
       subtype: data['subtype'],
       bankLogo: data['bankLogo'],
       attachmentUrl: data['attachmentUrl'],

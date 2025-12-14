@@ -55,6 +55,7 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
   String _category = '';
   DateTime _date = DateTime.now();
   String? _selectedPayerPhone;
+  String _counterparty = '';
 
   // Custom split
   bool _customSplit = false;
@@ -412,6 +413,7 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
           friendIds: [widget.friend.phone],
           payerId: _selectedPayerPhone!,
           customSplits: _customSplit ? _normalizedSplits() : null,
+          counterparty: _counterparty.trim().isNotEmpty ? _counterparty.trim() : null,
         ),
       );
       if (!mounted) return;
@@ -829,6 +831,12 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
           onChanged: (v) => _note = v,
           enabled: !_saving,
           maxLines: 2,
+        ),
+        const SizedBox(height: 10),
+         TextFormField(
+          decoration: _pillDec(label: "Paid to (optional)", icon: Icons.storefront_rounded),
+          onChanged: (v) => _counterparty = v,
+          enabled: !_saving,
         ),
         const SizedBox(height: 14),
         Wrap(

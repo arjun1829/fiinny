@@ -106,6 +106,8 @@ class CategoryRules {
     'OLA': ['Travel', 'cab/bike services', ['mobility']],
     'UBER': ['Travel', 'cab/bike services', ['mobility']],
     'RAPIDO': ['Travel', 'cab/bike services', ['mobility']],
+    'HYDERABAD M': ['Travel', 'railways', ['metro', 'travel']],
+    'HYDERABAD METRO': ['Travel', 'railways', ['metro', 'travel']],
 
     // Entertainment
     'BOOKMYSHOW': ['Entertainment', 'movies', ['entertainment']],

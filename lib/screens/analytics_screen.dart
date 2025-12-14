@@ -2801,28 +2801,35 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Last 12 months',
+                style: Fx.label.copyWith(
+                  color: Fx.text.withOpacity(0.6),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                INR.f(currentSpend),
+                style: Fx.title.copyWith(fontSize: 24),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Last 12 months',
-                      style: Fx.label.copyWith(
-                        color: Fx.text.withOpacity(0.6),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      INR.f(currentSpend),
-                      style: Fx.title.copyWith(fontSize: 24),
-                    ),
-                  ],
+                child: Text(
+                  comparisonText,
+                  style: Fx.label.copyWith(color: Fx.text.withOpacity(0.7)),
                 ),
               ),
+              const SizedBox(width: 8),
               // View selector (Trend / Stacked)
               Container(
                 decoration: BoxDecoration(
@@ -2838,11 +2845,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            comparisonText,
-            style: Fx.label.copyWith(color: Fx.text.withOpacity(0.7)),
           ),
           const SizedBox(height: 24),
 
@@ -2914,7 +2916,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     if (maxY == 0) maxY = 100;
     maxY = maxY * 1.25; // Add headroom
 
+    final cacheKey = [
+      _aggRev,
+      _periodToken,
+      _bankFilter,
+      _last4Filter,
+      _instrumentFilter
+    ].join('_');
+
     return TweenAnimationBuilder<double>(
+      key: ValueKey('trend_chart_$cacheKey'),
       tween: Tween(begin: 0.0, end: 1.0),
       duration: const Duration(milliseconds: 1000),
       curve: Curves.easeOutQuart,
@@ -3085,115 +3096,134 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   Widget _buildStackedChart() {
     // Show breakdown of top categories per month
-    final stacks = _buildMonthlyCategoryStacks(6); // last 6 months only for space
+    final stacks = _buildMonthlyCategoryStacks(6); // last 6 months only
     if (stacks.isEmpty) return const SizedBox.shrink();
 
-    // Normalize to 100%? Or absolute?
-    // Let's do absolute stacked bars.
     double maxY = 0;
     for (final s in stacks) {
       final total = s.segments.fold<double>(0, (sum, seg) => sum + seg.value);
       if (total > maxY) maxY = total;
     }
     if (maxY == 0) maxY = 100;
+    maxY = maxY * 1.1; // Headroom
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final barWidth = (width / (stacks.length * 2)).clamp(12.0, 32.0);
+    final cacheKey = [
+      _aggRev,
+      _periodToken,
+      _bankFilter,
+      _last4Filter,
+      _instrumentFilter
+    ].join('_');
 
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            for (final stack in stacks)
-              _singleStackedBar(stack, maxY, barWidth),
-          ],
+    return TweenAnimationBuilder<double>(
+      key: ValueKey('stacked_chart_$cacheKey'),
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 1000),
+      curve: Curves.easeOutQuart,
+      builder: (context, anim, child) {
+        return BarChart(
+          BarChartData(
+            alignment: BarChartAlignment.spaceEvenly,
+            maxY: maxY,
+            minY: 0,
+            barTouchData: BarTouchData(
+              touchTooltipData: BarTouchTooltipData(
+                tooltipBgColor: Colors.black87,
+                getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                   // Calculate total for this group (month)
+                   final stack = stacks[groupIndex];
+                   final total = stack.segments.fold<double>(0, (sum, s) => sum + s.value);
+                   
+                   return BarTooltipItem(
+                     INR.f(total),
+                     const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                     children: [
+                       // Optional: Add date below
+                       TextSpan(
+                         text: '\n${DateFormat('MMM yyyy').format(DateTime(stack.year, stack.month))}',
+                         style: const TextStyle(
+                           color: Colors.white70,
+                           fontSize: 10,
+                           fontWeight: FontWeight.normal,
+                         ),
+                       ),
+                     ],
+                   );
+                },
+              ),
+            ),
+            titlesData: FlTitlesData(
+              show: true,
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 24,
+                  interval: 1,
+                  getTitlesWidget: (val, meta) {
+                    final index = val.toInt();
+                    if (index < 0 || index >= stacks.length) return const SizedBox.shrink();
+                    final s = stacks[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        DateFormat('MMM').format(DateTime(s.year, s.month)),
+                        style: TextStyle(
+                           fontSize: 10, 
+                           color: Colors.grey[600],
+                           fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            ),
+            gridData: const FlGridData(show: false),
+            borderData: FlBorderData(show: false),
+            barGroups: [
+               for (int i = 0; i < stacks.length; i++)
+                 BarChartGroupData(
+                   x: i,
+                   barRods: [
+                     BarChartRodData(
+                       toY: stacks[i].segments.fold<double>(0, (sum, s) => sum + s.value) * anim,
+                       width: 16,
+                       borderRadius: BorderRadius.circular(2),
+                       rodStackItems: _buildRodStackItems(stacks[i], anim),
+                       color: Colors.transparent, // Color is determined by rodStackItems
+                     ),
+                   ],
+                 ),
+            ],
+          ),
         );
       },
     );
   }
 
-  Widget _singleStackedBar(
-    _MonthlyCategoryStack stack,
-    double maxY,
-    double width,
-  ) {
-    final label = DateFormat('MMM').format(DateTime(stack.year, stack.month));
-    final total = stack.segments.fold<double>(0, (sum, seg) => sum + seg.value);
-    final hFactor = (total / maxY).clamp(0.0, 1.0);
-    final totalH = 140 * hFactor;
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        SizedBox(
-          height: 140,
-          width: width,
-          child: Stack(
-            alignment: Alignment.bottomCenter,
-            children: [
-              // Background track
-              Container(
-                width: width,
-                height: 140,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              // Segments
-              _buildStackedSegments(stack.segments, totalH, width),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 10, color: Colors.black54),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStackedSegments(
-    List<_CategoryStackSegment> segments,
-    double totalHeight,
-    double width,
-  ) {
-    if (totalHeight <= 0) return const SizedBox.shrink();
-    final totalVal = segments.fold<double>(0, (sum, s) => sum + s.value);
-    if (totalVal <= 0) return const SizedBox.shrink();
-
-    final children = <Widget>[];
-    for (final seg in segments) {
-      final pct = seg.value / totalVal;
-      final h = totalHeight * pct;
-      final color = _categoryColors[seg.category] ?? Colors.grey;
-
-      children.add(
-        Container(
-          width: width,
-          height: h,
-          color: color,
-        ),
-      );
+  List<BarChartRodStackItem> _buildRodStackItems(_MonthlyCategoryStack stack, double anim) {
+    final items = <BarChartRodStackItem>[];
+    double currentY = 0;
+    
+    // Sort segments so largest are at bottom (or top) - using same order as logic
+    // Usually stack items are drawn from 0 upwards.
+    // If segments are [A=10, B=5], we want A from 0-10, B from 10-15.
+    
+    for (final seg in stack.segments) {
+       final val = seg.value * anim;
+       if (val <= 0) continue;
+       final fromY = currentY;
+       final toY = currentY + val;
+       final color = _categoryColors[seg.category] ?? Colors.grey;
+       
+       items.add(BarChartRodStackItem(fromY, toY, color));
+       currentY = toY;
     }
-
-    // Reverse so largest/first is at bottom? Or top?
-    // Usually stacks build up.
-    // If we use Column(mainAxisAlignment: end), the first child is at top.
-    // We want the first segment at the bottom.
-    // So we should reverse the list if we use Column.
-    // Or just use Flex.
-
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: children.reversed.toList(),
-      ),
-    );
+    
+    return items;
   }
 
   Future<void> _openTxDrilldown({

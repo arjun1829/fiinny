@@ -45,6 +45,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
   // Controllers / fields
   late TextEditingController _amountCtrl;
   late TextEditingController _noteCtrl; // personal note (maps to comments)
+  late TextEditingController _counterpartyCtrl;
   late TextEditingController _labelCtrl;
   late TextEditingController _customCategoryCtrl;
   String _bankRefText = '';
@@ -95,6 +96,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         ? existingComments
         : (looksStructured ? '' : originalNote);
     _noteCtrl = TextEditingController(text: initialPersonalNote);
+    _counterpartyCtrl = TextEditingController(text: widget.expense.counterparty ?? '');
     _labelCtrl = TextEditingController(text: widget.expense.label ?? "");
     _customCategoryCtrl = TextEditingController(text: _customCategory);
     _date = widget.expense.date;
@@ -110,7 +112,9 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
     if (!_categories.contains(_category)) {
       _category = _categories.isNotEmpty ? _categories.first : 'Others';
     }
-    _subcategory = widget.expense.subtype;
+    _subcategory = (widget.expense.subcategory ?? '').isNotEmpty
+        ? widget.expense.subcategory
+        : widget.expense.subtype;
     if (_category.isNotEmpty && _category != 'Other') {
       _subcategories = kExpenseSubcategories[_category] ?? [];
     }
@@ -333,6 +337,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
     _pg.dispose();
     _amountCtrl.dispose();
     _noteCtrl.dispose();
+    _counterpartyCtrl.dispose();
     _labelCtrl.dispose();
     _customCategoryCtrl.dispose();
     super.dispose();
@@ -410,6 +415,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         friendIds: friendIds,
         payerId: _selectedPayerPhone!,
         groupId: groupId,
+        counterparty: _counterpartyCtrl.text.trim().isNotEmpty ? _counterpartyCtrl.text.trim() : null,
         settledFriendIds: settledFriends,
         customSplits: widget.expense.customSplits,
         label: label,
@@ -534,6 +540,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                       if (d != null) setState(() => _date = d);
                     },
                     noteCtrl: _noteCtrl,
+                    counterpartyCtrl: _counterpartyCtrl,
                     onNext: _next,
                     saving: _saving,
                     bankRefText: _bankRefText,
@@ -649,6 +656,7 @@ class _StepBasics extends StatelessWidget {
   final DateTime date;
   final VoidCallback onPickDate;
   final TextEditingController noteCtrl;
+  final TextEditingController counterpartyCtrl;
   final VoidCallback onNext;
   final bool saving;
   final String bankRefText;
@@ -665,6 +673,7 @@ class _StepBasics extends StatelessWidget {
     required this.date,
     required this.onPickDate,
     required this.noteCtrl,
+    required this.counterpartyCtrl,
     required this.onNext,
     required this.saving,
     required this.bankRefText,
@@ -778,8 +787,20 @@ class _StepBasics extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          const _H2('Your note (optional)'),
+          const _H2('Details'),
           const SizedBox(height: 8),
+          _Box(
+            child: TextField(
+              controller: counterpartyCtrl,
+              enabled: !saving,
+              decoration: _inputDec().copyWith(
+                labelText: 'Paid to (opt)',
+                hintText: 'Merchant/Person name…',
+                prefixIcon: const Icon(Icons.storefront_rounded, color: kPrimary),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           if (isActive)
             _Box(
               child: TextField(
@@ -787,7 +808,8 @@ class _StepBasics extends StatelessWidget {
                 maxLines: 2,
                 enabled: !saving,
                 decoration: _inputDec().copyWith(
-                  hintText: 'Add a note just for yourself…',
+                  labelText: 'Note (opt)',
+                  hintText: 'For yourself…',
                 ),
               ),
             )
