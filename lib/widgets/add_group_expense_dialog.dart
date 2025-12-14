@@ -54,6 +54,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
   String _category = '';
   DateTime _date = DateTime.now();
   String? _selectedPayerPhone;
+  String _counterparty = '';
 
   // Custom split
   bool _customSplit = false;
@@ -454,6 +455,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
         groupId: widget.group.id,
         payerId: _selectedPayerPhone!,
         customSplits: custom, // null = equal split downstream
+        counterparty: _counterparty.trim().isNotEmpty ? _counterparty.trim() : null,
       );
 
       await ExpenseService().addExpenseWithSync(widget.userPhone, expense);
@@ -843,6 +845,12 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
           onChanged: (v) => _note = v,
           enabled: !_saving,
           maxLines: 2,
+        ),
+        const SizedBox(height: 10),
+        TextFormField(
+          decoration: _pillDec(label: "Paid to (optional)", icon: Icons.storefront_rounded),
+          onChanged: (v) => _counterparty = v,
+          enabled: !_saving,
         ),
         const SizedBox(height: 14),
         Wrap(

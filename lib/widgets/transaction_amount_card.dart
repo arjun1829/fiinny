@@ -138,9 +138,11 @@ class TransactionAmountCard extends StatelessWidget {
                   children: List.generate(barData.length, (idx) {
                     final val = barData[idx];
                     final barHeight = maxVal == 0 ? 0.0 : (val / maxVal) * 42.0;
+                    final double hMargin = barData.length > 40 ? 0.0 : 1.0;
+
                     return Expanded(
                       child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 1), // Thin gaps
+                        margin: EdgeInsets.symmetric(horizontal: hMargin), // Thin gaps
                         alignment: Alignment.bottomCenter,
                         child: Container(
                           height: barHeight < 2 && val > 0 ? 2 : barHeight,

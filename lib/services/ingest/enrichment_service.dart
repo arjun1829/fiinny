@@ -40,6 +40,7 @@ class EnrichmentService {
     required double amount,
     required DateTime date,
     List<String> hints = const [],
+    String? merchantRegex, // Optional regex-extracted merchant name
     String currency = 'INR', // Default to INR for backward compatibility
     String regionCode = 'IN',
   }) async {
@@ -56,7 +57,36 @@ class EnrichmentService {
     // 2. LLM Call (Primary Engine)
     if (AiConfig.llmOn) {
       try {
-        final enrichedDesc = hints.join('; ') + '; ' + rawText;
+        // Scrub known legal/footer noise to prevent LLM confusion
+        var cleanedText = rawText;
+        const noisePhrases = [
+          'any errors or omissions',
+          'we maintain strict', 
+          'security standards',
+          'please do not reply',
+          'system generated',
+        ];
+        for (final phrase in noisePhrases) {
+          cleanedText = cleanedText.replaceAll(RegExp(phrase, caseSensitive: false), '');
+        }
+
+        if (merchantRegex != null && merchantRegex.trim().isNotEmpty) {
+           final m = merchantRegex.trim();
+           // Quick check to ensure regex didn't pick up noise
+           bool isNoise = false;
+           for (final phrase in noisePhrases) {
+             if (m.toLowerCase().contains(phrase)) {
+               isNoise = true;
+               break;
+             }
+           }
+           if (!isNoise) {
+             // We modify the hints list (copy it) or just append string
+             cleanedText = "Possible Merchant: $m\n" + cleanedText;
+           }
+        }
+
+        final enrichedDesc = hints.join('; ') + '; ' + cleanedText;
         
         final labels = await TxExtractor.labelUnknown([
           TxRaw(

@@ -756,6 +756,7 @@ class SmsIngestor {
           date: event.timestamp,
           currency: event.currency,
           regionCode: 'IN', // TODO: Get from user profile
+          merchantRegex: null,
         );
 
         // 2. Map to Legacy Item
@@ -1056,6 +1057,7 @@ class SmsIngestor {
       amount: amount,
       date: ts,
       hints: hintParts,
+      merchantRegex: null,
     );
 
     merchantNorm = enriched.merchantName;

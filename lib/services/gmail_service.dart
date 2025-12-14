@@ -270,7 +270,7 @@ class GmailService {
 
   // PATCH: strict txn gating utilities
   bool _hasCurrencyAmount(String s) => RegExp(
-        r'(₹|inr|rs\.?)\s*[0-9][\d,]*(?:\.\d{1,2})?',
+        r'(₹|inr|rs\.?)\s*[0-9][\d,]*(?:\s*\.\s*\d{1,2})?',
         caseSensitive: false,
       ).hasMatch(s);
 
@@ -526,7 +526,8 @@ class GmailService {
     const stopwords = {
       'INFORM', 'YOU', 'YOUR', 'THAT', 'ACCOUNT', 'ACC', 'A', 'THE', 'WE', 'ARE', 'IS', 'TO', 'FROM',
       'PAYMENT', 'PAID', 'THANK', 'CUSTOMER', 'CARD', 'CREDIT', 'DEBIT', 'BANK', 'REF', 'REFERENCE',
-      'TRANSACTION', 'DETAILS', 'INFO', 'NOTICE', 'BALANCE', 'AMOUNT', 'THIS', 'MESSAGE', 'SPENT', 'PURCHASE', 'AT', 'FOR', 'WITH'
+      'TRANSACTION', 'DETAILS', 'INFO', 'NOTICE', 'BALANCE', 'AMOUNT', 'THIS', 'MESSAGE', 'SPENT', 'PURCHASE', 'AT', 'FOR', 'WITH',
+      'ERRORS', 'OMISSIONS', 'LIABILITY', 'STRICT', 'SECURITY', 'STANDARDS', 'MAINTAIN'
     };
     final tokens = upper.split(RegExp(r'[^A-Z0-9]+')).where((e) => e.isNotEmpty).toList();
     if (tokens.isEmpty) return null;
@@ -657,11 +658,12 @@ class GmailService {
     double? _amtAfter(List<RegExp> rxs) {
       for (final rx in rxs) {
         final a = RegExp(
-          rx.pattern + r''':?\s*(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\.\d{1,2})?)''',
+          rx.pattern + r''':?\s*(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)''',
           caseSensitive: false,
         ).firstMatch(text);
         if (a != null) {
-          final v = double.tryParse((a.group(1) ?? '').replaceAll(',', ''));
+          final numStr = (a.group(1) ?? '').replaceAll(',', '').replaceAll(RegExp(r'\s+'), '');
+          final v = double.tryParse(numStr);
           if (v != null) return v;
         }
       }
@@ -731,14 +733,16 @@ class GmailService {
 
   // Extract sender name for UPI P2A alerts, e.g. "UPI/P2A/.../SHREYA AG/HDFC BANK"
   String? _extractUpiSenderName(String text) {
+    // Relaxed regex to allow mixed case names (e.g. Nurbasa Mujeeb)
     final rx = RegExp(
-      r'\bUPI\/P2A\/[^\/\s]{3,}\/([A-Z][A-Z0-9 \.\-]{2,})(?:\/|\b)',
+      r'\bUPI\/P2[AM]\/[^\/\s]{3,}\/([A-Za-z0-9 \.\-]{2,})(?:\/|\b)',
       caseSensitive: false,
     );
-    final m = rx.firstMatch(text.toUpperCase());
+    final m = rx.firstMatch(text); // Case insensitive matching on original text
     if (m != null) {
       final raw = (m.group(1) ?? '').trim();
-      if (raw.isNotEmpty && !RegExp(r'(HDFC|ICICI|SBI|AXIS|KOTAK|YES|IDFC|BANK)', caseSensitive: false).hasMatch(raw)) {
+      // Filter out bank names if they appear in the name slot
+      if (raw.isNotEmpty && !RegExp(r'(HDFC|ICICI|SBI|AXIS|KOTAK|YES|IDFC|BANK|UPI)', caseSensitive: false).hasMatch(raw)) {
         return raw;
       }
       return raw;
@@ -1221,6 +1225,10 @@ class GmailService {
         'instrument=${instrument!.toLowerCase().replaceAll(' ', '_')}',
       if (upiVpa != null && upiVpa.trim().isNotEmpty) 'upi=${upiVpa!.trim()}',
     ];
+
+    // Attempt robust regex extraction first (Phase 2 Fallback/Hint)
+    final merchantMatch = _guessMerchantSmart(combined);
+    final cleanHint = merchantMatch != null ? _cleanMerchantName(merchantMatch) : null;
     
     final enriched = await EnrichmentService.instance.enrichTransaction(
       userId: userId,
@@ -1228,6 +1236,7 @@ class GmailService {
       amount: amount,
       date: msgDate,
       hints: hintParts,
+      merchantRegex: cleanHint,
     );
 
     var merchantNorm = enriched.merchantName;
@@ -1829,9 +1838,9 @@ class GmailService {
   double? _extractTxnAmount(String text, {String? direction}) {
     if (text.isEmpty) return null;
     final amountPatterns = <RegExp>[
-      RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\.\d{1,2})?)',
+      RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
           caseSensitive: false),
-      RegExp(r'\bamount\s+of\s+([0-9][\d,]*(?:\.\d{1,2})?)', caseSensitive: false),
+      RegExp(r'\bamount\s+of\s+([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)', caseSensitive: false),
     ];
     final balanceCue = RegExp(
       r'(A/?c\.?\s*Bal|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance|Current\s*Balance|'
@@ -1873,7 +1882,7 @@ class GmailService {
           final lookbackStart = math.max(0, absoluteStart - 40);
           final lookback = text.substring(lookbackStart, absoluteStart);
           if (balanceCue.hasMatch(lookback)) continue;
-          final numStr = (m.group(1) ?? '').replaceAll(',', '');
+          final numStr = (m.group(1) ?? '').replaceAll(',', '').replaceAll(RegExp(r'\s+'), '');
           final value = double.tryParse(numStr);
           if (value != null && value > 0 && absoluteStart < bestIndex) {
             bestIndex = absoluteStart;
@@ -1897,7 +1906,7 @@ class GmailService {
         final lookbackStart = math.max(0, absoluteStart - 40);
         final lookback = text.substring(lookbackStart, absoluteStart);
         if (balanceCue.hasMatch(lookback)) continue;
-        final numStr = (m.group(1) ?? '').replaceAll(',', '');
+        final numStr = (m.group(1) ?? '').replaceAll(',', '').replaceAll(RegExp(r'\s+'), '');
         final value = double.tryParse(numStr);
         if (value != null && value > 0 && absoluteStart < fallbackIdx) {
           fallbackIdx = absoluteStart;
@@ -1912,18 +1921,18 @@ class GmailService {
     if (text.isEmpty) return null;
     final patterns = <RegExp>[
       RegExp(
-        r'(?:A/?c\.?\s*Bal(?:\.|\s*is)?|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance)\s*(?:is\s*)?(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\.\d{1,2})?)',
+        r'(?:A/?c\.?\s*Bal(?:\.|\s*is)?|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance)\s*(?:is\s*)?(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
         caseSensitive: false,
       ),
       RegExp(
-        r'\b(?:balance|bal)\s*(?:is|:)?\s*(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\.\d{1,2})?)',
+        r'\b(?:balance|bal)\s*(?:is|:)?\s*(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
         caseSensitive: false,
       ),
     ];
     for (final rx in patterns) {
       final match = rx.firstMatch(text);
       if (match != null) {
-        final numStr = (match.group(1) ?? '').replaceAll(',', '');
+        final numStr = (match.group(1) ?? '').replaceAll(',', '').replaceAll(RegExp(r'\s+'), '');
         final value = double.tryParse(numStr);
         if (value != null && value > 0) {
           return value;
@@ -1935,14 +1944,14 @@ class GmailService {
 
   double? _extractAnyInr(String text) {
     final rxs = <RegExp>[
-      RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\.\d{1,2})?)',
+      RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
           caseSensitive: false),
-      RegExp(r'\bamount\s+of\s+([0-9][\d,]*(?:\.\d{1,2})?)', caseSensitive: false),
+      RegExp(r'\bamount\s+of\s+([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)', caseSensitive: false),
     ];
     for (final rx in rxs) {
       final m = rx.firstMatch(text);
       if (m != null) {
-        final numStr = (m.group(1) ?? '').replaceAll(',', '');
+        final numStr = (m.group(1) ?? '').replaceAll(',', '').replaceAll(RegExp(r'\s+'), '');
         final v = double.tryParse(numStr);
         if (v != null && v > 0) return v;
       }
@@ -2046,7 +2055,9 @@ class GmailService {
     final t = text.toUpperCase();
 
     // 1) explicit "Merchant Name:"
-    final m1 = RegExp(r'MERCHANT\s*NAME\s*[:\-]\s*([A-Z0-9&\.\-\* ]{3,40})').firstMatch(t);
+    // Original strict + New relaxed (multiline / varied separators)
+    final m1 = RegExp(r'MERCHANT\s*NAME\s*[:\-]\s*([A-Z0-9&\.\-\* ]{3,40})').firstMatch(t) ??
+               RegExp(r'MERCHANT\s*NAME[\s\r\n]*[:\-]?[\s\r\n]*([A-Z0-9&\.\-\* ]{3,40})').firstMatch(t);
     if (m1 != null) {
       final v = m1.group(1)!.trim();
       if (v.isNotEmpty) return v;

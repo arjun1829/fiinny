@@ -23,6 +23,8 @@ import '../widgets/chart_switcher_widget.dart';
 import '../widgets/unified_transaction_list.dart';
 import '../themes/custom_card.dart';
 import '../themes/tokens.dart';
+import '../widgets/bulk_split_dialog.dart';
+
 
 import '../services/user_data.dart'; // Needed for data passing
 
@@ -49,6 +51,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   double periodTotalExpense = 0;
   double periodTotalIncome = 0;
   Map<String, FriendModel> _friendsById = {};
+  List<FriendModel> _friends = [];
+  Set<String> _friendNameTokens = {};
+  Set<String> _friendPhoneSet = {};
   List<GroupModel> _groups = [];
 
   // Calendar state
@@ -225,7 +230,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     _friendSub = FriendService().streamFriends(widget.userPhone).listen((friends) {
       if (!mounted) return;
       setState(() {
+        _friends = friends;
         _friendsById = {for (var f in friends) f.phone: f};
+        _friendNameTokens.clear();
+        _friendPhoneSet.clear();
+        for (final f in friends) {
+          if (f.name.isNotEmpty) _friendNameTokens.add(f.name.toLowerCase());
+          if (f.phone.isNotEmpty) _friendPhoneSet.add(f.phone.replaceAll(RegExp(r'[^0-9]'), ''));
+        }
       });
     });
 
@@ -1110,7 +1122,105 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                       color: Colors.white,
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  if (!_selectedTxIds.containsAll(
+                      [...filteredExpenses.map((e) => e.id), ...filteredIncomes.map((i) => i.id)]))
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedTxIds.addAll(filteredExpenses.map((e) => e.id));
+                          _selectedTxIds.addAll(filteredIncomes.map((i) => i.id));
+                        });
+                      },
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        minimumSize: const Size(0, 0),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const Text(
+                        "Select All",
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
                   const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.call_split, color: Colors.cyanAccent),
+                    tooltip: "Bulk Split",
+                    onPressed: _selectedTxIds.isEmpty
+                        ? null
+                        : () async {
+                            final result = await showDialog<Map<String, dynamic>>(
+                                context: context,
+                                builder: (ctx) => BulkSplitDialog(
+                                      allFriends: _friends,
+                                      allGroups: _groups,
+                                    ));
+                            if (result != null) {
+                              final List<String> friendIds = result['friendIds'] ?? [];
+                              final String? groupId = result['groupId'];
+
+                              for (final tx in filteredExpenses
+                                  .where((e) => _selectedTxIds.contains(e.id))) {
+                                await ExpenseService().updateExpense(
+                                  widget.userPhone,
+                                  tx.copyWith(
+                                    friendIds: friendIds,
+                                    groupId: groupId,
+                                  ),
+                                );
+                              }
+                              // Note: Usually we don't split incomes, but if needed logic goes here.
+
+                              setState(() {
+                                _selectedTxIds.clear();
+                                _multiSelectMode = false;
+                              });
+                              _scheduleRecompute();
+                            }
+                          },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.call_split, color: Colors.cyanAccent),
+                    tooltip: "Bulk Split",
+                    onPressed: _selectedTxIds.isEmpty
+                        ? null
+                        : () async {
+                            final result = await showDialog<Map<String, dynamic>>(
+                                context: context,
+                                builder: (ctx) => BulkSplitDialog(
+                                      allFriends: _friends,
+                                      allGroups: _groups,
+                                    ));
+                            if (result != null) {
+                              final List<String> friendIds = result['friendIds'] ?? [];
+                              final String? groupId = result['groupId'];
+
+                              for (final tx in filteredExpenses
+                                  .where((e) => _selectedTxIds.contains(e.id))) {
+                                await ExpenseService().updateExpense(
+                                  widget.userPhone,
+                                  tx.copyWith(
+                                    friendIds: friendIds,
+                                    groupId: groupId,
+                                  ),
+                                );
+                              }
+                              // Note: Usually we don't split incomes
+
+                              setState(() {
+                                _selectedTxIds.clear();
+                                _multiSelectMode = false;
+                              });
+                              _scheduleRecompute();
+                            }
+                          },
+                  ),
                   IconButton(
                     icon: const Icon(Icons.label, color: Colors.amber),
                     tooltip: "Edit Label (Bulk)",
@@ -1348,6 +1458,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   _scheduleRecompute();
                 }
               },
+              onAddComment: (tx) => _openCommentDialog(tx),
             ),
           ),
         ],
@@ -1582,6 +1693,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     _scheduleRecompute();
                   }
                 },
+                onAddComment: (tx) => _openCommentDialog(tx),
               ),
             ),
           ),
@@ -2208,6 +2320,53 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       ),
     );
     return result;
+  }
+
+  Future<void> _openCommentDialog(dynamic tx) async {
+    if (tx is! ExpenseItem && tx is! IncomeItem) return;
+
+    final String currentNote = (tx is ExpenseItem ? tx.note : (tx as IncomeItem).note) ?? '';
+    final controller = TextEditingController(text: currentNote);
+
+    final newNote = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Edit Comment/Note"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: "Enter note...",
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text("Save"),
+          ),
+        ],
+      ),
+    );
+
+    if (newNote != null && newNote != currentNote) {
+      if (tx is ExpenseItem) {
+        await ExpenseService().updateExpense(
+          widget.userPhone,
+          tx.copyWith(note: newNote),
+        );
+      } else if (tx is IncomeItem) {
+        await IncomeService().updateIncome(
+          widget.userPhone,
+          tx.copyWith(note: newNote),
+        );
+      }
+      _scheduleRecompute();
+    }
   }
 }
 
@@ -3562,4 +3721,5 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         .map((word) => '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}')
         .join(' ');
   }
+
 }

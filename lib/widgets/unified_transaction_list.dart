@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../core/services/fx_service.dart'; // Import FxService
 
 // ✅ for inline ads inside the details sheet
@@ -28,6 +29,8 @@ class UnifiedTransactionList extends StatefulWidget {
   final Function(dynamic tx)? onEdit;
   final Function(dynamic tx)? onDelete;
   final Function(dynamic tx)? onSplit;
+  final Function(dynamic tx)? onAddComment; // New callback
+
   final bool showBillIcon;
   final String userPhone;
 
@@ -133,6 +136,7 @@ class UnifiedTransactionList extends StatefulWidget {
     this.onEdit,
     this.onDelete,
     this.onSplit,
+    this.onAddComment,
     this.showBillIcon = false,
     this.multiSelectEnabled = false,
     this.selectedIds = const {},
@@ -578,11 +582,20 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     }
   }
 
-  Future<void> _saveOverrideIfPossible(String category, Map<String, dynamic> normalized) async {
+  Future<void> _saveOverrideIfPossible(
+      String category, Map<String, dynamic> normalized,
+      {String? subcategory}) async {
     final mk = _normalizedMerchantKey(normalized);
     if (mk.isEmpty) return;
     try {
-      await UserOverrides.setCategoryForMerchant(widget.userPhone, mk, category);
+      if (category.isNotEmpty) {
+        await UserOverrides.setCategoryForMerchant(
+            widget.userPhone, mk, category);
+      }
+      if (subcategory != null && subcategory.isNotEmpty) {
+        await UserOverrides.setSubcategoryForMerchant(
+            widget.userPhone, mk, subcategory);
+      }
     } catch (_) {}
   }
 
@@ -1134,6 +1147,18 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
                       textAlign: TextAlign.center,
                     ),
+                    if (methodChips.isNotEmpty) ...[
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: -6,
+                        alignment: WrapAlignment.center,
+                        children: methodChips,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (counterparty != null && counterparty.isNotEmpty)
+                      Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
+                    Text("Category: $category"),
                     if (subcategory.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
@@ -1145,21 +1170,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 8),
-                    if (methodChips.isNotEmpty) ...[
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: -6,
-                        alignment: WrapAlignment.center,
-                        children: methodChips,
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                      Text("Category: $category"),
-                    if (subcategory.isNotEmpty)
-                      Text("Subcategory: $subcategory"),
-                    if (counterparty != null && counterparty.isNotEmpty)
-                      Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
                     if (instrument != null && instrument.isNotEmpty)
                       Text("Instrument: $instrument"),
                     if (issuer != null && issuer.isNotEmpty)
@@ -1231,6 +1241,14 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                               widget.onDelete?.call(doc);
                             },
                           ),
+                        TextButton.icon(
+                          icon: const Icon(Icons.bug_report_outlined, color: Colors.orange, size: 21),
+                          label: const Text("Report"),
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _handleReport(doc);
+                          },
+                        ),
                         TextButton(
                           child: const Text("Close"),
                           onPressed: () => Navigator.pop(context),
@@ -1325,6 +1343,18 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
                       textAlign: TextAlign.center,
                     ),
+                    if (methodChips.isNotEmpty) ...[
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: -6,
+                        alignment: WrapAlignment.center,
+                        children: methodChips,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if ((counterparty ?? '').toString().trim().isNotEmpty)
+                      Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
+                      Text("Category: $categoryResolved"),
                     if (subcategory.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
@@ -1336,21 +1366,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 8),
-                    if (methodChips.isNotEmpty) ...[
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: -6,
-                        alignment: WrapAlignment.center,
-                        children: methodChips,
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                      Text("Category: $categoryResolved"),
-                    if (subcategory.isNotEmpty)
-                      Text("Subcategory: $subcategory"),
-                    if ((counterparty ?? '').toString().trim().isNotEmpty)
-                      Text(isIncome ? "Got from: $counterparty" : "Paid to: $counterparty"),
                     if ((instrument ?? '').toString().trim().isNotEmpty)
                       Text("Instrument: $instrument"),
                     if ((issuer ?? '').toString().trim().isNotEmpty)
@@ -1422,6 +1437,14 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                               widget.onDelete?.call(item);
                             },
                           ),
+                        TextButton.icon(
+                          icon: const Icon(Icons.bug_report_outlined, color: Colors.orange, size: 21),
+                          label: const Text("Report"),
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _handleReport(item);
+                          },
+                        ),
                         TextButton(
                           child: const Text("Close"),
                           onPressed: () => Navigator.pop(context),
@@ -1702,8 +1725,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     required dynamic payload,
     required Map<String, dynamic> normalized,
   }) {
-    // Keep the signature for back-compat, but make this a read-only label.
-
     String lookup = currentCategory;
     if (lookup == 'Other' || lookup == 'General') lookup = 'Others';
 
@@ -1712,24 +1733,116 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
     final String raw = (currentSubcategory ?? '').trim();
 
-    // If we have neither a subcategory nor configured options, hide the control.
-    if (raw.isEmpty && baseOptions.isEmpty) {
+    // If no options configured, just show the text if present, or nothing
+    if (baseOptions.isEmpty) {
+      if (raw.isNotEmpty) {
+         return Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            raw,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 13.0,
+              color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
+            ),
+          ),
+        );
+      }
       return const SizedBox.shrink();
     }
 
-    // Prefer explicit subcategory from data; otherwise show the first configured option as a hint.
-    final String display = raw.isNotEmpty ? raw : baseOptions.first;
+    // Dropdown logic
+    String value = raw;
+    List<String> options = List<String>.from(baseOptions);
+    
+    // If current value is not in options (and not empty), add it transiently or handle mismatch
+    // If empty, we might want a placeholder or just "Select"
+    if (value.isNotEmpty && !options.contains(value)) {
+      options = [value, ...options];
+    }
+    
+    // Ensure we have a valid selection if value is invalid, or use a hint
+    String? dropdownValue = value.isNotEmpty ? value : null;
 
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        display,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontWeight: FontWeight.w500,
-          fontSize: 13.0,
-          color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
+    return SizedBox(
+      width: double.infinity,
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: dropdownValue,
+          isExpanded: true,
+          hint: Text(
+            "Subcategory",
+            style: TextStyle(
+              fontSize: 13.0,
+              color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.5),
+            ),
+          ),
+          items: options.map((s) => DropdownMenuItem<String>(
+            value: s,
+            child: Text(
+              s,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                fontSize: 13.0,
+                color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
+              ),
+            ),
+          )).toList(),
+          onChanged: (newVal) async {
+            if (newVal == null || newVal == value) return;
+
+            setState(() {
+              final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
+              if (idx != -1) allTx[idx]['subcategory'] = newVal;
+            });
+
+            if (widget.onChangeSubcategory != null) {
+              try {
+                await widget.onChangeSubcategory!(
+                  txId: txId,
+                  newSubcategory: newVal,
+                  payload: payload,
+                );
+                await _saveOverrideIfPossible(currentCategory, normalized, subcategory: newVal);
+                return;
+              } catch (_) {}
+            } else {
+               // Fallback default saver
+               try {
+                if (payload is ExpenseItem) {
+                  final e = payload as ExpenseItem;
+                  final updated = e.copyWith(subcategory: newVal);
+                  await ExpenseService().updateExpense(widget.userPhone, updated);
+                  await _saveOverrideIfPossible(currentCategory, normalized, subcategory: newVal);
+                  return;
+                } else if (payload is IncomeItem) {
+                  final i = payload as IncomeItem;
+                  final updated = i.copyWith(subcategory: newVal);
+                  await IncomeService().updateIncome(widget.userPhone, updated);
+                  await _saveOverrideIfPossible(currentCategory, normalized, subcategory: newVal);
+                  return;
+                }
+              } catch (_) {}
+            }
+            
+            // Revert on error
+             setState(() {
+              final idx = allTx.indexWhere((t) => (t['id'] ?? '').toString() == txId);
+              if (idx != -1) allTx[idx]['subcategory'] = raw;
+            });
+          },
+          isDense: true,
+          icon: const Icon(Icons.expand_more_rounded, size: 16),
+          borderRadius: BorderRadius.circular(12),
+          style: TextStyle(
+            fontWeight: FontWeight.w500,
+            fontSize: 13.0,
+            color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
+          ),
+          menuMaxHeight: 300,
         ),
       ),
     );
@@ -2232,11 +2345,23 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                       ),
                     ),
                   SizedBox(
-                    width: 40,
-                    height: 40,
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: leadingVisual,
+                    width: 48, // slightly wider for time
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        leadingVisual,
+                        const SizedBox(height: 4),
+                        Text(
+                          DateFormat('h:mm a').format(tx['date'] as DateTime),
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[600],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
                   if (schemeLogo != null && schemeLogo.isNotEmpty)
@@ -2407,6 +2532,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                               visualDensity: VisualDensity.compact,
                               onPressed: () => _showBillImage(context, billUrl),
                             ),
+                          if (widget.onAddComment != null)
+                             IconButton(
+                               icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: Colors.blueGrey),
+                               tooltip: 'Add Comment/Note',
+                               visualDensity: VisualDensity.compact,
+                               onPressed: () => widget.onAddComment?.call(payload),
+                             ),
                           if (tx['mode'] == 'legacy' && !isIncome && widget.onSplit != null)
                             IconButton(
                               icon: const Icon(Icons.group, size: 18, color: Colors.deepPurple),
@@ -2732,6 +2864,37 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         widget.onDelete?.call(payload);
       }
     });
+  }
+
+  Future<void> _handleReport(dynamic payload) async {
+    try {
+      dynamic data = payload;
+      if (payload is! Map<String, dynamic>) {
+        try {
+           data = (payload as dynamic).toJson();
+        } catch(_) {
+           data = {'raw': payload.toString()};
+        }
+      }
+
+      await FirebaseFirestore.instance.collection('reported_transactions').add({
+        'data': data,
+        'userPhone': widget.userPhone,
+        'reportedAt': FieldValue.serverTimestamp(),
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Transaction reported for analysis!')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Report error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to report transaction.')),
+        );
+      }
+    }
   }
 }
 

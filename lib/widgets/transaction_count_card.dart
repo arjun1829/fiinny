@@ -149,11 +149,12 @@ class TransactionCountCard extends StatelessWidget {
                   children: List.generate(barData.length, (idx) {
                     final val = barData[idx].toDouble();
                     final barHeight = maxVal == 0 ? 0.0 : (val / maxVal) * 42.0;
+                    final double hMargin = barData.length > 40 ? 0.0 : 1.0;
 
                     // Expanded + Margin ensures they fit and have tiny gaps
                     return Expanded(
                       child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 1),
+                        margin: EdgeInsets.symmetric(horizontal: hMargin),
                         alignment: Alignment.bottomCenter,
                         child: Container(
                           height: barHeight < 2 && val > 0 ? 2 : barHeight, // Min height for visibility

@@ -71,6 +71,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   // Step data
   final _amountCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
+  final _counterpartyCtrl = TextEditingController();
   final _labelCtrl = TextEditingController();
   final _cardLast4Ctrl = TextEditingController();
 
@@ -121,6 +122,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     }
     _amountCtrl.dispose();
     _noteCtrl.dispose();
+    _counterpartyCtrl.dispose();
     _labelCtrl.dispose();
     _cardLast4Ctrl.dispose();
     super.dispose();
@@ -506,6 +508,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           groupId: groupId,
           imageUrl: billUrl,
           label: label,
+          counterparty: _counterpartyCtrl.text.trim().isNotEmpty ? _counterpartyCtrl.text.trim() : null,
           category: _category,
           subtype: _subcategory, // Added subtype
           customSplits: (_customSplit && _participants.isNotEmpty) ? _normalizedSplits() : null,
@@ -602,6 +605,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   _StepDetails(
                     type: _type,
                     noteCtrl: _noteCtrl,
+                    counterpartyCtrl: _counterpartyCtrl,
                     friends: _friends,
                     groups: _groups,
                     friendId: _friendId,
@@ -851,6 +855,7 @@ class _StepCategory extends StatelessWidget {
 class _StepDetails extends StatelessWidget {
   final String type;
   final TextEditingController noteCtrl;
+  final TextEditingController counterpartyCtrl;
   final String mePhone;
   final List<Map<String,String>> friends;
   final List<_GroupLite> groups;
@@ -887,6 +892,7 @@ class _StepDetails extends StatelessWidget {
   const _StepDetails({
     required this.type,
     required this.noteCtrl,
+    required this.counterpartyCtrl,
     required this.friends,
     required this.groups,
     required this.friendId,
@@ -965,6 +971,17 @@ class _StepDetails extends StatelessWidget {
         children: [
           const _H2('Details'),
           const SizedBox(height: 10),
+          _Box(
+            label: 'Paid to (optional)',
+            child: TextField(
+              controller: counterpartyCtrl,
+              decoration: _inputDec(context).copyWith(
+                hintText: 'Merchant or person name…',
+                prefixIcon: Icon(Icons.storefront_rounded, size: 20, color: Theme.of(context).primaryColor),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           _Box(
             label: 'Note (optional)',
             child: TextField(
