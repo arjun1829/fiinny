@@ -4,16 +4,25 @@ class CommonRegex {
   static final _amount = RegExp(r'(?:INR|Rs\.?|₹|\$|USD|EUR|GBP|AED)\s?([\d,]+(?:\.\d{1,2})?)', caseSensitive: false);
   static final _last4 = RegExp(r'(?:ending|xx|XXXX|last\s?digits?|last\s?4)\s?(\d{4})', caseSensitive: false);
   static final _upi = RegExp(r'\b([\w\.\-_]+)@[\w\.\-_]+\b');
-  static final _merchantAfter =
-      RegExp(r"\b(?:at|to|for)\s+([A-Za-z0-9 &().@'_\-]{2,60})");
+  
+  // Updated: Added ANY ERRORS protection
+  static final _merchantAfter = RegExp(r"\b(?:at|to|for)\s+(?!ANY\s+ERRORS)([A-Za-z0-9 &().@'_\-]{2,60})");
+  
+  static final _merchantNameStrict = RegExp(
+    r'Merchant Name\s*[:\-]?\s*([A-Za-z0-9 &().@''_\-]{2,60})',
+    caseSensitive: false,
+  );
+
   static final _paidToExplicit = RegExp(
-    r'\b(PAID\s+TO|PAYMENT\s+TO|TO)\b\s*[:\-]?\s*([A-Z][A-Z0-9 .&\-\(\)]{2,40})',
+    r'\b(PAID\s+TO|PAYMENT\s+TO|TO)\b\s*[:\-]?\s*(?!ANY\s+ERRORS)([A-Za-z0-9][A-Za-z0-9 .&\-\(\)+]{1,40})',
     caseSensitive: false,
   );
-  static final _upiP2aTail = RegExp(
-    r'\bUPI\/P2A\/[^\/\s]{3,}\/([A-Z][A-Z0-9 \.\-]{2,})(?:\/|\b)',
+
+  static final _upiP2mTail = RegExp(
+    r'\bUPI\/P2[AM]\/[^\/\s]+\/([^\/\n\r]+)',
     caseSensitive: false,
   );
+
   static final _credit = RegExp(
     r'(credited|amount\s*credited|received|rcvd|deposit|refund|reversal|cashback|interest\s+credited)',
     caseSensitive: false,
@@ -23,12 +32,19 @@ class CommonRegex {
     caseSensitive: false,
   );
 
+  // Quick match list for known brands (aligned with SmsIngestor)
+  static final _knownBrands = <String>[
+    'OPENAI','NETFLIX','AMAZON PRIME','PRIME VIDEO','SPOTIFY','YOUTUBE','GOOGLE *YOUTUBE',
+    'APPLE.COM/BILL','APPLE','MICROSOFT','ADOBE','SWIGGY','ZOMATO','HOTSTAR','DISNEY+ HOTSTAR',
+    'SONYLIV','AIRTEL','JIO','VI','HATHWAY','ACT FIBERNET','BOOKMYSHOW','BIGTREE','OLA','UBER',
+    'IRCTC','REDBUS','AMAZON','FLIPKART','MEESHO','BLINKIT','ZEPTO','STARBUCKS','DMART'
+  ];
+
   static int? extractAmountPaise(String text) {
     final m = _amount.firstMatch(text);
     if (m == null) return null;
     final n = double.tryParse((m.group(1) ?? '').replaceAll(',', ''));
     return n == null ? null : (n * 100).round();
-    // NOTE: we keep paise, your models store double — we’ll convert in mapper.
   }
 
   static String extractInstrumentHint(String text) {
@@ -61,10 +77,10 @@ class CommonRegex {
     final m1 = _paidToExplicit.firstMatch(upper);
     if (m1 != null) {
       final v = (m1.group(2) ?? '').trim();
-      if (v.isNotEmpty) return v;
+      if (v.isNotEmpty && !v.startsWith('ANY ERRORS')) return v;
     }
 
-    final m2 = _upiP2aTail.firstMatch(upper);
+    final m2 = _upiP2mTail.firstMatch(upper);
     if (m2 != null) {
       final raw = (m2.group(1) ?? '').trim();
       if (raw.isNotEmpty) return raw;
@@ -74,16 +90,33 @@ class CommonRegex {
   }
 
   static String? extractMerchant(String text) {
+    // 0) Check known brands first (High confidence, fast)
+    final upperArgs = text.toUpperCase();
+    for (final k in _knownBrands) {
+      if (upperArgs.contains(k)) return k;
+    }
+
+    // 1) Explicit "Merchant Name:"
+    final mExplicit = _merchantNameStrict.firstMatch(text);
+    if (mExplicit != null) {
+       final name = mExplicit.group(1)?.trim();
+       if (name != null && name.isNotEmpty) return name;
+    }
+
+    // 2) Paid To / UPI P2M
     final paidTo = extractPaidToName(text);
     if (paidTo != null && paidTo.isNotEmpty) {
       return paidTo;
     }
+    
+    // 3) Fallback: 'at|to|for' <something>
     final m = _merchantAfter.firstMatch(text);
-    return m?.group(1)?.trim();
+    final fallback = m?.group(1)?.trim();
+    if (fallback != null && fallback.startsWith('ANY ERRORS')) return null; // Double check
+    return fallback;
   }
 
   static DateTime? parseDateFromHeader(String hdr) {
-    // Let Gmail internalDate be primary; header parse is optional
     return null;
   }
 
