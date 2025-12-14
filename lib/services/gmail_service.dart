@@ -563,7 +563,7 @@ class GmailService {
     // "Paid to SWIGGY", "Transfer to RAMESH", "Sent to ZOMATO"
     // ─────────────────────────────────────────────────────────────────────────
     final onlinePatterns = [
-      RegExp(r'\b(?:paid|sent|transfer(?:red)?)\s+(?:to|for)\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
+      RegExp(r'\b(?:paid|sent|transfer(?:red)?)\s+(?:to|for)\s+(?!ANY\s+ERRORS)([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
       RegExp(r'\b(?:towards|for)\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
     ];
     for (final p in onlinePatterns) {
@@ -571,6 +571,9 @@ class GmailService {
         // "Towards" often captures "towards your Loan", filter that
         final raw = m.group(1) ?? '';
         if (raw.toLowerCase().contains('loan') || raw.toLowerCase().contains('emi')) continue;
+        
+        // Extra check for "ANY ERRORS" in case regex didn't catch it
+        if (raw.trim().toUpperCase().startsWith('ANY ERRORS')) continue;
         
         final cleaned = _cleanMerchantName(raw);
         if (cleaned != null) candidates.add(cleaned);
@@ -611,16 +614,19 @@ class GmailService {
     // TYPE E: Special Formats (UPI, Info tags, KV Pairs)
     // ─────────────────────────────────────────────────────────────────────────
     final metaPatterns = [
-      RegExp(r'\bMerchant\s*Name\s*[:\-]\s*([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
+      RegExp(r'Merchant\s*Name\s*[:\-]\s*([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
       // TYPE D: Loan Repayment context
       RegExp(r'credited\s+to\s+(?:your\s+)?(Loan\s+account)', caseSensitive: false),
       RegExp(r'\bInfo:\s*([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})', caseSensitive: false),
-      RegExp(r'UPI(?:/[A-Za-z0-9]+)?/[A-Za-z0-9.@_-]{2,}/([A-Za-z0-9 .&@-]{2,40})', caseSensitive: false),
+      RegExp(r'\bUPI\/P2[AM]\/[^\/\s]+\/([^\/\n\r]+)', caseSensitive: false),
     ];
     for (final p in metaPatterns) {
       for (final m in p.allMatches(text)) {
         final cleaned = _cleanMerchantName(m.group(1));
-        if (cleaned != null) candidates.add(cleaned);
+        if (cleaned != null) {
+           // Insert meta matches AT THE FRONT as they are higher confidence
+           candidates.insert(0, cleaned);
+        }
       }
     }
 
@@ -735,7 +741,7 @@ class GmailService {
   String? _extractUpiSenderName(String text) {
     // Relaxed regex to allow mixed case names (e.g. Nurbasa Mujeeb)
     final rx = RegExp(
-      r'\bUPI\/P2[AM]\/[^\/\s]{3,}\/([A-Za-z0-9 \.\-]{2,})(?:\/|\b)',
+      r'\bUPI\/P2[AM]\/[^\/\s]+\/([^\/\n\r]+)',
       caseSensitive: false,
     );
     final m = rx.firstMatch(text); // Case insensitive matching on original text

@@ -115,7 +115,7 @@ class SmsIngestor {
   String _cap(String s, [int max = 4000]) => s.length <= max ? s : s.substring(0, max) + '…';
 
   bool _hasCurrencyAmount(String s) => RegExp(
-        r'(₹|inr|rs\.?)\s*[0-9][\d,]*(?:\.\d{1,2})?',
+        r'(?:₹|inr|rs\.?)\s*[0-9][\d,]*(?:\s*\.\s*\d{1,2})?',
         caseSensitive: false,
       ).hasMatch(s);
 
@@ -1007,9 +1007,13 @@ class SmsIngestor {
     }
 
     // Merchant/Counterparty (smart + alias normalize)
+    // PATCH: Use improved _guessMerchantSmart and added _cleanMerchantName
     final merchantRaw = _guessMerchantSmart(body);
+    // Extra cleanup if guesser return something with noise (like VPA)
+    final merchantClean = _cleanMerchantName(merchantRaw);
+
     var merchantNorm = MerchantAlias.normalizeFromContext(
-      raw: merchantRaw,
+      raw: merchantClean,
       upiVpa: upiVpa,
       smsAddress: address,
     );
@@ -1049,6 +1053,8 @@ class SmsIngestor {
         'instrument=${instrument!.toLowerCase().replaceAll(' ', '_')}',
       if (upiVpa != null && upiVpa.trim().isNotEmpty)
         'upi=${upiVpa!.trim()}',
+      // NEW: Pass the extracted merchant guess as a strong hint
+      if (merchantClean != null) 'merchantRegex=${merchantClean.trim()}',
     ];
     
     final enriched = await EnrichmentService.instance.enrichTransaction(
@@ -1434,12 +1440,12 @@ class SmsIngestor {
 
     final body = text;
     final amountPattern = RegExp(
-      r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\.[0-9]{1,2})?)',
+      r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\s*\.\s*[0-9]{1,2})?)',
       caseSensitive: false,
     );
     final balanceCue = RegExp(
       r'(A/?c\.?\s*Bal(?:ance)?|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance|\bBal\b|'
-      r'Total\s*Due|Min(imum)?\s*Due|Difference\s*Due|'
+      r'Total\s*Due|Min(imum)?\s*Due|Difference\s*Due|Ledger\s*Balance|Passbook\s*Balance|'
       r'(?:Avail(?:able)?|Total|Credit|Cc)\s*(?:Limit|Lmt|Amt))',
       caseSensitive: false,
     );
@@ -1479,7 +1485,7 @@ class SmsIngestor {
       if (number.isEmpty) {
         number = match.group(0) ?? '';
       }
-      number = number.replaceAll(',', '');
+      number = number.replaceAll(',', '').replaceAll(RegExp(r'\s+'), '');
       number = number.replaceAll(RegExp(r'[^0-9\.]'), '');
       if (number.isEmpty) return null;
       final value = double.tryParse(number);
@@ -1521,14 +1527,14 @@ class SmsIngestor {
     if (text.isEmpty) return null;
     final balancePattern = RegExp(
       r'(?:A/?c\.?\s*Bal(?:ance)?|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance)'
-      r'\s*(?:is|:)?\s*(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\.[0-9]{1,2})?)(?:\s*(?:CR|DR))?',
+      r'\s*(?:is|:)?\s*(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\s*\.\s*[0-9]{1,2})?)(?:\s*(?:CR|DR))?',
       caseSensitive: false,
     );
 
     for (final match in balancePattern.allMatches(text)) {
       var number = match.group(1) ?? '';
       if (number.isEmpty) continue;
-      number = number.replaceAll(',', '');
+      number = number.replaceAll(',', '').replaceAll(RegExp(r'\s+'), '');
       number = number.replaceAll(RegExp(r'[^0-9\.]'), '');
       if (number.isEmpty) continue;
       final value = double.tryParse(number);
@@ -1543,14 +1549,14 @@ class SmsIngestor {
   // INR amount like: ₹1,234.50 / INR 1234 / Rs 1,234 / rs.250
   double? _extractAmountInr(String text) {
     final patterns = <RegExp>[
-      RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\.\d{1,2})?)', caseSensitive: false),
+      RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)', caseSensitive: false),
       // fallback: "amount of 123.45"
-      RegExp(r'\bamount\s+of\s+([0-9][\d,]*(?:\.\d{1,2})?)', caseSensitive: false),
+      RegExp(r'\bamount\s+of\s+([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)', caseSensitive: false),
     ];
     for (final re in patterns) {
       final m = re.firstMatch(text);
       if (m != null) {
-        final numStr = (m.group(1) ?? '').replaceAll(',', '');
+        final numStr = (m.group(1) ?? '').replaceAll(',', '').replaceAll(RegExp(r'\s+'), '');
         final v = double.tryParse(numStr);
         if (v != null) return v;
       }
@@ -1617,48 +1623,81 @@ class SmsIngestor {
     return null;
   }
 
+  // PATCH: Added cleaner for merchant names
+  String? _cleanMerchantName(String? raw) {
+    if (raw == null) return null;
+    var t = raw.trim();
+    if (t.isEmpty) return null;
+    // Remove "VPA " prefix or suffix
+    t = t.replaceAll(RegExp(r'\bVPA\b', caseSensitive: false), '').trim();
+    // Use first part of UPI if it looks like an ID
+    if (t.contains('@')) {
+      t = t.split('@').first.trim();
+    }
+    return t.isEmpty ? null : t;
+  }
+
   // merchant guess (smart) from SMS text (before alias normalize)
   String? _guessMerchantSmart(String body) {
     final t = body.toUpperCase();
 
-    // explicit "Merchant/Payee:"
-    final m0 = RegExp(r'\b(MERCHANT|PAYEE)\s*[:\-]\s*([A-Z0-9&\.\-\* ]{3,40})').firstMatch(t);
-    if (m0 != null) {
-      final v = m0.group(2)!.trim();
-      if (v.isNotEmpty) return v;
-    }
-
-    // “for/towards/to/at <merchant>” near txn cue
-    final m1 = RegExp(r'\b(TXN|TRANSACTION|PURCHASE|PAID|PAYMENT|AUTOPAY|AUTO[-\s]?DEBIT)\b[^A-Z0-9]{0,40}\b(FOR|TOWARDS|TO|AT)\b\s*([A-Z0-9&\.\-\* ]{3,40})').firstMatch(t);
+    // 1) explicit "Merchant Name:"
+    final m1 = RegExp(
+      r'MERCHANT\s*NAME\s*[:\-]\s*([A-Za-z0-9 .&/@-]{2,40})',
+      caseSensitive: false,
+    ).firstMatch(body); // Use original body for case robustness if needed, but uppercase `t` is fine for key search
+    
     if (m1 != null) {
-      final v = m1.group(3)!.trim();
-      if (v.isNotEmpty) return v;
+      final v = m1.group(1)!.trim();
+      final cleaned = _cleanMerchantName(v);
+      if (cleaned != null) return cleaned;
     }
 
-    // known brands
+    // 1b) UPI/P2M patterns (High confidence)
+    final mUpi = RegExp(r'\bUPI\/P2[AM]\/[^\/\s]+\/([^\/\n\r]+)', caseSensitive: false).firstMatch(body);
+    if (mUpi != null) {
+      final v = mUpi.group(1)?.trim();
+      final cleaned = _cleanMerchantName(v); 
+      if (cleaned != null) return cleaned;
+    }
+
+    // 2) “for <merchant>” after autopay/purchase/txn cues
+    final m2 = RegExp(r'\b(AUTOPAY|AUTO[-\s]?DEBIT|TXN|TRANSACTION|PURCHASE|PAYMENT)\b[^A-Z0-9]{0,40}\b(FOR|TOWARDS)\b\s*(?!ANY\s+ERRORS)([A-Z0-9&.\-\* ]{3,40})').firstMatch(t);
+    if (m2 != null) {
+      final v = m2.group(3)!.trim();
+      if (v.isNotEmpty && !v.startsWith('ANY ERRORS')) return v;
+    }
+
+    // 3) known brands (quick path)
     final known = <String>[
       'OPENAI','NETFLIX','AMAZON PRIME','PRIME VIDEO','SPOTIFY','YOUTUBE','GOOGLE *YOUTUBE',
       'APPLE.COM/BILL','APPLE','MICROSOFT','ADOBE','SWIGGY','ZOMATO','HOTSTAR','DISNEY+ HOTSTAR',
       'SONYLIV','AIRTEL','JIO','VI','HATHWAY','ACT FIBERNET','BOOKMYSHOW','BIGTREE','OLA','UBER',
-      'IRCTC','REDBUS','AMAZON','FLIPKART','MEESHO','BLINKIT','ZEPTO'
+      'IRCTC','REDBUS','AMAZON','FLIPKART','MEESHO','BLINKIT','ZEPTO','STARBUCKS','DMART'
     ];
     for (final k in known) {
       final idx = t.indexOf(k);
       if (idx >= 0) {
         final windowStart = idx - 60 < 0 ? 0 : idx - 60;
         final windowEnd = idx + 60 > t.length ? t.length : idx + 60;
-        final window = t.substring(windowStart, windowEnd);
-        final nearVerb = _hasDebitVerb(window) || _hasCreditVerb(window);
-        final nearAmt = _hasCurrencyAmount(window);
+        final w = t.substring(windowStart, windowEnd);
+        final nearVerb = _hasDebitVerb(w) || _hasCreditVerb(w);
+        final nearAmt = _hasCurrencyAmount(w);
         if (nearVerb || nearAmt) return k;
       }
     }
 
-    // “to/at <merchant>”
-    final m2 = RegExp(r'\b(TO|AT)\b\s*([A-Z0-9&\.\-\* ]{3,40})').firstMatch(t);
-    if (m2 != null) {
-      final v = m2.group(2)!.trim();
-      if (v.isNotEmpty) return v;
+    // 4) “at|to <merchant>” (plus Paid to / etc)
+    // "Paid to SWIGGY", "Spent at STARBUCKS"
+    final m3 = RegExp(r'\b(AT|TO|PAID\s+TO|SENT\s+TO)\b\s*(?!ANY\s+ERRORS)([A-Z0-9&.@\-\* ]{3,40})').firstMatch(t);
+    if (m3 != null) {
+      final v = m3.group(2)!.trim();
+      if (v.isNotEmpty && !v.startsWith('ANY ERRORS')) {
+         // quick filter for common bad captures
+         if (!RegExp(r'^(THE|MY|YOUR|ENDS|ENDING|AC|ACCOUNT|TXN|REF|RS|INR|USD|HOME|OFFICE)$').hasMatch(v)) {
+            return v;
+         }
+      }
     }
 
     return null;
@@ -1726,10 +1765,10 @@ class SmsIngestor {
       if (m == null) return null;
       // find ₹/INR/Rs amount after the match
       final after = t.substring(m.end);
-      final a = RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\.\d{1,2})?)', caseSensitive: false)
+      final a = RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)', caseSensitive: false)
           .firstMatch(after);
       if (a != null) {
-        final v = double.tryParse((a.group(1) ?? '').replaceAll(',', ''));
+        final v = double.tryParse((a.group(1) ?? '').replaceAll(',', '').replaceAll(RegExp(r'\s+'), ''));
         return v;
       }
       return null;
