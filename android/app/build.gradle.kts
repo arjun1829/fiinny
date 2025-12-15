@@ -52,7 +52,7 @@ if (keystorePropertiesFile != null) {
 android {
     namespace = "com.KaranArjunTechnologies.lifemap"
     compileSdk = 35
-    ndkVersion = "27.0.12077973"
+    ndkVersion = "28.0.12433566"
 
     /* ✅ Use Java 17 to satisfy modern toolchains */
     compileOptions {
