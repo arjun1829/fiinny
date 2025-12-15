@@ -115,7 +115,7 @@ class AnalyticsAgg {
     bool has(Iterable<String> keys) => keys.any((k) => base.contains(k));
 
     if (has(['zomato','swiggy','restaurant','food','meal','eat','dine'])) return 'Food & Dining';
-    if (has(['grocery','mart','d mart','dmart','bigbasket','fresh','kirana'])) return 'Groceries';
+    if (has(['grocery','mart','d mart','dmart','bigbasket','fresh','kirana','blinkit','zepto','ratnadeep','more'])) return 'Groceries';
     if (has(['ola','uber','rapido','metro','bus','auto','cab','train'])) return 'Transport';
     if (has(['fuel','petrol','diesel','hpcl','bpcl','ioc'])) return 'Fuel';
     if (has(['amazon','flipkart','myntra','ajio','nykaa','tata cliq','meesho'])) return 'Shopping';
@@ -129,6 +129,7 @@ class AnalyticsAgg {
     if (has(['movie','pvr','inox','bookmyshow','concert','event'])) return 'Entertainment';
     if (has(['charge','fee','penalty'])) return 'Fees & Charges';
     if (has(['sip','mutual fund','mf','stock','zerodha','groww','angel','upstox'])) return 'Investments';
+    if (t0 == 'Transfer') return 'Transfers (Self)'; // Map CommonRegex 'Transfer' to this bucket
     if (has(['upi','imps','neft','rtgs']) && (e.payerId != null && e.payerId!.isNotEmpty)) return 'Transfers (Self)';
 
     return 'Other';

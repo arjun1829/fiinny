@@ -38,6 +38,12 @@ class SmsAlertParser {
       instrumentHint: instrument,
       occurredAt: receivedAt,
     );
+    
+    // Detect flags for hints
+    final isCard = channel == TxChannel.card || (instrument.startsWith('CARD'));
+    final isP2P = (channel == TxChannel.upi && (body.contains('sent to') || body.contains('paid to')) && !body.toUpperCase().contains('PVT LTD'));
+
+    final catResult = CommonRegex.categoryHint(body, merchantName: norm.display, isP2P: isP2P, isCard: isCard);
 
     return ParsedTransaction(
       idempotencyKey: key,
@@ -49,7 +55,8 @@ class SmsAlertParser {
       instrumentHint: instrument,
       merchantId: norm.id,
       merchantName: norm.display,
-      categoryHint: CommonRegex.categoryHint(body, merchantName: norm.display),
+      categoryHint: catResult.category,
+      subcategoryHint: catResult.subcategory,
       confidence: conf,
       meta: {
         'source': 'sms',

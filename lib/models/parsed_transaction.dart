@@ -14,6 +14,7 @@ class ParsedTransaction {
   final String merchantId;       // normalized stable id
   final String merchantName;     // display
   final String categoryHint;     // optional category
+  final String subcategoryHint;  // optional subcategory
   final double confidence;       // 0..1
   final Map<String, String> meta;// refNo, gmailId, etc.
   final Set<TxSource> sources;   // {gmailAlert,...}
@@ -29,6 +30,7 @@ class ParsedTransaction {
     required this.merchantId,
     required this.merchantName,
     required this.categoryHint,
+    required this.subcategoryHint,
     required this.confidence,
     required this.meta,
     required this.sources,
@@ -45,6 +47,7 @@ class ParsedTransaction {
     merchantId: merchantId.isNotEmpty ? merchantId : other.merchantId,
     merchantName: merchantName.length >= other.merchantName.length ? merchantName : other.merchantName,
     categoryHint: categoryHint.isNotEmpty ? categoryHint : other.categoryHint,
+    subcategoryHint: subcategoryHint.isNotEmpty ? subcategoryHint : other.subcategoryHint,
     confidence: (confidence + other.confidence) / 2.0,
     meta: {...meta, ...other.meta},
     sources: {...sources, ...other.sources},

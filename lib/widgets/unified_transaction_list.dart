@@ -2532,13 +2532,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                               visualDensity: VisualDensity.compact,
                               onPressed: () => _showBillImage(context, billUrl),
                             ),
-                          if (widget.onAddComment != null)
-                             IconButton(
-                               icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: Colors.blueGrey),
-                               tooltip: 'Add Comment/Note',
-                               visualDensity: VisualDensity.compact,
-                               onPressed: () => widget.onAddComment?.call(payload),
-                             ),
+                          // if (widget.onAddComment != null)
+                          //    IconButton(
+                          //      icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: Colors.blueGrey),
+                          //      tooltip: 'Add Comment/Note',
+                          //      visualDensity: VisualDensity.compact,
+                          //      onPressed: () => widget.onAddComment?.call(payload),
+                          //    ),
                           if (tx['mode'] == 'legacy' && !isIncome && widget.onSplit != null)
                             IconButton(
                               icon: const Icon(Icons.group, size: 18, color: Colors.deepPurple),

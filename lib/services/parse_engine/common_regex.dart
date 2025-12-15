@@ -150,25 +150,47 @@ class CommonRegex {
     'pvr': 'Entertainment',
   };
 
-  static String categoryHint(String text, {String? merchantName}) {
+  static ({String category, String subcategory}) categoryHint(String text, {String? merchantName, bool isP2P = false, bool isCard = false}) {
     final t = text.toLowerCase();
+    
+    String cat = 'Other';
+    String sub = 'others';
+
+    // 0) P2P Override
+    if (isP2P) {
+       return (category: 'Transfer', subcategory: 'p2p');
+    }
     
     // 1) Check explicit merchant name against our map
     if (merchantName != null) {
       final m = merchantName.toLowerCase();
       for (final e in _merchantCategories.entries) {
-        if (m.contains(e.key)) return e.value;
+        if (m.contains(e.key)) {
+           cat = e.value;
+           // Derive subcategory from category
+           if (cat == 'Groceries') sub = 'groceries and consumables';
+           else if (cat == 'Food') sub = 'dining';
+           else if (cat == 'Health') sub = 'medical';
+           else sub = 'general';
+           return (category: cat, subcategory: sub);
+        }
       }
     }
 
     // 2) Fallback to keyword sniffing
-    if (t.contains('fuel') || t.contains('petrol')) return 'Fuel';
-    if (t.contains('zomato') || t.contains('swiggy') || t.contains('restaurant') || t.contains('bakery')) return 'Food';
-    if (t.contains('irctc') || t.contains('uber') || t.contains('ola') || t.contains('air')) return 'Travel';
-    if (t.contains('electricity') || t.contains('bill') || t.contains('dth')) return 'Bills';
-    if (t.contains('salary')) return 'Salary';
-    if (isCredit(text)) return 'Income';
-    return 'Other';
+    if (t.contains('fuel') || t.contains('petrol')) { return (category: 'Fuel', subcategory: 'fuel'); }
+    if (t.contains('zomato') || t.contains('swiggy') || t.contains('restaurant') || t.contains('bakery')) { return (category: 'Food', subcategory: 'dining'); }
+    if (t.contains('irctc') || t.contains('uber') || t.contains('ola') || t.contains('air')) { return (category: 'Travel', subcategory: 'general'); }
+    if (t.contains('electricity') || t.contains('bill') || t.contains('dth')) { return (category: 'Bills', subcategory: 'utilities'); }
+    if (t.contains('salary')) { return (category: 'Salary', subcategory: 'salary'); }
+    if (isCredit(text)) { return (category: 'Income', subcategory: 'general'); }
+    
+    // 3) Final Heuristic: If unknown merchant but paying via Card -> Shopping
+    if (isCard) {
+      return (category: 'Shopping', subcategory: 'general');
+    }
+    
+    return (category: 'Other', subcategory: 'others');
   }
 
   static double confidenceScore({
