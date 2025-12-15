@@ -56,12 +56,21 @@ class GmailAlertParser {
       channelKnown: channel != TxChannel.unknown,
     );
 
+    // Check for P2P indicators (e.g. UPI/P2A patterns or explicit 'P2P' strings)
+    final isP2P = text.toUpperCase().contains('UPI/P2A') || 
+                  (channel == TxChannel.upi && (text.contains('sent to') || text.contains('paid to')) && !text.toUpperCase().contains('PVT LTD'));
+
+    // Check for Card
+    final isCard = channel == TxChannel.card || (instrument.startsWith('CARD'));
+
     final key = Idempotency.buildKey(
       merchantId: norm.id,
       amountPaise: amountPaise,
       instrumentHint: instrument,
       occurredAt: dt,
     );
+
+    final catResult = CommonRegex.categoryHint(text, merchantName: norm.display, isP2P: isP2P, isCard: isCard);
 
     return ParsedTransaction(
       idempotencyKey: key,
@@ -73,7 +82,8 @@ class GmailAlertParser {
       instrumentHint: instrument,
       merchantId: norm.id,
       merchantName: norm.display,
-      categoryHint: CommonRegex.categoryHint(text, merchantName: norm.display),
+      categoryHint: catResult.category,
+      subcategoryHint: catResult.subcategory,
       confidence: conf,
       meta: {
         'gmailId': msg.id ?? '',
