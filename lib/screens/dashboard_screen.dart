@@ -525,6 +525,16 @@ class _DashboardScreenState extends State<DashboardScreen>
       await NotificationService.initFull();
       await AdService.initLater();
     });
+
+    // 🔔 Listen for global expense updates (e.g. from Expenses Tab)
+    ExpenseService.globalUpdate.addListener(_handleGlobalUpdate);
+  }
+
+  void _handleGlobalUpdate() {
+    if (mounted) {
+      // Small debounce or direct refresh
+      unawaited(_refreshDashboardSmooth());
+    }
   }
 
 
@@ -540,6 +550,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
     _numbersCtrl.dispose();
     SmsPermissionHelper.permissionStatus.removeListener(_onSmsPermissionStatusChanged);
+    ExpenseService.globalUpdate.removeListener(_handleGlobalUpdate);
     super.dispose();
   }
 

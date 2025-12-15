@@ -83,6 +83,10 @@ class CategoryRules {
     'BLINKIT': ['Shopping', 'groceries and consumables', ['groceries']],
     'ZEPTO': ['Shopping', 'groceries and consumables', ['groceries']],
     'DMART': ['Shopping', 'groceries and consumables', ['groceries']],
+    'RATNADEEP': ['Shopping', 'groceries and consumables', ['groceries']],
+    'KARACHI BAKERY': ['Food', 'restaurants', ['food']],
+    'ASHOK CHAVA': ['Food', 'restaurants', ['food']],
+    'STARBUCKS': ['Food', 'restaurants', ['food']],
 
     // Shopping
     'AMAZON': ['Shopping', 'ecommerce', ['shopping']],

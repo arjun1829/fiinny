@@ -23,7 +23,7 @@ import '../widgets/chart_switcher_widget.dart';
 import '../widgets/unified_transaction_list.dart';
 import '../themes/custom_card.dart';
 import '../themes/tokens.dart';
-import '../widgets/bulk_split_dialog.dart';
+import 'bulk_split_screen.dart';
 
 
 import '../services/user_data.dart'; // Needed for data passing
@@ -1152,74 +1152,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   IconButton(
                     icon: const Icon(Icons.call_split, color: Colors.cyanAccent),
                     tooltip: "Bulk Split",
-                    onPressed: _selectedTxIds.isEmpty
-                        ? null
-                        : () async {
-                            final result = await showDialog<Map<String, dynamic>>(
-                                context: context,
-                                builder: (ctx) => BulkSplitDialog(
-                                      allFriends: _friends,
-                                      allGroups: _groups,
-                                    ));
-                            if (result != null) {
-                              final List<String> friendIds = result['friendIds'] ?? [];
-                              final String? groupId = result['groupId'];
-
-                              for (final tx in filteredExpenses
-                                  .where((e) => _selectedTxIds.contains(e.id))) {
-                                await ExpenseService().updateExpense(
-                                  widget.userPhone,
-                                  tx.copyWith(
-                                    friendIds: friendIds,
-                                    groupId: groupId,
-                                  ),
-                                );
-                              }
-                              // Note: Usually we don't split incomes, but if needed logic goes here.
-
-                              setState(() {
-                                _selectedTxIds.clear();
-                                _multiSelectMode = false;
-                              });
-                              _scheduleRecompute();
-                            }
-                          },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.call_split, color: Colors.cyanAccent),
-                    tooltip: "Bulk Split",
-                    onPressed: _selectedTxIds.isEmpty
-                        ? null
-                        : () async {
-                            final result = await showDialog<Map<String, dynamic>>(
-                                context: context,
-                                builder: (ctx) => BulkSplitDialog(
-                                      allFriends: _friends,
-                                      allGroups: _groups,
-                                    ));
-                            if (result != null) {
-                              final List<String> friendIds = result['friendIds'] ?? [];
-                              final String? groupId = result['groupId'];
-
-                              for (final tx in filteredExpenses
-                                  .where((e) => _selectedTxIds.contains(e.id))) {
-                                await ExpenseService().updateExpense(
-                                  widget.userPhone,
-                                  tx.copyWith(
-                                    friendIds: friendIds,
-                                    groupId: groupId,
-                                  ),
-                                );
-                              }
-                              // Note: Usually we don't split incomes
-
-                              setState(() {
-                                _selectedTxIds.clear();
-                                _multiSelectMode = false;
-                              });
-                              _scheduleRecompute();
-                            }
-                          },
+                    onPressed: _selectedTxIds.isEmpty ? null : _openBulkSplit,
                   ),
                   IconButton(
                     icon: const Icon(Icons.label, color: Colors.amber),
@@ -1470,6 +1403,36 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
 
 
+
+  Future<void> _openBulkSplit() async {
+    final result = await Navigator.push<BulkSplitResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BulkSplitScreen(
+          userPhone: widget.userPhone,
+          expenses: filteredExpenses.where((e) => _selectedTxIds.contains(e.id)).toList(),
+        ),
+      ),
+    );
+
+    if (result != null) {
+      await ExpenseService().bulkSplit(
+        widget.userPhone,
+        filteredExpenses.where((e) => _selectedTxIds.contains(e.id)).toList(),
+        friendIds: result.friendIds,
+        groupId: result.groupId,
+        payerPhone: result.payerPhone,
+        note: result.note,
+        label: result.label,
+      );
+
+      setState(() {
+        _selectedTxIds.clear();
+        _multiSelectMode = false;
+      });
+      _scheduleRecompute();
+    }
+  }
 
   Widget _calendarView(BuildContext context) {
     return SingleChildScrollView(

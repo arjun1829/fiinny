@@ -136,12 +136,13 @@ class EnrichmentService {
     // We need a "merchantKey" for the rules. We'll try to guess one from the text.
     // This is a bit circular because the rules *help* find the category.
     // We'll pass the raw text as the key if we have nothing else.
-    final ruleResult = CategoryRules.categorizeMerchant(rawText, null);
+    // We pass the merchantRegex if we have it, to help the rules
+    final ruleResult = CategoryRules.categorizeMerchant(rawText, merchantRegex);
     
-    // We still want a clean merchant name. Rules don't really give us one, 
-    // they just give a category. We might have to stick with "Unknown" or a simple regex extraction.
-    // For now, we'll use a placeholder or simple extraction if possible.
-    String fallbackMerchant = 'Unknown'; 
+    // Use the regex extracted name if available, otherwise "Unknown"
+    String fallbackMerchant = (merchantRegex != null && merchantRegex.trim().isNotEmpty) 
+        ? merchantRegex.trim() 
+        : 'Unknown'; 
     // (Simple regex extraction could go here, but we removed it from the other files. 
     //  We might need to bring back a *simple* version here or just accept "Unknown" for offline mode).
 

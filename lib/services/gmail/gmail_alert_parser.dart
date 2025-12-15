@@ -73,7 +73,7 @@ class GmailAlertParser {
       instrumentHint: instrument,
       merchantId: norm.id,
       merchantName: norm.display,
-      categoryHint: CommonRegex.categoryHint(text),
+      categoryHint: CommonRegex.categoryHint(text, merchantName: norm.display),
       confidence: conf,
       meta: {
         'gmailId': msg.id ?? '',

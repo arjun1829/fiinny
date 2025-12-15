@@ -12,6 +12,7 @@ import '../services/friend_service.dart';
 import '../services/group_service.dart';
 import '../widgets/add_friend_dialog.dart';
 import '../widgets/add_group_dialog.dart';
+import '../widgets/people_selector_step.dart';
 
 /// Shared palette (matches add screens)
 const Color kBg = Color(0xFFF8FAF9);
@@ -549,7 +550,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                     onCustomCategoryChanged: (v) => setState(() => _customCategory = v),
                     isActive: _step == 0,
                   ),
-                  _StepPeople(
+                  PeopleSelectorStep(
                     userPhone: widget.userPhone,
                     payerPhone: _selectedPayerPhone,
                     onPayer: (v) => setState(() => _selectedPayerPhone = v),

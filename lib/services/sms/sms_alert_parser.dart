@@ -49,7 +49,7 @@ class SmsAlertParser {
       instrumentHint: instrument,
       merchantId: norm.id,
       merchantName: norm.display,
-      categoryHint: CommonRegex.categoryHint(body),
+      categoryHint: CommonRegex.categoryHint(body, merchantName: norm.display),
       confidence: conf,
       meta: {
         'source': 'sms',

@@ -85,11 +85,17 @@ class PushService {
         const InitializationSettings(android: androidInit, iOS: iosInit),
         onDidReceiveNotificationResponse: (resp) {
           final deeplink = resp.payload;
+          final actionId = resp.actionId; // e.g. 'SETTLE', 'MARK_READ'
           if (kDebugMode) {
             // ignore: avoid_print
-            print('[PushService] onDidReceiveNotificationResponse payload=$deeplink');
+            print('[PushService] onDidReceive action=$actionId payload=$deeplink');
           }
-          if (deeplink != null && deeplink.isNotEmpty) _handleDeeplink(deeplink);
+          if (actionId == 'SETTLE') {
+             // If payload is friend-detail, nav there
+             if (deeplink != null) _handleDeeplink(deeplink);
+          } else if (deeplink != null && deeplink.isNotEmpty) {
+            _handleDeeplink(deeplink);
+          }
         },
       );
 
@@ -430,6 +436,12 @@ class PushService {
       importance: Importance.high,
       priority: Priority.high,
       styleInformation: const BigTextStyleInformation(''),
+      actions: [
+        if (channelId == _chNudges.id)
+           const AndroidNotificationAction('MARK_READ', 'Dismiss', showsUserInterface: false),
+        if (deeplink.contains('friend-detail') || deeplink.contains('group-detail'))
+           const AndroidNotificationAction('SETTLE', 'View & Settle', showsUserInterface: true),
+      ],
     );
     const ios = DarwinNotificationDetails();
     final details = NotificationDetails(android: android, iOS: ios);
