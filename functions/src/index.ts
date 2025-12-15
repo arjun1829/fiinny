@@ -159,16 +159,16 @@ export const onSharedExpenseCreated = onDocumentCreated(
       const token = userDoc.get("fcmToken") as string | undefined;
 
       const title = groupId
-          ? (groupName || 'Group expense')
-          : `${payerName} added an expense`;
+        ? (groupName || 'Group expense')
+        : `${payerName} added an expense`;
       const body = groupId
-          ? `${payerName} added ${amountDisplay} in ${groupName || 'your group'}.`
-          : `${payerName} added ${amountDisplay} with you.`;
+        ? `${payerName} added ${amountDisplay} in ${groupName || 'your group'}.`
+        : `${payerName} added ${amountDisplay} with you.`;
       const deeplink = groupId
-          ? `app://group-detail/${encodeURIComponent(groupId)}${groupName ? `?name=${encodeURIComponent(groupName)}` : ''}`
-          : (payerIdentifier
-              ? `app://friend-detail/${encodeURIComponent(payerIdentifier)}?name=${encodeURIComponent(payerName)}`
-              : 'app://friends');
+        ? `app://group-detail/${encodeURIComponent(groupId)}${groupName ? `?name=${encodeURIComponent(groupName)}` : ''}`
+        : (payerIdentifier
+          ? `app://friend-detail/${encodeURIComponent(payerIdentifier)}?name=${encodeURIComponent(payerName)}`
+          : 'app://friends');
 
       await sendOrFeed({
         uid,
@@ -221,6 +221,10 @@ export const onChatMessageCreated = onDocumentCreated(
 
 // 🆕 Oracle LLM job consumer (ESM needs .js)
 export { onIngestJobCreate } from "./oracleCategorizer.js";
+export * from "./notifications.js";
+export * from "./streaks.js";
+export * from "./watchdog.js";
+export * from "./social_notifications.js";
 
 /* ----------------------- New: Cloud reminder pipeline ---------------------- */
 

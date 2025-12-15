@@ -34,6 +34,7 @@ class ExpenseQuery {
 
 class ExpenseService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final ValueNotifier<int> globalUpdate = ValueNotifier(0);
 
   // ── USER SCOPED COLLECTION (what Dashboard reads & Mirror writes) ─────────────
   // users/<userPhone>/expenses/*
@@ -110,8 +111,11 @@ class ExpenseService {
       await _mirrorToGroupCollections(expenseWithId);
     }
 
+    _notify();
     return docRef.id;
   }
+  
+  void _notify() => globalUpdate.value++;
 
   /// Add with sync (same as dialog variant, kept for compatibility)
   Future<String> addExpenseWithSync(String userPhone, ExpenseItem expense) async {
@@ -147,6 +151,7 @@ class ExpenseService {
       await _mirrorToGroupCollections(expenseWithId);
     }
 
+    _notify();
     return docRef.id;
   }
 
@@ -157,10 +162,23 @@ class ExpenseService {
     final expenseWithId = expense.copyWith(id: docRef.id);
     await docRef.set(expenseWithId.toJson());
 
-    if (expense.groupId != null) {
+    if (expense.groupId != null && expense.groupId!.isNotEmpty) {
       await _groupExpenses.doc(expenseWithId.id).set(expenseWithId.toJson());
       await _mirrorToGroupCollections(expenseWithId);
+    } else if (expense.friendIds.isNotEmpty) {
+      // Mirror to individual friends (Social Notification Trigger)
+      final batch = _firestore.batch();
+      for (final friendPhone in expense.friendIds) {
+        if (friendPhone == userPhone || friendPhone.isEmpty) continue;
+        final mirrorDoc = getExpensesCollection(friendPhone).doc(expenseWithId.id);
+        // Add 'mirroredFrom' so the Cloud Function knows to notify
+        final mirrorData = expenseWithId.toJson();
+        mirrorData['mirroredFrom'] = userPhone;
+        batch.set(mirrorDoc, mirrorData);
+      }
+      await batch.commit();
     }
+    _notify();
     return docRef.id;
   }
 
@@ -253,6 +271,7 @@ class ExpenseService {
         }
       }
     }
+    _notify();
   }
 
   /// Delete expense everywhere
@@ -290,6 +309,7 @@ class ExpenseService {
         }
       }
     }
+    _notify();
   }
 
   /// Settle an expense (two-way)
@@ -629,5 +649,110 @@ class ExpenseService {
     }
 
     await batch.commit();
+  }
+  // ===================== ✂️ Bulk Split =====================
+  /// Updates participants (friends/group) for multiple expenses.
+  /// Note: this overrides existing splits.
+  Future<void> bulkSplit(
+      String userPhone,
+      List<ExpenseItem> expenses, {
+        required List<String> friendIds,
+        required String? groupId,
+        String? payerPhone,
+        String? label,
+        String? note,
+      }) async {
+    // Sanitize friendIds (exclude user)
+    final normalizedFriends = friendIds
+        .where((p) => p.trim().isNotEmpty && p != userPhone)
+        .toSet()
+        .toList();
+
+    // Check logic: if group, friendIds empty
+    final effectiveFriendIds = (groupId != null && groupId.isNotEmpty) ? <String>[] : normalizedFriends;
+
+    for (final base in expenses) {
+      // Prepare updates
+      var updated = base.copyWith(
+        friendIds: effectiveFriendIds,
+        groupId: groupId?.isEmpty == true ? null : groupId,
+        // Reset custom splits on bulk change
+        // customSplits: null, // Assuming copyWith supports setting null.
+        // If copyWith only updates if non-null, we might need a way to clear it.
+        // Most generated copyWith( {Map? customSplits} ) -> customSplits: customSplits ?? this.customSplits
+        // If so, passing null won't clear it.
+        // I will inspect ExpenseItem later if this fails, but for now I will assume I need to handle it.
+        // If copyWith is smart, I'll pass null. Use `forceCustomSplitsNull`? No.
+        // If I can't clear it, I'll modify the object manually or construct new.
+        // Let's assume I can pass an empty map or check ExpenseItem.
+        updatedAt: DateTime.now(),
+        updatedBy: 'bulk',
+      );
+      
+      // Force clear custom splits (workaround if copyWith ignores null)
+      // Actually, safest is to instantiate. But that's tedious.
+      // I'll check ExpenseItem later. For now, I'll pass empty map if null not possible?
+      // updated = updated.copyWith(customSplits: {}); 
+      
+      if (payerPhone != null) {
+        updated = updated.copyWith(payerId: payerPhone);
+      }
+
+      if (label != null && label.isNotEmpty) {
+        final newLabels = {...updated.labels, label}.toList();
+        updated = updated.copyWith(label: label, labels: newLabels);
+      }
+
+      if (note != null && note.isNotEmpty) {
+        updated = updated.copyWith(comments: note, note: note);
+      }
+
+      // Filter settled friends if not in group
+      if (groupId == null || groupId.isEmpty) {
+        final newSettled = base.settledFriendIds
+            .where((id) => effectiveFriendIds.contains(id))
+            .toList();
+        updated = updated.copyWith(settledFriendIds: newSettled);
+      }
+
+      // Hack for clearing customSplits if copyWith doesn't support null
+      // (Usually copyWith(val) uses val ?? this.val).
+      // If I want to set null, I might need `customSplits: null` but it might be ignored.
+      // I will inspect ExpenseItem in a second.
+      // If I can't clear customSplits easily, I'll assume they persist? No that's bad.
+      // I'll modify `updated` to have null customSplits.
+      updated = _clearCustomSplits(updated);
+
+      await updateExpense(userPhone, updated);
+    }
+  }
+
+  ExpenseItem _clearCustomSplits(ExpenseItem item) {
+    // Helper to clear custom splits since copyWith might not support explicit null
+    return ExpenseItem(
+      id: item.id,
+      amount: item.amount,
+      note: item.note,
+      date: item.date,
+      payerId: item.payerId,
+      friendIds: item.friendIds,
+      groupId: item.groupId,
+      settledFriendIds: item.settledFriendIds,
+      customSplits: null, // Clear here
+      type: item.type,
+      subtype: item.subtype,
+      cardType: item.cardType,
+      cardLast4: item.cardLast4,
+      isBill: item.isBill,
+      imageUrl: item.imageUrl,
+      label: item.label,
+      labels: item.labels,
+      comments: item.comments,
+      category: item.category,
+      createdAt: item.createdAt,
+      createdBy: item.createdBy,
+      updatedAt: item.updatedAt,
+      updatedBy: item.updatedBy,
+    );
   }
 }

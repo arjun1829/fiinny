@@ -180,3 +180,4 @@ export const onIngestJobCreate = onDocumentCreated({ document: "users/{userPhone
         });
     }
 });
+//# sourceMappingURL=oracleCategorizer.js.map

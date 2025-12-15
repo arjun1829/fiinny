@@ -963,7 +963,8 @@ class GmailService {
     final newerDays = _daysBetween(DateTime.now(), since).clamp(0, 36500);
     final baseQ =
         '(bank OR card OR transaction OR credited OR debited OR purchase OR spent OR withdrawn OR payment OR UPI OR refund OR salary OR invoice OR receipt OR statement OR bill) '
-        'newer_than:${newerDays}d -in:spam -in:trash -category:promotions';
+        'newer_than:${newerDays}d -in:spam -in:trash -category:promotions '
+        '-subject:(Digest OR Newsletter) -from:daily.digest.groww.in';
 
 
 

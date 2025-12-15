@@ -178,7 +178,7 @@ export const onIngestJobCreate = onDocumentCreated(
       const contentType = (res.headers.get("content-type") || "").toLowerCase();
       let out: OracleOut = {};
       if (contentType.includes("application/json")) {
-        out = await res.json();
+        out = await res.json() as OracleOut;
         if (out.category) out.category = mapSynonyms(out.category);
         if (out.subcategory) out.subcategory = titleCase(out.subcategory);
       } else {

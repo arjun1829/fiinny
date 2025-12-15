@@ -5,8 +5,9 @@ class CommonRegex {
   static final _last4 = RegExp(r'(?:ending|xx|XXXX|last\s?digits?|last\s?4)\s?(\d{4})', caseSensitive: false);
   static final _upi = RegExp(r'\b([\w\.\-_]+)@[\w\.\-_]+\b');
   
-  // Updated: Added ANY ERRORS protection
-  static final _merchantAfter = RegExp(r"\b(?:at|to|for)\s+(?!ANY\s+ERRORS)([A-Za-z0-9 &().@'_\-]{2,60})");
+  // Updated: Added ANY ERRORS protection and negative lookbehind for 'except'
+  // Note: Dart's RegExp supports lookbehind.
+  static final _merchantAfter = RegExp(r"(?<!except\s)\b(?:at|to|for)\s+(?!(?:the\s+)?media|ANY\s+ERRORS)([A-Za-z0-9 &().@'_\-]{2,60})");
   
   static final _merchantNameStrict = RegExp(
     r'Merchant Name\s*[:\-]?\s*([A-Za-z0-9 &().@''_\-]{2,60})',
@@ -120,10 +121,49 @@ class CommonRegex {
     return null;
   }
 
-  static String categoryHint(String text) {
+  // Static category map for synchronous enrichment (Partial/High-Confidence)
+  static final _merchantCategories = <String, String>{
+    'ratnadeep': 'Groceries',
+    'd-mart': 'Groceries',
+    'more': 'Groceries',
+    'bigbasket': 'Groceries',
+    'zepto': 'Groceries',
+    'blinkit': 'Groceries',
+    'swiggy': 'Food',
+    'zomato': 'Food',
+    'karachi bakery': 'Food',
+    'ashok chava': 'Food',
+    'starbucks': 'Food',
+    'uber': 'Travel',
+    'ola': 'Travel',
+    'irctc': 'Travel',
+    'redbus': 'Travel',
+    'airtel': 'Bills',
+    'jio': 'Bills',
+    'vi': 'Bills',
+    'bescom': 'Bills',
+    'act fibernet': 'Bills',
+    'netflix': 'Entertainment',
+    'prime video': 'Entertainment',
+    'spotify': 'Entertainment',
+    'bookmyshow': 'Entertainment',
+    'pvr': 'Entertainment',
+  };
+
+  static String categoryHint(String text, {String? merchantName}) {
     final t = text.toLowerCase();
+    
+    // 1) Check explicit merchant name against our map
+    if (merchantName != null) {
+      final m = merchantName.toLowerCase();
+      for (final e in _merchantCategories.entries) {
+        if (m.contains(e.key)) return e.value;
+      }
+    }
+
+    // 2) Fallback to keyword sniffing
     if (t.contains('fuel') || t.contains('petrol')) return 'Fuel';
-    if (t.contains('zomato') || t.contains('swiggy') || t.contains('restaurant')) return 'Food';
+    if (t.contains('zomato') || t.contains('swiggy') || t.contains('restaurant') || t.contains('bakery')) return 'Food';
     if (t.contains('irctc') || t.contains('uber') || t.contains('ola') || t.contains('air')) return 'Travel';
     if (t.contains('electricity') || t.contains('bill') || t.contains('dth')) return 'Bills';
     if (t.contains('salary')) return 'Salary';

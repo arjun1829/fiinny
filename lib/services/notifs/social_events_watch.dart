@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:characters/characters.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:lifemap/services/notif_prefs_service.dart' as Prefs;
 import 'package:lifemap/services/push/push_service.dart';
@@ -18,7 +19,8 @@ class SocialEventsWatch {
   static StreamSubscription? _joinsByInviteSub;
   static StreamSubscription? _pairEdgesA;
   static StreamSubscription? _pairEdgesB;
-  static DateTime _bootAt = DateTime.now();
+
+  // Track seen IDs in memory to avoid duplicates in same session
   static final _seenExpense = <String>{};
   static final _seenJoins = <String>{};
 
@@ -26,10 +28,23 @@ class SocialEventsWatch {
 
   static Future<void> bind(String userPhone) async {
     await unbind();
-    _bootAt = DateTime.now().subtract(const Duration(seconds: 3));
 
-    final prefs = await Prefs.NotifPrefsService.fetchForUser(_uid);
-    final channels = (prefs['channels'] as Map?) ?? const {};
+    final prefs = await SharedPreferences.getInstance();
+    
+    // --- Restore last seen timestamps ---
+    // If null (first run), we default to NOW to avoid spamming 5 years of history.
+    // We subtract a small buffer (e.g. 5 seconds) to catch anything "just" happened.
+    int lastFriendTs = prefs.getInt('last_friend_ts') ?? DateTime.now().millisecondsSinceEpoch;
+    int lastExpenseTs = prefs.getInt('last_expense_ts') ?? DateTime.now().millisecondsSinceEpoch;
+    int lastJoinTs = prefs.getInt('last_join_ts') ?? DateTime.now().millisecondsSinceEpoch;
+
+    // Helper to persist updates
+    Future<void> updateTs(String key, int ts) async {
+       await prefs.setInt(key, ts);
+    }
+
+    final notifPrefs = await Prefs.NotifPrefsService.fetchForUser(_uid);
+    final channels = (notifPrefs['channels'] as Map?) ?? const {};
     final partnerOn = (channels['partner_checkins'] ?? true) == true;
     final nudgeOn = (channels['settleup_nudges'] ?? true) == true;
 
@@ -46,7 +61,14 @@ class SocialEventsWatch {
           if (change.type != DocumentChangeType.added) continue;
           final data = change.doc.data() ?? {};
           final addedAt = _tsOrNow(data['createdAt']);
-          if (addedAt.isBefore(_bootAt)) continue;
+          
+          if (addedAt.millisecondsSinceEpoch <= lastFriendTs) continue;
+          
+          // Update cursor immediately
+          if (addedAt.millisecondsSinceEpoch > lastFriendTs) {
+            lastFriendTs = addedAt.millisecondsSinceEpoch;
+            unawaited(updateTs('last_friend_ts', lastFriendTs));
+          }
 
           final phone = (data['phone'] ?? '') as String;
           final name = ((data['name'] ?? '') as String).trim();
@@ -76,7 +98,7 @@ class SocialEventsWatch {
           .doc(userPhone)
           .collection('expenses')
           .orderBy('date', descending: true)
-          .limit(40)
+          .limit(20)
           .snapshots()
           .listen((snapshot) async {
         for (final change in snapshot.docChanges) {
@@ -87,9 +109,14 @@ class SocialEventsWatch {
           _seenExpense.add(id);
 
           final data = change.doc.data() ?? {};
-          final createdAt =
-              _tsOrNow(data['createdAt'] ?? data['updatedAt'] ?? data['date']);
-          if (createdAt.isBefore(_bootAt)) continue;
+          final sortDate = _tsOrNow(data['createdAt'] ?? data['updatedAt'] ?? data['date']);
+          
+          if (sortDate.millisecondsSinceEpoch <= lastExpenseTs) continue;
+
+          if (sortDate.millisecondsSinceEpoch > lastExpenseTs) {
+            lastExpenseTs = sortDate.millisecondsSinceEpoch;
+            unawaited(updateTs('last_expense_ts', lastExpenseTs));
+          }
 
           final payer = (data['payerId'] ?? '') as String;
           final friendIds = ((data['friendIds'] ?? const []) as List).cast<String>();
@@ -130,7 +157,7 @@ class SocialEventsWatch {
         .where('inviterPhone', isEqualTo: userPhone)
         .where('status', isEqualTo: 'active')
         .orderBy('claimedAt', descending: true)
-        .limit(50)
+        .limit(20)
         .snapshots()
         .listen((snapshot) async {
       for (final change in snapshot.docChanges) {
@@ -141,7 +168,12 @@ class SocialEventsWatch {
 
         final data = change.doc.data() ?? {};
         final claimedAt = _tsOrNow(data['claimedAt']);
-        if (claimedAt.isBefore(_bootAt)) continue;
+        if (claimedAt.millisecondsSinceEpoch <= lastJoinTs) continue;
+        
+        if (claimedAt.millisecondsSinceEpoch > lastJoinTs) {
+          lastJoinTs = claimedAt.millisecondsSinceEpoch;
+          unawaited(updateTs('last_join_ts', lastJoinTs));
+        }
 
         final friendPhone = (data['friendPhone'] ?? '').toString();
         final friendName = (data['friendName'] ?? '').toString().trim();
@@ -168,7 +200,13 @@ class SocialEventsWatch {
         final data = change.doc.data();
         final map = data ?? const <String, dynamic>{};
         final createdAt = _tsOrNow(map['createdAt']);
-        if (createdAt.isBefore(_bootAt)) continue;
+        
+        if (createdAt.millisecondsSinceEpoch <= lastJoinTs) continue;
+        
+        if (createdAt.millisecondsSinceEpoch > lastJoinTs) {
+           lastJoinTs = createdAt.millisecondsSinceEpoch;
+           unawaited(updateTs('last_join_ts', lastJoinTs));
+        }
 
         final a = (map['a'] ?? '').toString();
         final b = (map['b'] ?? '').toString();
@@ -196,7 +234,7 @@ class SocialEventsWatch {
         .collection('friends_pairs')
         .where('a', isEqualTo: userPhone)
         .orderBy('createdAt', descending: true)
-        .limit(50)
+        .limit(20)
         .snapshots()
         .listen(onPairEdge);
 
@@ -204,7 +242,7 @@ class SocialEventsWatch {
         .collection('friends_pairs')
         .where('b', isEqualTo: userPhone)
         .orderBy('createdAt', descending: true)
-        .limit(50)
+        .limit(20)
         .snapshots()
         .listen(onPairEdge);
   }
