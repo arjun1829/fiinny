@@ -188,22 +188,7 @@ class _SleekAdCardState extends State<SleekAdCard> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Text(
-                  'Sponsored',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black54,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
+
               Align(
                 alignment: Alignment.center,
                 child: banner,

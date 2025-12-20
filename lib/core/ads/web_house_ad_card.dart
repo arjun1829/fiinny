@@ -80,16 +80,7 @@ class _WebHouseAdCardState extends State<WebHouseAdCard>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: const [
-                    Text(
-                      'Sponsored',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black54,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                    SizedBox(height: 6),
+
                     Text(
                       'Get the Fiinny mobile app for faster settles',
                       style: TextStyle(

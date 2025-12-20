@@ -31,12 +31,18 @@ import '../widgets/dashboard/bank_cards_carousel.dart';
 import '../widgets/dashboard/bank_overview_dialog.dart';
 import '../services/user_data.dart';
 
-class _MonthSpend {
-  final int year;
-  final int month;
-  final double totalExpense;
+class _ChartBucket {
+  final DateTime date;      // Start of the bucket period
+  final String label;       // Display label (e.g. "4 AM", "Mon", "Jan")
+  final double total;       // Total spend in this bucket
+  final Map<String, double> categoryBreakdown; // Stacked breakdown
 
-  const _MonthSpend(this.year, this.month, this.totalExpense);
+  const _ChartBucket({
+    required this.date,
+    required this.label,
+    required this.total,
+    required this.categoryBreakdown,
+  });
 }
 
 class _CategoryStackSegment {
@@ -829,7 +835,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     if (buckets.isEmpty) return;
 
     final monthDates = <DateTime>[
-      for (final b in buckets) DateTime(b.year, b.month, 1),
+      for (final b in buckets) DateTime(b.date.year, b.date.month, 1),
     ];
 
     DateTime selected = DateTime(month.year, month.month, 1);
@@ -1135,13 +1141,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             color: Colors.grey.withOpacity(0.08),
             borderRadius: BorderRadius.circular(16),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final token in periods)
-                _buildPeriodDockItem(token),
-              _buildPeriodDockIcon(),
-            ],
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final token in periods)
+                  _buildPeriodDockItem(token),
+                _buildPeriodDockIcon(),
+              ],
+            ),
           ),
         ),
       ),
@@ -1829,16 +1838,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   /// Builds expense totals for the last [monthCount] months (including current month),
   /// after applying the current bank/card filters.
   /// Oldest month comes first in the returned list.
-  List<_MonthSpend> _buildLastMonthSpends({int monthCount = 12}) {
-    if (monthCount <= 0) return <_MonthSpend>[];
+  List<_ChartBucket> _buildLastMonthSpends({int monthCount = 12}) {
+    if (monthCount <= 0) return <_ChartBucket>[];
 
     final now = DateTime.now();
-
     // Apply only bank/card filters here; we want full history by month,
     // not limited by the current _range.
     final baseExp = _applyBankFiltersToExpenses(_allExp);
 
-    final List<_MonthSpend> out = <_MonthSpend>[];
+    final List<_ChartBucket> out = <_ChartBucket>[];
     for (int i = monthCount - 1; i >= 0; i--) {
       final monthDate = DateTime(now.year, now.month - i, 1);
       final start = DateTime(monthDate.year, monthDate.month, 1);
@@ -1851,17 +1859,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         }
       }
 
-      out.add(_MonthSpend(monthDate.year, monthDate.month, total));
+      out.add(_ChartBucket(
+        date: monthDate,
+        label: DateFormat('MMM').format(monthDate),
+        total: total,
+        categoryBreakdown: const {},
+      ));
     }
 
     return out;
   }
 
   /// Convenience labels for month buckets, e.g. ["Dec", "Jan", "Feb", ...].
-  List<String> _labelsForMonthSpends(List<_MonthSpend> buckets) {
+  List<String> _labelsForMonthSpends(List<_ChartBucket> buckets) {
     final fmt = DateFormat('MMM');
     return buckets
-        .map((b) => fmt.format(DateTime(b.year, b.month, 1)))
+        .map((b) => fmt.format(b.date))
         .toList();
   }
 
@@ -2381,6 +2394,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                            );
                         },
                       ),
+                      _analyticsBannerCard(),
                       const SizedBox(height: 24),
                       Text(
                         'Your Spends',
@@ -2458,39 +2472,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
                       const SizedBox(height: 12),
 
-                      // NEW: Last X months spends card (Axis-style)
-                      _lastMonthsSpendsCard(),
+                      // NEW: Dynamic Trend Card
+                      _dynamicTrendCard(),
 
                       // Small banner ad
                       const SizedBox(height: 10),
                       _analyticsBannerCard(),
 
                       const SizedBox(height: 14),
-
-                      // NEW: Monthly spends by category (with month selector)
-                      _monthlyCategoryListCard(),
-
-                      const SizedBox(height: 14),
-
-                      if (!hasTransactions) ...[
-                        GlassCard(
-                          radius: Fx.r24,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 16),
-                            child: Text(
-                              'No transactions in this period with the current filters.',
-                              style: Fx.label
-                                  .copyWith(color: Fx.text.withOpacity(.7)),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-
-
-
-                      // ===== Transactions (bottom) with filter chips =====
                       GlassCard(
                         radius: Fx.r24,
                         child: Column(
@@ -2627,7 +2616,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     // Build list of month DateTimes from oldest -> newest.
     final monthDates = <DateTime>[
-      for (final b in buckets) DateTime(b.year, b.month, 1),
+      for (final b in buckets) b.date,
     ];
 
     // Ensure selected month is valid; default to most recent if null/out of range.
@@ -2750,481 +2739,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   // ---------- Last X months spends card (Axis-style) ----------
-  Widget _lastMonthsSpendsCard() {
-    // 1) Gather data for last 12 months
-    final buckets = _buildLastMonthSpends(monthCount: 12);
-    if (buckets.isEmpty) return const SizedBox.shrink();
-
-    // Calculate average
-    final totalAll = buckets.fold<double>(0, (sum, b) => sum + b.totalExpense);
-    final avg = buckets.isEmpty ? 0.0 : totalAll / buckets.length;
-
-    // Current month spend
-    final currentSpend = buckets.last.totalExpense;
-
-    // Comparison text
-    String comparisonText;
-    if (avg == 0) {
-      comparisonText = 'No previous data to compare.';
-    } else {
-      final diff = currentSpend - avg;
-      final pct = (diff / avg * 100).abs().toStringAsFixed(0);
-      if (diff > 0) {
-        comparisonText = '$pct% more than your monthly average.';
-      } else if (diff < 0) {
-        comparisonText = '$pct% less than your monthly average.';
-      } else {
-        comparisonText = 'Same as your monthly average.';
-      }
-    }
-
-    // Prepare chart data
-    // We'll show bar chart or line chart based on _lastMonthsView
-    // For simplicity, let's implement a nice Bar Chart using fl_chart or custom painter.
-    // Reusing BarChartSimple if possible, or building a custom one.
-    // Let's use a custom small bar chart for "Trend".
-
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.65), // Stronger opacity for contrast against new background
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF004D40).withOpacity(0.08), // Teal shadow
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Last 12 months',
-                style: Fx.label.copyWith(
-                  color: Fx.text.withOpacity(0.6),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                INR.f(currentSpend),
-                style: Fx.title.copyWith(fontSize: 24),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  comparisonText,
-                  style: Fx.label.copyWith(color: Fx.text.withOpacity(0.7)),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // View selector (Trend / Stacked)
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                padding: const EdgeInsets.all(4),
-                child: Row(
-                  children: [
-                    _chartViewBtn('Trend', Icons.bar_chart_rounded),
-                    _chartViewBtn('Breakdown', Icons.pie_chart_rounded),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // Chart Area
-          SizedBox(
-            height: 220,
-            child: _lastMonthsView == 'Trend'
-                ? _buildTrendChart(buckets, avg)
-                : _buildStackedChart(),
-          ),
-          if (_lastMonthsView == 'Breakdown') ...[
-            const SizedBox(height: 16),
-            _buildBreakdownLegend(buckets),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _chartViewBtn(String label, IconData icon) {
-    final selected = _lastMonthsView == label;
-    return InkWell(
-      onTap: () => setState(() => _lastMonthsView = label),
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  )
-                ]
-              : [],
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: 16,
-              color: selected ? Colors.black : Colors.black54,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                color: selected ? Colors.black : Colors.black54,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTrendChart(List<_MonthSpend> buckets, double avg) {
-    if (buckets.isEmpty) return const SizedBox.shrink();
-
-    double maxY = avg;
-    for (final b in buckets) {
-      if (b.totalExpense > maxY) maxY = b.totalExpense;
-    }
-    if (maxY == 0) maxY = 100;
-    maxY = maxY * 1.25; // Add headroom
-
-    final cacheKey = [
-      _aggRev,
-      _periodToken,
-      _bankFilter,
-      _last4Filter,
-      _instrumentFilter
-    ].join('_');
-
-    return TweenAnimationBuilder<double>(
-      key: ValueKey('trend_chart_$cacheKey'),
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 1000),
-      curve: Curves.easeOutQuart,
-      builder: (context, anim, child) {
-        final double minX = -0.5;
-        final double maxX = buckets.length - 0.5;
-        
-        return Stack(
-          children: [
-            BarChart(
-              BarChartData(
-                minY: 0,
-                maxY: maxY,
-                barTouchData: BarTouchData(
-                  touchTooltipData: BarTouchTooltipData(
-                    tooltipBgColor: Colors.black87,
-                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                       return BarTooltipItem(
-                         INR.f(rod.toY),
-                         const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                       );
-                    }
-                  ),
-                ),
-                titlesData: FlTitlesData(
-                  show: true,
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 24,
-                      interval: 1, // Ensure one title per integer index
-                      getTitlesWidget: (val, meta) {
-                        final index = val.toInt();
-                        if (index < 0 || index >= buckets.length) {
-                          return const SizedBox.shrink();
-                        }
-                        if (val != index.toDouble()) return const SizedBox.shrink();
-
-                        final b = buckets[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            DateFormat('MMM').format(DateTime(b.year, b.month)),
-                            style: TextStyle(
-                              fontSize: 10, 
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                ),
-                gridData: const FlGridData(show: false),
-                borderData: FlBorderData(show: false),
-                barGroups: [
-                  for (int i = 0; i < buckets.length; i++)
-                    BarChartGroupData(
-                      x: i,
-                      barRods: [
-                        BarChartRodData(
-                          toY: buckets[i].totalExpense * anim,
-                          color: i == buckets.length - 1
-                              ? const Color(0xFF004D40)
-                              : Colors.grey[300],
-                          width: 12,
-                          borderRadius: BorderRadius.circular(4),
-                          backDrawRodData: BackgroundBarChartRodData(
-                             show: true,
-                             toY: maxY,
-                             color: Colors.grey.withOpacity(0.05),
-                          )
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-            IgnorePointer(
-              child: LineChart(
-                LineChartData(
-                  minY: 0,
-                  maxY: maxY,
-                  minX: minX,
-                  maxX: maxX,
-                  lineTouchData: const LineTouchData(enabled: false),
-                  titlesData: const FlTitlesData(show: false),
-                  gridData: const FlGridData(show: false),
-                  borderData: FlBorderData(show: false),
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: [
-                        for (int i = 0; i < buckets.length; i++)
-                          FlSpot(i.toDouble(), buckets[i].totalExpense * anim),
-                      ],
-                      isCurved: true,
-                      curveSmoothness: 0.25, // Gentle curve
-                      color: const Color(0xFF004D40),
-                      barWidth: 2,
-                      isStrokeCapRound: true,
-                      dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            const Color(0xFF004D40).withOpacity(0.15 * anim),
-                            const Color(0xFF004D40).withOpacity(0.0),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildBreakdownLegend(List<_MonthSpend> buckets) {
-     // Identify all categories present in the current view (last 6 months stacks essentially)
-     final stacks = _buildMonthlyCategoryStacks(12);
-     final categories = <String>{};
-     for (final s in stacks) {
-        for (final seg in s.segments) {
-           if (seg.value > 0) categories.add(seg.category);
-        }
-     }
-     final list = categories.toList()..sort();
-
-     return Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        alignment: WrapAlignment.center,
-        children: list.map((cat) {
-           return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                 Container(
-                    width: 8, height: 8,
-                    decoration: BoxDecoration(
-                       color: _categoryColors[cat] ?? Colors.grey,
-                       shape: BoxShape.circle,
-                    ),
-                 ),
-                 const SizedBox(width: 4),
-                 Text(
-                    cat, 
-                    style: TextStyle(
-                       fontSize: 11, 
-                       color: Colors.grey[700],
-                       fontWeight: FontWeight.w500
-                    )
-                 ),
-              ],
-           );
-        }).toList(),
-     );
-  }
-
-  Widget _buildStackedChart() {
-    // Show breakdown of top categories per month
-    final stacks = _buildMonthlyCategoryStacks(6); // last 6 months only
-    if (stacks.isEmpty) return const SizedBox.shrink();
-
-    double maxY = 0;
-    for (final s in stacks) {
-      final total = s.segments.fold<double>(0, (sum, seg) => sum + seg.value);
-      if (total > maxY) maxY = total;
-    }
-    if (maxY == 0) maxY = 100;
-    maxY = maxY * 1.1; // Headroom
-
-    final cacheKey = [
-      _aggRev,
-      _periodToken,
-      _bankFilter,
-      _last4Filter,
-      _instrumentFilter
-    ].join('_');
-
-    return TweenAnimationBuilder<double>(
-      key: ValueKey('stacked_chart_$cacheKey'),
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 1000),
-      curve: Curves.easeOutQuart,
-      builder: (context, anim, child) {
-        return BarChart(
-          BarChartData(
-            alignment: BarChartAlignment.spaceEvenly,
-            maxY: maxY,
-            minY: 0,
-            barTouchData: BarTouchData(
-              touchTooltipData: BarTouchTooltipData(
-                tooltipBgColor: Colors.black87,
-                getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                   // Calculate total for this group (month)
-                   final stack = stacks[groupIndex];
-                   final total = stack.segments.fold<double>(0, (sum, s) => sum + s.value);
-                   
-                   return BarTooltipItem(
-                     INR.f(total),
-                     const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                     children: [
-                       // Optional: Add date below
-                       TextSpan(
-                         text: '\n${DateFormat('MMM yyyy').format(DateTime(stack.year, stack.month))}',
-                         style: const TextStyle(
-                           color: Colors.white70,
-                           fontSize: 10,
-                           fontWeight: FontWeight.normal,
-                         ),
-                       ),
-                     ],
-                   );
-                },
-              ),
-            ),
-            titlesData: FlTitlesData(
-              show: true,
-              bottomTitles: AxisTitles(
-                sideTitles: SideTitles(
-                  showTitles: true,
-                  reservedSize: 24,
-                  interval: 1,
-                  getTitlesWidget: (val, meta) {
-                    final index = val.toInt();
-                    if (index < 0 || index >= stacks.length) return const SizedBox.shrink();
-                    final s = stacks[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        DateFormat('MMM').format(DateTime(s.year, s.month)),
-                        style: TextStyle(
-                           fontSize: 10, 
-                           color: Colors.grey[600],
-                           fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            ),
-            gridData: const FlGridData(show: false),
-            borderData: FlBorderData(show: false),
-            barGroups: [
-               for (int i = 0; i < stacks.length; i++)
-                 BarChartGroupData(
-                   x: i,
-                   barRods: [
-                     BarChartRodData(
-                       toY: stacks[i].segments.fold<double>(0, (sum, s) => sum + s.value) * anim,
-                       width: 16,
-                       borderRadius: BorderRadius.circular(2),
-                       rodStackItems: _buildRodStackItems(stacks[i], anim),
-                       color: Colors.transparent, // Color is determined by rodStackItems
-                     ),
-                   ],
-                 ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  List<BarChartRodStackItem> _buildRodStackItems(_MonthlyCategoryStack stack, double anim) {
-    final items = <BarChartRodStackItem>[];
-    double currentY = 0;
-    
-    // Sort segments so largest are at bottom (or top) - using same order as logic
-    // Usually stack items are drawn from 0 upwards.
-    // If segments are [A=10, B=5], we want A from 0-10, B from 10-15.
-    
-    for (final seg in stack.segments) {
-       final val = seg.value * anim;
-       if (val <= 0) continue;
-       final fromY = currentY;
-       final toY = currentY + val;
-       final color = _categoryColors[seg.category] ?? Colors.grey;
-       
-       items.add(BarChartRodStackItem(fromY, toY, color));
-       currentY = toY;
-    }
-    
-    return items;
-  }
 
   Future<void> _openTxDrilldown({
     required String title,
@@ -3313,6 +2827,559 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       await _bootstrap();
     }
   }
+  // ---------- Chart Data Generation ----------
+
+  /// Generates chart buckets based on the current active period/range.
+  List<_ChartBucket> _generateChartBuckets() {
+    final range = _range ?? _rangeOrDefault();
+    final start = range.start;
+    final end = range.end.subtract(const Duration(milliseconds: 1)); // adjust strictly
+
+    final diff = end.difference(start);
+    final days = diff.inDays;
+
+    // Decide granularity
+    bool useHours = false;
+    bool useMonths = false;
+    bool useSays = false; // days
+
+    // If explicit period token is Year, force month buckets
+    if (_periodToken == 'Y') {
+      useMonths = true;
+    } else if (_periodToken == 'D' || _periodToken == 'Day' || days == 0) {
+      useHours = true;
+    } else if (_periodToken == 'M' || days >= 28) {
+      // Month or Custom large range -> Days (or Weeks if too large? Stick to days for Month view)
+      // Actually for "Month", we want daily bars.
+      useSays = true;
+    } else if (_periodToken == 'W') {
+      useSays = true; // 7 days
+    } else if (_periodToken == 'All Time') {
+      useMonths = true;
+    } else {
+      // Custom range fallback
+      if (days <= 1) useHours = true;
+      else if (days <= 31) useSays = true;
+      else useMonths = true;
+    }
+    
+    // Generate empty buckets
+    final buckets = <_ChartBucket>[];
+    
+    // Helper to get expense data (filtered)
+    // We need to re-fetch relevant expenses based on method.
+    // Optimization: Filter _allExp once for the whole range, then bucketize.
+    final expInRange = _applyBankFiltersToExpenses(_allExp).where((e) {
+      return !e.date.isBefore(start) && e.date.isBefore(range.end);
+    }).toList();
+
+    // Generators
+    if (useHours) {
+      // 0 to 23 hours for the specific day
+      // Note: If custom range matches 2 days, this logic might be simplistic, 
+      // but for 'D' it's always TODAY 00:00 to 23:59
+      final baseDate = DateTime(start.year, start.month, start.day);
+      for (int i = 0; i < 24; i++) {
+        final bucketStart = baseDate.add(Duration(hours: i));
+        final bucketEnd = bucketStart.add(const Duration(hours: 1));
+        
+        final bucketExp = expInRange.where((e) => 
+          !e.date.isBefore(bucketStart) && e.date.isBefore(bucketEnd)
+        );
+        
+        double total = 0;
+        final catMap = <String, double>{};
+        for(final e in bucketExp) {
+           total += e.amount;
+           final cat = _normalizeMainCategory(AnalyticsAgg.resolveExpenseCategory(e));
+           catMap[cat] = (catMap[cat] ?? 0) + e.amount;
+        }
+
+        // Label: "4 PM" or "4"
+        final hourC = i % 12 == 0 ? 12 : i % 12;
+        final ampm = i < 12 ? 'AM' : 'PM';
+        // Simplified label to avoid clutter: only even hours or every 4 hours?
+        // Let chart decide, just provide "4 PM"
+        final label = '$hourC $ampm'; 
+        
+        buckets.add(_ChartBucket(
+          date: bucketStart,
+          label: label,
+          total: total,
+          categoryBreakdown: catMap,
+        ));
+      }
+    } else if (useMonths) {
+      // Iterate from start month to end month
+      DateTime ptr = DateTime(start.year, start.month, 1);
+      final stop = DateTime(end.year, end.month, 1);
+      
+      while (!ptr.isAfter(stop)) {
+        final bucketStart = DateTime(ptr.year, ptr.month, 1);
+        final bucketEnd = DateTime(ptr.year, ptr.month + 1, 1);
+        
+        final bucketExp = expInRange.where((e) => 
+          !e.date.isBefore(bucketStart) && e.date.isBefore(bucketEnd)
+        );
+
+        double total = 0;
+        final catMap = <String, double>{};
+        for(final e in bucketExp) {
+           total += e.amount;
+           final cat = _normalizeMainCategory(AnalyticsAgg.resolveExpenseCategory(e));
+           catMap[cat] = (catMap[cat] ?? 0) + e.amount;
+        }
+
+        buckets.add(_ChartBucket(
+          date: bucketStart,
+          label: DateFormat('MMM').format(bucketStart),
+          total: total,
+          categoryBreakdown: catMap,
+        ));
+        
+        ptr = DateTime(ptr.year, ptr.month + 1, 1);
+      }
+    } else {
+      // Days
+      DateTime ptr = DateTime(start.year, start.month, start.day);
+      final stop = DateTime(end.year, end.month, end.day); // can match end exactly for exclusive check loop?
+      
+      // Safety cap for custom ranges
+      int count = 0;
+      while (ptr.isBefore(range.end) && count < 60) {
+        final bucketStart = DateTime(ptr.year, ptr.month, ptr.day);
+        final bucketEnd = bucketStart.add(const Duration(days: 1));
+        
+        final bucketExp = expInRange.where((e) => 
+          !e.date.isBefore(bucketStart) && e.date.isBefore(bucketEnd)
+        );
+
+        double total = 0;
+        final catMap = <String, double>{};
+        for(final e in bucketExp) {
+           total += e.amount;
+           final cat = _normalizeMainCategory(AnalyticsAgg.resolveExpenseCategory(e));
+           catMap[cat] = (catMap[cat] ?? 0) + e.amount;
+        }
+
+        // Label: "Mon", "Tue" for Week; "1", "2" for Month
+        String label = '';
+        if (_periodToken == 'W') {
+           label = DateFormat('E').format(bucketStart);
+        } else {
+           label = bucketStart.day.toString();
+        }
+
+        buckets.add(_ChartBucket(
+          date: bucketStart,
+          label: label,
+          total: total,
+          categoryBreakdown: catMap,
+        ));
+
+        ptr = ptr.add(const Duration(days: 1));
+        count++;
+      }
+    }
+
+    return buckets;
+  }
+
+  // ---------- Dynamic Trend Card (Chart) ----------
+  Widget _dynamicTrendCard() {
+    final buckets = _generateChartBuckets();
+    if (buckets.isEmpty || buckets.every((b) => b.total == 0)) {
+       // Show placeholder state if truly empty? 
+       // Or just show zero-state chart.
+    }
+
+    // Identify period label
+    String title = 'Trends';
+    String subtitle = 'Spending over time';
+    
+    if (_periodToken == 'D') {
+      title = 'Today\'s Spend';
+      subtitle = 'Hourly breakdown';
+    } else if (_periodToken == 'W') {
+      title = 'Weekly Trend';
+      subtitle = 'Daily breakdown';
+    } else if (_periodToken == 'M') {
+      title = 'Monthly Trend';
+      subtitle = DateFormat('MMMM y').format(_range?.start ?? DateTime.now());
+    } else if (_periodToken == 'Y') {
+      title = 'Yearly Trend';
+      subtitle = DateFormat('y').format(_range?.start ?? DateTime.now());
+    } else if (_periodToken == 'All Time') {
+      title = 'All Time';
+      subtitle = 'Monthly breakdown';
+    } else {
+      title = 'Custom Range';
+      subtitle = _activePeriodLabel(_range ?? _rangeOrDefault());
+    }
+
+    final totalPeriod = buckets.fold<double>(0, (sum, b) => sum + b.total);
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.65), 
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF004D40).withOpacity(0.08), 
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+               Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Fx.label.copyWith(
+                      color: Fx.text.withOpacity(0.6),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    INR.f(totalPeriod),
+                    style: Fx.title.copyWith(fontSize: 24),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // View selector (Trend / Stacked)
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                padding: const EdgeInsets.all(4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _chartViewBtn('Trend', Icons.bar_chart_rounded),
+                    _chartViewBtn('Breakdown', Icons.pie_chart_rounded),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          
+          Text(
+            subtitle,
+            style: Fx.label.copyWith(color: Fx.text.withOpacity(0.5), fontSize: 13),
+          ),
+          
+          const SizedBox(height: 24),
+
+          // Chart Area
+          SizedBox(
+            height: 220,
+            child: _lastMonthsView == 'Trend'
+                ? _buildTrendChart(buckets)
+                : _buildStackedChart(buckets),
+          ),
+          
+          if (_lastMonthsView == 'Breakdown') ...[
+            const SizedBox(height: 16),
+            _buildBreakdownLegend(buckets),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _chartViewBtn(String label, IconData icon) {
+    final bool isActive = _lastMonthsView == label;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _lastMonthsView = label;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              : null,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isActive ? Colors.black87 : Colors.black54,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: Fx.label.copyWith(
+                color: isActive ? Colors.black87 : Colors.black54,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrendChart(List<_ChartBucket> buckets) {
+    // Max Y calculation
+    double maxY = 0;
+    for (final b in buckets) {
+      if (b.total > maxY) maxY = b.total;
+    }
+    if (maxY == 0) maxY = 100;
+    maxY *= 1.2; // buffer
+
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        maxY: maxY,
+        barTouchData: BarTouchData(
+          touchTooltipData: BarTouchTooltipData(
+            tooltipBgColor: Colors.black87,
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              final bucket = buckets[groupIndex];
+              return BarTooltipItem(
+                '${bucket.label}\n',
+                const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+                children: <TextSpan>[
+                  TextSpan(
+                    text: INR.f(bucket.total),
+                    style: const TextStyle(
+                      color: Color(0xFFE0E0E0), 
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        titlesData: FlTitlesData(
+          show: true,
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (value, meta) {
+                final idx = value.toInt();
+                if (idx < 0 || idx >= buckets.length) return const SizedBox.shrink();
+                // Thin out labels if too many
+                if (buckets.length > 15 && idx % 2 != 0) return const SizedBox.shrink(); 
+                if (buckets.length > 30 && idx % 4 != 0) return const SizedBox.shrink();
+
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(
+                    buckets[idx].label,
+                    style: const TextStyle(
+                      color: Color(0xff7589a2),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 10,
+                    ),
+                  ),
+                );
+              },
+              reservedSize: 30,
+            ),
+          ),
+          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: maxY / 5 == 0 ? 1 : maxY / 5,
+          getDrawingHorizontalLine: (value) {
+            return FlLine(
+              color: const Color(0xffe7e8ec),
+              strokeWidth: 1,
+            );
+          },
+        ),
+        borderData: FlBorderData(show: false),
+        barGroups: buckets.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final bucket = entry.value;
+          return BarChartGroupData(
+            x: idx,
+            barRods: [
+              BarChartRodData(
+                toY: bucket.total,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF2E7D32), Color(0xFF004D40)],
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                ),
+                width: buckets.length > 20 ? 8 : 16,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+              )
+            ],
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildBreakdownLegend(List<_ChartBucket> buckets) {
+      // Aggregate all categories
+      final agg = <String, double>{};
+      for(final b in buckets) {
+         b.categoryBreakdown.forEach((cat, amt) {
+            agg[cat] = (agg[cat] ?? 0) + amt;
+         });
+      }
+
+      // Sort by amount desc
+      final sorted = agg.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      
+      return Wrap(
+        spacing: 16,
+        runSpacing: 8,
+        children: sorted.map((e) {
+             final color = _categoryColors[e.key] ?? Colors.grey;
+             return Row(
+               mainAxisSize: MainAxisSize.min,
+               children: [
+                 Container(
+                   width: 12, height: 12,
+                   decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                 ),
+                 const SizedBox(width: 6),
+                 Text(
+                   e.key,
+                   style: Fx.label.copyWith(fontSize: 12),
+                 ),
+               ],
+             );
+        }).toList(),
+      );
+  }
+
+  Widget _buildStackedChart(List<_ChartBucket> buckets) {
+    // MaxY 
+    double maxY = 0;
+    for(final b in buckets) {
+       if (b.total > maxY) maxY = b.total;
+    }
+    if (maxY == 0) maxY = 100;
+    maxY *= 1.1;
+
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        maxY: maxY,
+        barTouchData: BarTouchData(
+           touchTooltipData: BarTouchTooltipData(
+             tooltipBgColor: Colors.black87,
+             getTooltipItem: (group, groupIndex, rod, rodIndex) {
+               final bucket = buckets[groupIndex];
+               return BarTooltipItem(
+                 '${bucket.label}\n',
+                 const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                 children: [
+                   TextSpan(
+                     text: INR.f(bucket.total),
+                     style: const TextStyle(color: Colors.white70, fontSize: 12),
+                   ),
+                 ],
+               );
+             }
+           ),
+        ),
+        titlesData: FlTitlesData(
+          bottomTitles: AxisTitles(
+             sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (val, _) {
+                  final idx = val.toInt();
+                   if (idx < 0 || idx >= buckets.length) return const SizedBox.shrink();
+                   // Thin out labels
+                   if (buckets.length > 15 && idx % 2 != 0) return const SizedBox.shrink(); 
+                   if (buckets.length > 30 && idx % 4 != 0) return const SizedBox.shrink();
+                   return Padding(
+                     padding: const EdgeInsets.only(top: 8),
+                     child: Text(buckets[idx].label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                   );
+                },
+                reservedSize: 30,
+             ),
+          ),
+          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles:false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles:false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles:false)),
+        ),
+        gridData: FlGridData(show: false),
+        borderData: FlBorderData(show: false),
+        barGroups: buckets.asMap().entries.map((entry) {
+           final idx = entry.key;
+           final bucket = entry.value;
+           return BarChartGroupData(
+             x: idx,
+             barRods: [
+               BarChartRodData(
+                 toY: bucket.total,
+                 width: buckets.length > 20 ? 8 : 16,
+                 rodStackItems: _buildRodStackItems(bucket.categoryBreakdown, bucket.total),
+                 borderRadius: BorderRadius.all(Radius.zero),
+               ),
+             ],
+           );
+        }).toList(),
+      ),
+    );
+  }
+
+  List<BarChartRodStackItem> _buildRodStackItems(Map<String, double> breakdown, double total) {
+     if (total == 0) return [];
+     
+     final sorted = breakdown.entries.toList()
+        ..sort((a,b) => b.value.compareTo(a.value));
+     
+     final items = <BarChartRodStackItem>[];
+     double currentY = 0;
+     
+     for(final e in sorted) {
+        final amt = e.value;
+        if (amt <= 0) continue; 
+        
+        final color = _categoryColors[e.key] ?? Colors.grey;
+        items.add(BarChartRodStackItem(currentY, currentY + amt, color));
+        currentY += amt;
+     }
+     
+     return items;
+  }
+
   Widget _buildMyCardsSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

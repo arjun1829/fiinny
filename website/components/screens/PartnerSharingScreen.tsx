@@ -127,6 +127,7 @@ export default function PartnerSharingScreen({ userProfile, onUpdateProfile }: P
         return (
             <PartnerDetailsScreen
                 partner={selectedPartner}
+                currentUserPhone={userProfile.phoneNumber || ''}
                 onBack={() => setSelectedPartner(null)}
             />
         );

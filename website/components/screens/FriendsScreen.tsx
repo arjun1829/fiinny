@@ -195,7 +195,7 @@ export default function FriendsScreen({
                                             <div className="text-xs text-slate-500">{friend.phone}</div>
                                         </div>
                                     </div>
-                                    <Link href={`/dashboard/friends/${encodeURIComponent(friend.phone)}`}>
+                                    <Link href={`/dashboard/friend?id=${encodeURIComponent(friend.phone)}`}>
                                         <button className="px-4 py-2 text-sm font-semibold text-[var(--primary)] border border-[var(--primary)] rounded-full hover:bg-[var(--primary-light)] transition-colors">
                                             View Details
                                         </button>
@@ -228,7 +228,7 @@ export default function FriendsScreen({
                                             <div className="text-xs text-slate-500">{group.memberPhones.length} members</div>
                                         </div>
                                     </div>
-                                    <Link href={`/dashboard/groups/${group.id}`}>
+                                    <Link href={`/dashboard/group?id=${group.id}`}>
                                         <button className="px-4 py-2 text-sm font-semibold text-[var(--primary)] border border-[var(--primary)] rounded-full hover:bg-[var(--primary-light)] transition-colors">
                                             View Group
                                         </button>

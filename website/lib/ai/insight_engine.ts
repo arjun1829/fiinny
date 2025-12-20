@@ -2,7 +2,7 @@ import { ExpenseItem, IncomeItem, GoalModel, LoanModel } from "@/lib/firestore";
 import { startOfMonth, subMonths, endOfMonth, isSameMonth } from "date-fns";
 
 export type InsightSeverity = 'info' | 'success' | 'warning' | 'critical';
-export type InsightType = 'trend' | 'saving' | 'budget' | 'goal' | 'subscription' | 'networth';
+export type InsightType = 'trend' | 'saving' | 'budget' | 'goal' | 'subscription' | 'networth' | 'info';
 
 export interface Insight {
     id: string;
@@ -115,7 +115,7 @@ export const generateInsights = (
     }
 
     // 4. Net Worth / Loans (If data exists)
-    const totalLoans = loans.reduce((sum, l) => sum + (l.amount - (l.amountPaid || 0)), 0);
+    const totalLoans = loans.reduce((sum, l) => sum + ((l.totalAmount || l.amount || 0) - (l.paidAmount || 0)), 0);
     if (totalLoans > 0) {
         insights.push({
             id: 'loan-alert',
