@@ -48,16 +48,20 @@ Future<void> configureSystemUI() async {
 
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  if (sdk >= 35) {
+  if (sdk < 35) {
+    // Only set colors on older Android versions where it's still allowed/needed.
+    // On Android 15+, edge-to-edge is enforced and these APIs are deprecated/ignored.
     const style = SystemUiOverlayStyle(
+      statusBarColor: Color(0x00000000),
+      systemNavigationBarColor: Color(0x00000000),
       statusBarIconBrightness: Brightness.dark,
       systemNavigationBarIconBrightness: Brightness.dark,
     );
     SystemChrome.setSystemUIOverlayStyle(style);
   } else {
+    // For Android 15+, just ensure icon brightness is correct if needed,
+    // but do not set the deprecated color properties.
     const style = SystemUiOverlayStyle(
-      statusBarColor: Color(0x00000000),
-      systemNavigationBarColor: Color(0x00000000),
       statusBarIconBrightness: Brightness.dark,
       systemNavigationBarIconBrightness: Brightness.dark,
     );

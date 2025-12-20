@@ -148,31 +148,13 @@ class _DefaultAdPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final caption = textTheme.bodyMedium?.copyWith(
-      fontWeight: FontWeight.w700,
-      color: const Color(0xFF6B7280),
+    return const SizedBox(
+      height: 24,
+      width: 24,
+      child: Center(
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
     );
-
-    Widget label = Text(
-      'Sponsored • ${placement.replaceAll('_', ' ')}',
-      textAlign: TextAlign.center,
-      style: caption,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-    );
-
-    if (alignment == Alignment.centerLeft || alignment == Alignment.centerRight) {
-      label = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircleAvatar(radius: 20, backgroundColor: Color(0xFFE5E7EB)),
-          const SizedBox(width: 12),
-          Flexible(child: label),
-        ],
-      );
-    }
-
-    return label;
   }
 }
+

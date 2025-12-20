@@ -1844,6 +1844,22 @@ class GmailService {
 
   double? _extractTxnAmount(String text, {String? direction}) {
     if (text.isEmpty) return null;
+
+    // PATCH: Strong patterns for specific receipts (BookMyShow, Zomato, etc)
+    // where we want "Total Paid" or "Grand Total" instead of the first "Ticket Amount" or "Subtotal".
+    final strongPatterns = <RegExp>[
+      RegExp(r'(?:Grand\s*Total|Total\s*Paid|Amount\s*Paid|Total\s*Amount|Net\s*Amount|Final\s*Amount)[^0-9\n]{0,30}(?:₹|INR|Rs\.?)\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)', caseSensitive: false),
+    ];
+
+    for (final rx in strongPatterns) {
+      final m = rx.firstMatch(text);
+      if (m != null) {
+         final numStr = (m.group(1) ?? '').replaceAll(',', '').replaceAll(RegExp(r'\s+'), '');
+         final val = double.tryParse(numStr);
+         if (val != null && val > 0) return val;
+      }
+    }
+
     final amountPatterns = <RegExp>[
       RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
           caseSensitive: false),

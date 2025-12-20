@@ -9,9 +9,19 @@ const countryData: Record<string, any> = {
     default: { name: "Global", flag: "🌍", currency: "USD", features: ["Manual Tracking", "Multi-currency", "Global Analytics"] },
 };
 
-export default function CountryDetail({ params }: { params: { code: string } }) {
-    const code = params.code.toLowerCase();
-    const data = countryData[code] || countryData.default;
+export async function generateStaticParams() {
+    return Object.keys(countryData).map((code) => ({
+        code: code,
+    }));
+}
+
+
+import { use } from "react";
+
+export default function CountryDetail({ params }: { params: Promise<{ code: string }> }) {
+    const { code } = use(params);
+    const codeLower = code.toLowerCase();
+    const data = countryData[codeLower] || countryData.default;
 
     return (
         <div className="min-h-screen bg-slate-50 py-20 px-4">

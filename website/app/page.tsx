@@ -139,7 +139,7 @@ function MainContent() {
                 </motion.a>
 
                 <motion.a
-                  href="https://apps.apple.com"
+                  href="https://apps.apple.com/in/app/fiinny/id6751309482"
                   target="_blank"
                   rel="noopener noreferrer"
                   whileHover={{ scale: 1.05 }}
@@ -550,8 +550,8 @@ function MainContent() {
               <h4 className="font-bold text-slate-900 mb-4">{t.nav.company}</h4>
               <ul className="space-y-2 text-slate-500">
                 <li><a href="#" className="hover:text-teal-600">{t.nav.about}</a></li>
-                <li><a href="#" className="hover:text-teal-600">{t.nav.privacy}</a></li>
-                <li><a href="#" className="hover:text-teal-600">{t.nav.terms}</a></li>
+                <li><Link href="/privacy" className="hover:text-teal-600">{t.nav.privacy}</Link></li>
+                <li><Link href="/terms" className="hover:text-teal-600">{t.nav.terms}</Link></li>
                 <li><Link href="/countries" className="hover:text-teal-600">{t.nav.countries}</Link></li>
               </ul>
             </div>

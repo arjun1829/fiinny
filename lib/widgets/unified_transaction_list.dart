@@ -2025,28 +2025,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   }
 
   Widget _adPlaceholderRow(String placement) {
-    final caption = Theme.of(context).textTheme.bodyMedium?.copyWith(
-          fontWeight: FontWeight.w700,
-          color: const Color(0xFF6B7280),
-        );
-
-    final placementLabel = placement.replaceAll('_', ' ');
-
-    return Row(
-      children: [
-        const CircleAvatar(radius: 22, backgroundColor: Color(0xFFE5E7EB)),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            'Sponsored • $placementLabel',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: caption,
-          ),
-        ),
-        const SizedBox(width: 8),
-        const Icon(Icons.open_in_new_rounded, color: Color(0xFF9CA3AF)),
-      ],
+    return const Center(
+      child: SizedBox(
+        width: 24,
+        height: 24,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
     );
   }
 

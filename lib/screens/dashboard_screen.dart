@@ -338,37 +338,15 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _dashboardAdPlaceholder() {
-    return SizedBox(
+    return const SizedBox(
+      height: 60,
       width: double.infinity,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Text(
-              'Sponsored',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Colors.black54,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            height: 56,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE5E7EB),
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        ],
+      child: Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey),
+        ),
       ),
     );
   }
@@ -383,33 +361,84 @@ class _DashboardScreenState extends State<DashboardScreen>
   Future<void> _updateSmsPermission({required bool requestPrompt}) async {
     if (!_isAndroidPlatform || _requestingSmsPermission) return;
 
+    if (!requestPrompt) {
+      // Just refresh status without prompting
+      setState(() => _requestingSmsPermission = true);
+      final bool granted = await SmsPermissionHelper.hasPermissions();
+      if (!mounted) return;
+      setState(() => _requestingSmsPermission = false);
+      if (granted) {
+        _onPermissionGranted();
+      } else {
+        SnackThrottle.show(context, 'SMS permission is disabled.', color: Colors.orange);
+      }
+      return;
+    }
+
+    // --- PROMINENT DISCLOSURE (Google Play Policy Requirement) ---
+    // We must show a disclosure *before* the system permission dialog.
+    final bool? agreed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Enable Expense Tracking'),
+        content: const SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'To automatically track your expenses, Fiinny needs access to your SMS messages.',
+                style: TextStyle(height: 1.4),
+              ),
+              SizedBox(height: 12),
+              Text(
+                '• What we read: Only transaction alerts from banks and cards.\n'
+                '• What we ignore: Personal chats, OTPs, and promotional messages.\n'
+                '• Privacy: Your data is processed locally on your device.',
+                style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.5),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false), // User declined disclosure
+            child: const Text('No thanks', style: TextStyle(color: Colors.grey)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true), // User agreed to disclosure
+            style: FilledButton.styleFrom(backgroundColor: Fx.mintDark),
+            child: const Text('Agree & Continue'),
+          ),
+        ],
+      ),
+    );
+
+    if (agreed != true) return; // User did not agree to disclosure
+
+    // Now it is safe to show the system prompt
     setState(() => _requestingSmsPermission = true);
-    final bool granted = requestPrompt
-        ? await SmsPermissionHelper.ensurePermissions()
-        : await SmsPermissionHelper.hasPermissions();
-
+    final bool granted = await SmsPermissionHelper.ensurePermissions();
     if (!mounted) return;
-
     setState(() => _requestingSmsPermission = false);
 
     if (granted) {
-      SyncCoordinator.instance.onAppStop();
-      await SyncCoordinator.instance.onAppStart(widget.userPhone);
-      if (mounted) {
-        SnackThrottle.show(context, 'SMS sync enabled!', color: Colors.green);
-      }
-    } else if (requestPrompt) {
-      SnackThrottle.show(
-        context,
-        'Please allow SMS access so we can keep your spends up to date.',
-        color: Colors.orange,
-      );
+      _onPermissionGranted();
     } else {
       SnackThrottle.show(
         context,
-        'SMS permission is still disabled. Enable it from Settings to sync messages.',
+        'Permission denied. We cannot sync your expenses without it.',
         color: Colors.orange,
       );
+    }
+  }
+
+  Future<void> _onPermissionGranted() async {
+    SyncCoordinator.instance.onAppStop();
+    await SyncCoordinator.instance.onAppStart(widget.userPhone);
+    if (mounted) {
+      SnackThrottle.show(context, 'SMS sync enabled!', color: Colors.green);
     }
   }
 

@@ -73,9 +73,7 @@ class SyncCoordinator {
 
   Future<void> _ensureSmsPipelines(String userPhone, {required bool coldStart}) async {
     try {
-      final bool granted = coldStart
-          ? await SmsPermissionHelper.ensurePermissions()
-          : await SmsPermissionHelper.hasPermissions();
+      final bool granted = await SmsPermissionHelper.hasPermissions();
 
       if (!granted) {
         return;
