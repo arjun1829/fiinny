@@ -242,6 +242,61 @@ function MainContent() {
         </div>
       </section>
 
+      {/* How It Works Section */}
+      <section id="how-it-works" className="py-24 bg-white border-y border-slate-100 scroll-mt-24">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <h2 className="text-3xl lg:text-5xl font-bold text-slate-900 mb-6">
+              Three steps to <span className="text-teal-600">financial freedom.</span>
+            </h2>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-12 relative">
+            {/* Connecting Line (Desktop) */}
+            <div className="hidden md:block absolute top-12 left-[16%] right-[16%] h-0.5 bg-gradient-to-r from-teal-500/0 via-teal-500/20 to-teal-500/0" />
+
+            {[
+              {
+                step: "01",
+                title: "Connect",
+                desc: "Securely link your bank accounts or import import via SMS/Gmail parsing.",
+                icon: <Zap className="w-6 h-6 text-teal-600" />
+              },
+              {
+                step: "02",
+                title: "Analyze",
+                desc: "Our AI automatically categorizes every transaction. No manual entry needed.",
+                icon: <PieChart className="w-6 h-6 text-teal-600" />
+              },
+              {
+                step: "03",
+                title: "Master",
+                desc: "Get deep insights, set budgets, and watch your net worth grow.",
+                icon: <Trophy className="w-6 h-6 text-teal-600" />
+              }
+            ].map((item, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.2 }}
+                className="relative z-10 flex flex-col items-center text-center group"
+              >
+                <div className="w-24 h-24 rounded-3xl bg-slate-50 border border-slate-100 flex items-center justify-center mb-8 shadow-sm group-hover:scale-110 group-hover:shadow-xl group-hover:bg-white group-hover:border-teal-100 transition-all duration-300">
+                  {item.icon}
+                </div>
+                <div className="text-5xl font-black text-slate-100 absolute -top-4 -right-4 -z-10 select-none group-hover:text-teal-50 transition-colors">
+                  {item.step}
+                </div>
+                <h3 className="text-xl font-bold text-slate-900 mb-3">{item.title}</h3>
+                <p className="text-slate-500 leading-relaxed max-w-xs">{item.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Features Section - Apple Style Bento Grid */}
       <section className="py-32 bg-slate-50 relative overflow-hidden" id="features">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
