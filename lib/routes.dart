@@ -24,6 +24,7 @@ import 'screens/analytics_screen.dart'; // ✅ we’ll instantiate this in onGen
 import 'screens/gmail_link_screen.dart';
 import 'screens/premium_paywall.dart';
 import 'screens/transactions_screen.dart';
+import 'screens/subscriptions/subscriptions_screen.dart'; // ✅ NEW Subscription Screen
 
 // ---------- Services for typed args ----------
 import 'services/user_data.dart';
@@ -63,6 +64,9 @@ final Map<String, WidgetBuilder> appRoutes = {
   // Devtools
   '/parse-debug': (_) => const ParseDebugScreen(),
 
+  // Subscription Feature
+
+
   // Settings
   '/settings/notifications': (_) => const NotificationPrefsScreen(),
   '/settings/gmail': (ctx) {
@@ -101,6 +105,12 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
     case '/dashboard':
       if (args is String) {
         return MaterialPageRoute(builder: (_) => DashboardScreen(userPhone: args));
+      }
+      break;
+
+    case '/subscriptions':
+      if (args is String) {
+        return MaterialPageRoute(builder: (_) => SubscriptionsScreen(userId: args));
       }
       break;
 

@@ -52,11 +52,12 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyABuimmTbHwrxY-w7xhRrf-LWOu4gLVfnk',
-    appId: '1:1085936196639:web:b74ffa7e9ded49e616492a',
+    apiKey: 'AIzaSyA7HqSl9YZE9MkQ-_pjbNtS9Lcv679zy2Q',
+    appId: '1:1085936196639:web:b0f063c3c95b347f16492a',
     messagingSenderId: '1085936196639',
     projectId: 'lifemap-72b21',
     authDomain: 'lifemap-72b21.firebaseapp.com',
     storageBucket: 'lifemap-72b21.firebasestorage.app',
+    measurementId: 'G-GCS6LCXNHW',
   );
 }

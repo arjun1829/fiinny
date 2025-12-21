@@ -13,8 +13,9 @@ class SubscriptionItem {
   final String? id;
   final String title;
   final double amount;
-  final String type; // subscription | bill
-  final String frequency; // monthly | yearly | weekly | custom | daily
+  final String type; // subscription | bill | trial
+  final String frequency; // monthly | yearly | weekly | custom | daily | once
+  final String currency;
   final int? intervalDays;
   final DateTime anchorDate;
   final DateTime? nextDueAt;
@@ -23,12 +24,17 @@ class SubscriptionItem {
   final String? provider;
   final String? plan;
   final String? note;
-  final String? category;
+  final String? category; // 'streaming', 'utility', 'rent', etc.
   final int? reminderDaysBefore;
   final String? reminderTime; // HH:mm
   final List<ParticipantShare> participants;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  
+  // New fields for "Ultimate" features
+  final double? averageAmount; // For variable bills
+  final DateTime? trialEndDate; // For trials
+  final String status; // active | paused | canceled | expired
 
   const SubscriptionItem({
     this.id,
@@ -36,6 +42,7 @@ class SubscriptionItem {
     required this.amount,
     required this.type,
     required this.frequency,
+    this.currency = 'INR',
     this.intervalDays,
     required this.anchorDate,
     this.nextDueAt,
@@ -50,6 +57,9 @@ class SubscriptionItem {
     this.participants = const <ParticipantShare>[],
     this.createdAt,
     this.updatedAt,
+    this.averageAmount,
+    this.trialEndDate,
+    this.status = 'active',
   });
 
   SubscriptionItem copyWith({
@@ -58,6 +68,7 @@ class SubscriptionItem {
     double? amount,
     String? type,
     String? frequency,
+    String? currency,
     int? intervalDays,
     DateTime? anchorDate,
     DateTime? nextDueAt,
@@ -72,6 +83,9 @@ class SubscriptionItem {
     List<ParticipantShare>? participants,
     DateTime? createdAt,
     DateTime? updatedAt,
+    double? averageAmount,
+    DateTime? trialEndDate,
+    String? status,
   }) {
     return SubscriptionItem(
       id: id ?? this.id,
@@ -79,6 +93,7 @@ class SubscriptionItem {
       amount: amount ?? this.amount,
       type: type ?? this.type,
       frequency: frequency ?? this.frequency,
+      currency: currency?? this.currency,
       intervalDays: intervalDays ?? this.intervalDays,
       anchorDate: anchorDate ?? this.anchorDate,
       nextDueAt: nextDueAt ?? this.nextDueAt,
@@ -93,10 +108,16 @@ class SubscriptionItem {
       participants: participants ?? this.participants,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      averageAmount: averageAmount ?? this.averageAmount,
+      trialEndDate: trialEndDate ?? this.trialEndDate,
+      status: status ?? this.status,
     );
   }
 
-  bool get isPaused => paused;
+  bool get isPaused => paused || status == 'paused';
+  bool get isActive => status == 'active';
+  bool get isTrial => type.toLowerCase() == 'trial';
+  bool get isVariable => type.toLowerCase() == 'bill';
 
   Map<String, dynamic> toJson() {
     return {
@@ -104,6 +125,7 @@ class SubscriptionItem {
       'amount': amount,
       'type': type,
       'frequency': frequency,
+      'currency': currency,
       if (intervalDays != null) 'intervalDays': intervalDays,
       'anchorDate': Timestamp.fromDate(anchorDate),
       if (nextDueAt != null) 'nextDueAt': Timestamp.fromDate(nextDueAt!),
@@ -119,6 +141,9 @@ class SubscriptionItem {
         'participants': participants.map((e) => e.toJson()).toList(),
       if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
       if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
+      if (averageAmount != null) 'averageAmount': averageAmount,
+      if (trialEndDate != null) 'trialEndDate': Timestamp.fromDate(trialEndDate!),
+      'status': status,
     };
   }
 
@@ -144,6 +169,14 @@ class SubscriptionItem {
           ParticipantShare.fromJson(entry)
     ];
 
+    final rawStatus = (json['status'] as String?)?.toLowerCase() ?? 'active';
+    final legacyPaused = (json['paused'] as bool?) ??
+        (((json['rule'] as Map?)?['status'] as String?)?.toLowerCase() ==
+            'paused');
+    
+    // Unify paused state
+    final effectiveStatus = legacyPaused ? 'paused' : rawStatus;
+
     return SubscriptionItem(
       id: id,
       title: (json['title'] as String? ?? '').trim(),
@@ -155,6 +188,7 @@ class SubscriptionItem {
                   : null) ??
               'monthly')
           .toLowerCase(),
+      currency: (json['currency'] as String?)?.toUpperCase() ?? 'INR',
       intervalDays: (json['intervalDays'] as num?)?.toInt() ??
           ((json['rule'] is Map
                   ? ((json['rule'] as Map)['intervalDays'] as num?)
@@ -164,9 +198,7 @@ class SubscriptionItem {
           _toDate((json['rule'] as Map?)?['anchorDate']) ??
           DateTime.now(),
       nextDueAt: _toDate(json['nextDueAt']),
-      paused: (json['paused'] as bool?) ??
-          (((json['rule'] as Map?)?['status'] as String?)?.toLowerCase() ==
-              'paused'),
+      paused: legacyPaused,
       autopay: (json['autopay'] as bool?) ?? false,
       provider: (json['provider'] as String?)?.trim(),
       plan: (json['plan'] as String?)?.trim(),
@@ -177,6 +209,9 @@ class SubscriptionItem {
       participants: parts,
       createdAt: _toDate(json['createdAt']),
       updatedAt: _toDate(json['updatedAt']),
+      averageAmount: (json['averageAmount'] as num?)?.toDouble(),
+      trialEndDate: _toDate(json['trialEndDate']),
+      status: effectiveStatus,
     );
   }
 
@@ -192,7 +227,7 @@ class SubscriptionItem {
       intervalDays: intervalDays,
       amount: amount,
       participants: effectiveParticipants,
-      status: paused ? 'paused' : 'active',
+      status: isPaused ? 'paused' : 'active',
     );
   }
 
@@ -213,6 +248,9 @@ class SubscriptionItem {
         if (plan != null && plan!.isNotEmpty) 'plan': plan,
         if (category != null && category!.isNotEmpty) 'category': category,
         'autopay': autopay,
+        'status': status,
+        if(isTrial) 'isTrial': true,
+        if(trialEndDate != null) 'trialEndDate': trialEndDate!.toIso8601String(),
       },
       notify: reminderDaysBefore == null && reminderTime == null
           ? null
