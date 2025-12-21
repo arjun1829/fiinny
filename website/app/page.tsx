@@ -17,7 +17,6 @@ import {
   Coins,
   Globe,
   AlertCircle,
-  AlertCircle,
   X,
   Instagram,
   Linkedin
