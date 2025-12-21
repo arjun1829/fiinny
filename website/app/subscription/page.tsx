@@ -1,131 +1,89 @@
 "use client";
 
-"use client";
-
 import Link from "next/link";
-import Image from "next/image";
-import { Zap, ArrowLeft, AlertCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function SubscriptionPage() {
     return (
-        <div className="min-h-screen bg-black text-white selection:bg-teal-500/30">
+        <div className="min-h-screen bg-slate-900 text-white selection:bg-teal-500/30 overflow-hidden relative">
 
-            {/* Navbar Placeholder / Back Button */}
-            <nav className="p-6 flex items-center justify-between max-w-7xl mx-auto w-full">
-                <Link href="/dashboard" className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors">
-                    <ArrowLeft className="w-5 h-5" />
-                    <span>Back to Dashboard</span>
+            {/* Background Effects */}
+            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-teal-500/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2" />
+            <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[100px] translate-y-1/2 -translate-x-1/2" />
+
+            {/* Navbar */}
+            <nav className="p-6 flex items-center justify-between max-w-7xl mx-auto w-full relative z-10">
+                <Link href="/" className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors group">
+                    <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                    <span>Back Home</span>
                 </Link>
-                <div className="text-xl font-bold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-cyan-500">
-                    SMART TRACKER
+                <div className="text-xl font-black tracking-tighter bg-gradient-to-r from-teal-400 to-emerald-400 bg-clip-text text-transparent">
+                    Fiinny
                 </div>
             </nav>
 
-            <div className="max-w-4xl mx-auto px-4 py-12">
-                <div className="grid gap-8">
+            {/* Main Content */}
+            <div className="max-w-7xl mx-auto px-4 py-20 lg:py-32 relative z-10">
+                <div className="text-center max-w-4xl mx-auto">
 
-                    {/* HIDDEN CHARGES ALERT */}
                     <motion.div
-                        initial={{ opacity: 0, y: 10 }}
+                        initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="bg-red-500/10 border border-red-500/20 rounded-3xl p-6"
+                        transition={{ duration: 0.6 }}
                     >
-                        <div className="flex items-start gap-4">
-                            <div className="p-3 bg-red-500/20 rounded-full">
-                                <AlertCircle className="w-6 h-6 text-red-500" />
-                            </div>
-                            <div>
-                                <h3 className="text-xl font-bold text-red-200 mb-1">Hidden Charges Detected</h3>
-                                <p className="text-red-200/60 text-sm mb-4">We found 2 sneaky fees in your recent transactions. You might want to dispute these.</p>
-
-                                <div className="space-y-3">
-                                    <div className="flex justify-between items-center bg-black/20 p-3 rounded-xl border border-red-500/10">
-                                        <span className="text-red-100 font-medium">Forex Markup Fee</span>
-                                        <span className="text-red-400 font-bold">-₹45.00</span>
-                                    </div>
-                                    <div className="flex justify-between items-center bg-black/20 p-3 rounded-xl border border-red-500/10">
-                                        <span className="text-red-100 font-medium">ATM Surcharge</span>
-                                        <span className="text-red-400 font-bold">-₹20.00</span>
-                                    </div>
-                                </div>
-                            </div>
+                        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-teal-500/10 text-teal-300 text-sm font-bold mb-8 border border-teal-500/20">
+                            <Zap className="w-4 h-4" /> No Credit Card Required
                         </div>
+
+                        <h1 className="text-7xl lg:text-[7rem] font-bold tracking-tighter mb-8 leading-none">
+                            Pricing? <br />
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-400">It's Free.</span>
+                        </h1>
+
+                        <p className="text-2xl text-slate-400 mb-12 leading-relaxed max-w-2xl mx-auto">
+                            We believe financial clarity shouldn't come with a price tag.
+                            Track expenses, split bills, and master your money without paying a dime.
+                        </p>
+
+                        <motion.div
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            className="inline-block"
+                        >
+                            <Link href="/login" className="bg-white text-slate-900 px-10 py-5 rounded-full text-xl font-bold shadow-[0_0_40px_-10px_rgba(255,255,255,0.3)] hover:shadow-[0_0_60px_-15px_rgba(20,184,166,0.5)] transition-shadow">
+                                Start for ₹0
+                            </Link>
+                        </motion.div>
                     </motion.div>
 
-                    {/* SUBSCRIPTION LIST */}
-                    <div>
-                        <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
-                            <Zap className="w-6 h-6 text-teal-400" />
-                            Active Subscriptions
-                        </h2>
+                    {/* Features Grid */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 40 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.8, delay: 0.2 }}
+                        className="grid md:grid-cols-3 gap-6 mt-24 text-left"
+                    >
+                        {[
+                            { title: "Unlimited Tracking", desc: "Track as many expenses, incomes, and transfers as you want." },
+                            { title: "Smart Parsing", desc: "Auto-detect transactions from SMS and Gmail. No manual entry." },
+                            { title: "Group Expenses", desc: "Split bills with friends, roommates, and trips easily." },
+                        ].map((item, i) => (
+                            <div key={i} className="bg-slate-800/50 border border-slate-700 p-8 rounded-3xl backdrop-blur-sm hover:bg-slate-800 transition-colors">
+                                <CheckCircle2 className="w-8 h-8 text-teal-400 mb-4" />
+                                <h3 className="text-xl font-bold mb-2 text-white">{item.title}</h3>
+                                <p className="text-slate-400">{item.desc}</p>
+                            </div>
+                        ))}
+                    </motion.div>
 
-                        <div className="space-y-4">
-                            {/* Item 1 */}
-                            <motion.div
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: 0.1 }}
-                                className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex items-center justify-between hover:border-teal-500/30 transition-colors group"
-                            >
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-zinc-800 rounded-2xl flex items-center justify-center text-red-500 font-bold text-xl">N</div>
-                                    <div>
-                                        <h4 className="font-bold text-lg group-hover:text-teal-400 transition-colors">Netflix</h4>
-                                        <p className="text-zinc-500 text-sm">Due in 5 days</p>
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <div className="text-xl font-bold">₹649</div>
-                                    <div className="text-zinc-600 text-xs">/month</div>
-                                </div>
-                            </motion.div>
-
-                            {/* Item 2 */}
-                            <motion.div
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: 0.2 }}
-                                className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex items-center justify-between hover:border-teal-500/30 transition-colors group"
-                            >
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-zinc-800 rounded-2xl flex items-center justify-center text-green-500 font-bold text-xl">S</div>
-                                    <div>
-                                        <h4 className="font-bold text-lg group-hover:text-teal-400 transition-colors">Spotify</h4>
-                                        <p className="text-zinc-500 text-sm">Due in 12 days</p>
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <div className="text-xl font-bold">₹119</div>
-                                    <div className="text-zinc-600 text-xs">/month</div>
-                                </div>
-                            </motion.div>
-
-                            {/* Item 3 */}
-                            <motion.div
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: 0.3 }}
-                                className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex items-center justify-between hover:border-teal-500/30 transition-colors group"
-                            >
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-zinc-800 rounded-2xl flex items-center justify-center text-blue-500 font-bold text-xl">G</div>
-                                    <div>
-                                        <h4 className="font-bold text-lg group-hover:text-teal-400 transition-colors">Google One</h4>
-                                        <p className="text-orange-400 text-sm font-medium">Due Tomorrow!</p>
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <div className="text-xl font-bold">₹130</div>
-                                    <div className="text-zinc-600 text-xs">/month</div>
-                                </div>
-                            </motion.div>
-                        </div>
+                    <div className="mt-20 text-slate-500 font-medium text-sm">
+                        * Premium features for teams and businesses coming soon. <br />
+                        Personal accounts will remain free forever.
                     </div>
+
                 </div>
             </div>
         </div>
     );
 }
-
-// Helper components not needed as we inlined list items for specific styling
