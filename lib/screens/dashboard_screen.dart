@@ -63,6 +63,10 @@ import '../services/notifs/social_events_watch.dart';
 import '../widgets/hidden_charges_card.dart';
 import '../widgets/forex_charges_card.dart';
 import '../widgets/salary_predictor_card.dart';
+import '../widgets/subscriptions_summary_card.dart'; // ✅ NEW
+import '../services/subscription_service.dart'; // ✅ NEW
+import '../models/subscription_item.dart';
+import '../services/subscriptions/subscription_notifier.dart';
 
 import '../brain/loan_detection_service.dart';
 import '../widgets/loan_suggestions_sheet.dart';
@@ -111,6 +115,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   int loanCount = 0;
   double totalAssets = 0.0;
   int assetCount = 0;
+  // Subscriptions
+  double _subsTotal = 0.0;
+  int _subsCount = 0;
+  
   List<GoalModel> goals = [];
   GoalModel? currentGoal;
   List<InsightModel> insights = [];
@@ -269,9 +277,16 @@ class _DashboardScreenState extends State<DashboardScreen>
       final goalsList = await GoalService().getGoals(widget.userPhone);
       final loans = await LoanService().getLoans(widget.userPhone);
       final assetsForInsights = await _assetSvc.getAssets(widget.userPhone);
-      await _loadPortfolioTotals();
+    await _loadPortfolioTotals();
 
-      final openLoans = loans.where((l) => !(l.isClosed ?? false)).toList();
+    // Subscriptions
+    final subs = await SubscriptionService().streamSubscriptions(widget.userPhone).first.catchError((_) => <SubscriptionItem>[]);
+    double subTotal = subs.where((s) => s.isActive).fold<double>(0.0, (sum, s) => sum + (s.averageAmount ?? s.amount));
+    
+    // Sync reminders given fresh data
+    SubscriptionNotifier.instance.syncReminders(widget.userPhone);
+
+    final openLoans = loans.where((l) => !(l.isClosed ?? false)).toList();
       final openLoanTotal =
           openLoans.fold<double>(0.0, (sum, loan) => sum + loan.amount);
 
@@ -289,11 +304,13 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (!mounted) return;
       setState(() {
         goals = goalsList;
-        currentGoal = goalsList.isNotEmpty ? goalsList.first : null;
-        loanCount = openLoans.length;
-        totalLoan = openLoanTotal;
+      currentGoal = goalsList.isNotEmpty ? goalsList.first : null;
+      loanCount = openLoans.length;
+      totalLoan = openLoanTotal;
+      _subsCount = subs.length;
+      _subsTotal = subTotal;
 
-        _insightUserData = userData;
+      _insightUserData = userData;
         insights = generated;
         _generateSmartInsight();
       });
@@ -2011,6 +2028,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                         const SizedBox(height: 10),
                         Padding(
                           padding: horizontalPadding,
+                          child: _buildSubscriptionsTile(),
+                        ),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
                           child: _buildGoalsTile(),
                         ),
                         const SizedBox(height: 10),
@@ -2185,6 +2207,28 @@ class _DashboardScreenState extends State<DashboardScreen>
         }
         return card;
       },
+    );
+  }
+
+  Widget _buildSubscriptionsTile() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () async {
+          await Navigator.pushNamed(context, '/subscriptions', arguments: widget.userPhone);
+          // Refresh on return
+          await _refreshSecondaryBlocks();
+        },
+        child: SubscriptionsSummaryCard(
+          totalAmount: _subsTotal,
+          count: _subsCount,
+          onTap: () async {
+            await Navigator.pushNamed(context, '/subscriptions', arguments: widget.userPhone);
+             await _refreshSecondaryBlocks();
+          },
+        ),
+      ),
     );
   }
 

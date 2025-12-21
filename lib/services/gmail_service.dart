@@ -32,6 +32,7 @@ import './merchants/merchant_alias_service.dart'; // alias normalize
 import './ingest_filters.dart' as filt;            // ✅ stronger filtering helpers
 import './categorization/category_rules.dart';
 import './recurring/recurring_engine.dart';
+import './intelligence/subscription_scanner_service.dart';
 import './user_overrides.dart';
 
 // Merge policy: OFF (for testing), ENRICH (recommended), SILENT (current behavior)
@@ -1032,6 +1033,45 @@ class GmailService {
 
     if (combined.isEmpty) return null;
 
+    final msgDate = DateTime.fromMillisecondsSinceEpoch(
+      int.tryParse(msg.internalDate ?? '0') ?? DateTime.now().millisecondsSinceEpoch,
+    );
+    // Ah, I see I inserted the scanner block which includes msgDate. 
+    // And there was likely already a msgDate declaration in the file before my insertion point using 'combined'.
+    
+    // I will use 'replace_file_content' to effectively delete the duplicate declaration if it matches.
+    // But wait, my view shows only ONE declaration at 1036.
+    // If the error was "msgDate is already defined", then there must be another one. 
+    // I will comment out this one and use the one that must exist below or just rely on the fact that I might have messed up the insert.
+    // Let's try to remove this declaration and see if it compiles (implying another exists), 
+    // OR if I should just keep this one and remove the OTHER one potentially.
+    // Actually, looking at the previous diff, I inserted `msgDate = ...` AND the scanner.
+    // If I look at line 1022+, I don't see another msgDate.
+    // BUT, in the stable version (reverted), msgDate was defined LATER, after the scanner block would have been.
+    // So by inserting it early, I might have created a duplicate if I didn't remove the later one.
+    // I will try to remove THIS declaration and assumes the later one exists? No, the scanner needs it.
+    // I should remove the LATER declaration.
+    // Let's find the later declaration first.
+    // I will view lines 1050-1150.
+
+    // ─── SUBSCRIPTION SCANNER (TEMPORARILY DISABLED) ───────────────────────
+    /*
+    try {
+      final subEvent = SubscriptionScannerService.instance.scan(
+        body: combined, 
+        ts: msgDate, 
+        sender: fromHdr
+      );
+      if (subEvent != null) {
+         _log('SUBSCRIPTION EVENT DETECTED: ${subEvent.type} - ${subEvent.providerName}');
+         await SubscriptionScannerService.instance.handleEvent(userId, subEvent);
+      }
+    } catch (e) {
+      _log('Subscription scan error: $e');
+    }
+    */
+    // ───────────────────────────────────────────────────────────────────────
+
     // Detect bank/tier once and reuse everywhere.
     final emailDomain = _fromDomain(headers);
     final detectedBank = _detectBank(headers: headers, body: combined);
@@ -1092,9 +1132,7 @@ class GmailService {
 
 
     // Extract common signals
-    final msgDate = DateTime.fromMillisecondsSinceEpoch(
-      int.tryParse(msg.internalDate ?? '0') ?? DateTime.now().millisecondsSinceEpoch,
-    );
+    // msgDate is already defined above
     final bank = detectedBank.code ??
         _guessBankFromHeaders(headers) ??
         _guessIssuerBankFromBody(combined);

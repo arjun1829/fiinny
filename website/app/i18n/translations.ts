@@ -17,8 +17,8 @@ export const translations = {
         },
         hero: {
             badge: "The #1 Finance Tracker for Everyone",
-            titleStart: "Master",
-            titleHighlight: "Your Money.",
+            titleStart: "Master Your Money",
+            titleHighlight: "with Fiinny.",
             subtitle: "Stop guessing where your money went. Track expenses, split bills, and reach your goals. Locally or globally.",
             getStarted: "Get Started Free",
             watchDemo: "Watch Demo",
