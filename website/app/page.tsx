@@ -17,7 +17,10 @@ import {
   Coins,
   Globe,
   AlertCircle,
-  X
+  AlertCircle,
+  X,
+  Instagram,
+  Linkedin
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
@@ -537,6 +540,26 @@ function MainContent() {
               <p className="text-slate-500 max-w-xs">
                 {t.footer.tagline}
               </p>
+              <div className="flex items-center gap-4 mt-6">
+                <a
+                  href="https://www.instagram.com/fiinnyapp/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 bg-slate-100 rounded-full text-slate-600 hover:bg-teal-50 hover:text-teal-600 transition-colors"
+                  aria-label="Instagram"
+                >
+                  <Instagram className="w-5 h-5" />
+                </a>
+                <a
+                  href="https://www.linkedin.com/company/fiinny-inc/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 bg-slate-100 rounded-full text-slate-600 hover:bg-teal-50 hover:text-teal-600 transition-colors"
+                  aria-label="LinkedIn"
+                >
+                  <Linkedin className="w-5 h-5" />
+                </a>
+              </div>
             </div>
             <div>
               <h4 className="font-bold text-slate-900 mb-4">{t.nav.product}</h4>
