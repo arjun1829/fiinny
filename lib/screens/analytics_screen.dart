@@ -2138,7 +2138,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       radius: Fx.r24,
       child: AdsBannerCard(
         placement: 'analytics_overview',
-        inline: true,
+        inline: false,
         inlineMaxHeight: 90,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
         minHeight: 96,
@@ -2146,13 +2146,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         placeholder: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.campaign_rounded, color: Fx.mintDark),
-            const SizedBox(height: 8),
-            const Text(
-              'Sponsored',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
             Text(
               'Your personalised offers will appear here shortly.',
               textAlign: TextAlign.center,
@@ -2478,6 +2471,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       // Small banner ad
                       const SizedBox(height: 10),
                       _analyticsBannerCard(),
+
+                      const SizedBox(height: 14),
+                      _monthlyCategoryListCard(),
 
                       const SizedBox(height: 14),
                       GlassCard(

@@ -109,6 +109,7 @@ function MainContent() {
               <a href="#features" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.features}</a>
               <a href="#how-it-works" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.howItWorks}</a>
               <Link href="/subscription" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.pricing}</Link>
+              <Link href="/careers" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">Careers</Link>
 
               <Link href="#fiinny-ai" className="relative group flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 hover:border-teal-300 transition-all hover:shadow-md hover:-translate-y-0.5">
                 <span className="relative flex h-2 w-2">
@@ -127,7 +128,7 @@ function MainContent() {
               {/* Download Buttons */}
               <div className="flex items-center gap-3 ml-4 pl-4 border-l border-slate-200">
                 <motion.a
-                  href="https://play.google.com/store"
+                  href="https://play.google.com/store/apps/details?id=com.KaranArjunTechnologies.lifemap"
                   target="_blank"
                   rel="noopener noreferrer"
                   whileHover={{ scale: 1.05 }}
@@ -630,6 +631,7 @@ function MainContent() {
                 <li><Link href="/privacy" className="hover:text-teal-600">{t.nav.privacy}</Link></li>
                 <li><Link href="/terms" className="hover:text-teal-600">{t.nav.terms}</Link></li>
                 <li><Link href="/countries" className="hover:text-teal-600">{t.nav.countries}</Link></li>
+                <li><Link href="/careers" className="hover:text-teal-600">Careers</Link></li>
               </ul>
             </div>
           </div>

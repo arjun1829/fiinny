@@ -2005,7 +2005,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   Widget _adBanner(String placement) {
     return AdsBannerCard(
       placement: placement,
-      inline: true,
+      inline: false,
       inlineMaxHeight: 120,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       minHeight: 96,
@@ -2016,7 +2016,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   Widget _inlineAdCard(String placement) {
     return AdsBannerCard(
       placement: placement,
-      inline: true,
+      inline: false,
       inlineMaxHeight: 120,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       minHeight: 96,

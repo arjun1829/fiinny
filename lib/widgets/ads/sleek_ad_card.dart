@@ -139,7 +139,7 @@ class _SleekAdCardState extends State<SleekAdCard> {
     final banner = AdaptiveBanner(
       key: ValueKey(_bannerGeneration),
       adUnitId: AdIds.banner,
-      inline: true,
+      inline: false,
       inlineMaxHeight: 120,
       padding: EdgeInsets.zero,
       onLoadChanged: (isLoaded) {
