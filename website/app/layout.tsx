@@ -11,6 +11,10 @@ export const metadata: Metadata = {
   title: "Fiinny - Personal Finance & Expense Tracker App",
   description: "Fiinny is your personal finance companion. See exactly where your money went, auto-track expenses, and split bills.",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/icon.png",
+    apple: "/icon.png",
+  },
 };
 
 export default function RootLayout({

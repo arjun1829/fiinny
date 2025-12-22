@@ -527,7 +527,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
           ),
           const AdsBannerCard(
             placement: 'partner_dashboard_summary',
-            inline: true,
+            inline: false,
             inlineMaxHeight: 120,
             margin: EdgeInsets.fromLTRB(18, 16, 18, 4),
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),

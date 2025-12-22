@@ -261,7 +261,7 @@ class _SharingScreenState extends State<SharingScreen> {
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 18),
       child: AdsBannerCard(
         placement: 'sharing_partner_batch_$batchIndex',
-        inline: true,
+        inline: false,
         inlineMaxHeight: 110,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         minHeight: 88,
@@ -272,7 +272,7 @@ class _SharingScreenState extends State<SharingScreen> {
   Widget _buildHeaderAd() {
     return const AdsBannerCard(
       placement: 'sharing_screen_header',
-      inline: true,
+      inline: false,
       inlineMaxHeight: 120,
       margin: EdgeInsets.fromLTRB(14, 0, 14, 18),
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),

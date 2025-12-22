@@ -182,7 +182,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     return AdsBannerCard(
       key: const ValueKey('ad-dashboard_summary'),
       placement: 'dashboard_summary',
-      inline: true,
+      inline: false,
       inlineMaxHeight: 120,
       margin: EdgeInsets.zero,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
