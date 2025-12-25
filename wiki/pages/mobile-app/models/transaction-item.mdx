@@ -1,0 +1,18 @@
+# Transaction Item (`transaction_item.dart`)
+
+**Path:** `lib/models/transaction_item.dart`
+
+## 1. Overview
+A generic transaction wrapper often used for **AI Analysis** and **Unified Lists**. It abstracts whether a transaction is a Credit or Debit using an Enum.
+
+## 2. Responsibilities
+- **Unified Representation:** Can represent both Credit and Debit via `TransactionType`.
+- **AI Suggestions:** heavily used to carry "Suggested" metadata (`suggestedCategory`, `suggestedMerchant`, `suggestedConfidence`) from AI models.
+- **SQLite / Local Storage:** Has `toMap` methods tailored for generic maps, often used for local caching or analysis before saving to Firestore.
+
+## 3. Key Logic
+- `_parseDate`: A robust helper that can parse dates from Timestamps, Strings, or Ints, preventing crashes from malformatted data.
+- **Flat Map Structure:** The `toMap` flattens suggested fields, making it easy to store in simple key-value databases or pass to analysis engines.
+
+## 4. Usage
+- **AI Pipelines:** When an SMS is parsed, it might first become a `TransactionItem` to be enriched by an AI model before being converted to a final `ExpenseItem` or `IncomeItem`.

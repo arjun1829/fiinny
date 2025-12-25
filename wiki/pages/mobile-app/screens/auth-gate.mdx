@@ -1,0 +1,46 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Auth Gate
+
+The primary authentication screen managing Phone Number login and OTP verification.
+
+## Overview
+
+`AuthGate` handles the Firebase Phone Auth flow. It manages three internal stages:
+1.  **Phone Input**: User enters country code and phone number.
+2.  **OTP Input**: User enters the 6-digit code sent via SMS.
+3.  **Loading**: Transient state during network verifications.
+
+It also wraps the flow in a branded UI with a rotating logo animation and glassmorphic cards.
+
+## Usage
+
+```dart
+Navigator.pushReplacement(
+  context,
+  MaterialPageRoute(builder: (_) => const AuthGate()),
+);
+```
+
+## Logic & State
+
+- **`_sendOTP`**: Triggered after valid phone input. Calls `FirebaseAuth.verifyPhoneNumber`.
+    - Handles `verificationCompleted` (auto-verify on Android).
+    - Handles `codeSent` (moves to OTP stage).
+- **`_verifyOTP`**: triggered after OTP input. Calls `signInWithCredential`.
+- **`_saveUserToFirestore`**: Post-login hook.
+    - Creates a stub `users/{phone}` document if new.
+    - Checks `onboarded` flag.
+    - Routes to `OnboardingScreen` (if new) or `MainNavScreen` (if returning).
+
+## UI Components
+
+- **`_FiinnyHero`**: A custom widget with a spinning teal ring and a glowing background, housing the app logo.
+- **`_Shake`**: A wrapper for the OTP field that physically shakes the input when an error occurs.
+- **Glass Cards**: Input forms are contained within `_glassCard` wrappers for visual depth.
+
+## Dependencies
+
+- `firebase_auth`: Core authentication.
+- `intl_phone_field`: For country code selection and phone validation.

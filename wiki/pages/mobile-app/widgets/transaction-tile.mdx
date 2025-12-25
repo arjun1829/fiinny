@@ -1,0 +1,26 @@
+# Transaction Tile
+
+**Path:** `lib/widgets/transaction_tile.dart`
+
+The fundamental atomic unit for displaying a transaction in a list. It is designed to be lightweight and stateless.
+
+## Polymorphism
+The tile accepts `dynamic transaction`, which can be either an `ExpenseItem` or `IncomeItem`. It internally switches:
+*   **Income:** Green arrow, positive vibe.
+*   **Expense:** Red arrow/pink accent.
+
+## Features
+*   **Three-Line Layout:** Supports `Title` (Category/Type), `Subtitle` (Note + Date), and `Trailing` (Actions).
+*   **Inline Actions:** Exposes Edit, Delete, and Split buttons directly on the tile if callbacks are provided.
+
+## Usage
+
+```dart
+ListView.builder(
+  itemBuilder: (ctx, i) => TransactionTile(
+    transaction: items[i],
+    onEdit: () => edit(items[i]),
+    onDelete: () => delete(items[i]),
+  ),
+);
+```

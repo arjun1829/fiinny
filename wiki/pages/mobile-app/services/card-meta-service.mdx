@@ -1,0 +1,12 @@
+# Card Meta Service
+
+**Path**: `lib/services/card_meta_service.dart`
+
+Manages metadata associated with credit cards, particularly their **limits**.
+
+## Responsibilities
+*   Stores `creditLimitInr` and `availableLimitInr` for a given card (identified by `last4`).
+*   Path: `users/{userId}/cards_meta/{last4}`.
+
+## Usage
+Used by the Credit Card screen or parsing services to update available limits when extracted from SMS (e.g., "Available Limit: 50,000").

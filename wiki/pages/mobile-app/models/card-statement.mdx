@@ -1,0 +1,13 @@
+# Card Statement (`card_statement.dart`)
+
+**Path:** `lib/models/card_statement.dart`
+
+## 1. Overview
+Represents a detailed **PDF Statement Parse Result**. When the System parses a PDF sent via email, it produces this object.
+
+## 2. Responsibilities
+- **Granular Breakdown:** Unlike `CreditCardCycle` (which is just a summary), this model can hold a breakdown of `components`: `newSpends`, `taxes`, `fees`.
+- **Linking:** `id` is usually constructed as `stmt_<issuer>_<last4>_<yyyymm>` to create a deterministic key.
+
+## 3. Usage
+- **Pipeline:** PDF Parser -> `CardStatement` -> Firestore.

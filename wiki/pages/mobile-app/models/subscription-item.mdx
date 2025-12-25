@@ -1,0 +1,19 @@
+# Subscription Item (`subscription_item.dart`)
+
+**Path:** `lib/models/subscription_item.dart`
+
+## 1. Overview
+A sophisticated model for **Recurring Payments**. It unifies personal subscriptions (Netflix) and recurring bills (Rent) into a single actionable entity.
+
+## 2. Responsibilities
+- **Scheduling:** Deep logic for recurrence via `frequency`, `intervalDays`, `anchorDate`.
+- **Lifecycle:** Tracks `status` (active, paused, canceled, expired) and `trialEndDate`.
+- **Conversion:** Can convert itself into a `RecurringRule` (for the backend logic) or a `SharedItem` (for the standardized list UI).
+
+## 3. Key Logic
+- `effectiveStatus`: Handles legacy data where "paused" was a boolean, normalizing it into the new `status` string field.
+- `toSharedItem`: A vital adapter allows these subscription objects to be rendered by the generic "Universal List" widgets used elsewhere in the app.
+
+## 4. Usage
+- **Collections:** `users/{uid}/subscriptions`.
+- **UI:** "Subscriptions" tab in the app.

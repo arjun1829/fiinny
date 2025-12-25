@@ -1,0 +1,24 @@
+# Ingest Index Service
+
+**Path**: `lib/services/ingest_index_service.dart`
+
+The `IngestIndexService` provides a **deduplication layer** for the ingestion pipeline. Given that the same transaction might be received via multiple channels (SMS, Email, Push Notification), or the same sync might run multiple times, this service ensures we only process a unique event once.
+
+## Architecture
+It uses a specialized Firestore subclass `ingest_index/{userPhone}/keys/{key}`.
+
+## Key Methods
+
+### `claim(String userPhone, String key, {required String source})`
+Attempts to "claim" a transaction key.
+*   **Mechanism**: Uses a Firestore `runTransaction`.
+    1.  Reads `keys/{key}`.
+    2.  If it exists, returns `false` (Claim failed, already processed).
+    3.  If not, writes `{ createdAt, source }` and returns `true`.
+*   **Significance**: This allows the caller (SmsService/GmailService) to immediately stop processing if `false` is returned, saving compute and preventing duplicate data.
+
+### `pruneOldKeys`
+Maintenance method to delete keys older than `olderThanDays`. Keeps the index size manageable using a batch delete.
+
+## Key Concept: `txKey`
+The `key` passed here is usually a hash of critical transaction fields: `hash(amount + normalized_date + merchant_pattern)`.

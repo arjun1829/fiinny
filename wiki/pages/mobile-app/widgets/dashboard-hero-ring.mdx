@@ -1,0 +1,25 @@
+# Dashboard Hero Ring
+
+**Path:** `lib/widgets/dashboard_hero_ring.dart`
+
+A visually striking double-ring chart used to compare two values (typically Income/Credit vs Expense/Debit).
+
+## Modes
+1.  **Full Card:** Displays the rings alongside detailed text stats (Amount, Label).
+2.  **Compact:** Displays only the graphical rings (used in lists or mini-views).
+
+## Visuals
+*   **Layered Rings:** Draws two overlapping arcs using `CustomPainter`.
+*   **Gradients:** Uses sweep gradients to give the rings a glowing, 3D effect.
+*   **Responsive Sizing:** Adapts stroke width and radius based on available size.
+
+## Usage
+
+```dart
+DashboardHeroRing(
+  credit: 5000,
+  debit: 2000,
+  period: "Weekly",
+  showHeader: true, // Set false for mini-mode
+)
+```

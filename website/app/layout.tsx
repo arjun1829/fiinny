@@ -8,8 +8,8 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { AiProvider } from "@/components/ai/AiContext";
 
 export const metadata: Metadata = {
-  title: "Fiinny - Personal Finance & Expense Tracker App",
-  description: "Fiinny is your personal finance companion. See exactly where your money went, auto-track expenses, and split bills.",
+  title: "Fiinny - The Secure, Privacy-First Expense Tracker",
+  description: "Fiinny is an ISO-aligned, private financial operating system. Auto-track expenses via SMS, split bills, and master your money without your data ever leaving your device.",
   manifest: "/manifest.json",
   icons: {
     icon: "/icon.png",
@@ -32,16 +32,25 @@ export default function RootLayout({
               "@type": "SoftwareApplication",
               "name": "Fiinny",
               "applicationCategory": "FinanceApplication",
-              "operatingSystem": "Android, iOS",
+              "operatingSystem": "Android, iOS, Web",
+              "datePublished": "2024-01-01",
               "offers": {
                 "@type": "Offer",
                 "price": "0",
                 "priceCurrency": "USD"
               },
-              "description": "Fiinny is a personal finance companion that helps you track expenses, split bills, and master your money.",
+              "description": "Fiinny is a privacy-first personal finance tracker that helps you auto-track expenses from SMS, split bills, and gain total financial control. Your data is encrypted and processed on-device.",
               "author": {
                   "@type": "Organization",
-                  "name": "Fiinny"
+                  "name": "Fiinny",
+                  "location": {
+                      "@type": "Place",
+                      "address": {
+                        "@type": "PostalAddress",
+                        "addressLocality": "Hyderabad",
+                        "addressCountry": "IN"
+                      }
+                  }
               }
             }
           `}

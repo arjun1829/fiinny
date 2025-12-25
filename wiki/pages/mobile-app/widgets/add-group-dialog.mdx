@@ -1,0 +1,30 @@
+# Add Group Dialog
+
+**Path:** `lib/widgets/add_group_dialog.dart`
+
+Enables creation of a social expense group, including member selection, naming, and photo upload.
+
+## Features
+*   **Multi-Select Contacts:** Includes a built-in contact picker that supports selecting multiple people at once.
+*   **Inline Friend Creation:** If a user selects a contact who isn't already a Fiinny friend, it creates a "placeholder" friend model on the fly.
+*   **Group Metadata:** Supports setting a Group Type (Trip, Home, etc.) and an optional custom label/emoji.
+*   **Photo Picker:** Allows setting a group avatar from the gallery or camera.
+
+## Logic
+*   It performs a check against existing friends (`_matchFriendByPhone`) to avoid duplicates when importing from contacts.
+*   It persists metadata (type/label) to a sub-collection `groups/{groupId}/meta/info` immediately after creation.
+
+## Usage
+
+```dart
+showDialog(
+  context: context,
+  builder: (_) => AddGroupDialog(
+    userPhone: currentUser.phone,
+    allFriends: myFriendsList,
+    onGroupCreated: (groupId) {
+      // Navigate to group details
+    },
+  ),
+);
+```

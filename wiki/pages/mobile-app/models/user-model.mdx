@@ -1,0 +1,27 @@
+# User Model (`user_model.dart`)
+
+**Path:** `lib/models/user_model.dart`
+
+## 1. Overview
+Represents the core profile of a registered user in Fiinny.
+
+## 2. Responsibilities
+- Stores essential user identity information (Name, Email, Phone).
+- Holds localization preferences (Country, Currency).
+- Manages the user's avatar.
+
+## 3. Key Fields
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `phone` | `String` | **Foreign Key / ID**. The E.164 formatted phone number (e.g., `+919876543210`). Used as the primary identifier in many other services. |
+| `currency` | `String` | The user's preferred currency code (e.g., `INR`, `USD`). |
+| `avatar` | `String` | Path to the avatar asset or URL. |
+
+## 4. Usage
+- Used by `ProfileScreen` to display user details.
+- Used during `Onboarding` to create the initial user account.
+- `fromMap` handles defensive parsing to safely load legacy data where some fields might be missing.
+
+## 5. Cautions
+> [!NOTE]
+> The `phone` field is often used as the unique ID for fetching data across the app (unlike Firebase UID in some other places). Ensure it is always present and correctly formatted.

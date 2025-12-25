@@ -1,0 +1,16 @@
+# Parsing Enrichment
+
+**Path**: `lib/services/parsing_enrichment.dart`
+
+A lightweight enrichment layer that runs *after* basic regex parsing but *before* database insertion.
+
+## Responsibilities
+*   **Merchant Canonicalization**: Uses `MerchantRegistry` to map messy descriptors (e.g., "SWIGGY BANGALORE") to clean names ("Swiggy").
+*   **Category Mapping**: Uses `CategoryMapper` to assign categories based on the cleaned merchant name (e.g., "Swiggy" -> "Food & Dining").
+
+## Helpers
+*   **`enrich(ParsedTxn)`**: Returns a new `ParsedTxn` with better `merchantName` and `category`.
+*   **`refineFields`**: A helper for quick lookups when you only have a string.
+
+## Assets
+Relies on specific JSON dictionaries in `assets/enrich/`.

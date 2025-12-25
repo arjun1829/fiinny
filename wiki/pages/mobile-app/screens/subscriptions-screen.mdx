@@ -1,0 +1,33 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Subscriptions Screen
+
+A command center for recurring financial commitments.
+
+## Overview
+
+Helps users track subscriptions, bills, and free trials. The goal is to provide a "Total Monthly Burn" metric so users know exactly what their fixed costs are.
+
+## Features
+
+- **Total Monthly Burn**: Auto-normalizes different frequencies (yearly, weekly) into a monthly cost estimate.
+- **Timeline Strip**: Horizontally adds a visual timeline of the next 5 upcoming payments.
+- **Type Filtering**: Quick filters for "Subs", "Bills", and "Trials".
+- **Visual Coding**: Color-coded indicators (Purple for Subs, Orange for Trials, Blue for Bills).
+
+## Architecture
+
+- **Stream Based**: Real-time updates from `SubscriptionService`.
+- **Logic**: Client-side calculation for "Total Monthly Burn" and "Next Due" sorting.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'The user ID.'
+  }
+]} />

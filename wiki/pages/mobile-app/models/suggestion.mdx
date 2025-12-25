@@ -1,0 +1,15 @@
+# Search Suggestion (`suggestion.dart`)
+
+**Path:** `lib/models/suggestion.dart`
+> [!NOTE]
+> Not to be confused with `SuggestedClassification`. This model is for **Recurring Subscription Discovery**.
+
+## 1. Overview
+Represents a potential subscription discovered by analyzing transaction history (e.g., "We found 3 transactions for 'Netflix', is this a subscription?").
+
+## 2. Responsibilities
+- **Evidence:** `sampleTxnIds` allow the user to see *why* the suggestion was made.
+- **Inference:** Stores inferred `frequency` ("monthly") and `confidence`.
+
+## 3. Usage
+- **UI:** "New Subscriptions Found" alert.

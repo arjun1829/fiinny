@@ -1,0 +1,19 @@
+# Friend List Widget
+
+**Path:** `lib/widgets/friend_list_widget.dart`
+
+A reusable list component for displaying friends. It integrates with `ContactNameService` to show the most relevant display name (e.g., matching the user's address book name instead of the friend's public profile name if available).
+
+## Features
+*   **Smart Naming:** Listen to `ContactNameService` changes to update names dynamically.
+*   **Fallback Avatars:** Generates initials (e.g., "AB") if no image avatar is available.
+*   **Interactivity:** Supports `onTap` and `onLongPress` callbacks for navigation or context menus.
+
+## Usage
+
+```dart
+FriendListWidget(
+  friends: myFriends,
+  onTap: (friend) => _openFriendDetails(friend),
+)
+```

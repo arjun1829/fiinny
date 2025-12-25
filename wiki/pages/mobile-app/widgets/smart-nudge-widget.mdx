@@ -1,0 +1,16 @@
+# Smart Nudge
+
+**Path:** `lib/widgets/smart_nudge_widget.dart`
+
+A rotating carousel of financial tips and encouragement displayed on the dashboard.
+
+## Logic
+*   **Rotation:** Uses a `Timer.periodic` (5 seconds) to cycle through a static list of strings.
+*   **Animation:** Uses `AnimatedSwitcher` for smooth fade transitions between text updates.
+*   **Content:** Contains predefined nudges like "Small expenses add up" or "Don't forget to log today's expenses!".
+
+## Usage
+
+```dart
+SmartNudgeWidget(userId: currentUser.uid)
+```

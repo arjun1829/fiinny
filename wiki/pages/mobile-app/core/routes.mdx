@@ -1,0 +1,29 @@
+# Routes (`routes.dart`)
+
+**Path:** `lib/routes.dart`
+
+## 1. Overview
+The map of the application. It tells the app "which screen to show" when given a specific URL-like path (e.g., `/dashboard` or `/profile`).
+
+## 2. Why this file exists
+To decouple screens from each other. Screen A doesn't need to import Screen B directly; it just asks the Navigator to go to `/screen-b`.
+
+## 3. Responsibilities
+- **Static Routes:** Simple mapping of names to screens (e.g., `/onboarding`).
+- **Dynamic Routes:** Complex mapping where data is passed (e.g., `/expenses` needs a `userPhone` argument).
+- **Argument Validation:** Checks if the passed data (like user ID or phone number) is valid before opening the screen.
+
+## 4. How it works (high-level)
+- `appRoutes`: A list of simple pages (Introduction, Settings, etc.).
+- `appOnGenerateRoute`: A function that runs when a route has arguments. It switches based on the route name, validates the arguments, and builds the correct page.
+- If a route is unknown or arguments are wrong, it shows a `_BadRouteArgsScreen` to help developers debug.
+
+## 5. Dependencies and Interactions
+- Imports almost every screen in the `lib/screens/` folder.
+- Used by `lib/main.dart` to configure the `MaterialApp` navigator.
+
+## 6. Cautions / Important Notes
+> [!CAUTION]
+> **Typing Arguments:** When pushing a named route, ensure you pass the correct argument type (String vs Map). The `appOnGenerateRoute` logic is strict and will show an error screen if types mismatch.
+
+- **Maintenance:** Every time you add a new screen, you must register it here.

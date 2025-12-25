@@ -1,0 +1,18 @@
+# Ingest Draft (`ingest_draft_model.dart`)
+
+**Path:** `lib/models/ingest_draft_model.dart`
+
+## 1. Overview
+The **gateway to the entire financial system**. Every incoming SMS, Email, or WhatsApp message first becomes an `IngestDraft`.
+
+## 2. Responsibilities
+- **Staging Area:** Acts as a temporary "draft" transaction that can be rejected or approved before entering the main `expenses`/`income` ledgers.
+- **Traceability:** Keeps the original `sources` (SMS body, Email metadata) so we can always debug why a transaction was parsed a certain way.
+- **Enrichment:** Holds raw `brain` data (AI tags) and `fxOriginal` (foreign currency info) waiting to be processed.
+
+## 3. Key Logic
+- `needsAmount`: A helper check. If true, the user must manually enter the amount (e.g., for ambiguous SMS alerts).
+
+## 4. Usage
+- **Collections:** `users/{uid}/ingest_drafts`.
+- **UI:** The "Review Pending Transactions" card on the dashboard.

@@ -1,0 +1,16 @@
+# User Data
+
+**Path**: `lib/services/user_data.dart`
+
+A "mega-model" or ViewModel that aggregates all financial entities for a user.
+
+## Responsibilities
+*   **Aggregation**: Holds lists of Incomes, Expenses, Goals, Loans, Assets.
+*   **Calculations**:
+    *   `getTotalIncome()`, `getTotalExpenses()`, `getSavings()`
+    *   `getSpendingRatio()`
+    *   `getWeeklySpending()` vs `weeklyLimit`
+*   **Serialization**: Can dump/load the entire user state to JSON (useful for backups).
+
+## Usage
+Often used by the Dashboard or Analytics screens to pass around the "whole state" of the user in one object.

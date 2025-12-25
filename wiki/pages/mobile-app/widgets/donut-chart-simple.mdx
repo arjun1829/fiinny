@@ -1,0 +1,23 @@
+# Donut Chart (Simple)
+
+**Path:** `lib/widgets/charts/donut_chart_simple.dart`
+
+A clean wrapper around the `fl_chart` library's `PieChart`, configured specifically for "Donut" style visualizations.
+
+## Features
+*   **Center Label:** Optional text in the hole (e.g., Total Amount).
+*   **Auto Colors:** Rotates through a predefined `palette` if specific slice colors aren't provided.
+*   **Percentage Labels:** Automatically calculates and displays percentage labels on the slices.
+
+## Usage
+
+```dart
+DonutChartSimple(
+  slices: [
+    DonutSlice(label: "Rent", value: 15000, color: Colors.blue),
+    DonutSlice(label: "Food", value: 5000, color: Colors.orange),
+  ],
+  centerLabel: "Total Expense",
+  height: 220,
+)
+```

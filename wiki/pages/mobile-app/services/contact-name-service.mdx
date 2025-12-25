@@ -1,0 +1,19 @@
+# Contact Name Service (`contact_name_service.dart`)
+
+**Path:** `lib/services/contact_name_service.dart`
+
+## 1. Overview
+Resolves **Phone Numbers** to **Device Contact Names** for privacy-friendly display.
+
+## 2. Caching Strategy
+- **Memory + Disk**: Caches names in `SharedPreferences` (`contactNames.cache.v1`) to avoid constant permission prompts or contact reads.
+- **Normalization**: Uses E.164 normalization matching.
+
+## 3. Best-Effort Lookup
+`bestDisplayName` logic:
+- Prefers **Device Name** if the remote name looks like a placeholder (e.g. "Member (123)").
+- Prefers **Remote Name** if the user explicitly set a display name in their profile (and it's not a generic placeholder).
+- Falls back to **Phone Number**.
+
+## 4. Usage
+Used extensively in **Friends List**, **Group Definitions**, and **Transaction Details** to show "Ramesh" instead of "+919876543210".

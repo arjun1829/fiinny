@@ -1,0 +1,49 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Crisis Mode Toggle Card
+
+A control card that allows users to enable or disable "Crisis Mode" (a strict spending limit enforcement mode).
+
+## Overview
+
+This widget fetches the current crisis mode status from Firebase and provides a switch to toggle it. It handles the async state (loading) and provides immediate feedback via SnackBars.
+
+## Usage
+
+```dart
+CrisisModeToggleCard(
+  userData: currentUserData,
+  onChanged: (isEnabled) {
+    // Optional callback behavior
+  },
+)
+```
+
+## Props
+
+<PropsTable
+  data={[
+    {
+      name: 'userData',
+      type: 'UserData',
+      required: true,
+      description: 'User data object containing the default/current weekly limit.',
+    },
+    {
+      name: 'onChanged',
+      type: 'ValueChanged<bool>?',
+      required: false,
+      description: 'Callback executed when the toggle is successfully switched.',
+    },
+  ]}
+/>
+
+## Features
+
+- **Async State**: Shows a `CircularProgressIndicator` while the Firebase update is in progress.
+- **Service Integration**: Uses `FirebaseCrisisService` to fetch and save the plan status.
+- **Visual Feedback**:
+    - **Active**: Card tint is `Colors.teal.withOpacity(0.07)`, switch is on.
+    - **Inactive**: White card, switch is off.
+    - **SnackBars**: "Crisis Mode enabled" / "Crisis Mode disabled" / Error messages.

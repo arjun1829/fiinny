@@ -1,0 +1,13 @@
+# Push Prefs Helper
+
+**Path**: `lib/services/push/notif_prefs_service.dart`
+
+A specialized helper for `PushService` that handles the **initial seeding** of notification preferences.
+
+## Responsibilities
+*   **`ensureDefaultPrefs`**: Checks `users/{uid}/prefs/notifications`. If missing, creates a default config:
+    *   `push_enabled`: true
+    *   `quiet_hours`: 10 PM - 8 AM
+    *   Channels: All enabled by default.
+
+(Note: A broader `NotifPrefsService` exists in the main services directory for reading/updating these values; this file specifically focuses on the *creation* logic).

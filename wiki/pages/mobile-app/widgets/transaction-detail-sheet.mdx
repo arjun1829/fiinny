@@ -1,0 +1,33 @@
+# Transaction Detail Sheet
+
+**Path:** `lib/widgets/transaction_detail_sheet.dart`
+
+A comprehensive bottom sheet that displays full details of a transaction. It handles both Expenses and Incomes, adapting its UI color and icons accordingly.
+
+## Features
+
+*   **Rich Metadata:** Shows parsed fields like `Merchant`, `Category`, `Bank`, `Payment Method`, `UPI VPA`, and `Reference ID`.
+*   **Attachments:** Renders a horizontal scroll view for image attachments and a list for file/PDF attachments.
+*   **Smart Actions:** Provides Edit and Split buttons for Expenses.
+*   **Ad Interstitials:** Integrates with `AdService` to potentially show an interstitial ad when opening or performing high-value actions (configurable via `interstitialOnOpen`).
+
+## Layout Structure
+1.  **Header:** Icon (Green/Red), Large Category Title, Amount.
+2.  **Tags/Labels:** Wrap widget showing hashtags.
+3.  **Meta Rows:** Standardized icon-label-value rows for structured data.
+4.  **Notes/Comments:** Distinct sections for user notes vs. machine-parsed text.
+5.  **Attachments:** Thumbnail previews for images.
+
+## Usage
+
+```dart
+showModalBottomSheet(
+  context: context,
+  isScrollControlled: true,
+  builder: (_) => TransactionDetailSheet(
+    tx: selectedTransaction, // ExpenseItem or IncomeItem
+    onEdit: () => _handleEdit(),
+    onSplit: () => _handleSplit(),
+  ),
+);
+```

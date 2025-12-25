@@ -1,0 +1,30 @@
+# Transaction Analyzer (`tx_analyzer.dart`)
+
+**Path:** `lib/services/tx_analyzer.dart`
+
+## 1. Overview
+The **Natural Language Processing (NLP)** engine for parsing financial texts (SMS/Email). It uses a hybrid approach of Regex, ML Kit, and Heuristics.
+
+## 2. Core Features
+- **Extraction**:
+  - **Amount**: Finds `INR`, `Rs`, `₹` patterns.
+  - **Date**: Robust parsing for various formats (`dd-MM-yy`, `yyyy-MM-dd`, etc.).
+  - **Merchant**: Extracts merchant names using "UPI/P2M", "AT `<PLACE>`", or email domains.
+- **Categorization (Layered Strategy)**:
+  1.  **Merchant Map**: High-precision lookup (e.g., `ZOMATO` -> `Food Delivery`).
+  2.  **Email Domain**: (e.g., `@swiggy.in` -> `Food Delivery`).
+  3.  **Keywords**: Fallback regex (e.g., `FUEL` -> `Transport/Fuel`).
+  4.  **Channel Hints**: Logic for UPI P2P vs P2M.
+- **Confidence Scoring**: Returns a `CategoryGuess` with a confidence score (0.0 - 1.0) and a breakdown of "reasons" (signals).
+  - *Example:* "Looks like Food (92%) because 'ZOMATO' matched."
+
+## 3. Configuration (`TxAnalyzerConfig`)
+- **ML Kit**: Can be toggled (disabled on Web).
+- **User Overrides**: Allows users to remap specific merchants to preferred categories.
+- **Hard Negatives**: Ignores "OTP", "KYC", "Available Limit" messages.
+
+## 4. Usage
+Used by:
+- **SMS Ingestion**: Parsing raw SMS.
+- **Gmail Parser**: Analyzing email body/subject.
+- **Add Transaction**: Suggesting details when user pastes text.

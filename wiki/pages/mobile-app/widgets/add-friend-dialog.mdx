@@ -1,0 +1,27 @@
+# Add Friend Dialog
+
+**Path:** `lib/widgets/add_friend_dialog.dart`
+
+Allows users to add friends either manually or by importing from their device contacts.
+
+## Features
+
+*   **Contacts Integration:** Uses `flutter_contacts` to fetch and display device contacts in a searchable bottom sheet.
+*   **Searchable Picker:** Filters contacts in real-time by name or phone number.
+*   **Phone Normalization:** Automatically parses and standardizes phone numbers to E.164 format using `PhoneNumberUtils`.
+*   **Permission Handling:** gracefully handles permission denial for contacts access.
+*   **Smart Parsing:** splits a full phone number into country code + local digits for the edit form.
+
+## Usage
+
+```dart
+showDialog(
+  context: context,
+  builder: (_) => AddFriendDialog(
+    userPhone: currentUser.phone,
+    onFriendCreated: (phone) {
+      // Handle success
+    },
+  ),
+);
+```

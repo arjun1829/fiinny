@@ -1,0 +1,22 @@
+# Date Filter Bar
+
+**Path:** `lib/widgets/date_filter_bar.dart`
+
+A simple row of `ChoiceChip`s for selecting standard time periods.
+
+## Options
+*   Day
+*   Week
+*   Month
+*   Quarter
+*   Year
+*   All
+
+## Usage
+
+```dart
+DateFilterBar(
+  selected: "Month",
+  onChanged: (newPeriod) => setState(() => period = newPeriod),
+)
+```

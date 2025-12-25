@@ -1,0 +1,19 @@
+# Net Worth Panel
+
+**Path:** `lib/widgets/net_worth_panel.dart`
+
+A glassmorphic panel summarizing the user's total financial health (Assets - Liabilities).
+
+## Visuals
+*   **Glassmorphism:** Built using `GlassCard` for a frosted transparency effect.
+*   **Tokens:** Uses internal `Fx` design tokens for consistent spacing and colors.
+*   **Breakdown:** Displays pill chips for "Assets" and "Loans" alongside the main Net Worth figure.
+
+## Usage
+
+```dart
+NetWorthPanel(
+  totalAssets: 1500000,
+  totalLoan: 200000,
+)
+```

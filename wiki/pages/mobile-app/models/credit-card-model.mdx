@@ -1,0 +1,23 @@
+# Credit Card Model (`credit_card_model.dart`)
+
+**Path:** `lib/models/credit_card_model.dart`
+
+## 1. Overview
+Represents a user's credit card. It tracks the card's identity (Bank, Last 4) and its current billing status (Total Due, Due Date).
+
+## 2. Responsibilities
+- **Card Identity:** Stores `bankName`, `cardType`, and `last4Digits` to display the card in the UI ("HDFC Regalia ending in 1234").
+- **Bill Snapshot:** Holds the *latest* billing info (`totalDue`, `minDue`, `dueDate`) directly on the card object for quick access.
+- **PDF Security:** Stores a `PdfPassFormat` hint (e.g., `first4name_ddmm`) to help the specialized PDF parser unlock statements automatically. It **does not** store the actual password.
+
+## 3. Key Logic
+- `isOverdue`: Computed property checking if today > `dueDate` and `!isPaid`.
+- `daysToDue()`: Helper to show "Due in 5 days" countdowns.
+
+## 4. Usage
+- **Collections:** Stored in the `credit_cards` collection in Firestore.
+- **UI:** Used in `CreditCardScreen` and the "Cards" section of the dashboard.
+
+## 5. Cautions
+> [!WARNING]
+> Do NOT store full card numbers or CVV. This model is designed only for expense tracking and bill reminders, not for processing payments.

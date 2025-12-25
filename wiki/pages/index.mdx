@@ -1,0 +1,112 @@
+# Welcome to Fiinny Wiki
+
+**The Single Source of Truth for Fiinny Engineering.**
+
+This internal portal hosts documentation for the **Fiinny Mobile App** (Flutter), **Marketing Website** (Next.js), and **Backend Services** (Firebase).
+
+## Quick Links
+
+- [App Architecture](/mobile-app/architecture)
+- [Core Codebase](/mobile-app/core)
+- [Deployment Guides](/deployment)
+
+> **For New Joiners:** Start by reading the [Core Codebase](/mobile-app/core) section to understand `main.dart` and the app entry point.
+
+## App Flow
+
+Visual map of the application screens. Click on nodes to jump to their documentation.
+
+```mermaid
+graph TD
+    %% Nodes
+    Launcher(Launcher Screen)
+    Welcome(Welcome Carousel)
+    Onboarding(Onboarding Profile)
+    AuthGate(Auth Gate)
+    MainNav(Main Navigation)
+    
+    %% Dashboard Tab
+    Dash(Dashboard)
+    Profile(Profile Settings)
+    Notifs(Notification Prefs)
+    Crisis(Crisis Mode)
+    
+    %% Transactions Tab
+    TxList(Transactions List)
+    Filters(Filters Sheet)
+    
+    %% Add Tab
+    AddFAB((+ Add FAB))
+    AddExp(Add Expense)
+    AddTx(Add Transaction)
+    
+    %% Social Tab
+    Social(Friends & Groups)
+    FriendDet(Friend Detail)
+    GroupDet(Group Detail)
+    
+    %% Analytics Tab
+    Analytics(Analytics Dash)
+    Insights(Smart Insights)
+    
+    %% Edges
+    Launcher --> AuthGate
+    AuthGate -- "First Time?" --> Welcome
+    Welcome --> Onboarding
+    Onboarding --> AuthGate
+    AuthGate -- "Authenticated" --> MainNav
+    
+    MainNav --> |Tab 1| Dash
+    MainNav --> |Tab 2| TxList
+    MainNav --> |Tab 3| AddFAB
+    MainNav --> |Tab 4| Social
+    MainNav --> |Tab 5| Analytics
+    
+    %% Drill-downs
+    Dash --> Profile
+    Profile --> Notifs
+    Dash -.-> Crisis
+    
+    TxList -.-> Filters
+    
+    AddFAB --> AddExp
+    AddFAB --> AddTx
+    
+    Social --> FriendDet
+    Social --> GroupDet
+    
+    Analytics --> Insights
+    
+    %% Styling
+    classDef primary fill:#e0f2f1,stroke:#00897b,stroke-width:2px;
+    classDef secondary fill:#fff,stroke:#b2dfdb,stroke-width:1px;
+    classDef action fill:#00897b,stroke:#fff,color:#fff;
+    
+    class MainNav,Dash,TxList,Social,Analytics primary;
+    class AddFAB action;
+    
+    %% Links
+    click Launcher "/mobile-app/screens/launcher-screen"
+    click Welcome "/mobile-app/screens/welcome-screen"
+    click Onboarding "/mobile-app/screens/onboarding-screen"
+    click AuthGate "/mobile-app/screens/auth-gate"
+    click MainNav "/mobile-app/screens/main-nav-screen"
+    
+    click Dash "/mobile-app/screens/dashboard-screen"
+    click Profile "/mobile-app/screens/profile-screen"
+    click Notifs "/mobile-app/screens/notification-prefs-screen"
+    click Crisis "/mobile-app/screens/crisis-mode-screen"
+    
+    click TxList "/mobile-app/screens/transactions-screen"
+    
+    click AddExp "/mobile-app/screens/add-expense-screen"
+    click AddTx "/mobile-app/screens/add-transaction-screen"
+    
+    click Social "/mobile-app/screens/friends-screen"
+    click FriendDet "/mobile-app/screens/friend-detail-screen"
+    click GroupDet "/mobile-app/screens/group-detail-screen"
+    
+    click Analytics "/mobile-app/screens/analytics-screen"
+    click Insights "/mobile-app/screens/insight-feed-screen"
+```
+

@@ -1,0 +1,35 @@
+# App Entry Point (`main.dart`)
+
+**Path:** `lib/main.dart`
+
+## 1. Overview
+The entry point of the Fiinny mobile application. This file is the first to run when the app starts. It initializes all critical services before showing any UI to the user.
+
+## 2. Why this file exists
+Every Flutter app needs a `main()` function to start. This file calls that function and ensures the environment (Firebase, Ads, Background Tasks) is ready so the app doesn't crash later.
+
+## 3. Responsibilities
+- **App Initialization:** Starts Flutter bindings, Firebase, and Crashlytics.
+- **Background Tasks:** Sets up `Workmanager` for tasks like SMS syncing and Gmail fetching that run when the app is closed.
+- **System UI:** Configures the status bar and navigation bar colors (especially for Android).
+- **Error Handling:** Catches crashes and errors globally, sending them to Firebase Crashlytics.
+- **Navigation:** Launches the first screen (`LauncherScreen`).
+
+## 4. How it works (high-level)
+- The `main()` function prepares the app. It checks if "Safe Mode" is enabled (a diagnostic mode).
+- It sets up a `backgroundDispatcher` to handle tasks like `smsSync48h` and `dailyGmailSync` in the background.
+- It initializes `MobileAds` and `VoiceBridge` (for voice commands).
+- Finally, it runs `runApp(_DiagApp(...))`, which builds the visual application and applies themes and routes.
+
+## 5. Dependencies and Interactions
+- **Firebase:** Depends on `firebase_core`, `firebase_crashlytics` to report health.
+- **Routes:** Imports `routes.dart` to know which screens exist.
+- **Themes:** Uses `ThemeProvider` to style the app.
+- **Services:** interacting with `SmsIngestor`, `GmailService`, and `AdService`.
+
+## 6. Cautions / Important Notes
+> [!IMPORTANT]
+> The `backgroundDispatcher` function must remain decorated with `@pragma('vm:entry-point')` so the system can find it even when the app is closed. Do not rename or move it easily.
+
+- **Initialization Order:** `Firebase.initializeApp` must complete before using any Firebase features.
+- **Safe Mode:** There is a flag `SAFE_MODE` used potentially for CI/CD or debugging; ensure it's false for production builds.

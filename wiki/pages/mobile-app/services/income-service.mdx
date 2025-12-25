@@ -1,0 +1,15 @@
+# Income Service (`income_service.dart`)
+
+**Path:** `lib/services/income_service.dart`
+
+## 1. Overview
+The **IncomeService** manages `IncomeItem` data. It mirrors the structure of `ExpenseService` but is simplified as incomes typically do not have complex "social splitting" logic (you rarely split a salary deposit with a friend).
+
+## 2. Key Responsibilities
+- **CRUD**: Full lifecycle management for income records.
+- **Advanced Querying**: Supports `IncomeQuery` for filtering by date, category, source, and text search.
+- **Analytics Support**: Provides `getIncomesInDateRange` for chart data generation.
+- **Facets**: Extracts unique labels and categories for UI filtering.
+
+## 3. Usage
+Used by the **Income Tab** and **Analytics Screen** to retrieve inflow data.

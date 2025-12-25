@@ -1,0 +1,37 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Settle Up Screen
+
+The settlement command center for a group.
+
+## Overview
+
+Calculates and displays exactly who owes whom within a group. It simplifies complex debts into a list of bilateral settlement actions.
+
+## Logic
+
+- **Balance Calculation**: Client-side logic (`_calculateBalances`) iterates through all group expenses to determine net standing for each member.
+- **Bilateral Display**: Shows a list of cards, e.g., "Alice owes You ₹500" or "You owe Bob ₹200".
+
+## Features
+
+- **Settle All**: Bulk action to record settlements for *all* outstanding balances at once.
+- **Individual Settle**: Dialog to record a partial or full payment for a specific pair.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  },
+  {
+    name: 'group',
+    type: 'GroupModel',
+    required: true,
+    description: 'The group to settle.'
+  }
+]} />

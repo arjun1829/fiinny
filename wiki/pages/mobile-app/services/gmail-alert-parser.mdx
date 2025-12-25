@@ -1,0 +1,13 @@
+# Gmail Alert Parser
+
+**Path**: `lib/services/gmail/gmail_alert_parser.dart`
+
+Specializes in parsing **email alerts** from known banks.
+
+## Responsibilities
+*   **Whitelist**: `allowedFrom` regex limits parsing to official bank domains (`alerts@hdfcbank.net`, `noreply@paytm.com`, etc.) to prevent spoofing.
+*   **Extraction**:
+    *   Combines `Subject` + `Snippet`.
+    *   Uses `CommonRegex` to extract financial details.
+    *   Detects if the email is a simple P2P transfer or a merchant purchase.
+*   **Metadata**: Retains the `gmailId` for deep linking or debugging.

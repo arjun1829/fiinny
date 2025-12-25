@@ -1,0 +1,32 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Groups Screen
+
+A dedicated list view for all user groups.
+
+## Overview
+
+Displays a list of groups the user belongs to. It uses a distinct "Tiffany Blue / Mint" color palette to distinguish the social domain from the rest of the app.
+
+## Design
+
+- **Glass Diamond Cards**: List items use a custom `_GlassDiamondCard` widget with blur effects and diamond-like borders.
+- **Animated Background**: `_AnimatedMintBackground` provides a soothing, shifting gradient backdrop.
+- **Custom AppBar**: A non-standard, taller app bar with rounded bottom corners.
+
+## Functionality
+
+- **Creation**: FAB launches [Add Group Screen](./add-group-screen.mdx).
+- **Navigation**: Tapping a card opens [Group Detail Screen](./group-detail-screen.mdx).
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  }
+]} />

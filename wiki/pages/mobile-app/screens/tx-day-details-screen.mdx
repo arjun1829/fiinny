@@ -1,0 +1,28 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Tx Day Details Screen
+
+A focused daily view for deep-diving into a specific date's finances.
+
+## Overview
+
+Displays all transactions for a single 24-hour period. It features a "Week Strip" at the top to easily jump between days in the current week.
+
+## Features
+
+- **Premium Date Sheet**: A custom bottom sheet picker with "Quick Chips" (Today, Yesterday, Month Start).
+- **Daily Limit**: Users can set a spending limit for the day (`_editLimitDialog`). The UI displays progress against this limit.
+- **Hero Ring**: Shows a large summary ring for the selected day's flows.
+- **Gesture Navigation**: Supports horizontal swipe to move between days.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userPhone',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  }
+]} />

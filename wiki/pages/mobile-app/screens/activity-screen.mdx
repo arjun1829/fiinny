@@ -1,0 +1,35 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Activity Screen
+
+An "Add Expense" hub designed for speed and contact discovery.
+
+## Overview
+
+This screen functionality acts as the primary entry point for creating expenses with people. It focuses on finding the right person or group quickly via search, recency sorting, or contact book integration.
+
+## Features
+
+- **Smart Recency**: Sorts friends and groups based on user's last interaction time (`lastSeen` map).
+- **Universal Search**: Filters both friends and groups simultaneously.
+- **Quick Actions**: Bouncy chips for:
+    - Add from Contacts (using `AddFriendDialog`)
+    - Add Friend (Manual entry)
+    - Add Group
+- **Animation**: Staggered list entry using `_SlideFade` and bouncy touch feedback (`_Bouncy`).
+
+## Architecture
+
+- **Stream Composition**: Combines streams from `ExpenseService`, `FriendService`, and `GroupService` to build a smart, time-sorted list of potential expense targets.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userPhone',
+    type: 'String',
+    required: true,
+    description: 'The phone number of the current user.'
+  }
+]} />

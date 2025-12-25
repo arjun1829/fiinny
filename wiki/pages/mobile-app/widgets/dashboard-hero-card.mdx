@@ -1,0 +1,23 @@
+# Dashboard Hero Card
+
+**Path:** `lib/widgets/dashboard_hero_card.dart`
+
+The centerpiece of the Dashboard, summarizing the user's financial status for a specific period.
+
+## Features
+*   **Double Ring Visualization:** Uses `DashboardHeroRing` to show split metrics (Credit vs Debit).
+*   **Period Filtering:** Displays the current time range (e.g., "This Month") with a dropdown trigger.
+*   **Greeting:** Personalized "Hello [User]" message.
+*   **Animations:** Rings fill up with a `TweenAnimationBuilder` on load.
+
+## Usage
+
+```dart
+DashboardHeroCard(
+  userName: "Arjun",
+  credit: 15000,
+  debit: 8500,
+  period: "This Month",
+  onFilterTap: () => _openFilterSheet(),
+)
+```

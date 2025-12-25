@@ -1,0 +1,8 @@
+# Gmail Ingestor
+
+**Path**: `lib/services/gmail/gmail_ingestor.dart`
+
+Currently a lightweight wrapper that provides an authenticated `http.Client`.
+
+## Class `_AuthClient`
+Wraps a standard `http.Client` to inject OAuth headers into every request. This is used by the `GmailService` to communicate with the Google Gmail API.

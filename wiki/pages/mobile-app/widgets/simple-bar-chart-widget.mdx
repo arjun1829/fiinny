@@ -1,0 +1,23 @@
+# Smart Bar Chart Widget
+
+**Path:** `lib/widgets/simple_bar_chart_widget.dart`
+
+**Note:** Despite the name "Simple", this is a complex "Smart" widget that handles its own state for filtering.
+
+## Capabilities
+1.  **Stateful Filtering:** Manages `_selectedCategory` and `_range` (Date Range) internally.
+2.  **Date Picker:** Includes a custom date range picker interface and "Quick Range" chips (7 days, 30 days).
+3.  **Dual Mode:**
+    *   **Owe vs Owed:** If no `expenses` list is provided, it defaults to showing a simple 2-bar comparison of `owe` vs `owed`.
+    *   **Expense Analysis:** If `expenses` ARE provided, it unlocks the filter UI and summary stats (count, total, average).
+
+## Usage
+
+```dart
+SimpleBarChartWidget(
+  owe: 500,
+  owed: 1000,
+  expenses: fullTransactionList, // Unlocks smart filters
+  showFilters: true,
+)
+```

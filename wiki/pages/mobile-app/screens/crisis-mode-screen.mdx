@@ -1,0 +1,41 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Crisis Mode Screen
+
+An emergency dashboard for debt management.
+
+## Overview
+
+Triggered when users face high debt-to-income ratios. It visualizes the gravity of the situation and offers "Escape Paths".
+
+## Features
+
+- **Risk Ratio**: Calculates `CreditCardBill / Salary`. Displays a red warning if > 2.0.
+- **Path Selection**:
+    - **Survival Mode**: Strict weekly budgeting (navigates to `SurvivalModeScreen`).
+    - **EMI Conversion**: Navigates to `EMIPlanScreen`.
+    - **Pause Payment**: (Placeholder) Future feature to request payment holidays.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  },
+  {
+    name: 'creditCardBill',
+    type: 'double',
+    required: true,
+    description: 'Total outstanding debt.'
+  },
+  {
+    name: 'salary',
+    type: 'double',
+    required: true,
+    description: 'Monthly income for ratio calculation.'
+  }
+]} />

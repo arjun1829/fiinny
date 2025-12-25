@@ -1,0 +1,34 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Review Inbox Screen
+
+The interface for managing incoming transaction drafts.
+
+## Overview
+
+When the app ingests SMS or Gmail notifications, they are stored as "Drafts" (not committed transactions). This screen allows the user to review, edit, and approve these drafts.
+
+## Features
+
+- **Ingest Drafts**: Reads from `ReviewQueueService`.
+- **Bulk Actions**: Supports multi-select to approve many drafts at once.
+- **Smart Filtering**: Filter by "Needs Amount" (drafts missing critical data), "Debit", or "Credit".
+- **Draft Editor**: Tapping an item opens `ReviewDraftEditorSheet` for standardizing data before approval.
+- **Dismissible**: Swipe to approve items directly.
+
+## Design
+
+- **Glassmorphism**: Heavy use of backdrop filters and semi-transparent gradients (`_glass` helper).
+- **Interactive**: Haptic feedback on selection.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  }
+]} />

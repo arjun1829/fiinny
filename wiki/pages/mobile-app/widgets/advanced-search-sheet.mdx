@@ -1,0 +1,30 @@
+# Advanced Search Sheet
+
+**Path:** `lib/widgets/advanced_search_sheet.dart`
+
+A bottom sheet form designed for "Power Search". Unlike the generic Filter Bar, this is optimized for specific "Find this transaction" workflows.
+
+## Features
+*   **Async Options:** Loads available categories and labels asynchronously on open.
+*   **Multi-Select:** Uses `FilterChip` wraps for selecting multiple categories or labels.
+*   **Manual Entry:** Allows users to manually type in a new label filter if it's not in the suggestion list.
+*   **Reset:** One-tap clear of all search fields.
+
+## Data Model
+Returns an `AdvancedSearchSpec` object containing the user's criteria.
+
+## Usage
+
+```dart
+final result = await showModalBottomSheet(
+  context: context,
+  builder: (_) => AdvancedSearchSheet(
+    loadCategories: () => db.getUniqueCategories(),
+    loadLabels: () => db.getUniqueLabels(),
+  ),
+);
+
+if (result != null) {
+  // Apply search
+}
+```

@@ -1,0 +1,35 @@
+# Bank & Card Widgets
+
+**Files:**
+*   `lib/widgets/finance/add_card_sheet.dart`
+*   `lib/widgets/finance/bank_card_widget.dart`
+
+These widgets handle the display and management of credit/debit cards within the app.
+
+## BankCardWidget
+A realistic, credit-card-styled presentation widget.
+*   **Deterministic Gradients:** Uses the bank name (hashed) to generate a consistent background gradient (`_getCardGradient`), ensuring the same bank always "looks" the same without needing server-side assets.
+*   **Auto-Branding:** Detects card network (Visa, Mastercard, Amex, RuPay) from the number prefix and displays the appropriate logo/text.
+*   **Masking:** Securely displays only the last 4 digits by default, with a "dot group" visual for the masked portion.
+
+## AddCardSheet
+A bottom sheet form for adding new cards.
+*   **Instant Validation:** Uses `_detectCardType` to separate VISA/Mastercard logic in real-time.
+*   **Mock Verification:** Simulates a "Verify & Save" process with a delay, mimicking a payment gateway check (₹1 deduction flow).
+
+## Usage
+
+```dart
+// Display
+BankCardWidget(
+  card: myCardModel,
+  onTap: () => _showDetails(card),
+);
+
+// Add New
+showModalBottomSheet(
+  context: context,
+  isScrollControlled: true,
+  builder: (_) => AddCardSheet(userId: uid),
+);
+```

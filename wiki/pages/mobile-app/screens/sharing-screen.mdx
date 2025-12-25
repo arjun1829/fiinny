@@ -1,0 +1,36 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Sharing Screen
+
+The main entry point for managing financial partners.
+
+## Overview
+
+Displays a list of all active partners, pending requests (incoming and sent), and the user's own daily stat summary.
+
+## Features
+
+- **Partner List**: Cards for each active partner showing today's shared stats (Credit/Debit).
+- **Request Management**: 
+    - **Incoming**: Approve or Reject connection requests.
+    - **Sent**: Cancel pending requests.
+- **Permissions Management**: Edit shared data scope (e.g., "View Transactions") via `showEditPermissionsDialog`.
+- **Add Flow**: Floating Action Button (FAB) opens `AddPartnerDialog`.
+- **My Stats**: A summary card showing the user's own total daily financial activity.
+
+## Architecture
+
+- **Stream Based**: Real-time updates from `PartnerService` streams.
+- **Animations**: Uses `AnimatedSlideFade` for staggering list item entry.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'currentUserPhone',
+    type: 'String',
+    required: true,
+    description: 'The phone number/ID of the current user.'
+  }
+]} />

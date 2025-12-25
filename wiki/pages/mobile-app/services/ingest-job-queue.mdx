@@ -1,0 +1,30 @@
+# Ingest Job Queue
+
+**Path**: `lib/services/ingest_job_queue.dart`
+
+The `IngestJobQueue` is the entry point for the **LLM Extraction Pipeline**. When the app detects a raw SMS or Email that looks like a transaction but is too complex for regex, it queues it here for a cloud worker (Cloud Function + Gemini/OpenAI) to process.
+
+## Data Structure
+Jobs are stored in: `users/{userId}/ingest_jobs/{txKey}`
+
+## Methods
+
+### `enqueue(...)`
+Static method to submit a new job.
+*   **Parameters**:
+    *   `rawText`: The body of the SMS or Email.
+    *   `txKey`: Unique hash or ID for the message (for idempotency).
+    *   `source`: 'sms', 'email', 'upi', etc.
+    *   `route`: Optional hints (`docCollection`, `docId`) so the worker knows exactly which document to update with the extraction results.
+*   **Behavior**:
+    *   Writes a document with status `queued`.
+    *   Sets `createdAt`.
+    *   `SetOptions(merge: true)` ensures we don't overwrite if the job is already processing.
+
+### Lifecycle Helpers
+*   `markStarted`: Updates status to `working`.
+*   `markDone`: Updates status to `done` and saves the `suggested*` fields (Category, Merchant, Confidence) returned by the AI.
+*   `markError`: Updates status to `error`.
+
+## Usage
+Used by `SmsService` and `GmailService` when they encounter a message that passes basic filters but needs advanced parsing (e.g., to identify "Spent X at Amazon" vs "Refund from Amazon").

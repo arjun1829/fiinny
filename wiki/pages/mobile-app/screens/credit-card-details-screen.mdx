@@ -1,0 +1,28 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Credit Card Details Screen
+
+Manages credit card cycles and bill payments.
+
+## Overview
+
+Lists all linked credit cards and their current billing status.
+
+## Features
+
+- **Due Calculation**: Uses `CreditCardModel.daysToDue()` to show urgency ("Due in 5d" or "Overdue").
+- **Cycle Tracking**: Fetches the latest `CreditCardCycle` to display "Total Due" and "Paid Amount".
+- **Mark Paid**: Long-press action to manually record a full payment for the current cycle.
+- **Smart Notifications**: Integrates with `CardDueNotifier` to schedule local notifications for upcoming bills.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  }
+]} />

@@ -1,0 +1,31 @@
+# Expense Item (`expense_item.dart`)
+
+**Path:** `lib/models/expense_item.dart`
+
+## 1. Overview
+The **primary data model** for storing expense transactions in Cloud Firestore. It is a comprehensive class that has evolved to support Social Splitting, Bills, Attachments, and detailed Banking Context.
+
+## 2. Responsibilities
+- **Core Expense Data:** Amount, Date, Note, Category.
+- **Social Splits:** `friendIds`, `settledFriendIds`, `customSplits` for Group/Friend expenses.
+- **Banking Context:** Stores deeply parsed info like `counterparty`, `upiVpa`, `instrument` (UPI/CC), and `issuerBank`.
+- **Bill Management:** Tracks `billMinDue`, `billDueDate`, and `statementPeriod` for credit card bills.
+- **Attachments:** Supports multiple files via `List<AttachmentMeta>`.
+- **Fiinny Brain:** Stores AI confidence scores and tags.
+
+## 3. Key Logic
+- Handles **Legacy Compatibility**: Automatically maps old single-attachment fields (`attachmentUrl`) to the new list-based `attachments`.
+- **Fees & FX:** capable of storing complex breakdowns of fees (GST, markup) and foreign exchange rates.
+- **Convenience Getters:**
+    - `isCreditCard`: Checks if cardType contains "credit".
+    - `isUserEdited`: Checks audit logs to see if a human modified the auto-parsed entry.
+
+## 4. Usage
+- **Firestore:** Has `fromFirestore` and `toJson` for database IO.
+- **UI:** The main object passed around in `ExpensesScreen`, `TransactionList`, and `ExpenseDetail`.
+
+## 5. Cautions
+> [!IMPORTANT]
+> This file corresponds directly to the `expenses` collection in Firestore. Adding fields here usually requires checking `toJson` to ensure data is saved, and `fromFirestore` to ensure it reads back correctly.
+
+- **Note vs Title:** `note` is the system-parsed text (raw SMS/email extraction), while `title` is the user-friendly display name.

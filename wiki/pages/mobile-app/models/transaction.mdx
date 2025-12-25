@@ -1,0 +1,21 @@
+# Transaction (`transaction.dart`)
+
+**Path:** `lib/models/transaction.dart`
+
+## 1. Overview
+A specialized model representing a unified financial transaction. This appears to be a cleaner, stricter definition compared to older legacy models.
+
+## 2. Responsibilities
+- **Global Currency Support:** Explicitly handles `baseCurrency` vs `originalCurrency` and `fxRate`.
+- **Source Tracing:** Tracks `sourceChannels` (where the tx came from).
+- **Instrument Details:** Stores `instrumentType` (CC, UPI) and `instrumentId`.
+
+## 3. Key Logic
+- `isForeignTransaction`: Boolean getter that checks if `baseCurrency != originalCurrency`.
+- **Immutability:** All fields are `final` and uses `copyWith` for modifications, ensuring thread-safety and predictable state updates.
+
+## 4. Dependencies
+- Imports `raw_transaction_event.dart` (likely for `TransactionSourceChannel`).
+
+## 5. Usage
+This model is likely used in newer parts of the app that require robust multi-currency or multi-channel support, distinct from the simpler `TransactionItem`.

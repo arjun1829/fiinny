@@ -1,0 +1,19 @@
+# Group List Widget
+
+**Path:** `lib/widgets/group_list_widget.dart`
+
+Displays a list of user groups with a rich avatar stack preview of the members.
+
+## Features
+*   **Avatar Stack:** Shows up to 5 member avatars in a row.
+*   **Overflow Indicator:** If more than 5 members, displays a `+N` badge (e.g., "+3").
+*   **Empty State:** Displays a friendly message if the list is empty.
+
+## Usage
+
+```dart
+GroupListWidget(
+  groups: myGroups,
+  onTap: (group) => _goToGroup(group),
+)
+```

@@ -1,0 +1,17 @@
+# Insight Model (`insight_model.dart`)
+
+**Path:** `lib/models/insight_model.dart`
+
+## 1. Overview
+The data structure for the "Smart Feed" or "Insights" that appear on the dashboard. It turns raw data into actionable alerts.
+
+## 2. Responsibilities
+- **Categorization:** `type` enum allows for varied UI treatments (Info, Warning, Credit Card Due, Bill Due).
+- **Linking:** Can point to related objects (`relatedLoanId`, `relatedCreditCardId`) so tapping the insight takes the user to the right place.
+- **Actions:** `isActionable` flag determines if the card should show "Pay Now" or "Mark Read" buttons.
+
+## 3. Key Logic
+- **Serialization:** Robust `_stringToType` helper to map strings from JSON/Firestore to the `InsightType` enum safely.
+
+## 4. Usage
+- **UI:** `InsightFeedScreen` and Dashboard widgets.

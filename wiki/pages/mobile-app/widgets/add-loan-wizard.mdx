@@ -1,0 +1,37 @@
+# Add Loan Wizard
+
+**Path:** `lib/widgets/add_loan_wizard.dart`
+
+A specialized 4-step wizard for creating structured Loan/Debt entries. It differs from the generic Expense wizard by focusing on financial terms like EMI, Tenure, and Interest Rates.
+
+## Steps
+
+1.  **Basics:** Title, Lender Type (Bank/NBFC/Person), Lender Name.
+2.  **Numbers:** Outstanding Principle, Original Amount, EMI, Interest Rate.
+3.  **Schedule:** Tenure (months), Payment Day (1-31), Final Due Date.
+4.  **Review:** Summary card before saving.
+
+## Logic Overview
+
+### `AddLoanDraft`
+Uses a lightweight intermediate DTO (`AddLoanDraft`) to hold form state, decoupling the wizard UI from the persistent `LoanModel`. This allows for easy cancellation without side effects.
+
+### Validation
+Each step implements specific `_validN()` methods to ensure data integrity before proceeding (e.g., ensuring EMI is positive, Payment Day is 1-31).
+
+## Usage
+
+```dart
+Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (_) => AddLoanWizard(
+      userId: uid,
+      initial: AddLoanDraft(), // or populated draft for editing
+      onSubmit: (draft) async {
+        // Map draft to LoanModel and save
+      },
+    ),
+  ),
+);
+```

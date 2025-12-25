@@ -1,0 +1,45 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Custom Split Screen
+
+Advanced interface for defining unequal splits.
+
+## Overview
+
+Allows precise control over how an expense is divided among participants.
+
+## Features
+
+- **Toggle Mode**: Switch between "Split Equally" (auto-calculation) and "Custom Split" (manual entry).
+- **Validation**: Prevents saving if the sum of custom splits does not equal the total amount.
+- **Multi-Source**: Can handle splitting a *batch* of selected expenses (summing them up first).
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userPhone',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  },
+  {
+    name: 'selectedExpenses',
+    type: 'List<ExpenseItem>',
+    required: true,
+    description: 'Expenses being split (used to calculate total).'
+  },
+  {
+    name: 'selectedFriends',
+    type: 'List<FriendModel>',
+    required: true,
+    description: 'Friends involved.'
+  },
+  {
+    name: 'selectedGroups',
+    type: 'List<GroupModel>',
+    required: true,
+    description: 'Groups involved.'
+  }
+]} />

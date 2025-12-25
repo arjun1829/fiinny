@@ -1,0 +1,27 @@
+# Pie Chart (Glossy)
+
+**Path:** `lib/widgets/charts/pie_chart_glossy.dart`
+
+A visually rich radial chart that mimics a "glossy" 3D surface using custom shaders.
+
+## Visual Effects
+*   **Gloss Overlay:** Uses a `LinearGradient` shader masked to the pie shape to create a top-down light reflection.
+*   **Sparkle:** Adds a `RadialGradient` highlight to simulate a specular highlight.
+*   **Tinting:** Selected slices are dynamically lightened using HSL color manipulation.
+
+## Interaction
+*   **Custom Hit Testing:** Implements manual trigonometry (`atan2`) to detect which wedge was tapped, as standard `GestureDetector` doesn't support irregular shapes accurately without plugin overhead.
+
+## Usage
+
+```dart
+PieChartGlossy(
+  data: [
+    DonutSlice("Food", 500),
+    DonutSlice("Travel", 1200),
+  ],
+  size: 200,
+  showCenter: true, // "Donut" hole
+  onSliceTap: (index, slice) {},
+)
+```

@@ -1,0 +1,30 @@
+# Fiinny Brain Service (`fiinny_brain_service.dart`)
+
+**Path:** `lib/services/fiinny_brain_service.dart`
+
+## 1. Overview
+The **Intelligence Core** of the app. It analyzes the user's entire financial state (User Data) to generate actionable `InsightModel` items (Smart Feed cards & Notifications).
+
+## 2. Key workflows
+### A. Data Prep (`createFromLiveData`)
+Aggregates all streams (Incomes, Expenses, Goals, Loans, Assets) into a snapshot `UserData` object.
+- **Auto-Bill Detection**: Tries to guess the current month's credit card bill from expenses if not explicitly provided.
+
+### B. Insight Generation (`generateInsights`)
+Runs a series of heuristic checks:
+1.  **Spending Ratio**: Alerts if Expenses > Income (Critical) or > 80% (Warning).
+2.  **Category Spikes**: "Food spending spike" if food > 25% of income.
+3.  **Weekly Limit**: "Crisis mode breach" if > 120% of weekly limit.
+4.  **Subscriptions**: Warns if subscriptions eat > 25% of income.
+5.  **Debt Watch**: Checks loan due dates (next 7 days) and high-interest rates (>18%).
+6.  **Goal Tracking**: "Goal at risk" if < 30 days left and < 75% saved.
+7.  **Net Worth**: Calculates periodic net worth updates.
+
+### C. Notification Dispatch (`generateInsightsAndNotify`)
+1.  Generates insights.
+2.  Checks `NotifPrefsService` for permission (Global 'Push Enabled' & Channel-specific toggles).
+3.  **Quiet Hours**: Checks if current time is within user-defined quiet hours. Skips non-critical alerts during this time.
+4.  **Payloads**: Attaches deep links (e.g., `app://goals?id=123`) for tap navigation.
+
+## 3. Usage
+Called periodically by `Workmanager` (background) or on app startup (foreground) to refresh the "Smart Feed".

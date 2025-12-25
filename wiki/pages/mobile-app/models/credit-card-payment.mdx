@@ -1,0 +1,13 @@
+# Credit Card Payment (`credit_card_payment.dart`)
+
+**Path:** `lib/models/credit_card_payment.dart`
+
+## 1. Overview
+Tracks a **repayment** made towards a credit card bill.
+
+## 2. Responsibilities
+- **Source of Truth:** Defines *how* the bill was paid (`source`: 'gmail', 'sms', or 'manual').
+- **Reference:** `ref` can hold the UPI transaction ID or Bank Reference Number for reconciliation.
+
+## 3. Usage
+- **Reconciliation:** Used to mark a `CreditCardCycle` as "PAID".

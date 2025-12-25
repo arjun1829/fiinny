@@ -1,0 +1,16 @@
+# Suggested Classification (`suggested_classification.dart`)
+
+**Path:** `lib/models/suggested_classification.dart`
+
+## 1. Overview
+A portable data structure carrying **AI predictions**. It can be attached to any transaction or draft.
+
+## 2. Responsibilities
+- **Predictions:** `category`, `subcategory`, and `merchant` names suggested by the model.
+- **Metadata:** `confidence` (0.0 to 1.0), `latencyMs` (performance tracking), and `by` (model version, e.g., "gpt-4-turbo").
+
+## 3. Key Logic
+- **Flexible Deserialization:** `fromMap` handles both flat structures (fields directly on the parent doc) and nested structures (under an `aiSuggestion` key), making it robust for schema evolution.
+
+## 4. Usage
+- **UI:** Used to show "Suggested Category" pills that users can tap to confirm or reject.

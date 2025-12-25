@@ -1,0 +1,12 @@
+# Ad Config
+
+**Path**: `lib/services/ad_config.dart`
+
+A simple configuration wrapper for Google Mobile Ads.
+
+## Responsibilities
+*   **Authorization Tracking**: Maintains a static `authorized` boolean based on user consent (ATT).
+*   **Request Factory**: Provides a helper `AdRequest(nonPersonalizedAds: !authorized)` to ensure we request non-personalized ads if the user has denied tracking permissions.
+
+## Usage
+Used by ad widgets (`SleekAdCard`, `AdsBannerCard`) to configure their requests.

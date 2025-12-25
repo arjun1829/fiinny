@@ -1,0 +1,16 @@
+# Transaction Key
+
+**Path**: `lib/services/tx_key.dart`
+
+A single helper function to generate **Stable Idempotency Keys** for transactions.
+
+## Logic
+`buildTxKey` combines:
+*   **Bank Code**: e.g. "HDFC"
+*   **Type**: "debit" / "credit"
+*   **Pattern**: Last 4 digits (if available).
+*   **Amount**: Normalized (2 decimal places).
+*   **Time Bucket**: Rounds the timestamp to the nearest 5-minute bucket (default).
+
+## Purpose
+This prevents duplicate entries when the same transaction is received via multiple channels (e.g., SMS and Email) slightly apart in time. If they land in the same 5-minute bucket with the same details, they generate the same key.

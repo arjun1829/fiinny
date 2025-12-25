@@ -1,0 +1,71 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Crisis Option Card
+
+A selectable option card used within the Crisis Mode configuration flow (e.g., choosing a difficulty level).
+
+## Overview
+
+A simple, interactive card that displays a title, subtitle, and optional icon. It supports an "active" state for selection highlighting.
+
+## Usage
+
+```dart
+CrisisOptionCard(
+  title: 'Strict Mode',
+  subtitle: 'No notifications, hard limits.',
+  icon: Icons.lock,
+  isActive: true,
+  onTap: () => selectOption(strict),
+)
+```
+
+## Props
+
+<PropsTable
+  data={[
+    {
+      name: 'title',
+      type: 'String',
+      required: true,
+      description: 'Main heading text.',
+    },
+    {
+      name: 'subtitle',
+      type: 'String',
+      required: true,
+      description: 'Descriptive subtext.',
+    },
+    {
+      name: 'onTap',
+      type: 'VoidCallback',
+      required: true,
+      description: 'Tap handler.',
+    },
+    {
+      name: 'icon',
+      type: 'IconData?',
+      required: false,
+      description: 'Optional leading icon.',
+    },
+    {
+      name: 'isActive',
+      type: 'bool',
+      required: false,
+      description: 'Highlights the card with teal color if true.',
+      default: 'false',
+    },
+  ]}
+/>
+
+## Styling
+
+- **Active State**:
+    - Background: `Colors.teal.withOpacity(0.11)`
+    - Text/Icon: Teal shades.
+    - Elevation: 5
+- **Inactive State**:
+    - Background: Standard toggleable card color.
+    - Text/Icon: Grey/Black.
+    - Elevation: 3

@@ -1,114 +1,112 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Users, Target, Heart, Zap } from "lucide-react";
 import Link from "next/link";
+import { Shield, Clock, Zap, Globe } from "lucide-react";
+import Image from "next/image";
 
 export default function AboutPage() {
     return (
-        <div className="min-h-screen bg-white">
-            {/* Simple Nav */}
-            <nav className="container mx-auto px-6 py-6 flex justify-between items-center border-b">
-                <Link href="/" className="flex items-center space-x-2">
-                    <div className="w-8 h-8 bg-gradient-to-br from-teal to-tiffany rounded-lg flex items-center justify-center text-white font-bold">
-                        F
+        <div className="min-h-screen bg-slate-50 font-sans selection:bg-teal-100 selection:text-teal-900">
+            {/* Header / Nav */}
+            <nav className="fixed w-full bg-white/95 backdrop-blur-lg z-50 border-b border-slate-200">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="flex justify-between items-center h-20">
+                        <Link href="/" className="flex items-center gap-2">
+                            <Image src="/assets/images/logo_icon.png" alt="Fiinny" width={24} height={24} className="w-6 h-6" />
+                            <span className="text-xl font-bold text-slate-900">Fiinny</span>
+                        </Link>
+                        <Link href="/" className="text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors">
+                            Close
+                        </Link>
                     </div>
-                    <span className="text-xl font-bold text-teal">Fiinny</span>
-                </Link>
-                <Link href="/" className="text-teal hover:text-tiffany">← Back to Home</Link>
+                </div>
             </nav>
 
-            {/* Hero */}
-            <section className="container mx-auto px-6 py-20 text-center">
-                <motion.h1
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="text-5xl md:text-6xl font-bold bg-gradient-to-r from-teal to-tiffany bg-clip-text text-transparent mb-6"
-                >
-                    About Fiinny
-                </motion.h1>
-                <motion.p
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                    className="text-xl text-gray-600 max-w-3xl mx-auto"
-                >
-                    We're on a mission to make personal finance social, simple, and stress-free for everyone.
-                </motion.p>
-            </section>
+            {/* Main Content */}
+            <main className="pt-32 pb-24">
+                <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
 
-            {/* Story */}
-            <section className="container mx-auto px-6 py-16">
-                <div className="max-w-4xl mx-auto">
-                    <h2 className="text-3xl font-bold text-teal mb-6">Our Story</h2>
-                    <div className="prose prose-lg text-gray-600 space-y-4">
-                        <p>
-                            Fiinny was born from a simple frustration: splitting bills with friends shouldn't be complicated.
-                            Whether it's a group dinner, a weekend trip, or shared household expenses, managing money with
-                            others should be as easy as sending a message.
-                        </p>
-                        <p>
-                            We built Fiinny to bridge the gap between traditional finance apps and the way people actually
-                            live their lives—together. By combining powerful expense tracking with social features, we've
-                            created a platform that makes managing money feel natural and even enjoyable.
-                        </p>
-                        <p>
-                            Today, over 10,000 users trust Fiinny to manage their shared finances, track expenses, and
-                            achieve their financial goals together.
-                        </p>
-                    </div>
-                </div>
-            </section>
-
-            {/* Values */}
-            <section className="bg-gradient-to-b from-mint/10 to-white py-20">
-                <div className="container mx-auto px-6">
-                    <h2 className="text-3xl font-bold text-center text-teal mb-12">Our Values</h2>
-                    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-                        {[
-                            { icon: Users, title: "Community First", desc: "We build for people, not profits." },
-                            { icon: Target, title: "Simplicity", desc: "Finance should be simple and accessible." },
-                            { icon: Heart, title: "Trust", desc: "Your data and money are sacred to us." },
-                            { icon: Zap, title: "Innovation", desc: "We constantly push boundaries." },
-                        ].map((value, idx) => {
-                            const Icon = value.icon;
-                            return (
-                                <motion.div
-                                    key={idx}
-                                    initial={{ opacity: 0, y: 20 }}
-                                    whileInView={{ opacity: 1, y: 0 }}
-                                    viewport={{ once: true }}
-                                    transition={{ delay: idx * 0.1 }}
-                                    className="text-center"
-                                >
-                                    <div className="w-16 h-16 bg-gradient-to-br from-teal to-tiffany rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                        <Icon className="w-8 h-8 text-white" />
-                                    </div>
-                                    <h3 className="font-bold text-teal mb-2">{value.title}</h3>
-                                    <p className="text-gray-600 text-sm">{value.desc}</p>
-                                </motion.div>
-                            );
-                        })}
-                    </div>
-                </div>
-            </section>
-
-            {/* CTA */}
-            <section className="container mx-auto px-6 py-20 text-center">
-                <h2 className="text-3xl font-bold text-teal mb-6">Join Us</h2>
-                <p className="text-gray-600 mb-8 max-w-2xl mx-auto">
-                    Be part of a community that's redefining how we think about money and relationships.
-                </p>
-                <Link href="/login">
-                    <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        className="bg-gradient-to-r from-teal to-tiffany text-white px-8 py-4 rounded-full font-bold text-lg shadow-xl"
+                    {/* Intro */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.6 }}
+                        className="mb-20"
                     >
-                        Get Started Free
-                    </motion.button>
-                </Link>
-            </section>
+                        <h1 className="text-4xl lg:text-5xl font-bold text-slate-900 mb-8 tracking-tight leading-tight">
+                            Engineering Financial Clarity. <br />
+                            <span className="text-slate-400">Built in Hyderabad for the World.</span>
+                        </h1>
+                        <p className="text-xl text-slate-600 leading-relaxed">
+                            Fiinny is an institution-grade financial operating system. We combine bank-level security with consumer-grade design to give you absolute control over your net worth.
+                            <span className="block mt-4 font-semibold text-slate-900">No ads. No data selling. Just pure utility.</span>
+                        </p>
+                    </motion.div>
+
+                    <div className="w-full h-px bg-slate-200 mb-20" />
+
+                    {/* The Mission */}
+                    <section className="mb-24">
+                        <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">Our Mission</h2>
+                        <div className="prose prose-lg text-slate-600">
+                            <p className="mb-6">
+                                In a market flooded with loan apps disguised as trackers, Fiinny stands apart. We are not here to sell you credit. We are here to help you build wealth.
+                            </p>
+                            <p>
+                                Born in <strong>Hyderabad</strong>, a global hub of technology, our team engineers solutions that respect your privacy and your intelligence. We believe financial data is personal infrastructure, not a commodity.
+                            </p>
+                        </div>
+                    </section>
+
+                    {/* Principles Grid */}
+                    <section className="mb-24">
+                        <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-8">Our Principles</h2>
+                        <div className="grid md:grid-cols-2 gap-8">
+                            <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
+                                <Shield className="w-6 h-6 text-teal-600 mb-4" />
+                                <h3 className="text-lg font-bold text-slate-900 mb-2">Privacy First</h3>
+                                <p className="text-slate-500 text-sm leading-relaxed">
+                                    We practice data minimization. Your financial records are encrypted and strictly isolated. We do not monetize your behavior.
+                                </p>
+                            </div>
+                            <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
+                                <Clock className="w-6 h-6 text-teal-600 mb-4" />
+                                <h3 className="text-lg font-bold text-slate-900 mb-2">Long-Term Reliability</h3>
+                                <p className="text-slate-500 text-sm leading-relaxed">
+                                    We ignore short-term trends to build durable infrastructure. This product is designed to manage your finances for decades, not months.
+                                </p>
+                            </div>
+                            <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
+                                <Zap className="w-6 h-6 text-teal-600 mb-4" />
+                                <h3 className="text-lg font-bold text-slate-900 mb-2">Speed & Utility</h3>
+                                <p className="text-slate-500 text-sm leading-relaxed">
+                                    Latency is a bug. Every interaction is engineered to be instant. We respect the limited time you have to manage your money.
+                                </p>
+                            </div>
+                            <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
+                                <Globe className="w-6 h-6 text-teal-600 mb-4" />
+                                <h3 className="text-lg font-bold text-slate-900 mb-2">Global Neutrality</h3>
+                                <p className="text-slate-500 text-sm leading-relaxed">
+                                    Fiinny works in 190+ countries and supports any currency. We are not tied to a single banking system or region.
+                                </p>
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* Closing */}
+                    <section className="bg-slate-900 text-white p-10 rounded-3xl text-center">
+                        <h3 className="text-xl font-bold mb-4">A standard of care.</h3>
+                        <p className="text-slate-400 mb-8 max-w-lg mx-auto">
+                            We are continuously refining Fiinny to be the most reliable financial tool on the market. Thank you for trusting us with your journey.
+                        </p>
+                        <p className="text-sm font-mono text-slate-500">
+                            Built with care in Hyderabad.
+                        </p>
+                    </section>
+
+                </div>
+            </main>
         </div>
     );
 }

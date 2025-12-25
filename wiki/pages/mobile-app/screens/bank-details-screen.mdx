@@ -1,0 +1,46 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Bank Details Screen
+
+Also known as "My Wallet".
+
+## Overview
+
+Provides a "Bank Account" centric view of finances. The top half is a carousel of bank cards (`BankCardsCarousel`), and the bottom half is a transaction list filtered by the selected bank.
+
+## Features
+
+- **Bank Carousel**: Visually distinct cards for each bank account (HDFC vs SBI etc.). 
+- **Filtering**: Tapping a card filters the `UnifiedTransactionList` to show only transactions issued by that specific bank slug.
+- **Deep Integration**: Allows editing transactions directly from this filtered view.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userPhone',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  },
+  {
+    name: 'initialBankSlug',
+    type: 'String?',
+    required: false,
+    description: 'If provided, auto-selects this bank on load.'
+  },
+  {
+    name: 'allExpenses',
+    type: 'List<ExpenseItem>',
+    required: true,
+    description: 'Full dataset to filter.'
+  },
+  {
+    name: 'allIncomes',
+    type: 'List<IncomeItem>',
+    required: true,
+    description: 'Full dataset to filter.'
+  }
+
+]} />

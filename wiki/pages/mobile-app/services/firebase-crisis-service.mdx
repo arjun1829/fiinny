@@ -1,0 +1,12 @@
+# Firebase Crisis Service
+
+**Path**: `lib/services/firebase_crisis_service.dart`
+
+Manages the **"Survival Mode"** (Crisis Mode) state.
+
+## Responsibilities
+*   **Persist Plan**: Saves the user's crisis settings (`weeklyLimit`, `isActive`) to `survival_mode/{userId}`.
+*   **Fetch Plan**: Retrieves the current plan.
+
+## Context
+Survival Mode is a feature where users can lock down their spending to a strict weekly limit during financial emergencies.

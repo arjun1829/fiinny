@@ -1,0 +1,50 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Split From Transaction Screen
+
+A retro-active splitting tool.
+
+## Overview
+
+Allows a user to take *existing*, previously created transactions and apply them to a split with friends. This is useful if a user forgot to split a bill at the moment of payment.
+
+## Flow
+
+1.  **Selection**: User selects one or more existing expenses.
+2.  **Participants**: User selects Friends or Groups to split with.
+3.  **Nav**: Proceeding opens `CustomSplitScreen` initialized with these parameters.
+
+## Design
+
+- **Tiffany Blue Palette**: Uses a distinct color scheme (Tiffany Blue / Mint Green) to differentiate this flow from standard editing.
+- **Mint Background**: Animated background effect (`_AnimatedMintBackground`).
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  },
+  {
+    name: 'expenses',
+    type: 'List<ExpenseItem>',
+    required: true,
+    description: 'List of expenses eligible for splitting.'
+  },
+  {
+    name: 'friends',
+    type: 'List<FriendModel>',
+    required: true,
+    description: 'Available friends.'
+  },
+  {
+    name: 'groups',
+    type: 'List<GroupModel>',
+    required: true,
+    description: 'Available groups.'
+  }
+]} />

@@ -1,0 +1,36 @@
+# Push Service
+
+**Path**: `lib/services/push/push_service.dart`
+
+The central hub for handling Push Notifications (FCM) and Local Notifications (`flutter_local_notifications`).
+
+## Architecture
+
+### 1. Initialization (`init`)
+*   **Idempotent**: Safe to call multiple times.
+*   **Local Plugin**: Initializes `flutter_local_notifications` with `ic_launcher`.
+*   **Channels**: Creates Android Notification Channels:
+    *   `fiinny_default`: General
+    *   `fiinny_nudges`: High importance (reminders)
+    *   `fiinny_digests`: Digests
+    *   `fiinny_critical`: Max importance
+*   **Permissions**: Coordinates with `FirstSurfaceGate` to show iOS prompts only after the UI is ready.
+*   **Token**: Syncs FCM token to `users/{uid}/fcmToken`.
+
+### 2. Handling Messages
+*   **Foreground**: Shows a local banner using `_showLocalNow`. Also writes to `users/{uid}/notif_feed`.
+*   **Background**: `_firebaseMessagingBackgroundHandler` handles messages when app is killed.
+*   **Taps**: `onDidReceiveNotificationResponse` and `onMessageOpenedApp` handle user taps.
+
+### 3. Deep Linking (`_handleDeeplink`)
+Centralized router for `app://` URLs:
+*   `app://tx/today` -> Daily Transactions
+*   `app://analytics/weekly` -> Analytics
+*   `app://friend/{id}/recurring` -> Nudge Screen
+*   `app://chat/{id}` -> Chat
+*   `app://budget` -> Budget Screen
+
+### 4. Smart Local Nudges (`showLocalSmart`)
+*   Respects **Quiet Hours** (defined in user prefs).
+*   If in quiet hours, schedules the notification for the next morning via `LocalNotifs.scheduleOnce`.
+*   Checks per-channel user preferences (e.g., if user disabled 'nudges', it won't show).

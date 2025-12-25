@@ -1,0 +1,13 @@
+# Subscription Service (`subscription_service.dart`)
+
+**Path:** `lib/services/subscription_service.dart`
+
+## 1. Overview
+Manages recurring payments (`SubscriptionItem`) like Netflix, Gym, or Rent.
+
+## 2. Responsibilities
+- **Scheduling**: `calculateNextDueDate` contains the core logic for determining when the next payment event occurs given a frequency (Weekly, Monthly, Yearly, Custom).
+- **CRUD**: Standard Firestore operations for subscription items.
+
+## 3. Usage
+Used to populate the **Subscriptions List** and to generate **Recurring Transaction** suggestions.

@@ -1,0 +1,45 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Welcome Screen
+
+The introductory carousel displayed to first-time users, showcasing the app's value proposition.
+
+## Overview
+
+`WelcomeScreen` features a "Stories-style" auto-advancing carousel. It includes:
+- **Progress Rail**: Top bars indicating the current slide and progress.
+- **Auto-Advance**: Automatically moves to the next slide every 2 seconds unless interacted with.
+- **Swipe Hint**: An animated "Swipe to continue" hint on the first slide.
+- **Glossy CTA**: A "Get Started" button that appears only on the final slide with a breathing animation.
+
+## Usage
+
+```dart
+Navigator.pushReplacement(
+  context,
+  MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+);
+```
+
+## Interactions
+
+- **Tap/Drag**: Pauses the auto-advance timer (`_stopAuto`) and resumes (`_startAuto`) on release.
+- **Skip**: Available on non-final slides to jump immediately to the end.
+- **Quick Tour**: Opens a bottom sheet with detailed "How it works" information for the current slide.
+
+## Assets & Themes
+
+- **Colors**: Uses a mint/teal base (`kMintBase`, `kMintDeep`) consistent with the brand.
+- **Cards**: Each slide is rendered in an `_OnboardCard` with a frosted glass effect and shadow.
+- **Animations**:
+    - `_progressCtl`: Drives the top progress bar filling.
+    - `_pulseTimer`: Creates a breathing effect on the final CTA button.
+    - `_SheenPainter`: Adds a moving glossy reflection to the "Get Started" button.
+
+## Navigation
+
+On "Get Started", it navigates to `AuthGate`:
+```dart
+Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const AuthGate()));
+```

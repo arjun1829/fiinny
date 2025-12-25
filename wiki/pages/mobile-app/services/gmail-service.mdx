@@ -1,0 +1,57 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Gmail Service
+
+Cloud-based transaction synchronization.
+
+## Overview
+
+`GmailService` connects to the user's Gmail account via OAuth to fetch, parse, and ingest financial transaction emails (e.g., statements, alerts). It acts as a backup and complement to SMS ingestion, especially for reliable bill tracking.
+
+## OAuth & Ingestion Flow
+
+```mermaid
+graph TD
+    %% User
+    User(User)
+    
+    %% Service
+    subgraph GmailService
+        Auth[Google Sign-In]
+        Fetch[Fetch Messages]
+        Filter[Bank Filter]
+        Parser[Email Parser]
+    end
+    
+    %% External
+    Google[Google API]
+    DB[(Firestore)]
+    
+    %% Flow
+    User --> |Authorize| Auth
+    Auth --> |Token| Google
+    
+    Google --> |Return Emails| Fetch
+    Fetch --> Filter
+    Filter -- "Spam/Promo" --> Ignore((Skip))
+    Filter -- "Bank Alert" --> Parser
+    
+    Parser --> |Extract Data| DB
+    
+    classDef process fill:#f3e5f5,stroke:#8e24aa,stroke-width:2px;
+    class GmailService process;
+```
+
+## Logic Deep Dive
+
+1.  **Auth**: Uses `google_sign_in` with `gmail.readonly` scope.
+2.  **Query**: Fetches messages matching specific queries (e.g., `subject:transaction`, `from:bank`).
+3.  **Bank Detection**: `_detectBank` identifies the sender (e.g., HDFC, SBI) based on domain headers.
+4.  **Parsing**: Specific logic per bank tier (Major vs Generic) to extract amounts.
+5.  **Reconciliation**: Checks if an SMS transaction already exists for the same amount/date to avoid duplicates.
+
+## Features
+
+- **Bill Detection**: Scans for "Credit Card Bill Generated" emails to populate the "Bills" tab.
+- **Masking**: Automatically redacts sensitive info like full account numbers before processing.

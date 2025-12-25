@@ -1,0 +1,14 @@
+# Voice Bridge
+
+**Path**: `lib/services/voice_bridge.dart`
+
+Handles **App Links (Deep Links)** for voice commands (Siri / Google Assistant).
+
+## Responsibilities
+*   **Initialization**: Listens to `AppLinks().uriLinkStream`.
+*   **Routing**:
+    *   `fiinny://add-expense`: Opens the Add Expense screen.
+    *   `fiinny://ask`: Logic for future "Ask AI" feature.
+
+## Usage
+Allows users to say "Hey Google, add expense on Fiinny" (if the shortcuts/intents are configured to open this URL).

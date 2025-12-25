@@ -1,0 +1,43 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Add Transaction Screen
+
+The comprehensive wizard for creating new financial records.
+
+## Overview
+
+A multi-step `PageView` form that guides the user through creating complex transactions. It supports Expenses, Incomes, Credit Card Spends, and Bill Payments.
+
+## Wizard Steps
+
+1.  **Amount & Type**:
+    - Enter value.
+    - Select Type: Debit, Credit, CC Spend, CC Bill.
+    - (Optional) CC Last 4 digits.
+2.  **Category**:
+    - Select main category.
+    - Select subcategory (dependent on main).
+3.  **Details & Splits**:
+    - **Note**: Description.
+    - **Splits**: Select Friends or Groups.
+    - **Custom Split**: Advanced logic to define uneven splits or assign a specific payer (`_rebuildSplitControllers`).
+    - **Receipt**: Upload image to Firebase Storage.
+4.  **Review**: Final confirmation summary.
+
+## Key Logic
+
+- **Split Management**: The screen maintains complex split state (`_splits` map). It validates that custom splits sum up to the total amount.
+- **Inline Creation**: Users can create new Friends or Groups directly from the wizard using `AddFriendDialog` or `_CreateGroupSheet`.
+- **Image Upload**: Uploads bills to `users/{uid}/tx_images/` before saving the transaction document.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'The creating user\'s phone number.'
+  }
+]} />

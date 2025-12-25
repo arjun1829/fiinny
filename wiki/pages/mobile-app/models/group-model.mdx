@@ -1,0 +1,15 @@
+# Group Model (`group_model.dart`)
+
+**Path:** `lib/models/group_model.dart`
+
+## 1. Overview
+Represents a group of people for splitting expenses (e.g., "Goa Trip" or "Flatmates").
+
+## 2. Responsibilities
+- **Membership:** `memberPhones` list containing E.164 phone numbers of all participants.
+- **Metadata:** Stores `memberAvatars` and `memberDisplayNames` maps to avoid fetching full profiles for every list item.
+- **Creator Logic:** `GroupModel.withCreator` factory ensures the creator is always added to the member list automatically.
+
+## 3. Usage
+- **Collections:** `groups` collection.
+- **UI:** `GroupDetailScreen`.

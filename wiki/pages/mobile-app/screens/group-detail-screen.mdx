@@ -1,0 +1,40 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Group Detail Screen
+
+The central hub for group management and activity.
+
+## Overview
+
+Canonical view for a Group, located in `lib/details/`. It manages members, balances, and shared expenses in a focused environment.
+
+## Features
+
+- **Member Management**: Fetches and aggregates member profiles (`FriendModel`), handling fuzzy name matching if local contacts are missing.
+- **Smart Balances**: Calculates "Who owes who" using `gbm.computeSplits` and displays a simplified "You owe / Owed to you" summary.
+- **Interactive Attachments**: Specialized `_attachmentView` that detects images for inline zoomable previews vs generic files for external download.
+- **Expenses**: Infinite list of group-specific expenses with edit/delete capabilities that propagate across all members.
+
+## Architecture
+
+- **Data**: Streams `GroupModel` and member details.
+- **Logic**: Uses `GroupBalanceMath` for client-side ledger calculations.
+- **Location**: Defined in `lib/details/group_detail_screen.dart`.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'Current user ID.'
+  },
+  {
+    name: 'group',
+    type: 'GroupModel',
+    required: true,
+    description: 'The group object.'
+  }
+]} />

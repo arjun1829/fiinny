@@ -1,0 +1,8 @@
+{
+    "core": "Core Components",
+    "models": "Data Models",
+    "architecture": "Architecture",
+    "services": "Services",
+    "ios": "iOS Specifics",
+    "config": "Configuration & Setup"
+}

@@ -1,0 +1,40 @@
+# Unified Transaction List
+
+**Path:** `lib/widgets/unified_transaction_list.dart`
+
+The `UnifiedTransactionList` is the primary feed component in Fiinny. It renders a merged, sorted, and filtered list of both **Expenses** and **Incomes**. It is highly optimized for performance and handles complex rendering logic for various transaction types.
+
+## Key Responsibilities
+
+1.  **Data Merging:** Combines `ExpenseItem` and `IncomeItem` lists into a single normalized stream.
+2.  **Filtering & Sorting:** Applies the active `TransactionFilter` (date range, category, amount) and sort orders.
+3.  **Visualization:** Renders `TransactionTile` items, injecting date headers (for sticky grouping via `sticky_headers` in parent usually, or internal grouping logic).
+4.  **Ad Injection:** Automatically injects inline ads (native or banner) at configurable intervals (default: after 2nd item).
+5.  **Actions:** Supports swipe-to-edit/delete and tap-to-view-details.
+
+## Logic Highlights
+
+### Normalization
+The `_combine()` method flattens dissimilar models into a unified `Map<String, dynamic>` structure to simplify rendering. This handles legacy data fields vs. new unified schemas.
+
+### FX Conversion
+It integrates `FxService` to display transactions in the user's preferred currency (e.g., INR) even if the original transaction was in USD or EUR.
+
+### Ad Cadence
+The list accepts `inlineAdAfterIndex` to determine where to insert monetization widgets without disrupting the UX.
+
+## Usage
+
+```dart
+UnifiedTransactionList(
+  expenses: expenseList,
+  incomes: incomeList,
+  userPhone: currentUser.phone,
+  friendsById: friendsMap,
+  // Configuration
+  enableScrolling: true, // Set false if inside a CustomScrollView
+  showCategoryDropdown: true,
+  onEdit: (tx) => _openEdit(tx),
+  onDelete: (tx) => _confirmDelete(tx),
+)
+```

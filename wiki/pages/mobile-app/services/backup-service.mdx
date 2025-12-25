@@ -1,0 +1,10 @@
+# Backup Service
+
+**Path**: `lib/services/backup_service.dart`
+
+The `BackupService` provides manual backup and restore functionality, primarily allowing users to export their data as a JSON file or save a snapshot to Firestore.
+
+## Methods
+*   **`backupUserData`**: Saves a snapshot of `incomes`, `expenses`, and `goals` to `users/{userId}/backups/latest`.
+*   **`restoreUserData`**: Fetches the latest backup from Firestore.
+*   **`shareUserData`**: Exports the backup as a JSON string and invokes the system share sheet (`share_plus`), allowing the user to email or save the file locally.

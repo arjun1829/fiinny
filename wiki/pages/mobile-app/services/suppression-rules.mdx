@@ -1,0 +1,13 @@
+# Suppression Rules
+
+**Path**: `lib/services/recurring/suppression_rules.dart`
+
+A helper service to allow users to "hide" or "suppress" false positives from the Recurring Engine.
+
+## Functionality
+*   **Storage**: `users/{userId}/suppressions` collection.
+*   **Rule Types**: `subscription` or `emi`.
+*   **Logic**:
+    *   If a rule exists for a `merchantKey`, checks `amountTolerance`.
+    *   If `amountTolerance` is 0, it blankets suppresses that merchant.
+    *   Otherwise, it suppresses only if the transaction amount is within the tolerance.

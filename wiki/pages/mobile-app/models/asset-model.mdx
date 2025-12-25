@@ -1,0 +1,18 @@
+# Asset Model (`asset_model.dart`)
+
+**Path:** `lib/models/asset_model.dart`
+
+## 1. Overview
+Tracks user assets like Stocks, Gold, Mutual Funds, or Real Estate.
+
+## 2. Responsibilities
+- **Valuation:** Stores current `value` vs `purchaseValue` to calculate P&L.
+- **Categorization:** `assetType` (Equity, Gold) and `subType` (ETF, SGB).
+- **Metadata:** `institution` (Zerodha, HDFC) and `logoHint` for UI branding.
+
+## 3. Key Logic
+- **Flexible JSON Parsing:** The `fromJson` factory is extremely defensive, handling values that might come as `int`, `double`, or `String` from various APIs or user inputs.
+
+## 4. Usage
+- **Collections:** `assets` collection in Firestore.
+- **UI:** `PortfolioScreen` and `AssetDetailScreen`.

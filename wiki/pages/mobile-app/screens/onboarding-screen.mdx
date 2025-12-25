@@ -1,0 +1,42 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Onboarding Screen
+
+The profile setup screen where users configure their identity and default preferences.
+
+## Overview
+
+`OnboardingScreen` is displayed to users who are authenticated but have not yet completed their profile (`onboarded != true`). It collects:
+- **Profile Photo**: via Image Picker or a set of preset Avatar assets.
+- **Name**: Display name.
+- **Preferences**: Country, Currency, and Language (defaulting to India/INR/en).
+
+## Usage
+
+```dart
+Navigator.pushReplacement(
+  context,
+  MaterialPageRoute(builder: (_) => const OnboardingScreen()),
+);
+```
+
+## Logic
+
+1.  **Prefill**: Populates fields from `FirebaseAuth` user data (e.g., if a name/email/phone is already available).
+2.  **Validation**: Ensures required fields (Name, Phone) are present.
+3.  **Persistence**:
+    - Uploads profile image to `FirebaseStorage` (path: `users/{uid}/profile.jpg`) if a new file is picked.
+    - Updates `FirebaseAuth` profile (displayName, photoURL).
+    - Writes definitive user document to Firestore `users/{docId}` with `onboarded: true`.
+4.  **Claim Pending**: Calls `FriendService().claimPendingFor` to link any pre-existing "shadow" contacts (where friends added this user by phone number before they joined) to this new real account.
+
+## UI Design
+
+- **Background**: Uses `_mintBlob` shapes and a subtle gradient for a premium feel.
+- **Glass Forms**: All input fields use `_glassFieldDecoration`—semi-transparent white backgrounds with blur.
+- **Avatar Picker**: A dual-mode picker allowing either a custom gallery upload or selection from 10 bundled illustrations.
+
+## Props
+
+None. The screen relies on the currently signed-in `FirebaseAuth` user.

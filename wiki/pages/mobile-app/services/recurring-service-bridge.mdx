@@ -1,0 +1,35 @@
+# Recurring Service Bridge
+
+**Path**: `lib/services/recurring_service_bridge.dart`
+
+The `RecurringLoanBridge` acts as a specialized adapter between the **Loan Service** and the **Recurring (EMI) Service**. It ensures that when a user creates a formal Loan, they can optionally generate a recurring payment reminder (EMI) that mirrors this obligation. Conversely, it allows converting a recurring item back into a Loan wrapper for tracking.
+
+## Responsibilities
+
+*   **Loan -> EMI**: Creating a recurring reminder when a Loan is established.
+*   **EMI -> Loan**: Creating a tracking Loan entity from an existing recurring bill.
+*   **Bi-directional Linking**: Maintaining `recurringItemId` on Loans and `link: { type: 'loan' }` metadata on recurring items.
+
+## Key Methods
+
+### `ensureRecurringForLoan`
+Creates a mirrored recurring item from a `LoanModel`.
+*   **Logic**:
+    *   Calculates `amount` (EMI or minDue).
+    *   Determines `anchorDate` based on `paymentDayOfMonth`.
+    *   Creates a `SharedItem` of type `emi`.
+    *   **Metadata**: Stores `lenderType`, `interestRate`, and the `loanId` link.
+    *   **Notification**: Optionally sets up push notifications locally.
+    *   **Patch**: Updates the original Loan doc with the new `recurringItemId`.
+
+### `ensureLoanForRecurringEmi`
+Creates a `LoanModel` stub from a `SharedItem` (EMI).
+*   **Use Case**: User enters an EMI manually in the "Recurring" tab and wants to track it effectively as a Loan.
+*   **Logic**:
+    *   Extracts amount and due day from the `RecurringRule`.
+    *   Creates a `LoanModel` with status `isClosed: false`.
+    *   Patches the recurring item to link back to this new `loanId`.
+
+## Dependencies
+*   `LoanService`: For creating/patching loan documents.
+*   `RecurringService`: For creating/patching shared recurrence items.

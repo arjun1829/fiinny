@@ -1,0 +1,28 @@
+# Bar Chart (Simple)
+
+**Path:** `lib/widgets/charts/bar_chart_simple.dart`
+
+A scratch-built, highly generic bar chart widget optimized for aesthetics and performance.
+
+## Features
+*   **Custom Painting:** Uses `CustomPaint` for drawing the grid and background lines, ensuring crisp rendering.
+*   **Animations:** Bars grow into place using `TweenAnimationBuilder`.
+*   **Smart Scaling:** Includes a `_NiceScale` utility to calculate human-readable Y-axis ticks (e.g., 0, 50, 100 instead of 0, 47, 94).
+*   **Interactive:** Supports tap callbacks on individual bars.
+*   **Label Thinning:** Intelligent X-axis label skipping logic (`targetXTicks`) to prevent text overlap on dense datasets.
+
+## Usage
+
+```dart
+BarChartSimple(
+  data: [
+    SeriesPoint(x: "Mon", y: 500),
+    SeriesPoint(x: "Tue", y: 1200),
+  ],
+  height: 200,
+  barColor: Colors.teal,
+  onBarTap: (index, point) {
+    print("Tapped ${point.x}");
+  },
+)
+```

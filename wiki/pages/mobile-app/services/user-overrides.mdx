@@ -1,0 +1,14 @@
+# User Overrides
+
+**Path**: `lib/services/user_overrides.dart`
+
+Allows users to manually correct the categorization of specific merchants.
+
+## Logic
+*   **Storage**: `users/{userId}/overrides/merchant_categories` (and `merchant_subcategories`).
+*   **Methods**:
+    *   `setCategoryForMerchant`: User says "Amazon" is always "Shopping".
+    *   `getCategoryForMerchant`: The parser checks this *before* using the default AI guess.
+
+## Impact
+Ensures that if the AI gets it wrong once, the user can fix it permanently for that merchant.

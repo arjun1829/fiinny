@@ -1,0 +1,26 @@
+# Smart Insights Card
+
+**Path:** `lib/widgets/smart_insights_card.dart`
+
+A glass-morphic card that displays a single, high-priority insight based on the user's current context.
+
+## Discovery Logic
+It resolves the insight to display in the following priority order:
+1.  **Preset Text:** If `insightText` is explicitly passed.
+2.  **Net Worth:** If the user has significant assets/loans.
+3.  **Spend vs Income:** Comparing total inflow vs outflow.
+4.  **Savings Rate:** Highlighting saving habits.
+5.  **Goal Pace:** If user is tracking a goal (e.g., "You have ₹20k left to reach Car").
+6.  **Fallback:** Generic placeholder from `InsightMicrocopy`.
+
+## Usage
+
+```dart
+SmartInsightCard(
+  income: 50000,
+  expense: 30000,
+  savings: 20000,
+  goal: myGoal,
+  showToday: true,
+)
+```

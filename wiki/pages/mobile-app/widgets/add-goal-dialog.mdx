@@ -1,0 +1,29 @@
+# Add Goal Dialog
+
+**Path:** `lib/widgets/add_goal_dialog.dart`
+
+A visually rich dialog for setting financial goals. It employs a "glassmorphism" design and interactive elements to make goal setting feel positive and engaging.
+
+## Features
+
+*   **Emoji Picker:** A horizontally scrolling quick-picker for goal icons.
+*   **Quick Amounts & Dates:** One-tap chips for common values (e.g., "+6 months", "₹50k").
+*   **Smart Suggestions:** Calculates the required monthly savings in real-time based on the target date and amount (`_suggestion()`).
+*   **Motivational Tips:** Cycles through financial wisdom quotes.
+*   **Sub-goals:** Allows adding a checklist of dependencies or milestones.
+
+## Visual Design
+Uses `BackdropFilter` with `ImageFilter.blur` to create a frosted glass effect layered over the app background. Input fields use a custom "pill" decoration (`_pillDec`) consistent with the modern design language.
+
+## Usage
+
+```dart
+showDialog(
+  context: context,
+  builder: (_) => AddGoalDialog(
+    onAdd: (GoalModel newGoal) {
+      // Persist to service
+    },
+  ),
+);
+```

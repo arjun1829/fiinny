@@ -1,0 +1,24 @@
+# Financial Ring
+
+**Path:** `lib/widgets/financial_ring.dart`
+
+A generic, highly customizable ring widget used for Goals, Budgets, or any "Progress to Target" metric.
+
+## Features
+*   **Diamond Cut Card:** Wrapped in a `CustomDiamondCard` for a premium glass/angled look.
+*   **Popup Detail:** Long-pressing the ring opens an `AlertDialog` with an enlarged view and cheering text ("Wow! You've reached your target!").
+*   **Animations:** Smoothly animates progress changes.
+*   **Customization:** Supports gradients, stroke widths, and resizing knobs.
+
+## Usage
+
+```dart
+FinancialRingWidget(
+  label: "New Car Goal",
+  value: 500000,
+  maxValue: 1200000,
+  color: Colors.purpleAccent,
+  icon: Icons.directions_car,
+  showPercent: true,
+)
+```

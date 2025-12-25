@@ -1,0 +1,27 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Profile Screen
+
+The user's identity and preference management hub.
+
+## Overview
+
+Allows users to manage their personal details, app preferences, privacy settings, and account lifecycle. It uses a "Card & Expansion Tile" UI pattern to organize complex settings without clutter.
+
+## Features
+
+- **Identity Management**: Edit Name, Email, Phone, and Avatar (Upload or Preset).
+- **Privacy Controls**: Toggles for Analytics, Personalized Tips, and Android SMS Permissions.
+- **Data Sovereignty**: Options to "Export Data" (BackupService) or "Delete Account".
+- **Navigation**: Deep links to Notification Preferences.
+- **Completeness Score**: Calculates a profile completeness percentage.
+
+## Architecture
+
+- **Firebase**: Direct integration with `FirebaseAuth` (User mgmt), `Firestore` (User profile doc), and `FirebaseStorage` (Avatar upload).
+- **UI Structure**: Uses `_GlassCard` and `ExpansionTile` for a clean, organized layout.
+
+## Props
+
+None (Self-contained, relies on Auth context).

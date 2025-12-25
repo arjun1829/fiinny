@@ -1,0 +1,14 @@
+# Consent Service
+
+**Path**: `lib/services/consent_service.dart`
+
+Handles **App Tracking Transparency (ATT)** on iOS, which is a prerequisite for IDFA access and personalized ads.
+
+## Key Methods
+*   **`requestATTIfNeeded`**:
+    *   On iOS: Checks status. If `notDetermined`, shows the system prompt. Returns `true` if authorized.
+    *   On Android/Web: Auto-returns `true`.
+*   **`openSettings`**: Opens system settings if the user previously denied permission and wants to enable it.
+
+## State
+Maintains `_lastStatus` and `_authorized` static fields for global access.

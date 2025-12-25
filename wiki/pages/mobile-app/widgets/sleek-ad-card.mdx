@@ -1,0 +1,59 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Sleek Ad Card
+
+A standardized, visually polished container for displaying banner ads, with remote flag control and platform adaptability.
+
+## Overview
+
+`SleekAdCard` is the primary widget for embedding banner ads within the application's feed or lists. It wraps the `AdaptiveBanner` component in a styled container with a gradient background, shadow, and rounded corners. It also handles:
+- **Remote Flags**: Checks `RemoteFlags` (e.g., `adsWebHouse`, `adsEnabledIOS`) to conditionally render.
+- **Initialization**: Ensures the `AdService` is initialized before attempting to load an ad.
+- **Platform Specifics**: Renders a `WebHouseAdCard` on web if the flag is enabled.
+
+## Usage
+
+```dart
+SleekAdCard(
+  margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+  radius: 12,
+)
+```
+
+## Props
+
+<PropsTable
+  data={[
+    {
+      name: 'margin',
+      type: 'EdgeInsets',
+      required: false,
+      description: 'Outer margin for the card.',
+      default: 'EdgeInsets.fromLTRB(18, 8, 18, 12)',
+    },
+    {
+      name: 'radius',
+      type: 'double',
+      required: false,
+      description: 'Border radius of the card.',
+      default: '16',
+    },
+  ]}
+/>
+
+## Key Features
+
+1.  **Safety Checks**: Automatically hides itself (`SizedBox.shrink`) if ads are disabled via remote config or if the ad service fails to initialize.
+2.  **Web Support**: Seamlessly switches to `WebHouseAdCard` when running on the web platform.
+3.  **Ad Loading State**: Monitors the `AdaptiveBanner`'s load state and only makes the container visible (`Visibility`) once the ad is actually loaded, preventing empty whitespace.
+4.  **Aesthetics**:
+    - Subtle teal-to-white gradient (`LinearGradient`).
+    - Soft shadow (`BoxShadow`).
+    - Anti-aliased clipping.
+
+## Dependencies
+
+- `AdService`: For initialization checks.
+- `RemoteFlags`: For feature flagging.
+- `AdaptiveBanner`: The core ad rendering widget.

@@ -1,0 +1,15 @@
+# Notification Service (`notification_service.dart`)
+
+**Path:** `lib/services/notification_service.dart`
+
+## 1. Overview
+Manages **Local Push Notifications** using `flutter_local_notifications`.
+
+## 2. Capabilities
+- **Instant Alerts**: `showNotification` for immediate feedback (e.g., "Insight Generated").
+- **Scheduled Alerts**: `scheduleAt` for future reminders (e.g., Loan Due Date).
+- **Monthly Wrap**: Logic to schedule a "Monthly Wrap is ready" alert on the 1st of the month at 9 AM.
+- **Channels**: Sets up Android Notification Channels (Importance Max).
+
+## 3. Usage
+Used by `FiinnyBrainService`, `SmartNudgeEngine`, and `LoanService` (for reminders).

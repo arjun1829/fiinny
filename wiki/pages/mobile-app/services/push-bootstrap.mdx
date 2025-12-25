@@ -1,0 +1,8 @@
+# Push Bootstrap
+
+**Path**: `lib/services/push/push_bootstrap.dart`
+
+A tiny helper to ensure the user's root document exists in Firestore.
+
+## Purpose
+Before writing preference sub-collections or notification feeds, we must ensure the parent `users/{uid}` document exists to avoid "document not found" hierarchy issues. `ensureUserRoot` does this check-and-create.

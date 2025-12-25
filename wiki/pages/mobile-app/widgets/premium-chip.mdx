@@ -1,0 +1,47 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Premium Chip
+
+A prominent, pill-shaped chip used to upsell premium features or indicate premium status.
+
+## Overview
+
+The `PremiumChip` is a specialized actionable chip designed to draw attention to premium features. It uses a distinct mint color scheme and an "auto awesome" icon to signify value. It is typically placed in headers, profiles, or feature gates.
+
+## Usage
+
+```dart
+PremiumChip(
+  onTap: () {
+    // Navigate to premium purchase page
+  },
+  label: 'Go Premium', // Optional, defaults to 'Go Premium'
+)
+```
+
+## Props
+
+<PropsTable
+  data={[
+    {
+      name: 'onTap',
+      type: 'VoidCallback',
+      required: true,
+      description: 'Callback function triggered when the chip is tapped.',
+    },
+    {
+      name: 'label',
+      type: 'String',
+      required: false,
+      description: 'The text to display on the chip.',
+      default: "'Go Premium'",
+    },
+  ]}
+/>
+
+## Design Details
+
+- **Visual Style**: Uses `Fx.mintDark` for text and border, with a low-opacity mint background (`Fx.mintDark.withOpacity(.10)`).
+- **Shape**: Fully rounded tokens (Stadium border) using `BorderRadius.circular(999)`.
+- **Iconography**: Includes a standard `Icons.auto_awesome_rounded` icon to represent "premium" or "magic" features.

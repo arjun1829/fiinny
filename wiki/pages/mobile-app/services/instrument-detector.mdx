@@ -1,0 +1,17 @@
+# Instrument Detector
+
+**Path**: `lib/services/enrich/instrument_detector.dart`
+
+A powerful regex engine for extracting payment instrument details from raw text.
+
+## Extracts
+*   **Instrument Type**: UPI, Credit Card, Debit Card, NetBanking, Wallet, etc.
+*   **Channel**: POS, ECOM, P2P, P2M, AUTOPAY, ATM.
+*   **Identifiers**:
+    *   `cardLast4`, `cardNetwork`
+    *   `accountLast4`
+    *   `upiVpa`, `upiTxnId` (UTR), `rrn`
+*   **Bank**: Infers bank from sender ID or domain hints (e.g., `hdfcbank.net` -> HDFC).
+
+## Usage
+Used by both SMS and Gmail ingestion pipelines to populate the `InstrumentInfo` model.

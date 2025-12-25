@@ -1,0 +1,19 @@
+# Gmail Mappers
+
+**Path**: `lib/services/gmail/gmail_mappers.dart`
+
+Converts `ParsedTransaction` objects into Fiinny's domain models (`ExpenseItem`, `IncomeItem`).
+
+## Mappers
+*   **`toExpense`**:
+    *   Maps `merchantName` -> `note`.
+    *   Maps `categoryHint` -> `category`.
+    *   Extracts card details (`cardLast4`) from the instrument hint.
+    *   Sets `label: 'gmail'`.
+*   **`toIncome`**: Similar mapping logic for credit transactions.
+
+## `FiinnyTransactionWriter`
+The class responsible for the final DB write.
+*   Checks `IngestIndex` for duplicates.
+*   Calls `ExpenseService.addExpense` or `IncomeService.addIncome`.
+*   Records the write in the index.

@@ -1,0 +1,15 @@
+# Fee Detector
+
+**Path**: `lib/services/enrich/fee_detector.dart`
+
+Extracts hidden fees and tax breakups from invoice text (parsing emails/receipts).
+
+## Detects
+*   Platform Fees
+*   Convenience Fees
+*   Fuel Surcharge
+*   FX Markup
+*   Late Fees
+*   GST/Taxes
+
+Returns a `FeeBreakup` object with a map of detected components.

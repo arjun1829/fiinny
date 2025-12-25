@@ -1,0 +1,14 @@
+# Bill Model (`bill_model.dart`)
+
+**Path:** `lib/models/bill_model.dart`
+
+## 1. Overview
+Represents generic recurring bills like Rent, Electricity, or Netflix, distinct from Credit Card bills.
+
+## 2. Responsibilities
+- **Tracking:** `dueDate`, `amount`, and `isPaid`.
+- **Recurrence:** Stores string hints like "monthly".
+- **Overdue Logic:** `daysToDue()` and `isOverdue` helpers for red alerts in UI.
+
+## 3. Usage
+- **UI:** `BillsScreen` (if present) or `Dashboard` reminders.

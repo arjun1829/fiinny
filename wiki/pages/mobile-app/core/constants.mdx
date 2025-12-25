@@ -1,0 +1,23 @@
+# Constants (`constants.dart`)
+
+**Path:** `lib/constants.dart`
+
+## 1. Overview
+A small utility file holding static constant values, primarily asset paths.
+
+## 2. Why this file exists
+To avoid typos in string paths (magic strings). Instead of typing `"assets/avatars/avatar1.png"` multiple times, we use `AppAssets.avatars[0]`.
+
+## 3. Responsibilities
+- Lists paths to images and other static resources.
+
+## 4. How it works (high-level)
+- Contains a class `AppAssets` with static properties.
+- Includes the welcome background image and a list of user avatars.
+
+## 5. Dependencies and Interactions
+- Used by UI screens (like `OnboardingScreen` or `ProfileScreen`) to display images.
+
+## 6. Cautions / Important Notes
+> [!WARNING]
+> Just adding a string here doesn't make the image work. You must also ensure the file exists in the `assets/` folder and is listed in `pubspec.yaml`.
