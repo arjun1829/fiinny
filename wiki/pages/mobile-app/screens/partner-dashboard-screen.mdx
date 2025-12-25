@@ -1,0 +1,42 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Partner Dashboard Screen
+
+A dedicated view for a specific financial partner relationship.
+
+## Overview
+
+This screen provides a detailed breakdown of shared financial activity with a single partner. It includes a weekly activity ring, daily stats, and a transaction history with "Discuss" capability.
+
+## Features
+
+- **Activity Rings**: Visualizes shared spending intensity over the last 8 days using `WeeklyPartnerRingsWidget`.
+- **Daily Drilldown**: Tapping a ring updates the stats (Credit/Debit/Count) and transaction list for that specific day.
+- **Transaction Selection**: Long-press or tap transactions to enter "Selection Mode", allowing bulk actions.
+- **Contextual Discussion**: "Discuss" button sends selected transaction summaries directly to the integrated chat tab.
+- **Permissions Aware**: Respects `partner.permissions` (e.g., hiding transactions if `viewTransactions` is revoked).
+
+## Architecture
+
+- **Dual Tabs**: 
+    1.  **Transactions**: Infinite list of `UnifiedTxTile`.
+    2.  **Chat**: Embedded `PartnerChatTab`.
+- **Data Fetching**: Aggregates `incomes` and `expenses` from Firestore collections for the selected date range.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'partner',
+    type: 'PartnerModel',
+    required: true,
+    description: 'The partner object containing ID, name, avatar, and permissions.'
+  },
+  {
+    name: 'currentUserId',
+    type: 'String',
+    required: true,
+    description: 'ID of the logged-in user.'
+  }
+]} />

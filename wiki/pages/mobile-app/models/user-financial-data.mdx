@@ -1,0 +1,16 @@
+# User Financial Data (`user_financial_data.dart`)
+
+**Path:** `lib/models/user_financial_data.dart`
+
+## 1. Overview
+A **God Object** or "Aggregate Root" sometimes used to pass the entire user state in one go (e.g., for Export/Import or initial Dashboard loading).
+
+## 2. Responsibilities
+- **Container:** Holds lists of *everything*: `incomes`, `expenses`, `loans`, `assets`, `goals`, `bills`, etc.
+- **Budgeting:** Stores `weeklyLimit` and current `weekStart` for budget calculations.
+
+## 3. Key Logic
+- `_getStartOfWeek()`: Auto-calculates the most recent Monday (or user-defined start) to anchor weekly graphs.
+
+## 4. Usage
+- **Services:** Often the return type of a `DataService.fetchAll()` call.

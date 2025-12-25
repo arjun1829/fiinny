@@ -1,0 +1,13 @@
+# SMS Permission Helper
+
+**Path**: `lib/services/sms/sms_permission_helper.dart`
+
+A robust utility for requesting Android SMS permissions.
+
+## Logic
+It tries multiple methods to ensure permission is granted:
+1.  **`Permission.sms.request()`** (Standard Flutter permission handler).
+2.  **`telephony.requestSmsPermissions`** (Plugin-specific request).
+3.  **`telephony.requestPhoneAndSmsPermissions`** (Broader request if needed).
+
+It exposes a `ValueNotifier` (`permissionStatus`) so the UI can reactively show/hide the "Sync SMS" button.

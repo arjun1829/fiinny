@@ -1,0 +1,32 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Goals Screen
+
+Tracks financial targets like "New Car" or "Paris Trip".
+
+## Overview
+
+A motivational screen listing savings goals. It encourages users with rotating quotes.
+
+## Features
+
+- **Progress Tracking**: Visualizes "Saved vs Target".
+- **Quick Add**: Tapping a goal opens a bottom sheet `_addProgressSheet` to quickly log a savings contribution.
+- **Confetti**: (Implicit in `AddGoalDialog`) Celebrates creating new goals.
+
+## Architecture
+
+- **Data**: Streams from `GoalService`.
+- **Add Flow**: Uses `AddGoalDialog` for creation.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  }
+]} />

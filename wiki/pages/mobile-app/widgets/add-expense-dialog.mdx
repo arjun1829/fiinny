@@ -1,0 +1,49 @@
+# Add Expense Wizard
+
+**Path:** `lib/widgets/add_expense_dialog.dart`
+
+The `AddExpenseDialog` is a complex, multi-step wizard used for creating or editing expenses in Fiinny. It handles amount entry, payee selection, splitting logic, and categorization.
+
+## Key Features
+
+*   **Multi-Step Navigation:** Broken down into Amount -> People -> Split -> Review steps.
+*   **Smart Splitting:** Supports both equal splits (default) and custom amount splitting.
+*   **Context Aware:** Adapts its UI when invoked from a specific Group or Friend context (pre-filling participants).
+*   **Animations:** Uses a `PageController` and custom progress bar for smooth transitions.
+*   **Ad Integration:** Displays an inline banner ad (`AdsBannerCard`) at the bottom of the wizard.
+
+## Logic Overview
+
+### State Management
+The widget maintains extensive local state for the form, including:
+*   `_amount`, `_date`, `_note`, `_category`
+*   `_selectedPayer` (FriendModel)
+*   `_selectedFriends` / `_selectedGroup` (for splitting)
+*   `_customSplitMode` & `_customSplits` (`Map<String, double>`)
+
+### Splitting Algorithm
+*   **Equal Split:** Divides amount by `(participants.length + 1)` (including user/payer).
+*   **Custom Split:** Validates that the sum of custom amounts equals the total transaction amount.
+*   **Auto-Adjustment:** If the user enters manual amounts for others, the remaining balance is automatically assigned to the payer.
+
+### Usage
+
+```dart
+// Opening the wizard
+final bool? result = await Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (_) => AddExpenseScreen(
+      userPhone: currentUser.phone,
+      friends: myFriendsList,
+      groups: myGroupsList,
+      // Optional: Editing mode
+      existingExpense: expenseToEdit,
+    ),
+  ),
+);
+
+if (result == true) {
+  // Refresh list
+}
+```

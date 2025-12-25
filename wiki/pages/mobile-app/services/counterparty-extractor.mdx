@@ -1,0 +1,11 @@
+# Counterparty Extractor
+
+**Path**: `lib/services/enrich/counterparty_extractor.dart`
+
+Helper logic to identify *who* the transaction was with, distinct from the merchant.
+
+## Logic
+*   **Debit**: Looks for "paid to", "beneficiary", or VPA patterns.
+*   **Credit**: Looks for "from", "by", or VPA patterns.
+*   **Cleaning**: Removes noise words like "for", "the".
+*   **Classification**: Guesses type (`person`, `merchant`, `bank`, `employer`) based on regex hints (e.g., VPA handle vs Bank acronyms).

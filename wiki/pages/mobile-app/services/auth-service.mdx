@@ -1,0 +1,15 @@
+# Auth Service (`auth_service.dart`)
+
+**Path:** `lib/services/auth_service.dart`
+
+## 1. Overview
+Handles authentication via **Google Sign-In** and **Phone Number (OTP)**.
+
+## 2. Key Responsibilities
+- **Identity Resolution**: Fiinny uses **E.164 Phone Numbers** as the primary user identifier in Firestore (`users/{phoneNumber}`).
+  - When signing in with Google, it still expects a phone number to link or create the doc.
+- **Account Creation**: Automatically creates a user document if one doesn't exist upon sign-in.
+- **Session Management**: Wraps `FirebaseAuth` and `GoogleSignIn` logout flows.
+
+## 3. Usage
+Used by the **Login Screen** and **OTP Verification Screen**.

@@ -1,0 +1,19 @@
+# Goal Model (`goal_model.dart`)
+
+**Path:** `lib/models/goal_model.dart`
+
+## 1. Overview
+Represents a financial goal (e.g., "Buy a Car", "Emergency Fund").
+
+## 2. Responsibilities
+- **Targeting:** `targetAmount` and `targetDate`.
+- **Progress:** `savedAmount` and calculated `progress` (0.0 to 1.0).
+- **Status:** Tracks if a goal is `active`, `completed`, or `paused`.
+
+## 3. Key Logic
+- `requiredPerMonth`: A helpful getter that tells the user "You need to save ₹5,000/month" to hit their target on time.
+- `daysRemaining`: Countdown helper.
+
+## 4. Usage
+- **Collections:** `goals` collection.
+- **UI:** `GoalsScreen` dashboard.

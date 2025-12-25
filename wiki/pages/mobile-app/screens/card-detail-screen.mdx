@@ -1,0 +1,42 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Card Detail Screen
+
+A comprehensive dashboard for managing a specific credit card.
+
+## Overview
+
+Provides deep visibility into a credit card's status, including cycle tracking, due dates, and payment history. It aims to prevent late fees by highlighting "Days to Due" and "Overdue" status.
+
+## Features
+
+- **Visual Progress**: Linear progress bar showing "Percent Paid" for the current cycle.
+- **Cycle Management**: Lists past statements (cycles) with their status and due dates.
+- **Payment Log**: detailed history of manual and automated payments.
+- **Actions**:
+    - **Mark Paid**: Manually close the current bill period.
+    - **Add Payment**: Record a partial or full payment.
+- **Alert Integration**: Updates `CardDueNotifier` when payments are made.
+
+## Architecture
+
+- **Tabbed View**: Overview, Statements, and Payments tabs.
+- **Service Integration**: heavily reliant on `CreditCardService` for cycle calculations.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'The ID of the owner.'
+  },
+  {
+    name: 'card',
+    type: 'CreditCardModel',
+    required: true,
+    description: 'The card object to display.'
+  }
+]} />

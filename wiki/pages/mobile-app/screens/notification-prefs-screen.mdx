@@ -1,0 +1,29 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Notification Prefs Screen
+
+Fine-grained control over the app's push notification strategy.
+
+## Overview
+
+Allows users to tune "Fiinny's Voice" — deciding when and why the app should nudge them. It emphasizes high-signal alerts over spam.
+
+## Features
+
+- **Master Toggle**: Enable/Disable all push notifications (integrates with `PushService` permissions).
+- **Channel Config**: Granular toggles for:
+    - **Review Rhythm**: Daily reminders, Weekly digests.
+    - **Brain Alerts**: Overspend, Loan watch, Goal milestones.
+    - **Collaboration**: Partner check-ins, Settle up nudges.
+- **Quiet Hours**: Time-picker based "Do Not Disturb" window, enforced by cloud functions or local scheduling.
+- **Test Mode**: "Test nudge" button to verify push delivery locally.
+
+## Architecture
+
+- **Service Layer**: Reads/Writes to `NotifPrefsService` (Firestore).
+- **UI**: Uses `_GlassCard` and adaptive switches for a premium feel.
+
+## Props
+
+None.

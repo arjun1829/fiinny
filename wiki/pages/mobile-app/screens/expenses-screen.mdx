@@ -1,0 +1,33 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Expenses Screen
+
+The primary "Expenses" tab in the main navigation.
+
+## Overview
+
+`ExpensesScreen` provides a high-level overview of spending behavior. It combines mini pie charts with a list of recent transactions. It emphasizes time-based navigation (Day, Week, Month) and categorization.
+
+## Key Differences from Transactions Screen
+
+- **Visualization**: Includes `PieChart` sections for quick category breakdowns.
+- **Date Navigation**: Focuses on "Period" (e.g., "This Month", "Last Month") rather than complex arbitrary ranges.
+- **Search**: Implements a local search filter (`_searchQuery`) along with chip-based filtering for Merchants and Banks.
+
+## Components
+
+- **Charts**: Uses `fl_chart` to render mini visuals for Income vs Expense.
+- **Filters**: "Quick chips" for filtering by specific Bank, Merchant, or Friend.
+- **Date Picker**: A bottom sheet for selecting standard accounting periods.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userPhone',
+    type: 'String',
+    required: true,
+    description: 'User identifier context.'
+  }
+]} />

@@ -1,0 +1,19 @@
+# Group Service (`group_service.dart`)
+
+**Path:** `lib/services/group_service.dart`
+
+## 1. Overview
+Manages splitting groups (e.g., "Goa Trip", "House Rent"). Implements a **Dual-Write Architecture** for data availability.
+
+## 2. Architecture
+- **Source of Truth**: The `groups` top-level collection. All writes must go here.
+- **Mirrors**: Every time a group is created or updated, the service **also** updates a copy in `users/{memberPhone}/groups/{groupId}`.
+  - **Why?** Allows a user to load their list of groups instantly without querying the massive global collection.
+  - **Trade-off**: Requires consistent fan-out updates on every change.
+
+## 3. Responsibilities
+- **CRUD**: Create/Update/Delete groups handling the fan-out logic.
+- **Membership**: `addMembers` / `removeMembers` ensures mirrors are created/destroyed for the affected users.
+
+## 4. Usage
+Used by **Groups Tab** and **Group Detail Screen**.

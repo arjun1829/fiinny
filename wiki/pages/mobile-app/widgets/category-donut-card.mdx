@@ -1,0 +1,24 @@
+# Category Donut Card
+
+**Path:** `lib/widgets/analytics_ui/category_donut_card.dart`
+
+Dashboard widget displaying spending breakdown by category.
+
+## Logic
+*   **Top 4 + Others:** It automatically sorts categories by spend, picks the top 4, and lumps the rest into an "Others" category to keep the chart clean.
+*   **Legend:** Renders a custom legend on the right side with color indicators and percentage values.
+*   **Colors:** Contains a `_getCategoryColor` helper to map common categories (Food, Travel) to specific brand colors.
+
+## Usage
+
+```dart
+CategoryDonutCard(
+  categoryTotals: {
+    "Food": 5000,
+    "Rent": 15000,
+    "Travel": 2000,
+    // ...
+  },
+  totalSpent: 22000,
+)
+```

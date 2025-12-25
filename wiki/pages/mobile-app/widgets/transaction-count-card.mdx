@@ -1,0 +1,18 @@
+# Transaction Count Card
+
+**Path:** `lib/widgets/transaction_count_card.dart`
+
+Mirrors `TransactionAmountCard` but specialized for integer counts (e.g., number of transactions).
+
+## Usage
+
+```dart
+TransactionCountCard(
+  count: 42,
+  barData: [5, 2, 8, ...],
+  period: "Today",
+  limit: 100, // Optional warning limit
+  onFilterTap: () {},
+  onViewAllTap: () {},
+)
+```

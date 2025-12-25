@@ -1,0 +1,27 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# EMI Plan Screen
+
+A clean, list-based EMI simulator.
+
+## Overview
+
+Helps users visualize how breaking a large payment into smaller chunks affects their cash flow.
+
+## Features
+
+- **Plans**: Displays standard tenures (3, 6, 9, 12 months).
+- **Interest Simulation**: Adds a flat ~2% fictional interest markup for realistic simulation.
+- **Selection**: "Choose" button returns the selected plan (currently mock).
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'amount',
+    type: 'double',
+    required: true,
+    description: 'The total amount to convert.'
+  }
+]} />

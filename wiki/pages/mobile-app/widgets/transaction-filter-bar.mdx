@@ -1,0 +1,30 @@
+# Transaction Filter Bar
+
+**Path:** `lib/widgets/filters/transaction_filter_bar.dart`
+
+The master filter component for the transaction list. It is one of the most complex UI components in the app.
+
+## Features
+*   **Adaptive Layout:**
+    *   **Portrait:** Shows a horizontal scrollable row of chips (Type, Period, Filter Btn, Sort).
+    *   **Rail (Desktop/Tablet):** Shows a full vertical sidebar of expanded filter controls using the `_FilterControls` internal widget.
+*   **Deep Filtering:** Supports filtering by:
+    *   Date Range (Shortcuts + Custom)
+    *   Amount Range (Min/Max)
+    *   Category & Subcategory (Async loading)
+    *   Merchant, Instrument, Bank, Tags, Labels, Groups, etc.
+*   **Saved Views:** Users can save their current filter configuration as a named "View" (bookmark) for quick access later.
+*   **Debouncing:** When used in Rail mode, applies filters with a 150ms debounce to prevent UI stuttering during rapid typing.
+
+## Usage
+
+```dart
+TransactionFilterBar(
+  allTx: rawTransactionMapList,
+  initial: currentFilter,
+  isRail: MediaQuery.of(context).size.width > 900,
+  onApply: (newFilter) => updateState(newFilter),
+  onSaveView: (name, filter) => saveToDb(name, filter),
+  loadSavedViews: () => fetchFromDb(),
+)
+```

@@ -1,0 +1,43 @@
+# Balance Service
+
+**Path**: `lib/services/balance_service.dart`
+
+The `BalanceService` is responsible for calculating the real-time financial standing (net balance) between the current user and their friends or groups. It aggregates data from both shared expenses and direct income/settlements.
+
+## Responsibilities
+
+*   **Balance Aggregation**: Listens to `expenses` and `incomes` collections in real-time.
+*   **Split Calculation**: Iterates through expenses to determine individual debt obligations based on `customSplits` or equal splits.
+*   **Net Logic**: offsets "who owes you" against "who you owe" to verify the total net position.
+
+## Key Components
+
+### data class `BalanceResult`
+A simple container for the calculated state:
+*   `netBalance`: Overall net amount (Positive = user is owed, Negative = user owes).
+*   `perFriendNet`: Map of `friendId` -> amount.
+*   `perGroupNet`: Map of `groupId` -> amount.
+
+### `streamUserBalances(String userId)`
+*   **Input**: `userId` (Phone number).
+*   **Streams**:
+    1.  `_expensesRef`: Queries expenses where `friendIds` array contains the user.
+    2.  `_incomesRef`: Queries incomes where `source` is the user (e.g. settlements paid).
+*   **Logic**: Uses `Rx.combineLatest2` to merge streams and triggering recalculation whenever underlying data changes.
+
+### `_calculateBalances`
+The core logic engine:
+1.  Iterates through **Expenses**:
+    *   If **User is Payer**:
+        *   Calculates what others owe (`othersShare`).
+        *   Adds to `totalOwedTo`.
+        *   Updates `perFriendNet` and `perGroupNet` (adding positive amounts).
+    *   If **User is Participant** (not payer):
+        *   Calculates user's share.
+        *   Adds to `totalOwe`.
+        *   Updates `perFriendNet` and `perGroupNet` (subtracting share, making it negative).
+2.  Iterates through **Incomes**:
+    *   Adds amounts to `totalOwedTo` (treated as money received/settled).
+
+## Usage
+Used primarily by the `FriendsScreen` and `GroupsScreen` (or their ViewModels) to display "You owe ₹500" or "Owes you ₹200" badges next to friends.

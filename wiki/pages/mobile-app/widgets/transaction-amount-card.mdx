@@ -1,0 +1,25 @@
+# Transaction Amount Card
+
+**Path:** `lib/widgets/transaction_amount_card.dart`
+
+A stats card showing a big total amount and a "sparkline" style bar chart at the bottom.
+
+## Bar Chart Logic
+*   **Custom Layout:** DOES NOT use `fl_chart` or `CustomPainter`. Instead, it uses a `Row` of `Expanded` -> `Container` widgets.
+*   **Granular Labels:** Dynamically generates X-axis labels based on the `period` context:
+    *   **24 bars:** 0AM, 6AM, 12PM...
+    *   **7 bars:** M, T, W...
+    *   **Month:** 1, 8, 15...
+
+## Usage
+
+```dart
+TransactionAmountCard(
+  label: "Income",
+  amount: 50000,
+  barData: [100, 200, 50, ...], // List of values
+  period: "This Month",
+  onFilterTap: () {},
+  onViewAllTap: () {},
+)
+```

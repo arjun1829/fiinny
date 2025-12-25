@@ -1,0 +1,40 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Dashboard Activity Screen
+
+A simple log view for recent app activities.
+
+## Overview
+
+This screen displays a list of `ActivityEvent` objects. It is primarily used to show a history of "What just happened" or system notifications that might not warrant a full inbox item.
+
+## Usage
+
+Usually navigated to from the `DashboardActivityTab` or a "View All" button on the dashboard.
+
+```dart
+Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (_) => DashboardActivityScreen(events: myEventList),
+  ),
+);
+```
+
+## Structure
+
+- **AppBar**: Standard white app bar.
+- **ListView**: A separated list of `ListTile`s.
+- **Empty State**: Centered text "No activity yet!".
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'events',
+    type: 'List<ActivityEvent>',
+    required: true,
+    description: 'The list of activity events to display.'
+  }
+]} />

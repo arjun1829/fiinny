@@ -1,0 +1,44 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Friend Detail Screen
+
+The comprehensive profile view for a friend relationship.
+
+## Overview
+
+This is the canonical "Friend Profile" in the app, distinct from the legacy `screens/friend_detail_screen.dart`. It features a rich 4-tab interface:
+1.  **History**: Infinite list of shared expenses.
+2.  **Chart**: `PieTouchChart` showing expense breakdown.
+3.  **Analytics**: `FriendAnalyticsTab` for deeper stats.
+4.  **Chat**: `PartnerChatTab` for contextual messaging.
+
+## Features
+
+- **Recurring Hub**: A "Recurring Peek" card showing top shared subscriptions/loans, with a flow to add new ones via `AddChoiceSheet`.
+- **Advanced Settlement**: Integrates `SettleUpFlowV2Launcher` for smart settlement suggestions.
+- **Contextual Chat**: "Discuss" action on expenses pre-fills the chat input with the expense summary using `Clipboard` and tab switching.
+- **Smart Attachments**: Robust logic (`_attachmentsOf`) to extract receipts/files from various historical data formats (lists, maps, strings).
+
+## Architecture
+
+- **State Management**: Uses `SingleTickerProviderStateMixin` for the 4-tab `TabController`.
+- **Data Fetching**: Streams friend data (`FriendModel`) and recurring items (`RecurringService`).
+- **Location**: Defined in `lib/details/friend_detail_screen.dart`.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userPhone',
+    type: 'String',
+    required: true,
+    description: 'Current user ID.'
+  },
+  {
+    name: 'friend',
+    type: 'FriendModel',
+    required: true,
+    description: 'The friend object being viewed.'
+  }
+]} />

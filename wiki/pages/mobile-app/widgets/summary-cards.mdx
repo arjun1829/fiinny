@@ -1,0 +1,18 @@
+# Summary Cards
+
+**Path:** `lib/widgets/summary_cards.dart`
+
+A row of three cards displaying the user's high-level social debt status: "You Owe", "Owed To You", and "Net Balance".
+
+## Data Source
+*   **Real-time Stream:** Listens to `BalanceService().streamUserBalances(uid)` to update UI instantly when a settlement or expense occurs.
+*   **Color Coding:**
+    *   **Red:** You Owe / Negative Net
+    *   **Green:** Owed To You
+    *   **Blue:** Positive Net
+
+## Usage
+
+```dart
+SummaryCards(userId: currentUser.uid)
+```

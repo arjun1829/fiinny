@@ -1,0 +1,24 @@
+# Review Queue Service (`review_queue_service.dart`)
+
+**Path:** `lib/services/review_queue_service.dart`
+
+## 1. Overview
+Manages the **Ingestion Staging Area** (`ingest_drafts` collection).
+Transactions parsed from SMS/Gmail or "Fast Added" often go here first for user approval.
+
+## 2. Draft Lifecycle
+- **New**: Created by parser.
+- **Posted**: User approved. Moved to `expenses` or `incomes` collection.
+- **Rejected**: User discarded.
+
+## 3. Features
+- **Upsert**: Idempotent creation based on `txKey`.
+- **Brain Integration**: Stores AI suggestions in `brain` map inside the draft.
+- **Transaction**: `approve` method runs a Firestore Transaction to atomically:
+  1.  Read Draft.
+  2.  Write Real Doc (Expense/Income).
+  3.  Update Draft status to `posted`.
+  4.  Write Brain Feedback (reinforcement learning hook).
+
+## 4. Usage
+Used by `GmailService`, `SmsService` (implied), and the **Review Queue UI**.

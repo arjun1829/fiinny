@@ -1,0 +1,13 @@
+# User Service (`user_service.dart`)
+
+**Path:** `lib/services/user_service.dart`
+
+## 1. Overview
+A lightweight helper service for user profile checks.
+
+## 2. Responsibilities
+- **Profile Check**: `isProfileComplete` verifies if critical fields (Name, Phone) are present.
+- **Lookup**: `getPhoneForUid` resolves a Firebase Auth UID to the business logic identifier (Phone Number) by reading the Firestore doc.
+
+## 3. Usage
+Used during **Splash/Startup** to decide if the user should be sent to the Onboarding screen or the Dashboard.

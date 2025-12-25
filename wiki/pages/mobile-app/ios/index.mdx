@@ -1,0 +1,52 @@
+
+# iOS Configuration
+
+Specifics for the iOS build of the Flutter app.
+
+## Overview
+
+While the core logic is shared, the iOS layer requires specific configuration for permissions, UI guidelines, and capabilities.
+
+## Vital Files
+
+- **`ios/Runner/Info.plist`**: The manifest for permissions and app settings.
+- **`ios/Podfile`**: CocoaPods dependency manager.
+
+## Release Workflow
+
+```mermaid
+graph TD
+    %% Nodes
+    Code[Flutter Code]
+    Build{Flutter Build}
+    Xcode[Xcode Archive]
+    TestFlight[TestFlight]
+    Store[App Store]
+    
+    %% Edges
+    Code --> |flutter build ipa| Build
+    Build --> |Runner.xcarchive| Xcode
+    Xcode --> |Upload| TestFlight
+    TestFlight -- "Beta Testing" --> Store
+    
+    classDef steps fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    class Code,Build,Xcode,TestFlight,Store steps;
+```
+
+## Permissions
+
+Fiinny requests strict permissions on iOS to ensure transparency.
+
+| Key | Usage Description |
+| :--- | :--- |
+| `NSPhotoLibraryUsageDescription` | Required for attaching receipts to expenses. |
+| `NSCameraUsageDescription` | Required for scanning physical receipts. |
+| `NSFaceIDUsageDescription` | Used for local App Lock authentication. |
+
+> **Note**: SMS permission is **not** available on iOS. The iOS app relies on Manual Entry and Gmail Sync only.
+
+## Build
+
+```bash
+flutter build ipa --release
+```

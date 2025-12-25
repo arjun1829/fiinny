@@ -1,0 +1,27 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Add Group Screen
+
+Interface for creating a new group entity.
+
+## Overview
+
+A polished form for naming a group and immediately adding initial members.
+
+## Features
+
+- **Friend Picker**: integrated `FriendPicker` widget allows toggling friends from the user's contact list.
+- **Glassmorphism**: Consistent "Mint" glass aesthetic.
+- **Validation**: Ensures a group name is provided before creation.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'Creator\'s user ID.'
+  }
+]} />

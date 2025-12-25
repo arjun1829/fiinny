@@ -1,0 +1,17 @@
+# Firebase Insight Service (`firebase_insight_service.dart`)
+
+**Path:** `lib/services/firebase_insight_service.dart`
+
+## 1. Overview
+The Persistence Layer for the "Smart Feed". It saves generated insights to Firestore so they persist across app restarts and devices.
+
+## 2. Responsibilities
+- **CRUD**: `saveInsight`, `fetchInsights` (ordered by timestamp).
+- **Batch Generators**: Contains logic to generate specific alerts for **Credit Cards** and **Bills** (Due Soon / Overdue).
+  - *Note:* This overlaps partially with `FiinnyBrainService`. Brain is the modern engine; this service's generation logic might be legacy or specific to the "Insights Tab" refresh loop.
+
+## 3. Key Methods
+- `generateAndSaveInsightsFromData`: Iterates through all cards and bills to create `InsightType.creditCardDue` or `billDue` alerts.
+
+## 4. Usage
+Used by `FiinnyBrainService` (to save its output) and background workers.

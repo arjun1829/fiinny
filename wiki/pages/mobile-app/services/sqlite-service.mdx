@@ -1,0 +1,11 @@
+# SQLite Service
+
+**Path**: `lib/services/sqlite_service.dart`
+
+A local offline cache using `sqflite`.
+
+## Responsibilities
+*   **Tables**: `transactions` and `goals`.
+*   **Usage**: Primarily used for **fast startup** (showing data before Firestore loads) or **offline support**. It currently mirrors `TransactionItem` and `GoalModel`.
+
+(Note: The app's primary source of truth is Firestore; this is a secondary cache).

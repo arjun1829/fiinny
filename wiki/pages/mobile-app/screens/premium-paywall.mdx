@@ -1,0 +1,27 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Premium Paywall Screen
+
+The up-sell page for Fiinny Premium.
+
+## Overview
+
+A persuasive screen highlighting premium features (Smart Insights, Rules, Priority Sync). It uses a "7-day free trial" model anchored in Firestore flags.
+
+## Features
+
+- **Visuals**: Radial gradient background and `GlassCard` layout.
+- **Feature List**: Mapped list of value propositions with icons.
+- **Trial Logic**: Sets `premiumEnabledAt` and `premiumUntil` timestamps in Firestore (`users/{id}/meta/flags`).
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userPhone',
+    type: 'String',
+    required: true,
+    description: 'User ID for Firestore flag updates.'
+  }
+]} />

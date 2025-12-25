@@ -1,0 +1,23 @@
+# Income Item (`income_item.dart`)
+
+**Path:** `lib/models/income_item.dart`
+
+## 1. Overview
+The counterpart to `ExpenseItem`, representing money flowing **into** the user's account (Salary, Refunds, Credits).
+
+## 2. Responsibilities
+- **Income Data:** Amount, Source ("Email", "SMS"), Type.
+- **Context:** `counterparty` (e.g., Employer Name), `instrument` (NEFT, IMPS), and `bankLogo`.
+- **Attachments:** Supports proofs of income/refunds.
+- **Audit:** Tracks who created/updated the record (`parser:gmail` vs `user`).
+
+## 3. Key Differences from Expense
+- Lacks "Splitting" logic (Income is usually personal).
+- Has `source` field explicitly defined ("Email" | "SMS" | "Manual").
+
+## 4. Usage
+- **Firestore:** corresponds to `income` collection.
+- **UI:** Used in `IncomeScreen` (if it exists) or mixed into `UnifiedTransactionList`.
+
+## 5. Cautions
+- Similar to `ExpenseItem`, `note` is system-generated. Do not overwrite it with user comments; use `comments` instead.

@@ -1,0 +1,39 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Add Expense Screen (Simple)
+
+A simplified, single-page form for quick expense entry.
+
+## Overview
+
+Unlike the wizard-based [Add Transaction Screen](./add-transaction-screen.mdx), this screen puts all fields on one scrollable page. It is often used for quick additions or when invoked from specific contexts like a Group page.
+
+## Features
+
+- **Single Page**: No steps, just a form.
+- **Group Context**: Can be initialized with a specific `groupId` and `groupMembers` to pre-select split participants.
+- **Labels**: Supports creating or selecting persistent "Labels" (tags) for organizing expenses (e.g., "Goa Trip").
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  },
+  {
+    name: 'groupId',
+    type: 'String?',
+    required: false,
+    description: 'Optional group ID to link this expense to.'
+  },
+  {
+    name: 'groupMembers',
+    type: 'List<FriendModel>?',
+    required: false,
+    description: 'Pre-loaded members if adding to a group.'
+  }
+]} />

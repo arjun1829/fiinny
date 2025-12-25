@@ -1,0 +1,14 @@
+# Note Sanitizer
+
+**Path**: `lib/services/note_sanitizer.dart`
+
+A text processing utility that cleans up raw SMS/Email bodies to create user-friendly "Notes" or "Previews".
+
+## Logic
+1.  **Cleaning**: Removes "junk" lines like "Not you?", "Download app", "Available Balance", OTPs, and long URLs.
+2.  **Smart Summary**: If a `TxParseResult` is available, constructs a clean string like `"₹500 debited • Swiggy • Ref 1234"`.
+3.  **Truncation**: Ensures the note fits within UI limits (240 chars).
+4.  **Tagging**: Auto-generates tags like `UPI`, `P2M`, `CR` based on keywords.
+
+## Usage
+Used by `TxAnalyzer` and ingestion services to populate the `note` field of a transaction.

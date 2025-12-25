@@ -1,0 +1,26 @@
+# Ingest Filters
+
+**Path**: `lib/services/ingest_filters.dart`
+
+`IngestFilters` is a collection of static **heuristics and regular expressions** used to classify raw text messages *before* they are sent to the parser or LLM. It acts as a fast, offline gatekeeper.
+
+## Categories of Filters
+
+### 1. Transaction Detection
+*   **`hasTxnVerb(String body)`**: Checks for keywords like "debited", "credited", "spent", "purchase", "upi", "withdraw".
+*   **`guessInstrument`**: Attempts to identify 'UPI', 'NEFT', 'Credit Card', 'Wallet' from keywords.
+*   **`extractUpiVpa`**: Regex to pull out `name@bank` patterns.
+
+### 2. Spam & Noise Rejection
+*   **`isLikelyPromo`**: A large list of stop-words ("sale", "discount", "lucky draw", "dream11") identifying marketing spam. Also flags texts with links but no transaction verbs.
+*   **`looksLikeOtpOnly`**: Identifies messages that contain "OTP" or "One Time Password" but lack monetary amounts or transaction contexts.
+
+### 3. Bank Identification
+*   **`guessBankFromSms`**: Maps sender IDs (e.g., "VK-HDFCBK") or body text to canonical bank names (HDFC, SBI, ICICI, etc.).
+
+### 4. Specialized Notifications
+*   **`isLikelyBalanceAlert`**: Detects "Available Balance" messages that aren't actual transactions.
+*   **`isLikelyCardBillNotice`**: Distinguishes "Bill Generated" alerts (useful for due dates) from generic statements.
+
+## Usage
+These functions are used by `SmsService` and `GmailService` during the "Scan" phase to rapidly discard 90% of irrelevant messages.

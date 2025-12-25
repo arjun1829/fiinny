@@ -1,0 +1,21 @@
+# Common Regex
+
+**Path**: `lib/services/parse_engine/common_regex.dart`
+
+The base library of Regular Expressions used across the app for parsing financial text.
+
+## Capabilities
+
+### Extraction
+*   **Amounts**: Supports INR, USD, EUR, etc. Handles commas.
+*   **Last 4**: "ending xx1234".
+*   **UPI IDs**: Standard VPA patterns.
+*   **Merchant Names**: Looks for "At", "To", "Paid to", or explicit headers.
+
+### Classification
+*   **Channel**: Determines if text refers to UPI, Card, NetBanking, ATM, etc.
+*   **Direction**: Credit vs Debit keyword matching.
+
+### Category Hints
+*   **`categoryHint`**: A static heuristic engine that guesses category based on keywords (e.g., "swiggy" -> Food, "petrol" -> Fuel).
+*   **Confidence Scoring**: Calculates a 0.0-1.0 score based on how many fields were successfully extracted.

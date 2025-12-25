@@ -1,0 +1,52 @@
+
+import { PropsTable } from '../../components/props-table';
+
+# Marketing Website
+
+The public face of Fiinny.
+
+## Tech Stack
+
+- **Framework**: [Next.js 14](https://nextjs.org/) (App Router)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+- **Animations**: [Framer Motion](https://www.framer.com/motion/)
+- **Hosting**: Firebase Hosting
+
+## Project Structure
+
+- `app/`: Application routes and page templates.
+- `components/`: Reusable UI blocks (Hero, Features, Footer).
+- `public/`: Static assets (images, fonts).
+
+## Site Architecture
+
+```mermaid
+graph TD
+    %% Nodes
+    Landing[Landing Page /]
+    Auth{Auth Check}
+    App[Mobile App Deep Link]
+    
+    %% Pages
+    Privacy[Privacy Policy]
+    Terms[Terms of Service]
+    FAQ[FAQ Page]
+    
+    %% Edges
+    Landing --> |"Get App"| Auth
+    Auth -- "Mobile" --> App
+    Auth -- "Desktop" --> Landing
+    
+    Landing --> |Footer| Privacy
+    Landing --> |Footer| Terms
+    Landing --> |Nav| FAQ
+    
+    classDef pages fill:#e0f2f1,stroke:#00695c,stroke-width:2px;
+    class Landing,Privacy,Terms,FAQ,App pages;
+```
+
+## Key Features
+
+- **SEO Optimized**: Server-Side Rendering (SSR) for maximum visibility.
+- **Responsive**: Mobile-first design adapting to all viewports.
+- **Performance**: High Lighthouse scores for Core Web Vitals.

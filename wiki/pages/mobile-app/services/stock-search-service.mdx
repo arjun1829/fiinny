@@ -1,0 +1,18 @@
+# Stock Search Service (`stock_search_service.dart`)
+
+**Path:** `lib/services/stock_search_service.dart`
+
+## 1. Overview
+Provides Stock and ETF data using **Yahoo Finance** unofficial APIs.
+
+## 2. API Endpoints
+- **Search**: `query1.finance.yahoo.com/v1/finance/search`
+- **Price**: `query1.finance.yahoo.com/v8/finance/chart`
+
+## 3. Features
+- **Gold Proxy**: Special handling for query "Gold" -> suggests `GOLDBEES.NS` (ETF) and `GC=F` (Futures).
+- **Filtering**: Prioritizes Indian exchanges (`NSI`, `BSE`) and filters for Equities/ETFs.
+- **Caching**: Simple `_priceCache` implementation (though currently unused in the main public method).
+
+## 4. Usage
+Used by **Asset Form** when adding a new Stock/Fund asset interactively.

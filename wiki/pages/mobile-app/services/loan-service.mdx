@@ -1,0 +1,21 @@
+# Loan Service (`loan_service.dart`)
+
+**Path:** `lib/services/loan_service.dart`
+
+## 1. Overview
+Manages `LoanModel` entities, handling both *Lending* (Money given) and *Borrowing* (Money taken). It includes specialized logic for interest calculation, repayments, and sharing.
+
+## 2. Key Responsibilities
+- **Transaction Safety**: Uses `_db.runTransaction` for `recordPayment` to ensure that outstanding balance updates are atomic and reliable.
+- **EMI Logic**: Can estimate EMIs (`_estimateEmi`) using either **Flat Rate** or **Reducing Balance** methods if the data is missing.
+- **Alerts**:
+  - `upcomingEmis`: Scans active loans to find payments due within `X` days.
+  - `overdueLoansStream`: Filters loans that are active but past their due date.
+- **Sharing**: Allows adding "Share Members" to a loan track who is responsible for what portion.
+
+## 3. Notable Methods
+- `recordPayment`: The critical method that reduces the `amount` (outstanding) and auto-closes the loan if the balance hits zero.
+- `highInterestStream`: Identifies "toxic" loans with interest rates above a threshold (default 24%) for the "Debt Dashboard".
+
+## 4. Usage
+Powers the **Loans / Liability** section of the app.

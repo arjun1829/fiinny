@@ -1,0 +1,33 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Gmail Link Screen
+
+Manages connection to email providers for statement parsing.
+
+## Overview
+
+Handles the OAuth flow for Gmail (and placeholders for Outlook), allowing the "Ingestion Intelligence" engine to fetch bank statements.
+
+## Features
+
+- **OAuth Integration**: Uses `google_sign_in` with `gmail.readonly` scope.
+- **Status Tracking**: Updates `gmailBackfillStatus` and error logs in Firestore.
+- **Banner Integration**: Shows `GmailBackfillBanner` for real-time status (Running, Error, OK).
+- **Unlink Flow**: securely revokes access and deletes the email reference.
+
+## Architecture
+
+- **State Management**: Local state `_busy`, `_email`, `_linked`.
+- **Data Completeness**: Fetches user profile on init to determine current link status.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userPhone',
+    type: 'String',
+    required: true,
+    description: 'User ID associated with the link.'
+  }
+]} />

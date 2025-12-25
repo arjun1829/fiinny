@@ -1,0 +1,24 @@
+
+# iOS Permissions
+
+Deep dive into `Info.plist` keys.
+
+## Critical Keys
+
+iOS requires explicit justification for accessing sensitive data.
+
+### `NSPhotoLibraryUsageDescription`
+*   **Value:** "Fiinny needs access to your photos to attach receipts to expenses."
+*   **Trigger:** User taps "Add Receipt" -> "Choose from Gallery".
+
+### `NSCameraUsageDescription`
+*   **Value:** "Fiinny uses the camera to scan physical receipts."
+*   **Trigger:** User taps "Add Receipt" -> "Take Photo".
+
+### `NSFaceIDUsageDescription`
+*   **Value:** "Authenticate to unlock Fiinny."
+*   **Trigger:** App launch if "App Lock" is enabled.
+
+## Background Modes
+
+Fiinny uses **Background Fetch** to keep widgets up to date, but does **not** rely on extensive background processing on iOS due to system limitations.

@@ -1,0 +1,49 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Crisis Limit Alert Card
+
+A specific alert card showing how much a user has exceeded their self-imposed spending limit.
+
+## Overview
+
+Unlike the general `CrisisAlertBanner`, this card is specific to the "Crisis Mode" feature. It highlights the exact amount overdrawn against a set weekly limit.
+
+## Usage
+
+```dart
+CrisisLimitAlertCard(
+  spent: 1500,
+  limit: 1000,
+)
+```
+
+## Props
+
+<PropsTable
+  data={[
+    {
+      name: 'spent',
+      type: 'double',
+      required: true,
+      description: 'Current total spending.',
+    },
+    {
+      name: 'limit',
+      type: 'double',
+      required: true,
+      description: 'The spending limit set by the user.',
+    },
+  ]}
+/>
+
+## Logic
+
+- **Visibility**: Only renders if `spent > limit`. Returns `SizedBox.shrink()` otherwise.
+- **Calculation**: Computes `overBy = spent - limit` to display the excess amount.
+
+## Styling
+
+- **Theme**: Red/Light Red (`Colors.red.shade50`).
+- **Icon**: Large `warning_amber_rounded`.
+- **Message**: "You've spent ₹X this week. That's ₹Y over your limit of ₹Z."

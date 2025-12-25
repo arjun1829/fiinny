@@ -1,0 +1,24 @@
+# Daily Rings Strip
+
+**Path:** `lib/widgets/daily_rings_strip.dart`
+
+A horizontal scrollable strip showing a "Day Summary" for the last 7+ days. Each item is a mini-visualization of that day's cash flow.
+
+## Logic
+*   **Value Object:** Uses `DaySummary` to hold `income`, `expense`, and `date`.
+*   **Sorting:** Automatically sorts days to show the most recent first.
+*   **Mini Rings:** Uses `_MiniDualPainter` to draw tiny, pixel-perfect versions of the main Hero Ring.
+*   **Selection:** Highlights the currently selected day with ateal border/background.
+
+## Usage
+
+```dart
+DailyRingsStrip(
+  days: [
+    DaySummary(date: DateTime.now(), income: 200, expense: 50),
+    // ...
+  ],
+  selectedDate: _currentDate,
+  onTap: (day) => _selectDate(day),
+)
+```

@@ -1,0 +1,37 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Friend Expense History Screen
+
+A dedicated, highly visual timeline of shared expenses.
+
+## Overview
+
+While `FriendDetailScreen` has an activity tab, this screen offers a more immersive, full-screen history view with specific aesthetic choices.
+
+## Design
+
+- **Tiffany Blue / Mint Palette**: Uses custom colors (`#81e6d9`, `#b9f5d8`) distinct from the main app theme.
+- **Glass Cards**: Expenses are rendered in `_GlassExpenseCard` containers.
+
+## Features
+
+- **Settle Action**: Each expense has an inline "Settle Up" button if not yet settled.
+- **Settled State**: Displays a "Settled" chip if the transaction is closed.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  },
+  {
+    name: 'friend',
+    type: 'FriendModel',
+    required: true,
+    description: 'The friend context.'
+  }
+]} />

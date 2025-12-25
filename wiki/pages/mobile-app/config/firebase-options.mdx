@@ -1,0 +1,26 @@
+# Firebase Options (`firebase_options.dart`)
+
+**Path:** `lib/firebase_options.dart`
+
+## 1. Overview
+A configuration file generated automatically by the FlutterFire CLI.
+
+## 2. Why this file exists
+It tells the app how to talk to the correct Firebase project (database, auth, etc.) for each platform (Android, iOS, Web).
+
+## 3. Responsibilities
+- Storing API keys, App IDs, and Project IDs.
+- Selecting the correct keys based on whether the app is running on Android, iOS, or Web.
+
+## 4. How it works (high-level)
+- The `DefaultFirebaseOptions.currentPlatform` getter checks the OS (`TargetPlatform.android`, etc.).
+- It returns the specific `FirebaseOptions` object needed to initialize Firebase in `lib/main.dart`.
+
+## 5. Dependencies and Interactions
+- **Critical Dependency:** Used by `lib/main.dart` in `Firebase.initializeApp()`. Without this, the app essentially has no backend connection.
+
+## 6. Cautions / Important Notes
+> [!IMPORTANT]
+> **Do Not Edit Manually:** This file is machine-generated. If you change Firebase settings in the console (like adding a new iOS bundle ID), you should regenerate this file using the CLI, not by typing here.
+
+- **Security:** Contains public API identifiers. These are generally safe to be in the code, but be aware they identify your specific Firebase project.

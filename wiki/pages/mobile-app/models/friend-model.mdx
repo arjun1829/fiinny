@@ -1,0 +1,18 @@
+# Friend Model (`friend_model.dart`)
+
+**Path:** `lib/models/friend_model.dart`
+
+## 1. Overview
+Represents a friend for social expense splitting.
+
+## 2. Responsibilities
+- **Identity:** `name` and `phone`. The **phone number** is the strict unique identifier.
+- **Linkage:** Can optionally store a `docId` if retrieved from Firestore.
+
+## 3. Key Logic
+- **Immutable Updates:** Extensions provide a `copyWith` method to easily update fields while keeping the object immutable.
+- **Fallback:** Avatar defaults to "👤" if not provided.
+
+## 4. Usage
+- **Collections:** `users/{uid}/friends` sub-collection.
+- **UI:** Pay/Request flows, "Friends" tab.

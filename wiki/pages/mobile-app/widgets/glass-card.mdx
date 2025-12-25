@@ -1,0 +1,19 @@
+# Glass Card
+
+**Path:** `lib/widgets/glass_card.dart`
+
+A core design primitive used throughout the app to create the "Fiinny Glass" effect.
+
+## Implementation
+*   **BackdropFilter:** Applies `ImageFilter.blur(sigmaX: 14, sigmaY: 14)` to content behind the card.
+*   **Adaptive Color:** Defaults to `Colors.white.withOpacity(0.13)` in dark mode and `Colors.black.withOpacity(0.05)` in light mode.
+*   **Border & Shadow:** Adds a subtle white border and localized shadow to lift the card from the background.
+
+## Usage
+
+```dart
+GlassCard(
+  borderRadius: 24,
+  child: Text("I look frosty!"),
+)
+```

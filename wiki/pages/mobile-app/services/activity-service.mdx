@@ -1,0 +1,19 @@
+# Activity Service (`activity_service.dart`)
+
+**Path:** `lib/services/activity_service.dart`
+
+## 1. Overview
+Aggregates various data sources into a single **Activity Stream** for the "Activity Tab" or "Friend Detail" screen.
+
+## 2. Aggregation Logic
+Combines 3 Firestore streams using `Rx.combineLatest3`:
+1.  **Expenses**: Where `friendIds` contains the user.
+2.  **Incomes**: Pending incomes or reimbursements.
+3.  **Recurring**: Recurring payment rules owned by the user.
+
+## 3. Transformations
+Maps all documents to a unified `ActivityItem` DTO, sorting them by date descending.
+- **Settle Ups**: Identifies settlement transactions using labels like "settle" or "bill".
+
+## 4. Usage
+Used mainly by the **Activity Tab** in the UI.

@@ -1,0 +1,33 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# User Dashboard Screen (Sharing)
+
+A self-focused version of the partner dashboard.
+
+## Overview
+
+Displays the user's own financial activity in the same "Partner Ring" visual style. This allows users to see exactly what their partners might see (if fully shared) or simply track their own daily trends.
+
+## Features
+
+- **Self-monitoring**: Rings and stats for the last 7 days.
+- **Unified List**: Shows both Incomes and Expenses in a single timeline.
+- **Chat Placeholder**: If a `chatPeerUserId` is provided, it enables a chat tab; otherwise, it handles the empty state.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'currentUserId',
+    type: 'String',
+    required: true,
+    description: 'The user ID to display stats for.'
+  },
+  {
+    name: 'chatPeerUserId',
+    type: 'String?',
+    required: false,
+    description: 'Optional partner ID to enable the chat tab context.'
+  }
+]} />

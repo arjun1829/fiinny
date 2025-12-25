@@ -1,0 +1,38 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Bulk Split Screen
+
+A utility for retroactive splitting of multiple items.
+
+## Overview
+
+This screen allows users to take a list of expenses and assign them to a Friend or Group in one go.
+
+## Component Usage
+
+- **PeopleSelectorStep**: Reuses this shared widget (also used in Onboarding) to handle the complexity of picking Friends/Groups and creating new ones inline.
+
+## Flow
+
+1.  Receives a list of `expenses`.
+2.  User selects Payer (defaults to self).
+3.  User selects Friends OR a Group.
+4.  Returns a `BulkSplitResult` to the caller for processing.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userPhone',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  },
+  {
+    name: 'expenses',
+    type: 'List<ExpenseItem>',
+    required: true,
+    description: 'The items to be split.'
+  }
+]} />

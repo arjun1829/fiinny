@@ -1,0 +1,39 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Survival Mode Screen
+
+A drastic budgeting tool for financial emergencies.
+
+## Overview
+
+Calculates a "bare minimum" weekly spend limit (`Salary * 50% / 4 weeks`) to force savings. It provides actionable lifestyle tips to survive the month.
+
+## Features
+
+- **Calculated Limit**: Auto-derives a safe weekly spending cap.
+- **Tips List**: Hardcoded advice (e.g., "Pause Swiggy/Zomato", "Use UPI").
+- **Activation**: "Activate Plan" button (currently shows a Snackbar).
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  },
+  {
+    name: 'creditCardBill',
+    type: 'double',
+    required: true,
+    description: 'Current debt.'
+  },
+  {
+    name: 'salary',
+    type: 'double',
+    required: true,
+    description: 'Monthly income.'
+  }
+]} />

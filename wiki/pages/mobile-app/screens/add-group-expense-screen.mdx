@@ -1,0 +1,34 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Add Group Expense Screen
+
+A optimized form for adding expenses within a group context.
+
+## Overview
+
+Unlike the generic [Add Expense Screen](./add-expense-screen.mdx), this screen is context-aware. It pre-populates group members and handles "Who paid?" logic specifically for the group.
+
+## Features
+
+- **Payer Selection**: "Who paid?" chips (User + all group members).
+- **Split Selection**: "Split with" multi-select chips (defaults to all except payer).
+- **Custom Split**: Advanced splitting dialog if "Equal" isn't sufficient.
+- **Labels**: Dropdown and text input for organizing expenses (e.g., "Goa Trip").
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userPhone',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  },
+  {
+    name: 'group',
+    type: 'GroupModel',
+    required: true,
+    description: 'The target group.'
+  }
+]} />

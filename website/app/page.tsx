@@ -19,17 +19,17 @@ import {
   AlertCircle,
   X,
   Instagram,
-  Linkedin
+  Linkedin,
+  ChevronDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
+import { useAuth } from "@/components/AuthProvider";
+import { User as FirebaseUser } from "firebase/auth";
 import LanguageSelector from "@/components/LanguageSelector";
 import { LanguageProvider, useLanguage } from "./i18n/LanguageContext";
 import { translations } from "./i18n/translations";
 import AiOverlay from "@/components/ai/AiOverlay";
-
-// Feature Data for Expansion
-// Feature Data for Expansion moved inside component
 
 export default function Home() {
   return (
@@ -40,6 +40,7 @@ export default function Home() {
 }
 
 function MainContent() {
+  const { user } = useAuth();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const { language } = useLanguage();
@@ -52,7 +53,7 @@ function MainContent() {
       subtitle: t.features.analytics.badge,
       icon: <PieChart className="w-4 h-4" />,
       description: t.features.analytics.description,
-      longDescription: t.features.analytics.description, // Reusing desc for longDesc for simplicity in translation or could add longDesc to dictionary
+      longDescription: t.features.analytics.description,
       image: "/assets/images/3d-analytics.png",
       color: "bg-white",
       textColor: "text-slate-900"
@@ -100,73 +101,87 @@ function MainContent() {
           <div className="flex justify-between items-center h-24">
             {/* Logo */}
             <div className="flex items-center gap-3">
-              <Image src="/assets/images/logo_icon.png" alt="Fiinny" width={28} height={28} className="w-7 h-7" />
-              <span className="text-2xl font-black bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text text-transparent">Fiinny</span>
+              <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-3">
+                <Image src="/assets/images/logo_icon.png" alt="Fiinny" width={28} height={28} className="w-7 h-7" />
+                <span className="text-2xl font-black bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text text-transparent">Fiinny</span>
+              </Link>
             </div>
 
             {/* Desktop Navigation */}
             <div className="hidden lg:flex items-center gap-8">
               <a href="#features" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.features}</a>
               <a href="#how-it-works" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.howItWorks}</a>
-              <Link href="/subscription" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.pricing}</Link>
-              <Link href="/careers" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">Careers</Link>
+              <Link href="/trust" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.trust}</Link>
+              {!user && <Link href="/subscription" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.pricing}</Link>}
+              {user && <Link href="/dashboard" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">Console</Link>}
 
-              <Link href="#fiinny-ai" className="relative group flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 hover:border-teal-300 transition-all hover:shadow-md hover:-translate-y-0.5">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500"></span>
-                </span>
-                <span className="text-sm font-bold bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text text-transparent group-hover:from-teal-500 group-hover:to-emerald-500">
-                  Fiinny AI
-                </span>
-              </Link>
+              {/* Company Dropdown */}
+              <div className="relative group">
+                <button className="flex items-center gap-1 text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold py-2">
+                  {t.nav.company} <ChevronDown className="w-4 h-4" />
+                </button>
+                <div className="absolute top-full left-0 pt-2 w-48 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+                  <div className="bg-white rounded-xl shadow-xl border border-slate-100 p-2 flex flex-col gap-1">
+                    <Link href="/about" className="px-4 py-2 text-sm text-slate-600 hover:text-teal-600 hover:bg-slate-50 rounded-lg transition-colors text-left block">
+                      {t.nav.about}
+                    </Link>
+                    <Link href="/careers" className="px-4 py-2 text-sm text-slate-600 hover:text-teal-600 hover:bg-slate-50 rounded-lg transition-colors text-left block">
+                      {t.nav.careers}
+                    </Link>
+                    <Link href="/contact" className="px-4 py-2 text-sm text-slate-600 hover:text-teal-600 hover:bg-slate-50 rounded-lg transition-colors text-left block">
+                      {t.nav.contact}
+                    </Link>
+                  </div>
+                </div>
+              </div>
 
               <div className="ml-4 pl-4 border-l border-slate-200">
                 <LanguageSelector />
               </div>
 
-              {/* Download Buttons */}
-              <div className="flex items-center gap-3 ml-4 pl-4 border-l border-slate-200">
-                <motion.a
-                  href="https://play.google.com/store/apps/details?id=com.KaranArjunTechnologies.lifemap"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all shadow-md hover:shadow-lg"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M3,20.5V3.5C3,2.91 3.34,2.39 3.84,2.15L13.69,12L3.84,21.85C3.34,21.6 3,21.09 3,20.5M16.81,15.12L6.05,21.34L14.54,12.85L16.81,15.12M20.16,10.81C20.5,11.08 20.75,11.5 20.75,12C20.75,12.5 20.5,12.92 20.16,13.19L17.89,14.5L15.39,12L17.89,9.5L20.16,10.81M6.05,2.66L16.81,8.88L14.54,11.15L6.05,2.66Z" />
-                  </svg>
-                  <span>{t.nav.playStore}</span>
-                </motion.a>
-
-                <motion.a
-                  href="https://apps.apple.com/in/app/fiinny/id6751309482"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all shadow-md hover:shadow-lg"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M18.71,19.5C17.88,20.74 17,21.95 15.66,21.97C14.32,22 13.89,21.18 12.37,21.18C10.84,21.18 10.37,21.95 9.1,22C7.79,22.05 6.8,20.68 5.96,19.47C4.25,17 2.94,12.45 4.7,9.39C5.57,7.87 7.13,6.91 8.82,6.88C10.1,6.86 11.32,7.75 12.11,7.75C12.89,7.75 14.37,6.68 15.92,6.84C16.57,6.87 18.39,7.1 19.56,8.82C19.47,8.88 17.39,10.1 17.41,12.63C17.44,15.65 20.06,16.66 20.09,16.67C20.06,16.74 19.67,18.11 18.71,19.5M13,3.5C13.73,2.67 14.94,2.04 15.94,2C16.07,3.17 15.6,4.35 14.9,5.19C14.21,6.04 13.07,6.7 11.95,6.61C11.8,5.46 12.36,4.26 13,3.5Z" />
-                  </svg>
-                  <span>{t.nav.appStore}</span>
-                </motion.a>
-              </div>
-
-              <Link href="/login" className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:shadow-lg hover:shadow-teal-500/30 transition-all hover:scale-105 active:scale-95">
-                {t.nav.login}
-              </Link>
             </div>
 
-            {/* Mobile Menu Button */}
-            <div className="lg:hidden">
+            {user ? (
+              <Link href="/dashboard" className="flex items-center gap-3 bg-slate-100 hover:bg-slate-200 transition-all pl-2 pr-4 py-1.5 rounded-full border border-slate-200 ml-4">
+                {user.photoURL ? (
+                  <Image
+                    src={user.photoURL}
+                    alt="Profile"
+                    width={32}
+                    height={32}
+                    className="w-8 h-8 rounded-full object-cover border border-white shadow-sm"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs">
+                    {user.email?.charAt(0).toUpperCase() || "U"}
+                  </div>
+                )}
+                <div className="flex flex-col items-start">
+                  <span className="text-xs font-bold text-slate-900 leading-none mb-0.5">Console</span>
+                  <span className="text-[10px] text-slate-500 leading-none">Dashboard</span>
+                </div>
+              </Link>
+            ) : (
+              <Link href="/login" className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:shadow-lg hover:shadow-teal-500/30 transition-all hover:scale-105 active:scale-95 ml-4">
+                {t.nav.login}
+              </Link>
+            )}
+          </div>
+
+          {/* Mobile Menu Button */}
+          <div className="lg:hidden">
+            {user ? (
+              <Link href="/dashboard" className="bg-slate-100 text-slate-900 border border-slate-200 px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-2">
+                {user.photoURL && (
+                  <Image src={user.photoURL} alt="Profile" width={20} height={20} className="rounded-full w-5 h-5" />
+                )}
+                Console
+              </Link>
+            ) : (
               <Link href="/login" className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white px-5 py-2 rounded-xl text-sm font-bold">
                 {t.nav.login}
               </Link>
-            </div>
+            )}
           </div>
         </div>
       </nav>
@@ -247,7 +262,7 @@ function MainContent() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto mb-16">
             <h2 className="text-3xl lg:text-5xl font-bold text-slate-900 mb-6">
-              Three steps to <span className="text-teal-600">financial freedom.</span>
+              Three steps to <span className="text-teal-600">total clarity.</span>
             </h2>
           </div>
 
@@ -259,7 +274,7 @@ function MainContent() {
               {
                 step: "01",
                 title: "Connect",
-                desc: "Securely link your bank accounts or import import via SMS/Gmail parsing.",
+                desc: "Securely sync your transactions via automatic SMS and Email parsing.",
                 icon: <Zap className="w-6 h-6 text-teal-600" />
               },
               {
@@ -270,8 +285,8 @@ function MainContent() {
               },
               {
                 step: "03",
-                title: "Master",
-                desc: "Get deep insights, set budgets, and watch your net worth grow.",
+                title: "Control",
+                desc: "Get deep insights, set budgets, and spot unnecessary subscriptions.",
                 icon: <Trophy className="w-6 h-6 text-teal-600" />
               }
             ].map((item, i) => (
@@ -294,6 +309,20 @@ function MainContent() {
               </motion.div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Section 1: Philosophy - Simplifed */}
+      <section className="pt-24 pb-12 bg-slate-50 border-t border-slate-100">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl lg:text-4xl font-bold text-slate-900 mb-6 font-display">
+            The problem wasn't tracking. <br />
+            <span className="text-teal-600">It was clarity.</span>
+          </h2>
+          <p className="text-lg text-slate-500 max-w-2xl mx-auto leading-relaxed">
+            We replaced the "homework" of manual spreadsheets with a quiet, intelligent partner.
+            One that respects your time, protects your privacy, and gives you peace of mind.
+          </p>
         </div>
       </section>
 
@@ -507,6 +536,42 @@ function MainContent() {
         </div>
       </section>
 
+      {/* Section 2: Privacy & Security - Concrete Facts */}
+      <section className="pb-32 pt-10 bg-slate-900 border-t border-slate-800 text-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-3xl mx-auto text-center mb-16">
+            <h2 className="text-3xl font-bold mb-4">Your data, purely yours.</h2>
+            <p className="text-slate-400">Security isn't a feature. It's the architecture.</p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-8">
+            <div className="bg-slate-800/50 p-8 rounded-3xl border border-slate-800">
+              <span className="text-teal-500 font-bold mb-3 block"><Shield className="w-6 h-6" /></span>
+              <h3 className="text-lg font-bold text-white mb-2">No Bank Linking</h3>
+              <p className="text-slate-400 text-sm">
+                We never ask for your bank login or API access. We parse SMS/Email alerts locally on your device.
+              </p>
+            </div>
+
+            <div className="bg-slate-800/50 p-8 rounded-3xl border border-slate-800">
+              <span className="text-teal-500 font-bold mb-3 block"><Zap className="w-6 h-6" /></span>
+              <h3 className="text-lg font-bold text-white mb-2">On-Device Processing</h3>
+              <p className="text-slate-400 text-sm">
+                Your transaction data is analyzed on your phone, not our servers. Zero latency, maximum privacy.
+              </p>
+            </div>
+
+            <div className="bg-slate-800/50 p-8 rounded-3xl border border-slate-800">
+              <span className="text-teal-500 font-bold mb-3 block"><Shield className="w-6 h-6" /></span>
+              <h3 className="text-lg font-bold text-white mb-2">Zero Data Selling</h3>
+              <p className="text-slate-400 text-sm">
+                We don't build profiles to sell ads. You are the customer, not the product.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Social Proof Section - Moved Below Features */}
       <section className="py-20 border-t border-slate-100 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -521,6 +586,19 @@ function MainContent() {
         </div>
       </section>
 
+      {/* Section 3: Built with Care - Merged with Social Proof Header logic to be cleaner */}
+      <section className="py-24 bg-white border-t border-slate-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <div className="max-w-2xl mx-auto mb-16">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold uppercase tracking-widest mb-6">
+              Handcrafted Software
+            </div>
+            <h2 className="text-2xl lg:text-3xl font-bold text-slate-900">
+              We care about the details. <br /> <span className="text-slate-400 font-normal">Features you love, built with respect.</span>
+            </h2>
+          </div>
+        </div>
+      </section>
 
       {/* Testimonials */}
       <section className="py-24 bg-white border-t border-slate-100">
@@ -627,7 +705,7 @@ function MainContent() {
             <div>
               <h4 className="font-bold text-slate-900 mb-4">{t.nav.company}</h4>
               <ul className="space-y-2 text-slate-500">
-                <li><a href="#" className="hover:text-teal-600">{t.nav.about}</a></li>
+                <li><Link href="/about" className="hover:text-teal-600">{t.nav.about}</Link></li>
                 <li><Link href="/privacy" className="hover:text-teal-600">{t.nav.privacy}</Link></li>
                 <li><Link href="/terms" className="hover:text-teal-600">{t.nav.terms}</Link></li>
                 <li><Link href="/countries" className="hover:text-teal-600">{t.nav.countries}</Link></li>
@@ -643,91 +721,95 @@ function MainContent() {
 
       {/* Expandable Card Overlay */}
       <AnimatePresence>
-        {selectedId && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-            onClick={() => setSelectedId(null)}
-          >
-            {features.map((feature) => (
-              feature.id === selectedId && (
-                <motion.div
-                  layoutId={selectedId}
-                  key={feature.id}
-                  className={`w-full max-w-4xl ${feature.color} rounded-[2.5rem] overflow-hidden shadow-2xl relative`}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button
-                    onClick={() => setSelectedId(null)}
-                    className="absolute top-6 right-6 p-2 bg-black/10 hover:bg-black/20 rounded-full transition-colors z-20"
+        {
+          selectedId && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+              onClick={() => setSelectedId(null)}
+            >
+              {features.map((feature) => (
+                feature.id === selectedId && (
+                  <motion.div
+                    layoutId={selectedId}
+                    key={feature.id}
+                    className={`w-full max-w-4xl ${feature.color} rounded-[2.5rem] overflow-hidden shadow-2xl relative`}
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    <X className={`w-6 h-6 ${feature.textColor === 'text-white' ? 'text-white' : 'text-slate-900'}`} />
-                  </button>
+                    <button
+                      onClick={() => setSelectedId(null)}
+                      className="absolute top-6 right-6 p-2 bg-black/10 hover:bg-black/20 rounded-full transition-colors z-20"
+                    >
+                      <X className={`w-6 h-6 ${feature.textColor === 'text-white' ? 'text-white' : 'text-slate-900'}`} />
+                    </button>
 
-                  <div className="grid md:grid-cols-2 h-full">
-                    <div className="p-10 md:p-14 flex flex-col justify-center relative">
-                      <div className={`inline-flex self-start items-center gap-2 px-4 py-2 rounded-full ${feature.textColor === 'text-white' ? 'bg-white/20' : 'bg-slate-100'} ${feature.textColor} text-sm font-bold mb-6`}>
-                        {feature.icon} {feature.subtitle}
+                    <div className="grid md:grid-cols-2 h-full">
+                      <div className="p-10 md:p-14 flex flex-col justify-center relative">
+                        <div className={`inline-flex self-start items-center gap-2 px-4 py-2 rounded-full ${feature.textColor === 'text-white' ? 'bg-white/20' : 'bg-slate-100'} ${feature.textColor} text-sm font-bold mb-6`}>
+                          {feature.icon} {feature.subtitle}
+                        </div>
+                        <h3 className={`text-4xl md:text-5xl font-bold mb-6 ${feature.textColor}`}>{feature.title}</h3>
+                        <p className={`text-lg md:text-xl leading-relaxed ${feature.textColor === 'text-white' ? 'text-slate-300' : 'text-slate-600'}`}>
+                          {feature.longDescription}
+                        </p>
+                        <button className={`mt-8 px-8 py-4 rounded-full font-bold text-lg transition-transform hover:scale-105 active:scale-95 self-start ${feature.textColor === 'text-white' ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'}`}>
+                          Try it now
+                        </button>
                       </div>
-                      <h3 className={`text-4xl md:text-5xl font-bold mb-6 ${feature.textColor}`}>{feature.title}</h3>
-                      <p className={`text-lg md:text-xl leading-relaxed ${feature.textColor === 'text-white' ? 'text-slate-300' : 'text-slate-600'}`}>
-                        {feature.longDescription}
-                      </p>
-                      <button className={`mt-8 px-8 py-4 rounded-full font-bold text-lg transition-transform hover:scale-105 active:scale-95 self-start ${feature.textColor === 'text-white' ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'}`}>
-                        Try it now
-                      </button>
+                      <div className="relative h-64 md:h-auto bg-slate-100/50 flex items-center justify-center p-8">
+                        <Image
+                          src={feature.image}
+                          alt={feature.title}
+                          width={500}
+                          height={500}
+                          className="w-full h-auto object-contain drop-shadow-2xl max-h-[400px]"
+                        />
+                      </div>
                     </div>
-                    <div className="relative h-64 md:h-auto bg-slate-100/50 flex items-center justify-center p-8">
-                      <Image
-                        src={feature.image}
-                        alt={feature.title}
-                        width={500}
-                        height={500}
-                        className="w-full h-auto object-contain drop-shadow-2xl max-h-[400px]"
-                      />
-                    </div>
-                  </div>
-                </motion.div>
-              )
-            ))}
-          </motion.div>
-        )}
+                  </motion.div>
+                )
+              ))}
+            </motion.div>
+          )
+        }
       </AnimatePresence>
 
       {/* Video Modal */}
       <AnimatePresence>
-        {selectedVideo && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 lg:p-10"
-            onClick={() => setSelectedVideo(null)}
-          >
+        {
+          selectedVideo && (
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-6xl max-h-[90vh] bg-black rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 lg:p-10"
+              onClick={() => setSelectedVideo(null)}
             >
-              <button
-                onClick={() => setSelectedVideo(null)}
-                className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors z-20 backdrop-blur-sm"
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                className="relative w-full max-w-6xl max-h-[90vh] bg-black rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center"
               >
-                <X className="w-6 h-6" />
-              </button>
-              <video
-                src={selectedVideo}
-                controls
-                autoPlay
-                className="w-full h-full max-h-[85vh] object-contain bg-black"
-              />
+                <button
+                  onClick={() => setSelectedVideo(null)}
+                  className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors z-20 backdrop-blur-sm"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+                <video
+                  src={selectedVideo}
+                  controls
+                  autoPlay
+                  className="w-full h-full max-h-[85vh] object-contain bg-black"
+                />
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
+          )
+        }
       </AnimatePresence>
       <AiOverlay />
     </div>

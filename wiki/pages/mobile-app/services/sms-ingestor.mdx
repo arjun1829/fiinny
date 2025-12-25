@@ -1,0 +1,67 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# SMS Ingestor Service
+
+The automated heart of transaction tracking on Android.
+
+## Overview
+
+`SmsIngestor` listens for incoming SMS messages, parses them using regex patterns and AI, and automatically creates transaction records in Firestore. It is designed to be privacy-first, processing data locally on-device where possible.
+
+## Data Flow
+
+```mermaid
+graph TD
+    %% Sources
+    Network(Mobile Network)
+    OS(Android OS)
+    
+    %% Ingestor Logic
+    subgraph Ingestor ["SmsIngestor (Local)"]
+        Listener[Telephony Listener]
+        Parser[Regex Parser]
+        Dedupe{Seen Recently?}
+        Enricher[Enrichment Service]
+    end
+    
+    %% Output
+    DB[(Firestore)]
+    
+    %% Edges
+    Network --> |SMS Arrives| OS
+    OS --> |Broadcast| Listener
+    Listener --> Dedupe
+    Dedupe -- "Duplicate" --> Stop((Ignored))
+    Dedupe -- "New" --> Parser
+    
+    Parser -- "Not a Bank/Txn" --> Stop
+    Parser -- "Match" --> Enricher
+    
+    Enricher --> |Extract Merchant/Cat| Enricher
+    Enricher --> |Create Expense/Income| DB
+    
+    classDef process fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    classDef storage fill:#fff3e0,stroke:#e65100,stroke-width:2px;
+    class Ingestor process;
+    class DB storage;
+    class Listener,Parser,Dedupe,Enricher fill:#fff,stroke:#1565c0;
+```
+
+## Logic Pipeline
+
+1.  **Listen**: `telephony.listenIncomingSms` triggers on new messages.
+2.  **Dedupe**: Checks a local rolling buffer (`_seenRecently`) to prevent processing the same message twice (common Android issue).
+3.  **Gate**: `_smsIncomeGate` or `_passesTxnGate` checks if the message looks like a financial transaction (has currency, keywords like "debited", "credited").
+4.  **Parse**: Extracts Amount, Date, and Counterparty using Regex.
+5.  **Enrich**: Calls `EnrichmentService` to normalize merchant names and assign categories.
+6.  **Persist**: Writes `ExpenseItem` or `IncomeItem` to Firestore.
+
+## Permissions
+
+Requires `READ_SMS` and `RECEIVE_SMS` on Android.
+
+## Backfill
+
+- **Initial Backfill**: On first run, it scans the last 120 days of inbox messages.
+- **Testing**: Can be forced to backfill via `backfillLastNDaysForTesting`.

@@ -1,0 +1,13 @@
+# Analytics Models (`analytics_models.dart`)
+
+**Path:** `lib/models/analytics_models.dart`
+
+## 1. Overview
+A collection of helper classes for the Analytics Screen. Currently contains `AnalyticsCardGroup`.
+
+## 2. Responsibilities
+- **Aggregation:** Group transactions by Bank/Instrument to show "HDFC Credit Card: ₹50k Spent".
+- **Net Flow:** Computes `netOutflow` (`debit` - `credit`).
+
+## 3. Usage
+- **UI:** Used exclusively in `AnalyticsScreen` to group pie charts and list views.

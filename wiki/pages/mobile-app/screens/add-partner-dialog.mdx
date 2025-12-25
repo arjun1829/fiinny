@@ -1,0 +1,28 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Add Partner Dialog
+
+A shiny, glassmorphic dialog for initiating partner connections.
+
+## Overview
+
+Allows users to send connection requests by entering a phone number, email, or picking from device contacts.
+
+## Features
+
+- **Contact Picker**: Integrates `flutter_contacts` to pick valid phone numbers directly.
+- **Validation**: Smart regex validation for Email (E.164-ish) vs Phone vs Referral codes.
+- **Visuals**: Custom "Glossy" paint effect (`_GlossPainter`) and white gradient styling.
+- **Relation Selector**: Dropdown to categorize the partner (Spouse, Friend, etc.).
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'currentUserId',
+    type: 'String',
+    required: true,
+    description: 'ID of the sender.'
+  }
+]} />

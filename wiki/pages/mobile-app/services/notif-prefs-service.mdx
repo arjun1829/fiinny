@@ -1,0 +1,17 @@
+# Notification Prefs Service (`notif_prefs_service.dart`)
+
+**Path:** `lib/services/notif_prefs_service.dart`
+
+## 1. Overview
+Manages the user's granular Push Notification settings.
+
+## 2. Storage
+Stored in a dedicated document: `users/{uid}/prefs/notifications`. This separation prevents the main user doc from getting bloated.
+
+## 3. Features
+- **Channels**: Booleans for specific alert types (`loan_watch`, `brain_insights`, `settleup_nudges`).
+- **Quiet Hours**: Stores start/end times (e.g., "22:00" to "08:00") which the backend helper (Cloud Functions) respects.
+- **Defaults**: `ensureDefaultPrefs` populates the doc with intelligent defaults if missing.
+
+## 4. Usage
+Used by the **Notification Settings Screen**.

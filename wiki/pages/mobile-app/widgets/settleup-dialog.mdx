@@ -1,0 +1,32 @@
+# Settle Up Dialog
+
+**Path:** `lib/widgets/settleup_dialog.dart`
+
+A critical component for social finance, handling the recording of payments between friends or within groups ("Settlements").
+
+## Logic Highlights
+
+### Pairwise Net Calculation
+*   It calculates the net outstanding balance between the user and the selected friend *in real-time*.
+*   It iterates through all shared expenses, summing up `yourShare` vs `friendShare`.
+*   It respects previous `Settlement` transactions to adjust the balance correctly.
+
+### Features
+*   **Smart Defaults:** Automatically guesses who pays whom based on the net outstanding balance direction.
+*   **Quick Amounts:** Chips for "Full", "50%", "₹500", etc., to speed up entry.
+*   **Attachments:** Supports attaching payment screenshots (receipts) via Camera, Gallery, or File Picker.
+*   **Group Context:** Can be scoped to a specific group ID or allow "global" settlement between two friends across all groups.
+
+## Usage
+
+```dart
+showDialog(
+  context: context,
+  builder: (_) => SettleUpDialog(
+    userPhone: currentUser.phone,
+    friends: myFriends,
+    groups: myGroups,
+    initialFriend: friendToSettleWith,
+  ),
+);
+```

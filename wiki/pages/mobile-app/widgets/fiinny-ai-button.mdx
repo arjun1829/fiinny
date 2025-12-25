@@ -1,0 +1,20 @@
+# Fiinny AI Button
+
+**Path:** `lib/widgets/fiinny_ai_button.dart`
+
+The entry point to the AI insights experience.
+
+## Visuals
+*   **Animations:** Contains a perpetually spinning sparkle icon (`AnimationController` repeating every 4 seconds) to draw attention.
+*   **Design:** Elevated capsule shape with a teal border and shadow.
+
+## Behavior
+*   **Navigation:** Pushes the `/insights` route on tap, passing the `userPhone` as an argument.
+
+## Usage
+
+```dart
+FiinnyAiButton(
+  userPhone: currentUser.phone,
+)
+```

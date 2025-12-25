@@ -1,0 +1,35 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Add Loan Screen
+
+A sophisticated, multi-step wizard for configuring a loan profile.
+
+## Overview
+
+Unlike simple forms, this screen includes a financial engine to compute EMI schedules and validate input.
+
+## Steps
+
+1.  **Basics**: Title, Lender (Bank/NBFC/Friend), and Current Outstanding.
+2.  **Schedule**: Interest Rate, and EITHER "EMI Amount" OR "Months Remaining". It mathematically solves for the missing variable using `_solveMonthsReducing` or `_emiReducing`.
+3.  **Share**: (Optional) Split this loan with others (e.g., a shared Home Loan).
+4.  **Reminders**: Configure monthly due alerts.
+5.  **Review**: Final validaiton and suggestions (e.g., "Rate is very high!").
+
+## Features
+
+- **Solver Engine**: Can calculate Tenure if EMI is known, or EMI if Tenure is known.
+- **Recurring Engine**: Can `_shareCreateRecurringForMembers` to auto-link this loan to a friend's profile.
+- **Restoration**: Uses `RestorationMixin` to save state if the app is killed by the OS.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  }
+]} />

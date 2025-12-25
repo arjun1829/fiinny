@@ -1,0 +1,91 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Quick Create Pick Sheet
+
+A comprehensive bottom sheet for selecting friends, groups, or initializing new create actions.
+
+## Overview
+
+`QuickCreatePickSheet` is a modal interface used when the user wants to initiate an action that requires a target (like a friend or a group). It supports:
+- **Tabs/Segments**: Switching between "Friends", "Groups", and "New" actions.
+- **Search**: Real-time filtering of friends and groups by name or phone number.
+- **Quick Actions**: "Add from Contacts", "Add friend (manual)", "Create group".
+- **Responsive Layout**: Adapts to wider screens (tablets/web) by using a side-rail navigation instead of top tabs.
+
+## Usage
+
+```dart
+final result = await showQuickCreatePickSheet(
+  context: context,
+  friends: myFriendsList,
+  groups: myGroupsList,
+  contactNames: contactNameService,
+);
+
+if (result != null) {
+  if (result.friend != null) {
+    // Handle friend selection
+  } else if (result.group != null) {
+    // Handle group selection
+  } else if (result.action != null) {
+    // Handle quick action (e.g., create new friend)
+  }
+}
+```
+
+## Props
+
+The widget is typically shown via the generic helper `showQuickCreatePickSheet`.
+
+<PropsTable
+  data={[
+    {
+      name: 'context',
+      type: 'BuildContext',
+      required: true,
+      description: 'Build context for showing the modal.',
+    },
+    {
+      name: 'friends',
+      type: 'List<FriendModel>',
+      required: true,
+      description: 'List of friends to display in the picker.',
+    },
+    {
+      name: 'groups',
+      type: 'List<GroupModel>',
+      required: true,
+      description: 'List of groups to display in the picker.',
+    },
+    {
+      name: 'contactNames',
+      type: 'ContactNameService',
+      required: true,
+      description: 'Service to resolve contact names from phone numbers.',
+    },
+  ]}
+/>
+
+## Internal Structure
+
+### `QuickCreatePickResult`
+A union-like class returned by the sheet, containing one of:
+- `friend`: Selected `FriendModel`.
+- `group`: Selected `GroupModel`.
+- `action`: Selected `QuickCreateAction` (enum).
+
+### `_QuickCreatePickSheet`
+The main stateful widget managing:
+- `_segment`: Current view (Friends/Groups/New).
+- `_searchCtrl`: Controller for the search bar.
+- `_filteredFriends` / `_filteredGroups`: Getters for filtered lists based on search query.
+
+### `_buildContent` & Layout
+- **Mobile**: Vertical column with a `_SegmentedHeader` (tab bar) at the top.
+- **Wide Screens**: Horizontal row with a `_WideRail` sidebar on the left and content on the right.
+
+### Custom Sub-widgets
+- **`_QuickActionChip`**: Small, pill-shaped buttons for quick actions like "Add from Contacts".
+- **`_QuickListTile`**: A standardized list item for friends and groups with avatars and subtitles.
+- **`_NewEntryCard`**: Larger card style used in the "New" tab for primary create actions.

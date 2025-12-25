@@ -1,0 +1,24 @@
+# Loan Model (`loan_model.dart`)
+
+**Path:** `lib/models/loan_model.dart`
+
+## 1. Overview
+A robust model for tracking both **formal loans** (Banks) and **informal lending** (Friends/Family). It includes features for tracking EMIs, interest, and shared repayment responsibilities.
+
+## 2. Responsibilities
+- **Loan Details:** Principal `amount`, `interestRate`, `tenureMonths`.
+- **Lender Info:** `lenderType` (Bank/Friend) and `lenderName`.
+- **Calculations:** Supports `flat` vs `reducing` interest methods.
+- **Social Sharing:** Uniquely supports `LoanShare` allowing a loan to be split among multiple people (e.g., a shared home loan).
+
+## 3. Key Logic
+- `nextPaymentDate()`: Complex logic that calculates the next due date based on `paymentDayOfMonth`, clamping to valid days (1-28) to avoid "Feb 30" errors.
+- `sharePercentForPhone()`: Determines how much a specific user owes if the loan is shared.
+- `monthsElapsed` / `monthsBetweenDates`: Helpers for progress bars.
+
+## 4. Usage
+- **Collections:** `loans` collection in Firestore.
+- **UI:** `LoansScreen` and `LoanDetailScreen`.
+
+## 5. Cautions
+- **Complex Dates:** Loan calculations are time-sensitive. Always use the robust getters (`nextPaymentDate`) rather than manual date math.

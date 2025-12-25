@@ -1,0 +1,33 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Bills Overview Screen
+
+A unified calendar of upcoming financial obligations.
+
+## Overview
+
+Aggregates both manual bills (`BillModel`) and credit card dues (`CreditCardModel`) into a single, chronological list. Its primary goal is to provide a "Pay Now" checklist.
+
+## Features
+
+- **Unified List**: Merges distinct data sources (Bills + Cards).
+- **Time Sorting**: Auto-sorts by nearest due date.
+- **Status Indicators**: Color-coded (Green for Paid, Orange/Blue for Due).
+- **Quick Action**: "Mark Paid" button directly on the tile.
+
+## Architecture
+
+- **Data Fetching**: Parallel fetches from `BillService` and `CreditCardService`.
+- **Polymorphic UI**: Custom list widgets (`_BillEntry` and `_CardBillEntry`) adapt to different model types.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'The user ID.'
+  }
+]} />

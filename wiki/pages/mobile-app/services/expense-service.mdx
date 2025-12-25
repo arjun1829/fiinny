@@ -1,0 +1,26 @@
+# Expense Service (`expense_service.dart`)
+
+**Path:** `lib/services/expense_service.dart`
+
+## 1. Overview
+The **ExpenseService** is the most complex data layer in the application. It manages the lifecycle of `ExpenseItem` documents, including creation, updates, deletion, and intricate logic for **Social Mirroring** (ensuring friends see the expenses they are part of).
+
+## 2. Key Responsibilities
+- **CRUD Operations**: Standard `add`, `update`, `delete` for expenses.
+- **Social Mirroring**:
+  - When a user adds an expense with `friendIds` or `groupId`, this service automatically creates "mirror" copies in the collections of those friends or groups.
+  - **Batch Updates:** Updates to an expense are propagated to all participants using Firestore Batches.
+- **Hybrid Search**: Implements `queryHybrid` which combines:
+  - **Server-side filtering:** (Date range, exact category matches).
+  - **Client-side refinement:** (Full-text search across titles, notes, and labels).
+- **Bulk Operations**:
+  - `bulkEdit`: Apply changes (like tagging) to dozens of expenses at once.
+  - `bulkSplit`: Update participants for multiple expenses in one go.
+
+## 3. Notable Methods
+- `addExpenseWithDialog`/`addExpenseWithSync`: The main entry points for creating expenses, triggering the mirroring logic.
+- `getOpenAmountWithFriend`: Calculates the net balance with a specific friend by iterating through shared, unsettled expenses.
+- `distinctLabels` / `distinctCategories`: Aggregation helpers to power auto-complete suggestions.
+
+## 4. Usage
+Used extensively by `DashboardScreen`, `ExpenseScreen`, and `GroupDetailScreen` to manage financial data.

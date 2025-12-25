@@ -1,0 +1,23 @@
+# Ingest State Service
+
+**Path**: `lib/services/ingest_state_service.dart`
+
+The `IngestStateService` manages the persistent state of the ingestion pipelines for each user. It tracks "where we left off" to ensure we don't re-scan the user's entire history every time the app opens.
+
+## State Model: `IngestState`
+Stored at `users/{userId}/ingest/state`.
+*   **`baselineCutoff`**: The timestamp representing the "start of history" for this device's ingestion. Transactions before this are ignored (or handled by an initial backfill process).
+*   **`reviewEnabled`**: Boolean flag. If true, newly ingested transactions are sent to a "Review Queue" UI instead of being auto-confirmed.
+*   **`lastSmsAt`**: Timestamp of the newest SMS processed.
+*   **`lastGmailAt`**: Timestamp of the newest Email processed.
+
+## key Methods
+
+### `ensureCutoff`
+Initialize the state if missing. Sets `baselineCutoff` to `now()` by default, preventing the app from unexpectedly importing 5 years of history on a fresh install.
+
+### `setProgress`
+Updates `lastSmsAt` or `lastGmailAt`. Called after a successful batch processing run.
+
+### `enableReview`
+Activates the review mode. Typically called once the user has completed onboarding and trusts the automated system enough to start reviewing edge cases.

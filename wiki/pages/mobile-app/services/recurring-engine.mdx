@@ -1,0 +1,38 @@
+# Recurring Engine
+
+**Path**: `lib/services/recurring/recurring_engine.dart`
+
+The core intelligence for detecting subscriptions, recurring bills, and EMIs from transaction history.
+
+## Key Logic
+
+### 1. Evidence Collection (`_collectEvidence`)
+*   Scans `ExpenseItem` and `IncomeItem` history.
+*   Groups transactions by a composite key: `Merchant + Instrument + Last4 + Network`.
+*   This ensures that "Netflix on Credit Card A" and "Netflix on Credit Card B" are tracked as separate subscriptions if needed (or combined if the logic allows).
+
+### 2. Period Inference (`_inferPeriod`)
+*   Analyzes the intervals between payments.
+*   Uses a scoring system to detect:
+    *   **Monthly** (30 days ±3)
+    *   **Quarterly** (90 days ±6)
+    *   **Annual** (365 days ±14)
+    *   **Weekly** (7 days ±1)
+*   Requires a confidence threshold (0.6+) to make a guess.
+
+### 3. Heuristics & Signals
+*   **Autopay Cues**: Checks regex for "autopay", "sub", "renew" in notes/tags.
+*   **Tolerance**: `_toleranceForBrand` allows tighter bounds for loans (EMS) vs looser bounds for utilities.
+
+### 4. Detect & Upsert (`detectSubscriptionsFromHistory`)
+*   Runs the analysis and returns a list of candidate subscriptions.
+*   Calculates `nextDue` dates.
+*   Flags new discoveries as `needsConfirmation`.
+
+### 5. Attachment Logic
+*   **`maybeAttachToSubscription`**: When a new expense is added, this method checks if it matches an existing active subscription. If so, it links them, updates the `lastPaidAt`, and rolls the `nextDue` date forward.
+*   **`_maybeAttachLoanClassic`**: Similar logic for detecting EMI payments and linking them to `loans`.
+
+## New Features (V2)
+*   **SIP Detection**: Hooks for attaching Mutual Fund auto-invests (stubs present).
+*   **Credit Card Cycle Check**: Hooks for aggregating card spend into cycles (stubs present).

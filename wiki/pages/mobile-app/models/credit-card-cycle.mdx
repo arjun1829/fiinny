@@ -1,0 +1,18 @@
+# Credit Card Cycle (`credit_card_cycle.dart`)
+
+**Path:** `lib/models/credit_card_cycle.dart`
+
+## 1. Overview
+Represents a **single monthly billing statement** for a credit card. While `CreditCardModel` holds the *latest* state, `CreditCardCycle` is historical data.
+
+## 2. Responsibilities
+- **Statement Tracking:** Stores specific `periodStart`, `periodEnd`, and `statementDate`.
+- **Reconciliation:** Tracks `paidAmount` vs `totalDue` to determine if a specific month's bill is "fully paid", "partially paid", or "overdue".
+- **Snapshots:** Captures `creditLimit` and `availableCredit` at the time of statement generation for historical credit utilization graphs.
+
+## 3. Key Logic
+- `id`: Usually in the format `YYYYMM` (e.g., `202401`) to make sorting and querying for "January Bill" easy.
+
+## 4. Usage
+- **Firestore Sub-collection:** Stored as `credit_cards/{cardId}/cycles/{cycleId}`.
+- **UI:** Used when a user clicks "View History" on a credit card to show past bills.

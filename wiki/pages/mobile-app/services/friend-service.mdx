@@ -1,0 +1,19 @@
+# Friend Service (`friend_service.dart`)
+
+**Path:** `lib/services/friend_service.dart`
+
+## 1. Overview
+Manages the user's social graph. It uses a **Hybrid Model** of local mirrors (for speed) and global link documents (for graph integrity).
+
+## 2. Key Concepts
+- **Local Mirror**: Each user has a `users/{me}/friends/{them}` collection. This allows fast, offline-ready access to your friends list.
+- **Global Pair**: A `friends_pairs` document (`{u1}_{u2}`) proves a bidirectional friendship exists.
+- **Friend Link**: A `friend_links` document represents a pending or active connection state, supporting the "Invite flow".
+
+## 3. Invite Flow (`addFriendByPhone`)
+1.  **Local Add**: User A adds User B (by phone) locally.
+2.  **Link Creation**: A `friend_links` doc is created (`status: pending`).
+3.  **Claiming**: When User B signs up, `claimPendingFor` runs. It finds the pending link, creates the Global Pair, and creates the **Reciprocal Mirror** (adds A to B's list automatically).
+
+## 4. Usage
+Used by **Friends Tab**, **Add Expense (Split)**, and **Onboarding**.

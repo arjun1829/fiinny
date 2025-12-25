@@ -1,0 +1,28 @@
+# People Selector
+
+**Path:** `lib/widgets/people_selector_step.dart`
+
+A shared step widget used within expense wizards (like `AddExpenseDialog`) to handle participant selection.
+
+## Responsibilities
+1.  **Payer Selection:** "Who paid?" (Me vs. Friend).
+2.  **Group Selection:** Toggling between "No group" and specific user groups.
+3.  **Split Participation:** Selecting which friends are involved in the expense.
+4.  **Metadata:** Handling Note and Label entry.
+
+## UI Components
+*   **Rich Dropdowns:** Uses custom layouts in dropdowns to show avatars alongside names.
+*   **Multi-Select Sheet:** If "See all..." is clicked, opens a full-screen checkbox list for selecting multiple friends.
+*   **Input Chips:** Displays selected friends as removable chips for easy management.
+
+## Usage
+Designed to be embedded in a `PageView` or `Stepper`.
+
+```dart
+PeopleSelectorStep(
+  userPhone: uid,
+  // ... callbacks for state changes
+  onPayer: (p) => setState(() => _payer = p),
+  onToggleFriend: (phone, isSelected) => _updateSplits(phone, isSelected),
+)
+```

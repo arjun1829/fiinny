@@ -1,0 +1,11 @@
+# Idempotency
+
+**Path**: `lib/services/dedupe/idempotency.dart`
+
+Contains the standard logic for generating **De-duplication Keys**.
+
+## Algorithm
+Generates a SHA-1 hash of:
+`merchantId | amountPaise | instrumentHint | timeBucket`
+
+*   **Time Bucket**: CURRENTLY 10 minutes (`occurredAt / 600000`). This fuzziness allows matching an SMS and an Email for the same transaction even if they arrive a few minutes apart.

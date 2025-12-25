@@ -1,0 +1,22 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Main Screen (Legacy)
+
+> [!WARNING]
+> This screen appears to be deprecated or unused. The active main container is **[Main Nav Screen](./main-nav-screen.mdx)**.
+
+## Overview
+
+An alternative implementation of the main navigation shell. It uses a standard `BottomNavigationBar` without the custom "shine" animations found in `MainNavScreen`.
+
+## Differences from MainNavScreen
+
+- **Tabs**: Logic includes `Goals` and `Profile` directly in the tab bar, whereas `MainNavScreen` puts `Expenses` and `Sharing` in the tabs and usually nests Profile under settings.
+- **State**: Simple `setState` index switching.
+
+## Navigation Items
+1.  Dashboard
+2.  Friends
+3.  Goals
+4.  Profile

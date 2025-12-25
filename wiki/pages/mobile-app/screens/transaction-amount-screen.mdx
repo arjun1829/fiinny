@@ -1,0 +1,27 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Transaction Amount Screen
+
+High-level cashflow analysis.
+
+## Overview
+
+Compares the **volume** (monetary value) of Income vs Expense over time.
+
+## Features
+
+- **Cashflow Chart**: Stacked/Grouped bar chart showing total inflow vs outflow per time bucket.
+- **Net Calculation**: Instantly displays total `Credit` and `Debit` sums for the selected period.
+- **Visuals**: Uses distinct colors (Mint Green for Credit, Red/Orange for Debit) to highlight net positions.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  }
+]} />

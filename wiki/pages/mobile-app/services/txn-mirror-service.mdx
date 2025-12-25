@@ -1,0 +1,40 @@
+# Txn Mirror Service
+
+**Path**: `lib/services/txn_mirror_service.dart`
+
+The `TxnMirrorService` acts as a crucial **synchronization bridge** between the modern "Unified Transactions" collection (populated by ingestion pipelines) and the legacy application-aware `expenses` and `incomes` collections.
+
+## Context
+Fiinny's ingestion pipeline (parsing SMS/Gmail) writes raw, immutable transaction logs into `users/{uid}/transactions`. However, the UI and older services rely on `users/{uid}/expenses` and `incomes`. This service reads the unified log and "mirrors" valid transactions to the legacy collections.
+
+## Logic Flow
+
+### `mirrorRecent({int pageSize, int maxPages})`
+Runs a cursor-based sync job.
+
+1.  **Cursor Management**:
+    *   Reads `ingest_index/mirror` to find `lastMirroredAt` timestamp.
+    *   Queries `transactions` collection for docs *newer* than this cursor.
+    *   *Safety*: If the query yields nothing but we suspect the cursor is invalid (future dated), it auto-resets the cursor.
+
+2.  **Filtering**:
+    *   **Status**: Only mirrors `POSTED`, `SUCCESS`, `COMPLETED`, `PAID`. Skips `PENDING` or `FAILED`.
+    *   **Amount/Direction**: Ensures strictly positive amounts and valid `DEBIT`/`CREDIT` direction.
+
+3.  **Mapping**:
+    *   Maps `DEBIT` -> `_expensesRef`
+    *   Maps `CREDIT` -> `_incomesRef`
+    *   **ID Stability**: Uses `txKey` to generate a deterministic ID (`tx_{txKey}`). This ensures idempotency; running the mirror multiple times won't duplicate entries.
+
+4.  **Batch Write**:
+    *   Writes processed items in a batch.
+    *   Updates the `lastMirroredAt` cursor upon success.
+
+## Key Helper
+*   **`_bestTime`**: ingestion often provides multiple timestamps (`occurredAt`, `postedAt`, `updatedAt`). This helper picks the most accurate one for the UI "Date" field.
+
+## Usage
+Typically called:
+*   On app startup (background fetch).
+*   After a successful ingestion webhook/signal.
+*   Periodically by a background worker (Workmanager).

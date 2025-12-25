@@ -1,0 +1,23 @@
+
+# App Store Publishing
+
+Guidelines for submitting Fiinny to the Apple App Store.
+
+## Privacy Manifest
+As of Spring 2024, Apple requires a Privacy Manifest (`PrivacyInfo.xcprivacy`) for apps and strict declarations for:
+- User Defaults
+- Disk Space
+- Boot Time
+
+Fiinny declares usage for **User Defaults** (storing theme/locale preferences).
+
+## Screenshots
+Screenshots must be taken on:
+- 6.5" Display (iPhone 11 Pro Max / XS Max)
+- 5.5" Display (iPhone 8 Plus)
+- 12.9" Display (iPad Pro - optional if universal)
+
+## TestFlight
+1.  **Build**: `flutter build ipa`
+2.  **Upload**: Use Transporter app (macOS) to upload `.ipa`.
+3.  **Groups**: "Internal Testers" get updates immediately.

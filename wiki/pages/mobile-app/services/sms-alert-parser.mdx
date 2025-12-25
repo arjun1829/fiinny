@@ -1,0 +1,16 @@
+# SMS Alert Parser
+
+**Path**: `lib/services/sms/sms_alert_parser.dart`
+
+A wrapper around `CommonRegex` specialized for SMS formatting.
+
+## Responsibilities
+*   **`looksFinancial`**: Fast regex check for keywords (`bank`, `upi`, `debited`).
+*   **`parse`**:
+    *   Extracts amount (paise).
+    *   Detects direction (Dr/Cr).
+    *   Extracts Merchant ID/Name.
+    *   Builds an idempotency key.
+    *   Returns a `ParsedTransaction` object.
+
+It serves as the "Adapter" converting raw SMS strings into the application's standard `ParsedTransaction` model.

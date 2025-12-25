@@ -1,0 +1,21 @@
+# Spend Summary Card
+
+**Path:** `lib/widgets/analytics_ui/spend_summary_card.dart`
+
+A high-level dashboard widget that shows the total spending for a period and provides a daily breakdown bar chart.
+
+## Internals
+*   **Aggregation:** Automatically groups a raw list of `ExpenseItem`s into daily buckets (`_DailyBarChart`).
+*   **Visualization:** Uses `fl_chart` to render the daily bars.
+*   **Tooltip:** Shows exact date and amount on press.
+
+## Usage
+
+```dart
+SpendSummaryCard(
+  totalSpent: 45000,
+  expenses: myExpensesList,
+  startDate: startOfMonth,
+  endDate: endOfMonth,
+)
+```

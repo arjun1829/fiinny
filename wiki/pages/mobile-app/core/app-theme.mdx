@@ -1,0 +1,25 @@
+# App Theme (`app_theme.dart`)
+
+**Path:** `lib/app_theme.dart`
+
+## 1. Overview
+A centralized definition of the visual styles (colors, fonts, shapes) used throughout the app.
+
+## 2. Why this file exists
+To ensure consistency. Instead of hardcoding colors like "blue" or "red" in every file, developers use themes defined here. If we want to change the app's look, we only change it here.
+
+## 3. Responsibilities
+- Defining the **Light Theme**, **Dark Theme**, and specialized themes like **Glass** and **Fresh (Mint/Tiffany Blue)**.
+- Setting defaults for buttons, text, and input fields.
+
+## 4. How it works (high-level)
+- It exports `ThemeData` variables (`appTheme`, `darkTheme`, `glassTheme`, `freshTheme`).
+- Each variable contains configurations for `scaffoldBackgroundColor`, `primaryColor`, `textTheme`, and component styles (like `AppBars` and `Inputs`).
+
+## 5. Dependencies and Interactions
+- Used by `lib/main.dart` (specifically `ThemeProvider`) to apply styles to the entire `MaterialApp`.
+- Used by any widget doing `Theme.of(context)` to look up colors.
+
+## 6. Cautions / Important Notes
+- **Visual Consistency:** Avoid hardcoding colors in widgets. Always try to use `Theme.of(context).primaryColor` etc.
+- **Opacity:** The "Glass" theme uses opacity; this can have performance implications on older devices if overused.

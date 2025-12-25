@@ -1,0 +1,16 @@
+# Asset Service (`asset_service.dart`)
+
+**Path:** `lib/services/asset_service.dart`
+
+## 1. Overview
+A lightweight Service for managing `AssetModel` (Stocks, Gold, Real Estate).
+
+## 2. Responsibilities
+- **CRUD**: Basic Create, Read, Update, Delete for assets.
+- **Aggregation**:
+  - `getTotalAssets`: Returns the user's Total Net Worth (Asset side).
+  - `getAssetBreakdown`: returns a Map of `AssetType -> TotalValue` for pie charts.
+- **Fallback Sorting**: If Firestore indexes are missing (`failed-precondition`), it gracefully falls back to client-side sorting.
+
+## 3. Usage
+Used by the **Net Worth** card and **Assets Tab**.

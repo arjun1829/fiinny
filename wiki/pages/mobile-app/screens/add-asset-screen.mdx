@@ -1,0 +1,37 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Add Asset Screen
+
+A dual-mode interface for tracking new assets.
+
+## Overview
+
+Supporting both a **Search Mode** (for stocks/MFs) and a **Manual Mode** for custom assets (Real Estate, etc.).
+
+## Modes
+
+1.  **Search Mode**: 
+    - Queries `StockSearchService` for tickers.
+    - select an item -> `enrich()` gets real-time price -> auto-fills the form.
+2.  **Manual Mode**: 
+    - Traditional form with dropdowns for Type/Subtype.
+    - Fields for Quantity, Average Price, Total Value.
+    - "Numbers" section auto-calculates total value (`Qty * Avg`).
+
+## Features
+
+- **Real-time Enrichment**: Fetches live stock prices to pre-fill the "Current Price" field.
+- **Dynamic Fields**: "Type" selection drives "Subtype" and "Institution" choices (e.g., selecting 'Gold' shows 'Jeweller' or 'SGB').
+- **Success Animation**: Custom `_SuccessCard` overlay on completion.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  }
+]} />

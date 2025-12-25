@@ -1,0 +1,9 @@
+# Merchant Normalizer
+
+**Path**: `lib/services/normalize/merchant_normalizer.dart`
+
+A secondary normalization layer that attaches **metadata** (like logos) to the normalized ID.
+
+## Functionality
+*   **Bank Logos**: Maps standard IDs (`hdfc`, `sbi`) to local asset paths (`assets/images/banks/hdfc.png`).
+*   **ID Generation**: Converts any string into a "slug" (`My  Shop!` -> `my-shop`) if not found in the alias map.

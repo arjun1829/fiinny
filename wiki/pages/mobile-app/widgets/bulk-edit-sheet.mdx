@@ -1,0 +1,29 @@
+# Bulk Edit Sheet
+
+**Path:** `lib/widgets/bulk_edit_sheet.dart`
+
+A powerful tool for modifying multiple transactions at once. It allows users to apply changes to Title, Comments, Category, Date, or Labels across a selection set.
+
+## `BulkEditSpec`
+The widget returns a `BulkEditSpec` object, not the modified transactions. This "specification" pattern decouples the UI from the logic of applying the updates. The caller (usually `UnifiedTransactionList`) interprets the spec and iterates over the selected IDs to apply changes.
+
+## Features
+*   **Category & Label Pre-loading:** Fetches available categories and labels via async callbacks (`loadCategories`, `loadLabels`) to offer auto-complete suggestions.
+*   **Chip Interface:** Uses `Wrap` + `FilterChip` for intuitive adding/removing of labels.
+*   **Tri-State Logic:** Fields left empty are treated as "no-op" (do not change), allowing users to update *only* the category without wiping out existing notes.
+
+## Usage
+
+```dart
+final BulkEditSpec? result = await showModalBottomSheet(
+  context: context,
+  builder: (_) => BulkEditSheet(
+    initial: lastUsedSpec, // Optional memory
+    loadCategories: ExpenseService.getDistinctCategories,
+  ),
+);
+
+if (result != null && !result.isNoop) {
+  // Apply result to all selected IDs
+}
+```

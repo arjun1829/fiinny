@@ -1,0 +1,74 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Stagger In
+
+A specialized animation widget for staggering list items or elements into view.
+
+## Overview
+
+`StaggerIn` combines a fade and slide transition to create a smooth entry effect. It is designed to work with a parent `AnimationController` and an `Interval` to sequence items (e.g., list items appearing one after another).
+
+## Usage
+
+```dart
+StaggerIn(
+  controller: _animationController,
+  interval: Interval(0.1, 0.6, curve: Curves.easeOutCubic),
+  from: Offset(0, 0.1), // Slide from 10% down
+  child: MyListItem(),
+)
+```
+
+## Props
+
+<PropsTable
+  data={[
+    {
+      name: 'controller',
+      type: 'AnimationController',
+      required: true,
+      description: 'The parent animation controller driving the effect.',
+    },
+    {
+      name: 'interval',
+      type: 'Interval',
+      required: true,
+      description: 'The time window (0.0 to 1.0) during which this specific item should animate.',
+    },
+    {
+      name: 'from',
+      type: 'Offset',
+      required: true,
+      description: 'The starting offset for the slide (relative to final position).',
+    },
+    {
+      name: 'child',
+      type: 'Widget',
+      required: true,
+      description: 'The widget to animate.',
+    },
+    {
+      name: 'curve',
+      type: 'Curve',
+      required: false,
+      description: 'Animation curve for the slide.',
+      default: 'Curves.easeOutCubic',
+    },
+    {
+      name: 'fadeBegin',
+      type: 'double',
+      required: false,
+      description: 'Initial opacity value.',
+      default: '0.0',
+    },
+  ]}
+/>
+
+## Implementation Details
+
+It chains two transitions:
+1.  **FadeTransition**: Opacity goes from `fadeBegin` to `1.0`.
+2.  **SlideTransition**: Position goes from `from` (offset) to `Offset.zero`.
+
+Both are driven by the same `CurvedAnimation` derived from the provided `controller` and `interval`.

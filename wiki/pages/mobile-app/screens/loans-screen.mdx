@@ -1,0 +1,33 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Loans Screen
+
+A dedicated management dashboard for Liabilities.
+
+## Overview
+
+Tracks active and closed loans with a strong focus on EMI and due dates. It separates "Active" and "Closed" loans into segments.
+
+## Design
+
+- **Hero Header**: A large, dark teal (`#09857a`) banner with a rotating financial quote.
+- **Glass Summary**: A translucent card summarizing Total Outstanding, Total EMI, and Debt-Free progress.
+- **Loan Tiles**: Cards displaying next due date, "Overdue" badges, and EMI details.
+
+## Logic
+
+- **Smart Due Date**: `_nextPaymentDate` calculates the next occurrence of the "Payment Day of Month" (e.g., the 5th) relative to today.
+- **Sorting**: loans are sorted by urgency (nearest due date first).
+- **Progress**: Visualizes "Years Left" and "Paid %" based on original vs. outstanding amounts.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  }
+]} />

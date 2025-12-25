@@ -1,0 +1,13 @@
+# Activity Event (`activity_event.dart`)
+
+**Path:** `lib/models/activity_event.dart`
+
+## 1. Overview
+A specialized view model designed purely for the UI **Activity Feed**.
+
+## 2. Responsibilities
+- **Feed Item:** Represents a single row in the "Recent Activity" stream (e.g., "Arjun updated the Goa Trip").
+- **Visuals:** Holds a pre-resolved `IconData` and formatted `subtitle` string ready for display.
+
+## 3. Usage
+- **UI:** The "Activity" sidebar or dashboard widget. It is **not** persisted to Firestore directly; it is logically derived from other real-time events.

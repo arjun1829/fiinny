@@ -1,0 +1,19 @@
+# Activity Tab
+
+**Path:** `lib/widgets/dashboard_activity_tab.dart`
+
+Displays a chronological feed of `ActivityEvent`s on the dashboard.
+
+## Features
+*   **Empty State:** Friendly message when no events exist.
+*   **Card List:** Renders events as elevated cards with `ListTile`.
+*   **Detail Sheet:** Tapping an event opens a modal bottom sheet with more specifics (currently a placeholder for future expansion).
+*   **Date Formatting:** Uses `intl` to format timestamps (e.g., "12 Oct, 10:30 AM").
+
+## Usage
+
+```dart
+DashboardActivityTab(
+  events: myActivityList, // List<ActivityEvent>
+)
+```

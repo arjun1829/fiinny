@@ -1,0 +1,12 @@
+# First Surface Gate
+
+**Path**: `lib/services/push/first_surface_gate.dart`
+
+A coordination primitive to prevent system permission dialogs (like iOS "Allow Notifications?") from showing up while the Flutter engine is still warming up or showing a splash screen.
+
+## Mechanism
+*   **`waitUntilReady()`**: A Future that waits until the app signals it's ready.
+*   **`markReady()`**: Called by the main Dashboard or Home screen `initState`.
+*   **Timeout**: Has a safe fallback (5s) so it doesn't block forever if the UI fails to mount.
+
+This ensures a smoother UX and prevents "blank screen" issues during permission requests.

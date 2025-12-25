@@ -1,0 +1,27 @@
+# Merchant Alias Service
+
+**Path**: `lib/services/merchants/merchant_alias_service.dart`
+
+The core normalization engine for merchant names. It maps messy, noisy bank descriptors (e.g., "AMAZON PAY INDIA PVT L") to clean, canonical brand names (e.g., "AMAZON").
+
+## Features
+
+### 1. Built-in Registry (`_builtin`)
+A massive map of RegEx patterns to Canonical Names, covering:
+*   **Gateways**: Razorpay, PayU, BillDesk.
+*   **Wallets**: Paytm, PhonePe.
+*   **Tech**: Google, Apple, Microsoft, Spotify, Netflix.
+*   **Food**: Swiggy, Zomato, Blinkit.
+*   **Shopping**: Amazon, Flipkart, Myntra.
+*   **Travel**: Uber, Ola, IRCTC.
+*   **Utilities**: Bescom, Jio, Airtel.
+*   **Finance**: Zerodha, Groww.
+
+### 2. Context-Aware Normalization (`normalizeFromContext`)
+Uses extra hints to disambiguate:
+*   **UPI VPA**: `@ybl` -> PhonePe, `@swiggy` -> Swiggy.
+*   **Email Domain**: `noreply@swiggy.in` -> Swiggy.
+*   **SMS Sender**: `VK-NETFLX` -> Netflix.
+
+### 3. Remote Overrides
+Supports fetching dynamic overrides from Firestore (`config/merchant_alias/overrides`) to fix mappings without an app update.

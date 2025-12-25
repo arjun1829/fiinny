@@ -1,0 +1,12 @@
+# Image Cache
+
+**Path**: `lib/services/image_cache.dart`
+
+A utility to optimize image loading performance, specifically for brand logos.
+
+## Responsibilities
+*   **Pre-caching**: `warmUpBrands` loads a list of common assets (Amazon, Netflix, Spotify, etc.) into the memory cache on app startup.
+*   **Cache Caps**: `setCaps` allows limiting the image cache size to prevent OOM errors on low-end devices.
+
+## Usage
+Called in `main.dart` or the Dashboard's `initState` to ensure smooth scrolling in transaction lists.

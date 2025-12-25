@@ -1,0 +1,23 @@
+# Insight Feed
+
+**Path:** `lib/widgets/insight_feed_card.dart`
+
+A list view of multiple generated insights, typically used on the "Fiinny Brain" or Insights screen.
+
+## Intelligence
+*   **Deduplication:** Merges duplicate insights (same title/category/type) by keeping only the one with the highest severity or latest timestamp.
+*   **Sorting:** Orders insights by **Severity** (Critical > Warning > Positive) and then by **Time** (Newest first).
+*   **Severity Coding:**
+    *   **Level 3 (Critical):** Red (`Fx.bad`) + Error Icon.
+    *   **Level 2 (Warning):** Orange (`Fx.warn`) + Warning Icon.
+    *   **Level 1 (Positive):** Green (`Fx.good`) + Thumbs Up.
+
+## Usage
+
+```dart
+InsightFeedCard(
+  insights: myRawInsightsList,
+  maxItems: 5,
+  showHeader: true,
+)
+```

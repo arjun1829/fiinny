@@ -1,0 +1,49 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Main Nav Screen
+
+The application's persistent bottom navigation shell.
+
+## Overview
+
+`MainNavScreen` is the primary authenticated container. It holds the bottom navigation bar and stays alive while the user switches between the four main tabs. It manages the global navigation state and maintains the widget tree for each tab to preserve state (using `IndexedStack`).
+
+## Features
+
+- **Persistent State**: Uses `IndexedStack` to keep `DashboardScreen`, `ExpensesScreen`, `FriendsScreen`, and `SharingScreen` alive.
+- **Shine Animation**: A custom `Canvas`-drawn "shine" effect loops over the active tab icon every few seconds to draw attention.
+- **Phone Resolution**: If initialized with a user UID (from deep links or legacy auth), it asynchronously resolves the real phone number using `UserService` before rendering the main content.
+
+## Usage
+
+```dart
+Navigator.pushReplacement(
+  context,
+  MaterialPageRoute(builder: (_) => const MainNavScreen(userPhone: '+919876543210')),
+);
+```
+
+## Internal Components
+
+### Tabs
+1.  **Dashboard**: `Icons.dashboard_rounded`
+2.  **Expenses**: `Icons.list_alt_rounded`
+3.  **Friends**: `Icons.group_rounded`
+4.  **Sharing**: `Icons.people_outline`
+
+### ShinePainter
+A custom painter that draws a `LinearGradient` mask moving across the icon.
+- **Gradient**: White with varying opacity (0% -> 22% -> 45% -> 0%).
+- **Animation**: Driven by `AnimationController`s that run on a looper (`_startShine`).
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userPhone',
+    type: 'String',
+    required: true,
+    description: 'The authenticated user\'s phone number (or UID for resolution).'
+  }
+]} />

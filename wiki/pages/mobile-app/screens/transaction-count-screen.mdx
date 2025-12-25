@@ -1,0 +1,27 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Transaction Count Screen
+
+High-level volume analysis.
+
+## Overview
+
+Compares the **frequency** of financial activities (Income vs Expense) over time.
+
+## Features
+
+- **Frequency Chart**: A Bar chart displaying the number of transactions per bucket (Hour for 'Day', Day for 'Month', Month for 'Year').
+- **Comparison**: Side-by-side totals for Credit vs Debit counts.
+- **Animation**: Bars animate from zero on load using `CurvedAnimation` and `Curves.easeOutCubic`.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userId',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  }
+]} />

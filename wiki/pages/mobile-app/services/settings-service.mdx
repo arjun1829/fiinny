@@ -1,0 +1,14 @@
+# Settings Service (`settings_service.dart`)
+
+**Path:** `lib/services/settings_service.dart`
+
+## 1. Overview
+A simple Key-Value store backed by Firestore.
+
+## 2. Logic
+Stores data in a map field `settings` within the `users/{uid}` document.
+- `setString(key, value)`: Merges the key into the settings map.
+- `getString(key)`: Retrieves it.
+
+## 3. Usage
+Used for syncing simple preferences like "Default Currency" or "Theme Mode" across devices.

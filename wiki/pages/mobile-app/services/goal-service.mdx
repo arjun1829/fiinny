@@ -1,0 +1,15 @@
+# Goal Service (`goal_service.dart`)
+
+**Path:** `lib/services/goal_service.dart`
+
+## 1. Overview
+Manages `GoalModel` entities. This service is highly "Transaction-Aware" to ensure money saved towards a goal is accurately tracked.
+
+## 2. Key Responsibilities
+- **Atomic Progress**: `incrementSavedAmount` uses a transaction to ensure that if two sources add money to a goal simultaneously, the balance is correct. It also enforces logic like "Cannot save more than Target Amount" (clamping).
+- **Lifecycle Management**: Transitions goals through `Active -> Completed` or `Active -> Paused -> Archived` states.
+- **Dependency Tracking**: Manages arrays of `milestones` and `dependencies` (e.g., "Buy Car" depends on "Save Downpayment").
+- **Projections**: `dueWithinStream` helps the UI show "Goals due this month".
+
+## 3. Usage
+Powers the **Goals Dashboard** and **Smart Nudges** (e.g. "You are behind on your Japan Trip goal").

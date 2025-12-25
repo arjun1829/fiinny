@@ -1,0 +1,20 @@
+# Shimmer Box
+
+**Path:** `lib/widgets/shimmer.dart`
+
+A generalized loading placeholder widget that shows a moving gradient animation.
+
+## Mechanics
+*   **AnimationController:** Repeats indefinitely (duration 1200ms).
+*   **Gradient:** Uses a `LinearGradient` with stops moving from -1 to 1 to create the "wave" light effect.
+*   **Customization:** Accepts custom `height`, `width`, and `borderRadius` to match the loading content shape.
+
+## Usage
+
+```dart
+ShimmerBox(
+  height: 50,
+  width: 200,
+  borderRadius: BorderRadius.circular(8),
+)
+```

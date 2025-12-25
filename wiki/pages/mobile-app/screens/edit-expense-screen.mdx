@@ -1,0 +1,46 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Edit Expense Screen
+
+The editor for existing expense records.
+
+## Overview
+
+Allows users to modify details of an existing `ExpenseItem`. It shares much of the UI DNA with `AddTransactionScreen` but is structured specifically for editing.
+
+## Features
+
+- **Date Changing**: Allows moving the transaction date.
+- **Split Adjustment**: Users can add/remove friends from an existing split.
+- **Bank Reference Detection**: Automatically detects bank reference numbers (UTR, Ref No) in notes and extracts them into a separate display field (`_looksLikeBankReference`).
+- **Audit Trails**: Preserves `createdAt` and `createdBy` fields while updating `updatedAt`.
+
+## Structure
+
+1.  **Step 0: Basics**: Amount, Category, Date, Note, Counterparty.
+2.  **Step 1: People**: Payer, Friends/Group involved.
+3.  **Step 2: Review**: Summary before saving.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userPhone',
+    type: 'String',
+    required: true,
+    description: 'User ID.'
+  },
+  {
+    name: 'expense',
+    type: 'ExpenseItem',
+    required: true,
+    description: 'The existing expense object to edit.'
+  },
+  {
+    name: 'initialStep',
+    type: 'int',
+    default: '0',
+    description: 'Start at a specific step (e.g. 1 for adding people).'
+  }
+]} />

@@ -1,0 +1,14 @@
+# Parsed Transaction (`parsed_transaction.dart`)
+
+**Path:** `lib/models/parsed_transaction.dart`
+
+## 1. Overview
+An **intermediate, model-agnostic contract** emitted by the parsing engine. It represents pure data extraction before it becomes a concrete Firestore model (like `ExpenseItem`).
+
+## 2. Responsibilities
+- **Standardization:** Normalizes data from disparate sources using Enums (`TxChannel`, `TxDirection`, `TxSource`).
+- **Deduplication:** The `idempotencyKey` is critical. It allows multiple sources (e.g., an SMS and an Email about the same debit) to be merged into a single event.
+- **Merging Logic:** The `merge` method intelligently combines two parsings, preferring longer merchant names, more specific categories, and higher confidence scores.
+
+## 3. Usage
+- **Pipeline:** Parser Service -> `ParsedTransaction` -> Deduplication Service -> `IngestDraft` / `ExpenseItem`.

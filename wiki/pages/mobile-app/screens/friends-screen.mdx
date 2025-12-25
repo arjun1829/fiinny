@@ -1,0 +1,76 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Friends Screen
+
+The main social hub of the application.
+
+## Overview
+
+A comprehensive dashboard for managing relationships and shared finances. It combines a tabbed interface (All/Friends/Groups) with advanced filtering and search capabilities.
+
+## Features
+
+- **Settle Smart**: A prominent animated CTA (`_SettleSmartCTA`) that suggests optimized settlement actions.
+- **Filtering**:
+    - **Direction**: "Filter by Owed to you" vs "You owe".
+    - **Open Only**: Toggles viewing only unsettled balances.
+- **Tabs**:
+    1.  **All**: Aggregated view.
+    2.  **Friends**: Individual relationships.
+    3.  **Groups**: Group entities.
+    4.  **Activity**: Recent shared expenses.
+- **Search Overlay**: An animated expandable search bar.
+
+## Architecture
+
+**Social Graph Navigation:**
+
+```mermaid
+graph TD
+    %% Nodes
+    User(User)
+    Friends(FriendsScreen)
+    
+    %% Tabs
+    TabBox[TabBar]
+    FriendList[FriendListWidget]
+    GroupList[GroupListWidget]
+    
+    %% Actions
+    AddFriend[Add Friend Dialog]
+    AddGroup[Add Group Dialog]
+    SettleUp[Settle Up Screen]
+    
+    %% Edges
+    User --> Friends
+    Friends --> TabBox
+    TabBox --> |Tab 1| FriendList
+    TabBox --> |Tab 2| GroupList
+    
+    FriendList --> |Tap Tile| FriendDetail[FriendDetailScreen]
+    GroupList --> |Tap Tile| GroupDetail[GroupDetailScreen]
+    
+    Friends -- "FAB Action" --> AddFriend
+    Friends -- "FAB Action" --> AddGroup
+    
+    FriendList -.-> |"Settle"| SettleUp
+    
+    classDef ui fill:#e1bee7,stroke:#8e24aa,stroke-width:2px;
+    class Friends,FriendList,GroupList,SettleUp ui;
+```
+
+- **State**: Manages filters (`_direction`, `_openOnly`) locally.
+- **Data**: Streams friends and groups from `FriendService` and `GroupService`.
+- **Navigation**: Routes to `FriendDetailScreen` or `GroupDetailScreen`.
+
+## Props
+
+<PropsTable props={[
+  {
+    name: 'userPhone',
+    type: 'String',
+    required: true,
+    description: 'User ID context.'
+  }
+]} />

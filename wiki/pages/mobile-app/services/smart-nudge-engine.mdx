@@ -1,0 +1,14 @@
+# Smart Nudge Engine (`smart_nudge_engine.dart`)
+
+**Path:** `lib/services/smart_nudge_engine.dart`
+
+## 1. Overview
+A wrapper around `flutter_local_notifications` to display **System Tray Notifications**.
+
+## 2. Features
+- **Channel Config**: Uses `fiinny_nudges` channel (High Importance).
+- **Deep Linking**: Infers URI schemes based on insight category (e.g., `app://loans` for Loan alerts).
+- **Daily Briefing**: `sendDailyReminder` triggers a generic "Check your goals" nudges, deep-linking to `app://tx/today`.
+
+## 3. Usage
+Called by `FiinnyBrainService` when it decides an insight is worthy of a push notification.

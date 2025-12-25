@@ -1,0 +1,77 @@
+
+import { PropsTable } from '../../../components/props-table';
+
+# Crisis Alert Banner
+
+A prominent warning banner displayed when a user's financial situation requires immediate attention (e.g., expenses exceed income).
+
+## Overview
+
+The `CrisisAlertBanner` is a red, high-alert widget designed to stand out in the dashboard or home feed. It is conditionally rendered based on financial metrics.
+
+## Usage
+
+```dart
+CrisisAlertBanner(
+  userId: 'user_123',
+  totalIncome: 5000,
+  totalExpense: 6000, // > income, triggers alert
+  customMessage: null,
+)
+```
+
+## Props
+
+<PropsTable
+  data={[
+    {
+      name: 'userId',
+      type: 'String',
+      required: true,
+      description: 'ID of the current user (currently used for context/logging in future).',
+    },
+    {
+      name: 'totalIncome',
+      type: 'double',
+      required: true,
+      description: 'Total income for the period.',
+    },
+    {
+      name: 'totalExpense',
+      type: 'double',
+      required: true,
+      description: 'Total expenses for the period.',
+    },
+    {
+      name: 'totalLoan',
+      type: 'double?',
+      required: false,
+      description: 'Total debt/loan value (for potential future checks).',
+    },
+    {
+      name: 'totalAssets',
+      type: 'double?',
+      required: false,
+      description: 'Total assets value.',
+    },
+    {
+      name: 'customMessage',
+      type: 'String?',
+      required: false,
+      description: 'If provided, overrides the automatic crisis logic message.',
+    },
+  ]}
+/>
+
+## Logic
+
+- **Condition**: Visible if `totalExpense > totalIncome` OR if `customMessage` is provided.
+- **Message**:
+    - Defaults to: "⚠️ High expenses alert! You’ve spent more than your income this month."
+    - Can be overridden by `customMessage`.
+    - Returns `SizedBox.shrink()` if no crisis condition is met.
+
+## Styling
+- **Background**: `Colors.redAccent.withOpacity(0.90)`
+- **Shadow**: Red shadow to create a "glowing" warning effect.
+- **Icon**: `Icons.warning_amber_rounded` in white.

@@ -1,0 +1,18 @@
+# Credit Card Service (`credit_card_service.dart`)
+
+**Path:** `lib/services/credit_card_service.dart`
+
+## 1. Overview
+Manages the lifecycle of Credit Cards, specifically **Cycles** and **Payments**.
+
+## 2. Data Structure
+- `users/{uid}/credit_cards/{cardId}`: Card definition.
+- `.../cycles/{cycleId}`: Monthly statement cycles (Total Due, Paid Amount).
+- `.../payments/{paymentId}`: Individual payments made towards the card.
+
+## 3. Logic
+- **Reconciliation (`recomputeCycleStatus`)**: Calculates `paidAmount` vs `totalDue` to determine if a cycle is `open`, `partial`, `paid`, or `overdue`.
+- **Mark Paid**: Convenience method to create a manual payment entry equal to the remaining due amount.
+
+## 4. Usage
+Used by **Credit Card Detail Screen** and **Bill Payments**.
