@@ -8,6 +8,7 @@ import '../../core/ads/ad_ids.dart';
 import '../../core/ads/ad_service.dart';
 import '../../core/ads/adaptive_banner.dart';
 import '../../core/ads/web_house_ad_card.dart';
+import '../../core/ads/native_inline_ad.dart';
 import '../../core/flags/remote_flags.dart';
 
 class SleekAdCard extends StatefulWidget {
@@ -136,24 +137,38 @@ class _SleekAdCardState extends State<SleekAdCard> {
       return const SizedBox.shrink();
     }
 
-    final banner = AdaptiveBanner(
-      key: ValueKey(_bannerGeneration),
-      adUnitId: AdIds.banner,
-      inline: false,
-      inlineMaxHeight: 120,
-      padding: EdgeInsets.zero,
-      onLoadChanged: (isLoaded) {
-        assert(() {
-          debugPrint(
-            '[SleekAdCard] banner ${maskAdIdentifier(AdIds.banner)} '
-            'loaded=$isLoaded generation=$_bannerGeneration',
+    final useNative = !kIsWeb && 
+        (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) && 
+        AdIds.native.isNotEmpty;
+
+    final childAd = useNative
+        ? NativeInlineAd(
+            key: ValueKey('native_$_bannerGeneration'),
+            adUnitId: AdIds.native,
+            inlineMaxHeight: 120, // Hint for template selection
+            onLoadChanged: (isLoaded) {
+               if (!mounted || _loaded == isLoaded) return;
+               setState(() => _loaded = isLoaded);
+            },
+          )
+        : AdaptiveBanner(
+            key: ValueKey(_bannerGeneration),
+            adUnitId: AdIds.banner,
+            inline: false,
+            inlineMaxHeight: 120,
+            padding: EdgeInsets.zero,
+            onLoadChanged: (isLoaded) {
+              assert(() {
+                debugPrint(
+                  '[SleekAdCard] banner ${maskAdIdentifier(AdIds.banner)} '
+                  'loaded=$isLoaded generation=$_bannerGeneration',
+                );
+                return true;
+              }());
+              if (!mounted || _loaded == isLoaded) return;
+              setState(() => _loaded = isLoaded);
+            },
           );
-          return true;
-        }());
-        if (!mounted || _loaded == isLoaded) return;
-        setState(() => _loaded = isLoaded);
-      },
-    );
 
     return Visibility(
       visible: _loaded,
@@ -191,7 +206,7 @@ class _SleekAdCardState extends State<SleekAdCard> {
 
               Align(
                 alignment: Alignment.center,
-                child: banner,
+                child: childAd,
               ),
             ],
           ),

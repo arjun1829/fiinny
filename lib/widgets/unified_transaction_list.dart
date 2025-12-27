@@ -1633,10 +1633,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     required Map<String, dynamic> normalized,
   }) {
     final String value = (current.isEmpty ? (isIncome ? "Income" : "General") : current);
-    List<String> options = List<String>.from(widget.categoryOptions);
-    if (!options.contains(value)) {
-      options = [value, ...options];
+    // Use a Set to ensure uniqueness and include the current value
+    final Set<String> uniqueOptions = <String>{};
+    if (value.isNotEmpty) {
+      uniqueOptions.add(value);
     }
+    uniqueOptions.addAll(widget.categoryOptions);
+    final List<String> options = uniqueOptions.toList();
 
     return SizedBox(
       width: double.infinity,
@@ -1755,13 +1758,14 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
     // Dropdown logic
     String value = raw;
-    List<String> options = List<String>.from(baseOptions);
     
-    // If current value is not in options (and not empty), add it transiently or handle mismatch
-    // If empty, we might want a placeholder or just "Select"
-    if (value.isNotEmpty && !options.contains(value)) {
-      options = [value, ...options];
+    // Ensure uniqueness and include the current value
+    final Set<String> uniqueOptions = <String>{};
+    if (value.isNotEmpty) {
+      uniqueOptions.add(value);
     }
+    uniqueOptions.addAll(baseOptions);
+    final List<String> options = uniqueOptions.toList();
     
     // Ensure we have a valid selection if value is invalid, or use a hint
     String? dropdownValue = value.isNotEmpty ? value : null;
