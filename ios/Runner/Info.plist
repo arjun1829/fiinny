@@ -1,117 +1,137 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
-  <!-- Identity -->
-  <key>CFBundleDevelopmentRegion</key><string>$(DEVELOPMENT_LANGUAGE)</string>
-  <key>CFBundleDisplayName</key><string>Fiinny</string>
-  <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
-  <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>Fiinny</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>$(FLUTTER_BUILD_NAME)</string>
-  <key>CFBundleVersion</key><string>8674</string>
+  <dict>
+    <!-- Identity -->
+    <key>CFBundleDevelopmentRegion</key>
+    <string>$(DEVELOPMENT_LANGUAGE)</string>
+    <key>CFBundleDisplayName</key>
+    <string>Fiinny</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Fiinny</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$(FLUTTER_BUILD_NAME)</string>
+    <key>CFBundleVersion</key>
+    <string>8675</string>
 
-  <!-- Flutter / Launch (no Main storyboard; only launch screen) -->
-  <!-- Temporarily disable Impeller to rule out iOS 18/Metal black-screen -->
-  <key>FLTEnableImpeller</key>
-  <false/>
-  <key>LSRequiresIPhoneOS</key><true/>
-  <key>UILaunchStoryboardName</key><string>LaunchScreen</string>
+    <!-- Flutter / Launch (no Main storyboard; only launch screen) -->
+    <!-- Temporarily disable Impeller to rule out iOS 18/Metal black-screen -->
+    <key>FLTEnableImpeller</key>
+    <false/>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
 
-  <!-- Verified launch + status configuration -->
-  <key>UIApplicationStateRestorationEnabled</key><false/>
-  <key>UIStatusBarHidden</key><false/>
-  <key>UIViewControllerBasedStatusBarAppearance</key><false/>
+    <!-- Verified launch + status configuration -->
+    <key>UIApplicationStateRestorationEnabled</key>
+    <false/>
+    <key>UIStatusBarHidden</key>
+    <false/>
+    <key>UIViewControllerBasedStatusBarAppearance</key>
+    <false/>
 
-  <!-- Orientation -->
-  <key>UISupportedInterfaceOrientations</key>
-  <array>
-    <string>UIInterfaceOrientationPortrait</string>
-    <string>UIInterfaceOrientationLandscapeLeft</string>
-    <string>UIInterfaceOrientationLandscapeRight</string>
-  </array>
-  <key>UISupportedInterfaceOrientations~ipad</key>
-  <array>
-    <string>UIInterfaceOrientationPortrait</string>
-    <string>UIInterfaceOrientationPortraitUpsideDown</string>
-    <string>UIInterfaceOrientationLandscapeLeft</string>
-    <string>UIInterfaceOrientationLandscapeRight</string>
-  </array>
-  <key>UIBackgroundModes</key>
-  <array>
-    <string>remote-notification</string>
-  </array>
-  <key>NSUserNotificationUsageDescription</key>
-  <string>We use notifications to remind you about upcoming dues.</string>
+    <!-- Orientation -->
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+      <string>UIInterfaceOrientationPortrait</string>
+      <string>UIInterfaceOrientationLandscapeLeft</string>
+      <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+      <string>UIInterfaceOrientationPortrait</string>
+      <string>UIInterfaceOrientationPortraitUpsideDown</string>
+      <string>UIInterfaceOrientationLandscapeLeft</string>
+      <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UIBackgroundModes</key>
+    <array>
+      <string>remote-notification</string>
+    </array>
+    <key>NSUserNotificationUsageDescription</key>
+    <string>We use notifications to remind you about upcoming dues.</string>
 
 
-  <!-- Performance / input -->
-  <key>CADisableMinimumFrameDurationOnPhone</key><true/>
-  <key>UIApplicationSupportsIndirectInputEvents</key><true/>
+    <!-- Performance / input -->
+    <key>CADisableMinimumFrameDurationOnPhone</key>
+    <true/>
+    <key>UIApplicationSupportsIndirectInputEvents</key>
+    <true/>
 
-  <!-- Keep Firebase delegate proxy ON unless you manually forward everything -->
-  <key>FirebaseAppDelegateProxyEnabled</key><true/>
-  <key>FirebaseDeepLinkPasteboardRetrievalEnabled</key><false/>
+    <!-- Keep Firebase delegate proxy ON unless you manually forward everything -->
+    <key>FirebaseAppDelegateProxyEnabled</key>
+    <true/>
+    <key>FirebaseDeepLinkPasteboardRetrievalEnabled</key>
+    <false/>
 
-  <!-- URL Schemes (Google Sign-In etc.) -->
-  <key>CFBundleURLTypes</key>
-  <array>
-    <dict>
-      <key>CFBundleTypeRole</key><string>Editor</string>
-      <key>CFBundleURLSchemes</key>
-      <array>
-        <!-- From GoogleService-Info.plist: REVERSED_CLIENT_ID -->
-        <string>com.googleusercontent.apps.1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00</string>
-      </array>
-    </dict>
-  </array>
+    <!-- URL Schemes (Google Sign-In etc.) -->
+    <key>CFBundleURLTypes</key>
+    <array>
+      <dict>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <!-- From GoogleService-Info.plist: REVERSED_CLIENT_ID -->
+          <string>com.googleusercontent.apps.1085936196639-ful1a37opigvpkrfnkvkpitue5fcbd00</string>
+        </array>
+      </dict>
+    </array>
 
-  <!-- App Linking / canOpenURL -->
-  <key>LSApplicationQueriesSchemes</key>
-  <array>
-    <string>google</string>
-    <string>comgooglemaps</string>
-    <string>tel</string>
-    <string>whatsapp</string>
-    <string>instagram</string>
-    <string>twitter</string>
-  </array>
+    <!-- App Linking / canOpenURL -->
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+      <string>google</string>
+      <string>comgooglemaps</string>
+      <string>tel</string>
+      <string>whatsapp</string>
+      <string>instagram</string>
+      <string>twitter</string>
+    </array>
 
-  <!-- ===== Fiinny iOS permissions & AdMob ===== -->
-  <key>NSContactsUsageDescription</key>
-  <string>Fiinny uses your contacts to help you find friends and enable Partner Mode.</string>
-  <key>NSPhotoLibraryUsageDescription</key>
-  <string>Allow access to save and pick receipt images and your profile photo.</string>
-  <key>NSPhotoLibraryAddUsageDescription</key>
-  <string>Allow saving generated receipts and exports to your library.</string>
-  <key>NSCameraUsageDescription</key>
-  <string>We use the camera to scan receipts and documents.</string>
-  <key>NSMicrophoneUsageDescription</key>
-  <string>Required only if you record videos (not used by default).</string>
-  <key>NSSpeechRecognitionUsageDescription</key>
-  <string>Fiinny uses speech recognition to let you add transactions or search using your voice.</string>
-  <key>NSUserTrackingUsageDescription</key>
-  <string>Fiinny asks permission to use your device’s identifier to show more relevant ads and measure performance. You can continue even if you don’t allow.</string>
-  <key>FirebaseCrashlyticsCollectionEnabled</key>
-  <true/>
-  <key>NSLocationWhenInUseUsageDescription</key>
-  <string>Your app needs access to your location for a specific feature.</string>
-  <key>NSFaceIDUsageDescription</key>
-  <string>This app uses Face ID to securely unlock your profile.</string>
-  <key>NSCalendarsUsageDescription</key>
-  <string>Fiinny needs access to your calendar for tracking goal due dates and reminders.</string>
+    <!-- ===== Fiinny iOS permissions & AdMob ===== -->
+    <key>NSContactsUsageDescription</key>
+    <string>Fiinny uses your contacts to help you find friends and enable Partner Mode.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Allow access to save and pick receipt images and your profile photo.</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>Allow saving generated receipts and exports to your library.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>We use the camera to scan receipts and documents.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Required only if you record videos (not used by default).</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Fiinny uses speech recognition to let you add transactions or search using your voice.</string>
+    <key>NSUserTrackingUsageDescription</key>
+    <string>Fiinny asks permission to use your device’s identifier to show more relevant ads and measure performance. You can continue even if you don’t allow.</string>
+    <key>FirebaseCrashlyticsCollectionEnabled</key>
+    <true/>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Your app needs access to your location for a specific feature.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>This app uses Face ID to securely unlock your profile.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Fiinny needs access to your calendar for tracking goal due dates and reminders.</string>
 
-  <!-- App Store Export Compliance -->
-  <key>ITSAppUsesNonExemptEncryption</key><false/>
+    <!-- App Store Export Compliance -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
 
-  <!-- AdMob iOS App ID -->
-  <key>GADApplicationIdentifier</key>
-  <string>ca-app-pub-5891610127665684~2144640230</string>
+    <!-- AdMob iOS App ID -->
+    <key>GADApplicationIdentifier</key>
+    <string>ca-app-pub-3087779657197986~5816186389</string>
 
-  <!-- (TEMP, only if you hit http:// dev endpoints—remove later) -->
-  <!--
+    <!-- (TEMP, only if you hit http:// dev endpoints—remove later) -->
+    <!--
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsArbitraryLoads</key><true/>
@@ -119,5 +139,5 @@
   -->
 
 
-</dict>
+  </dict>
 </plist>

@@ -1773,8 +1773,22 @@ class FriendsTab extends StatelessWidget {
             final bottomPad = MediaQuery.of(context).padding.bottom + 120.0;
             return ListView.builder(
               padding: EdgeInsets.only(top: 10, bottom: bottomPad),
-              itemCount: items.length,
-              itemBuilder: (_, i) => _GlassyChatTile(item: items[i]),
+              itemCount: items.length + 1,
+              itemBuilder: (_, i) {
+                if (i == 0) {
+                  return const Padding(
+                    padding: EdgeInsets.fromLTRB(14, 0, 14, 12),
+                    child: AdsBannerCard(
+                      placement: 'friends_tab',
+                      inline: true,
+                      inlineMaxHeight: 110,
+                      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      minHeight: 88,
+                    ),
+                  );
+                }
+                return _GlassyChatTile(item: items[i - 1]);
+              },
             );
 
           },
@@ -1935,8 +1949,22 @@ class GroupsTab extends StatelessWidget {
                 final bottomPad = MediaQuery.of(context).padding.bottom + 120.0;
                 return ListView.builder(
                   padding: EdgeInsets.only(top: 10, bottom: bottomPad),
-                  itemCount: items.length,
-                  itemBuilder: (_, i) => _GlassyChatTile(item: items[i]),
+                  itemCount: items.length + 1,
+                  itemBuilder: (_, i) {
+                    if (i == 0) {
+                      return const Padding(
+                        padding: EdgeInsets.fromLTRB(14, 0, 14, 12),
+                        child: AdsBannerCard(
+                          placement: 'groups_tab',
+                          inline: true,
+                          inlineMaxHeight: 110,
+                          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          minHeight: 88,
+                        ),
+                      );
+                    }
+                    return _GlassyChatTile(item: items[i - 1]);
+                  },
                 );
 
               },

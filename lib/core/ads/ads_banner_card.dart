@@ -73,8 +73,11 @@ class AdsBannerCard extends StatefulWidget {
   State<AdsBannerCard> createState() => _AdsBannerCardState();
 }
 
-class _AdsBannerCardState extends State<AdsBannerCard> {
+class _AdsBannerCardState extends State<AdsBannerCard> with AutomaticKeepAliveClientMixin {
   bool _loaded = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   void _handleLoad(bool loaded) {
     if (!mounted) {
@@ -103,6 +106,7 @@ class _AdsBannerCardState extends State<AdsBannerCard> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final placeholder = widget.placeholder ??
         _DefaultAdPlaceholder(placement: widget.placement, alignment: widget.alignment);
 
