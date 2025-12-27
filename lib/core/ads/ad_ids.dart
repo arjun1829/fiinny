@@ -9,18 +9,21 @@ const bool forceTestAds =
 
 class AdIds {
   // ---------- REAL App IDs ----------
-  static const _androidAppIdReal = 'ca-app-pub-5891610127665684~7171759721';
-  static const _iosAppIdReal     = 'ca-app-pub-5891610127665684~2144640230';
+  // ---------- REAL App IDs ----------
+  static const _androidAppIdReal = 'ca-app-pub-3087779657197986~6549865319';
+  static const _iosAppIdReal     = 'ca-app-pub-3087779657197986~5816186389';
 
   // ---------- REAL UNIT IDs (ANDROID) ----------
-  static const _androidBannerReal = 'ca-app-pub-5891610127665684/1238736762'; // Dashboard_Banner (Updated)
-  static const _androidInterReal  = 'ca-app-pub-5891610127665684/1651774466'; // TxSuccess_Interstitial
-  static const _androidRewardReal = 'ca-app-pub-5891610127665684/8515531876'; // Insights_Rewarded
+  static const _androidBannerReal = 'ca-app-pub-3087779657197986/1206857538'; 
+  static const _androidInterReal  = 'ca-app-pub-3087779657197986/8573393427'; 
+  static const _androidNativeReal = 'ca-app-pub-3087779657197986/9244489028'; 
+  static const _androidRewardReal = ''; // None provided in new set
 
   // ---------- REAL UNIT IDs (iOS) ----------
-  static const _iosBannerReal = 'ca-app-pub-5891610127665684/1649712954'; // Dashboard_Banner (Updated)
-  static const _iosInterReal  = 'ca-app-pub-5891610127665684/5161685814'; // TxSuccess_Interstitial
-  static const _iosRewardReal = 'ca-app-pub-5891610127665684/6770265044'; // Insights_Rewarded
+  static const _iosBannerReal = 'ca-app-pub-3087779657197986/2519939208'; 
+  static const _iosInterReal  = 'ca-app-pub-3087779657197986/9231868975'; 
+  static const _iosNativeReal = 'ca-app-pub-3087779657197986/5553296655'; 
+  static const _iosRewardReal = ''; // None provided in new set
 
   // ---------- Google TEST IDs ----------
   static const _androidAppIdTest  = 'ca-app-pub-3940256099942544~3347511713';
@@ -51,13 +54,13 @@ class AdIds {
       return _looksConfigured(_androidAppIdReal, isAppId: true) &&
           _looksConfigured(_androidBannerReal) &&
           _looksConfigured(_androidInterReal) &&
-          _looksConfigured(_androidRewardReal);
+          _looksConfigured(_androidNativeReal);
     }
     if (Platform.isIOS) {
       return _looksConfigured(_iosAppIdReal, isAppId: true) &&
           _looksConfigured(_iosBannerReal) &&
           _looksConfigured(_iosInterReal) &&
-          _looksConfigured(_iosRewardReal);
+          _looksConfigured(_iosNativeReal);
     }
     return false;
   }
@@ -83,6 +86,10 @@ class AdIds {
       ? (_useReal ? _androidInterReal : _androidInterTest)
       : (_useReal ? _iosInterReal : _iosInterTest));
 
+  static String get native => kIsWeb ? '' : (Platform.isAndroid
+      ? (_useReal ? _androidNativeReal : '') // No test ID for native defined yet
+      : (_useReal ? _iosNativeReal : ''));
+ 
   static String get rewarded => kIsWeb ? '' : (Platform.isAndroid
       ? (_useReal ? _androidRewardReal : _androidRewardTest)
       : (_useReal ? _iosRewardReal : _iosRewardTest));

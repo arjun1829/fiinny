@@ -1,5 +1,6 @@
 // lib/main.dart
 import 'dart:async';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'dart:io' show Platform;
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
@@ -40,17 +41,20 @@ Future<void> configureSystemUI() async {
 
   int sdk = 0;
   try {
-    final result = await _systemUiChannel.invokeMethod<int>('getSdkInt');
-    if (result != null) sdk = result;
+    final androidInfo = await DeviceInfoPlugin().androidInfo;
+    sdk = androidInfo.version.sdkInt;
   } catch (err) {
-    debugPrint('System UI channel failed: $err');
+    debugPrint('Device info failed: $err');
+    // Fallback or assume newer to be safe? 
+    // If we assume newer, we might miss coloring on old devices. 
+    // If we assume older, we trigger warning on new devices.
+    // Let's rely on the channel as backup or default to 0.
   }
 
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  if (sdk < 35) {
+  if (sdk != 0 && sdk < 35) {
     // Only set colors on older Android versions where it's still allowed/needed.
-    // On Android 15+, edge-to-edge is enforced and these APIs are deprecated/ignored.
     const style = SystemUiOverlayStyle(
       statusBarColor: Color(0x00000000),
       systemNavigationBarColor: Color(0x00000000),
@@ -59,8 +63,9 @@ Future<void> configureSystemUI() async {
     );
     SystemChrome.setSystemUIOverlayStyle(style);
   } else {
-    // For Android 15+, just ensure icon brightness is correct if needed,
-    // but do not set the deprecated color properties.
+    // For Android 15+, edge-to-edge is enforced.
+    // Do NOT set deprecated color properties. 
+    // Just ensure brightness.
     const style = SystemUiOverlayStyle(
       statusBarIconBrightness: Brightness.dark,
       systemNavigationBarIconBrightness: Brightness.dark,

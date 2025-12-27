@@ -139,49 +139,50 @@ function MainContent() {
                 <LanguageSelector />
               </div>
 
+
+              {user ? (
+                <Link href="/dashboard" className="flex items-center gap-3 bg-slate-100 hover:bg-slate-200 transition-all pl-2 pr-4 py-1.5 rounded-full border border-slate-200 ml-4">
+                  {user.photoURL ? (
+                    <Image
+                      src={user.photoURL}
+                      alt="Profile"
+                      width={32}
+                      height={32}
+                      className="w-8 h-8 rounded-full object-cover border border-white shadow-sm"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs">
+                      {user.email?.charAt(0).toUpperCase() || "U"}
+                    </div>
+                  )}
+                  <div className="flex flex-col items-start">
+                    <span className="text-xs font-bold text-slate-900 leading-none mb-0.5">Console</span>
+                    <span className="text-[10px] text-slate-500 leading-none">Dashboard</span>
+                  </div>
+                </Link>
+              ) : (
+                <Link href="/login" className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:shadow-lg hover:shadow-teal-500/30 transition-all hover:scale-105 active:scale-95 ml-4">
+                  {t.nav.login}
+                </Link>
+              )}
             </div>
 
-            {user ? (
-              <Link href="/dashboard" className="flex items-center gap-3 bg-slate-100 hover:bg-slate-200 transition-all pl-2 pr-4 py-1.5 rounded-full border border-slate-200 ml-4">
-                {user.photoURL ? (
-                  <Image
-                    src={user.photoURL}
-                    alt="Profile"
-                    width={32}
-                    height={32}
-                    className="w-8 h-8 rounded-full object-cover border border-white shadow-sm"
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs">
-                    {user.email?.charAt(0).toUpperCase() || "U"}
-                  </div>
-                )}
-                <div className="flex flex-col items-start">
-                  <span className="text-xs font-bold text-slate-900 leading-none mb-0.5">Console</span>
-                  <span className="text-[10px] text-slate-500 leading-none">Dashboard</span>
-                </div>
-              </Link>
-            ) : (
-              <Link href="/login" className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:shadow-lg hover:shadow-teal-500/30 transition-all hover:scale-105 active:scale-95 ml-4">
-                {t.nav.login}
-              </Link>
-            )}
-          </div>
 
-          {/* Mobile Menu Button */}
-          <div className="lg:hidden">
-            {user ? (
-              <Link href="/dashboard" className="bg-slate-100 text-slate-900 border border-slate-200 px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-2">
-                {user.photoURL && (
-                  <Image src={user.photoURL} alt="Profile" width={20} height={20} className="rounded-full w-5 h-5" />
-                )}
-                Console
-              </Link>
-            ) : (
-              <Link href="/login" className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white px-5 py-2 rounded-xl text-sm font-bold">
-                {t.nav.login}
-              </Link>
-            )}
+            {/* Mobile Menu Button - Moved inside flex container */}
+            <div className="lg:hidden">
+              {user ? (
+                <Link href="/dashboard" className="bg-slate-100 text-slate-900 border border-slate-200 px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-2">
+                  {user.photoURL && (
+                    <Image src={user.photoURL} alt="Profile" width={20} height={20} className="rounded-full w-5 h-5" />
+                  )}
+                  Console
+                </Link>
+              ) : (
+                <Link href="/login" className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white px-5 py-2 rounded-xl text-sm font-bold">
+                  {t.nav.login}
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </nav>
@@ -202,7 +203,7 @@ function MainContent() {
                 </span>
                 {t.hero.badge}
               </div>
-              <h1 className="text-6xl lg:text-8xl font-bold tracking-tighter text-slate-900 mb-8 leading-[0.9]">
+              <h1 className="text-4xl md:text-5xl lg:text-8xl font-bold tracking-tighter text-slate-900 mb-8 leading-[0.9]">
                 {t.hero.titleStart} <br />
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 to-emerald-600">
                   {t.hero.titleHighlight}
@@ -226,7 +227,39 @@ function MainContent() {
                   {t.hero.watchDemo}
                 </button>
               </div>
-              <p className="mt-6 text-sm text-slate-500 flex items-center gap-4 font-medium">
+
+              {/* Store Buttons */}
+              <div className="flex flex-col sm:flex-row gap-4 mt-8 items-center sm:items-start">
+                <a
+                  href="https://apps.apple.com/in/app/fiinny/id6751309482"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="transition-transform hover:scale-105 active:scale-95"
+                >
+                  <Image
+                    src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Download_on_the_App_Store_Badge.svg"
+                    alt="Download on the App Store"
+                    width={140}
+                    height={47}
+                    className="h-12 w-auto"
+                  />
+                </a>
+                <a
+                  href="https://play.google.com/store/apps/details?id=com.KaranArjunTechnologies.lifemap"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="transition-transform hover:scale-105 active:scale-95"
+                >
+                  <Image
+                    src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg"
+                    alt="Get it on Google Play"
+                    width={154}
+                    height={47}
+                    className="h-12 w-auto"
+                  />
+                </a>
+              </div>
+              <p className="mt-8 text-sm text-slate-500 flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 font-medium">
                 <span className="flex items-center gap-1"><CheckCircle2 className="w-4 h-4 text-teal-500" /> {t.hero.noCard}</span>
                 <span className="flex items-center gap-1"><CheckCircle2 className="w-4 h-4 text-teal-500" /> {t.hero.freePlan}</span>
               </p>

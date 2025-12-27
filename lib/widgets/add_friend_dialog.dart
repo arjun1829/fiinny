@@ -112,7 +112,9 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
             minChildSize: 0.5,
             maxChildSize: 0.95,
             builder: (context, scrollController) {
-              return ClipRRect(
+              return StatefulBuilder(
+                builder: (context, setModalState) {
+                  return ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
@@ -185,7 +187,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                                     ),
                                     onChanged: (q) {
                                       final query = q.trim().toLowerCase();
-                                      setState(() {
+                                      setModalState(() {
                                         _filtered = _allContacts.where((c) {
                                           final name = c.displayName.toLowerCase();
                                           final phone = c.phones.isNotEmpty ? c.phones.first.number.toLowerCase() : '';
@@ -227,6 +229,8 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                     ),
                   ),
                 ),
+              );
+                },
               );
             },
           );

@@ -71,7 +71,7 @@ android {
     }
 
     packaging {
-        jniLibs { useLegacyPackaging = true }
+        // jniLibs { useLegacyPackaging = true } // Removed for 16KB alignment support
     }
 
     signingConfigs {

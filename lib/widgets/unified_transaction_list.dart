@@ -2825,7 +2825,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     messenger
         .showSnackBar(
       SnackBar(
-        content: const Text('Deleted • UNDO'),
+        content: const Text('Deleted'),
+        duration: const Duration(seconds: 3),
         action: SnackBarAction(
           label: 'UNDO',
           onPressed: () {

@@ -611,6 +611,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     }
   }
 
+  bool _includeSalaryOverflow = false;
+
   DateTimeRange _rangeOrDefault() {
     if (_range != null) return _range!;
 
@@ -653,7 +655,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       case 'M':
       default:
         final start = DateTime(now.year, now.month, 1);
-        return DateTimeRange(start: start, end: DateTime(now.year, now.month + 1, 1));
+        final effectiveStart = _includeSalaryOverflow 
+            ? start.subtract(const Duration(days: 3)) 
+            : start;
+        return DateTimeRange(start: effectiveStart, end: DateTime(now.year, now.month + 1, 1));
     }
   }
 
@@ -792,6 +797,53 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         .join(' ');
   }
 
+  Map<String, double> _categoryTotalsForMonth(DateTime month) {
+    final start = DateTime(month.year, month.month, 1);
+    final end = DateTime(month.year, month.month + 1, 1);
+    final range = DateTimeRange(start: start, end: end);
+
+    final out = <String, double>{};
+    for (final e in _applyBankFiltersToExpenses(_allExp)) {
+      if (!_inRange(e.date, range)) continue;
+      final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+      final cat = _normalizeMainCategory(legacy);
+      out[cat] = (out[cat] ?? 0) + e.amount;
+    }
+    return out;
+  }
+
+  List<_SubcategoryBucket> _subcategoryBucketsForMonthAndCategory(
+      DateTime month, String category) {
+    final start = DateTime(month.year, month.month, 1);
+    final end = DateTime(month.year, month.month + 1, 1);
+    final range = DateTimeRange(start: start, end: end);
+
+    final expenses = _applyBankFiltersToExpenses(_allExp).where((e) {
+      if (!_inRange(e.date, range)) return false;
+      final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+      final cat = _normalizeMainCategory(legacy);
+      return cat == category;
+    });
+
+    final map = <String, _SubcategoryBucket>{};
+
+    for (final e in expenses) {
+      final sub = _resolveExpenseSubcategory(e);
+      final existing = map[sub];
+      if (existing == null) {
+        map[sub] = _SubcategoryBucket(name: sub, amount: e.amount, txCount: 1);
+      } else {
+        map[sub] = _SubcategoryBucket(
+          name: sub,
+          amount: existing.amount + e.amount,
+          txCount: existing.txCount + 1,
+        );
+      }
+    }
+
+    return map.values.toList();
+  }
+
   Future<void> _openCategoryDrilldown({
     required bool expense,
     required String category,
@@ -818,7 +870,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           .where((i) =>
               _inRange(i.date, range) &&
               AnalyticsAgg.resolveIncomeCategory(i) == category)
-          .toList();
+              .toList();
       await _openTxDrilldown(
         title: 'Income • $category · ${INR.f(total)}',
         exp: const [],
@@ -826,6 +878,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       );
     }
   }
+
+
+
+
+
+
 
   Future<void> _openCategoryDetailForMonth({
     required String category,
@@ -1149,9 +1207,45 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 for (final token in periods)
                   _buildPeriodDockItem(token),
                 _buildPeriodDockIcon(),
+                if (_periodToken == 'M')
+                  _buildSalaryOverflowCheckbox(),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSalaryOverflowCheckbox() {
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _includeSalaryOverflow = !_includeSalaryOverflow;
+          _invalidateAggCache();
+        });
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 12, right: 8, top: 8, bottom: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+             Icon(
+               _includeSalaryOverflow ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+               size: 18,
+               color: _includeSalaryOverflow ? (Colors.teal[800] ?? Colors.teal) : Colors.grey,
+             ),
+             const SizedBox(width: 4),
+             Text(
+               'Include last 3 days',
+               style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: _includeSalaryOverflow ? FontWeight.w600 : FontWeight.normal,
+                  color: _includeSalaryOverflow ? (Colors.teal[800] ?? Colors.teal) : Colors.grey[700],
+               ),
+             ),
+          ],
         ),
       ),
     );
@@ -1910,28 +2004,130 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return stacks;
   }
 
-  /// Category totals for a specific calendar month, after applying
-  /// current bank/card + instrument filters.
-  Map<String, double> _categoryTotalsForMonth(DateTime month) {
-    final key = 'expByCatMonth-${month.year}-${month.month}';
-    return _memo(key, () {
-      final base = _applyBankFiltersToExpenses(_allExp);
-      final start = DateTime(month.year, month.month, 1);
-      final end = DateTime(month.year, month.month + 1, 1);
+  List<_ChartBucket> _buildLastDaysSpends({int dayCount = 14}) {
+    final now = DateTime.now();
+    final baseExp = _applyBankFiltersToExpenses(_allExp);
+    final out = <_ChartBucket>[];
 
-      final out = <String, double>{};
-      for (final e in base) {
-        if (!e.date.isBefore(start) && e.date.isBefore(end)) {
-          final legacy = AnalyticsAgg.resolveExpenseCategory(e);
-          final cat = _normalizeMainCategory(legacy);
-          out[cat] = (out[cat] ?? 0) + e.amount;
-        }
+    for (int i = dayCount - 1; i >= 0; i--) {
+      final d = now.subtract(Duration(days: i));
+      final date = DateTime(d.year, d.month, d.day);
+      final start = date;
+      final end = date.add(const Duration(days: 1));
+
+      double total = 0;
+      for (final e in baseExp) {
+        if (!e.date.isBefore(start) && e.date.isBefore(end)) total += e.amount;
       }
+      out.add(_ChartBucket(
+        date: date,
+        label: i == 0 ? 'Today' : (i == 1 ? 'Yesterday' : DateFormat('d MMM').format(date)),
+        total: total,
+        categoryBreakdown: const {},
+      ));
+    }
+    return out;
+  }
 
-      final entries = out.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
-      return Map<String, double>.fromEntries(entries);
-    });
+  List<_ChartBucket> _buildLastWeeksSpends({int weekCount = 12}) {
+    final now = DateTime.now();
+    final baseExp = _applyBankFiltersToExpenses(_allExp);
+    final out = <_ChartBucket>[];
+    
+    // Find start of current week (Monday)
+    final currentMonday = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
+
+    for (int i = weekCount - 1; i >= 0; i--) {
+      final start = currentMonday.subtract(Duration(days: i * 7));
+      final end = start.add(const Duration(days: 7));
+      
+      double total = 0;
+      for (final e in baseExp) {
+        if (!e.date.isBefore(start) && e.date.isBefore(end)) total += e.amount;
+      }
+      out.add(_ChartBucket(
+        date: start, // Key is start of week
+        label: DateFormat('d MMM').format(start),
+        total: total,
+        categoryBreakdown: const {},
+      ));
+    }
+    return out;
+  }
+
+  List<_ChartBucket> _buildLastYearsSpends({int yearCount = 5}) {
+    final now = DateTime.now();
+    final baseExp = _applyBankFiltersToExpenses(_allExp);
+    final out = <_ChartBucket>[];
+
+    for (int i = yearCount - 1; i >= 0; i--) {
+      final year = now.year - i;
+      final start = DateTime(year, 1, 1);
+      final end = DateTime(year + 1, 1, 1);
+      
+      double total = 0;
+      for (final e in baseExp) {
+        if (!e.date.isBefore(start) && e.date.isBefore(end)) total += e.amount;
+      }
+      out.add(_ChartBucket(
+        date: start,
+        label: year.toString(),
+        total: total,
+        categoryBreakdown: const {},
+      ));
+    }
+    return out;
+  }
+
+  List<_ChartBucket> _buildAllTimeBucket() {
+    final baseExp = _applyBankFiltersToExpenses(_allExp);
+    double total = baseExp.fold(0, (sum, e) => sum + e.amount);
+    
+    // Minimal date found or 2000
+    DateTime minDate = DateTime(2000);
+    if (baseExp.isNotEmpty) {
+       var d = baseExp.first.date;
+       for(final e in baseExp) if(e.date.isBefore(d)) d = e.date;
+       minDate = DateTime(d.year, d.month, 1); // just a reference
+    }
+
+    return [
+      _ChartBucket(
+        date: minDate, 
+        label: 'All Time',
+        total: total,
+        categoryBreakdown: const {},
+      )
+    ];
+  }
+
+  List<_ChartBucket> _buildAdaptiveBuckets() {
+    switch (_periodToken) {
+      case 'D': return _buildLastDaysSpends();
+      case 'W': return _buildLastWeeksSpends();
+      case 'Y': return _buildLastYearsSpends();
+      case 'All Time': return _buildAllTimeBucket();
+      case 'M': 
+      default: return _buildLastMonthSpends();
+    }
+  }
+
+  Map<String, double> _categoryTotalsForRange(DateTime start, DateTime end) {
+     final key = 'expByCatRange-${start.millisecondsSinceEpoch}-${end.millisecondsSinceEpoch}-$_bankFilter-$_instrumentFilter-v$_rev';
+     return _memo(key, () {
+        final base = _applyBankFiltersToExpenses(_allExp);
+        final out = <String, double>{};
+        for (final e in base) {
+          if (!e.date.isBefore(start) && e.date.isBefore(end)) {
+            final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+            final cat = _normalizeMainCategory(legacy);
+            out[cat] = (out[cat] ?? 0) + e.amount;
+          }
+        }
+        final entries = out.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+        return Map<String, double>.fromEntries(entries);
+     });
   }
 
   String _resolveExpenseSubcategory(ExpenseItem e) {
@@ -1952,15 +2148,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return 'Uncategorized';
   }
 
-  /// Subcategory buckets for a given month and main category, respecting
-  /// bank/card + instrument filters.
-  List<_SubcategoryBucket> _subcategoryBucketsForMonthAndCategory(
-    DateTime month,
+  List<_SubcategoryBucket> _subcategoryBucketsForRangeAndCategory(
+    DateTime start,
+    DateTime end,
     String category,
   ) {
-    final start = DateTime(month.year, month.month, 1);
-    final end = DateTime(month.year, month.month + 1, 1);
-
     final filtered = _applyBankFiltersToExpenses(_allExp).where((e) {
       final legacy = AnalyticsAgg.resolveExpenseCategory(e);
       if (_normalizeMainCategory(legacy) != category) return false;
@@ -2133,26 +2325,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Widget _analyticsBannerCard() {
-    final bodySmall = Theme.of(context).textTheme.bodySmall;
-    return GlassCard(
-      radius: Fx.r24,
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 0),
       child: AdsBannerCard(
         placement: 'analytics_overview',
         inline: false,
         inlineMaxHeight: 90,
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-        minHeight: 96,
-        boxShadow: const [],
-        placeholder: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Your personalised offers will appear here shortly.',
-              textAlign: TextAlign.center,
-              style: bodySmall?.copyWith(color: Colors.black54),
-            ),
-          ],
-        ),
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        minHeight: 90,
       ),
     );
   }
@@ -2585,18 +2765,61 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  // ---------- Monthly "Spends by Category" card ----------
+  DateTimeRange _getRangeForBucketDate(DateTime date) {
+    if (_periodToken == 'D') return DateTimeRange(start: date, end: date.add(const Duration(days: 1)));
+    if (_periodToken == 'W') return DateTimeRange(start: date, end: date.add(const Duration(days: 7)));
+    if (_periodToken == 'Y') return DateTimeRange(start: date, end: DateTime(date.year + 1, 1, 1));
+    if (_periodToken == 'All Time') return DateTimeRange(start: date, end: DateTime(3000));
+    // M
+    return DateTimeRange(start: date, end: DateTime(date.year, date.month + 1, 1));
+  }
+
+  Widget _buildBucketSelector({
+    required List<_ChartBucket> buckets,
+    required _ChartBucket selected,
+    required ValueChanged<_ChartBucket> onSelect,
+  }) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final b in buckets)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: _buildSoftPill(
+                label: b.label,
+                isSelected: b.date.isAtSameMomentAs(selected.date),
+                onTap: () => onSelect(b),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _openCategoryDetailForBucket(String category, DateTime start, DateTime end, double amount) {
+     final expInRange = _applyBankFiltersToExpenses(_allExp).where((e) {
+        return !e.date.isBefore(start) && e.date.isBefore(end) &&
+               _normalizeMainCategory(AnalyticsAgg.resolveExpenseCategory(e)) == category;
+     }).toList();
+     
+     _openTxDrilldown(
+        title: '$category (${DateFormat("d MMM").format(start)} - ${DateFormat("d MMM").format(end.subtract(const Duration(days:1)))})',
+        exp: expInRange,
+        inc: const [],
+     );
+  }
+
   Widget _monthlyCategoryListCard() {
-    final buckets = _buildLastMonthSpends(monthCount: 12);
+    final buckets = _buildAdaptiveBuckets();
 
     if (buckets.isEmpty) {
-      // No history at all; show a soft empty card instead of nothing.
       return GlassCard(
         radius: Fx.r24,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildMyCardsSection(), // NEW
+            _buildMyCardsSection(),
             const SizedBox(height: 16),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2609,36 +2832,35 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ),
       );
     }
-
-    // Build list of month DateTimes from oldest -> newest.
-    final monthDates = <DateTime>[
-      for (final b in buckets) b.date,
-    ];
-
-    // Ensure selected month is valid; default to most recent if null/out of range.
-    DateTime selected =
-        _selectedCategoryMonth ?? monthDates.last; // latest in our buckets.
-    if (!monthDates.any(
-        (m) => m.year == selected.year && m.month == selected.month)) {
-      selected = monthDates.last;
-      _selectedCategoryMonth = selected;
+    
+    _ChartBucket? selectedBucket;
+    if (_selectedCategoryMonth != null) {
+        try {
+           selectedBucket = buckets.firstWhere((b) => b.date.isAtSameMomentAs(_selectedCategoryMonth!));
+        } catch (_) {}
     }
+    if (selectedBucket == null) {
+       selectedBucket = buckets.isNotEmpty ? buckets.last : null;
+    }
+    
+    if (selectedBucket == null) return const SizedBox();
 
-    final monthLabelFull = DateFormat('MMMM y').format(selected);
-    final monthShortFmt = DateFormat('MMM');
+    final range = _getRangeForBucketDate(selectedBucket.date);
+    final byCat = _categoryTotalsForRange(range.start, range.end);
+    
+    final entries = byCat.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final hasData = entries.isNotEmpty && entries.any((e) => e.value.abs() > 0);
+    final total = entries.fold<double>(0, (sum, e) => sum + e.value);
 
-    final byCat = _categoryTotalsForMonth(selected);
-    final entries = byCat.entries.toList();
-    final hasData =
-        entries.isNotEmpty && entries.any((e) => e.value.abs() > 0);
-    final monthTotal = entries.fold<double>(0, (sum, e) => sum + e.value);
+    String periodLabel = selectedBucket.label;
+    if (_periodToken == 'M') periodLabel = DateFormat('MMMM y').format(selectedBucket.date); 
+    if (_periodToken == 'W') periodLabel = '${DateFormat('d MMM').format(range.start)} - ${DateFormat('d MMM').format(range.end.subtract(const Duration(days: 1)))}';
 
     return GlassCard(
       radius: Fx.r24,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Row(
             children: [
               const Icon(Icons.category_rounded, color: Colors.teal),
@@ -2653,7 +2875,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            '$monthLabelFull spends – ${INR.f(monthTotal)}',
+            '$periodLabel spends – ${INR.f(total)}',
             style: Fx.label.copyWith(
               fontWeight: FontWeight.w600,
               color: Fx.text.withOpacity(.85),
@@ -2663,72 +2885,46 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ),
           const SizedBox(height: 8),
 
-          // Month selector chips (last 12 months)
-          _buildMonthSelector(
-            months: monthDates,
-            selected: selected,
-            onSelect: (m) {
-              setState(() {
-                _selectedCategoryMonth = m;
-              });
+          _buildBucketSelector(
+            buckets: buckets,
+            selected: selectedBucket,
+            onSelect: (b) {
+               setState(() => _selectedCategoryMonth = b.date);
             },
           ),
           const SizedBox(height: 10),
 
           if (!hasData)
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
-              child: Text(
-                'No spends found for this month with the current filters.',
-                style: Fx.label.copyWith(color: Fx.text.withOpacity(.7)),
-              ),
-            )
+             Padding(
+                padding: const EdgeInsets.all(4),
+                child: Text('No spends found for this period.', style: Fx.label.copyWith(color: Fx.text.withOpacity(.7))),
+             )
           else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: entries.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (_, index) {
-                final entry = entries[index];
-                final cat = entry.key;
-                final amount = entry.value;
+             ListView.separated(
+               shrinkWrap: true,
+               physics: const NeverScrollableScrollPhysics(),
+               itemCount: entries.length,
+               separatorBuilder: (_, __) => const Divider(height: 1),
+               itemBuilder: (_, index) {
+                 final entry = entries[index];
+                 final cat = entry.key;
+                 final amount = entry.value;
 
-                final start = DateTime(selected.year, selected.month, 1);
-                final end = DateTime(selected.year, selected.month + 1, 1);
-                final range = DateTimeRange(start: start, end: end);
-
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    _iconForCategory(cat),
-                    color: _categoryColors[cat] ?? Fx.mintDark,
-                  ),
-                  title: Text(
-                    cat,
-                    style: Fx.label.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  trailing: Text(
-                    INR.f(amount),
-                    style: Fx.number.copyWith(fontWeight: FontWeight.w700),
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  onTap: () => _openCategoryDetailForMonth(
-                    category: cat,
-                    month: selected,
-                  ),
-                  onLongPress: () => _openCategoryDrilldown(
-                    expense: true,
-                    category: cat,
-                    total: amount,
-                    overrideRange: range,
-                  ),
-                );
-              },
-            ),
+                 return ListTile(
+                   contentPadding: EdgeInsets.zero,
+                   leading: Icon(
+                     _iconForCategory(cat),
+                     color: _categoryColors[cat] ?? Fx.mintDark,
+                   ),
+                   title: Text(cat, style: Fx.label.copyWith(fontWeight: FontWeight.w600)),
+                   trailing: Text(
+                     INR.f(amount),
+                     style: Fx.number.copyWith(fontWeight: FontWeight.w700),
+                   ),
+                   onTap: () => _openCategoryDetailForBucket(cat, range.start, range.end, amount),
+                 );
+               },
+             ),
         ],
       ),
     );

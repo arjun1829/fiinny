@@ -1,5 +1,17 @@
 {
   "projects": {
     "default": "lifemap-72b21"
+  },
+  "targets": {
+    "lifemap-72b21": {
+      "hosting": {
+        "marketing": [
+          "lifemap-72b21"
+        ],
+        "wiki": [
+          "fiinny-wiki"
+        ]
+      }
+    }
   }
 }

@@ -2026,11 +2026,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ),
                         const SizedBox(height: 10),
-                        Padding(
-                          padding: horizontalPadding,
-                          child: _buildSubscriptionsTile(),
-                        ),
-                        const SizedBox(height: 10),
+
                         Padding(
                           padding: horizontalPadding,
                           child: _buildGoalsTile(),
@@ -2210,27 +2206,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildSubscriptionsTile() {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () async {
-          await Navigator.pushNamed(context, '/subscriptions', arguments: widget.userPhone);
-          // Refresh on return
-          await _refreshSecondaryBlocks();
-        },
-        child: SubscriptionsSummaryCard(
-          totalAmount: _subsTotal,
-          count: _subsCount,
-          onTap: () async {
-            await Navigator.pushNamed(context, '/subscriptions', arguments: widget.userPhone);
-             await _refreshSecondaryBlocks();
-          },
-        ),
-      ),
-    );
-  }
+
 
   Widget _wrapRingWithShine(Widget child) {
     if (!_ringShineVisible) return child;
