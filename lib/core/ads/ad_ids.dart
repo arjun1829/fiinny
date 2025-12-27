@@ -16,13 +16,13 @@ class AdIds {
   // ---------- REAL UNIT IDs (ANDROID) ----------
   static const _androidBannerReal = 'ca-app-pub-3087779657197986/1206857538'; 
   static const _androidInterReal  = 'ca-app-pub-3087779657197986/8573393427'; 
-  static const _androidNativeReal = 'ca-app-pub-3087779657197986/9244489028'; 
+  static const _androidNativeReal = 'ca-app-pub-3087779657197986/4168896940'; 
   static const _androidRewardReal = ''; // None provided in new set
 
   // ---------- REAL UNIT IDs (iOS) ----------
-  static const _iosBannerReal = 'ca-app-pub-3087779657197986/2519939208'; 
+  static const _iosBannerReal = 'ca-app-pub-3087779657197986/2308202123'; 
   static const _iosInterReal  = 'ca-app-pub-3087779657197986/9231868975'; 
-  static const _iosNativeReal = 'ca-app-pub-3087779657197986/5553296655'; 
+  static const _iosNativeReal = 'ca-app-pub-3087779657197986/2060790116'; 
   static const _iosRewardReal = ''; // None provided in new set
 
   // ---------- Google TEST IDs ----------
@@ -32,6 +32,7 @@ class AdIds {
   static const _iosBannerTest     = 'ca-app-pub-3940256099942544/2934735716';
   static const _androidInterTest  = 'ca-app-pub-3940256099942544/1033173712';
   static const _iosInterTest      = 'ca-app-pub-3940256099942544/4411468910';
+  static const _androidNativeTest = 'ca-app-pub-3940256099942544/2247696110'; // Standard Test Native Advanced
   static const _androidRewardTest = 'ca-app-pub-3940256099942544/5224354917';
   static const _iosRewardTest     = 'ca-app-pub-3940256099942544/1712485313';
 
@@ -87,8 +88,8 @@ class AdIds {
       : (_useReal ? _iosInterReal : _iosInterTest));
 
   static String get native => kIsWeb ? '' : (Platform.isAndroid
-      ? (_useReal ? _androidNativeReal : '') // No test ID for native defined yet
-      : (_useReal ? _iosNativeReal : ''));
+      ? (_useReal ? _androidNativeReal : _androidNativeTest)
+      : (_useReal ? _iosNativeReal : '')); // No iOS Test Native ID defined/needed yet
  
   static String get rewarded => kIsWeb ? '' : (Platform.isAndroid
       ? (_useReal ? _androidRewardReal : _androidRewardTest)

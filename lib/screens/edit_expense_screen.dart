@@ -740,12 +740,19 @@ class _StepBasics extends StatelessWidget {
                 value: subcategory,
                 isExpanded: true,
                 decoration: _inputDec().copyWith(labelText: 'Subcategory'),
-                items: subcategories.map((s) {
-                  return DropdownMenuItem<String>(
-                    value: s,
-                    child: Text(s, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  );
-                }).toList(),
+                items: () {
+                  final unique = <String>{};
+                  if (subcategory != null && subcategory!.isNotEmpty) {
+                    unique.add(subcategory!);
+                  }
+                  unique.addAll(subcategories);
+                  return unique.map((s) {
+                    return DropdownMenuItem<String>(
+                      value: s,
+                      child: Text(s, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    );
+                  }).toList();
+                }(),
                 onChanged: saving
                     ? null
                     : (value) {

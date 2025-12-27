@@ -345,17 +345,62 @@ function MainContent() {
         </div>
       </section>
 
-      {/* Section 1: Philosophy - Simplifed */}
-      <section className="pt-24 pb-12 bg-slate-50 border-t border-slate-100">
+      {/* Section 1: The Problem with Most Finance Apps - UPDATED */}
+      <section className="pt-24 pb-20 bg-slate-50 border-t border-slate-100">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl lg:text-4xl font-bold text-slate-900 mb-6 font-display">
-            The problem wasn't tracking. <br />
-            <span className="text-teal-600">It was clarity.</span>
+            Managing money shouldn't <br /> <span className="text-teal-600">feel like work.</span>
           </h2>
-          <p className="text-lg text-slate-500 max-w-2xl mx-auto leading-relaxed">
-            We replaced the "homework" of manual spreadsheets with a quiet, intelligent partner.
-            One that respects your time, protects your privacy, and gives you peace of mind.
+          <p className="text-lg text-slate-500 max-w-2xl mx-auto leading-relaxed mb-12">
+            Most finance apps today are cluttered, restrictive, or built around limits. Fiinny was built to fix that.
           </p>
+
+          <div className="grid md:grid-cols-2 gap-8 text-left">
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+              <h3 className="font-bold text-slate-900 mb-6 flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-rose-500" />
+                The Problem
+              </h3>
+              <ul className="space-y-4">
+                {[
+                  "Too many manual steps for basic tracking",
+                  "Duplicate entry for personal and shared expenses",
+                  "Monthly insights that ignore recent days",
+                  "Limits on expenses, groups, or transactions",
+                  "Ads and prompts blocking core usage",
+                  "Sharing that feels complicated"
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-3 text-slate-600 text-sm">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-2 flex-shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="bg-teal-900 p-8 rounded-3xl shadow-xl text-white relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-teal-500/20 rounded-full blur-3xl" />
+              <h3 className="font-bold text-white mb-6 flex items-center gap-2 relative z-10">
+                <CheckCircle2 className="w-5 h-5 text-teal-400" />
+                The Fiinny Way
+              </h3>
+              <ul className="space-y-4 relative z-10">
+                {[
+                  "Smart & effortless tracking in seconds",
+                  "Split bills directly from expenses (swipe right)",
+                  "Real insights including recent days",
+                  "Unlimited expenses, no artificial blocks",
+                  "Privacy first, no data selling",
+                  "Share seamlessly with partners & groups"
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-3 text-teal-50 text-sm">
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-400 mt-2 flex-shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -573,8 +618,13 @@ function MainContent() {
       <section className="pb-32 pt-10 bg-slate-900 border-t border-slate-800 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">Your data, purely yours.</h2>
-            <p className="text-slate-400">Security isn't a feature. It's the architecture.</p>
+            <h2 className="text-3xl font-bold mb-4">Privacy & Control First.</h2>
+            <p className="text-slate-400 mb-4">
+              Your data is yours. We collect only what’s needed.
+            </p>
+            <p className="text-teal-400 text-sm font-bold bg-teal-900/30 inline-block px-4 py-2 rounded-full border border-teal-800">
+              Fiinny works even if you deny optional permissions.
+            </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
@@ -595,10 +645,10 @@ function MainContent() {
             </div>
 
             <div className="bg-slate-800/50 p-8 rounded-3xl border border-slate-800">
-              <span className="text-teal-500 font-bold mb-3 block"><Shield className="w-6 h-6" /></span>
-              <h3 className="text-lg font-bold text-white mb-2">Zero Data Selling</h3>
+              <span className="text-teal-500 font-bold mb-3 block"><FileText className="w-6 h-6" /></span>
+              <h3 className="text-lg font-bold text-white mb-2">Full Control</h3>
               <p className="text-slate-400 text-sm">
-                We don't build profiles to sell ads. You are the customer, not the product.
+                Export your data (JSON) anytime. Delete your account instantly in-app. No questions asked.
               </p>
             </div>
           </div>
@@ -739,6 +789,7 @@ function MainContent() {
               <h4 className="font-bold text-slate-900 mb-4">{t.nav.company}</h4>
               <ul className="space-y-2 text-slate-500">
                 <li><Link href="/about" className="hover:text-teal-600">{t.nav.about}</Link></li>
+                <li><Link href="/blog" className="hover:text-teal-600">Blog</Link></li>
                 <li><Link href="/privacy" className="hover:text-teal-600">{t.nav.privacy}</Link></li>
                 <li><Link href="/terms" className="hover:text-teal-600">{t.nav.terms}</Link></li>
                 <li><Link href="/countries" className="hover:text-teal-600">{t.nav.countries}</Link></li>

@@ -419,6 +419,34 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     _heavyAggCache.clear();
   }
 
+  Future<void> _handleEdit(dynamic item) async {
+    // Only support editing expenses for now as EditExpenseScreen is specific
+    if (item is! ExpenseItem) return;
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditExpenseScreen(
+          userPhone: widget.userPhone,
+          expense: item,
+        ),
+      ),
+    );
+
+    if (result == true) {
+      await _bootstrap();
+    }
+  }
+
+  Future<void> _handleDelete(dynamic item) async {
+    if (item is ExpenseItem) {
+      await _expenseSvc.deleteExpense(widget.userPhone, item.id);
+    } else if (item is IncomeItem) {
+      await _incomeSvc.deleteIncome(widget.userPhone, item.id);
+    }
+    await _bootstrap();
+  }
+
   void _changeScope(SpendScope scope) {
     setState(() {
       _scope = scope;
@@ -860,7 +888,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               ) ==
                   category)
           .toList();
-      await _openTxDrilldown(
+      _openTxDrilldown(
         title: 'Expense • $category · ${INR.f(total)}',
         exp: matches,
         inc: const [],
@@ -871,7 +899,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               _inRange(i.date, range) &&
               AnalyticsAgg.resolveIncomeCategory(i) == category)
               .toList();
-      await _openTxDrilldown(
+      _openTxDrilldown(
         title: 'Income • $category · ${INR.f(total)}',
         exp: const [],
         inc: matches,
@@ -2798,16 +2826,159 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   void _openCategoryDetailForBucket(String category, DateTime start, DateTime end, double amount) {
-     final expInRange = _applyBankFiltersToExpenses(_allExp).where((e) {
-        return !e.date.isBefore(start) && e.date.isBefore(end) &&
-               _normalizeMainCategory(AnalyticsAgg.resolveExpenseCategory(e)) == category;
-     }).toList();
+     final subBuckets = _subcategoryBucketsForRangeAndCategory(start, end, category);
      
-     _openTxDrilldown(
-        title: '$category (${DateFormat("d MMM").format(start)} - ${DateFormat("d MMM").format(end.subtract(const Duration(days:1)))})',
-        exp: expInRange,
-        inc: const [],
+     if (subBuckets.isEmpty) {
+       ScaffoldMessenger.of(context).showSnackBar(
+         SnackBar(content: Text('No transactions found for $category')),
+       );
+       return;
+     }
+
+     showModalBottomSheet(
+       context: context,
+       isScrollControlled: true,
+       backgroundColor: Colors.transparent,
+       builder: (context) => _SubcategoryBreakdownSheet(
+         category: category,
+         start: start,
+         end: end,
+         totalAmount: amount,
+         subBuckets: subBuckets,
+         onSubcategoryTap: (subcategory, subAmount) {
+           // Drill down to transactions for this subcategory
+           final expInRange = _applyBankFiltersToExpenses(_allExp).where((e) {
+             return !e.date.isBefore(start) && 
+                    e.date.isBefore(end) &&
+                    _normalizeMainCategory(AnalyticsAgg.resolveExpenseCategory(e)) == category &&
+                    _resolveExpenseSubcategory(e) == subcategory;
+           }).toList();
+           
+           Navigator.pop(context); // Close the sheet first
+           _openTxDrilldown(
+             title: '$category • $subcategory (${DateFormat("d MMM").format(start)} - ${DateFormat("d MMM").format(end.subtract(const Duration(days:1)))})',
+             exp: expInRange,
+             inc: const [],
+           );
+         },
+       ),
      );
+  }
+
+  void _openTxDrilldown({
+    required String title,
+    required List<ExpenseItem> exp,
+    required List<IncomeItem> inc,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              children: [
+                // Handle bar
+                Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                
+                // Header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                const Divider(height: 1),
+                
+                // Transaction list
+                Expanded(
+                  child: exp.isEmpty && inc.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              'No transactions found',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                        )
+                      : SingleChildScrollView(
+                          controller: scrollController,
+                          child: UnifiedTransactionList(
+                            expenses: exp,
+                            incomes: inc,
+                            friendsById: const <String, FriendModel>{},
+                            userPhone: widget.userPhone,
+                            previewCount: 10000, // Show all
+                            filterType: 'All',
+                            showBillIcon: true,
+                            enableScrolling: false, // Let SingleChildScrollView handle it
+                            onEdit: (item) async {
+                              await _handleEdit(item);
+                              if (mounted) Navigator.pop(context); // Close sheet to reflect changes
+                            },
+                            onDelete: (item) async {
+                              await _handleDelete(item);
+                              if (mounted) Navigator.pop(context); // Close sheet to reflect changes
+                            },
+                            onChangeCategory: ({required String txId, required String newCategory, required dynamic payload}) async {
+                              if (payload is ExpenseItem) {
+                                final updated = payload.copyWith(category: newCategory);
+                                await _expenseSvc.updateExpense(widget.userPhone, updated);
+                                await _bootstrap();
+                              }
+                            },
+                            onChangeSubcategory: ({required String txId, required String newSubcategory, required dynamic payload}) async {
+                               if (payload is ExpenseItem) {
+                                 final updated = payload.copyWith(subcategory: newSubcategory);
+                                 await _expenseSvc.updateExpense(widget.userPhone, updated);
+                                 await _bootstrap();
+                               }
+                            },
+                            emptyBuilder: (context) => const SizedBox(),
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Widget _monthlyCategoryListCard() {
@@ -2932,93 +3103,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   // ---------- Last X months spends card (Axis-style) ----------
 
-  Future<void> _openTxDrilldown({
-    required String title,
-    required List<ExpenseItem> exp,
-    required List<IncomeItem> inc,
-  }) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(
-            title: Text(title),
-            elevation: 0,
-            backgroundColor: Colors.white,
-            foregroundColor: Colors.black,
-          ),
-          body: UnifiedTransactionList(
-            expenses: exp,
-            incomes: inc,
-            friendsById: const {},
-            userPhone: widget.userPhone,
-            onEdit: _handleEdit,
-            onDelete: _handleDelete,
-            enableScrolling: true,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _handleDelete(dynamic item) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Transaction?'),
-        content: const Text('This action cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      setState(() => _loading = true);
-      try {
-        if (item is ExpenseItem) {
-          await _expenseSvc.deleteExpense(widget.userPhone, item.id);
-        } else if (item is IncomeItem) {
-          await _incomeSvc.deleteIncome(widget.userPhone, item.id);
-        }
-        await _bootstrap();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error deleting: $e')),
-          );
-        }
-      } finally {
-        if (mounted) setState(() => _loading = false);
-      }
-    }
-  }
-
-  Future<void> _handleEdit(dynamic tx) async {
-    // EditExpenseScreen only handles ExpenseItem, not IncomeItem
-    if (tx is! ExpenseItem) return;
-
-    final edited = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => EditExpenseScreen(
-          expense: tx,
-          userPhone: widget.userPhone,
-        ),
-      ),
-    );
-
-    if (edited == true) {
-      await _bootstrap();
-    }
-  }
   // ---------- Chart Data Generation ----------
 
   /// Generates chart buckets based on the current active period/range.
@@ -3645,3 +3729,261 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 }
 
+// Subcategory Breakdown Sheet Widget
+class _SubcategoryBreakdownSheet extends StatefulWidget {
+  final String category;
+  final DateTime start;
+  final DateTime end;
+  final double totalAmount;
+  final List<_SubcategoryBucket> subBuckets;
+  final Function(String subcategory, double amount) onSubcategoryTap;
+
+  const _SubcategoryBreakdownSheet({
+    required this.category,
+    required this.start,
+    required this.end,
+    required this.totalAmount,
+    required this.subBuckets,
+    required this.onSubcategoryTap,
+  });
+
+  @override
+  State<_SubcategoryBreakdownSheet> createState() => _SubcategoryBreakdownSheetState();
+}
+
+class _SubcategoryBreakdownSheetState extends State<_SubcategoryBreakdownSheet> {
+  _SubcategorySort _sortBy = _SubcategorySort.amountDesc;
+  
+  List<_SubcategoryBucket> get _sortedBuckets {
+    final list = List<_SubcategoryBucket>.from(widget.subBuckets);
+    switch (_sortBy) {
+      case _SubcategorySort.amountDesc:
+        list.sort((a, b) => b.amount.compareTo(a.amount));
+        break;
+      case _SubcategorySort.amountAsc:
+        list.sort((a, b) => a.amount.compareTo(b.amount));
+        break;
+      case _SubcategorySort.alphaAsc:
+        list.sort((a, b) => a.name.compareTo(b.name));
+        break;
+      case _SubcategorySort.alphaDesc:
+        list.sort((a, b) => b.name.compareTo(a.name));
+        break;
+    }
+    return list;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dateRange = '${DateFormat("d MMM").format(widget.start)} - ${DateFormat("d MMM").format(widget.end.subtract(const Duration(days: 1)))}';
+    
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              // Handle bar
+              Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              
+              // Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.category_rounded,
+                          color: Colors.teal[700],
+                          size: 28,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.category,
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                dateRange,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              INR.f(widget.totalAmount),
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            Text(
+                              '${widget.subBuckets.length} subcategories',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Sort options
+                    Row(
+                      children: [
+                        Text(
+                          'Sort by:',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                _buildSortChip('Amount ↓', _SubcategorySort.amountDesc),
+                                const SizedBox(width: 6),
+                                _buildSortChip('Amount ↑', _SubcategorySort.amountAsc),
+                                const SizedBox(width: 6),
+                                _buildSortChip('A-Z', _SubcategorySort.alphaAsc),
+                                const SizedBox(width: 6),
+                                _buildSortChip('Z-A', _SubcategorySort.alphaDesc),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              
+              const Divider(height: 1),
+              
+              // Subcategory list
+              Expanded(
+                child: ListView.separated(
+                  controller: scrollController,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: _sortedBuckets.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+                  itemBuilder: (context, index) {
+                    final bucket = _sortedBuckets[index];
+                    final percentage = (bucket.amount / widget.totalAmount * 100).toStringAsFixed(1);
+                    
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                      leading: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: Colors.teal.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.label_outline,
+                          color: Colors.teal[700],
+                          size: 24,
+                        ),
+                      ),
+                      title: Text(
+                        bucket.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${bucket.txCount} transaction${bucket.txCount != 1 ? 's' : ''} • $percentage%',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      trailing: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            INR.f(bucket.amount),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          Icon(
+                            Icons.chevron_right,
+                            color: Colors.grey[400],
+                            size: 20,
+                          ),
+                        ],
+                      ),
+                      onTap: () => widget.onSubcategoryTap(bucket.name, bucket.amount),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+  
+  Widget _buildSortChip(String label, _SubcategorySort sort) {
+    final isSelected = _sortBy == sort;
+    return GestureDetector(
+      onTap: () => setState(() => _sortBy = sort),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.teal : Colors.grey[100],
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            color: isSelected ? Colors.white : Colors.grey[700],
+          ),
+        ),
+      ),
+    );
+  }
+}
