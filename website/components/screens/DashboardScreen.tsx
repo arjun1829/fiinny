@@ -620,6 +620,11 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
                     />
                 )}
             </AnimatePresence>
+
+            {/* Fiinny Brain Chat */}
+            {userProfile?.phoneNumber && (
+                <FiinnyBrainChat userPhone={userProfile.phoneNumber} />
+            )}
         </div >
     );
 }
