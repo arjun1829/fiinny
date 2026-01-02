@@ -78,9 +78,46 @@ service cloud.firestore {
       }
     }
 
-    // --- everything else stays open (so nothing else breaks) ---
+    // --- Explicitly secure main user collections ---
+    // Instead of relying on the catch-all, we define them here for CASA compliance.
+    
+    // User Expenses
+    match /users/{uid}/expenses/{docId} {
+      allow read, write: if isUserOwner(uid);
+    }
+    // User Incomes
+    match /users/{uid}/incomes/{docId} {
+      allow read, write: if isUserOwner(uid);
+    }
+    // User Bill Reminders
+    match /users/{uid}/bill_reminders/{docId} {
+      allow read, write: if isUserOwner(uid);
+    }
+    // Ingest Jobs (for off-device processing)
+    match /users/{uid}/ingest_jobs/{jobId} {
+      allow read, write: if isUserOwner(uid);
+    }
+    
+    // Groups & Shared (Authenticated users only, more complex logic can be added later)
+    match /groups/{groupId} {
+      allow read, write: if authed(); 
+    }
+    match /shared_expenses/{expId} {
+       allow read, write: if authed();
+    }
+    match /chats/{chatId} {
+       allow read, write: if authed();
+    }
+    // Chat Messages
+    match /chats/{chatId}/messages/{msgId} {
+       allow read, write: if authed();
+    }
+    
+    // --- Default Deny (CASA Requirement) ---
+    // Block all other access by default. 
+    // "Closed unless open" policy.
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false; 
     }
   }
 }

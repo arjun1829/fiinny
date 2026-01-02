@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import Image from "next/image";
 
 const countries = [
-    { code: "in", name: "India", flag: "🇮🇳", currency: "INR" },
-    { code: "us", name: "United States", flag: "🇺🇸", currency: "USD" },
-    { code: "gb", name: "United Kingdom", flag: "🇬🇧", currency: "GBP" },
-    { code: "sg", name: "Singapore", flag: "🇸🇬", currency: "SGD" },
-    { code: "au", name: "Australia", flag: "🇦🇺", currency: "AUD" },
-    { code: "ca", name: "Canada", flag: "🇨🇦", currency: "CAD" },
-    { code: "jp", name: "Japan", flag: "🇯🇵", currency: "JPY" },
-    { code: "eu", name: "Europe", flag: "🇪🇺", currency: "EUR" },
+    { code: "in", name: "India", flagUrl: "https://flagcdn.com/w320/in.png", currency: "INR" },
+    { code: "us", name: "United States", flagUrl: "https://flagcdn.com/w320/us.png", currency: "USD" },
+    { code: "gb", name: "United Kingdom", flagUrl: "https://flagcdn.com/w320/gb.png", currency: "GBP" },
+    { code: "sg", name: "Singapore", flagUrl: "https://flagcdn.com/w320/sg.png", currency: "SGD" },
+    { code: "au", name: "Australia", flagUrl: "https://flagcdn.com/w320/au.png", currency: "AUD" },
+    { code: "ca", name: "Canada", flagUrl: "https://flagcdn.com/w320/ca.png", currency: "CAD" },
+    { code: "jp", name: "Japan", flagUrl: "https://flagcdn.com/w320/jp.png", currency: "JPY" },
+    { code: "eu", name: "Europe", flagUrl: "https://flagcdn.com/w320/eu.png", currency: "EUR" },
 ];
 
 export default function CountriesPage() {
@@ -28,9 +29,16 @@ export default function CountriesPage() {
                         <Link
                             key={country.code}
                             href={`/countries/${country.code}`}
-                            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-teal-200 transition-all group"
+                            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-teal-200 transition-all group flex flex-col items-start"
                         >
-                            <div className="text-4xl mb-4">{country.flag}</div>
+                            <div className="relative w-16 h-12 mb-4 rounded-md overflow-hidden shadow-sm border border-slate-100">
+                                <Image
+                                    src={country.flagUrl}
+                                    alt={`${country.name} flag`}
+                                    fill
+                                    className="object-cover"
+                                />
+                            </div>
                             <h3 className="text-xl font-bold text-slate-900 group-hover:text-teal-600 transition-colors">{country.name}</h3>
                             <p className="text-slate-500 mt-2">Currency: {country.currency}</p>
                         </Link>

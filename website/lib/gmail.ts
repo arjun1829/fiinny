@@ -30,12 +30,30 @@ interface BillInfo {
 // --- Constants ---
 
 const MAJOR_BANKS: BankProfile[] = [
+    // Public Sector
     { code: 'SBI', display: 'State Bank of India', domains: ['sbi.co.in'], headerHints: ['state bank of india', 'sbi'] },
+    { code: 'PNB', display: 'Punjab National Bank', domains: ['pnb.co.in'], headerHints: ['punjab national bank', 'pnb'] },
+    { code: 'BOB', display: 'Bank of Baroda', domains: ['bankofbaroda.co.in'], headerHints: ['bank of baroda', 'bob'] },
+    { code: 'UNION', display: 'Union Bank of India', domains: ['unionbankofindia.co.in'], headerHints: ['union bank of india', 'union bank'] },
+    { code: 'BOI', display: 'Bank of India', domains: ['bankofindia.co.in'], headerHints: ['bank of india'] },
+    { code: 'CANARA', display: 'Canara Bank', domains: ['canarabank.com'], headerHints: ['canara bank'] },
+    { code: 'INDIAN', display: 'Indian Bank', domains: ['indianbank.in'], headerHints: ['indian bank'] },
+    { code: 'IOB', display: 'Indian Overseas Bank', domains: ['iob.in'], headerHints: ['indian overseas bank', 'iob'] },
+    { code: 'UCO', display: 'UCO Bank', domains: ['ucobank.com'], headerHints: ['uco bank'] },
+    { code: 'MAHARASHTRA', display: 'Bank of Maharashtra', domains: ['bankofmaharashtra.in', 'mahabank.co.in'], headerHints: ['bank of maharashtra'] },
+    { code: 'CBI', display: 'Central Bank of India', domains: ['centralbankofindia.co.in'], headerHints: ['central bank of india'] },
+    { code: 'PSB', display: 'Punjab & Sind Bank', domains: ['psbindia.com'], headerHints: ['punjab and sind bank', 'punjab & sind bank'] },
+
+    // Private Sector
     { code: 'HDFC', display: 'HDFC Bank', domains: ['hdfcbank.com'], headerHints: ['hdfc bank', 'hdfc'] },
     { code: 'ICICI', display: 'ICICI Bank', domains: ['icicibank.com'], headerHints: ['icici bank', 'icici'] },
     { code: 'AXIS', display: 'Axis Bank', domains: ['axisbank.com'], headerHints: ['axis bank', 'axis'] },
     { code: 'KOTAK', display: 'Kotak Mahindra Bank', domains: ['kotak.com'], headerHints: ['kotak mahindra bank', 'kotak'] },
-    // Add more as needed from the original list
+    { code: 'INDUSIND', display: 'IndusInd Bank', domains: ['indusind.com'], headerHints: ['indusind bank', 'indusind'] },
+    { code: 'YES', display: 'Yes Bank', domains: ['yesbank.in'], headerHints: ['yes bank'] },
+    { code: 'FEDERAL', display: 'Federal Bank', domains: ['federalbank.co.in'], headerHints: ['federal bank'] },
+    { code: 'IDFCFIRST', display: 'IDFC First Bank', domains: ['idfcfirstbank.com', 'idfcbank.com'], headerHints: ['idfc first bank', 'idfc'] },
+    { code: 'IDBI', display: 'IDBI Bank', domains: ['idbibank.com'], headerHints: ['idbi bank', 'idbi'] },
 ];
 
 const EMAIL_WHITELIST = new Set([
@@ -86,6 +104,11 @@ export class GmailService {
 
     // --- Authentication ---
 
+    public hasToken(): boolean {
+        this.loadToken(); // Ensure memory state matches storage
+        return !!this.accessToken;
+    }
+
     public async connect(): Promise<boolean> {
         try {
             const provider = new GoogleAuthProvider();
@@ -93,7 +116,8 @@ export class GmailService {
 
             // Force account selection to ensure we get the right account and consent
             provider.setCustomParameters({
-                prompt: 'consent select_account'
+                prompt: 'consent select_account',
+                access_type: 'offline' // Request refresh token if possible, though handling it on client is limited
             });
 
             let result;
@@ -115,10 +139,26 @@ export class GmailService {
         } catch (error: any) {
             console.error("Error connecting Gmail:", error);
             if (error.code === 'auth/credential-already-in-use') {
-                alert("This Gmail is already linked to another account.");
+                // This is tricky: we might want to unlink the old one or just sign in.
+                // For now, let's treat it as a failure but maybe we should allow it.
+                // Ideally, we'd just use the credential from the error if available,
+                // but for security we'll show a message.
+                throw new Error("This Gmail is already linked to another Fiinny account.");
             }
-            return false;
+            if (error.code === 'auth/popup-closed-by-user') {
+                throw new Error("Connection cancelled.");
+            }
+            throw error;
         }
+    }
+
+    public disconnect() {
+        this.accessToken = null;
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem('gmail_access_token');
+            localStorage.removeItem('gmail_token_expiry');
+        }
+        console.log("Gmail disconnected.");
     }
 
     // --- Main Fetch Logic ---

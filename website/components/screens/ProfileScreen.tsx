@@ -7,6 +7,8 @@ import { doc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { deleteUser } from "firebase/auth";
 import Image from "next/image";
+import { GmailService } from "@/lib/gmail";
+import { Mail } from "lucide-react";
 
 interface ProfileScreenProps {
     userProfile: UserProfile | null;
@@ -31,6 +33,7 @@ export default function ProfileScreen({ userProfile, userPhone, onSignOut }: Pro
     const [isEditing, setIsEditing] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+    const [isGmailConnected, setIsGmailConnected] = useState(false);
 
     // Form State
     const [name, setName] = useState(userProfile?.displayName || "");
@@ -123,6 +126,46 @@ export default function ProfileScreen({ userProfile, userPhone, onSignOut }: Pro
     const handleExportData = () => {
         alert("Export started! You will receive an email with your data shortly.");
         // Implement actual export logic here (e.g., cloud function trigger)
+    };
+
+    // Check Gmail Status
+    useState(() => {
+        const checkGmail = () => {
+            const service = GmailService.getInstance();
+            setIsGmailConnected(service.hasToken());
+        };
+        checkGmail();
+        // Poll briefly in case it changes elsewhere (hacky but works for now)
+        const interval = setInterval(checkGmail, 2000);
+        return () => clearInterval(interval);
+    });
+
+    const handleGmailDisconnect = () => {
+        if (confirm("Are you sure you want to disconnect Gmail? Auto-tracking will stop.")) {
+            GmailService.getInstance().disconnect();
+            setIsGmailConnected(false);
+            alert("Gmail disconnected.");
+        }
+    };
+
+    const handleGmailConnect = async () => {
+        if (!userPhone) return;
+
+        const service = GmailService.getInstance();
+        setIsLoading(true);
+        try {
+            const success = await service.connect();
+            if (success) {
+                setIsGmailConnected(true);
+                // Trigger sync immediately to "push to firestore"
+                const count = await service.fetchAndStoreTransactions(userPhone, 30);
+                alert(`Gmail connected! Synced ${count} transactions.`);
+            }
+        } catch (e: any) {
+            alert("Connection failed: " + e.message);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -274,6 +317,46 @@ export default function ProfileScreen({ userProfile, userPhone, onSignOut }: Pro
                             <input type="checkbox" checked={personalizeTips} onChange={(e) => setPersonalizeTips(e.target.checked)} className="sr-only peer" />
                             <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-teal-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-600"></div>
                         </label>
+                    </div>
+                </div>
+            </div>
+
+            {/* Integrations */}
+            <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-200">
+                <div className="p-6 border-b border-slate-100">
+                    <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                        <Mail className="w-5 h-5 text-red-500" />
+                        Integrations
+                    </h3>
+                </div>
+                <div className="p-6">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-600">
+                                <Mail className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <p className="font-medium text-slate-900">Gmail Sync</p>
+                                <p className="text-sm text-slate-500">
+                                    {isGmailConnected ? "Connected and active" : "Not connected"}
+                                </p>
+                            </div>
+                        </div>
+                        {isGmailConnected ? (
+                            <button
+                                onClick={handleGmailDisconnect}
+                                className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl text-sm font-medium transition-colors"
+                            >
+                                Disconnect
+                            </button>
+                        ) : (
+                            <button
+                                onClick={handleGmailConnect}
+                                className="px-4 py-2 bg-slate-900 text-white hover:bg-slate-800 rounded-xl text-sm font-medium transition-colors"
+                            >
+                                Connect
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>

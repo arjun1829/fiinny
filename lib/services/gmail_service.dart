@@ -89,13 +89,32 @@ class GmailService {
   }
   String _maskSensitive(String s) {
     var t = s;
-    // mask long digit runs (cards/accounts), keep last4
+    // 1. Mask long digit runs (cards/accounts 8-20 length), keep last4
+    // Modified to be careful not to kill valid amounts, though amounts usually have formatting or context.
+    // This targets pure digit strings like account numbers.
     t = t.replaceAllMapped(
-      RegExp(r'\b(\d{4})\d{4,10}(\d{4})\b'),
-          (m) => '**** **** **** ${m.group(2)}',
+      RegExp(r'\b(?<![₹\.])(\d{4})\d{4,12}(\d{4})\b'),
+          (m) => '****${m.group(2)}',
     );
-    // redact OTP tokens/one-time passwords
-    t = t.replaceAll(RegExp(r'\b(OTP|ONE[-\s]?TIME\s*PASSWORD)\b[^\n]*', caseSensitive: false), '[REDACTED OTP]');
+    
+    // 2. Strict OTP/password redaction
+    t = t.replaceAll(RegExp(r'\b(OTP|ONE[-\s]?TIME\s*PASSWORD)\b.*', caseSensitive: false), '[REDACTED OTP]');
+    
+    // 3. Email redaction (CASA Requirement: Don't leak other people's emails)
+    // Matches standard email pattern
+    t = t.replaceAll(
+      RegExp(r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'), 
+      '[EMAIL]',
+    );
+
+    // 4. Phone number redaction (India specific + international)
+    // Matches +91-xxxxx or 10-digit mobile numbers allowing for space/dash separators
+    // We avoid masking simplified amounts by looking for the specific structure of phones.
+    t = t.replaceAll(
+      RegExp(r'(?<!\d)(?:(?:\+91)|(?:91)|0)?\s?[6-9]\d{4}\s?\d{5}(?!\d)'), 
+      '[PHONE]',
+    );
+
     return t;
   }
 

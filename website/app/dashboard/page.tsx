@@ -32,6 +32,7 @@ import BarChartCard from "@/components/dashboard/BarChartCard";
 import SmartInsightCard from "@/components/dashboard/SmartInsightCard";
 import CrisisAlertBanner from "@/components/dashboard/CrisisAlertBanner";
 import GmailBackfillBanner from "@/components/dashboard/GmailBackfillBanner";
+import GmailLinkModal from "@/components/dashboard/transactions/GmailLinkModal";
 
 import { FxService } from "@/lib/fx_service";
 import DashboardScreen from "@/components/screens/DashboardScreen";
@@ -98,6 +99,7 @@ export default function Dashboard() {
     const [dataLoading, setDataLoading] = useState(true);
     const [gmailConnecting, setGmailConnecting] = useState(false);
     const [showAddCard, setShowAddCard] = useState(false);
+    const [isGmailLinkOpen, setIsGmailLinkOpen] = useState(false);
     const [selectedBankGroup, setSelectedBankGroup] = useState<BankGroup | null>(null);
     const [manualCards, setManualCards] = useState<any[]>([]);
 
@@ -300,22 +302,32 @@ export default function Dashboard() {
         const userId = user?.phoneNumber || user?.uid;
         if (!userId) return;
 
+        const service = GmailService.getInstance();
+
+        if (!service.hasToken()) {
+            setIsGmailLinkOpen(true);
+            return;
+        }
+
         setGmailConnecting(true);
         try {
-            const service = GmailService.getInstance();
-            const connected = await service.connect();
+            console.log("Gmail connected, starting sync...");
+            const count = await service.fetchAndStoreTransactions(userId, 30);
+            console.log(`Synced ${count} transactions from Gmail`);
 
-            if (connected) {
-                console.log("Gmail connected, starting sync...");
-                const count = await service.fetchAndStoreTransactions(userId);
-                console.log(`Synced ${count} transactions from Gmail`);
-
+            if (count > 0) {
                 await loadDashboardData(userId);
                 alert(`Successfully synced ${count} transactions from Gmail!`);
+            } else {
+                alert("No new transactions found.");
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Gmail sync error:", error);
-            alert("An error occurred during Gmail sync.");
+            if (error.message?.includes("Expired")) {
+                setIsGmailLinkOpen(true);
+            } else {
+                alert("Sync failed: " + error.message);
+            }
         } finally {
             setGmailConnecting(false);
         }
@@ -680,6 +692,16 @@ export default function Dashboard() {
                                             Here's your financial overview for {getPeriodLabel().toLowerCase()}.
                                         </p>
                                     </div>
+                                    <div className="relative z-10 mt-6 flex gap-3">
+                                        <button
+                                            onClick={handleGmailConnect}
+                                            disabled={gmailConnecting}
+                                            className="px-4 py-2 bg-slate-900 text-white rounded-xl shadow-lg shadow-slate-900/10 hover:bg-slate-800 transition-all flex items-center gap-2 text-sm font-medium"
+                                        >
+                                            {gmailConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <div className="w-4 h-4 bg-white rounded-full flex items-center justify-center text-[8px] text-slate-900 font-bold">G</div>}
+                                            <span>Sync Gmail</span>
+                                        </button>
+                                    </div>
                                     <div className="absolute top-0 right-0 w-64 h-64 bg-teal-50/50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
                                 </motion.div>
 
@@ -885,6 +907,16 @@ export default function Dashboard() {
 
                 </div>
             </div>
+            {isGmailLinkOpen && (
+                <GmailLinkModal
+                    isOpen={isGmailLinkOpen}
+                    onClose={() => setIsGmailLinkOpen(false)}
+                    onSuccess={() => {
+                        setIsGmailLinkOpen(false);
+                        handleGmailConnect();
+                    }}
+                />
+            )}
             <AiAssistant />
         </div >
     );
