@@ -9,11 +9,13 @@ import BulkEditModal, { BulkEditSpec } from "../dashboard/transactions/BulkEditM
 import SplitExpenseModal from "../dashboard/transactions/SplitExpenseModal";
 import TransactionDetailsModal from "../dashboard/transactions/TransactionDetailsModal";
 import TransactionModal from "../dashboard/transactions/TransactionModal";
+import FiinnyBrainChat from "../FiinnyBrainChat";
 import { Plus, Search, Filter, Download, X, Save, Trash2, Tag, Check, Edit2, RefreshCw, Layers } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { doc, setDoc, collection, Timestamp, writeBatch } from "firebase/firestore";
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, isWithinInterval, format } from "date-fns";
 import { GmailService } from "@/lib/gmail";
+import GmailLinkModal from "../dashboard/transactions/GmailLinkModal";
 
 const kExpenseCategories = [
     'General', 'Food', 'Groceries', 'Travel', 'Shopping', 'Bills', 'Entertainment',
@@ -45,6 +47,7 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
     const [editingTx, setEditingTx] = useState<ExpenseItem | IncomeItem | null>(null);
     const [splitTx, setSplitTx] = useState<ExpenseItem | null>(null);
     const [viewingTx, setViewingTx] = useState<ExpenseItem | IncomeItem | null>(null);
+    const [isGmailLinkOpen, setIsGmailLinkOpen] = useState(false);
 
     // Filter Config State
     const [filterConfig, setFilterConfig] = useState<ExpenseFilterConfig>({
@@ -318,11 +321,17 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
     const [isSyncing, setIsSyncing] = useState(false);
 
     const handleSync = async () => {
+        const service = GmailService.getInstance();
+
+        // If not connected, show link modal
+        if (!service.hasToken()) {
+            setIsGmailLinkOpen(true);
+            return;
+        }
+
         setIsSyncing(true);
         try {
-            const service = GmailService.getInstance();
-            const connected = await service.connect();
-            if (connected && userProfile?.phoneNumber) {
+            if (userProfile?.phoneNumber) {
                 const count = await service.fetchAndStoreTransactions(userProfile.phoneNumber, 30);
                 if (count > 0) {
                     alert(`Synced ${count} new transactions!`);
@@ -330,12 +339,14 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
                 } else {
                     alert("No new transactions found.");
                 }
-            } else {
-                alert("Could not connect to Gmail. Please try again.");
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
-            alert("Sync failed.");
+            if (e.message?.includes("Expired")) {
+                setIsGmailLinkOpen(true); // Re-link
+            } else {
+                alert("Sync failed: " + e.message);
+            }
         } finally {
             setIsSyncing(false);
         }
@@ -550,6 +561,16 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
 
             {/* Modals */}
             <AnimatePresence>
+                {isGmailLinkOpen && (
+                    <GmailLinkModal
+                        isOpen={isGmailLinkOpen}
+                        onClose={() => setIsGmailLinkOpen(false)}
+                        onSuccess={() => {
+                            setIsGmailLinkOpen(false);
+                            handleSync(); // Auto-start sync after linking
+                        }}
+                    />
+                )}
                 {isAddModalOpen && (
                     <TransactionModal
                         isOpen={isAddModalOpen}

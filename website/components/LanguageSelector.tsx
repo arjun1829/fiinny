@@ -24,9 +24,9 @@ export default function LanguageSelector() {
         <div className="relative">
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 text-slate-600 hover:text-teal-600 transition-colors text-sm font-medium"
+                className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white transition-all text-sm font-medium px-4 py-2 rounded-full border border-slate-700 shadow-sm"
             >
-                <Globe className="w-4 h-4" />
+                <Globe className="w-4 h-4 text-teal-400" />
                 <span className="hidden md:inline">{currentLangName}</span>
             </button>
 
@@ -36,7 +36,7 @@ export default function LanguageSelector() {
                         className="fixed inset-0 z-10"
                         onClick={() => setIsOpen(false)}
                     />
-                    <div className="absolute right-0 mt-2 w-40 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-20">
+                    <div className="absolute bottom-full mb-2 right-0 w-48 bg-slate-900 rounded-xl shadow-xl border border-slate-700 py-2 z-20 overflow-hidden">
                         {languages.map((lang) => (
                             <button
                                 key={lang.code}
@@ -44,10 +44,11 @@ export default function LanguageSelector() {
                                     setLanguage(lang.code as any);
                                     setIsOpen(false);
                                 }}
-                                className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors ${language === lang.code ? "text-teal-600 font-bold" : "text-slate-600"
+                                className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-800 transition-colors flex items-center justify-between ${language === lang.code ? "text-teal-400 font-bold bg-slate-800/50" : "text-slate-300"
                                     }`}
                             >
                                 {lang.name}
+                                {language === lang.code && <div className="w-1.5 h-1.5 rounded-full bg-teal-400" />}
                             </button>
                         ))}
                     </div>

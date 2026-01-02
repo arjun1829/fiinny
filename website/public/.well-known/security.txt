@@ -1,0 +1,6 @@
+Contact: mailto:security@fiinny.com
+Expires: 2026-12-31T23:59:59z
+Encryption: https://fiinny.com/pgp-key.txt
+Preferred-Languages: en, hi
+Policy: https://fiinny.com/privacy-policy
+Msg: We are committed to the security of our users. Automated Tier 2 CASA scanning is authorized.

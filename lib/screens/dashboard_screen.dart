@@ -77,6 +77,7 @@ import '../widgets/forex_findings_sheet.dart';
 import '../screens/review_inbox_screen.dart';
 import '../services/review_queue_service.dart';
 import '../models/ingest_draft_model.dart';
+import 'fiinny_brain_chat_screen.dart';
 
 import '../core/ads/ad_service.dart';
 
@@ -1716,6 +1717,18 @@ class _DashboardScreenState extends State<DashboardScreen>
                             context,
                             '/analytics',
                             arguments: widget.userPhone,
+                          );
+                        },
+                      ),
+                      IconButton(
+                        tooltip: 'Fiinny Brain Chat',
+                        icon: const Icon(Icons.chat_bubble_outline, color: Fx.mintDark, size: 22),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => FiinnyBrainChatScreen(userPhone: widget.userPhone),
+                            ),
                           );
                         },
                       ),
