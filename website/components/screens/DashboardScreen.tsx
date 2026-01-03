@@ -31,12 +31,13 @@ interface TransactionsViewProps {
     expenses: ExpenseItem[];
     incomes: IncomeItem[];
     userProfile: UserProfile | null;
+    userId: string;
     onRefresh: () => void;
     friends?: FriendModel[];
     groups?: GroupModel[];
 }
 
-export default function DashboardScreen({ expenses, incomes, userProfile, onRefresh, friends = [], groups = [] }: TransactionsViewProps) {
+export default function DashboardScreen({ expenses, incomes, userProfile, userId, onRefresh, friends = [], groups = [] }: TransactionsViewProps) {
     const [searchQuery, setSearchQuery] = useState("");
     const [filterType, setFilterType] = useState<"all" | "expense" | "income">("all");
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -183,9 +184,9 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
     // --- Handlers ---
 
     const handleDelete = async (id: string, type: "expense" | "income") => {
-        console.log("DashboardScreen: handleDelete called", { id, type, userPhone: userProfile?.phoneNumber });
-        if (!userProfile?.phoneNumber) {
-            console.error("DashboardScreen: No user phone number");
+        console.log("DashboardScreen: handleDelete called", { id, type, userId });
+        if (!userId) {
+            console.error("DashboardScreen: No user ID");
             return;
         }
         if (!confirm("Are you sure you want to delete this transaction?")) {
@@ -196,10 +197,10 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
         try {
             if (type === "expense") {
                 console.log("DashboardScreen: Deleting expense...");
-                await deleteExpense(userProfile.phoneNumber, id);
+                await deleteExpense(userId, id);
             } else {
                 console.log("DashboardScreen: Deleting income...");
-                await deleteIncome(userProfile.phoneNumber, id);
+                await deleteIncome(userId, id);
             }
             console.log("DashboardScreen: Delete successful, refreshing...");
             onRefresh();
@@ -210,7 +211,7 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
     };
 
     const handleBulkDelete = async () => {
-        if (!userProfile?.phoneNumber) return;
+        if (!userId) return;
         if (!confirm(`Delete ${selectedIds.size} transactions? This cannot be undone.`)) return;
 
         try {
@@ -219,8 +220,8 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
                 if (!tx) return Promise.resolve();
                 const isIncome = (tx as any).kind === 'income';
                 return isIncome
-                    ? deleteIncome(userProfile!.phoneNumber, id)
-                    : deleteExpense(userProfile!.phoneNumber, id);
+                    ? deleteIncome(userId, id)
+                    : deleteExpense(userId, id);
             });
             await Promise.all(promises);
             setSelectedIds(new Set());
@@ -232,7 +233,7 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
     };
 
     const handleBulkEdit = async (spec: BulkEditSpec) => {
-        if (!userProfile?.phoneNumber) return;
+        if (!userId) return;
 
         try {
             const batch = writeBatch(db);
@@ -243,7 +244,7 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
 
                 const isIncome = (tx as any).kind === 'income';
                 const collectionName = isIncome ? "incomes" : "expenses";
-                const ref = doc(db, "users", userProfile.phoneNumber, collectionName, id);
+                const ref = doc(db, "users", userId, collectionName, id);
 
                 const updates: any = {};
                 if (spec.title) updates.title = spec.title;
@@ -273,21 +274,22 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
     };
 
     const handleSaveTransaction = async (data: any) => {
-        if (!userProfile?.phoneNumber) return;
+        if (!userId) return;
 
         try {
             const isExpense = data.type === "expense";
-            const collectionName = isExpense ? "expenses" : "incomes";
-            const id = editingTx?.id || doc(collection(db, "users", userProfile.phoneNumber, collectionName)).id;
 
-            const docRef = doc(db, "users", userProfile.phoneNumber, collectionName, id);
+            const collectionName = isExpense ? "expenses" : "incomes";
+            const id = editingTx?.id || doc(collection(db, "users", userId, collectionName)).id;
+
+            const docRef = doc(db, "users", userId, collectionName, id);
 
             const payload = {
                 ...data,
                 id,
                 date: Timestamp.fromDate(new Date(data.date)),
                 amount: parseFloat(data.amount),
-                payerId: userProfile.phoneNumber, // Default to self
+                payerId: userId, // Default to self
             };
 
             // Clean up UI-only fields
@@ -305,9 +307,9 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
     };
 
     const handleSplitSave = async (expenseId: string, friendIds: string[]) => {
-        if (!userProfile?.phoneNumber) return;
+        if (!userId) return;
         try {
-            const ref = doc(db, "users", userProfile.phoneNumber, "expenses", expenseId);
+            const ref = doc(db, "users", userId, "expenses", expenseId);
             await setDoc(ref, { friendIds }, { merge: true });
             setIsSplitModalOpen(false);
             setSplitTx(null);
@@ -331,8 +333,8 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
 
         setIsSyncing(true);
         try {
-            if (userProfile?.phoneNumber) {
-                const count = await service.fetchAndStoreTransactions(userProfile.phoneNumber, 30);
+            if (userId) {
+                const count = await service.fetchAndStoreTransactions(userId, 30);
                 if (count > 0) {
                     alert(`Synced ${count} new transactions!`);
                     onRefresh();
@@ -622,8 +624,8 @@ export default function DashboardScreen({ expenses, incomes, userProfile, onRefr
             </AnimatePresence>
 
             {/* Fiinny Brain Chat */}
-            {userProfile?.phoneNumber && (
-                <FiinnyBrainChat userPhone={userProfile.phoneNumber} />
+            {userId && (
+                <FiinnyBrainChat userPhone={userId} />
             )}
         </div >
     );

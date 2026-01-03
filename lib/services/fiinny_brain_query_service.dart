@@ -1,4 +1,34 @@
-import '../models/expense_item.dart';
+import '../fiinny_brain/time_engine.dart';
+import '../fiinny_brain/trend_engine.dart';
+import '../fiinny_brain/inference_engine.dart';
+
+// ... (existing imports)
+
+      // === TIME/WEEKEND QUESTIONS ===
+      if (_isTimeQuery(queryLower)) {
+        return _handleTimeQuery(
+          query: queryLower,
+          expenses: expenses,
+        );
+      }
+
+      // === TREND/GROWTH QUESTIONS ===
+      if (_isTrendQuery(queryLower)) {
+        return _handleTrendQuery(
+          query: queryLower,
+          expenses: expenses,
+        );
+      }
+
+      // === INFERENCE/CONTEXT QUESTIONS ===
+      if (_isInferenceQuery(queryLower)) {
+        return _handleInferenceQuery(
+          query: queryLower,
+          expenses: expenses,
+        );
+      }
+
+      // === GENERAL SUMMARY ===
 import '../models/income_item.dart';
 import '../fiinny_brain/entity_resolver.dart';
 import '../fiinny_brain/entity_resolution_models.dart';
@@ -88,6 +118,21 @@ class FiinnyBrainQueryService {
   static bool _isTravelQuery(String query) {
     final travelKeywords = ['travel', 'trip', 'flight', 'hotel', 'vacation'];
     return travelKeywords.any((keyword) => query.contains(keyword));
+  }
+
+  static bool _isTimeQuery(String query) {
+    const keywords = ['weekend', 'weekday', 'morning', 'night', 'holiday', 'monday', 'sunday'];
+    return keywords.any((k) => query.contains(k));
+  }
+
+  static bool _isTrendQuery(String query) {
+    const keywords = ['increasing', 'decreasing', 'trend', 'spike', 'more than last', 'usage'];
+    return keywords.any((k) => query.contains(k));
+  }
+
+  static bool _isInferenceQuery(String query) {
+    const keywords = ['inferred', 'guess', 'hospital', 'commute']; // Explicit intents
+    return keywords.any((k) => query.contains(k));
   }
 
   // ==================== QUERY HANDLERS ====================
@@ -304,6 +349,60 @@ class FiinnyBrainQueryService {
         "Expenses: ₹${totalExpense.toStringAsFixed(0)}\n"
         "Savings: ₹${savings.toStringAsFixed(0)}\n\n"
         "Ask me anything about your expenses, splits, or travel!";
+  }
+
+  // ==================== ADVANCED HANDLERS ====================
+
+  static String _handleTimeQuery({required String query, required List<ExpenseItem> expenses}) {
+    if (query.contains('weekend')) {
+      final weekendExpenses = TimeEngine.filterByDayType(expenses, isWeekend: true);
+      final total = weekendExpenses.fold(0.0, (sum, e) => sum + e.amount);
+      return "You spent ₹${total.toStringAsFixed(0)} on weekends (Total ${weekendExpenses.length} expenses)";
+    }
+    
+    if (query.contains('morning') || query.contains('10 am')) {
+      final morningExpenses = TimeEngine.filterByTimeOfDay(expenses, 'morning');
+      final total = morningExpenses.fold(0.0, (sum, e) => sum + e.amount);
+      return "You spent ₹${total.toStringAsFixed(0)} in the morning (before 12 PM)";
+    }
+    
+    // Add more time handlers as needed
+    return "I can analyze spending by time. Try asking about 'weekends' or 'mornings'.";
+  }
+
+  static String _handleTrendQuery({required String query, required List<ExpenseItem> expenses}) {
+    final now = DateTime.now();
+    final currentMonth = expenses.where((e) => e.date.month == now.month && e.date.year == now.year).toList();
+    final lastMonth = expenses.where((e) => e.date.month == now.month - 1 && e.date.year == now.year).toList(); // Simplified date logic
+
+    if (query.contains('increasing') || query.contains('trend')) {
+      final growth = TrendEngine.calculateGrowthRate(currentMonth, lastMonth);
+      final direction = TrendEngine.analyzeTrendDirection(growth);
+      return "Your spending is $direction (${growth.abs().toStringAsFixed(1)}% vs last month)";
+    }
+
+    if (query.contains('spike')) {
+      final anomaly = TrendEngine.detectAnomaly(currentMonth, expenses); // Naive history
+      return anomaly['message'];
+    }
+
+    return "I can analyze your spending trends. Try asking 'Is my spending increasing?'";
+  }
+
+  static String _handleInferenceQuery({required String query, required List<ExpenseItem> expenses}) {
+    if (query.contains('hospital')) {
+      final results = InferenceEngine.inferComplexIntent(expenses, 'hospital_travel');
+      final total = results.fold(0.0, (sum, e) => sum + e.amount);
+      return "I found ₹${total.toStringAsFixed(0)} likely related to hospital travel (based on keywords like 'hospital', 'clinic' + travel patterns).";
+    }
+
+    if (query.contains('commute')) {
+      final results = InferenceEngine.inferContext(expenses, 'office');
+      final total = results.fold(0.0, (sum, e) => sum + e.amount);
+      return "Estimated office commute spend: ₹${total.toStringAsFixed(0)} (includes cab, metro, bus)";
+    }
+
+    return "I can infer categories based on context. Try asking about 'hospital travel' or 'office commute'.";
   }
 
   // ==================== HELPER METHODS ====================
