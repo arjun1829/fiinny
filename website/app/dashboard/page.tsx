@@ -74,6 +74,7 @@ import {
 } from "@/lib/firestore";
 import { doc, setDoc, collection, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import FiinnyBrainChat from "@/components/FiinnyBrainChat";
 // import AiAssistant from "@/components/dashboard/AiAssistant";
 
 export default function Dashboard() {
@@ -113,6 +114,8 @@ export default function Dashboard() {
     const [editingTx, setEditingTx] = useState<ExpenseItem | IncomeItem | null>(null);
     const [splitTx, setSplitTx] = useState<ExpenseItem | null>(null);
     const [viewingTx, setViewingTx] = useState<ExpenseItem | IncomeItem | null>(null);
+
+
 
     const handleSaveTransaction = async (data: any) => {
         if (!user || (!user.phoneNumber && !user.uid)) return;
@@ -645,6 +648,7 @@ export default function Dashboard() {
                                 expenses={expenses}
                                 incomes={incomes}
                                 userProfile={userProfile}
+                                userId={user?.phoneNumber || user?.uid || ""}
                                 onRefresh={() => {
                                     const userId = user?.phoneNumber || user?.uid;
                                     if (userId) loadDashboardData(userId);
@@ -919,6 +923,10 @@ export default function Dashboard() {
             )}
             {/* Old AI Assistant removed - using FiinnyBrainChat instead */}
             {/* <AiAssistant /> */}
+            {/* Fiinny Brain Chat - Global */}
+            {user && (
+                <FiinnyBrainChat userPhone={user.phoneNumber || user.uid || ""} />
+            )}
         </div >
     );
 }

@@ -18,6 +18,13 @@ import { FilterState } from "../dashboard/transactions/FilterModal";
 import BankCard from "../finance/BankCard";
 import AddCardModal from "../finance/AddCardModal";
 import { CreditCard, Plus } from "lucide-react";
+import ScopeFilters from "../dashboard/analytics/ScopeFilters";
+import BankFilterPills from "../dashboard/analytics/BankFilterPills";
+import InstrumentFilters from "../dashboard/analytics/InstrumentFilters";
+import SubcategoryModal from "../dashboard/analytics/SubcategoryModal";
+import AnalyticsTransactionList from "../dashboard/analytics/AnalyticsTransactionList";
+import MonthlyTrend from "../dashboard/analytics/MonthlyTrend";
+import SpendsByCategory from "../dashboard/analytics/SpendsByCategory";
 
 interface AnalyticsScreenProps {
     expenses: ExpenseItem[];
@@ -37,7 +44,7 @@ export default function AnalyticsScreen({
     // Filters
     const [searchQuery, setSearchQuery] = useState("");
     const [filters, setFilters] = useState<FilterState>({
-        type: "expense", // Default to expense for analytics
+        type: "expense",
         period: "M",
         categories: new Set(),
         merchants: new Set(),
@@ -46,11 +53,23 @@ export default function AnalyticsScreen({
         groups: new Set(),
         sortBy: "date",
         sortDir: "desc",
-        groupBy: "none"
+        groupBy: "none",
+        scope: "all",
+        bankPill: null,
+        instrument: "all"
     });
 
     const [showAddCard, setShowAddCard] = useState(false);
-    const [myCards, setMyCards] = useState<any[]>([]); // Mock state
+    const [myCards, setMyCards] = useState<any[]>([]);
+
+    // Subcategory Modal State
+    const [subcategoryModal, setSubcategoryModal] = useState<{
+        isOpen: boolean;
+        category: string;
+        expenses: ExpenseItem[];
+        totalAmount: number;
+        dateRange: string;
+    }>({ isOpen: false, category: "", expenses: [], totalAmount: 0, dateRange: "" });
 
     // Combine transactions for filtering
     const transactions = useMemo(() => {
@@ -100,7 +119,40 @@ export default function AnalyticsScreen({
             result = result.filter(tx => tx.date >= start! && tx.date <= end!);
         }
 
-        // 2. Type Filter (Important for Analytics)
+        // 2. Scope Filter
+        if (filters.scope && filters.scope !== "all") {
+            result = result.filter(tx => {
+                const instrument = (tx.instrument || "").toLowerCase();
+                const isCreditCard = instrument.includes("credit");
+                if (filters.scope === "credit") return isCreditCard;
+                if (filters.scope === "savings") return !isCreditCard;
+                return true;
+            });
+        }
+
+        // 3. Bank Pill Filter
+        if (filters.bankPill && filters.bankPill !== "__FRIENDS__") {
+            result = result.filter(tx =>
+                tx.issuerBank && tx.issuerBank.toLowerCase() === filters.bankPill!.toLowerCase()
+            );
+        }
+
+        // 4. Instrument Filter
+        if (filters.instrument && filters.instrument !== "all") {
+            result = result.filter(tx => {
+                const instrument = (tx.instrument || "").toLowerCase();
+                if (filters.instrument === "upi") return instrument.includes("upi");
+                if (filters.instrument === "debit") return instrument.includes("debit");
+                if (filters.instrument === "others") {
+                    return !instrument.includes("upi") &&
+                        !instrument.includes("debit") &&
+                        !instrument.includes("credit");
+                }
+                return true;
+            });
+        }
+
+        // 5. Type Filter
         if (filters.type !== "all") {
             result = result.filter(tx => {
                 const isIncome = 'type' in tx && (tx as IncomeItem).type === 'Income';
@@ -108,7 +160,7 @@ export default function AnalyticsScreen({
             });
         }
 
-        // 3. Search & Advanced Filters
+        // 6. Search & Advanced Filters
         if (searchQuery.trim()) {
             const query = searchQuery.toLowerCase();
             result = result.filter(tx =>
@@ -192,17 +244,38 @@ export default function AnalyticsScreen({
 
         // 4. Bank/Card Stats
         const uniqueBanks = new Set(filteredData.map(tx => tx.issuerBank).filter(Boolean)).size;
-        // Assuming cardLast4 is not available on base items yet, using banks as proxy or 0
-        const uniqueCards = uniqueBanks; // Placeholder logic
+        const uniqueCards = uniqueBanks;
+
+        // 5. Monthly Trend (Last 12 months)
+        const monthlyTrendData: { month: string; amount: number }[] = [];
+        const now = new Date();
+        for (let i = 11; i >= 0; i--) {
+            const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+            const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+
+            const monthAmount = transactions
+                .filter(tx => {
+                    const isExpense = !('type' in tx && (tx as IncomeItem).type === 'Income');
+                    return isExpense && tx.date >= monthStart && tx.date <= monthEnd;
+                })
+                .reduce((sum, tx) => sum + tx.amount, 0);
+
+            monthlyTrendData.push({
+                month: format(monthDate, 'MMM'),
+                amount: monthAmount
+            });
+        }
 
         return {
             trendData,
             categoryData,
             merchantData,
             uniqueBanks,
-            uniqueCards
+            uniqueCards,
+            monthlyTrendData
         };
-    }, [filteredData]);
+    }, [filteredData, transactions]);
 
     if (isLoading) {
         return (
@@ -236,6 +309,36 @@ export default function AnalyticsScreen({
 
             {/* Dashboard Content */}
 
+            {/* New Filter Components */}
+            <div className="space-y-4">
+                {/* Scope Filters */}
+                <div className="px-4 md:px-0">
+                    <ScopeFilters
+                        selectedScope={filters.scope || "all"}
+                        onScopeChange={(scope) => setFilters(prev => ({ ...prev, scope }))}
+                    />
+                </div>
+
+                {/* Bank Filter Pills */}
+                {Array.from(new Set(transactions.map(tx => tx.issuerBank).filter(Boolean))).length > 0 && (
+                    <div className="px-4 md:px-0">
+                        <BankFilterPills
+                            banks={Array.from(new Set(transactions.map(tx => tx.issuerBank).filter((b): b is string => Boolean(b)))).sort()}
+                            selectedBank={filters.bankPill || null}
+                            onBankChange={(bank) => setFilters(prev => ({ ...prev, bankPill: bank }))}
+                        />
+                    </div>
+                )}
+
+                {/* Instrument Filters */}
+                <div className="px-4 md:px-0">
+                    <InstrumentFilters
+                        selectedInstrument={filters.instrument || "all"}
+                        onInstrumentChange={(instrument) => setFilters(prev => ({ ...prev, instrument }))}
+                    />
+                </div>
+            </div>
+
             {/* My Cards Horizontal Section */}
             <div className="px-4 md:px-0 mb-8">
                 <div className="flex items-center justify-between mb-4">
@@ -248,7 +351,6 @@ export default function AnalyticsScreen({
                     </button>
                 </div>
                 <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-hide">
-                    {/* Combine automatic and manual cards */}
                     {aggregateBanksFromTransactions(filteredData.filter(t => 'type' in t && t.type !== 'Income'), filteredData.filter(t => 'type' in t && t.type === 'Income'))
                         .map((group, i) => (
                             <div key={i} className="flex-shrink-0">
@@ -256,7 +358,7 @@ export default function AnalyticsScreen({
                                     bankName={group.bankName}
                                     cardType={group.cards[0]?.cardType || 'Card'}
                                     last4={group.cards[0]?.last4 || 'XXXX'}
-                                    name={"User"} // You might want to pass user name prop
+                                    name={"User"}
                                     colorTheme={i % 2 === 0 ? 'black' : 'blue'}
                                     logoUrl={group.logoUrl}
                                     stats={group.stats}
@@ -297,27 +399,82 @@ export default function AnalyticsScreen({
                 onAdd={(card) => setMyCards([...myCards, card])}
             />
 
-            <div className="px-4 md:px-0 grid grid-cols-1 md:grid-cols-3 gap-6 pb-24">
+            {/* Analytics Charts and Lists */}
+            <div className="px-4 md:px-0 space-y-6 pb-24">
+                {/* Row 1: Monthly Trend + Spends by Category */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <MonthlyTrend data={aggregations.monthlyTrendData} />
+                    <SpendsByCategory
+                        expenses={filteredData.filter(tx => !('type' in tx && (tx as IncomeItem).type === 'Income')) as ExpenseItem[]}
+                        onCategoryClick={(category, amount) => {
+                            const categoryExpenses = filteredData.filter(tx => {
+                                const isExpense = !('type' in tx && (tx as IncomeItem).type === 'Income');
+                                return isExpense && tx.category === category;
+                            }) as ExpenseItem[];
+                            const now = new Date();
+                            const dateRange = `${format(startOfMonth(now), 'MMM d')} - ${format(endOfMonth(now), 'MMM d, yyyy')}`;
+                            setSubcategoryModal({
+                                isOpen: true,
+                                category,
+                                expenses: categoryExpenses,
+                                totalAmount: amount,
+                                dateRange
+                            });
+                        }}
+                    />
+                </div>
 
-                {/* Left Column: Charts */}
-                <div className="md:col-span-2 space-y-6">
+                {/* Row 2: Spend Trend + Category Breakdown */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <SpendTrendChart
                         data={aggregations.trendData}
                         period={filters.period === "M" ? "day" : "month"}
                     />
+                    <CategoryPieChart
+                        data={aggregations.categoryData}
+                        onCategoryClick={(category, amount) => {
+                            const categoryExpenses = filteredData.filter(tx => {
+                                const isExpense = !('type' in tx && (tx as IncomeItem).type === 'Income');
+                                return isExpense && tx.category === category;
+                            }) as ExpenseItem[];
+                            const now = new Date();
+                            const dateRange = `${format(startOfMonth(now), 'MMM d')} - ${format(endOfMonth(now), 'MMM d, yyyy')}`;
+                            setSubcategoryModal({
+                                isOpen: true,
+                                category,
+                                expenses: categoryExpenses,
+                                totalAmount: amount,
+                                dateRange
+                            });
+                        }}
+                    />
+                </div>
+
+                {/* Row 3: Bank Stats + Top Merchants */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <BankCardStats
                         bankCount={aggregations.uniqueBanks}
                         cardCount={aggregations.uniqueCards}
                     />
-                </div>
-
-                {/* Right Column: Breakdown & Lists */}
-                <div className="space-y-6">
-                    <CategoryPieChart data={aggregations.categoryData} />
                     <TopMerchantsList merchants={aggregations.merchantData} />
                 </div>
 
+                {/* Row 4: Transactions List */}
+                <AnalyticsTransactionList
+                    expenses={filteredData.filter(tx => !('type' in tx && (tx as IncomeItem).type === 'Income')) as ExpenseItem[]}
+                    incomes={filteredData.filter(tx => 'type' in tx && (tx as IncomeItem).type === 'Income') as IncomeItem[]}
+                />
             </div>
+
+            {/* Subcategory Modal */}
+            <SubcategoryModal
+                isOpen={subcategoryModal.isOpen}
+                onClose={() => setSubcategoryModal(prev => ({ ...prev, isOpen: false }))}
+                category={subcategoryModal.category}
+                expenses={subcategoryModal.expenses}
+                totalAmount={subcategoryModal.totalAmount}
+                dateRange={subcategoryModal.dateRange}
+            />
         </div>
     );
 }
