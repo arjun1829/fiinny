@@ -1,8 +1,10 @@
 // lib/services/sms/sms_ingestor.dart
 import 'dart:collection';
 
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
-import 'package:telephony/telephony.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'package:telephony/telephony.dart'
+    if (dart.library.html) '../../stubs/telephony_stub.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:workmanager/workmanager.dart' as wm;
 
@@ -45,15 +47,15 @@ enum ReconcilePolicy { off, mergeEnrich, mergeSilent }
 enum _BankTier { major, other, unknown }
 
 class _DetectedBank {
-  final String? code;    // 'HDFC'
+  final String? code; // 'HDFC'
   final String? display; // 'HDFC Bank'
   final _BankTier tier;
   const _DetectedBank({this.code, this.display, this.tier = _BankTier.unknown});
 }
 
 class _BankProfile {
-  final String code;              // 'SBI'
-  final String display;           // 'State Bank of India'
+  final String code; // 'SBI'
+  final String display; // 'State Bank of India'
   final List<String> headerHints; // keywords to look for in SMS address/body
   const _BankProfile({
     required this.code,
@@ -66,11 +68,13 @@ class SmsIngestor {
   SmsIngestor._();
   static final SmsIngestor instance = SmsIngestor._();
 
-
   // ── Behavior toggles ────────────────────────────────────────────────────────
-  static const bool USE_SERVICE_WRITES = false;  // write via Firestore by default
-  static const bool AUTO_POST_TXNS = true;       // create expenses/incomes immediately
-  static const bool WRITE_BILL_AS_EXPENSE = false; // keep false to avoid double-counting
+  static const bool USE_SERVICE_WRITES =
+      false; // write via Firestore by default
+  static const bool AUTO_POST_TXNS =
+      true; // create expenses/incomes immediately
+  static const bool WRITE_BILL_AS_EXPENSE =
+      false; // keep false to avoid double-counting
   static const int INITIAL_HISTORY_DAYS = 120;
   static const ReconcilePolicy RECONCILE_POLICY = ReconcilePolicy.mergeEnrich;
   // Backfill behaviour:
@@ -105,14 +109,18 @@ class SmsIngestor {
     // mask long digit runs (cards/accounts), keep last4
     t = t.replaceAllMapped(
       RegExp(r'\b(\d{4})\d{4,10}(\d{4})\b'),
-          (m) => '**** **** **** ${m.group(2)}',
+      (m) => '**** **** **** ${m.group(2)}',
     );
     // redact OTP lines
-    t = t.replaceAll(RegExp(r'\b(OTP|ONE[-\s]?TIME\s*PASSWORD)\b[^\n]*', caseSensitive: false), '[REDACTED OTP]');
+    t = t.replaceAll(
+        RegExp(r'\b(OTP|ONE[-\s]?TIME\s*PASSWORD)\b[^\n]*',
+            caseSensitive: false),
+        '[REDACTED OTP]');
     return t;
   }
 
-  String _cap(String s, [int max = 4000]) => s.length <= max ? s : s.substring(0, max) + '…';
+  String _cap(String s, [int max = 4000]) =>
+      s.length <= max ? s : s.substring(0, max) + '…';
 
   bool _hasCurrencyAmount(String s) => RegExp(
         r'(?:₹|inr|rs\.?)\s*[0-9][\d,]*(?:\s*\.\s*\d{1,2})?',
@@ -154,7 +162,8 @@ class SmsIngestor {
           'BOBFIN', 'SBICRD', 'SBIPSG', 'PNBSMS', 'CANBNK', 'INDUSB', 'IDBIBK',
           'FEDBNK', 'UCOBNK', 'UNIONB',
           // gateways/wallets
-          'RZPAYX', 'RAZORPAY', 'PAYTMB', 'PAYTMP', 'CASHFR', 'AMEX', 'VISA', 'MASTERC',
+          'RZPAYX', 'RAZORPAY', 'PAYTMB', 'PAYTMP', 'CASHFR', 'AMEX', 'VISA',
+          'MASTERC',
         ];
         whitelistedSender = wl.any((d) => s.contains(d)) ||
             RegExp(r'^\d{10,}$').hasMatch(s); // pure numeric sender ids
@@ -218,13 +227,34 @@ class SmsIngestor {
       final s = sender.trim().toUpperCase();
       if (s.isNotEmpty) {
         const wl = [
-          'HDFCBK', 'ICICIB', 'SBIINB', 'AXISBK', 'KOTAKB', 'YESBNK', 'IDFCFB',
-          'BOBFIN', 'SBICRD', 'SBIPSG', 'PNBSMS', 'CANBNK', 'INDUSB', 'IDBIBK',
-          'FEDBNK', 'UCOBNK', 'UNIONB',
-          'RZPAYX', 'RAZORPAY', 'PAYTMB', 'PAYTMP', 'CASHFR', 'AMEX', 'VISA', 'MASTERC',
+          'HDFCBK',
+          'ICICIB',
+          'SBIINB',
+          'AXISBK',
+          'KOTAKB',
+          'YESBNK',
+          'IDFCFB',
+          'BOBFIN',
+          'SBICRD',
+          'SBIPSG',
+          'PNBSMS',
+          'CANBNK',
+          'INDUSB',
+          'IDBIBK',
+          'FEDBNK',
+          'UCOBNK',
+          'UNIONB',
+          'RZPAYX',
+          'RAZORPAY',
+          'PAYTMB',
+          'PAYTMP',
+          'CASHFR',
+          'AMEX',
+          'VISA',
+          'MASTERC',
         ];
-        whitelistedSender = wl.any((d) => s.contains(d)) ||
-            RegExp(r'^\d{10,}$').hasMatch(s);
+        whitelistedSender =
+            wl.any((d) => s.contains(d)) || RegExp(r'^\d{10,}$').hasMatch(s);
       }
     }
 
@@ -239,10 +269,13 @@ class SmsIngestor {
 
   bool _looksLikeCardBillPayment(String text, {String? bank, String? last4}) {
     final u = text.toUpperCase();
-    final payCue = RegExp(r'(CARD\s*PAYMENT|PAYMENT\s*RECEIVED|THANK YOU.*PAYING|BILL\s*PAYMENT)').hasMatch(u);
-    final ccCue  = u.contains('CREDIT CARD') || u.contains('CC');
-    final last4Hit = (last4 != null) && RegExp(r'\b' + RegExp.escape(last4) + r'\b').hasMatch(u);
-    final bankHit  = (bank != null) && u.contains(bank.toUpperCase());
+    final payCue = RegExp(
+            r'(CARD\s*PAYMENT|PAYMENT\s*RECEIVED|THANK YOU.*PAYING|BILL\s*PAYMENT)')
+        .hasMatch(u);
+    final ccCue = u.contains('CREDIT CARD') || u.contains('CC');
+    final last4Hit = (last4 != null) &&
+        RegExp(r'\b' + RegExp.escape(last4) + r'\b').hasMatch(u);
+    final bankHit = (bank != null) && u.contains(bank.toUpperCase());
     return payCue && (last4Hit || bankHit || ccCue);
   }
 
@@ -366,7 +399,8 @@ class SmsIngestor {
       final upper = guess.toUpperCase();
       for (final b in _MAJOR_BANKS) {
         if (b.code == upper) {
-          return _DetectedBank(code: b.code, display: b.display, tier: _BankTier.major);
+          return _DetectedBank(
+              code: b.code, display: b.display, tier: _BankTier.major);
         }
       }
       return _DetectedBank(code: upper, display: upper, tier: _BankTier.other);
@@ -377,15 +411,14 @@ class SmsIngestor {
     for (final b in _MAJOR_BANKS) {
       for (final h in b.headerHints) {
         if (combined.contains(h.toLowerCase())) {
-          return _DetectedBank(code: b.code, display: b.display, tier: _BankTier.major);
+          return _DetectedBank(
+              code: b.code, display: b.display, tier: _BankTier.major);
         }
       }
     }
 
     return const _DetectedBank(tier: _BankTier.unknown);
   }
-
-
 
   // Testing: pull a chunk of inbox regardless of cutoff
   static const bool TEST_MODE = true;
@@ -397,7 +430,8 @@ class SmsIngestor {
     final t = text.toLowerCase();
 
     // Strong phrases like: "has been credited/debited"
-    if (RegExp(r'has\s*been\s*(credited|debited)', caseSensitive: false).hasMatch(t)) return true;
+    if (RegExp(r'has\s*been\s*(credited|debited)', caseSensitive: false)
+        .hasMatch(t)) return true;
 
     // Txn artifacts + payment verbs
     final hasArtifact = RegExp(
@@ -414,7 +448,8 @@ class SmsIngestor {
 
     // Account + CR/DR
     if (RegExp(r'\ba/?c|\baccount|\bacct', caseSensitive: false).hasMatch(t) &&
-        RegExp(r'\b(cr|dr|credited|debited)\b', caseSensitive: false).hasMatch(t)) return true;
+        RegExp(r'\b(cr|dr|credited|debited)\b', caseSensitive: false)
+            .hasMatch(t)) return true;
 
     return false;
   }
@@ -451,10 +486,11 @@ class SmsIngestor {
     }
   }
 
-
   // debug logs
   static const bool _DEBUG_INGEST = true;
-  void _log(String s) { if (_DEBUG_INGEST) print('[SmsIngestor] $s'); }
+  void _log(String s) {
+    if (_DEBUG_INGEST) print('[SmsIngestor] $s');
+  }
 
   Telephony? _telephony;
   final ExpenseService _expense = ExpenseService();
@@ -462,7 +498,8 @@ class SmsIngestor {
   final IngestIndexService _index = IngestIndexService();
   String? _scheduledTaskId;
 
-  bool get _isAndroid => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  bool get _isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   Telephony? _ensureTelephony() {
     if (!_isAndroid) return null;
@@ -533,7 +570,8 @@ class SmsIngestor {
       if (ts.isBefore(since)) break;
 
       final body = m.body ?? '';
-      if (_looksLikeOtpOnly(body)) continue; // drop pure OTPs, allow everything else
+      if (_looksLikeOtpOnly(body))
+        continue; // drop pure OTPs, allow everything else
 
       try {
         await _handleOne(
@@ -551,7 +589,8 @@ class SmsIngestor {
     }
 
     if (newest != null) {
-      await IngestStateService.instance.setProgress(userPhone, lastSmsTs: newest);
+      await IngestStateService.instance
+          .setProgress(userPhone, lastSmsTs: newest);
     }
     _log('backfill done: processed=$processed newest=$newest');
   }
@@ -576,7 +615,8 @@ class SmsIngestor {
     if (bankLocal == null && last4Local == null) return;
 
     Query billQuery = FirebaseFirestore.instance
-        .collection('users').doc(userPhone)
+        .collection('users')
+        .doc(userPhone)
         .collection('bill_reminders')
         .where('kind', isEqualTo: 'credit_card_bill');
 
@@ -588,17 +628,19 @@ class SmsIngestor {
       return;
     }
 
-    final snap = await billQuery.orderBy('dueDate', descending: true).limit(1).get();
+    final snap =
+        await billQuery.orderBy('dueDate', descending: true).limit(1).get();
     if (snap.docs.isEmpty) return;
 
     final d = snap.docs.first;
     final data = d.data() as Map<String, dynamic>;
     final num totalDueN = (data['totalDue'] ?? data['minDue'] ?? 0) as num;
-    final num alreadyN  = (data['amountPaid'] ?? 0) as num;
+    final num alreadyN = (data['amountPaid'] ?? 0) as num;
 
     final double totalDue = totalDueN.toDouble();
-    final double nowPaid  = alreadyN.toDouble() + amount;
-    final String status   = (totalDue > 0 && nowPaid + 1e-6 >= totalDue) ? 'paid' : 'partial';
+    final double nowPaid = alreadyN.toDouble() + amount;
+    final String status =
+        (totalDue > 0 && nowPaid + 1e-6 >= totalDue) ? 'paid' : 'partial';
 
     await d.reference.set({
       'amountPaid': nowPaid,
@@ -607,9 +649,9 @@ class SmsIngestor {
       'updatedAt': Timestamp.now(),
     }, SetOptions(merge: true));
 
-    _log('LINKED payment ${txRef.id} → bill ${d.id} (nowPaid=$nowPaid, status=$status)');
+    _log(
+        'LINKED payment ${txRef.id} → bill ${d.id} (nowPaid=$nowPaid, status=$status)');
   }
-
 
   Future<void> initialBackfill({
     required String userPhone,
@@ -641,9 +683,7 @@ class SmsIngestor {
       daysBack = MAX_BACKFILL_DAYS;
     } else {
       final gapDays = now.difference(st.lastSmsAt!).inDays;
-      daysBack = gapDays > LONG_GAP_DAYS
-          ? MAX_BACKFILL_DAYS
-          : newerThanDays;
+      daysBack = gapDays > LONG_GAP_DAYS ? MAX_BACKFILL_DAYS : newerThanDays;
     }
 
     final effectiveDays = daysBack.clamp(1, MAX_BACKFILL_DAYS);
@@ -695,7 +735,8 @@ class SmsIngestor {
           final ts = DateTime.fromMillisecondsSinceEpoch(
             m.date ?? DateTime.now().millisecondsSinceEpoch,
           );
-          final localKey = '${ts.millisecondsSinceEpoch}|${(m.address ?? '')}|${body.hashCode}';
+          final localKey =
+              '${ts.millisecondsSinceEpoch}|${(m.address ?? '')}|${body.hashCode}';
           if (_seenRecently(localKey)) return;
 
           final st = await IngestStateService.instance.get(userPhone);
@@ -707,7 +748,8 @@ class SmsIngestor {
             ingestState: st,
           );
 
-          await IngestStateService.instance.setProgress(userPhone, lastSmsTs: ts);
+          await IngestStateService.instance
+              .setProgress(userPhone, lastSmsTs: ts);
         },
         listenInBackground: true,
       );
@@ -731,12 +773,14 @@ class SmsIngestor {
         taskId,
         'smsSync48h',
         frequency: const Duration(hours: 24),
-            existingWorkPolicy: _scheduledTaskId == null
+        existingWorkPolicy: _scheduledTaskId == null
             ? wm.ExistingPeriodicWorkPolicy.keep
             : wm.ExistingPeriodicWorkPolicy.replace,
-            inputData: {'userPhone': userPhone},
-        constraints: wm.Constraints(networkType: wm.NetworkType.notRequired,),
-            backoffPolicy: wm.BackoffPolicy.exponential,
+        inputData: {'userPhone': userPhone},
+        constraints: wm.Constraints(
+          networkType: wm.NetworkType.notRequired,
+        ),
+        backoffPolicy: wm.BackoffPolicy.exponential,
       );
       _scheduledTaskId = taskId;
       _log('scheduled daily 48h SMS sync');
@@ -745,7 +789,8 @@ class SmsIngestor {
     }
   }
 
-  Future<void> _processRawEvents(List<RawTransactionEvent> events, String userPhone) async {
+  Future<void> _processRawEvents(
+      List<RawTransactionEvent> events, String userPhone) async {
     for (final event in events) {
       try {
         // 1. Enrich
@@ -803,7 +848,7 @@ class SmsIngestor {
       _log('skip SMS sync (not Android)');
       return;
     }
-    
+
     // Use the new AndroidSmsConnector
     // TODO: Fetch actual region from user profile
     final region = RegionProfile.getByCode('IN');
@@ -811,21 +856,24 @@ class SmsIngestor {
 
     try {
       await connector.initialize();
-      
+
       // Calculate last sync time
       final st = await IngestStateService.instance.get(userPhone);
       final lastSync = st.lastSmsAt;
-      
+
       final events = await connector.syncDelta(lastSync: lastSync);
-      
+
       if (events.isNotEmpty) {
         await _processRawEvents(events, userPhone);
-        
+
         // Update progress
-        final newest = events.map((e) => e.timestamp).reduce((a, b) => a.isAfter(b) ? a : b);
-        await IngestStateService.instance.setProgress(userPhone, lastSmsTs: newest);
+        final newest = events
+            .map((e) => e.timestamp)
+            .reduce((a, b) => a.isAfter(b) ? a : b);
+        await IngestStateService.instance
+            .setProgress(userPhone, lastSmsTs: newest);
       }
-      
+
       _log('syncDelta done: ${events.length} events processed');
     } catch (e) {
       _log('syncDelta failed: $e');
@@ -889,11 +937,12 @@ class SmsIngestor {
     final preview = _preview(masked);
     final rawCapped = _cap(masked);
 
-    _log('incoming ${ts.toIso8601String()} ${address ?? "?"}: ${_oneLine(body)}');
+    _log(
+        'incoming ${ts.toIso8601String()} ${address ?? "?"}: ${_oneLine(body)}');
 
     // Pre-extract common signals
-    final bank = detectedBank.code ??
-        _guessIssuerBank(address: address, body: body);
+    final bank =
+        detectedBank.code ?? _guessIssuerBank(address: address, body: body);
     final last4 = _extractCardLast4(body);
     final upiVpa = _extractUpiVpa(body);
     final instrument = _inferInstrument(body);
@@ -908,23 +957,31 @@ class SmsIngestor {
 
     // Card bill detection (statement/due) → write a bill_reminder (not an expense)
     if (bill != null) {
-      final total = bill.totalDue ?? bill.minDue ?? _extractAmountInr(body) ?? 0.0;
+      final total =
+          bill.totalDue ?? bill.minDue ?? _extractAmountInr(body) ?? 0.0;
       if (total > 0) {
         // use statementEnd or dueDate as cycle anchor for deterministic bill id
         final anchor = bill.statementEnd ?? bill.dueDate ?? ts;
         final billId = _billDocId(bank: bank, last4: last4, anchor: anchor);
 
         final billRef = FirebaseFirestore.instance
-            .collection('users').doc(userPhone)
-            .collection('bill_reminders').doc(billId);
+            .collection('users')
+            .doc(userPhone)
+            .collection('bill_reminders')
+            .doc(billId);
 
         await billRef.set({
           'kind': 'credit_card_bill',
           'issuerBank': bank,
           'cardLast4': last4,
-          'statementStart': bill.statementStart != null ? Timestamp.fromDate(bill.statementStart!) : null,
-          'statementEnd':   bill.statementEnd   != null ? Timestamp.fromDate(bill.statementEnd!)   : null,
-          'dueDate':        bill.dueDate        != null ? Timestamp.fromDate(bill.dueDate!)        : null,
+          'statementStart': bill.statementStart != null
+              ? Timestamp.fromDate(bill.statementStart!)
+              : null,
+          'statementEnd': bill.statementEnd != null
+              ? Timestamp.fromDate(bill.statementEnd!)
+              : null,
+          'dueDate':
+              bill.dueDate != null ? Timestamp.fromDate(bill.dueDate!) : null,
           'totalDue': bill.totalDue,
           'minDue': bill.minDue,
           'status': _initialBillStatus(bill.dueDate),
@@ -949,14 +1006,22 @@ class SmsIngestor {
         // Optional: legacy expense write (hidden from analytics) for backward-compat UI
         if (WRITE_BILL_AS_EXPENSE) {
           final key = buildTxKey(
-            bank: bank, amount: total, time: ts, type: 'debit', last4: last4,
+            bank: bank,
+            amount: total,
+            time: ts,
+            type: 'debit',
+            last4: last4,
           );
-          final claimed = await _index.claim(userPhone, key, source: 'sms').catchError((_) => false);
+          final claimed = await _index
+              .claim(userPhone, key, source: 'sms')
+              .catchError((_) => false);
           if (claimed == true) {
             final docId = _docIdFromKey(key);
             final expRef = FirebaseFirestore.instance
-                .collection('users').doc(userPhone)
-                .collection('expenses').doc(docId);
+                .collection('users')
+                .doc(userPhone)
+                .collection('expenses')
+                .doc(docId);
             await expRef.set({
               'type': 'Credit Card Bill',
               'amount': total,
@@ -972,7 +1037,7 @@ class SmsIngestor {
               'counterpartyType': 'CARD_BILL',
               'isBill': true,
               'excludedFromSpending': true,
-              'tags': ['credit_card_bill','bill'],
+              'tags': ['credit_card_bill', 'bill'],
               'txKey': key,
               'ingestSources': FieldValue.arrayUnion(['sms']),
               'sourceRecord': {
@@ -983,19 +1048,21 @@ class SmsIngestor {
           }
         }
 
-        _log('UPSERT BillReminder(SMS) total=$total bank=${bank ?? "-"} last4=${last4 ?? "-"} id=$billId');
+        _log(
+            'UPSERT BillReminder(SMS) total=$total bank=${bank ?? "-"} last4=${last4 ?? "-"} id=$billId');
         return;
       }
     }
 
-
     // Regular debit/credit detection
     // Prefer txn amount cues; keep legacy extractor as final fallback
     final amountInr = fx == null
-        ? (_extractTxnAmount(body, direction: direction) ?? _extractAmountInr(body))
+        ? (_extractTxnAmount(body, direction: direction) ??
+            _extractAmountInr(body))
         : null;
     final postBal = _extractPostTxnBalance(body);
-    _log('parsed amount=${amountInr ?? -1} postBalance=${postBal ?? -1} dir=$direction');
+    _log(
+        'parsed amount=${amountInr ?? -1} postBalance=${postBal ?? -1} dir=$direction');
     final amount = amountInr ?? fx?['amount'] as double?;
     if (amount == null || amount <= 0) {
       _log('no valid amount; skip');
@@ -1017,10 +1084,9 @@ class SmsIngestor {
       upiVpa: upiVpa,
       smsAddress: address,
     );
-    var merchantKey = (merchantNorm.isNotEmpty
-        ? merchantNorm
-        : (last4 ?? bank ?? 'UNKNOWN'))
-        .toUpperCase();
+    var merchantKey =
+        (merchantNorm.isNotEmpty ? merchantNorm : (last4 ?? bank ?? 'UNKNOWN'))
+            .toUpperCase();
 
     // Stable key + per-source idempotency
     final key = buildTxKey(
@@ -1030,7 +1096,9 @@ class SmsIngestor {
       type: direction,
       last4: last4,
     );
-    final claimed = await _index.claim(userPhone, key, source: 'sms').catchError((_) => false);
+    final claimed = await _index
+        .claim(userPhone, key, source: 'sms')
+        .catchError((_) => false);
     if (claimed != true) {
       _log('duplicate (key=$key) — skip');
       return;
@@ -1039,7 +1107,8 @@ class SmsIngestor {
     // Cutoff (ignored in TEST_MODE)
     final st = ingestState ?? await IngestStateService.instance.get(userPhone);
     final cutoff = _extractCutoff(st);
-    final isAfterCutoff = TEST_MODE ? true : (cutoff == null ? true : ts.isAfter(cutoff));
+    final isAfterCutoff =
+        TEST_MODE ? true : (cutoff == null ? true : ts.isAfter(cutoff));
     if (!isAfterCutoff) {
       _log('before cutoff — skip');
       return;
@@ -1051,12 +1120,11 @@ class SmsIngestor {
       if (isEmiAutopay) 'cues=emi,autopay',
       if (instrument != null && instrument!.isNotEmpty)
         'instrument=${instrument!.toLowerCase().replaceAll(' ', '_')}',
-      if (upiVpa != null && upiVpa.trim().isNotEmpty)
-        'upi=${upiVpa!.trim()}',
+      if (upiVpa != null && upiVpa.trim().isNotEmpty) 'upi=${upiVpa!.trim()}',
       // NEW: Pass the extracted merchant guess as a strong hint
       if (merchantClean != null) 'merchantRegex=${merchantClean.trim()}',
     ];
-    
+
     final enriched = await EnrichmentService.instance.enrichTransaction(
       userId: userPhone,
       rawText: _maskSensitive(body),
@@ -1077,7 +1145,7 @@ class SmsIngestor {
 
     // Use the clean merchant name from EnrichmentService as the counterparty
     final counterparty = merchantNorm.isNotEmpty ? merchantNorm : 'Unknown';
-    
+
     final extractedCounterparty = direction == 'debit'
         ? CounterpartyExtractor.extractForDebit(body)
         : CounterpartyExtractor.extractForCredit(body);
@@ -1133,8 +1201,10 @@ class SmsIngestor {
       if (RECONCILE_POLICY == ReconcilePolicy.mergeEnrich) {
         final col = direction == 'debit' ? 'expenses' : 'incomes';
         final ref = FirebaseFirestore.instance
-            .collection('users').doc(userPhone)
-            .collection(col).doc(existingDocId);
+            .collection('users')
+            .doc(userPhone)
+            .collection(col)
+            .doc(existingDocId);
 
         await ref.set({
           'ingestSources': FieldValue.arrayUnion(['sms']),
@@ -1159,12 +1229,13 @@ class SmsIngestor {
     // Build model and write
     var note = _cleanNoteSimple(body);
     if (emiLocked && direction == 'debit') {
-      final prefix = 'Paid towards your EMI' +
-          (last4 != null ? ' ****$last4' : '');
+      final prefix =
+          'Paid towards your EMI' + (last4 != null ? ' ****$last4' : '');
       note = prefix + (note.isNotEmpty ? '\n$note' : '');
     }
     final currency = (fx?['currency'] as String?) ?? 'INR';
-    final isIntlResolved = isIntl || (fx != null && currency.toUpperCase() != 'INR');
+    final isIntlResolved =
+        isIntl || (fx != null && currency.toUpperCase() != 'INR');
     final extraTagList = _extraTagsFromText(body);
     if (emiLocked) {
       if (!extraTagList.contains('loan_emi')) extraTagList.add('loan_emi');
@@ -1179,14 +1250,17 @@ class SmsIngestor {
 
     if (direction == 'debit') {
       final expRef = FirebaseFirestore.instance
-          .collection('users').doc(userPhone)
-          .collection('expenses').doc(_docIdFromKey(key));
+          .collection('users')
+          .doc(userPhone)
+          .collection('expenses')
+          .doc(_docIdFromKey(key));
 
       // PARSER LOCK: Read first to check for user edits
       final docSnap = await expRef.get();
       final data = docSnap.data();
-      final isUserEdited = (data?['updatedBy'] as String?)?.contains('user') ?? 
-                           (data?['createdBy'] as String?)?.contains('user') ?? false;
+      final isUserEdited = (data?['updatedBy'] as String?)?.contains('user') ??
+          (data?['createdBy'] as String?)?.contains('user') ??
+          false;
 
       final e = ExpenseItem(
         id: expRef.id,
@@ -1196,19 +1270,22 @@ class SmsIngestor {
         date: ts,
         payerId: userPhone,
         cardLast4: last4,
-        cardType: _isCard(instrument) ? (_isCreditCard(body) ? 'Credit Card' : 'Debit Card') : null,
+        cardType: _isCard(instrument)
+            ? (_isCreditCard(body) ? 'Credit Card' : 'Debit Card')
+            : null,
         issuerBank: bank,
         instrument: instrument,
         instrumentNetwork: network,
         upiVpa: upiVpa,
-        counterparty: counterparty, 
+        counterparty: counterparty,
         counterpartyType: counterpartyType,
         isInternational: isIntlResolved,
         fx: fx,
         fees: fees.isNotEmpty ? fees : null,
         tags: tags,
         // Audit fields (explicit retention)
-        createdAt: (data?['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        createdAt:
+            (data?['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
         createdBy: (data?['createdBy'] as String?) ?? 'parser:sms',
         updatedAt: DateTime.now(),
         updatedBy: 'parser:sms',
@@ -1218,7 +1295,7 @@ class SmsIngestor {
         await _expense.addExpense(userPhone, e);
       } else {
         var jsonToWrite = e.toJson();
-        
+
         // LOCK LOGIC
         if (isUserEdited) {
           _log('Skipping update for locked fields on ${expRef.id} (SMS)');
@@ -1235,7 +1312,7 @@ class SmsIngestor {
       final combinedTags = <String>{};
       combinedTags.addAll(e.tags ?? const []);
       combinedTags.addAll(labelSet);
-      
+
       // Secondary update for enrichment metadata
       final metaUpdate = {
         'sourceRecord': sourceMeta,
@@ -1247,18 +1324,18 @@ class SmsIngestor {
         'tags': combinedTags.toList(),
         'labels': labelsForDoc,
       };
-      
+
       if (!isUserEdited) {
-         metaUpdate['category'] = finalCategory;
-         metaUpdate['subcategory'] = finalSubcategory;
+        metaUpdate['category'] = finalCategory;
+        metaUpdate['subcategory'] = finalSubcategory;
       }
-      
+
       await expRef.set(metaUpdate, SetOptions(merge: true));
 
       await expRef.set({
         'ingestSources': FieldValue.arrayUnion(['sms']),
       }, SetOptions(merge: true));
-      
+
       await expRef.set({'source': 'SMS'}, SetOptions(merge: true));
 
       try {
@@ -1294,19 +1371,19 @@ class SmsIngestor {
           sourceMeta: sourceMeta,
         );
       }
-
-
-
     } else {
       final incRef = FirebaseFirestore.instance
-          .collection('users').doc(userPhone)
-          .collection('incomes').doc(_docIdFromKey(key));
+          .collection('users')
+          .doc(userPhone)
+          .collection('incomes')
+          .doc(_docIdFromKey(key));
 
       // PARSER LOCK: Read first
       final docSnap = await incRef.get();
       final data = docSnap.data();
-      final isUserEdited = (data?['updatedBy'] as String?)?.contains('user') ?? 
-                           (data?['createdBy'] as String?)?.contains('user') ?? false;
+      final isUserEdited = (data?['updatedBy'] as String?)?.contains('user') ??
+          (data?['createdBy'] as String?)?.contains('user') ??
+          false;
 
       final i = IncomeItem(
         id: incRef.id,
@@ -1319,14 +1396,15 @@ class SmsIngestor {
         instrument: instrument,
         instrumentNetwork: network,
         upiVpa: upiVpa,
-        counterparty: counterparty,      // "Received from"
+        counterparty: counterparty, // "Received from"
         counterpartyType: counterpartyType,
         isInternational: isIntlResolved,
         fx: fx,
         fees: fees.isNotEmpty ? fees : null,
         tags: tags,
         // Audit fields (explicit retention)
-        createdAt: (data?['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        createdAt:
+            (data?['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
         createdBy: (data?['createdBy'] as String?) ?? 'parser:sms',
         updatedAt: DateTime.now(),
         updatedBy: 'parser:sms',
@@ -1350,7 +1428,7 @@ class SmsIngestor {
       final combinedTags = <String>{};
       combinedTags.addAll(i.tags ?? const []);
       combinedTags.addAll(labelSet);
-      
+
       final metaUpdate = {
         'sourceRecord': sourceMeta,
         'merchantKey': merchantKey,
@@ -1361,9 +1439,9 @@ class SmsIngestor {
         'tags': combinedTags.toList(),
         'labels': labelsForDoc,
       };
-       if (!isUserEdited) {
-         metaUpdate['category'] = finalCategory;
-         metaUpdate['subcategory'] = finalSubcategory;
+      if (!isUserEdited) {
+        metaUpdate['category'] = finalCategory;
+        metaUpdate['subcategory'] = finalSubcategory;
       }
 
       await incRef.set(metaUpdate, SetOptions(merge: true));
@@ -1390,7 +1468,8 @@ class SmsIngestor {
       } catch (_) {}
     }
 
-    _log('WRITE type=$direction amt=$amount key=$key inst=$instrument bank=${bank ?? "-"}');
+    _log(
+        'WRITE type=$direction amt=$amount key=$key inst=$instrument bank=${bank ?? "-"}');
   }
 
   // ─────────────────────── Helpers ────────────────────────────────────────────
@@ -1414,13 +1493,17 @@ class SmsIngestor {
   }
 
   // Collapse to one line for logs
-  String _oneLine(String s) => s.replaceAll('\n', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  String _oneLine(String s) =>
+      s.replaceAll('\n', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 
   // Note cleaner
   String _cleanNoteSimple(String raw) {
     var t = raw.trim();
     // remove obvious OTP lines
-    t = t.replaceAll(RegExp(r'(^|\s)(OTP|One[-\s]?Time\s*Password)\b[^\n]*', caseSensitive: false), '');
+    t = t.replaceAll(
+        RegExp(r'(^|\s)(OTP|One[-\s]?Time\s*Password)\b[^\n]*',
+            caseSensitive: false),
+        '');
     // collapse whitespace
     t = t.replaceAll(RegExp(r'\s+'), ' ').trim();
     // keep it short
@@ -1549,14 +1632,19 @@ class SmsIngestor {
   // INR amount like: ₹1,234.50 / INR 1234 / Rs 1,234 / rs.250
   double? _extractAmountInr(String text) {
     final patterns = <RegExp>[
-      RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)', caseSensitive: false),
+      RegExp(
+          r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
+          caseSensitive: false),
       // fallback: "amount of 123.45"
-      RegExp(r'\bamount\s+of\s+([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)', caseSensitive: false),
+      RegExp(r'\bamount\s+of\s+([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
+          caseSensitive: false),
     ];
     for (final re in patterns) {
       final m = re.firstMatch(text);
       if (m != null) {
-        final numStr = (m.group(1) ?? '').replaceAll(',', '').replaceAll(RegExp(r'\s+'), '');
+        final numStr = (m.group(1) ?? '')
+            .replaceAll(',', '')
+            .replaceAll(RegExp(r'\s+'), '');
         final v = double.tryParse(numStr);
         if (v != null) return v;
       }
@@ -1567,21 +1655,31 @@ class SmsIngestor {
   /// FX examples: "Spent USD 23.6", "Transaction of EUR 12.00"
   Map<String, dynamic>? _extractFx(String text) {
     final pats = <RegExp>[
-      RegExp(r'(spent|purchase|txn|transaction|charged)\s+(usd|eur|gbp|aed|sgd|jpy|aud|cad)\s*([0-9]+(?:\.[0-9]+)?)', caseSensitive: false),
-      RegExp(r'\b(usd|eur|gbp|aed|sgd|jpy|aud|cad)\s*([0-9]+(?:\.[0-9]+)?)\b\s*(spent|purchase|txn|transaction|charged)', caseSensitive: false),
-      RegExp(r'(txn|transaction)\s*of\s*(usd|eur|gbp|aed|sgd|jpy|aud|cad)\s*([0-9]+(?:\.[0-9]+)?)', caseSensitive: false),
+      RegExp(
+          r'(spent|purchase|txn|transaction|charged)\s+(usd|eur|gbp|aed|sgd|jpy|aud|cad)\s*([0-9]+(?:\.[0-9]+)?)',
+          caseSensitive: false),
+      RegExp(
+          r'\b(usd|eur|gbp|aed|sgd|jpy|aud|cad)\s*([0-9]+(?:\.[0-9]+)?)\b\s*(spent|purchase|txn|transaction|charged)',
+          caseSensitive: false),
+      RegExp(
+          r'(txn|transaction)\s*of\s*(usd|eur|gbp|aed|sgd|jpy|aud|cad)\s*([0-9]+(?:\.[0-9]+)?)',
+          caseSensitive: false),
     ];
     for (final re in pats) {
       final m = re.firstMatch(text);
       if (m != null) {
-        final g = m.groups([1,2,3]);
-        String cur; String amtStr;
+        final g = m.groups([1, 2, 3]);
+        String cur;
+        String amtStr;
         if (re.pattern.startsWith('(spent')) {
-          cur = g[1]!.toUpperCase(); amtStr = g[2]!;
+          cur = g[1]!.toUpperCase();
+          amtStr = g[2]!;
         } else if (re.pattern.startsWith(r'\b(usd')) {
-          cur = g[0]!.toUpperCase(); amtStr = g[1]!;
+          cur = g[0]!.toUpperCase();
+          amtStr = g[1]!;
         } else {
-          cur = g[1]!.toUpperCase(); amtStr = g[2]!;
+          cur = g[1]!.toUpperCase();
+          amtStr = g[2]!;
         }
         final amt = double.tryParse(amtStr);
         if (amt != null && amt > 0) return {'currency': cur, 'amount': amt};
@@ -1594,8 +1692,12 @@ class SmsIngestor {
   String? _inferDirection(String body) {
     final lower = body.toLowerCase();
 
-    final strongCredit = RegExp(r'has\s*been\s*credited|credited\s*(?:by|with)', caseSensitive: false).hasMatch(lower);
-    final strongDebit  = RegExp(r'has\s*been\s*debited|debited\s*(?:by|for)', caseSensitive: false).hasMatch(lower);
+    final strongCredit = RegExp(r'has\s*been\s*credited|credited\s*(?:by|with)',
+            caseSensitive: false)
+        .hasMatch(lower);
+    final strongDebit = RegExp(r'has\s*been\s*debited|debited\s*(?:by|for)',
+            caseSensitive: false)
+        .hasMatch(lower);
 
     final isDR = RegExp(r'\bdr\b').hasMatch(lower);
     final isCR = RegExp(r'\bcr\b').hasMatch(lower);
@@ -1617,8 +1719,17 @@ class SmsIngestor {
     if ((debit || isDR) && !(credit || isCR)) return 'debit';
     if ((credit || isCR) && !(debit || isDR)) return 'credit';
 
-    final dIdx = RegExp(r'debit|spent|purchase|paid|payment|dr|auto[-\s]?debit|autopay|nach|mandate|recharged', caseSensitive: false).firstMatch(lower)?.start ?? -1;
-    final cIdx = RegExp(r'credit|received|rcvd|deposit|salary|refund|cr', caseSensitive: false).firstMatch(lower)?.start ?? -1;
+    final dIdx =
+        RegExp(r'debit|spent|purchase|paid|payment|dr|auto[-\s]?debit|autopay|nach|mandate|recharged',
+                    caseSensitive: false)
+                .firstMatch(lower)
+                ?.start ??
+            -1;
+    final cIdx = RegExp(r'credit|received|rcvd|deposit|salary|refund|cr',
+                caseSensitive: false)
+            .firstMatch(lower)
+            ?.start ??
+        -1;
     if (dIdx >= 0 && cIdx >= 0) return dIdx < cIdx ? 'debit' : 'credit';
     return null;
   }
@@ -1645,8 +1756,9 @@ class SmsIngestor {
     final m1 = RegExp(
       r'MERCHANT\s*NAME\s*[:\-]\s*([A-Za-z0-9 .&/@-]{2,40})',
       caseSensitive: false,
-    ).firstMatch(body); // Use original body for case robustness if needed, but uppercase `t` is fine for key search
-    
+    ).firstMatch(
+        body); // Use original body for case robustness if needed, but uppercase `t` is fine for key search
+
     if (m1 != null) {
       final v = m1.group(1)!.trim();
       final cleaned = _cleanMerchantName(v);
@@ -1654,15 +1766,19 @@ class SmsIngestor {
     }
 
     // 1b) UPI/P2M patterns (High confidence)
-    final mUpi = RegExp(r'\bUPI\/P2[AM]\/[^\/\s]+\/([^\/\n\r]+)', caseSensitive: false).firstMatch(body);
+    final mUpi =
+        RegExp(r'\bUPI\/P2[AM]\/[^\/\s]+\/([^\/\n\r]+)', caseSensitive: false)
+            .firstMatch(body);
     if (mUpi != null) {
       final v = mUpi.group(1)?.trim();
-      final cleaned = _cleanMerchantName(v); 
+      final cleaned = _cleanMerchantName(v);
       if (cleaned != null) return cleaned;
     }
 
     // 2) “for <merchant>” after autopay/purchase/txn cues
-    final m2 = RegExp(r'\b(AUTOPAY|AUTO[-\s]?DEBIT|TXN|TRANSACTION|PURCHASE|PAYMENT)\b[^A-Z0-9]{0,40}\b(FOR|TOWARDS)\b\s*(?!ANY\s+ERRORS)([A-Z0-9&.\-\* ]{3,40})').firstMatch(t);
+    final m2 = RegExp(
+            r'\b(AUTOPAY|AUTO[-\s]?DEBIT|TXN|TRANSACTION|PURCHASE|PAYMENT)\b[^A-Z0-9]{0,40}\b(FOR|TOWARDS)\b\s*(?!ANY\s+ERRORS)([A-Z0-9&.\-\* ]{3,40})')
+        .firstMatch(t);
     if (m2 != null) {
       final v = m2.group(3)!.trim();
       if (v.isNotEmpty && !v.startsWith('ANY ERRORS')) return v;
@@ -1670,10 +1786,40 @@ class SmsIngestor {
 
     // 3) known brands (quick path)
     final known = <String>[
-      'OPENAI','NETFLIX','AMAZON PRIME','PRIME VIDEO','SPOTIFY','YOUTUBE','GOOGLE *YOUTUBE',
-      'APPLE.COM/BILL','APPLE','MICROSOFT','ADOBE','SWIGGY','ZOMATO','HOTSTAR','DISNEY+ HOTSTAR',
-      'SONYLIV','AIRTEL','JIO','VI','HATHWAY','ACT FIBERNET','BOOKMYSHOW','BIGTREE','OLA','UBER',
-      'IRCTC','REDBUS','AMAZON','FLIPKART','MEESHO','BLINKIT','ZEPTO','STARBUCKS','DMART'
+      'OPENAI',
+      'NETFLIX',
+      'AMAZON PRIME',
+      'PRIME VIDEO',
+      'SPOTIFY',
+      'YOUTUBE',
+      'GOOGLE *YOUTUBE',
+      'APPLE.COM/BILL',
+      'APPLE',
+      'MICROSOFT',
+      'ADOBE',
+      'SWIGGY',
+      'ZOMATO',
+      'HOTSTAR',
+      'DISNEY+ HOTSTAR',
+      'SONYLIV',
+      'AIRTEL',
+      'JIO',
+      'VI',
+      'HATHWAY',
+      'ACT FIBERNET',
+      'BOOKMYSHOW',
+      'BIGTREE',
+      'OLA',
+      'UBER',
+      'IRCTC',
+      'REDBUS',
+      'AMAZON',
+      'FLIPKART',
+      'MEESHO',
+      'BLINKIT',
+      'ZEPTO',
+      'STARBUCKS',
+      'DMART'
     ];
     for (final k in known) {
       final idx = t.indexOf(k);
@@ -1689,14 +1835,18 @@ class SmsIngestor {
 
     // 4) “at|to <merchant>” (plus Paid to / etc)
     // "Paid to SWIGGY", "Spent at STARBUCKS"
-    final m3 = RegExp(r'\b(AT|TO|PAID\s+TO|SENT\s+TO)\b\s*(?!ANY\s+ERRORS)([A-Z0-9&.@\-\* ]{3,40})').firstMatch(t);
+    final m3 = RegExp(
+            r'\b(AT|TO|PAID\s+TO|SENT\s+TO)\b\s*(?!ANY\s+ERRORS)([A-Z0-9&.@\-\* ]{3,40})')
+        .firstMatch(t);
     if (m3 != null) {
       final v = m3.group(2)!.trim();
       if (v.isNotEmpty && !v.startsWith('ANY ERRORS')) {
-         // quick filter for common bad captures
-         if (!RegExp(r'^(THE|MY|YOUR|ENDS|ENDING|AC|ACCOUNT|TXN|REF|RS|INR|USD|HOME|OFFICE)$').hasMatch(v)) {
-            return v;
-         }
+        // quick filter for common bad captures
+        if (!RegExp(
+                r'^(THE|MY|YOUR|ENDS|ENDING|AC|ACCOUNT|TXN|REF|RS|INR|USD|HOME|OFFICE)$')
+            .hasMatch(v)) {
+          return v;
+        }
       }
     }
 
@@ -1717,13 +1867,15 @@ class SmsIngestor {
   }
 
   bool _isCard(String? instrument) =>
-      instrument != null && {
-        'CREDIT CARD','DEBIT CARD','CARD','ATM','POS'
-      }.contains(instrument.toUpperCase());
+      instrument != null &&
+      {'CREDIT CARD', 'DEBIT CARD', 'CARD', 'ATM', 'POS'}
+          .contains(instrument.toUpperCase());
 
   bool _isCreditCard(String body) {
     final t = body.toLowerCase();
-    return t.contains('credit card') || t.contains('cc txn') || t.contains('cc transaction');
+    return t.contains('credit card') ||
+        t.contains('cc txn') ||
+        t.contains('cc transaction');
   }
 
   String? _inferInstrument(String text) {
@@ -1734,17 +1886,22 @@ class SmsIngestor {
     if (RegExp(r'\bRTGS\b').hasMatch(t)) return 'RTGS';
     if (RegExp(r'\bATM\b').hasMatch(t)) return 'ATM';
     if (RegExp(r'\bPOS\b').hasMatch(t)) return 'POS';
-    if (RegExp(r'\bDEBIT CARD\b').hasMatch(t) || RegExp(r'\bDC\b').hasMatch(t)) return 'Debit Card';
-    if (RegExp(r'\bCREDIT CARD\b').hasMatch(t) || RegExp(r'\bCC\b').hasMatch(t)) return 'Credit Card';
-    if (RegExp(r'WALLET|PAYTM WALLET|AMAZON PAY', caseSensitive: false).hasMatch(text)) return 'Wallet';
-    if (RegExp(r'NETBANKING|NET BANKING', caseSensitive: false).hasMatch(text)) return 'NetBanking';
+    if (RegExp(r'\bDEBIT CARD\b').hasMatch(t) || RegExp(r'\bDC\b').hasMatch(t))
+      return 'Debit Card';
+    if (RegExp(r'\bCREDIT CARD\b').hasMatch(t) || RegExp(r'\bCC\b').hasMatch(t))
+      return 'Credit Card';
+    if (RegExp(r'WALLET|PAYTM WALLET|AMAZON PAY', caseSensitive: false)
+        .hasMatch(text)) return 'Wallet';
+    if (RegExp(r'NETBANKING|NET BANKING', caseSensitive: false).hasMatch(text))
+      return 'NetBanking';
     return null;
   }
 
   String? _inferCardNetwork(String text) {
     final t = text.toUpperCase();
     if (t.contains('VISA')) return 'VISA';
-    if (t.contains('MASTERCARD') || t.contains('MASTER CARD')) return 'MASTERCARD';
+    if (t.contains('MASTERCARD') || t.contains('MASTER CARD'))
+      return 'MASTERCARD';
     if (t.contains('RUPAY') || t.contains('RU-PAY')) return 'RUPAY';
     if (t.contains('AMEX') || t.contains('AMERICAN EXPRESS')) return 'AMEX';
     if (t.contains('DINERS')) return 'DINERS';
@@ -1765,21 +1922,30 @@ class SmsIngestor {
       if (m == null) return null;
       // find ₹/INR/Rs amount after the match
       final after = t.substring(m.end);
-      final a = RegExp(r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)', caseSensitive: false)
+      final a = RegExp(
+              r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
+              caseSensitive: false)
           .firstMatch(after);
       if (a != null) {
-        final v = double.tryParse((a.group(1) ?? '').replaceAll(',', '').replaceAll(RegExp(r'\s+'), ''));
+        final v = double.tryParse((a.group(1) ?? '')
+            .replaceAll(',', '')
+            .replaceAll(RegExp(r'\s+'), ''));
         return v;
       }
       return null;
     }
 
     final pairs = <String, RegExp>{
-      'convenience': RegExp(r'\b(convenience\s*fee|conv\.?\s*fee|gateway\s*charge)\b', caseSensitive: false),
+      'convenience': RegExp(
+          r'\b(convenience\s*fee|conv\.?\s*fee|gateway\s*charge)\b',
+          caseSensitive: false),
       'gst': RegExp(r'\b(GST|IGST|CGST|SGST)\b', caseSensitive: false),
-      'markup': RegExp(r'\b(markup|forex\s*markup|intl\.?\s*markup)\b', caseSensitive: false),
-      'surcharge': RegExp(r'\b(surcharge|fuel\s*surcharge)\b', caseSensitive: false),
-      'late_fee': RegExp(r'\b(late\s*fee|late\s*payment\s*fee|penalty)\b', caseSensitive: false),
+      'markup': RegExp(r'\b(markup|forex\s*markup|intl\.?\s*markup)\b',
+          caseSensitive: false),
+      'surcharge':
+          RegExp(r'\b(surcharge|fuel\s*surcharge)\b', caseSensitive: false),
+      'late_fee': RegExp(r'\b(late\s*fee|late\s*payment\s*fee|penalty)\b',
+          caseSensitive: false),
       'processing': RegExp(r'\b(processing\s*fee)\b', caseSensitive: false),
     };
 
@@ -1793,18 +1959,20 @@ class SmsIngestor {
   // Credit Card Bill extraction (Total Due, Min Due, Due Date, Statement period)
   _BillInfo? _extractCardBillInfo(String text) {
     final t = text.toUpperCase();
-    if (!(t.contains('CREDIT CARD') || t.contains('CC')))
-      return null;
+    if (!(t.contains('CREDIT CARD') || t.contains('CC'))) return null;
 
     // Must have at least one of total due/min due/due date/bill/statement
-    final hasCue = RegExp(r'(TOTAL\s*(AMT|AMOUNT)?\s*DUE|MIN(IM)?UM\s*(AMT|AMOUNT)?\s*DUE|DUE\s*DATE|BILL\s*DUE|STATEMENT)', caseSensitive: false)
+    final hasCue = RegExp(
+            r'(TOTAL\s*(AMT|AMOUNT)?\s*DUE|MIN(IM)?UM\s*(AMT|AMOUNT)?\s*DUE|DUE\s*DATE|BILL\s*DUE|STATEMENT)',
+            caseSensitive: false)
         .hasMatch(text);
     if (!hasCue) return null;
 
     double? _amtAfter(List<RegExp> rxs) {
       for (final rx in rxs) {
         final a = RegExp(
-          rx.pattern + r''':?\s*(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\.\d{1,2})?)''',
+          rx.pattern +
+              r''':?\s*(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\.\d{1,2})?)''',
           caseSensitive: false,
         ).firstMatch(text);
         if (a != null) {
@@ -1834,8 +2002,11 @@ class SmsIngestor {
       return null;
     }
 
-    final total = _amtAfter([RegExp(r'\b(TOTAL\s*(AMT|AMOUNT)?\s*DUE)\b', caseSensitive: false)]);
-    final minDue = _amtAfter([RegExp(r'\b(MIN(IM)?UM\s*(AMT|AMOUNT)?\s*DUE)\b', caseSensitive: false)]);
+    final total = _amtAfter(
+        [RegExp(r'\b(TOTAL\s*(AMT|AMOUNT)?\s*DUE)\b', caseSensitive: false)]);
+    final minDue = _amtAfter([
+      RegExp(r'\b(MIN(IM)?UM\s*(AMT|AMOUNT)?\s*DUE)\b', caseSensitive: false)
+    ]);
 
     final dueDate = _dateAfter([
       RegExp(r'\b(DUE\s*DATE)\b', caseSensitive: false),
@@ -1845,15 +2016,22 @@ class SmsIngestor {
     // Statement period (optional): "Statement 12 Aug to 11 Sep"
     DateTime? stStart;
     DateTime? stEnd;
-    final period = RegExp(r'(STATEMENT\s*(PERIOD)?|BILL\s*CYCLE)[^0-9]*([0-9]{1,2}\s*[A-Za-z]{3}\s*[0-9]{2,4})\s*(TO|-)\s*([0-9]{1,2}\s*[A-Za-z]{3}\s*[0-9]{2,4})',
-        caseSensitive: false).firstMatch(text);
+    final period = RegExp(
+            r'(STATEMENT\s*(PERIOD)?|BILL\s*CYCLE)[^0-9]*([0-9]{1,2}\s*[A-Za-z]{3}\s*[0-9]{2,4})\s*(TO|-)\s*([0-9]{1,2}\s*[A-Za-z]{3}\s*[0-9]{2,4})',
+            caseSensitive: false)
+        .firstMatch(text);
     if (period != null) {
       stStart = _parseLooseDate(period.group(3)!);
       stEnd = _parseLooseDate(period.group(5)!);
     }
 
     if (total == null && minDue == null && dueDate == null) return null;
-    return _BillInfo(totalDue: total, minDue: minDue, dueDate: dueDate, statementStart: stStart, statementEnd: stEnd);
+    return _BillInfo(
+        totalDue: total,
+        minDue: minDue,
+        dueDate: dueDate,
+        statementStart: stStart,
+        statementEnd: stEnd);
   }
 
   DateTime? _parseLooseDate(String s) {
@@ -1865,14 +2043,27 @@ class SmsIngestor {
         final parts = a.contains('/') ? a.split('/') : a.split('-');
         final d = int.parse(parts[0]);
         final m = int.parse(parts[1]);
-        final y = (parts[2].length == 2) ? (2000 + int.parse(parts[2])) : int.parse(parts[2]);
+        final y = (parts[2].length == 2)
+            ? (2000 + int.parse(parts[2]))
+            : int.parse(parts[2]);
         return DateTime(y, m, d);
       }
       final byText = RegExp(r'^\d{1,2}\s*[A-Za-z]{3}\s*\d{2,4}$').hasMatch(a);
       if (byText) {
         final m = RegExp(r'[A-Za-z]{3}').firstMatch(a)!.group(0)!.toLowerCase();
         const months = {
-          'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12
+          'jan': 1,
+          'feb': 2,
+          'mar': 3,
+          'apr': 4,
+          'may': 5,
+          'jun': 6,
+          'jul': 7,
+          'aug': 8,
+          'sep': 9,
+          'oct': 10,
+          'nov': 11,
+          'dec': 12
         };
         final d = int.parse(RegExp(r'^\d{1,2}').firstMatch(a)!.group(0)!);
         final yMatch = RegExp(r'\d{2,4}$').firstMatch(a);
@@ -1953,7 +2144,9 @@ class SmsIngestor {
       final upper = raw.toUpperCase();
       // Skip very generic/self phrases
       if (upper.startsWith('YOUR ')) return null;
-      if (upper.contains('ACCOUNT') || upper.contains('A/C') || upper.contains('ACCT')) {
+      if (upper.contains('ACCOUNT') ||
+          upper.contains('A/C') ||
+          upper.contains('ACCT')) {
         return null;
       }
       // Skip if it's just the bank name
@@ -1998,7 +2191,8 @@ class SmsIngestor {
     // 6) Final fallbacks if everything else failed
     if (parts.isEmpty) {
       if (last4 != null && last4.trim().isNotEmpty) {
-        _appendUnique(parts, _accountToken(null, last4) ?? 'A/c …${last4.trim()}');
+        _appendUnique(
+            parts, _accountToken(null, last4) ?? 'A/c …${last4.trim()}');
       } else if (address != null && address.trim().isNotEmpty) {
         _appendUnique(parts, address.trim().toUpperCase());
       } else {
@@ -2020,11 +2214,13 @@ class SmsIngestor {
     if (extracted != null) {
       final type = extracted.type.toLowerCase();
       if (type == 'merchant') return 'MERCHANT';
-      if (type == 'person') return direction == 'credit' ? 'SENDER' : 'RECIPIENT';
+      if (type == 'person')
+        return direction == 'credit' ? 'SENDER' : 'RECIPIENT';
       if (type == 'bank') return 'BANK';
     }
     if (merchantNorm.isNotEmpty) return 'MERCHANT';
-    if (instrument != null && instrument.toUpperCase().contains('CARD')) return 'MERCHANT';
+    if (instrument != null && instrument.toUpperCase().contains('CARD'))
+      return 'MERCHANT';
     return direction == 'credit' ? 'SENDER' : 'RECIPIENT';
   }
 
@@ -2038,8 +2234,8 @@ class SmsIngestor {
     if (instrument != null) {
       final i = instrument.toUpperCase();
       if (i.contains('UPI')) tags.add('upi');
-      if (i.contains('CREDIT')) tags.addAll(['card','credit_card']);
-      if (i.contains('DEBIT')) tags.addAll(['card','debit_card']);
+      if (i.contains('CREDIT')) tags.addAll(['card', 'credit_card']);
+      if (i.contains('DEBIT')) tags.addAll(['card', 'debit_card']);
       if (i == 'IMPS') tags.add('imps');
       if (i == 'NEFT') tags.add('neft');
       if (i == 'RTGS') tags.add('rtgs');
@@ -2048,7 +2244,7 @@ class SmsIngestor {
       if (i == 'RECHARGE') tags.add('recharge');
       if (i == 'WALLET') tags.add('wallet');
     }
-    if (isIntl) tags.addAll(['international','forex']);
+    if (isIntl) tags.addAll(['international', 'forex']);
     if (hasFees) tags.add('fee');
     tags.addAll(extra);
     // de-dup
@@ -2059,10 +2255,13 @@ class SmsIngestor {
   List<String> _extraTagsFromText(String text) {
     final t = text.toLowerCase();
     final out = <String>[];
-    if (RegExp(r'\bauto[- ]?debit|autopay|nach|mandate|e\s*mandate\b').hasMatch(t)) out.add('autopay');
+    if (RegExp(r'\bauto[- ]?debit|autopay|nach|mandate|e\s*mandate\b')
+        .hasMatch(t)) out.add('autopay');
     if (RegExp(r'\bemi\b').hasMatch(t)) out.add('loan_emi');
-    if (RegExp(r'\bsubscription|renew(al)?|membership\b').hasMatch(t)) out.add('subscription');
-    if (RegExp(r'\bcharge|surcharge|penalty|late fee\b').hasMatch(t)) out.add('charges');
+    if (RegExp(r'\bsubscription|renew(al)?|membership\b').hasMatch(t))
+      out.add('subscription');
+    if (RegExp(r'\bcharge|surcharge|penalty|late fee\b').hasMatch(t))
+      out.add('charges');
     if (RegExp(r'\brecharge|prepaid|dth\b').hasMatch(t)) out.add('recharge');
     if (RegExp(r'\b(petrol|diesel|fuel|filling\s*station|gas\s*station)\b')
             .hasMatch(t) ||

@@ -1,4 +1,4 @@
-import 'dart:io';
+// import 'dart:io'; // Removed for web compatibility
 import 'package:flutter/foundation.dart';
 import 'package:app_tracking_transparency/app_tracking_transparency.dart';
 import 'package:permission_handler/permission_handler.dart' as perm;
@@ -14,11 +14,12 @@ class ConsentService {
   static bool get authorized => _authorized;
 
   static bool get isDeniedOrRestricted =>
-      _lastStatus == TrackingStatus.denied || _lastStatus == TrackingStatus.restricted;
+      _lastStatus == TrackingStatus.denied ||
+      _lastStatus == TrackingStatus.restricted;
 
   /// Shows only the system ATT dialog (iOS >= 14.5) and returns true if authorized.
   static Future<bool> requestATTIfNeeded() async {
-    if (kIsWeb || !Platform.isIOS) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
       _authorized = true;
       _lastStatus = TrackingStatus.authorized;
       return true;
@@ -42,7 +43,7 @@ class ConsentService {
 
   /// Open app Settings (no ATT pre-prompt).
   static Future<void> openSettings() async {
-    if (kIsWeb || !Platform.isIOS) return;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
     try {
       await perm.openAppSettings();
     } catch (_) {}
