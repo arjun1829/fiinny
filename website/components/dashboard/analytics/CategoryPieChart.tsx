@@ -4,9 +4,10 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 interface CategoryPieChartProps {
     data: { name: string; value: number; color: string }[];
+    onCategoryClick?: (category: string, amount: number) => void;
 }
 
-export default function CategoryPieChart({ data }: CategoryPieChartProps) {
+export default function CategoryPieChart({ data, onCategoryClick }: CategoryPieChartProps) {
     const CustomTooltip = ({ active, payload }: any) => {
         if (active && payload && payload.length) {
             const data = payload[0].payload;
@@ -60,7 +61,11 @@ export default function CategoryPieChart({ data }: CategoryPieChartProps) {
             {/* Legend */}
             <div className="mt-6 space-y-3 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
                 {data.map((item) => (
-                    <div key={item.name} className="flex items-center justify-between text-sm">
+                    <button
+                        key={item.name}
+                        onClick={() => onCategoryClick?.(item.name, item.value)}
+                        className="w-full flex items-center justify-between text-sm hover:bg-slate-50 p-2 rounded-lg transition-colors cursor-pointer"
+                    >
                         <div className="flex items-center gap-2">
                             <div
                                 className="w-3 h-3 rounded-full"
@@ -71,7 +76,7 @@ export default function CategoryPieChart({ data }: CategoryPieChartProps) {
                         <span className="font-semibold text-slate-900">
                             ₹{item.value.toLocaleString('en-IN')}
                         </span>
-                    </div>
+                    </button>
                 ))}
             </div>
         </div>

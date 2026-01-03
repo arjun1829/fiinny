@@ -81,17 +81,48 @@ export default function TransactionCard({
                 </div>
 
                 <div className="flex items-center justify-between mt-1">
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                        <span>{format(tx.date, "h:mm a")}</span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                            <Tag className="w-3 h-3" />
-                            {tx.category || "Uncategorized"}
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {/* Category Badge with Icon */}
+                        {tx.category && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-100 text-teal-700 rounded-full text-xs font-medium">
+                                <span>{(() => {
+                                    const cat = tx.category.toLowerCase();
+                                    if (cat.includes('food')) return '🍔';
+                                    if (cat.includes('travel')) return '✈️';
+                                    if (cat.includes('shopping')) return '🛍️';
+                                    if (cat.includes('health')) return '🏥';
+                                    if (cat.includes('entertainment')) return '🎬';
+                                    if (cat.includes('education')) return '📚';
+                                    if (cat.includes('investment')) return '📈';
+                                    return '💰';
+                                })()}</span>
+                                <span>{tx.category}</span>
+                            </span>
+                        )}
+
+                        {/* Subcategory Badge */}
+                        {(() => {
+                            const subcategory = (tx as any).subcategory || tx.brainMeta?.subcategory;
+                            if (subcategory) {
+                                return (
+                                    <span className="inline-flex items-center px-2 py-0.5 bg-slate-100 text-slate-700 rounded-full text-xs font-medium">
+                                        {subcategory}
+                                    </span>
+                                );
+                            }
+                            return null;
+                        })()}
+
+                        {/* Time */}
+                        <span className="text-xs text-slate-500">
+                            {format(tx.date, "h:mm a")}
                         </span>
+
+                        {/* Counterparty */}
                         {tx.counterparty && (
                             <>
-                                <span>•</span>
-                                <span>{tx.counterparty}</span>
+                                <span className="text-xs text-slate-400">•</span>
+                                <span className="text-xs text-slate-500">{tx.counterparty}</span>
                             </>
                         )}
                     </div>

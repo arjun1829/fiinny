@@ -25,6 +25,13 @@ import {
 } from "date-fns";
 import { generateSankeyData } from "@/lib/analytics/sankeyData";
 import MoneyFlow from "@/components/analytics/MoneyFlow";
+import ScopeFilters from "@/components/dashboard/analytics/ScopeFilters";
+import BankFilterPills from "@/components/dashboard/analytics/BankFilterPills";
+import InstrumentFilters from "@/components/dashboard/analytics/InstrumentFilters";
+import SubcategoryModal from "@/components/dashboard/analytics/SubcategoryModal";
+import AnalyticsTransactionList from "@/components/dashboard/analytics/AnalyticsTransactionList";
+import MonthlyTrend from "@/components/dashboard/analytics/MonthlyTrend";
+import SpendsByCategory from "@/components/dashboard/analytics/SpendsByCategory";
 
 export default function AnalyticsPage() {
     const { user, loading } = useAuth();
@@ -48,8 +55,20 @@ export default function AnalyticsPage() {
         groups: new Set(),
         sortBy: "date",
         sortDir: "desc",
-        groupBy: "none"
+        groupBy: "none",
+        scope: "all",
+        bankPill: null,
+        instrument: "all"
     });
+
+    // Subcategory Modal State
+    const [subcategoryModal, setSubcategoryModal] = useState<{
+        isOpen: boolean;
+        category: string;
+        expenses: ExpenseItem[];
+        totalAmount: number;
+        dateRange: string;
+    }>({ isOpen: false, category: "", expenses: [], totalAmount: 0, dateRange: "" });
 
     useEffect(() => {
         if (!loading && !user) {
@@ -128,7 +147,40 @@ export default function AnalyticsPage() {
             result = result.filter(tx => tx.date >= start! && tx.date <= end!);
         }
 
-        // 2. Type Filter (Important for Analytics)
+        // 2. Scope Filter (All/Savings/Credit)
+        if (filters.scope && filters.scope !== "all") {
+            result = result.filter(tx => {
+                const instrument = (tx.instrument || "").toLowerCase();
+                const isCreditCard = instrument.includes("credit");
+                if (filters.scope === "credit") return isCreditCard;
+                if (filters.scope === "savings") return !isCreditCard;
+                return true;
+            });
+        }
+
+        // 3. Bank Pill Filter
+        if (filters.bankPill && filters.bankPill !== "__FRIENDS__") {
+            result = result.filter(tx =>
+                tx.issuerBank && tx.issuerBank.toLowerCase() === filters.bankPill!.toLowerCase()
+            );
+        }
+
+        // 4. Instrument Filter
+        if (filters.instrument && filters.instrument !== "all") {
+            result = result.filter(tx => {
+                const instrument = (tx.instrument || "").toLowerCase();
+                if (filters.instrument === "upi") return instrument.includes("upi");
+                if (filters.instrument === "debit") return instrument.includes("debit");
+                if (filters.instrument === "others") {
+                    return !instrument.includes("upi") &&
+                        !instrument.includes("debit") &&
+                        !instrument.includes("credit");
+                }
+                return true;
+            });
+        }
+
+        // 5. Type Filter (Important for Analytics)
         if (filters.type !== "all") {
             result = result.filter(tx => {
                 const isIncome = 'type' in tx && (tx as IncomeItem).type === 'Income';
@@ -136,7 +188,7 @@ export default function AnalyticsPage() {
             });
         }
 
-        // 3. Search & Advanced Filters
+        // 6. Search & Advanced Filters
         if (searchQuery.trim()) {
             const query = searchQuery.toLowerCase();
             result = result.filter(tx =>
@@ -220,17 +272,38 @@ export default function AnalyticsPage() {
 
         // 4. Bank/Card Stats
         const uniqueBanks = new Set(filteredData.map(tx => tx.issuerBank).filter(Boolean)).size;
-        // Assuming cardLast4 is not available on base items yet, using banks as proxy or 0
-        const uniqueCards = uniqueBanks; // Placeholder logic
+        const uniqueCards = uniqueBanks;
+
+        // 5. Monthly Trend (Last 12 months)
+        const monthlyTrendData: { month: string; amount: number }[] = [];
+        const now = new Date();
+        for (let i = 11; i >= 0; i--) {
+            const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+            const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+
+            const monthAmount = transactions
+                .filter(tx => {
+                    const isExpense = !('type' in tx && (tx as IncomeItem).type === 'Income');
+                    return isExpense && tx.date >= monthStart && tx.date <= monthEnd;
+                })
+                .reduce((sum, tx) => sum + tx.amount, 0);
+
+            monthlyTrendData.push({
+                month: format(monthDate, 'MMM'),
+                amount: monthAmount
+            });
+        }
 
         return {
             trendData,
             categoryData,
             merchantData,
             uniqueBanks,
-            uniqueCards
+            uniqueCards,
+            monthlyTrendData
         };
-    }, [filteredData]);
+    }, [filteredData, transactions]);
 
     // Sankey Data (Respects Period, ignores Type filter to show full flow)
     const sankeyData = useMemo(() => {
@@ -268,6 +341,32 @@ export default function AnalyticsPage() {
 
     if (!user) return null;
 
+    // Extract unique banks for filter pills
+    const uniqueBanks = Array.from(new Set(
+        transactions
+            .map(tx => tx.issuerBank)
+            .filter((bank): bank is string => Boolean(bank))
+    )).sort();
+
+    // Separate expenses and incomes for transactions list
+    const expenses = filteredData.filter(tx => !('type' in tx && (tx as IncomeItem).type === 'Income')) as ExpenseItem[];
+    const incomes = filteredData.filter(tx => 'type' in tx && (tx as IncomeItem).type === 'Income') as IncomeItem[];
+
+    // Handle category click to open subcategory modal
+    const handleCategoryClick = (category: string, amount: number) => {
+        const categoryExpenses = expenses.filter(e => e.category === category);
+        const now = new Date();
+        const dateRange = `${format(startOfMonth(now), 'MMM d')} - ${format(endOfMonth(now), 'MMM d, yyyy')}`;
+
+        setSubcategoryModal({
+            isOpen: true,
+            category,
+            expenses: categoryExpenses,
+            totalAmount: amount,
+            dateRange
+        });
+    };
+
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
             <Navbar />
@@ -294,6 +393,33 @@ export default function AnalyticsPage() {
                         />
                     </div>
 
+                    {/* Scope Filters */}
+                    <div className="px-4 md:px-0">
+                        <ScopeFilters
+                            selectedScope={filters.scope || "all"}
+                            onScopeChange={(scope) => setFilters(prev => ({ ...prev, scope }))}
+                        />
+                    </div>
+
+                    {/* Bank Filter Pills */}
+                    {uniqueBanks.length > 0 && (
+                        <div className="px-4 md:px-0">
+                            <BankFilterPills
+                                banks={uniqueBanks}
+                                selectedBank={filters.bankPill || null}
+                                onBankChange={(bank) => setFilters(prev => ({ ...prev, bankPill: bank }))}
+                            />
+                        </div>
+                    )}
+
+                    {/* Instrument Filters */}
+                    <div className="px-4 md:px-0">
+                        <InstrumentFilters
+                            selectedInstrument={filters.instrument || "all"}
+                            onInstrumentChange={(instrument) => setFilters(prev => ({ ...prev, instrument }))}
+                        />
+                    </div>
+
                     {/* Dashboard Content */}
                     {isLoadingData ? (
                         <div className="py-20 text-center">
@@ -301,34 +427,62 @@ export default function AnalyticsPage() {
                             <p className="text-slate-500">Loading analytics...</p>
                         </div>
                     ) : (
-                        <div className="px-4 md:px-0 grid grid-cols-1 md:grid-cols-3 gap-6 pb-24">
+                        <div className="px-4 md:px-0 space-y-6 pb-24">
 
-                            {/* Left Column: Charts */}
-                            <div className="md:col-span-2 space-y-6">
-                                {/* VISIONARY: Money Flow */}
-                                <MoneyFlow data={sankeyData} />
+                            {/* Row 1: Monthly Trend + Spends by Category */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <MonthlyTrend data={aggregations.monthlyTrendData} />
+                                <SpendsByCategory
+                                    expenses={expenses}
+                                    onCategoryClick={handleCategoryClick}
+                                />
+                            </div>
 
+                            {/* Row 2: Spend Trend + Category Breakdown */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <SpendTrendChart
                                     data={aggregations.trendData}
                                     period={filters.period === "M" ? "day" : "month"}
                                 />
+                                <CategoryPieChart
+                                    data={aggregations.categoryData}
+                                    onCategoryClick={handleCategoryClick}
+                                />
+                            </div>
+
+                            {/* Row 3: Money Flow (Full Width) */}
+                            <MoneyFlow data={sankeyData} />
+
+                            {/* Row 4: Bank Stats + Top Merchants */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <BankCardStats
                                     bankCount={aggregations.uniqueBanks}
                                     cardCount={aggregations.uniqueCards}
                                 />
-                            </div>
-
-                            {/* Right Column: Breakdown & Lists */}
-                            <div className="space-y-6">
-                                <CategoryPieChart data={aggregations.categoryData} />
                                 <TopMerchantsList merchants={aggregations.merchantData} />
                             </div>
+
+                            {/* Row 5: Transactions List (Full Width) */}
+                            <AnalyticsTransactionList
+                                expenses={expenses}
+                                incomes={incomes}
+                            />
 
                         </div>
                     )}
 
                 </div>
             </div>
+
+            {/* Subcategory Modal */}
+            <SubcategoryModal
+                isOpen={subcategoryModal.isOpen}
+                onClose={() => setSubcategoryModal(prev => ({ ...prev, isOpen: false }))}
+                category={subcategoryModal.category}
+                expenses={subcategoryModal.expenses}
+                totalAmount={subcategoryModal.totalAmount}
+                dateRange={subcategoryModal.dateRange}
+            />
         </div>
     );
 }

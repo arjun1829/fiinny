@@ -17,6 +17,10 @@ export interface FilterState {
     sortBy: "date" | "amount";
     sortDir: "asc" | "desc";
     groupBy: "none" | "day" | "week" | "month" | "category";
+    // New analytics filters
+    scope?: "all" | "savings" | "credit";
+    bankPill?: string | null;
+    instrument?: "all" | "upi" | "debit" | "others";
 }
 
 interface FilterModalProps {
@@ -106,8 +110,8 @@ export default function FilterModal({
                         key={item}
                         onClick={() => onToggle(item)}
                         className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${isSelected
-                                ? "bg-teal-50 border-teal-200 text-teal-700"
-                                : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                            ? "bg-teal-50 border-teal-200 text-teal-700"
+                            : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
                             }`}
                     >
                         {renderLabel ? renderLabel(item) : item}
@@ -189,8 +193,8 @@ export default function FilterModal({
                                             key={opt}
                                             onClick={() => setFilters(prev => ({ ...prev, sortBy: opt }))}
                                             className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${filters.sortBy === opt
-                                                    ? "bg-teal-50 border-teal-200 text-teal-700"
-                                                    : "bg-white border-slate-200 text-slate-600"
+                                                ? "bg-teal-50 border-teal-200 text-teal-700"
+                                                : "bg-white border-slate-200 text-slate-600"
                                                 }`}
                                         >
                                             {opt.charAt(0).toUpperCase() + opt.slice(1)}
@@ -206,8 +210,8 @@ export default function FilterModal({
                                             key={opt}
                                             onClick={() => setFilters(prev => ({ ...prev, groupBy: opt }))}
                                             className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${filters.groupBy === opt
-                                                    ? "bg-teal-50 border-teal-200 text-teal-700"
-                                                    : "bg-white border-slate-200 text-slate-600"
+                                                ? "bg-teal-50 border-teal-200 text-teal-700"
+                                                : "bg-white border-slate-200 text-slate-600"
                                                 }`}
                                         >
                                             {opt.charAt(0).toUpperCase() + opt.slice(1)}
@@ -233,7 +237,10 @@ export default function FilterModal({
                                 groups: new Set(),
                                 sortBy: "date",
                                 sortDir: "desc",
-                                groupBy: "none"
+                                groupBy: "none",
+                                scope: "all",
+                                bankPill: null,
+                                instrument: "all"
                             });
                         }}
                         className="px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
