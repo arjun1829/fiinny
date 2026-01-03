@@ -9,7 +9,8 @@ import { startOfYear, endOfYear, subYears, isWithinInterval, startOfMonth, endOf
 
 export async function POST(request: NextRequest) {
     try {
-        const { userPhone, query } = await request.json();
+        const body = await request.json();
+        const { query, userPhone } = body;
 
         if (!userPhone || !query) {
             return NextResponse.json(
@@ -18,29 +19,64 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Fetch user's expenses, incomes, and friends
-        const expensesRef = collection(db, "users", userPhone, "expenses");
-        const incomesRef = collection(db, "users", userPhone, "incomes");
-        const friendsRef = collection(db, "users", userPhone, "friends");
+        const queryLower = query.trim().toLowerCase();
 
+        // === 0. IMMEDIATE GREETING HANDLER (No DB required) ===
+        if (queryLower === 'hi' || queryLower === 'hello' || queryLower === 'hey') {
+            return NextResponse.json({ response: "Hi there! I'm Fiinny Brain. Ask me about your expenses, travel, or splits!" });
+        }
+
+        // === UNSUPPORTED INTENTS ===
+        if (queryLower.startsWith('add') || queryLower.includes('create expense')) {
+            return NextResponse.json({ response: "I can't add expenses yet, but I can analyze them! Try adding it via the + button." });
+        }
+
+        // Fetch user's expenses, incomes, and friends
+        // Database calls
         const [expensesSnap, incomesSnap, friendsSnap] = await Promise.all([
-            getDocs(expensesRef),
-            getDocs(incomesRef),
-            getDocs(friendsRef),
+            getDocs(collection(db, "users", userPhone, "expenses")),
+            getDocs(collection(db, "users", userPhone, "incomes")),
+            getDocs(collection(db, "users", userPhone, "friends")),
         ]);
 
-        const expenses = expensesSnap.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-            date: doc.data().date?.toDate() || new Date(),
-            labels: doc.data().labels || [],
-        })) as ExpenseItem[];
+        const expenses = expensesSnap.docs.map((doc) => {
+            const data = doc.data();
+            let date = new Date();
+            // Safe date parsing
+            if (data.date && typeof data.date.toDate === 'function') {
+                date = data.date.toDate();
+            } else if (data.date instanceof Date) {
+                date = data.date;
+            } else if (typeof data.date === 'string') {
+                date = new Date(data.date);
+            }
 
-        const incomes = incomesSnap.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-            date: doc.data().date?.toDate() || new Date(),
-        }));
+            return {
+                id: doc.id,
+                ...data,
+                date: date,
+                amount: Number(data.amount) || 0, // safe amount
+                labels: Array.isArray(data.labels) ? data.labels : [],
+            } as ExpenseItem;
+        });
+
+        const incomes = incomesSnap.docs.map((doc) => {
+            const data = doc.data();
+            let date = new Date();
+            if (data.date && typeof data.date.toDate === 'function') {
+                date = data.date.toDate();
+            } else if (data.date instanceof Date) {
+                date = data.date;
+            } else if (typeof data.date === 'string') {
+                date = new Date(data.date);
+            }
+            return {
+                id: doc.id,
+                ...data,
+                date: date,
+                amount: Number(data.amount) || 0, // safe amount
+            };
+        });
 
         const friends = friendsSnap.docs.map(doc => ({
             id: doc.id,
@@ -52,16 +88,19 @@ export async function POST(request: NextRequest) {
             if (f.phone) friendMap[f.phone] = f.name;
         });
 
-        // Process query with advanced engines
-        const response = await processQuery(query, expenses, incomes, userPhone, friendMap);
+        // Process query
+        if (query.trim().toLowerCase() === "debug") {
+            return NextResponse.json({ response: `Debug: Loaded ${expenses.length} expenses, ${friendsSnap.docs.length} friends.` });
+        }
 
+        const response = await processQuery(query, expenses, incomes, userPhone, friendMap);
         return NextResponse.json({ response });
-    } catch (error) {
+
+    } catch (error: any) {
         console.error("Error processing query:", error);
-        return NextResponse.json(
-            { error: "Failed to process query" },
-            { status: 500 }
-        );
+        return NextResponse.json({
+            response: `Sorry, I encountered an error: ${error.message || String(error)}`
+        });
     }
 }
 
@@ -173,12 +212,12 @@ async function processQuery(
             if (friendName) {
                 // Calculate debt to this friend
                 // (Simplified logic: assuming 50/50 splits where friend paid)
-                // NOTE: To do this accurately we need to know who paid. 
+                // NOTE: To do this accurately we need to know who paid.
                 // Expenses where payerId == friendPhone and friendIds contains userPhone.
-                // But we only have `expenses` (user's expenses). if user is not payer, logic is tricky if data model is "ExpenseItem is created primarily by payer". 
+                // But we only have `expenses` (user's expenses). if user is not payer, logic is tricky if data model is "ExpenseItem is created primarily by payer".
                 // Usually split expenses are synced.
                 // Let's stick to "User Owes" logic if data supports it, or just "Owe Me" for now.
-                // The "How much does karan owe me" was the user's specific query. It falls into the block above if the user types "owe me". 
+                // The "How much does karan owe me" was the user's specific query. It falls into the block above if the user types "owe me".
                 // But if they type "owe [name]", we need to resolve name back to ID.
 
                 // Reverse map
