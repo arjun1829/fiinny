@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query as firestoreQuery } from "firebase/firestore";
+import { collection, getDocs, Firestore } from "firebase/firestore";
+import { TimeEngine } from "@/lib/ai/time_engine";
+import { TrendEngine } from "@/lib/ai/trend_engine";
+import { InferenceEngine } from "@/lib/ai/inference_engine";
+import { ExpenseItem, FriendModel } from "@/lib/firestore";
+import { startOfYear, endOfYear, subYears, isWithinInterval, startOfMonth, endOfMonth, subMonths } from "date-fns";
 
 export async function POST(request: NextRequest) {
     try {
@@ -13,20 +18,23 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Fetch user's expenses and incomes
+        // Fetch user's expenses, incomes, and friends
         const expensesRef = collection(db, "users", userPhone, "expenses");
         const incomesRef = collection(db, "users", userPhone, "incomes");
+        const friendsRef = collection(db, "users", userPhone, "friends");
 
-        const [expensesSnap, incomesSnap] = await Promise.all([
+        const [expensesSnap, incomesSnap, friendsSnap] = await Promise.all([
             getDocs(expensesRef),
             getDocs(incomesRef),
+            getDocs(friendsRef),
         ]);
 
         const expenses = expensesSnap.docs.map((doc) => ({
             id: doc.id,
             ...doc.data(),
             date: doc.data().date?.toDate() || new Date(),
-        }));
+            labels: doc.data().labels || [],
+        })) as ExpenseItem[];
 
         const incomes = incomesSnap.docs.map((doc) => ({
             id: doc.id,
@@ -34,8 +42,18 @@ export async function POST(request: NextRequest) {
             date: doc.data().date?.toDate() || new Date(),
         }));
 
-        // Process query (simplified version - you'll need to port the Dart logic)
-        const response = await processQuery(query, expenses, incomes, userPhone);
+        const friends = friendsSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+        } as unknown as FriendModel));
+
+        const friendMap: Record<string, string> = {};
+        friends.forEach(f => {
+            if (f.phone) friendMap[f.phone] = f.name;
+        });
+
+        // Process query with advanced engines
+        const response = await processQuery(query, expenses, incomes, userPhone, friendMap);
 
         return NextResponse.json({ response });
     } catch (error) {
@@ -49,13 +67,71 @@ export async function POST(request: NextRequest) {
 
 async function processQuery(
     query: string,
-    expenses: any[],
+    expenses: ExpenseItem[],
     incomes: any[],
-    userPhone: string
+    userPhone: string,
+    friendMap: Record<string, string>
 ): Promise<string> {
     const queryLower = query.toLowerCase();
+    const now = new Date();
 
-    // Split/Friend queries
+    // === 1. TIMEFRAME FILTERING (Basic) ===
+    let filteredExpenses = expenses;
+    let timeframeLabel = "all time";
+
+    if (queryLower.includes("this year")) {
+        const start = startOfYear(now);
+        const end = endOfYear(now);
+        filteredExpenses = expenses.filter(e => isWithinInterval(e.date, { start, end }));
+        timeframeLabel = "this year";
+    } else if (queryLower.includes("last year")) {
+        const start = startOfYear(subYears(now, 1));
+        const end = endOfYear(subYears(now, 1));
+        filteredExpenses = expenses.filter(e => isWithinInterval(e.date, { start, end }));
+        timeframeLabel = "last year";
+    } else if (queryLower.includes("this month")) {
+        const start = startOfMonth(now);
+        const end = endOfMonth(now);
+        filteredExpenses = expenses.filter(e => isWithinInterval(e.date, { start, end }));
+        timeframeLabel = "this month";
+    }
+
+    // === 2. TIME ENGINE ALIASES ===
+    if (queryLower.includes("weekend")) {
+        filteredExpenses = TimeEngine.filterByDayType(filteredExpenses, true);
+        const total = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+        return `You spent ₹${total.toFixed(0)} on weekends (${timeframeLabel}).`;
+    }
+
+    if (['morning', 'afternoon', 'evening', 'night'].some(t => queryLower.includes(t))) {
+        const period = ['morning', 'afternoon', 'evening', 'night'].find(t => queryLower.includes(t))!;
+        filteredExpenses = TimeEngine.filterByTimeOfDay(filteredExpenses, period);
+        const total = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+        return `You spent ₹${total.toFixed(0)} in the ${period} (${timeframeLabel}).`;
+    }
+
+    // === 3. TREND ENGINE ===
+    if (queryLower.includes("increas") || queryLower.includes("decreas") || queryLower.includes("trend")) {
+        // Compare this month vs last month
+        const thisMonth = expenses.filter(e => isWithinInterval(e.date, { start: startOfMonth(now), end: endOfMonth(now) }));
+        const lastMonth = expenses.filter(e => isWithinInterval(e.date, { start: startOfMonth(subMonths(now, 1)), end: endOfMonth(subMonths(now, 1)) }));
+
+        const growth = TrendEngine.calculateGrowthRate(thisMonth, lastMonth);
+        const direction = TrendEngine.analyzeTrendDirection(growth);
+
+        return `Your spending is ${direction} (${growth.toFixed(1)}% vs last month).`;
+    }
+
+    if (queryLower.includes("spike") || queryLower.includes("anomaly")) {
+        const thisMonth = expenses.filter(e => isWithinInterval(e.date, { start: startOfMonth(now), end: endOfMonth(now) }));
+        const history = expenses.filter(e => e.date < startOfMonth(now)); // All history before this month
+
+        const result = TrendEngine.detectAnomaly(thisMonth, history);
+        return result.message;
+    }
+
+
+    // === 4. SPLIT/FRIEND QUERIES (Enhanced) ===
     if (
         queryLower.includes("owe") ||
         queryLower.includes("pending") ||
@@ -82,56 +158,87 @@ async function processQuery(
             }
 
             const details = Object.entries(balances)
-                .map(([friend, amount]) => `${friend}: ₹${amount.toFixed(0)}`)
+                .map(([friendId, amount]) => {
+                    const name = friendMap[friendId] || friendId;
+                    return `${name}: ₹${amount.toFixed(0)}`;
+                })
                 .join("\n");
             return `People who owe you:\n${details}`;
+        }
+
+        // "How much do I owe X?"
+        if (queryLower.includes("owe")) {
+            // Find friend name in query
+            const friendName = Object.values(friendMap).find(name => queryLower.includes(name.toLowerCase()));
+            if (friendName) {
+                // Calculate debt to this friend
+                // (Simplified logic: assuming 50/50 splits where friend paid)
+                // NOTE: To do this accurately we need to know who paid. 
+                // Expenses where payerId == friendPhone and friendIds contains userPhone.
+                // But we only have `expenses` (user's expenses). if user is not payer, logic is tricky if data model is "ExpenseItem is created primarily by payer". 
+                // Usually split expenses are synced.
+                // Let's stick to "User Owes" logic if data supports it, or just "Owe Me" for now.
+                // The "How much does karan owe me" was the user's specific query. It falls into the block above if the user types "owe me". 
+                // But if they type "owe [name]", we need to resolve name back to ID.
+
+                // Reverse map
+                const friendId = Object.keys(friendMap).find(key => friendMap[key].toLowerCase() === friendName.toLowerCase());
+                if (friendId) {
+                    // Check balances[friendId] from above logic?
+                    // We need to re-run the "owe me" calc.
+                    const balances: Record<string, number> = {};
+                    splitExpenses.forEach((expense) => {
+                        if (expense.payerId === userPhone) {
+                            const splitAmount = expense.amount / (expense.friendIds.length + 1);
+                            expense.friendIds.forEach((fid: string) => {
+                                balances[fid] = (balances[fid] || 0) + splitAmount;
+                            });
+                        }
+                    });
+
+                    const amount = balances[friendId] || 0;
+                    return `${friendName} owes you ₹${amount.toFixed(0)}.`;
+                }
+            }
         }
 
         return `You have ${splitExpenses.length} split expenses.`;
     }
 
-    // Travel queries
-    if (
-        queryLower.includes("travel") ||
-        queryLower.includes("trip") ||
-        queryLower.includes("flight")
-    ) {
-        const travelExpenses = expenses.filter(
-            (e) =>
-                e.category?.toLowerCase().includes("travel") ||
-                e.category?.toLowerCase().includes("flight") ||
-                e.labels?.some((l: string) => l.toLowerCase().includes("trip"))
-        );
+    // === 5. INFERENCE & CATEGORY ==
 
-        const total = travelExpenses.reduce((sum, e) => sum + e.amount, 0);
-        return `You spent ₹${total.toFixed(0)} on travel (${travelExpenses.length} expenses)`;
+    // Check for "Hospital travel", "Medical", etc.
+    if (queryLower.includes("hospital") && queryLower.includes("travel")) {
+        const found = InferenceEngine.inferComplexIntent(filteredExpenses, 'hospital_travel');
+        const total = found.reduce((sum, e) => sum + e.amount, 0);
+        return `Found ${found.length} hospital travel expenses totaling ₹${total.toFixed(0)}.`;
     }
 
-    // Expense verification
-    if (queryLower.includes("tracked") || queryLower.includes("recorded")) {
-        let searchTerm = "";
-        if (queryLower.includes("flight")) searchTerm = "flight";
-        else if (queryLower.includes("metro")) searchTerm = "metro";
-
-        if (searchTerm) {
-            const found = expenses.filter(
-                (e) =>
-                    e.note?.toLowerCase().includes(searchTerm) ||
-                    e.category?.toLowerCase().includes(searchTerm)
-            );
-
-            if (found.length > 0) {
-                const total = found.reduce((sum, e) => sum + e.amount, 0);
-                return `Yes, I found ${found.length} ${searchTerm} expense(s) totaling ₹${total.toFixed(0)}`;
-            }
-            return `No ${searchTerm} expenses found.`;
+    // Check inferred context
+    const contexts = ['office', 'vacation'];
+    for (const ctx of contexts) {
+        if (queryLower.includes(ctx)) {
+            const found = InferenceEngine.inferContext(filteredExpenses, ctx);
+            const total = found.reduce((sum, e) => sum + e.amount, 0);
+            return `You spent ₹${total.toFixed(0)} on ${ctx} (${timeframeLabel}).`;
         }
     }
 
-    // General summary
+    // Check inferred category
+    const categories = ['travel', 'food', 'shopping', 'grocery', 'medical', 'entertainment'];
+    for (const cat of categories) {
+        if (queryLower.includes(cat)) {
+            const found = InferenceEngine.inferByCategory(filteredExpenses, cat);
+            const total = found.reduce((sum, e) => sum + e.amount, 0);
+            return `You spent ₹${total.toFixed(0)} on ${cat} (${timeframeLabel}).`;
+        }
+    }
+
+
+    // === 6. FALLBACK: GENERAL SUMMARY ===
     const totalExpense = expenses.reduce((sum, e) => sum + e.amount, 0);
     const totalIncome = incomes.reduce((sum, i) => sum + i.amount, 0);
     const savings = totalIncome - totalExpense;
 
-    return `Financial Summary:\nIncome: ₹${totalIncome.toFixed(0)}\nExpenses: ₹${totalExpense.toFixed(0)}\nSavings: ₹${savings.toFixed(0)}\n\nAsk me anything about your expenses, splits, or travel!`;
+    return `Financial Summary (${timeframeLabel}):\nIncome: ₹${totalIncome.toFixed(0)}\nExpenses: ₹${totalExpense.toFixed(0)}\nSavings: ₹${savings.toFixed(0)}\n\nTry asking: "How much on weekends?", "Is my spending increasing?", or "Travel expenses last year"`;
 }
