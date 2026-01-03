@@ -1,34 +1,7 @@
 import '../fiinny_brain/time_engine.dart';
 import '../fiinny_brain/trend_engine.dart';
 import '../fiinny_brain/inference_engine.dart';
-
-// ... (existing imports)
-
-      // === TIME/WEEKEND QUESTIONS ===
-      if (_isTimeQuery(queryLower)) {
-        return _handleTimeQuery(
-          query: queryLower,
-          expenses: expenses,
-        );
-      }
-
-      // === TREND/GROWTH QUESTIONS ===
-      if (_isTrendQuery(queryLower)) {
-        return _handleTrendQuery(
-          query: queryLower,
-          expenses: expenses,
-        );
-      }
-
-      // === INFERENCE/CONTEXT QUESTIONS ===
-      if (_isInferenceQuery(queryLower)) {
-        return _handleInferenceQuery(
-          query: queryLower,
-          expenses: expenses,
-        );
-      }
-
-      // === GENERAL SUMMARY ===
+import '../models/expense_item.dart';
 import '../models/income_item.dart';
 import '../fiinny_brain/entity_resolver.dart';
 import '../fiinny_brain/entity_resolution_models.dart';
@@ -91,6 +64,30 @@ class FiinnyBrainQueryService {
         );
       }
 
+      // === TIME/WEEKEND QUESTIONS ===
+      if (_isTimeQuery(queryLower)) {
+        return _handleTimeQuery(
+          query: queryLower,
+          expenses: expenses,
+        );
+      }
+
+      // === TREND/GROWTH QUESTIONS ===
+      if (_isTrendQuery(queryLower)) {
+        return _handleTrendQuery(
+          query: queryLower,
+          expenses: expenses,
+        );
+      }
+
+      // === INFERENCE/CONTEXT QUESTIONS ===
+      if (_isInferenceQuery(queryLower)) {
+        return _handleInferenceQuery(
+          query: queryLower,
+          expenses: expenses,
+        );
+      }
+
       // === GENERAL SUMMARY ===
       return _handleGeneralSummary(expenses, incomes);
     } catch (e) {
@@ -101,17 +98,38 @@ class FiinnyBrainQueryService {
   // ==================== QUERY TYPE DETECTION ====================
 
   static bool _isSplitQuery(String query) {
-    final splitKeywords = ['owe', 'pending', 'friend', 'split', 'settle', 'remind', 'group', 'trip'];
+    final splitKeywords = [
+      'owe',
+      'pending',
+      'friend',
+      'split',
+      'settle',
+      'remind',
+      'group',
+      'trip'
+    ];
     return splitKeywords.any((keyword) => query.contains(keyword));
   }
 
   static bool _isExpenseSearchQuery(String query) {
-    final searchKeywords = ['show', 'find', 'search', 'list', 'tracked', 'recorded'];
+    final searchKeywords = [
+      'show',
+      'find',
+      'search',
+      'list',
+      'tracked',
+      'recorded'
+    ];
     return searchKeywords.any((keyword) => query.contains(keyword));
   }
 
   static bool _isCategoryQuery(String query) {
-    final categoryKeywords = ['category', 'spent on', 'spending on', 'how much on'];
+    final categoryKeywords = [
+      'category',
+      'spent on',
+      'spending on',
+      'how much on'
+    ];
     return categoryKeywords.any((keyword) => query.contains(keyword));
   }
 
@@ -121,17 +139,37 @@ class FiinnyBrainQueryService {
   }
 
   static bool _isTimeQuery(String query) {
-    const keywords = ['weekend', 'weekday', 'morning', 'night', 'holiday', 'monday', 'sunday'];
+    const keywords = [
+      'weekend',
+      'weekday',
+      'morning',
+      'night',
+      'holiday',
+      'monday',
+      'sunday'
+    ];
     return keywords.any((k) => query.contains(k));
   }
 
   static bool _isTrendQuery(String query) {
-    const keywords = ['increasing', 'decreasing', 'trend', 'spike', 'more than last', 'usage'];
+    const keywords = [
+      'increasing',
+      'decreasing',
+      'trend',
+      'spike',
+      'more than last',
+      'usage'
+    ];
     return keywords.any((k) => query.contains(k));
   }
 
   static bool _isInferenceQuery(String query) {
-    const keywords = ['inferred', 'guess', 'hospital', 'commute']; // Explicit intents
+    const keywords = [
+      'inferred',
+      'guess',
+      'hospital',
+      'commute'
+    ]; // Explicit intents
     return keywords.any((k) => query.contains(k));
   }
 
@@ -164,12 +202,14 @@ class FiinnyBrainQueryService {
     // "How much does X owe me?"
     if (query.contains('owe') && query.contains('me')) {
       if (friendName != null) {
-        final resolution = EntityResolver.resolveFriendName(friendName, phoneToNameMap);
+        final resolution =
+            EntityResolver.resolveFriendName(friendName, phoneToNameMap);
         if (resolution.needsClarification) {
           return _formatClarificationRequest(resolution.candidates, 'friend');
         }
         if (resolution.phone != null) {
-          final amount = SplitQueryEngine.getAmountOwedBy(resolution.phone!, report);
+          final amount =
+              SplitQueryEngine.getAmountOwedBy(resolution.phone!, report);
           if (amount > 0) {
             return "${resolution.name} owes you ₹${amount.toStringAsFixed(0)}";
           } else {
@@ -192,9 +232,11 @@ class FiinnyBrainQueryService {
     // "How much do I owe X?"
     if (query.contains('i owe') || query.contains('do i owe')) {
       if (friendName != null) {
-        final resolution = EntityResolver.resolveFriendName(friendName, phoneToNameMap);
+        final resolution =
+            EntityResolver.resolveFriendName(friendName, phoneToNameMap);
         if (resolution.phone != null) {
-          final amount = SplitQueryEngine.getAmountOwedTo(resolution.phone!, report);
+          final amount =
+              SplitQueryEngine.getAmountOwedTo(resolution.phone!, report);
           if (amount > 0) {
             return "You owe ${resolution.name} ₹${amount.toStringAsFixed(0)}";
           } else {
@@ -236,9 +278,12 @@ class FiinnyBrainQueryService {
   }) {
     // Extract search terms
     String? searchTerm;
-    if (query.contains('flight')) searchTerm = 'flight';
-    else if (query.contains('metro')) searchTerm = 'metro';
-    else if (query.contains('cab') || query.contains('uber')) searchTerm = 'cab';
+    if (query.contains('flight'))
+      searchTerm = 'flight';
+    else if (query.contains('metro'))
+      searchTerm = 'metro';
+    else if (query.contains('cab') || query.contains('uber'))
+      searchTerm = 'cab';
 
     if (searchTerm != null) {
       // Check if expense was tracked
@@ -277,8 +322,9 @@ class FiinnyBrainQueryService {
     required List<ExpenseItem> expenses,
   }) {
     // Extract category from query
-    final categories = expenses.map((e) => e.category).whereType<String>().toSet().toList();
-    
+    final categories =
+        expenses.map((e) => e.category).whereType<String>().toSet().toList();
+
     // Try to find category in query
     String? matchedCategory;
     for (final category in categories) {
@@ -290,7 +336,7 @@ class FiinnyBrainQueryService {
 
     // Extract timeframe
     final timeframe = FuzzySearchEngine.parseTimeframe(query);
-    
+
     if (matchedCategory != null) {
       final result = FuzzySearchEngine.searchByCategory(
         expenses,
@@ -298,7 +344,7 @@ class FiinnyBrainQueryService {
         from: timeframe['from'],
         to: timeframe['to'],
       );
-      
+
       final period = _formatPeriod(timeframe);
       return "You spent ₹${result.totalAmount.toStringAsFixed(0)} on $matchedCategory $period (${result.count} expenses)";
     }
@@ -309,10 +355,14 @@ class FiinnyBrainQueryService {
       final cat = expense.category ?? 'Uncategorized';
       summary[cat] = (summary[cat] ?? 0) + expense.amount;
     }
-    
-    final sorted = summary.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-    final top5 = sorted.take(5).map((e) => "${e.key}: ₹${e.value.toStringAsFixed(0)}").join('\n');
-    
+
+    final sorted = summary.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final top5 = sorted
+        .take(5)
+        .map((e) => "${e.key}: ₹${e.value.toStringAsFixed(0)}")
+        .join('\n');
+
     return "Top spending categories:\n$top5";
   }
 
@@ -339,7 +389,8 @@ class FiinnyBrainQueryService {
     return "Travel expenses $period:\nTotal: ₹${result.totalAmount.toStringAsFixed(0)}\nExpenses: ${result.count}\n\nBreakdown:\n$breakdown";
   }
 
-  static String _handleGeneralSummary(List<ExpenseItem> expenses, List<IncomeItem> incomes) {
+  static String _handleGeneralSummary(
+      List<ExpenseItem> expenses, List<IncomeItem> incomes) {
     final totalExpense = expenses.fold<double>(0, (sum, e) => sum + e.amount);
     final totalIncome = incomes.fold<double>(0, (sum, i) => sum + i.amount);
     final savings = totalIncome - totalExpense;
@@ -353,27 +404,34 @@ class FiinnyBrainQueryService {
 
   // ==================== ADVANCED HANDLERS ====================
 
-  static String _handleTimeQuery({required String query, required List<ExpenseItem> expenses}) {
+  static String _handleTimeQuery(
+      {required String query, required List<ExpenseItem> expenses}) {
     if (query.contains('weekend')) {
-      final weekendExpenses = TimeEngine.filterByDayType(expenses, isWeekend: true);
+      final weekendExpenses =
+          TimeEngine.filterByDayType(expenses, isWeekend: true);
       final total = weekendExpenses.fold(0.0, (sum, e) => sum + e.amount);
       return "You spent ₹${total.toStringAsFixed(0)} on weekends (Total ${weekendExpenses.length} expenses)";
     }
-    
+
     if (query.contains('morning') || query.contains('10 am')) {
       final morningExpenses = TimeEngine.filterByTimeOfDay(expenses, 'morning');
       final total = morningExpenses.fold(0.0, (sum, e) => sum + e.amount);
       return "You spent ₹${total.toStringAsFixed(0)} in the morning (before 12 PM)";
     }
-    
+
     // Add more time handlers as needed
     return "I can analyze spending by time. Try asking about 'weekends' or 'mornings'.";
   }
 
-  static String _handleTrendQuery({required String query, required List<ExpenseItem> expenses}) {
+  static String _handleTrendQuery(
+      {required String query, required List<ExpenseItem> expenses}) {
     final now = DateTime.now();
-    final currentMonth = expenses.where((e) => e.date.month == now.month && e.date.year == now.year).toList();
-    final lastMonth = expenses.where((e) => e.date.month == now.month - 1 && e.date.year == now.year).toList(); // Simplified date logic
+    final currentMonth = expenses
+        .where((e) => e.date.month == now.month && e.date.year == now.year)
+        .toList();
+    final lastMonth = expenses
+        .where((e) => e.date.month == now.month - 1 && e.date.year == now.year)
+        .toList(); // Simplified date logic
 
     if (query.contains('increasing') || query.contains('trend')) {
       final growth = TrendEngine.calculateGrowthRate(currentMonth, lastMonth);
@@ -382,16 +440,19 @@ class FiinnyBrainQueryService {
     }
 
     if (query.contains('spike')) {
-      final anomaly = TrendEngine.detectAnomaly(currentMonth, expenses); // Naive history
+      final anomaly =
+          TrendEngine.detectAnomaly(currentMonth, expenses); // Naive history
       return anomaly['message'];
     }
 
     return "I can analyze your spending trends. Try asking 'Is my spending increasing?'";
   }
 
-  static String _handleInferenceQuery({required String query, required List<ExpenseItem> expenses}) {
+  static String _handleInferenceQuery(
+      {required String query, required List<ExpenseItem> expenses}) {
     if (query.contains('hospital')) {
-      final results = InferenceEngine.inferComplexIntent(expenses, 'hospital_travel');
+      final results =
+          InferenceEngine.inferComplexIntent(expenses, 'hospital_travel');
       final total = results.fold(0.0, (sum, e) => sum + e.amount);
       return "I found ₹${total.toStringAsFixed(0)} likely related to hospital travel (based on keywords like 'hospital', 'clinic' + travel patterns).";
     }
@@ -416,21 +477,24 @@ class FiinnyBrainQueryService {
   static String _formatSplitSummary(EnhancedSplitReport report) {
     final summary = StringBuffer();
     summary.writeln("Split Summary:");
-    summary.writeln("Total to collect: ₹${report.totalPendingReceivable.toStringAsFixed(0)}");
-    summary.writeln("Total to pay: ₹${report.totalPendingPayable.toStringAsFixed(0)}");
+    summary.writeln(
+        "Total to collect: ₹${report.totalPendingReceivable.toStringAsFixed(0)}");
+    summary.writeln(
+        "Total to pay: ₹${report.totalPendingPayable.toStringAsFixed(0)}");
     summary.writeln("Net position: ₹${report.netPosition.toStringAsFixed(0)}");
-    
+
     if (report.risks.isNotEmpty) {
       summary.writeln("\n⚠️ Alerts:");
       for (final risk in report.risks.take(3)) {
         summary.writeln("• ${risk.description}");
       }
     }
-    
+
     return summary.toString();
   }
 
-  static String _formatClarificationRequest(List<dynamic> candidates, String type) {
+  static String _formatClarificationRequest(
+      List<dynamic> candidates, String type) {
     final buffer = StringBuffer();
     buffer.writeln("I found multiple matches. Which one did you mean?");
     for (int i = 0; i < candidates.length && i < 5; i++) {

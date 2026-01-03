@@ -13,8 +13,6 @@ import '../../widgets/add_friend_expense_dialog.dart';
 import '../../widgets/add_group_expense_dialog.dart';
 import '../../widgets/add_group_dialog.dart';
 
-
-
 class ActivityScreen extends StatefulWidget {
   final String userPhone;
   const ActivityScreen({Key? key, required this.userPhone}) : super(key: key);
@@ -44,7 +42,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
     super.dispose();
   }
 
-  bool _match(String q, String hay) => hay.toLowerCase().contains(q.toLowerCase());
+  bool _match(String q, String hay) =>
+      hay.toLowerCase().contains(q.toLowerCase());
 
   Future<void> _openFriendExpense(FriendModel f) async {
     final ok = await showDialog<bool>(
@@ -60,7 +59,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
     if (ok == true && mounted) setState(() {});
   }
 
-  Future<void> _openGroupExpense(GroupModel g, List<FriendModel> allFriends) async {
+  Future<void> _openGroupExpense(
+      GroupModel g, List<FriendModel> allFriends) async {
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -112,10 +112,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
       foregroundImage: prov,
       child: prov == null
           ? Text(
-        (f.avatar.isNotEmpty ? f.avatar : f.name.characters.first)
-            .toUpperCase(),
-        style: const TextStyle(fontSize: 12),
-      )
+              (f.avatar.isNotEmpty ? f.avatar : f.name.characters.first)
+                  .toUpperCase(),
+              style: const TextStyle(fontSize: 12),
+            )
           : null,
     );
   }
@@ -139,12 +139,15 @@ class _ActivityScreenState extends State<ActivityScreen> {
         elevation: 0,
         surfaceTintColor: Theme.of(context).scaffoldBackgroundColor,
         leading: IconButton(
-          icon: Icon(Icons.close_rounded, color: Theme.of(context).textTheme.bodyLarge?.color),
+          icon: Icon(Icons.close_rounded,
+              color: Theme.of(context).textTheme.bodyLarge?.color),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           'Add an expense',
-          style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.w800),
+          style: TextStyle(
+              color: Theme.of(context).textTheme.bodyLarge?.color,
+              fontWeight: FontWeight.w800),
         ),
       ),
       body: SafeArea(
@@ -166,34 +169,45 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     for (final e in tx) {
                       for (final f in e.friendIds) {
                         final p = lastSeen[f];
-                        if (p == null || e.date.isAfter(p)) lastSeen[f] = e.date;
+                        if (p == null || e.date.isAfter(p))
+                          lastSeen[f] = e.date;
                       }
                       final gid = e.groupId;
                       if (gid != null) {
                         final p = lastSeen[gid];
-                        if (p == null || e.date.isAfter(p)) lastSeen[gid] = e.date;
+                        if (p == null || e.date.isAfter(p))
+                          lastSeen[gid] = e.date;
                       }
                     }
 
                     // --- sort
                     final recentFriends = [...friends]..sort((a, b) {
-                      final ad = lastSeen[a.phone] ?? DateTime.fromMillisecondsSinceEpoch(0);
-                      final bd = lastSeen[b.phone] ?? DateTime.fromMillisecondsSinceEpoch(0);
-                      return bd.compareTo(ad);
-                    });
+                        final ad = lastSeen[a.phone] ??
+                            DateTime.fromMillisecondsSinceEpoch(0);
+                        final bd = lastSeen[b.phone] ??
+                            DateTime.fromMillisecondsSinceEpoch(0);
+                        return bd.compareTo(ad);
+                      });
                     final recentGroups = [...groups]..sort((a, b) {
-                      final ad = lastSeen[a.id] ?? DateTime.fromMillisecondsSinceEpoch(0);
-                      final bd = lastSeen[b.id] ?? DateTime.fromMillisecondsSinceEpoch(0);
-                      return bd.compareTo(ad);
-                    });
+                        final ad = lastSeen[a.id] ??
+                            DateTime.fromMillisecondsSinceEpoch(0);
+                        final bd = lastSeen[b.id] ??
+                            DateTime.fromMillisecondsSinceEpoch(0);
+                        return bd.compareTo(ad);
+                      });
 
                     // --- filter
                     final fq = _q.isEmpty
                         ? recentFriends
-                        : recentFriends.where((f) => _match(_q, f.name) || _match(_q, f.phone)).toList();
+                        : recentFriends
+                            .where((f) =>
+                                _match(_q, f.name) || _match(_q, f.phone))
+                            .toList();
                     final gq = _q.isEmpty
                         ? recentGroups
-                        : recentGroups.where((g) => _match(_q, g.name)).toList();
+                        : recentGroups
+                            .where((g) => _match(_q, g.name))
+                            .toList();
 
                     return Center(
                       child: ConstrainedBox(
@@ -208,7 +222,12 @@ class _ActivityScreenState extends State<ActivityScreen> {
                               curve: Curves.easeOut,
                               decoration: BoxDecoration(
                                 boxShadow: _searchFocus.hasFocus
-                                    ? [const BoxShadow(color: Color(0x14000000), blurRadius: 16, offset: Offset(0, 8))]
+                                    ? [
+                                        const BoxShadow(
+                                            color: Color(0x14000000),
+                                            blurRadius: 16,
+                                            offset: Offset(0, 8))
+                                      ]
                                     : const [],
                                 borderRadius: BorderRadius.circular(14),
                               ),
@@ -220,18 +239,22 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                   hintText: 'Enter name or phone…',
                                   filled: true,
                                   fillColor: Colors.white,
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 12),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(14),
-                                    borderSide: BorderSide(color: Colors.grey.shade300),
+                                    borderSide:
+                                        BorderSide(color: Colors.grey.shade300),
                                   ),
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(14),
-                                    borderSide: BorderSide(color: Colors.grey.shade300),
+                                    borderSide:
+                                        BorderSide(color: Colors.grey.shade300),
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(14),
-                                    borderSide: BorderSide(color: Theme.of(context).primaryColor),
+                                    borderSide: BorderSide(
+                                        color: Theme.of(context).primaryColor),
                                   ),
                                 ),
                               ),
@@ -254,24 +277,9 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                 Expanded(
                                   child: _Bouncy(
                                     onTap: () async {
-                                      final ok = await showDialog<bool>(
-                                        context: context,
-                                        builder: (_) => AddFriendDialog(userPhone: widget.userPhone),
-                                      );
-                                      if (ok == true && mounted) setState(() {});
-                                    },
-                                    child: const _QuickChip(
-                                      icon: Icons.person_add_alt_1_rounded,
-                                      label: 'Add friend',
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _Bouncy(
-                                    onTap: () async {
-                                      final allFriends =
-                                      await FriendService().streamFriends(widget.userPhone).first;
+                                      final allFriends = await FriendService()
+                                          .streamFriends(widget.userPhone)
+                                          .first;
                                       final ok = await showDialog<bool>(
                                         context: context,
                                         builder: (_) => AddGroupDialog(
@@ -279,7 +287,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                           allFriends: allFriends,
                                         ),
                                       );
-                                      if (ok == true && mounted) setState(() {});
+                                      if (ok == true && mounted)
+                                        setState(() {});
                                     },
                                     child: const _QuickChip(
                                       icon: Icons.group_add_rounded,
@@ -295,7 +304,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                               const _SectionHeader('Recent'),
                               ...List.generate(
                                 fq.take(6).length,
-                                    (i) => _SlideFade(
+                                (i) => _SlideFade(
                                   delayMs: 40 * i,
                                   child: _Bouncy(
                                     onTap: () => _openFriendExpense(fq[i]),
@@ -314,14 +323,16 @@ class _ActivityScreenState extends State<ActivityScreen> {
                               const _SectionHeader('Groups'),
                               ...List.generate(
                                 gq.length,
-                                    (i) => _SlideFade(
+                                (i) => _SlideFade(
                                   delayMs: 40 * i,
                                   child: _Bouncy(
-                                    onTap: () => _openGroupExpense(gq[i], friends),
+                                    onTap: () =>
+                                        _openGroupExpense(gq[i], friends),
                                     child: _PickerTile(
                                       leading: _avatarGroup(gq[i]),
                                       title: gq[i].name,
-                                      subtitle: '${gq[i].memberPhones.length} members',
+                                      subtitle:
+                                          '${gq[i].memberPhones.length} members',
                                     ),
                                   ),
                                 ),
@@ -333,7 +344,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                 padding: const EdgeInsets.only(top: 60),
                                 child: Column(
                                   children: const [
-                                    Icon(Icons.search_off_rounded, size: 40, color: Colors.grey),
+                                    Icon(Icons.search_off_rounded,
+                                        size: 40, color: Colors.grey),
                                     SizedBox(height: 8),
                                     Text('No matches yet'),
                                   ],
@@ -369,7 +381,10 @@ class _QuickChip extends StatelessWidget {
         color: Colors.white,
         border: Border.all(color: Colors.grey.shade300),
         borderRadius: BorderRadius.circular(12),
-        boxShadow: const [BoxShadow(color: Color(0x16000000), blurRadius: 12, offset: Offset(0, 6))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x16000000), blurRadius: 12, offset: Offset(0, 6))
+        ],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
@@ -475,13 +490,13 @@ class _SlideFadeState extends State<_SlideFade> {
         final dy = 16 * (1 - t); // slide up as it fades in
         return Opacity(
           opacity: t,
-          child: Transform.translate(offset: Offset(0, dy), child: widget.child),
+          child:
+              Transform.translate(offset: Offset(0, dy), child: widget.child),
         );
       },
     );
   }
 }
-
 
 class _Bouncy extends StatefulWidget {
   final Widget child;
@@ -493,8 +508,11 @@ class _Bouncy extends StatefulWidget {
 }
 
 class _BouncyState extends State<_Bouncy> with SingleTickerProviderStateMixin {
-  late final AnimationController _ac =
-  AnimationController(vsync: this, duration: const Duration(milliseconds: 110), lowerBound: 0.0, upperBound: 0.08);
+  late final AnimationController _ac = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 110),
+      lowerBound: 0.0,
+      upperBound: 0.08);
 
   @override
   void dispose() {
