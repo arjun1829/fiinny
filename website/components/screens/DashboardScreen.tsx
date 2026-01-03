@@ -9,7 +9,7 @@ import BulkEditModal, { BulkEditSpec } from "../dashboard/transactions/BulkEditM
 import SplitExpenseModal from "../dashboard/transactions/SplitExpenseModal";
 import TransactionDetailsModal from "../dashboard/transactions/TransactionDetailsModal";
 import TransactionModal from "../dashboard/transactions/TransactionModal";
-import FiinnyBrainChat from "../FiinnyBrainChat";
+
 import { Plus, Search, Filter, Download, X, Save, Trash2, Tag, Check, Edit2, RefreshCw, Layers } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { doc, setDoc, collection, Timestamp, writeBatch } from "firebase/firestore";
@@ -624,9 +624,7 @@ export default function DashboardScreen({ expenses, incomes, userProfile, userId
             </AnimatePresence>
 
             {/* Fiinny Brain Chat */}
-            {userId && (
-                <FiinnyBrainChat userPhone={userId} />
-            )}
+
         </div >
     );
 }

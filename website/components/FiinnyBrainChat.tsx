@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { MessageCircle, Send, X, Loader2 } from "lucide-react";
+import { MessageCircle, Send, X, Loader2, Maximize2, Minimize2 } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, Timestamp } from "firebase/firestore";
 
@@ -18,10 +18,21 @@ interface FiinnyBrainChatProps {
 
 export default function FiinnyBrainChat({ userPhone }: FiinnyBrainChatProps) {
     const [isOpen, setIsOpen] = useState(false);
+    const [size, setSize] = useState<"small" | "half" | "full">("small");
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState("");
     const [isProcessing, setIsProcessing] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const handleExpand = () => {
+        if (size === "small") setSize("half");
+        else if (size === "half") setSize("full");
+    };
+
+    const handleMinimize = () => {
+        if (size === "full") setSize("half");
+        else if (size === "half") setSize("small");
+    };
 
     // Subscribe to messages
     useEffect(() => {
@@ -42,6 +53,8 @@ export default function FiinnyBrainChat({ userPhone }: FiinnyBrainChatProps) {
                 });
             });
             setMessages(msgs.reverse());
+        }, (error) => {
+            console.error("Chat snapshot error:", error);
         });
 
         return () => unsubscribe();
@@ -69,8 +82,8 @@ export default function FiinnyBrainChat({ userPhone }: FiinnyBrainChatProps) {
                 status: "sent",
             });
 
-            // Call Cloud Function or API route to process query
-            const response = await fetch("/api/fiinny-brain/query", {
+            // Call Cloud Function
+            const response = await fetch("https://us-central1-lifemap-72b21.cloudfunctions.net/fiinnyBrainQuery", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ userPhone, query: userMessage }),
@@ -111,7 +124,7 @@ export default function FiinnyBrainChat({ userPhone }: FiinnyBrainChatProps) {
         return (
             <button
                 onClick={() => setIsOpen(true)}
-                className="fixed bottom-6 right-6 w-14 h-14 bg-teal-600 text-white rounded-full shadow-lg hover:bg-teal-700 transition-all flex items-center justify-center z-50 hover:scale-110"
+                className="fixed bottom-6 right-6 w-14 h-14 bg-teal-600 text-white rounded-full shadow-lg hover:bg-teal-700 transition-all flex items-center justify-center z-[100] hover:scale-110"
                 title="Fiinny Brain Chat"
             >
                 <MessageCircle className="w-6 h-6" />
@@ -119,10 +132,16 @@ export default function FiinnyBrainChat({ userPhone }: FiinnyBrainChatProps) {
         );
     }
 
+    const sizeClasses = {
+        small: "bottom-6 right-6 w-96 h-[600px]",
+        half: "bottom-0 right-0 w-1/2 h-screen rounded-none",
+        full: "inset-0 w-full h-screen rounded-none"
+    };
+
     return (
-        <div className="fixed bottom-6 right-6 w-96 h-[600px] bg-white rounded-2xl shadow-2xl flex flex-col z-50 border border-slate-200">
+        <div className={`fixed bg-white shadow-2xl flex flex-col z-[100] border border-slate-200 transition-all duration-300 ${sizeClasses[size]} ${size === "small" ? "rounded-2xl" : ""}`}>
             {/* Header */}
-            <div className="bg-gradient-to-r from-teal-600 to-teal-700 text-white p-4 rounded-t-2xl flex items-center justify-between">
+            <div className={`bg-gradient-to-r from-teal-600 to-teal-700 text-white p-4 flex items-center justify-between ${size === "small" ? "rounded-t-2xl" : ""}`}>
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
                         <MessageCircle className="w-5 h-5" />
@@ -132,12 +151,33 @@ export default function FiinnyBrainChat({ userPhone }: FiinnyBrainChatProps) {
                         <p className="text-xs text-teal-100">Ask me anything</p>
                     </div>
                 </div>
-                <button
-                    onClick={() => setIsOpen(false)}
-                    className="hover:bg-white/10 p-2 rounded-lg transition-colors"
-                >
-                    <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                    {size !== "full" && (
+                        <button
+                            onClick={handleExpand}
+                            className="hover:bg-white/10 p-2 rounded-lg transition-colors"
+                            title="Expand"
+                        >
+                            <Maximize2 className="w-5 h-5" />
+                        </button>
+                    )}
+                    {size !== "small" && (
+                        <button
+                            onClick={handleMinimize}
+                            className="hover:bg-white/10 p-2 rounded-lg transition-colors"
+                            title="Minimize"
+                        >
+                            <Minimize2 className="w-5 h-5" />
+                        </button>
+                    )}
+                    <button
+                        onClick={() => setIsOpen(false)}
+                        className="hover:bg-white/10 p-2 rounded-lg transition-colors"
+                        title="Close"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
             </div>
 
             {/* Suggestions */}
@@ -176,8 +216,8 @@ export default function FiinnyBrainChat({ userPhone }: FiinnyBrainChatProps) {
                         >
                             <div
                                 className={`max-w-[80%] rounded-2xl px-4 py-2 ${msg.isUser
-                                        ? "bg-teal-600 text-white"
-                                        : "bg-slate-100 text-slate-900"
+                                    ? "bg-teal-600 text-white"
+                                    : "bg-slate-100 text-slate-900"
                                     }`}
                             >
                                 <p className="text-sm whitespace-pre-wrap">{msg.text}</p>

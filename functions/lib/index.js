@@ -195,6 +195,7 @@ export * from "./notifications.js";
 export * from "./streaks.js";
 export * from "./watchdog.js";
 export * from "./social_notifications.js";
+export { fiinnyBrainQuery } from "./fiinnyBrainQuery.js";
 /* ----------------------- New: Cloud reminder pipeline ---------------------- */
 /**
  * Compute the planned "fireAt" using:
