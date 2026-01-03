@@ -74,7 +74,7 @@ import {
 } from "@/lib/firestore";
 import { doc, setDoc, collection, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import AiAssistant from "@/components/dashboard/AiAssistant";
+// import AiAssistant from "@/components/dashboard/AiAssistant";
 
 export default function Dashboard() {
     const { user, loading } = useAuth();
@@ -917,7 +917,8 @@ export default function Dashboard() {
                     }}
                 />
             )}
-            <AiAssistant />
+            {/* Old AI Assistant removed - using FiinnyBrainChat instead */}
+            {/* <AiAssistant /> */}
         </div >
     );
 }

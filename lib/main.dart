@@ -1,7 +1,7 @@
 // lib/main.dart
 import 'dart:async';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'dart:io' show Platform;
+// import 'dart:io' show Platform; // Removed for Web compatibility
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -35,7 +35,7 @@ final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 const MethodChannel _systemUiChannel = MethodChannel('lifemap/system_ui');
 
 Future<void> configureSystemUI() async {
-  if (kIsWeb || !Platform.isAndroid) {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
     return;
   }
 
@@ -45,8 +45,8 @@ Future<void> configureSystemUI() async {
     sdk = androidInfo.version.sdkInt;
   } catch (err) {
     debugPrint('Device info failed: $err');
-    // Fallback or assume newer to be safe? 
-    // If we assume newer, we might miss coloring on old devices. 
+    // Fallback or assume newer to be safe?
+    // If we assume newer, we might miss coloring on old devices.
     // If we assume older, we trigger warning on new devices.
     // Let's rely on the channel as backup or default to 0.
   }
@@ -64,7 +64,7 @@ Future<void> configureSystemUI() async {
     SystemChrome.setSystemUIOverlayStyle(style);
   } else {
     // For Android 15+, edge-to-edge is enforced.
-    // Do NOT set deprecated color properties. 
+    // Do NOT set deprecated color properties.
     // Just ensure brightness.
     const style = SystemUiOverlayStyle(
       statusBarIconBrightness: Brightness.dark,
@@ -79,7 +79,8 @@ void backgroundDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     WidgetsFlutterBinding.ensureInitialized();
     try {
-      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+      await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform);
     } catch (_) {}
 
     // Original SMS Task
@@ -96,46 +97,49 @@ void backgroundDispatcher() {
           debugPrint('[Workmanager] smsSync48h error: $e');
         }
       }
-    } 
-    
+    }
+
     // New: Daily Gmail Auto-Sync
     else if (task == "dailyGmailSync") {
-       final phone = inputData?['userPhone'] as String?;
-       if (phone == null) return Future.value(true);
-       
-       // 1. Check if user is "Active" (last app open < 48h ago)
-       final prefs = await SharedPreferences.getInstance();
-       final lastActiveMs = prefs.getInt('last_active_timestamp') ?? 0;
-       final lastActive = DateTime.fromMillisecondsSinceEpoch(lastActiveMs);
-       final now = DateTime.now();
-       
-       final diffHours = now.difference(lastActive).inHours;
-       if (diffHours > 48) {
-         debugPrint('[Workmanager] dailyGmailSync skipped: User inactive ($diffHours hours ago)');
-         return Future.value(true);
-       }
+      final phone = inputData?['userPhone'] as String?;
+      if (phone == null) return Future.value(true);
 
-       // 2. Check Time (After 1 PM IST)
-       // IST is UTC+5:30. 
-       // 1 PM IST = 13:00 IST = 07:30 UTC.
-       // We'll check local time assuming user is in IST (likely given context). 
-       // If local time, check > 13:00.
-       // The periodic task runs ~every 24h. We want it to "effectively" run afternoon.
-       // However, periodic tasks are inexact. We can't strictly force it to run at 1 PM.
-       // We can only *skip* if it's too early, but then we might miss the day entirely if it retries next day.
-       // BETTER STRATEGY: Periodic 24h tasks drift. 
-       // The instruction says: "we will sync the transaction evey day at 1PM IST".
-       // Since Workmanager periodic limit is 15min minimum, we can't schedule exact time easily without "daily" frequency.
-       // If we just run it whenever the OS allows (once a day), that's usually "good enough".
-       // But if we MUST enforce "after 1 PM", we might skip morning runs.
-       // Let's implement a loose check: If it's early morning (e.g. 1AM - 9AM), maybe skip?
-       // For now, given OS limitations, running it "once a day" for active users is a huge win. 
-       // Sticking to "Active User" check is the critical cost-saving measure.
-       
-       debugPrint('[Workmanager] dailyGmailSync running for $phone (Active $diffHours h ago)');
-       await GmailService().fetchAndStoreTransactionsFromGmail(phone, isAutoBg: true);
+      // 1. Check if user is "Active" (last app open < 48h ago)
+      final prefs = await SharedPreferences.getInstance();
+      final lastActiveMs = prefs.getInt('last_active_timestamp') ?? 0;
+      final lastActive = DateTime.fromMillisecondsSinceEpoch(lastActiveMs);
+      final now = DateTime.now();
+
+      final diffHours = now.difference(lastActive).inHours;
+      if (diffHours > 48) {
+        debugPrint(
+            '[Workmanager] dailyGmailSync skipped: User inactive ($diffHours hours ago)');
+        return Future.value(true);
+      }
+
+      // 2. Check Time (After 1 PM IST)
+      // IST is UTC+5:30.
+      // 1 PM IST = 13:00 IST = 07:30 UTC.
+      // We'll check local time assuming user is in IST (likely given context).
+      // If local time, check > 13:00.
+      // The periodic task runs ~every 24h. We want it to "effectively" run afternoon.
+      // However, periodic tasks are inexact. We can't strictly force it to run at 1 PM.
+      // We can only *skip* if it's too early, but then we might miss the day entirely if it retries next day.
+      // BETTER STRATEGY: Periodic 24h tasks drift.
+      // The instruction says: "we will sync the transaction evey day at 1PM IST".
+      // Since Workmanager periodic limit is 15min minimum, we can't schedule exact time easily without "daily" frequency.
+      // If we just run it whenever the OS allows (once a day), that's usually "good enough".
+      // But if we MUST enforce "after 1 PM", we might skip morning runs.
+      // Let's implement a loose check: If it's early morning (e.g. 1AM - 9AM), maybe skip?
+      // For now, given OS limitations, running it "once a day" for active users is a huge win.
+      // Sticking to "Active User" check is the critical cost-saving measure.
+
+      debugPrint(
+          '[Workmanager] dailyGmailSync running for $phone (Active $diffHours h ago)');
+      await GmailService()
+          .fetchAndStoreTransactionsFromGmail(phone, isAutoBg: true);
     }
-    
+
     return Future.value(true);
   });
 }
@@ -189,7 +193,8 @@ void main() {
     tracer.add('Uncaught: $error');
     try {
       if (!kIsWeb) {
-        await FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        await FirebaseCrashlytics.instance
+            .recordError(error, stack, fatal: true);
       }
     } catch (_) {}
   });
@@ -197,12 +202,13 @@ void main() {
 
 Future<void> _boot(_StartupTracer tracer, {required bool attAllowed}) async {
   tracer.add('BOOT start');
-  if (!kIsWeb && !Platform.isAndroid) {
+  if (!kIsWeb && defaultTargetPlatform != TargetPlatform.android) {
     // This block is intentionally left empty as per the instruction's placeholder.
     // It serves as a guard for platform-specific code that might be added here.
   }
 
-  tracer.add('Platform=${kIsWeb ? "web" : Platform.operatingSystem} diag=$kDiagBuild');
+  tracer.add(
+      'Platform=${kIsWeb ? "web" : defaultTargetPlatform.name} diag=$kDiagBuild');
 
   await _ensureNavigatorReady();
   VoiceBridge().initialize(); // 🎙️ Start listening for Siri/Google links
@@ -215,7 +221,8 @@ Future<void> _boot(_StartupTracer tracer, {required bool attAllowed}) async {
 
   try {
     tracer.add('Firebase.initializeApp…');
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)
+    await Firebase.initializeApp(
+            options: DefaultFirebaseOptions.currentPlatform)
         .timeout(const Duration(seconds: 8));
     tracer.add('Firebase ✅');
     if (!kIsWeb) {
@@ -229,7 +236,8 @@ Future<void> _boot(_StartupTracer tracer, {required bool attAllowed}) async {
       if (kReleaseMode && !kIsWeb) {
         FirebaseCrashlytics.instance.recordFlutterError(details);
       }
-      Zone.current.handleUncaughtError(details.exception, details.stack ?? StackTrace.current);
+      Zone.current.handleUncaughtError(
+          details.exception, details.stack ?? StackTrace.current);
     };
 
     PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
@@ -428,7 +436,8 @@ class _StartupTracer {
   List<String> get lines => List.unmodifiable(_lines);
   void attach(VoidCallback? onChange) => _onChange = onChange;
   void add(String s) {
-    final ts = DateTime.now().toIso8601String().split('T').last.split('.').first;
+    final ts =
+        DateTime.now().toIso8601String().split('T').last.split('.').first;
     _lines.add('[$ts] $s');
     debugPrint(s);
     final listener = _onChange;

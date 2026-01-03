@@ -140,7 +140,8 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
               decoration: BoxDecoration(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(24)),
                 gradient: LinearGradient(
                   colors: [
                     Colors.white.withOpacity(0.96),
@@ -193,7 +194,8 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
                     const SizedBox(height: 16),
                     if (isWide)
                       SizedBox(
-                        height: math.max(360, MediaQuery.of(context).size.height * 0.55),
+                        height: math.max(
+                            360, MediaQuery.of(context).size.height * 0.55),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -277,14 +279,8 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
           _QuickActionChip(
             icon: Icons.contact_phone_rounded,
             label: 'Add from Contacts',
-            onTap: () =>
-                _closeWithResult(QuickCreatePickResult.action(QuickCreateAction.addFriendFromContacts)),
-          ),
-          _QuickActionChip(
-            icon: Icons.person_add_alt_1_rounded,
-            label: 'Add friend (manual)',
-            onTap: () =>
-                _closeWithResult(QuickCreatePickResult.action(QuickCreateAction.addFriendManual)),
+            onTap: () => _closeWithResult(QuickCreatePickResult.action(
+                QuickCreateAction.addFriendFromContacts)),
           ),
         ],
       );
@@ -296,8 +292,8 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
           _QuickActionChip(
             icon: Icons.group_add_rounded,
             label: 'Create group',
-            onTap: () =>
-                _closeWithResult(QuickCreatePickResult.action(QuickCreateAction.createGroup)),
+            onTap: () => _closeWithResult(
+                QuickCreatePickResult.action(QuickCreateAction.createGroup)),
           ),
         ],
       );
@@ -320,7 +316,8 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
               borderRadius: BorderRadius.circular(14),
               borderSide: const BorderSide(color: Color(0xFFE4ECE9)),
             ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           ),
         ),
         if (quickRow != null) ...[
@@ -333,12 +330,14 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
 
   Widget _buildList() {
     final isFriends = _segment == QuickCreateSegment.friends;
-    final items = isFriends ? _filteredFriends.toList() : _filteredGroups.toList();
+    final items =
+        isFriends ? _filteredFriends.toList() : _filteredGroups.toList();
     if (items.isEmpty) {
       return Center(
         child: Text(
           isFriends ? 'No friends found' : 'No groups found',
-          style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.grey),
+          style:
+              const TextStyle(fontWeight: FontWeight.w600, color: Colors.grey),
         ),
       );
     }
@@ -356,16 +355,17 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
                       ? friend.name.characters.first
                       : friend.phone.characters.first)
               .toUpperCase();
-            return _QuickListTile(
-              leading: CircleAvatar(
-                radius: 20,
-                backgroundColor: const Color(0xFF09857a).withOpacity(0.08),
-                child: Text(initials, style: const TextStyle(fontWeight: FontWeight.w700)),
-              ),
-              title: _friendDisplay(friend),
-              subtitle: friend.phone,
-              onTap: () => _closeWithResult(QuickCreatePickResult.friend(friend)),
-            );
+          return _QuickListTile(
+            leading: CircleAvatar(
+              radius: 20,
+              backgroundColor: const Color(0xFF09857a).withOpacity(0.08),
+              child: Text(initials,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            title: _friendDisplay(friend),
+            subtitle: friend.phone,
+            onTap: () => _closeWithResult(QuickCreatePickResult.friend(friend)),
+          );
         } else {
           final group = items[index] as GroupModel;
           final members = group.memberPhones.length;
@@ -376,7 +376,8 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
             leading: CircleAvatar(
               radius: 20,
               backgroundColor: const Color(0xFF09857a).withOpacity(0.08),
-              child: Text(initials, style: const TextStyle(fontWeight: FontWeight.w700)),
+              child: Text(initials,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
             ),
             title: group.name,
             subtitle: '$members member${members == 1 ? '' : 's'}',
@@ -395,24 +396,16 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
           icon: Icons.contact_phone_rounded,
           title: 'Add from Contacts',
           subtitle: 'Import a contact and invite instantly',
-          onTap: () =>
-              _closeWithResult(QuickCreatePickResult.action(QuickCreateAction.addFriendFromContacts)),
-        ),
-        const SizedBox(height: 12),
-        _NewEntryCard(
-          icon: Icons.person_add_alt_1_rounded,
-          title: 'Add friend manually',
-          subtitle: 'Enter phone number and name',
-          onTap: () =>
-              _closeWithResult(QuickCreatePickResult.action(QuickCreateAction.addFriendManual)),
+          onTap: () => _closeWithResult(QuickCreatePickResult.action(
+              QuickCreateAction.addFriendFromContacts)),
         ),
         const SizedBox(height: 12),
         _NewEntryCard(
           icon: Icons.group_add_rounded,
           title: 'Create a new group',
           subtitle: 'Plan trips, homes, events and more',
-          onTap: () =>
-              _closeWithResult(QuickCreatePickResult.action(QuickCreateAction.createGroup)),
+          onTap: () => _closeWithResult(
+              QuickCreatePickResult.action(QuickCreateAction.createGroup)),
         ),
       ],
     );
@@ -664,7 +657,8 @@ class _WideRail extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 onTap: () => onChanged(seg),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
                   child: Row(
                     children: [
                       Icon(
@@ -678,7 +672,8 @@ class _WideRail extends StatelessWidget {
                           _labelForSegment(seg),
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            color: active ? Colors.white : const Color(0xFF09857a),
+                            color:
+                                active ? Colors.white : const Color(0xFF09857a),
                           ),
                         ),
                       ),

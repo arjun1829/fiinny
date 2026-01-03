@@ -1,6 +1,6 @@
 // lib/services/push/push_service.dart
 import 'dart:async';
-import 'dart:io';
+// import 'dart:io'; // Removed for web compatibility
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -88,11 +88,12 @@ class PushService {
           final actionId = resp.actionId; // e.g. 'SETTLE', 'MARK_READ'
           if (kDebugMode) {
             // ignore: avoid_print
-            print('[PushService] onDidReceive action=$actionId payload=$deeplink');
+            print(
+                '[PushService] onDidReceive action=$actionId payload=$deeplink');
           }
           if (actionId == 'SETTLE') {
-             // If payload is friend-detail, nav there
-             if (deeplink != null) _handleDeeplink(deeplink);
+            // If payload is friend-detail, nav there
+            if (deeplink != null) _handleDeeplink(deeplink);
           } else if (deeplink != null && deeplink.isNotEmpty) {
             _handleDeeplink(deeplink);
           }
@@ -106,12 +107,14 @@ class PushService {
       final bool notificationsAllowed = await ensurePermissions();
 
       // 4) Background handler
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      FirebaseMessaging.onBackgroundMessage(
+          _firebaseMessagingBackgroundHandler);
 
       if (!notificationsAllowed) {
         if (kDebugMode) {
           // ignore: avoid_print
-          print('[PushService] Notifications not authorized; deferring push init.');
+          print(
+              '[PushService] Notifications not authorized; deferring push init.');
         }
         return;
       }
@@ -137,11 +140,13 @@ class PushService {
         final title = msg.notification?.title ?? msg.data['title'] ?? 'Fiinny';
         final body = msg.notification?.body ?? msg.data['body'] ?? '';
         final String? deeplink = msg.data['deeplink']; // do NOT fabricate one
-        final channelId = _channelFromType(msg.data['type'], msg.data['severity']);
+        final channelId =
+            _channelFromType(msg.data['type'], msg.data['severity']);
 
         if (kDebugMode) {
           // ignore: avoid_print
-          print('[PushService] onMessage type=${msg.data['type']} deeplink=$deeplink');
+          print(
+              '[PushService] onMessage type=${msg.data['type']} deeplink=$deeplink');
         }
 
         await _showLocalNow(title, body, deeplink ?? '', channelId: channelId);
@@ -189,7 +194,7 @@ class PushService {
   /// - Android: prompt for POST_NOTIFICATIONS on 13+
   /// - iOS: prompts user via Firebase Messaging
   static Future<bool> ensurePermissions() async {
-    if (!kIsWeb && Platform.isAndroid) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       try {
         final status = await Permission.notification.status;
         if (status.isGranted || status.isLimited) {
@@ -216,7 +221,7 @@ class PushService {
       }
     }
 
-    if (kIsWeb || !Platform.isIOS) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
       _lastKnownPermissionStatus = true;
       return true;
     }
@@ -233,7 +238,8 @@ class PushService {
     var granted = _lastKnownPermissionStatus;
 
     try {
-      NotificationSettings settings = await _messaging.getNotificationSettings();
+      NotificationSettings settings =
+          await _messaging.getNotificationSettings();
       AuthorizationStatus status = settings.authorizationStatus;
 
       if (status == AuthorizationStatus.notDetermined) {
@@ -257,7 +263,8 @@ class PushService {
 
       if (kDebugMode) {
         // ignore: avoid_print
-        print('[PushService] iOS permission status: $status (granted=$granted)');
+        print(
+            '[PushService] iOS permission status: $status (granted=$granted)');
       }
     } catch (e) {
       if (kDebugMode) {
@@ -334,7 +341,8 @@ class PushService {
     final end = _parseHhMm(quiet['end'] ?? '08:00');
 
     final now = DateTime.now();
-    final startToday = DateTime(now.year, now.month, now.day, start.$1, start.$2);
+    final startToday =
+        DateTime(now.year, now.month, now.day, start.$1, start.$2);
     final endToday = DateTime(now.year, now.month, now.day, end.$1, end.$2);
 
     final inQuiet = endToday.isAfter(startToday)
@@ -367,11 +375,12 @@ class PushService {
     required String itemTitle,
     DateTime? dueOn,
     String? frequency, // e.g., daily/weekly/monthly/yearly/custom
-    String? amount,    // optional "₹1,200"
+    String? amount, // optional "₹1,200"
   }) async {
     final title = 'Reminder: $itemTitle';
     final String when = (dueOn != null) ? _fmtDate(dueOn) : 'soon';
-    final freqPart = (frequency != null && frequency.isNotEmpty) ? ' • $frequency' : '';
+    final freqPart =
+        (frequency != null && frequency.isNotEmpty) ? ' • $frequency' : '';
     final amtPart = (amount != null && amount.isNotEmpty) ? ' • $amount' : '';
     final body = '$itemTitle is due on $when$freqPart$amtPart';
 
@@ -382,9 +391,9 @@ class PushService {
   // ---- helpers ----
 
   static Future<void> _ensureAndroidChannels() async {
-    if (kIsWeb || !Platform.isAndroid) return;
-    final android =
-    _fln.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    final android = _fln.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
     if (android == null) return;
     try {
       await android.createNotificationChannel(_chDefault);
@@ -423,11 +432,11 @@ class PushService {
   }
 
   static Future<void> _showLocalNow(
-      String title,
-      String body,
-      String deeplink, {
-        String channelId = 'fiinny_default',
-      }) async {
+    String title,
+    String body,
+    String deeplink, {
+    String channelId = 'fiinny_default',
+  }) async {
     // NOTE: AndroidNotificationDetails requires BOTH channelId AND channelName
     final android = AndroidNotificationDetails(
       channelId,
@@ -438,9 +447,12 @@ class PushService {
       styleInformation: const BigTextStyleInformation(''),
       actions: [
         if (channelId == _chNudges.id)
-           const AndroidNotificationAction('MARK_READ', 'Dismiss', showsUserInterface: false),
-        if (deeplink.contains('friend-detail') || deeplink.contains('group-detail'))
-           const AndroidNotificationAction('SETTLE', 'View & Settle', showsUserInterface: true),
+          const AndroidNotificationAction('MARK_READ', 'Dismiss',
+              showsUserInterface: false),
+        if (deeplink.contains('friend-detail') ||
+            deeplink.contains('group-detail'))
+          const AndroidNotificationAction('SETTLE', 'View & Settle',
+              showsUserInterface: true),
       ],
     );
     const ios = DarwinNotificationDetails();
@@ -448,7 +460,8 @@ class PushService {
 
     if (kDebugMode) {
       // ignore: avoid_print
-      print('[PushService] showLocalNow channel=$channelId title="$title" deeplink=$deeplink');
+      print(
+          '[PushService] showLocalNow channel=$channelId title="$title" deeplink=$deeplink');
     }
 
     await _fln.show(
@@ -498,7 +511,8 @@ class PushService {
 
     if (kDebugMode) {
       // ignore: avoid_print
-      print('[PushService] handleDeeplink host=$host seg=$firstSeg full=$deeplink');
+      print(
+          '[PushService] handleDeeplink host=$host seg=$firstSeg full=$deeplink');
     }
 
     switch (host) {
@@ -592,7 +606,7 @@ class PushService {
         break;
 
       default:
-      // Do nothing on unknown hosts to avoid accidental navigation loops.
+        // Do nothing on unknown hosts to avoid accidental navigation loops.
         if (kDebugMode) {
           // ignore: avoid_print
           print('[PushService] Unknown deeplink host="$host" – ignoring');

@@ -61,14 +61,12 @@ class FriendsScreen extends StatefulWidget {
   const FriendsScreen({required this.userPhone, Key? key}) : super(key: key);
 
   @override
-  State<FriendsScreen> createState() => _FriendsScreenState(
-
-
-  );
-
+  State<FriendsScreen> createState() => _FriendsScreenState();
 }
+
 class _TinyPill extends StatelessWidget {
-  final IconData icon; final String text;
+  final IconData icon;
+  final String text;
   const _TinyPill({required this.icon, required this.text});
   @override
   Widget build(BuildContext context) {
@@ -84,13 +82,15 @@ class _TinyPill extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: Theme.of(context).primaryColor),
           const SizedBox(width: 6),
-          Text(text, style: TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w600, color: Theme.of(context).primaryColor)),
+          Text(text,
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).primaryColor)),
         ],
       ),
     );
   }
-
 }
 
 class _SettleSmartCTA extends StatefulWidget {
@@ -143,7 +143,8 @@ class _SettleSmartCTAState extends State<_SettleSmartCTA>
                 borderRadius: BorderRadius.circular(14),
                 onTap: widget.onTap,
                 splashColor: Theme.of(context).primaryColor.withOpacity(0.16),
-                highlightColor: Theme.of(context).primaryColor.withOpacity(0.08),
+                highlightColor:
+                    Theme.of(context).primaryColor.withOpacity(0.08),
                 child: Ink(
                   decoration: BoxDecoration(
                     color: Theme.of(context).primaryColor.withOpacity(0.12),
@@ -193,7 +194,8 @@ class _SettleSmartCTAState extends State<_SettleSmartCTA>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.auto_mode_rounded, size: 18, color: Theme.of(context).primaryColor),
+            Icon(Icons.auto_mode_rounded,
+                size: 18, color: Theme.of(context).primaryColor),
             SizedBox(width: 6),
             Text(
               'Settle smart',
@@ -212,8 +214,11 @@ class _SettleSmartCTAState extends State<_SettleSmartCTA>
 }
 
 class _ActionTile extends StatelessWidget {
-  final IconData icon; final String label; final VoidCallback onTap;
-  const _ActionTile({required this.icon, required this.label, required this.onTap});
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _ActionTile(
+      {required this.icon, required this.label, required this.onTap});
   @override
   Widget build(BuildContext context) {
     return ListTile(
@@ -233,10 +238,7 @@ class _FriendsScreenState extends State<FriendsScreen>
   final tabs = const ['All', 'Friends', 'Groups', 'Activity'];
   bool get _filtersActive => _direction != Direction.all || _openOnly;
 
-
   final ContactNameService _contactNames = ContactNameService.instance;
-
-
 
   // filters
   bool _openOnly = false;
@@ -256,7 +258,6 @@ class _FriendsScreenState extends State<FriendsScreen>
 
   // What direction of balances to show
 
-
   @override
   void initState() {
     super.initState();
@@ -267,11 +268,13 @@ class _FriendsScreenState extends State<FriendsScreen>
       if (q != _query) setState(() => _query = q);
     });
 
-    _searchAnim =
-        AnimationController(vsync: this, duration: const Duration(milliseconds: 220));
-    _searchSlide = CurvedAnimation(parent: _searchAnim, curve: Curves.easeOutCubic);
+    _searchAnim = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 220));
+    _searchSlide =
+        CurvedAnimation(parent: _searchAnim, curve: Curves.easeOutCubic);
     _contactNames.addListener(_onContactNamesChanged);
-    Future.microtask(() => FriendService().backfillNamesForUser(widget.userPhone));
+    Future.microtask(
+        () => FriendService().backfillNamesForUser(widget.userPhone));
   }
 
   @override
@@ -286,8 +289,6 @@ class _FriendsScreenState extends State<FriendsScreen>
   Future<List<FriendModel>> _fetchAllFriends() async {
     return await FriendService().streamFriends(widget.userPhone).first;
   }
-
-
 
   Future<List<GroupModel>> _fetchAllGroups() async {
     return await GroupService().streamGroups(widget.userPhone).first;
@@ -452,16 +453,22 @@ class _FriendsScreenState extends State<FriendsScreen>
                   required VoidCallback onTap,
                 }) {
                   return ChoiceChip(
-                    avatar: Icon(icon, size: 16,
-                        color: selected ? Colors.white : Theme.of(context).primaryColor),
+                    avatar: Icon(icon,
+                        size: 16,
+                        color: selected
+                            ? Colors.white
+                            : Theme.of(context).primaryColor),
                     label: Text(label),
                     selected: selected,
                     onSelected: (_) => setModalState(onTap),
                     labelStyle: TextStyle(
                       fontWeight: FontWeight.w600,
-                      color: selected ? Colors.white : Theme.of(context).primaryColor,
+                      color: selected
+                          ? Colors.white
+                          : Theme.of(context).primaryColor,
                     ),
-                    backgroundColor: Theme.of(context).primaryColor.withOpacity(.08),
+                    backgroundColor:
+                        Theme.of(context).primaryColor.withOpacity(.08),
                     selectedColor: Theme.of(context).primaryColor,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -482,7 +489,8 @@ class _FriendsScreenState extends State<FriendsScreen>
                     children: [
                       // handle
                       Container(
-                        width: 44, height: 5,
+                        width: 44,
+                        height: 5,
                         decoration: BoxDecoration(
                           color: Colors.black12,
                           borderRadius: BorderRadius.circular(999),
@@ -492,10 +500,12 @@ class _FriendsScreenState extends State<FriendsScreen>
 
                       Row(
                         children: [
-                          Icon(Icons.tune_rounded, color: Theme.of(context).primaryColor),
+                          Icon(Icons.tune_rounded,
+                              color: Theme.of(context).primaryColor),
                           SizedBox(width: 8),
                           Text('Filters',
-                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                              style: TextStyle(
+                                  fontSize: 17, fontWeight: FontWeight.w800)),
                         ],
                       ),
                       const SizedBox(height: 14),
@@ -511,7 +521,8 @@ class _FriendsScreenState extends State<FriendsScreen>
                       const SizedBox(height: 8),
 
                       Wrap(
-                        spacing: 8, runSpacing: 8,
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
                           chip(
                             icon: Icons.all_inclusive_rounded,
@@ -540,15 +551,18 @@ class _FriendsScreenState extends State<FriendsScreen>
                         decoration: BoxDecoration(
                           color: Theme.of(context).cardColor,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Theme.of(context).dividerColor),
+                          border:
+                              Border.all(color: Theme.of(context).dividerColor),
                         ),
                         child: SwitchListTile.adaptive(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                          contentPadding:
+                              const EdgeInsets.symmetric(horizontal: 12),
                           title: const Text('Open only',
                               style: TextStyle(fontWeight: FontWeight.w600)),
                           value: tmpOpenOnly,
                           activeColor: Theme.of(context).primaryColor,
-                          onChanged: (v) => setModalState(() => tmpOpenOnly = v),
+                          onChanged: (v) =>
+                              setModalState(() => tmpOpenOnly = v),
                         ),
                       ),
 
@@ -569,7 +583,8 @@ class _FriendsScreenState extends State<FriendsScreen>
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Theme.of(context).primaryColor,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 12),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
@@ -578,7 +593,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                               Navigator.pop(context);
                               setState(() {
                                 _direction = tmpDirection;
-                                _openOnly  = tmpOpenOnly;
+                                _openOnly = tmpOpenOnly;
                               });
                             },
                             icon: const Icon(Icons.check_rounded),
@@ -598,31 +613,30 @@ class _FriendsScreenState extends State<FriendsScreen>
     );
   }
 
-
-
-
   Future<void> _openSummarySheet() async {
-    final allTx   = await ExpenseService().getExpensesStream(widget.userPhone).first;
+    final allTx =
+        await ExpenseService().getExpensesStream(widget.userPhone).first;
     final friends = await FriendService().streamFriends(widget.userPhone).first;
     if (!mounted) return;
 
     await showModalBottomSheet(
       context: context,
       useRootNavigator: true,
-      isScrollControlled: true,                 // allow tall/full height
-      backgroundColor: Colors.transparent,      // for rounded top + shadow
+      isScrollControlled: true, // allow tall/full height
+      backgroundColor: Colors.transparent, // for rounded top + shadow
       barrierColor: Colors.black.withOpacity(0.25),
       builder: (_) {
         return DraggableScrollableSheet(
-          initialChildSize: 0.85,               // opens tall
+          initialChildSize: 0.85, // opens tall
           minChildSize: 0.35,
-          maxChildSize: 0.98,                   // pull to (almost) full screen
+          maxChildSize: 0.98, // pull to (almost) full screen
           expand: false,
           builder: (context, scrollCtrl) {
             return Container(
               decoration: BoxDecoration(
                 color: Theme.of(context).cardColor,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(18)),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.10),
@@ -638,7 +652,8 @@ class _FriendsScreenState extends State<FriendsScreen>
                     const SizedBox(height: 10),
                     // grab handle
                     Container(
-                      width: 42, height: 5,
+                      width: 42,
+                      height: 5,
                       decoration: BoxDecoration(
                         color: Colors.black12,
                         borderRadius: BorderRadius.circular(999),
@@ -647,7 +662,8 @@ class _FriendsScreenState extends State<FriendsScreen>
                     const SizedBox(height: 12),
                     const Text(
                       'Split Summary',
-                      style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                          fontSize: 16.5, fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 10),
 
@@ -663,7 +679,10 @@ class _FriendsScreenState extends State<FriendsScreen>
                             gradient: LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                              colors: [Theme.of(context).cardColor, Theme.of(context).scaffoldBackgroundColor],
+                              colors: [
+                                Theme.of(context).cardColor,
+                                Theme.of(context).scaffoldBackgroundColor
+                              ],
                             ),
                             border: Border.all(color: Color(0xFFE6ECEA)),
                             boxShadow: [
@@ -727,8 +746,8 @@ class _FriendsScreenState extends State<FriendsScreen>
     );
   }
 
-
-  Future<void> _quickPickAndOpen(BuildContext context, {required bool forSettle}) async {
+  Future<void> _quickPickAndOpen(BuildContext context,
+      {required bool forSettle}) async {
     final allFriends = await _fetchAllFriends();
     final allGroups = await _fetchAllGroups();
 
@@ -864,10 +883,12 @@ class _FriendsScreenState extends State<FriendsScreen>
     Set<String> before,
   ) async {
     if (phone != null) {
-      final byPhone = await FriendService().getFriendByPhone(widget.userPhone, phone);
+      final byPhone =
+          await FriendService().getFriendByPhone(widget.userPhone, phone);
       if (byPhone != null) return byPhone;
     }
-    final snapshot = await FriendService().streamFriends(widget.userPhone).first;
+    final snapshot =
+        await FriendService().streamFriends(widget.userPhone).first;
     for (final friend in snapshot.reversed) {
       if (!before.contains(friend.phone)) {
         return friend;
@@ -904,157 +925,152 @@ class _FriendsScreenState extends State<FriendsScreen>
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
-        elevation: 2,
-        actions: [
-          // <-- toggle first so it sits LEFT of the summary icon
-          Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: Transform.scale(
-              scale: 0.90,
-              child: Switch.adaptive(
-                value: _openOnly,
-                onChanged: (v) => setState(() => _openOnly = v),
-                activeColor: Theme.of(context).primaryColor,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+          elevation: 2,
+          actions: [
+            // <-- toggle first so it sits LEFT of the summary icon
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Transform.scale(
+                scale: 0.90,
+                child: Switch.adaptive(
+                  value: _openOnly,
+                  onChanged: (v) => setState(() => _openOnly = v),
+                  activeColor: Theme.of(context).primaryColor,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
             ),
-          ),
-          IconButton(
-            tooltip: 'Summary',
-            icon: const Icon(Icons.stacked_bar_chart_rounded, color: Color(0xFF09857a)),
-            onPressed: _openSummarySheet,
-          ),
-          IconButton(
-            tooltip: 'Search',
-            icon: const Icon(Icons.search_rounded, color: Color(0xFF09857a)),
-            onPressed: _toggleSearch,
-          ),
-        ],
-
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(kTextTabBarHeight + (_searchOpen ? 64 : 0)),
-          child: Column(
-            children: [
-              TabBar(
-                controller: _tabController,
-                isScrollable: false,
-                labelPadding: EdgeInsets.zero,
-                labelColor: Theme.of(context).primaryColor,
-                unselectedLabelColor: Colors.grey[600],
-                indicatorColor: Theme.of(context).primaryColor,
-                tabs: tabs.map((t) => Tab(text: t)).toList(),
-              ),
-              // search row inside app bar (unchanged)
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                transitionBuilder: (child, anim) =>
-                    SizeTransition(sizeFactor: anim, axisAlignment: -1.0, child: child),
-                child: !_searchOpen
-                    ? const SizedBox.shrink()
-                    : SizedBox(
-                  height: 64,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).primaryColor.withOpacity(0.06),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.grey.shade200),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.search_rounded,
-                              size: 20, color: Color(0xFF09857a)),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: TextField(
-                              controller: _searchCtrl,
-                              autofocus: true,
-                              decoration: const InputDecoration(
-                                hintText: "Search friends, groups…",
-                                border: InputBorder.none,
+            IconButton(
+              tooltip: 'Summary',
+              icon: const Icon(Icons.stacked_bar_chart_rounded,
+                  color: Color(0xFF09857a)),
+              onPressed: _openSummarySheet,
+            ),
+            IconButton(
+              tooltip: 'Search',
+              icon: const Icon(Icons.search_rounded, color: Color(0xFF09857a)),
+              onPressed: _toggleSearch,
+            ),
+          ],
+          bottom: PreferredSize(
+            preferredSize:
+                Size.fromHeight(kTextTabBarHeight + (_searchOpen ? 64 : 0)),
+            child: Column(
+              children: [
+                TabBar(
+                  controller: _tabController,
+                  isScrollable: false,
+                  labelPadding: EdgeInsets.zero,
+                  labelColor: Theme.of(context).primaryColor,
+                  unselectedLabelColor: Colors.grey[600],
+                  indicatorColor: Theme.of(context).primaryColor,
+                  tabs: tabs.map((t) => Tab(text: t)).toList(),
+                ),
+                // search row inside app bar (unchanged)
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  transitionBuilder: (child, anim) => SizeTransition(
+                      sizeFactor: anim, axisAlignment: -1.0, child: child),
+                  child: !_searchOpen
+                      ? const SizedBox.shrink()
+                      : SizedBox(
+                          height: 64,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Theme.of(context)
+                                    .primaryColor
+                                    .withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: Colors.grey.shade200),
+                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.search_rounded,
+                                      size: 20, color: Color(0xFF09857a)),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _searchCtrl,
+                                      autofocus: true,
+                                      decoration: const InputDecoration(
+                                        hintText: "Search friends, groups…",
+                                        border: InputBorder.none,
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Close',
+                                    icon: const Icon(Icons.close_rounded,
+                                        color: Color(0xFF09857a)),
+                                    onPressed: _toggleSearch,
+                                    splashRadius: 20,
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                          IconButton(
-                            tooltip: 'Close',
-                            icon: const Icon(Icons.close_rounded,
-                                color: Color(0xFF09857a)),
-                            onPressed: _toggleSearch,
-                            splashRadius: 20,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-
-
-      ),
-      floatingActionButton: _BottomCTAButton(
-        onTap: () {
-          Navigator.of(context).push(
-            _SlideUpRoute(
-              child: ActivityScreen(userPhone: widget.userPhone),
-            ),
-          );
-        },
-
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      body: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).scaffoldBackgroundColor,
-            ),
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                AllTab(
-                  userPhone: widget.userPhone,
-                  openOnly: _openOnly,
-                  query: _query,
-                  direction: _direction,
-                  onOpenFilters: _openFilterSheet,
-                  contactNames: _contactNames,
-                  onLaunchSettleSmart: _handleSettleSmartRecord,
-
-                ),
-                FriendsTab(
-                  userPhone: widget.userPhone,
-                  openOnly: _openOnly,
-                  query: _query,
-                  direction: _direction,
-                  contactNames: _contactNames,
-
-                ),
-                GroupsTab(
-                  userPhone: widget.userPhone,
-                  openOnly: _openOnly,
-                  query: _query,
-                  direction: _direction,
-                ),
-                ActivityTab(
-                  userPhone: widget.userPhone,
-                  contactNames: _contactNames,
+                        ),
                 ),
               ],
             ),
           ),
-
-
-
-        ],
-      ),
+        ),
+        floatingActionButton: _BottomCTAButton(
+          onTap: () {
+            Navigator.of(context).push(
+              _SlideUpRoute(
+                child: ActivityScreen(userPhone: widget.userPhone),
+              ),
+            );
+          },
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        body: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).scaffoldBackgroundColor,
+              ),
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  AllTab(
+                    userPhone: widget.userPhone,
+                    openOnly: _openOnly,
+                    query: _query,
+                    direction: _direction,
+                    onOpenFilters: _openFilterSheet,
+                    contactNames: _contactNames,
+                    onLaunchSettleSmart: _handleSettleSmartRecord,
+                  ),
+                  FriendsTab(
+                    userPhone: widget.userPhone,
+                    openOnly: _openOnly,
+                    query: _query,
+                    direction: _direction,
+                    contactNames: _contactNames,
+                  ),
+                  GroupsTab(
+                    userPhone: widget.userPhone,
+                    openOnly: _openOnly,
+                    query: _query,
+                    direction: _direction,
+                  ),
+                  ActivityTab(
+                    userPhone: widget.userPhone,
+                    contactNames: _contactNames,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1126,9 +1142,9 @@ class _OverallTotals {
 }
 
 _OverallTotals _computeOverallTotals(
-    List<ExpenseItem> allTx,
-    String you,
-    ) {
+  List<ExpenseItem> allTx,
+  String you,
+) {
   final perPerson = <String, double>{};
 
   for (final e in allTx) {
@@ -1147,23 +1163,21 @@ _OverallTotals _computeOverallTotals(
   }
   // round to 2dp to avoid tiny float noise
   owedToYou = double.parse(owedToYou.toStringAsFixed(2));
-  youOwe    = double.parse(youOwe.toStringAsFixed(2));
+  youOwe = double.parse(youOwe.toStringAsFixed(2));
   return _OverallTotals(owedToYou, youOwe);
 }
-
 
 String _bestFriendDisplayName(
     ContactNameService contactNames, FriendModel friend) {
   final fallback = friend.name.isNotEmpty ? friend.name : friend.phone;
   return contactNames
       .bestDisplayName(
-    phone: friend.phone,
-    remoteName: friend.name,
-    fallback: fallback,
-  )
+        phone: friend.phone,
+        remoteName: friend.name,
+        fallback: fallback,
+      )
       .trim();
 }
-
 
 /* ---------------------------------- ALL TAB -------------------------------- */
 
@@ -1171,8 +1185,8 @@ class AllTab extends StatelessWidget {
   final String userPhone;
   final bool openOnly;
   final String query;
-  final Direction direction;           // <— add
-  final VoidCallback onOpenFilters;    // <— add
+  final Direction direction; // <— add
+  final VoidCallback onOpenFilters; // <— add
   final ContactNameService contactNames;
   final Future<void> Function(String counterpartyPhone)? onLaunchSettleSmart;
 
@@ -1236,8 +1250,8 @@ class AllTab extends StatelessWidget {
                     final friend = friendLookup[id];
                     if (friend != null) {
                       final avatar = friend.avatar;
-                      final hasImage =
-                          avatar.startsWith('http') || avatar.startsWith('assets');
+                      final hasImage = avatar.startsWith('http') ||
+                          avatar.startsWith('assets');
                       mapped[id] = buildParticipantFor(
                         id,
                         contactNames,
@@ -1283,7 +1297,7 @@ class AllTab extends StatelessWidget {
 
                   final affecting = allTx
                       .where((e) =>
-                  _pairSigned(e, userPhone, f.phone).abs() >= 0.005)
+                          _pairSigned(e, userPhone, f.phone).abs() >= 0.005)
                       .toList()
                     ..sort((a, b) => b.date.compareTo(a.date));
 
@@ -1295,15 +1309,15 @@ class AllTab extends StatelessWidget {
                   if (openOnly && net == 0.0) continue;
 
                   if (direction == Direction.owedToYou && net <= 0) continue;
-                  if (direction == Direction.youOwe   && net >= 0) continue;
+                  if (direction == Direction.youOwe && net >= 0) continue;
 
                   final lastTx = affecting.isNotEmpty ? affecting.first : null;
 
                   final subtitle = (net == 0.0)
                       ? "All settled"
                       : (net > 0
-                      ? "Owes you ₹${net.toStringAsFixed(0)}"
-                      : "You owe ₹${(-net).toStringAsFixed(0)}");
+                          ? "Owes you ₹${net.toStringAsFixed(0)}"
+                          : "You owe ₹${(-net).toStringAsFixed(0)}");
 
                   final tail = (lastTx == null)
                       ? " • No activity yet"
@@ -1316,19 +1330,21 @@ class AllTab extends StatelessWidget {
                     title: displayName,
                     subtitle: "$subtitle$tail",
                     imageUrl: (f.avatar.startsWith('http') ||
-                        f.avatar.startsWith('assets'))
+                            f.avatar.startsWith('assets'))
                         ? f.avatar
                         : null,
                     fallbackEmoji: f.avatar.isNotEmpty &&
-                        !(f.avatar.startsWith('http') ||
-                            f.avatar.startsWith('assets'))
+                            !(f.avatar.startsWith('http') ||
+                                f.avatar.startsWith('assets'))
                         ? f.avatar
                         : '👤',
                     memberAvatars: null,
                     memberPhones: null,
                     lastUpdate: lastTx?.date,
-                    trailingText: net == 0 ? "" : "₹${net.abs().toStringAsFixed(0)}",
-                    trailingColor: net > 0 ? Colors.green[700]
+                    trailingText:
+                        net == 0 ? "" : "₹${net.abs().toStringAsFixed(0)}",
+                    trailingColor: net > 0
+                        ? Colors.green[700]
                         : (net < 0 ? Colors.red[700] : Colors.grey[700]),
                     trailingHint: _owedLabel(net), // NEW
 
@@ -1344,9 +1360,9 @@ class AllTab extends StatelessWidget {
                     ),
                     onExpense: () async {
                       final allFriends =
-                      await FriendService().streamFriends(userPhone).first;
+                          await FriendService().streamFriends(userPhone).first;
                       final allGroups =
-                      await GroupService().streamGroups(userPhone).first;
+                          await GroupService().streamGroups(userPhone).first;
                       final ok = await Navigator.push<bool>(
                         context,
                         MaterialPageRoute(
@@ -1386,7 +1402,7 @@ class AllTab extends StatelessWidget {
 
                   double owedToYou = 0.0, youOwe = 0.0;
                   final members =
-                  g.memberPhones.where((p) => p != userPhone).toList();
+                      g.memberPhones.where((p) => p != userPhone).toList();
 
                   for (final e in gtx) {
                     for (final m in members) {
@@ -1404,18 +1420,18 @@ class AllTab extends StatelessWidget {
 
                   if (openOnly && owedToYou == 0.0 && youOwe == 0.0) continue;
                   if (direction == Direction.owedToYou && net <= 0) continue;
-                  if (direction == Direction.youOwe   && net >= 0) continue;
+                  if (direction == Direction.youOwe && net >= 0) continue;
 
                   String subtitle;
                   if (owedToYou == 0 && youOwe == 0) {
                     subtitle = "All settled";
                   } else {
                     subtitle =
-                    "Owed to you ₹${owedToYou.toStringAsFixed(0)} • You owe ₹${youOwe.toStringAsFixed(0)}";
+                        "Owed to you ₹${owedToYou.toStringAsFixed(0)} • You owe ₹${youOwe.toStringAsFixed(0)}";
                   }
                   if (lastTx != null) {
                     subtitle +=
-                    " • last: ${(lastTx.label?.isNotEmpty == true ? lastTx.label! : lastTx.type)} ₹${_fmtAmt(lastTx.amount)}";
+                        " • last: ${(lastTx.label?.isNotEmpty == true ? lastTx.label! : lastTx.type)} ₹${_fmtAmt(lastTx.amount)}";
                   }
 
                   final memberPhones = g.memberPhones.take(3).toList();
@@ -1449,9 +1465,9 @@ class AllTab extends StatelessWidget {
                     ),
                     onExpense: () async {
                       final allFriends =
-                      await FriendService().streamFriends(userPhone).first;
+                          await FriendService().streamFriends(userPhone).first;
                       final allGroups =
-                      await GroupService().streamGroups(userPhone).first;
+                          await GroupService().streamGroups(userPhone).first;
                       final ok = await Navigator.push<bool>(
                         context,
                         MaterialPageRoute(
@@ -1518,15 +1534,19 @@ class AllTab extends StatelessWidget {
                                 colors: [Color(0xFFF6FBF9), Color(0xFFE9F4F1)],
                               ),
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: const Color(0xFFE5F1EE)),
+                              border:
+                                  Border.all(color: const Color(0xFFE5F1EE)),
                             ),
                             child: ListTile(
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 10),
                               title: Text(
                                 title,
                                 style: TextStyle(
                                   fontWeight: FontWeight.w800,
-                                  color: net >= 0 ? Colors.teal[700] : Colors.red[700],
+                                  color: net >= 0
+                                      ? Colors.teal[700]
+                                      : Colors.red[700],
                                 ),
                               ),
                               subtitle: Column(
@@ -1542,11 +1562,17 @@ class AllTab extends StatelessWidget {
                                     runSpacing: 6,
                                     children: [
                                       if (direction == Direction.owedToYou)
-                                        const _TinyPill(icon: Icons.arrow_downward_rounded, text: 'Owes you'),
+                                        const _TinyPill(
+                                            icon: Icons.arrow_downward_rounded,
+                                            text: 'Owes you'),
                                       if (direction == Direction.youOwe)
-                                        const _TinyPill(icon: Icons.arrow_upward_rounded, text: 'You owe'),
+                                        const _TinyPill(
+                                            icon: Icons.arrow_upward_rounded,
+                                            text: 'You owe'),
                                       if (openOnly)
-                                        const _TinyPill(icon: Icons.lock_open_rounded, text: 'Open only'),
+                                        const _TinyPill(
+                                            icon: Icons.lock_open_rounded,
+                                            text: 'Open only'),
                                     ],
                                   ),
                                 ],
@@ -1563,20 +1589,21 @@ class AllTab extends StatelessWidget {
                                             context: context,
                                             backgroundColor: Colors.transparent,
                                             isScrollControlled: true,
-                                          builder: (_) => SettleSmartSheet(
-                                            userPhone: userPhone,
-                                            netBalances: settleBalances,
-                                            participants: settleParticipants,
-                                            settleEligiblePhones:
-                                                settleEligiblePhones,
-                                            onLaunchSettle: onLaunchSettleSmart,
-                                            friends: friends,
-                                            groups: groups,
-                                          ),
-                                        );
-                                      },
+                                            builder: (_) => SettleSmartSheet(
+                                              userPhone: userPhone,
+                                              netBalances: settleBalances,
+                                              participants: settleParticipants,
+                                              settleEligiblePhones:
+                                                  settleEligiblePhones,
+                                              onLaunchSettle:
+                                                  onLaunchSettleSmart,
+                                              friends: friends,
+                                              groups: groups,
+                                            ),
+                                          );
+                                        },
+                                      ),
                                     ),
-                                  ),
                                   IconButton(
                                     icon: const Icon(Icons.tune_rounded,
                                         size: 20, color: Color(0xFF09857a)),
@@ -1595,7 +1622,8 @@ class AllTab extends StatelessWidget {
                             placement: 'friends_summary_header',
                             inline: true,
                             inlineMaxHeight: 110,
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 12),
                             minHeight: 88,
                           ),
                         );
@@ -1604,7 +1632,6 @@ class AllTab extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [header, adCard],
                         );
-
                       }
 
                       final item = items[i - 1];
@@ -1612,8 +1639,6 @@ class AllTab extends StatelessWidget {
                     },
                   ),
                 );
-
-
               },
             );
           },
@@ -1677,15 +1702,15 @@ class FriendsTab extends StatelessWidget {
               net = double.parse(net.toStringAsFixed(2));
               if (openOnly && net == 0.0) continue;
               if (direction == Direction.owedToYou && net <= 0) continue;
-              if (direction == Direction.youOwe   && net >= 0) continue;
+              if (direction == Direction.youOwe && net >= 0) continue;
 
               final lastTx = affecting.isNotEmpty ? affecting.first : null;
 
               final subtitle = (net == 0.0)
                   ? "All settled"
                   : (net > 0
-                  ? "Owes you ₹${net.toStringAsFixed(0)}"
-                  : "You owe ₹${(-net).toStringAsFixed(0)}");
+                      ? "Owes you ₹${net.toStringAsFixed(0)}"
+                      : "You owe ₹${(-net).toStringAsFixed(0)}");
               final tail = (lastTx == null)
                   ? " • No activity yet"
                   : " • last: ${(lastTx.label?.isNotEmpty == true ? lastTx.label! : lastTx.type)} ₹${_fmtAmt(lastTx.amount)}";
@@ -1697,12 +1722,12 @@ class FriendsTab extends StatelessWidget {
                 title: displayName,
                 subtitle: "$subtitle$tail",
                 imageUrl: (f.avatar.startsWith('http') ||
-                    f.avatar.startsWith('assets'))
+                        f.avatar.startsWith('assets'))
                     ? f.avatar
                     : null,
                 fallbackEmoji: f.avatar.isNotEmpty &&
-                    !(f.avatar.startsWith('http') ||
-                        f.avatar.startsWith('assets'))
+                        !(f.avatar.startsWith('http') ||
+                            f.avatar.startsWith('assets'))
                     ? f.avatar
                     : '👤',
                 memberAvatars: null,
@@ -1727,9 +1752,9 @@ class FriendsTab extends StatelessWidget {
                 ),
                 onExpense: () async {
                   final allFriends =
-                  await FriendService().streamFriends(userPhone).first;
+                      await FriendService().streamFriends(userPhone).first;
                   final allGroups =
-                  await GroupService().streamGroups(userPhone).first;
+                      await GroupService().streamGroups(userPhone).first;
                   await Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -1782,7 +1807,8 @@ class FriendsTab extends StatelessWidget {
                       placement: 'friends_tab',
                       inline: true,
                       inlineMaxHeight: 110,
-                      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                       minHeight: 88,
                     ),
                   );
@@ -1790,7 +1816,6 @@ class FriendsTab extends StatelessWidget {
                 return _GlassyChatTile(item: items[i - 1]);
               },
             );
-
           },
         );
       },
@@ -1842,7 +1867,7 @@ class GroupsTab extends StatelessWidget {
 
                   double owedToYou = 0.0, youOwe = 0.0;
                   final members =
-                  g.memberPhones.where((p) => p != userPhone).toList();
+                      g.memberPhones.where((p) => p != userPhone).toList();
                   for (final e in gtx) {
                     for (final m in members) {
                       final d = _pairSigned(e, userPhone, m);
@@ -1859,18 +1884,18 @@ class GroupsTab extends StatelessWidget {
 
                   if (openOnly && owedToYou == 0.0 && youOwe == 0.0) continue;
                   if (direction == Direction.owedToYou && net <= 0) continue;
-                  if (direction == Direction.youOwe   && net >= 0) continue;
+                  if (direction == Direction.youOwe && net >= 0) continue;
 
                   String subtitle;
                   if (owedToYou == 0 && youOwe == 0) {
                     subtitle = "All settled";
                   } else {
                     subtitle =
-                    "Owed to you ₹${owedToYou.toStringAsFixed(0)} • You owe ₹${youOwe.toStringAsFixed(0)}";
+                        "Owed to you ₹${owedToYou.toStringAsFixed(0)} • You owe ₹${youOwe.toStringAsFixed(0)}";
                   }
                   if (lastTx != null) {
                     subtitle +=
-                    " • last: ${(lastTx.label?.isNotEmpty == true ? lastTx.label! : lastTx.type)} ₹${_fmtAmt(lastTx.amount)}";
+                        " • last: ${(lastTx.label?.isNotEmpty == true ? lastTx.label! : lastTx.type)} ₹${_fmtAmt(lastTx.amount)}";
                   }
 
                   final memberPhones = g.memberPhones.take(3).toList();
@@ -1904,9 +1929,9 @@ class GroupsTab extends StatelessWidget {
                     ),
                     onExpense: () async {
                       final allFriends =
-                      await FriendService().streamFriends(userPhone).first;
+                          await FriendService().streamFriends(userPhone).first;
                       final allGroups =
-                      await GroupService().streamGroups(userPhone).first;
+                          await GroupService().streamGroups(userPhone).first;
                       await Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -1958,7 +1983,8 @@ class GroupsTab extends StatelessWidget {
                           placement: 'groups_tab',
                           inline: true,
                           inlineMaxHeight: 110,
-                          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
                           minHeight: 88,
                         ),
                       );
@@ -1966,7 +1992,6 @@ class GroupsTab extends StatelessWidget {
                     return _GlassyChatTile(item: items[i - 1]);
                   },
                 );
-
               },
             );
           },
@@ -2032,7 +2057,8 @@ class _ActivityTabBody extends StatelessWidget {
     required this.contactNames,
   });
 
-  Map<String, FriendModel> get _friendMap => {for (final f in friends) f.phone: f};
+  Map<String, FriendModel> get _friendMap =>
+      {for (final f in friends) f.phone: f};
   Map<String, GroupModel> get _groupMap => {for (final g in groups) g.id: g};
 
   String _nameFor(String phone) {
@@ -2094,7 +2120,8 @@ class _ActivityTabBody extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFE1EFEB)),
         boxShadow: const [
-          BoxShadow(color: Color(0x14000000), blurRadius: 16, offset: Offset(0, 8)),
+          BoxShadow(
+              color: Color(0x14000000), blurRadius: 16, offset: Offset(0, 8)),
         ],
       ),
       child: Column(
@@ -2103,7 +2130,8 @@ class _ActivityTabBody extends StatelessWidget {
           Row(
             children: [
               Text(title,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 16)),
             ],
           ),
           const SizedBox(height: 12),
@@ -2128,10 +2156,8 @@ class _ActivityTabBody extends StatelessWidget {
         : 'You owe ₹${(-impact).toStringAsFixed(2)}';
 
     final splits = computeSplits(e);
-    final participants = splits.keys
-        .where((id) => id != userPhone)
-        .map(_nameFor)
-        .toList();
+    final participants =
+        splits.keys.where((id) => id != userPhone).map(_nameFor).toList();
     final groupName = (e.groupId != null && e.groupId!.isNotEmpty)
         ? (_groupMap[e.groupId!]?.name ?? 'Group')
         : null;
@@ -2146,7 +2172,8 @@ class _ActivityTabBody extends StatelessWidget {
             height: 40,
             width: 40,
             decoration: BoxDecoration(
-              color: (isSettlement ? Colors.teal : Colors.indigo).withOpacity(0.10),
+              color: (isSettlement ? Colors.teal : Colors.indigo)
+                  .withOpacity(0.10),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
@@ -2163,7 +2190,8 @@ class _ActivityTabBody extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 15),
                 ),
                 const SizedBox(height: 4),
                 Wrap(
@@ -2174,31 +2202,37 @@ class _ActivityTabBody extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.calendar_today_rounded, size: 12, color: Colors.black54),
+                        const Icon(Icons.calendar_today_rounded,
+                            size: 12, color: Colors.black54),
                         const SizedBox(width: 4),
                         Text(_friendlyDate(e.date),
-                            style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.black87)),
                       ],
                     ),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.swap_horiz, size: 12, color: Colors.black54),
+                        const Icon(Icons.swap_horiz,
+                            size: 12, color: Colors.black54),
                         const SizedBox(width: 4),
                         Text('Paid by $payer',
-                            style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.black87)),
                       ],
                     ),
                     if (groupName != null)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: Colors.blueGrey.withOpacity(0.10),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
                           groupName,
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                          style: const TextStyle(
+                              fontSize: 11, fontWeight: FontWeight.w600),
                         ),
                       ),
                   ],
@@ -2210,13 +2244,15 @@ class _ActivityTabBody extends StatelessWidget {
                     runSpacing: 4,
                     children: participants.take(4).map((name) {
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: Colors.teal.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(name,
-                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            style: const TextStyle(
+                                fontSize: 11.5, fontWeight: FontWeight.w600)),
                       );
                     }).toList(),
                   ),
@@ -2229,18 +2265,23 @@ class _ActivityTabBody extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: amountColor.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(amountText,
-                    style: TextStyle(fontWeight: FontWeight.w800, color: amountColor)),
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800, color: amountColor)),
               ),
               const SizedBox(height: 6),
               Text(
                 impactLabel,
-                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.black87),
+                style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87),
               ),
             ],
           ),
@@ -2261,7 +2302,11 @@ class _ActivityTabBody extends StatelessWidget {
         : 'You owe ₹${(-impact).toStringAsFixed(0)}';
 
     final splits = computeSplits(e);
-    final preview = splits.keys.where((id) => id != userPhone).map(_nameFor).take(3).toList();
+    final preview = splits.keys
+        .where((id) => id != userPhone)
+        .map(_nameFor)
+        .take(3)
+        .toList();
 
     final title = e.label?.isNotEmpty == true
         ? e.label!
@@ -2275,7 +2320,8 @@ class _ActivityTabBody extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white.withOpacity(.6)),
         boxShadow: const [
-          BoxShadow(color: Color(0x16000000), blurRadius: 14, offset: Offset(0, 8)),
+          BoxShadow(
+              color: Color(0x16000000), blurRadius: 14, offset: Offset(0, 8)),
         ],
       ),
       child: Column(
@@ -2297,23 +2343,28 @@ class _ActivityTabBody extends StatelessWidget {
                     Text(title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 15)),
                     const SizedBox(height: 4),
                     Text(groupName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                        style: const TextStyle(
+                            fontSize: 12.5, fontWeight: FontWeight.w600)),
                   ],
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: Colors.teal.withOpacity(.12),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text('₹${e.amount.toStringAsFixed(0)}',
-                    style: TextStyle(fontWeight: FontWeight.w800, color: Colors.teal.shade900)),
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.teal.shade900)),
               ),
             ],
           ),
@@ -2324,13 +2375,15 @@ class _ActivityTabBody extends StatelessWidget {
               runSpacing: 4,
               children: preview.map((name) {
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.blueGrey.withOpacity(.10),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(name,
-                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                      style: const TextStyle(
+                          fontSize: 11.5, fontWeight: FontWeight.w600)),
                 );
               }).toList(),
             ),
@@ -2401,7 +2454,8 @@ class _ActivityTabBody extends StatelessWidget {
         padding: EdgeInsets.fromLTRB(16, 16, 16, safeBottom),
         children: [
           _sectionCard(title: 'Shared History', child: _buildSharedHistory()),
-          _sectionCard(title: 'Recent Group Activity', child: _buildGroupActivity()),
+          _sectionCard(
+              title: 'Recent Group Activity', child: _buildGroupActivity()),
         ],
       ),
     );
@@ -2422,12 +2476,12 @@ String _fmtTime(DateTime? dt) {
   final m = dt.minute.toString().padLeft(2, '0');
   return '$h:$m';
 }
+
 String _owedLabel(num net) {
   if (net > 0) return 'you are owed';
   if (net < 0) return 'you owe';
   return '';
 }
-
 
 /* ---------------------- Avatar cache & resolver (Firestore) ---------------- */
 
@@ -2436,10 +2490,8 @@ class _AvatarCache {
   static Future<String?> getUrl(String phone) async {
     if (_url.containsKey(phone)) return _url[phone];
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(phone)
-          .get();
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(phone).get();
       final url = (doc.data()?['avatar'] as String?)?.trim();
       _url[phone] = (url != null && url.isNotEmpty) ? url : null;
       return _url[phone];
@@ -2474,7 +2526,6 @@ class _ChatListItem {
   final VoidCallback openDetails;
   final String trailingHint; // NEW: "you are owed" / "you owe"
 
-
   _ChatListItem({
     required this.id,
     required this.phone,
@@ -2493,7 +2544,6 @@ class _ChatListItem {
     required this.onSettle,
     required this.openDetails,
     this.trailingHint = '',
-
   });
 }
 
@@ -2585,7 +2635,8 @@ class _GlassyChatTile extends StatelessWidget {
         child: Stack(
           children: List.generate(phones.length, (i) {
             final left = i * 18.0;
-            return Positioned(left: left, top: 2, child: _miniMember(context, phones[i]));
+            return Positioned(
+                left: left, top: 2, child: _miniMember(context, phones[i]));
           }),
         ),
       );
@@ -2598,7 +2649,6 @@ class _GlassyChatTile extends StatelessWidget {
       child: Text(item.fallbackEmoji, style: const TextStyle(fontSize: 20)),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -2613,7 +2663,10 @@ class _GlassyChatTile extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Theme.of(context).cardColor, Theme.of(context).scaffoldBackgroundColor],
+              colors: [
+                Theme.of(context).cardColor,
+                Theme.of(context).scaffoldBackgroundColor
+              ],
             ),
             boxShadow: [
               BoxShadow(
@@ -2668,13 +2721,14 @@ class _GlassyChatTile extends StatelessWidget {
                                   style: TextStyle(
                                     fontSize: 10.5,
                                     fontWeight: FontWeight.w600,
-                                    color: (item.trailingColor ?? Colors.black87).withOpacity(.85),
+                                    color:
+                                        (item.trailingColor ?? Colors.black87)
+                                            .withOpacity(.85),
                                   ),
                                 ),
                               ],
                             ),
                           ],
-
                           const SizedBox(width: 10),
                           Text(
                             _fmtTime(item.lastUpdate),
@@ -2708,7 +2762,8 @@ class _GlassyChatTile extends StatelessWidget {
                     PopupMenuItem(value: 'settle', child: Text('Settle up')),
                     PopupMenuItem(value: 'open', child: Text('Open details')),
                   ],
-                  child: Icon(Icons.more_vert, color: Theme.of(context).primaryColor),
+                  child: Icon(Icons.more_vert,
+                      color: Theme.of(context).primaryColor),
                 ),
               ],
             ),
@@ -2752,29 +2807,28 @@ class _SheetHeader extends StatelessWidget {
 class _SlideUpRoute<T> extends PageRouteBuilder<T> {
   _SlideUpRoute({required Widget child})
       : super(
-    transitionDuration: const Duration(milliseconds: 520),
-    reverseTransitionDuration: const Duration(milliseconds: 360),
-    pageBuilder: (_, __, ___) => child,
-    transitionsBuilder: (_, animation, __, child) {
-      final curved = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-      return SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, 1),  // from bottom
-          end: Offset.zero,
-        ).animate(curved),
-        child: FadeTransition(
-          opacity: Tween<double>(begin: 0, end: 1).animate(curved),
-          child: child,
-        ),
-      );
-    },
-  );
+          transitionDuration: const Duration(milliseconds: 520),
+          reverseTransitionDuration: const Duration(milliseconds: 360),
+          pageBuilder: (_, __, ___) => child,
+          transitionsBuilder: (_, animation, __, child) {
+            final curved = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+              reverseCurve: Curves.easeInCubic,
+            );
+            return SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 1), // from bottom
+                end: Offset.zero,
+              ).animate(curved),
+              child: FadeTransition(
+                opacity: Tween<double>(begin: 0, end: 1).animate(curved),
+                child: child,
+              ),
+            );
+          },
+        );
 }
-
 
 class _BottomCTAButton extends StatefulWidget {
   final VoidCallback onTap;
@@ -2786,12 +2840,12 @@ class _BottomCTAButton extends StatefulWidget {
 
 class _BottomCTAButtonState extends State<_BottomCTAButton>
     with TickerProviderStateMixin {
-  late final AnimationController _pulse =
-  AnimationController(vsync: this, duration: const Duration(milliseconds: 2400))
+  late final AnimationController _pulse = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 2400))
     ..repeat(reverse: true);
 
-  late final AnimationController _press =
-  AnimationController(vsync: this, duration: const Duration(milliseconds: 180));
+  late final AnimationController _press = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 180));
 
   @override
   void dispose() {
@@ -2805,9 +2859,7 @@ class _BottomCTAButtonState extends State<_BottomCTAButton>
     final bottom = MediaQuery.of(context).padding.bottom;
 
     return Padding(
-      padding: EdgeInsets.only(
-          right: 12,
-          bottom: bottom > 0 ? bottom : 12),
+      padding: EdgeInsets.only(right: 12, bottom: bottom > 0 ? bottom : 12),
       child: GestureDetector(
         onTapDown: (_) => _press.forward(),
         onTapCancel: () => _press.reverse(),
@@ -2835,7 +2887,10 @@ class _BottomCTAButtonState extends State<_BottomCTAButton>
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [Theme.of(context).cardColor, Theme.of(context).scaffoldBackgroundColor],
+                    colors: [
+                      Theme.of(context).cardColor,
+                      Theme.of(context).scaffoldBackgroundColor
+                    ],
                   ),
                   boxShadow: [
                     BoxShadow(
@@ -2850,7 +2905,8 @@ class _BottomCTAButtonState extends State<_BottomCTAButton>
                       offset: Offset(0, -2),
                     ),
                   ],
-                  border: Border.all(color: Theme.of(context).dividerColor, width: 1.2),
+                  border: Border.all(
+                      color: Theme.of(context).dividerColor, width: 1.2),
                 ),
                 child: Container(
                   margin: const EdgeInsets.all(6),
@@ -2972,7 +3028,8 @@ class _QuickPickerSheetState extends State<_QuickPickerSheet> {
                 hintText: isFriends ? 'Search friends...' : 'Search groups...',
                 filled: true,
                 fillColor: const Color(0xFFF7FAF9),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: Color(0xFFE6ECEA)),

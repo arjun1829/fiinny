@@ -1,6 +1,6 @@
 // lib/core/notifications/local_notifications.dart
 import 'dart:async';
-import 'dart:io' show Platform;
+// import 'dart:io' show Platform; // Removed for web compatibility
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -21,7 +21,7 @@ import '../../main.dart' show rootNavigatorKey; // for navigation on tap
 /// ─────────────────────────────────────────────────────────────────────────────
 class LocalNotifs {
   static final FlutterLocalNotificationsPlugin _plugin =
-  FlutterLocalNotificationsPlugin();
+      FlutterLocalNotificationsPlugin();
 
   static bool _inited = false;
 
@@ -64,12 +64,14 @@ class LocalNotifs {
     );
 
     final androidSpecific = _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
 
     // Ensure channel exists (no-op on iOS).
     await androidSpecific?.createNotificationChannel(_channel);
 
-    if (!kIsWeb && Platform.isAndroid) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       try {
         final enabled = await androidSpecific?.areNotificationsEnabled();
         debugPrint('[LocalNotifs] areNotificationsEnabled? $enabled');
@@ -85,9 +87,11 @@ class LocalNotifs {
 
   /// Helper (user-initiated only): may open OEM Alarms & reminders screen.
   static Future<void> requestExactAlarmPermissionIfUserInitiated() async {
-    if (kIsWeb || !Platform.isAndroid) return;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     final androidSpecific = _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     try {
       await androidSpecific?.requestExactAlarmsPermission();
     } catch (e) {
@@ -97,9 +101,11 @@ class LocalNotifs {
 
   /// Optional helper to check notifications enabled (no UI).
   static Future<bool?> areNotificationsEnabled() async {
-    if (kIsWeb || !Platform.isAndroid) return true;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return true;
     final androidSpecific = _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     try {
       return await androidSpecific?.areNotificationsEnabled();
     } catch (e) {
@@ -116,33 +122,42 @@ class LocalNotifs {
     if (uri == null) return;
 
     final host = uri.host.toLowerCase();
-    final first = (uri.pathSegments.isNotEmpty ? uri.pathSegments.first : '').trim();
-    final second = (uri.pathSegments.length > 1 ? uri.pathSegments[1] : '').trim().toLowerCase();
+    final first = (uri.pathSegments.isNotEmpty ? uri.pathSegments.first : '')
+        .trim();
+    final second = (uri.pathSegments.length > 1 ? uri.pathSegments[1] : '')
+        .trim()
+        .toLowerCase();
 
     // Legacy route (friend recurring)
     if (host == 'friend' && first.isNotEmpty) {
-      nav.pushNamed('/friend-recurring', arguments: {
-        'friendId': Uri.decodeComponent(first),
-        'section': second,
-      });
+      nav.pushNamed(
+        '/friend-recurring',
+        arguments: {'friendId': Uri.decodeComponent(first), 'section': second},
+      );
       return;
     }
 
     if (host == 'friend-detail' && first.isNotEmpty) {
-      nav.pushNamed('/friend-detail', arguments: {
-        'friendId': Uri.decodeComponent(first),
-        if (uri.queryParameters['name'] != null)
-          'friendName': uri.queryParameters['name'],
-      });
+      nav.pushNamed(
+        '/friend-detail',
+        arguments: {
+          'friendId': Uri.decodeComponent(first),
+          if (uri.queryParameters['name'] != null)
+            'friendName': uri.queryParameters['name'],
+        },
+      );
       return;
     }
 
     if (host == 'group-detail' && first.isNotEmpty) {
-      nav.pushNamed('/group-detail', arguments: {
-        'groupId': Uri.decodeComponent(first),
-        if (uri.queryParameters['name'] != null)
-          'groupName': uri.queryParameters['name'],
-      });
+      nav.pushNamed(
+        '/group-detail',
+        arguments: {
+          'groupId': Uri.decodeComponent(first),
+          if (uri.queryParameters['name'] != null)
+            'groupName': uri.queryParameters['name'],
+        },
+      );
       return;
     }
 
@@ -152,7 +167,10 @@ class LocalNotifs {
       return;
     }
     if (host == 'loans') {
-      nav.pushNamed('/loans', arguments: {'userId': uri.queryParameters['uid']});
+      nav.pushNamed(
+        '/loans',
+        arguments: {'userId': uri.queryParameters['uid']},
+      );
       return;
     }
     if (host == 'cards') {
@@ -220,7 +238,9 @@ class LocalNotifs {
           androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
           payload: payload ?? itemId,
         );
-        debugPrint('[LocalNotifs] scheduled(EXACT) id=$notifId at $tzWhen payload="$payload"');
+        debugPrint(
+          '[LocalNotifs] scheduled(EXACT) id=$notifId at $tzWhen payload="$payload"',
+        );
       } catch (e) {
         debugPrint('[LocalNotifs] exact schedule failed: $e → INEXACT');
         await _plugin.zonedSchedule(
@@ -232,7 +252,9 @@ class LocalNotifs {
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
           payload: payload ?? itemId,
         );
-        debugPrint('[LocalNotifs] scheduled(INEXACT) id=$notifId at $tzWhen payload="$payload"');
+        debugPrint(
+          '[LocalNotifs] scheduled(INEXACT) id=$notifId at $tzWhen payload="$payload"',
+        );
       }
     } catch (e, st) {
       debugPrint('[LocalNotifs] scheduleOnce failed: $e\n$st');
@@ -264,10 +286,8 @@ class ReminderLocalScheduler {
   StreamSubscription<List<SharedItem>>? _sub;
   Set<String> _lastIds = <String>{};
 
-  ReminderLocalScheduler({
-    required this.userPhone,
-    required this.friendId,
-  }) : _svc = RecurringService();
+  ReminderLocalScheduler({required this.userPhone, required this.friendId})
+    : _svc = RecurringService();
 
   Future<void> bind() async {
     await LocalNotifs.init();
@@ -316,9 +336,12 @@ class ReminderLocalScheduler {
             fireAt = _fireAtFrom(nextCycle, daysBefore, timeStr);
           }
 
-          final title = it.title?.trim().isNotEmpty == true ? it.title!.trim() : 'Reminder';
+          final title = it.title?.trim().isNotEmpty == true
+              ? it.title!.trim()
+              : 'Reminder';
           final body = 'Due on ${_fmt(nextDue)}';
-          final deeplink = 'app://friend/${Uri.encodeComponent(friendId)}/recurring';
+          final deeplink =
+              'app://friend/${Uri.encodeComponent(friendId)}/recurring';
 
           await LocalNotifs.scheduleOnce(
             itemId: it.id,
@@ -377,10 +400,10 @@ class SystemRecurringLocalScheduler {
   // Default reminder times (24h)
   final String defaultTime = '09:00';
   // Default days-before per category
-  final int subsDaysBefore;   // e.g. 1 day before
-  final int sipsDaysBefore;   // e.g. 0 (same day morning)
-  final int loansDaysBefore;  // e.g. 2 days before
-  final int cardsDaysBefore;  // e.g. 3 days before
+  final int subsDaysBefore; // e.g. 1 day before
+  final int sipsDaysBefore; // e.g. 0 (same day morning)
+  final int loansDaysBefore; // e.g. 2 days before
+  final int cardsDaysBefore; // e.g. 3 days before
 
   SystemRecurringLocalScheduler({
     required this.userId,
@@ -401,10 +424,10 @@ class SystemRecurringLocalScheduler {
         .where('active', isEqualTo: true)
         .snapshots()
         .listen((snap) async {
-      for (final d in snap.docs) {
-        await _scheduleSubscription(d);
-      }
-    });
+          for (final d in snap.docs) {
+            await _scheduleSubscription(d);
+          }
+        });
 
     // SIPs
     _sipsSub = base
@@ -412,10 +435,10 @@ class SystemRecurringLocalScheduler {
         .where('active', isEqualTo: true)
         .snapshots()
         .listen((snap) async {
-      for (final d in snap.docs) {
-        await _scheduleSip(d);
-      }
-    });
+          for (final d in snap.docs) {
+            await _scheduleSip(d);
+          }
+        });
 
     // Loans/EMIs
     _loansSub = base
@@ -423,16 +446,13 @@ class SystemRecurringLocalScheduler {
         .where('active', isEqualTo: true)
         .snapshots()
         .listen((snap) async {
-      for (final d in snap.docs) {
-        await _scheduleLoan(d);
-      }
-    });
+          for (final d in snap.docs) {
+            await _scheduleLoan(d);
+          }
+        });
 
     // Credit Cards (card bills)
-    _cardsSub = base
-        .collection('cards')
-        .snapshots()
-        .listen((snap) async {
+    _cardsSub = base.collection('cards').snapshots().listen((snap) async {
       for (final d in snap.docs) {
         await _scheduleCardBill(d);
       }
@@ -452,8 +472,13 @@ class SystemRecurringLocalScheduler {
     final parts = hhmm.split(':');
     final h = int.tryParse(parts.elementAt(0)) ?? 9;
     final m = int.tryParse(parts.elementAt(1)) ?? 0;
-    var fireAt = DateTime(due.year, due.month, due.day, h, m)
-        .subtract(Duration(days: daysBefore));
+    var fireAt = DateTime(
+      due.year,
+      due.month,
+      due.day,
+      h,
+      m,
+    ).subtract(Duration(days: daysBefore));
 
     // Quiet hours shift: if before 07:00 => 09:00 same day; if after 22:00 => 09:00 next day
     final hour = fireAt.hour;
@@ -480,7 +505,9 @@ class SystemRecurringLocalScheduler {
 
   // ── Individual schedulers ──────────────────────────────────────────────────
 
-  Future<void> _scheduleSubscription(QueryDocumentSnapshot<Map<String, dynamic>> d) async {
+  Future<void> _scheduleSubscription(
+    QueryDocumentSnapshot<Map<String, dynamic>> d,
+  ) async {
     final data = d.data();
     final brand = (data['brand'] ?? 'SUBSCRIPTION').toString().toUpperCase();
     final nextDue = _asDate(data['nextDue']);
@@ -503,7 +530,9 @@ class SystemRecurringLocalScheduler {
     );
   }
 
-  Future<void> _scheduleSip(QueryDocumentSnapshot<Map<String, dynamic>> d) async {
+  Future<void> _scheduleSip(
+    QueryDocumentSnapshot<Map<String, dynamic>> d,
+  ) async {
     final data = d.data();
     final brand = (data['brand'] ?? 'SIP').toString().toUpperCase();
     final nextDue = _asDate(data['nextDue']);
@@ -526,7 +555,9 @@ class SystemRecurringLocalScheduler {
     );
   }
 
-  Future<void> _scheduleLoan(QueryDocumentSnapshot<Map<String, dynamic>> d) async {
+  Future<void> _scheduleLoan(
+    QueryDocumentSnapshot<Map<String, dynamic>> d,
+  ) async {
     final data = d.data();
     final lender = (data['lender'] ?? 'LOAN').toString().toUpperCase();
     final nextDue = _asDate(data['nextDue']);
@@ -549,11 +580,17 @@ class SystemRecurringLocalScheduler {
     );
   }
 
-  Future<void> _scheduleCardBill(QueryDocumentSnapshot<Map<String, dynamic>> d) async {
+  Future<void> _scheduleCardBill(
+    QueryDocumentSnapshot<Map<String, dynamic>> d,
+  ) async {
     final data = d.data();
-    final issuer = (data['issuer'] ?? data['issuerBank'] ?? 'CARD').toString().toUpperCase();
+    final issuer = (data['issuer'] ?? data['issuerBank'] ?? 'CARD')
+        .toString()
+        .toUpperCase();
     final last4 = (data['last4'] ?? '').toString();
-    final lastBill = (data['lastBill'] is Map) ? Map<String, dynamic>.from(data['lastBill']) : null;
+    final lastBill = (data['lastBill'] is Map)
+        ? Map<String, dynamic>.from(data['lastBill'])
+        : null;
     final dueDate = _asDate(lastBill?['dueDate']);
 
     if (dueDate == null) {
