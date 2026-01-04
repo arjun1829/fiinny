@@ -1,46 +1,62 @@
-
----
-
-## 🛑 `.gitignore` (Flutter Optimized)
-
-Create a file `.gitignore` in your root folder and paste:
-
-```gitignore
 # Flutter/Dart/Pub related
 .dart_tool/
 .packages
 .pub-cache/
-build/
-flutter_*.png
+pubspec.lock
 .flutter-plugins
 .flutter-plugins-dependencies
 .melos_tool/
-pubspec.lock
 
-# VS Code
-.vscode/
-
-# iOS
-ios/Flutter/Flutter.framework
-ios/Flutter/Flutter.podspec
-ios/Flutter/Generated.xcconfig
+# Build artifacts
+build/
+android/app/build/
 ios/Flutter/ephemeral/
 
-# Android
-android/.gradle/
-android/app/build/
-android/.idea/
-
-# Mac
-*.DS_Store
-
-# Other
-*.log
-*.lock
+# IDEs
+.vscode/
 .idea/
+*.iml
+.metadata
 
+# Logs
+*.log
 *.bak
-**/io/flutter/plugins/GeneratedPluginRegistrant.java
-**/io/flutter/plugins/GeneratedPluginRegistrant.kt
-**/io/flutter/plugins/
-# Firebase iOS config (provided via CI secrets)
+
+# OS
+*.DS_Store
+Thumbs.db
+
+# Sensitive Keys and Secrets (CASA Compliance)
+*.p8
+*.p12
+*.pem
+*.jks
+*.keystore
+*.key
+*.csr
+*.cer
+*.mobileprovision
+*.json
+!firebase.json
+!firestore.indexes.json
+!package.json
+!tsconfig.json
+!app/google-services.json
+# Be careful with json, but we definitely want to ignore service accounts
+google-services.json
+key.properties
+local.properties
+
+# Explicitly ignore known secret files found in root
+github secretes.txt
+apple_api_key.txt
+p12.txt
+provision.txt
+analysis.txt
+analysis_count.txt
+analysis_dash.txt
+analysis_theme.txt
+deps.txt
+
+# Node
+node_modules/
