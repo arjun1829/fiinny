@@ -1,34 +1,7 @@
 import '../fiinny_brain/time_engine.dart';
 import '../fiinny_brain/trend_engine.dart';
 import '../fiinny_brain/inference_engine.dart';
-
-// ... (existing imports)
-
-      // === TIME/WEEKEND QUESTIONS ===
-      if (_isTimeQuery(queryLower)) {
-        return _handleTimeQuery(
-          query: queryLower,
-          expenses: expenses,
-        );
-      }
-
-      // === TREND/GROWTH QUESTIONS ===
-      if (_isTrendQuery(queryLower)) {
-        return _handleTrendQuery(
-          query: queryLower,
-          expenses: expenses,
-        );
-      }
-
-      // === INFERENCE/CONTEXT QUESTIONS ===
-      if (_isInferenceQuery(queryLower)) {
-        return _handleInferenceQuery(
-          query: queryLower,
-          expenses: expenses,
-        );
-      }
-
-      // === GENERAL SUMMARY ===
+import '../models/expense_item.dart';
 import '../models/income_item.dart';
 import '../fiinny_brain/entity_resolver.dart';
 import '../fiinny_brain/entity_resolution_models.dart';
@@ -86,6 +59,30 @@ class FiinnyBrainQueryService {
       // === TRAVEL QUESTIONS ===
       if (_isTravelQuery(queryLower)) {
         return _handleTravelQuery(
+          query: queryLower,
+          expenses: expenses,
+        );
+      }
+
+      // === TIME/WEEKEND QUESTIONS ===
+      if (_isTimeQuery(queryLower)) {
+        return _handleTimeQuery(
+          query: queryLower,
+          expenses: expenses,
+        );
+      }
+
+      // === TREND/GROWTH QUESTIONS ===
+      if (_isTrendQuery(queryLower)) {
+        return _handleTrendQuery(
+          query: queryLower,
+          expenses: expenses,
+        );
+      }
+
+      // === INFERENCE/CONTEXT QUESTIONS ===
+      if (_isInferenceQuery(queryLower)) {
+        return _handleInferenceQuery(
           query: queryLower,
           expenses: expenses,
         );
@@ -170,23 +167,23 @@ class FiinnyBrainQueryService {
         }
         if (resolution.phone != null) {
           final amount = SplitQueryEngine.getAmountOwedBy(resolution.phone!, report);
-          if (amount > 0) {
-            return "${resolution.name} owes you ₹${amount.toStringAsFixed(0)}";
+        if (amount > 0) {
+            return "${resolution.name} currently owes you ₹${amount.toStringAsFixed(0)}";
           } else {
-            return "${resolution.name} doesn't owe you anything";
+            return "${resolution.name} doesn't owe you anything right now.";
           }
         }
       }
       // General "who owes me"
       final whoOwes = SplitQueryEngine.getWhoOwesMe(report);
       if (whoOwes.isEmpty) {
-        return "No one owes you money right now";
+        return "Good news! No one owes you money right now.";
       }
       final details = whoOwes.map((phone) {
         final detail = report.friendDetails[phone]!;
         return "${detail.friendName}: ₹${detail.netBalance.toStringAsFixed(0)}";
       }).join('\n');
-      return "People who owe you:\n$details";
+      return "Here's who owes you money:\n$details";
     }
 
     // "How much do I owe X?"
@@ -252,9 +249,9 @@ class FiinnyBrainQueryService {
             expenses,
             SearchCriteria(textQuery: searchTerm),
           );
-          return "Yes, I found ${result.count} $searchTerm expense(s) totaling ₹${result.totalAmount.toStringAsFixed(0)}";
+          return "Yes, I found ${result.count} expenses related to '$searchTerm', totaling ₹${result.totalAmount.toStringAsFixed(0)}";
         } else {
-          return "No $searchTerm expenses found. Would you like to add one?";
+          return "I couldn't find any recorded expenses for '$searchTerm'. Would you like to add one?";
         }
       }
 
@@ -266,7 +263,7 @@ class FiinnyBrainQueryService {
       if (result.count == 0) {
         return "No $searchTerm expenses found";
       }
-      return "Found ${result.count} $searchTerm expense(s):\nTotal: ₹${result.totalAmount.toStringAsFixed(0)}\nAverage: ₹${(result.totalAmount / result.count).toStringAsFixed(0)}";
+      return "Found ${result.count} expense(s) for '$searchTerm':\nTotal: ₹${result.totalAmount.toStringAsFixed(0)}\nAverage: ₹${(result.totalAmount / result.count).toStringAsFixed(0)}";
     }
 
     return "I can help you search for expenses. Try asking about specific categories like 'flight', 'metro', or 'food'";
@@ -300,7 +297,7 @@ class FiinnyBrainQueryService {
       );
       
       final period = _formatPeriod(timeframe);
-      return "You spent ₹${result.totalAmount.toStringAsFixed(0)} on $matchedCategory $period (${result.count} expenses)";
+      return "You've spent ₹${result.totalAmount.toStringAsFixed(0)} on $matchedCategory $period (${result.count} expenses)";
     }
 
     // Show all categories
@@ -344,11 +341,11 @@ class FiinnyBrainQueryService {
     final totalIncome = incomes.fold<double>(0, (sum, i) => sum + i.amount);
     final savings = totalIncome - totalExpense;
 
-    return "Financial Summary:\n"
+    return "**Financial Summary**\n"
         "Income: ₹${totalIncome.toStringAsFixed(0)}\n"
         "Expenses: ₹${totalExpense.toStringAsFixed(0)}\n"
         "Savings: ₹${savings.toStringAsFixed(0)}\n\n"
-        "Ask me anything about your expenses, splits, or travel!";
+        "I'm here to help! efficient tracking leads to better savings.";
   }
 
   // ==================== ADVANCED HANDLERS ====================
@@ -357,13 +354,13 @@ class FiinnyBrainQueryService {
     if (query.contains('weekend')) {
       final weekendExpenses = TimeEngine.filterByDayType(expenses, isWeekend: true);
       final total = weekendExpenses.fold(0.0, (sum, e) => sum + e.amount);
-      return "You spent ₹${total.toStringAsFixed(0)} on weekends (Total ${weekendExpenses.length} expenses)";
+      return "You've spent a total of ₹${total.toStringAsFixed(0)} on weekends (Total ${weekendExpenses.length} expenses)";
     }
     
     if (query.contains('morning') || query.contains('10 am')) {
       final morningExpenses = TimeEngine.filterByTimeOfDay(expenses, 'morning');
       final total = morningExpenses.fold(0.0, (sum, e) => sum + e.amount);
-      return "You spent ₹${total.toStringAsFixed(0)} in the morning (before 12 PM)";
+      return "You've spent ₹${total.toStringAsFixed(0)} in the morning (before 12 PM)";
     }
     
     // Add more time handlers as needed
@@ -378,7 +375,7 @@ class FiinnyBrainQueryService {
     if (query.contains('increasing') || query.contains('trend')) {
       final growth = TrendEngine.calculateGrowthRate(currentMonth, lastMonth);
       final direction = TrendEngine.analyzeTrendDirection(growth);
-      return "Your spending is $direction (${growth.abs().toStringAsFixed(1)}% vs last month)";
+      return "I've noticed your spending is **$direction** (${growth.abs().toStringAsFixed(1)}% vs last month)";
     }
 
     if (query.contains('spike')) {
