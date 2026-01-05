@@ -423,8 +423,8 @@ class GmailService {
   static const int PAGE_POOL = 10;
 
   // Debug logs
-  static const bool _DEBUG = true;
-  void _log(String s) { if (_DEBUG) print('[GmailService] $s'); }
+  static const bool _DEBUG = kDebugMode;
+  void _log(String s) { if (kDebugMode) print('[GmailService] $s'); }
 
   static final _scopes = [gmail.GmailApi.gmailReadonlyScope];
   final GoogleSignIn _googleSignIn = GoogleSignIn(

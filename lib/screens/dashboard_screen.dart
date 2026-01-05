@@ -1700,16 +1700,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                         },
                       ),
                       IconButton(
-                        icon: const Icon(Icons.notifications_active_rounded,
-                            color: Fx.mintDark, size: 23),
-                        tooltip: 'Notification settings',
-                        onPressed: () async {
-                          await NotifPrefsService.ensureDefaultPrefs();
-                          if (!mounted) return;
-                          Navigator.pushNamed(context, '/settings/notifications');
-                        },
-                      ),
-                      IconButton(
                         tooltip: 'Analytics',
                         icon: const Icon(Icons.analytics_outlined, size: 22),
                         onPressed: () {
@@ -1720,17 +1710,25 @@ class _DashboardScreenState extends State<DashboardScreen>
                           );
                         },
                       ),
-                      IconButton(
-                        tooltip: 'Fiinny Brain Chat',
-                        icon: const Icon(Icons.chat_bubble_outline, color: Fx.mintDark, size: 22),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => FiinnyBrainChatScreen(userPhone: widget.userPhone),
+                      // Gemini-style AI Chat Icon
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: IconButton(
+                          tooltip: 'Fiinny AI',
+                            icon: const Icon(
+                              Icons.psychology_rounded,
+                              color: Fx.mintDark,
+                              size: 28,
                             ),
-                          );
-                        },
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => FiinnyBrainChatScreen(userPhone: widget.userPhone),
+                              ),
+                            );
+                          },
+                        ),
                       ),
                       IconButton(
                         icon: _isFetchingEmail
