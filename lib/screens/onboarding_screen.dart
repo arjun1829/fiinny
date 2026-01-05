@@ -1,6 +1,8 @@
-// lib/screens/onboarding_screen.dart
-import 'dart:io';
+// import 'dart:io'; // Removed for Web compatibility
+import 'dart:typed_data'; // For Uint8List
 import 'dart:ui' show ImageFilter;
+import 'package:flutter/foundation.dart'
+    show kIsWeb; // Explicit import if needed, or use existing
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -34,7 +36,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String? _language = 'en';
   String? _avatarAsset;
   String? _photoUrl;
-  File? _picked;
+  XFile? _picked;
+  Uint8List? _pickedBytes;
 
   bool _loading = false;
   String? _error;
@@ -81,7 +84,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final authPhone = (u.phoneNumber ?? '').trim();
     if (authPhone.isEmpty) return;
 
-    final doc = await FirebaseFirestore.instance.collection('users').doc(authPhone).get();
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(authPhone)
+        .get();
     if (doc.exists && (doc.data()?['onboarded'] == true)) {
       if (!mounted) return;
       Navigator.pushReplacement(
@@ -103,10 +109,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _pickImage() async {
-    final f = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 78);
+    final f = await ImagePicker()
+        .pickImage(source: ImageSource.gallery, imageQuality: 78);
     if (f != null) {
+      final bytes = await f.readAsBytes();
       setState(() {
-        _picked = File(f.path);
+        _picked = f;
+        _pickedBytes = bytes;
         _photoUrl = null;
         _avatarAsset = null;
       });
@@ -138,9 +147,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     try {
       String? photo = _photoUrl;
 
-      if (_picked != null) {
+      if (_picked != null && _pickedBytes != null) {
         final ref = FirebaseStorage.instance.ref('users/$docId/profile.jpg');
-        await ref.putFile(_picked!);
+        await ref.putData(
+            _pickedBytes!, SettableMetadata(contentType: 'image/jpeg'));
         photo = await ref.getDownloadURL();
       }
 
@@ -155,7 +165,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         'avatar': photo ?? _avatarAsset ?? '',
         'onboarded': true,
         'email': email,
-        'phone': _phone.text.trim().isNotEmpty ? _phone.text.trim() : (u.phoneNumber ?? ''),
+        'phone': _phone.text.trim().isNotEmpty
+            ? _phone.text.trim()
+            : (u.phoneNumber ?? ''),
         'created': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -210,7 +222,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           Positioned(top: -60, right: -40, child: _mintBlob(220)),
           Positioned(top: 120, left: -50, child: _mintBlob(160, opacity: .20)),
-          Positioned(bottom: -70, right: -30, child: _mintBlob(180, opacity: .16)),
+          Positioned(
+              bottom: -70, right: -30, child: _mintBlob(180, opacity: .16)),
 
           // ✨ Frosted sheet inside a real Form
           Positioned.fill(
@@ -278,7 +291,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             padding: const EdgeInsets.only(bottom: 8),
                             child: Text(
                               _error!,
-                              style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.w600),
                             ),
                           ),
 
@@ -290,7 +305,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             icon: Icons.person,
                             filledBorder: filledField,
                           ),
-                          validator: (v) => (v == null || v.trim().isEmpty) ? "Please enter your name" : null,
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? "Please enter your name"
+                              : null,
                         ),
                         const SizedBox(height: 12),
 
@@ -306,8 +323,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                                   filledBorder: filledField,
                                 ),
                                 validator: (val) {
-                                  if (val == null || val.trim().isEmpty) return "Please enter your email";
-                                  if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(val)) return "Enter a valid email";
+                                  if (val == null || val.trim().isEmpty)
+                                    return "Please enter your email";
+                                  if (!RegExp(r'^[^@]+@[^@]+\.[^@]+')
+                                      .hasMatch(val))
+                                    return "Enter a valid email";
                                   return null;
                                 },
                               ),
@@ -324,8 +344,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             filledBorder: filledField,
                           ),
                           validator: (v) {
-                            if (v == null || v.trim().isEmpty) return "Please enter your phone number";
-                            if (v.trim().length < 10) return "Enter a valid phone number";
+                            if (v == null || v.trim().isEmpty)
+                              return "Please enter your phone number";
+                            if (v.trim().length < 10)
+                              return "Enter a valid phone number";
                             return null;
                           },
                         ),
@@ -334,7 +356,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         DropdownButtonFormField<String>(
                           value: _country,
                           items: ["India", "USA", "UK", "Other"]
-                              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                              .map((e) =>
+                                  DropdownMenuItem(value: e, child: Text(e)))
                               .toList(),
                           onChanged: (v) => setState(() => _country = v),
                           decoration: _glassFieldDecoration(
@@ -348,7 +371,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         DropdownButtonFormField<String>(
                           value: _currency,
                           items: ["INR", "USD", "GBP", "Other"]
-                              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                              .map((e) =>
+                                  DropdownMenuItem(value: e, child: Text(e)))
                               .toList(),
                           onChanged: (v) => setState(() => _currency = v),
                           decoration: _glassFieldDecoration(
@@ -362,7 +386,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         DropdownButtonFormField<String>(
                           value: _language,
                           items: const [
-                            DropdownMenuItem(value: "en", child: Text("English")),
+                            DropdownMenuItem(
+                                value: "en", child: Text("English")),
                             DropdownMenuItem(value: "hi", child: Text("Hindi")),
                           ],
                           onChanged: (v) => setState(() => _language = v),
@@ -376,7 +401,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
                         const Align(
                           alignment: Alignment.centerLeft,
-                          child: Text("Or pick an avatar", style: TextStyle(fontWeight: FontWeight.w700)),
+                          child: Text("Or pick an avatar",
+                              style: TextStyle(fontWeight: FontWeight.w700)),
                         ),
                         const SizedBox(height: 10),
 
@@ -390,6 +416,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                               onTap: () => setState(() {
                                 _avatarAsset = asset;
                                 _picked = null;
+                                _pickedBytes = null;
                                 _photoUrl = null;
                               }),
                               child: AnimatedContainer(
@@ -398,11 +425,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(16),
                                   border: Border.all(
-                                    color: sel ? kPrimaryGreen : const Color(0xFFE5E7EB),
+                                    color: sel
+                                        ? kPrimaryGreen
+                                        : const Color(0xFFE5E7EB),
                                     width: sel ? 2 : 1,
                                   ),
                                   boxShadow: sel
-                                      ? const [BoxShadow(color: Color(0x2210B981), blurRadius: 14, offset: Offset(0, 6))]
+                                      ? const [
+                                          BoxShadow(
+                                              color: Color(0x2210B981),
+                                              blurRadius: 14,
+                                              offset: Offset(0, 6))
+                                        ]
                                       : const [],
                                 ),
                                 child: CircleAvatar(
@@ -414,7 +448,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                                       width: 48,
                                       height: 48,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Icon(Icons.person, size: 24, color: Colors.grey),
+                                      errorBuilder: (_, __, ___) => const Icon(
+                                          Icons.person,
+                                          size: 24,
+                                          color: Colors.grey),
                                     ),
                                   ),
                                 ),
@@ -432,25 +469,32 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             onPressed: _loading
                                 ? null
                                 : () async {
-                              final isValid = _formKey.currentState?.validate() ?? false;
-                              if (isValid) {
-                                await _save();
-                              }
-                            },
+                                    final isValid =
+                                        _formKey.currentState?.validate() ??
+                                            false;
+                                    if (isValid) {
+                                      await _save();
+                                    }
+                                  },
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               backgroundColor: kPrimaryGreen,
                               elevation: 6,
                               shadowColor: const Color(0x4410B981),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
                             ),
                             child: _loading
                                 ? const SizedBox(
-                              height: 22,
-                              width: 22,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
-                            )
-                                : const Text("Save & Continue", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                                    height: 22,
+                                    width: 22,
+                                    child: CircularProgressIndicator(
+                                        color: Colors.white, strokeWidth: 3),
+                                  )
+                                : const Text("Save & Continue",
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700)),
                           ),
                         ),
 
@@ -458,20 +502,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           onPressed: _loading
                               ? null
                               : () async {
-                            final u = FirebaseAuth.instance.currentUser;
-                            if (u == null) return;
-                            late final String docId;
-                            try {
-                              docId = _resolveDocIdOrError(u);
-                            } catch (_) {
-                              return;
-                            }
-                            if (!mounted) return;
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(builder: (_) => MainNavScreen(userPhone: docId)),
-                            );
-                          },
+                                  final u = FirebaseAuth.instance.currentUser;
+                                  if (u == null) return;
+                                  late final String docId;
+                                  try {
+                                    docId = _resolveDocIdOrError(u);
+                                  } catch (_) {
+                                    return;
+                                  }
+                                  if (!mounted) return;
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            MainNavScreen(userPhone: docId)),
+                                  );
+                                },
                           child: const Text("Skip for now"),
                         ),
                       ],
@@ -488,10 +534,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   // Build the big avatar content with safe fallbacks
   Widget _buildAvatarContent() {
-    if (_picked != null) {
+    if (_pickedBytes != null) {
       return ClipOval(
-        child: Image.file(
-          _picked!,
+        child: Image.memory(
+          _pickedBytes!,
           width: 120,
           height: 120,
           fit: BoxFit.cover,
@@ -505,7 +551,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           width: 120,
           height: 120,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => const Icon(Icons.person, size: 60, color: Colors.grey),
+          errorBuilder: (_, __, ___) =>
+              const Icon(Icons.person, size: 60, color: Colors.grey),
         ),
       );
     }
@@ -516,7 +563,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           width: 120,
           height: 120,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => const Icon(Icons.person, size: 60, color: Colors.grey),
+          errorBuilder: (_, __, ___) =>
+              const Icon(Icons.person, size: 60, color: Colors.grey),
         ),
       );
     }
@@ -536,7 +584,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  static Widget _glassIconButton({required IconData icon, required VoidCallback onTap}) {
+  static Widget _glassIconButton(
+      {required IconData icon, required VoidCallback onTap}) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: BackdropFilter(
@@ -545,7 +594,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           color: Colors.white.withOpacity(0.6),
           child: InkWell(
             onTap: onTap,
-            child: Padding( // keep non-const (icon is variable)
+            child: Padding(
+              // keep non-const (icon is variable)
               padding: const EdgeInsets.all(8.0),
               child: Icon(icon, size: 20),
             ),
@@ -600,7 +650,10 @@ class _Glass extends StatelessWidget {
             borderRadius: BorderRadius.circular(radius),
             border: Border.all(color: const Color(0xFFE7F6EF)),
             boxShadow: const [
-              BoxShadow(color: Color(0x14000000), blurRadius: 18, offset: Offset(0, 10)),
+              BoxShadow(
+                  color: Color(0x14000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 10)),
             ],
           ),
           child: child,

@@ -51,8 +51,8 @@ if (keystorePropertiesFile != null) {
 
 android {
     namespace = "com.KaranArjunTechnologies.lifemap"
-    compileSdk = 35
-    ndkVersion = "28.0.12433566"
+    compileSdk = 36
+    ndkVersion = "28.2.13676358"
 
     /* ✅ Use Java 17 to satisfy modern toolchains */
     compileOptions {
@@ -64,7 +64,7 @@ android {
 
     defaultConfig {
         applicationId = "com.KaranArjunTechnologies.lifemap"
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -109,7 +109,7 @@ android {
             isShrinkResources = false
         }
         getByName("debug") {
-            releaseSigning?.let { signingConfig = it }
+            // releaseSigning?.let { signingConfig = it }
         }
     }
 }
