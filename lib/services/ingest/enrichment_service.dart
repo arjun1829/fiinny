@@ -3,6 +3,8 @@ import '../ai/tx_extractor.dart';
 import '../categorization/category_rules.dart';
 import '../user_overrides.dart';
 import '../../config/app_config.dart';
+import '../merchants/merchant_alias_service.dart';
+import '../merchants/brand_service.dart';
 
 /// Result object for enriched transaction data
 class EnrichedTxn {
@@ -132,24 +134,58 @@ class EnrichmentService {
     }
 
     // 3. Rules Fallback (Secondary)
-    // If LLM is off or failed, we use the deterministic rules.
-    // We need a "merchantKey" for the rules. We'll try to guess one from the text.
-    // This is a bit circular because the rules *help* find the category.
-    // We'll pass the raw text as the key if we have nothing else.
-    // We pass the merchantRegex if we have it, to help the rules
+    // Use the robust MerchantAlias + BrandService first
+    String cleanMerchant = 'Unknown';
+    if (merchantRegex != null && merchantRegex.trim().isNotEmpty) {
+      // Normalize the regex-extracted name (e.g. "ZOMATO LIMITED" -> "ZOMATO")
+      cleanMerchant = MerchantAlias.normalize(merchantRegex);
+    }
+
+    // ... (inside enrichTransaction)
+
+    // Try to find a curated brand profile
+    final brand = BrandService.instance.getProfile(cleanMerchant);
+    if (brand != null) {
+      // High confidence brand match
+      return EnrichedTxn(
+        category: brand.defaultCategory ?? 'Others',
+        subcategory: brand.defaultSubcategory ?? 'others',
+        merchantName: brand.displayName,
+        confidence: 0.95,
+        source: 'brand_registry',
+        tags: const [], 
+      );
+    }
+
+    // [NEW] Check Crowd-Sourced Dictionary (The "Hive Mind")
+    // Ensure it's initialized (noop if already loaded)
+    await CrowdSourcingService.instance.init(); 
+    final crowdMatch = CrowdSourcingService.instance.lookup(cleanMerchant != 'Unknown' ? cleanMerchant : (merchantRegex ?? ''));
+    if (crowdMatch != null) {
+      return EnrichedTxn(
+        category: crowdMatch['nav'] ?? 'Others',
+        subcategory: crowdMatch['sub'] ?? 'others',
+        merchantName: cleanMerchant != 'Unknown' ? cleanMerchant : (merchantRegex ?? 'Unknown'),
+        confidence: (crowdMatch['c'] as num?)?.toDouble() ?? 0.85,
+        source: 'crowd_hive',
+        tags: const [],
+      );
+    }
+
+    // If no brand profile or crowd match, fall back to heuristic rules
     final ruleResult = CategoryRules.categorizeMerchant(rawText, merchantRegex);
     
-    // Use the regex extracted name if available, otherwise "Unknown"
-    String fallbackMerchant = (merchantRegex != null && merchantRegex.trim().isNotEmpty) 
-        ? merchantRegex.trim() 
-        : 'Unknown'; 
-    // (Simple regex extraction could go here, but we removed it from the other files. 
-    //  We might need to bring back a *simple* version here or just accept "Unknown" for offline mode).
+    // If rules gave a decent name, use it, otherwise use our normalized one
+    // Actually CategoryRules doesn't return a name, it returns a category. 
+    // We use 'cleanMerchant' as the name if it's not 'Unknown', else 'Unknown'.
+    final finalName = (cleanMerchant != 'Unknown' && cleanMerchant.isNotEmpty) 
+        ? cleanMerchant 
+        : (merchantRegex ?? 'Unknown');
 
     return EnrichedTxn(
       category: ruleResult.category,
       subcategory: ruleResult.subcategory,
-      merchantName: fallbackMerchant,
+      merchantName: finalName, // Normalized name
       confidence: ruleResult.confidence,
       source: 'rules',
       tags: ruleResult.tags,
