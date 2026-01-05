@@ -1,5 +1,4 @@
 // lib/details/friend_detail_screen.dart
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -10,6 +9,7 @@ import 'package:firebase_storage/firebase_storage.dart' as fb_storage;
 import 'package:intl/intl.dart';
 import 'package:lifemap/ui/atoms/brand_avatar.dart';
 import 'package:lifemap/ui/tokens.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'recurring/friend_recurring_screen.dart';
 import 'recurring/add_choice_sheet.dart';
@@ -36,16 +36,12 @@ import '../services/push/push_service.dart';
 
 import '../widgets/add_friend_expense_dialog.dart';
 import '../widgets/settleup_dialog.dart';
-import '../widgets/expense_list_widget.dart';
 import '../settleup_v2/index.dart';
 import 'analytics/friend_analytics_tab.dart';
-import 'dart:math' as math;
 
 import '../widgets/ads/sleek_ad_card.dart';
 import '../ui/comp/glass_card.dart' as detail;
-import '../ui/comp/pill_chip.dart';
 import '../ui/fx/motion.dart';
-import '../ui/typography/amount_text.dart';
 import '../widgets/charts/category_legend_row.dart';
 import '../widgets/charts/pie_touch_chart.dart';
 import '../widgets/unified_transaction_list.dart';
@@ -94,12 +90,25 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
   String? _friendDisplayName;
 
   final RecurringService _recurringSvc = RecurringService();
-  final NumberFormat _compactInr =
-  NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+  final NumberFormat _compactInr = NumberFormat.compactCurrency(
+      locale: 'en_IN', symbol: '₹', decimalDigits: 0);
   final DateFormat _dueFormat = DateFormat('d MMM');
 
   String _fmtShort(DateTime dt) {
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
     return '${dt.day} ${months[dt.month - 1]}';
   }
 
@@ -147,8 +156,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     }
   }
 
-
-  String _nameFor(String phone) => phone == widget.userPhone ? 'You' : _displayName;
+  String _nameFor(String phone) =>
+      phone == widget.userPhone ? 'You' : _displayName;
 
   FriendModel get _selfFriendModel => FriendModel(
         phone: widget.userPhone,
@@ -181,7 +190,15 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
         out.add(v.trim());
       } else if (v is Map) {
         // common keys in map item
-        for (final k in ['url','downloadURL','downloadUrl','href','link','gsUrl','path']) {
+        for (final k in [
+          'url',
+          'downloadURL',
+          'downloadUrl',
+          'href',
+          'link',
+          'gsUrl',
+          'path'
+        ]) {
           final s = v[k];
           if (s is String && s.trim().isNotEmpty) out.add(s.trim());
         }
@@ -189,7 +206,15 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
         for (final v2 in v.values) {
           if (v2 is String && v2.trim().isNotEmpty) out.add(v2.trim());
           if (v2 is Map) {
-            for (final k in ['url','downloadURL','downloadUrl','href','link','gsUrl','path']) {
+            for (final k in [
+              'url',
+              'downloadURL',
+              'downloadUrl',
+              'href',
+              'link',
+              'gsUrl',
+              'path'
+            ]) {
               final s = v2[k];
               if (s is String && s.trim().isNotEmpty) out.add(s.trim());
             }
@@ -210,33 +235,68 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     }
 
     // 1) Typical list fields
-    try { addList((e as dynamic).attachmentUrls); } catch (_) {}
-    try { addList((e as dynamic).receiptUrls); }   catch (_) {}
-    try { addList((e as dynamic).attachments); }   catch (_) {}
-    try { addList((e as dynamic).receipts); }      catch (_) {}
-    try { addList((e as dynamic).files); }         catch (_) {}
-    try { addList((e as dynamic).images); }        catch (_) {}
-    try { addList((e as dynamic).photos); }        catch (_) {}
+    try {
+      addList((e as dynamic).attachmentUrls);
+    } catch (_) {}
+    try {
+      addList((e as dynamic).receiptUrls);
+    } catch (_) {}
+    try {
+      addList((e as dynamic).attachments);
+    } catch (_) {}
+    try {
+      addList((e as dynamic).receipts);
+    } catch (_) {}
+    try {
+      addList((e as dynamic).files);
+    } catch (_) {}
+    try {
+      addList((e as dynamic).images);
+    } catch (_) {}
+    try {
+      addList((e as dynamic).photos);
+    } catch (_) {}
 
     // 2) Single string fields
-    try { addOne((e as dynamic).attachmentUrl); } catch (_) {}
-    try { addOne((e as dynamic).receiptUrl);    } catch (_) {}
-    try { addOne((e as dynamic).fileUrl);       } catch (_) {}
-    try { addOne((e as dynamic).imageUrl);      } catch (_) {}
-    try { addOne((e as dynamic).photoUrl);      } catch (_) {}
+    try {
+      addOne((e as dynamic).attachmentUrl);
+    } catch (_) {}
+    try {
+      addOne((e as dynamic).receiptUrl);
+    } catch (_) {}
+    try {
+      addOne((e as dynamic).fileUrl);
+    } catch (_) {}
+    try {
+      addOne((e as dynamic).imageUrl);
+    } catch (_) {}
+    try {
+      addOne((e as dynamic).photoUrl);
+    } catch (_) {}
 
     // 3) from toJson() map (Firestore snapshot → model me reh gaya ho)
     try {
       final m = (e as dynamic).toJson?.call();
       if (m is Map) {
         for (final k in [
-          'attachmentUrls','attachments','receiptUrls','receipts','files','images','photos',
-          'attachmentsMap','filesMap'
+          'attachmentUrls',
+          'attachments',
+          'receiptUrls',
+          'receipts',
+          'files',
+          'images',
+          'photos',
+          'attachmentsMap',
+          'filesMap'
         ]) {
           addList(m[k]);
         }
         for (final k in [
-          'attachmentUrl','receiptUrl','fileUrl','imageUrl','photoUrl'
+          'attachmentUrl',
+          'receiptUrl',
+          'fileUrl',
+          'imageUrl',
+          'photoUrl'
         ]) {
           addOne(m[k]);
         }
@@ -256,7 +316,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
 
     return out.where((u) => u.isNotEmpty).toList();
   }
-
 
   bool _isImageUrl(String u) {
     final s = u.toLowerCase();
@@ -278,7 +337,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     final title = (e.label?.isNotEmpty == true)
         ? e.label!
         : ((e.category?.isNotEmpty == true) ? e.category! : 'Expense');
-    final msg = "Discussing: $title • ₹${e.amount.toStringAsFixed(0)} • ${_fmtShort(e.date)}";
+    final msg =
+        "Discussing: $title • ₹${e.amount.toStringAsFixed(0)} • ${_fmtShort(e.date)}";
     _tabController.animateTo(_TAB_CHAT); // Chat tab
     Clipboard.setData(ClipboardData(text: msg));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -559,7 +619,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
               child: TextButton.icon(
                 onPressed: _openRecurringAddSheet,
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   foregroundColor: AppColors.mint,
@@ -582,9 +643,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
 
   Widget _recurringPeekRow(SharedItem item) {
     final title = item.safeTitle;
-    final brandKey = (item.provider?.isNotEmpty == true)
-        ? item.provider!
-        : title;
+    final brandKey =
+        (item.provider?.isNotEmpty == true) ? item.provider! : title;
     final share = item.amountShareForUser(widget.userPhone);
     final due = item.nextDueAt;
     final now = DateTime.now();
@@ -773,7 +833,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                       ),
                       _chip(
                         text:
-                        "${_fmtShort(e.date)} ${e.date.year} ${e.date.hour.toString().padLeft(2, '0')}:${e.date.minute.toString().padLeft(2, '0')}",
+                            "${_fmtShort(e.date)} ${e.date.year} ${e.date.hour.toString().padLeft(2, '0')}:${e.date.minute.toString().padLeft(2, '0')}",
                         fg: Colors.grey.shade900,
                         bg: Colors.grey.withOpacity(.12),
                         icon: Icons.calendar_month_rounded,
@@ -841,41 +901,46 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                   onTap: () => _openAttachment(url),
                                   child: isImg
                                       ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: SizedBox(
-                                      height: 88,
-                                      width: 88,
-                                      child: Image.network(url, fit: BoxFit.cover),
-                                    ),
-                                  )
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          child: SizedBox(
+                                            height: 88,
+                                            width: 88,
+                                            child: Image.network(url,
+                                                fit: BoxFit.cover),
+                                          ),
+                                        )
                                       : Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blueGrey.withOpacity(0.10),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: const [
-                                        Icon(Icons.attach_file, size: 14, color: Colors.blueGrey),
-                                        SizedBox(width: 4),
-                                        Text(
-                                          "File",
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.blueGrey,
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blueGrey
+                                                .withOpacity(0.10),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: const [
+                                              Icon(Icons.attach_file,
+                                                  size: 14,
+                                                  color: Colors.blueGrey),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                "File",
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.blueGrey,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                  ),
                                 );
-
                               }).toList(),
                             ),
                           ),
-
 
                         _section(
                           title: "Split",
@@ -883,21 +948,22 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                             children: [
                               ...splits.entries
                                   .where((s) =>
-                              s.key == widget.userPhone ||
-                                  s.key == widget.friend.phone)
+                                      s.key == widget.userPhone ||
+                                      s.key == widget.friend.phone)
                                   .map((s) {
                                 final isYou = s.key == widget.userPhone;
-                                final owes =
-                                    s.key != e.payerId; // payer "paid", others "owe"
+                                final owes = s.key !=
+                                    e.payerId; // payer "paid", others "owe"
                                 final who = isYou ? "You" : _displayName;
                                 final subtitle = owes
                                     ? (isYou ? "You owe" : "Owes")
                                     : (isYou ? "You paid" : "Paid");
                                 final amtColor =
-                                owes ? cs.error : Colors.green.shade700;
+                                    owes ? cs.error : Colors.green.shade700;
                                 final avatar = isYou
                                     ? widget.userAvatar
-                                    : (_friendAvatarUrl ?? widget.friend.avatar);
+                                    : (_friendAvatarUrl ??
+                                        widget.friend.avatar);
 
                                 return ListTile(
                                   dense: true,
@@ -905,12 +971,13 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                   leading: CircleAvatar(
                                     backgroundColor: Colors.grey.shade200,
                                     backgroundImage: (avatar != null &&
-                                        avatar.trim().startsWith('http'))
+                                            avatar.trim().startsWith('http'))
                                         ? NetworkImage(avatar.trim())
                                         : null,
                                     child: (avatar == null ||
-                                        !avatar.trim().startsWith('http'))
-                                        ? Text(who.characters.first.toUpperCase())
+                                            !avatar.trim().startsWith('http'))
+                                        ? Text(
+                                            who.characters.first.toUpperCase())
                                         : null,
                                   ),
                                   title: Text(who,
@@ -955,7 +1022,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                         Navigator.pop(context);
                         Future.delayed(
                           Duration.zero,
-                              () => _editEntry(e),
+                          () => _editEntry(e),
                         );
                       },
                     ),
@@ -979,6 +1046,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
       },
     );
   }
+
   Future<void> _openAttachment(String url) async {
     var u = url.trim();
 
@@ -992,7 +1060,9 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
 
     // B) Plain storage path (e.g. "receipts/uid/file.jpg")
     try {
-      if (!u.startsWith('http') && !u.startsWith('gs://') && !u.contains('://')) {
+      if (!u.startsWith('http') &&
+          !u.startsWith('gs://') &&
+          !u.contains('://')) {
         final ref = fb_storage.FirebaseStorage.instance.ref(u);
         u = await ref.getDownloadURL();
       }
@@ -1014,9 +1084,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
       );
     }
   }
-
-
-
 
   // ======================= PROFILE / REFRESH =======================
   Future<void> _loadFriendProfile() async {
@@ -1082,7 +1149,9 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
             title: const Text('Edit Name'),
             content: TextField(controller: controller, autofocus: true),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel')),
               ElevatedButton(
                 onPressed: () => Navigator.pop(ctx, controller.text.trim()),
                 child: const Text('Save'),
@@ -1095,8 +1164,11 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
         }
         break;
       case 'search':
-        final query = _displayName.trim().isNotEmpty ? _displayName.trim() : widget.friend.phone;
-        final searchUrl = Uri.parse('https://www.google.com/search?q=${Uri.encodeComponent(query)}');
+        final query = _displayName.trim().isNotEmpty
+            ? _displayName.trim()
+            : widget.friend.phone;
+        final searchUrl = Uri.parse(
+            'https://www.google.com/search?q=${Uri.encodeComponent(query)}');
         if (!await launchUrl(searchUrl, mode: LaunchMode.externalApplication)) {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1140,7 +1212,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
       {required Widget child, EdgeInsets? padding}) {
     return Container(
       decoration: _cardDeco(context),
-      child: Padding(padding: padding ?? const EdgeInsets.all(16), child: child),
+      child:
+          Padding(padding: padding ?? const EdgeInsets.all(16), child: child),
     );
   }
 
@@ -1153,151 +1226,203 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     final theme = Theme.of(context);
     final net = double.parse((owed - owe).toStringAsFixed(2));
     final settled = owe.abs() < 0.01 && owed.abs() < 0.01;
+
+    // Modern Fintech Colors
+    final posColor = const Color(0xFF00C853); // Vivid Green
+    final negColor = const Color(0xFFFF3D00); // Vivid Orange-Red
     final netColor = net > 0.01
-        ? Colors.teal.shade700
+        ? posColor
         : net < -0.01
-            ? Colors.redAccent
-            : theme.colorScheme.onSurface.withOpacity(.64);
-    final phone = widget.friend.phone;
-    final email = widget.friend.email;
-    final subtitleParts = <String>[];
-    if (phone.isNotEmpty) subtitleParts.add(phone);
-    if (email != null && email.isNotEmpty) subtitleParts.add(email);
+            ? negColor
+            : Colors.grey.shade600;
 
-    final oweLabel = owe <= 0.01
-        ? 'You owe ₹0.00'
-        : 'You owe ₹${owe.toStringAsFixed(2)}';
-    final owedLabel = owed <= 0.01
-        ? 'No dues for you'
-        : 'Owes you ₹${owed.toStringAsFixed(2)}';
-
-    final chipTextStyle = theme.textTheme.labelLarge?.copyWith(
-      fontFeatures: const [ui.FontFeature.tabularFigures()],
-    );
-
-    Widget amountChip(String label, double amount,
-        {Color? color, IconData? icon}) {
-      final chipColor = color ??
-          (amount >= 0 ? Colors.teal.shade700 : Colors.redAccent);
-      return PillChip(
-        label,
-        icon: icon,
-        fg: chipColor,
-        bg: chipColor.withOpacity(0.15),
-        textStyle: chipTextStyle,
-      );
-    }
-
-    final netLabel = net.abs() < 0.01
-        ? 'Settled'
-        : net > 0
-            ? '+ ₹${net.toStringAsFixed(2)}'
-            : '- ₹${(-net).toStringAsFixed(2)}';
-
-    return detail.GlassCard(
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Hero(
-                tag: 'friend:${widget.friend.phone}',
-                child: _buildAvatar(radius: 28),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (subtitleParts.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          subtitleParts.join(' • '),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.textTheme.bodySmall?.color
-                                ?.withOpacity(.74),
-                          ),
+          // 1. Profile Section
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Hero(
+                  tag: 'friend:${widget.friend.phone}',
+                  child: _buildAvatar(radius: 26),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black87,
+                          letterSpacing: -0.5,
                         ),
                       ),
-                  ],
-                ),
-              ),
-              AnimatedSwitcher(
-                duration: kMed,
-                switchInCurve: kEase,
-                switchOutCurve: kEase,
-                child: PillChip(
-                  netLabel,
-                  key: ValueKey(netLabel),
-                  fg: netColor,
-                  bg: netColor.withOpacity(0.18),
-                  textStyle: theme.textTheme.labelLarge?.copyWith(
-                    fontFeatures: const [ui.FontFeature.tabularFigures()],
-                    fontWeight: FontWeight.w800,
+                      if (widget.friend.phone.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            widget.friend.phone,
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              amountChip(
-                oweLabel,
-                -owe,
-                icon: Icons.call_made_rounded,
-                color: Colors.redAccent,
-              ),
-              amountChip(
-                owedLabel,
-                owed,
-                icon: Icons.call_received_rounded,
-                color: Colors.teal.shade700,
-              ),
-              if (settled)
-                PillChip(
-                  'All settled',
-                  icon: Icons.check_circle,
-                  fg: theme.colorScheme.onSurface.withOpacity(.72),
-                  bg: theme.colorScheme.onSurface.withOpacity(.08),
+
+          const Divider(
+              height: 1,
+              thickness: 1,
+              indent: 20,
+              endIndent: 20,
+              color: Color(0xFFF5F5F5)),
+
+          // 2. Big Net Balance
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+            child: Column(
+              children: [
+                Text(
+                  net.abs() < 0.01
+                      ? "NO OUTSTANDING BALANCE"
+                      : (net > 0 ? "YOU ARE OWED" : "YOU OWE"),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade400,
+                    letterSpacing: 1.2,
+                  ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              PillChip(
-                'Transactions: $txCount',
-                icon: Icons.receipt_long_rounded,
-                textStyle: theme.textTheme.labelLarge,
-              ),
-              if (bucketCount > 0)
-                PillChip(
-                  'Shared groups: $bucketCount',
-                  icon: Icons.layers_rounded,
-                  textStyle: theme.textTheme.labelLarge,
+                const SizedBox(height: 8),
+                Text(
+                  net.abs() < 0.01
+                      ? "All Settled"
+                      : "₹${net.abs().toStringAsFixed(2)}",
+                  style: TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.w900,
+                    color: netColor,
+                    letterSpacing: -1,
+                  ),
                 ),
-            ],
+              ],
+            ),
           ),
+
+          // 3. Mini Stats Row (Only if not settled)
+          if (!settled)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            const Color(0xFFFFF5F5),
+                            const Color(0xFFFFEBEE)
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.red.shade50, width: 1),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("YOU OWE",
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.red.shade300)),
+                          const SizedBox(height: 4),
+                          Text("₹${owe.toStringAsFixed(0)}",
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.red.shade700)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            const Color(0xFFE8F5E9),
+                            const Color(0xFFE0F2F1)
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        border:
+                            Border.all(color: Colors.green.shade50, width: 1),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("OWES YOU",
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.green.shade300)),
+                          const SizedBox(height: 4),
+                          Text("₹${owed.toStringAsFixed(0)}",
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.green.shade700)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
         ],
       ),
     );
   }
+
   Widget _buildAvatar({double radius = 36}) {
     final raw = (_friendAvatarUrl?.trim().isNotEmpty == true)
         ? _friendAvatarUrl!.trim()
@@ -1333,10 +1458,9 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     );
   }
 
-  String get _displayName =>
-      (_friendDisplayName?.isNotEmpty == true)
-          ? _friendDisplayName!
-          : widget.friend.name;
+  String get _displayName => (_friendDisplayName?.isNotEmpty == true)
+      ? _friendDisplayName!
+      : widget.friend.name;
 
   // ---------- Actions ----------
   void _openAddExpense() async {
@@ -1374,7 +1498,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
 
     try {
       final friendAvatar =
-      (_friendAvatarUrl?.isNotEmpty == true) ? _friendAvatarUrl : null;
+          (_friendAvatarUrl?.isNotEmpty == true) ? _friendAvatarUrl : null;
       final settled = await SettleUpFlowV2Launcher.openForFriend(
         context: context,
         currentUserPhone: widget.userPhone,
@@ -1450,8 +1574,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
       setState(() {});
     } catch (err) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete: $err')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to delete: $err')));
     }
   }
 
@@ -1462,796 +1586,230 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     final you = widget.userPhone;
     final primary = Colors.teal.shade800;
 
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFFF7FBFF), Color(0xFFEFF5FF)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+    // NEW: Clean Scaffold with Off-White Background
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA), // Modern Fintech Background
+      appBar: AppBar(
+        title: Text(
+          _displayName,
+          style: const TextStyle(
+              fontWeight: FontWeight.w800, color: Colors.black87),
         ),
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          title: Text(_displayName),
-          backgroundColor: Colors.white,
-          elevation: 2,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: _handleEditFriend,
-              tooltip: "Edit friend",
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        iconTheme: const IconThemeData(color: Colors.black87),
+        shape: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: _handleEditFriend,
+            tooltip: "Edit friend",
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(54),
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(16),
             ),
-          ],
-          bottom: TabBar(
-            controller: _tabController,
-            labelColor: Colors.teal.shade900,
-            unselectedLabelColor: Colors.teal.shade600,
-            labelStyle: const TextStyle(fontWeight: FontWeight.w800),
-            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
-            indicatorColor: Colors.teal.shade800,
-            indicatorWeight: 3,
-            tabs: const [
-              Tab(text: "History"),
-              Tab(text: "Chart"),
-              Tab(text: "Analytics"),
-              Tab(text: "Chat"),
-            ],
+            child: TabBar(
+              controller: _tabController,
+              labelColor: Colors.teal.shade800,
+              unselectedLabelColor: Colors.grey.shade600,
+              labelStyle:
+                  const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              unselectedLabelStyle:
+                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              indicator: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              tabs: const [
+                Tab(text: "History"),
+                Tab(text: "Chart"),
+                Tab(text: "Analytics"),
+                Tab(text: "Chat"),
+              ],
+            ),
           ),
         ),
-        body: StreamBuilder<List<ExpenseItem>>(
-          stream: ExpenseService().getExpensesStream(you),
-          builder: (context, snapshot) {
-            final all = snapshot.data ?? [];
-            final safeBottom = context.adsBottomPadding();
+      ),
+      // LOGIC STARTS HERE - UNTOUCHED
+      body: StreamBuilder<List<ExpenseItem>>(
+        stream: ExpenseService().getExpensesStream(you),
+        builder: (context, snapshot) {
+          final all = snapshot.data ?? [];
+          final safeBottom = context.adsBottomPadding();
 
-            // Pairwise-only list
-            final pairwise = pairwiseExpenses(you, friendPhone, all);
+          // Pairwise-only list
+          final pairwise = pairwiseExpenses(you, friendPhone, all);
+          // Totals + per-group breakdown (pairwise only)
+          final breakdown =
+              computePairwiseBreakdown(you, friendPhone, pairwise);
+          final buckets = breakdown.buckets;
+          final canonicalNet = ledger.netBetween(you, friendPhone, pairwise);
+          final headerTotals =
+              ledger.summarizeForHeader({friendPhone: canonicalNet});
+          final totalOwe = headerTotals.youOwe;
+          final totalOwed = headerTotals.owedToYou;
+          final double netHeader = headerTotals.net;
 
-            // Totals + per-group breakdown (pairwise only)
-            final breakdown =
-                computePairwiseBreakdown(you, friendPhone, pairwise);
-            final buckets = breakdown.buckets;
-            final canonicalNet =
-                ledger.netBetween(you, friendPhone, pairwise);
-            final headerTotals =
-                ledger.summarizeForHeader({friendPhone: canonicalNet});
-            final totalOwe = headerTotals.youOwe;
-            final totalOwed = headerTotals.owedToYou;
-            final double netHeader = headerTotals.net;
+          return TabBarView(
+            controller: _tabController,
+            children: [
+              // ------------------ 1) HISTORY ------------------
+              RefreshIndicator(
+                onRefresh: _refreshAll,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: Padding(
+                    // 16px sides avoids fractional leftover widths
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, safeBottom + 18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // UX: Premium friend summary card (UI-only)
+                        _friendSummaryCard(
+                          owe: totalOwe,
+                          owed: totalOwed,
+                          txCount: pairwise.length,
+                          bucketCount: buckets.length,
+                        ),
+                        const SizedBox(height: 12),
+                        const SleekAdCard(
+                          margin: EdgeInsets.symmetric(horizontal: 4),
+                          radius: 16,
+                        ),
+                        const SizedBox(height: 14),
+                        // Recurring overview -> full recurring screen
+                        _buildRecurringPeekCard(),
+                        const SizedBox(height: 14),
 
-            return TabBarView(
-              controller: _tabController,
-              children: [
-                // ------------------ 1) HISTORY ------------------
-                RefreshIndicator(
-                  onRefresh: _refreshAll,
-                  child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    child: Padding(
-                      // 16px sides avoids fractional leftover widths
-                      padding: EdgeInsets.fromLTRB(16, 16, 16, safeBottom + 18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // UX: Premium friend summary card (UI-only)
-                          _friendSummaryCard(
-                            owe: totalOwe,
-                            owed: totalOwed,
-                            txCount: pairwise.length,
-                            bucketCount: buckets.length,
-                          ),
-                          const SizedBox(height: 12),
-                          const SleekAdCard(
-                            margin: EdgeInsets.symmetric(horizontal: 4),
-                            radius: 16,
-                          ),
-                          const SizedBox(height: 14),
-                          // Recurring overview -> full recurring screen
-                          _buildRecurringPeekCard(),
-                          const SizedBox(height: 14),
-
-
-                          // Actions card
-                          _card(
-                            context,
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              // Row (with SizedBox gaps) is safer than Wrap in a horizontal scroller
-                              child: Row(
-                                children: [
-                                  ElevatedButton.icon(
-                                    icon: const Icon(Icons.add),
-                                    label: const Text("Add Expense"),
-                                    onPressed: _openAddExpense,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.redAccent,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets
-                                          .symmetric(
-                                          horizontal: 16, vertical: 12),
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                          BorderRadius.circular(12)),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  ElevatedButton.icon(
-                                    icon: const Icon(Icons.handshake),
-                                    label: const Text("Settle Up"),
-                                    onPressed: _openSettleUp,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: primary,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets
-                                          .symmetric(
-                                          horizontal: 16, vertical: 12),
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                          BorderRadius.circular(12)),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  ElevatedButton.icon(
-                                    icon: const Icon(
-                                        Icons.notifications_active_rounded),
-                                    label: const Text("Remind"),
-                                    onPressed: _remind,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.deepOrange,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets
-                                          .symmetric(
-                                          horizontal: 16, vertical: 12),
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                          BorderRadius.circular(12)),
-                                    ),
-                                  ),
-                                ],
+                        const SizedBox(height: 20),
+                        // NEW Modern Action Buttons
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.add_rounded),
+                                label: const Text("Add"),
+                                onPressed: _openAddExpense,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.teal.shade700,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  side: BorderSide(color: Colors.teal.shade100),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14)),
+                                  backgroundColor: Colors.white,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 16),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                icon: const Icon(Icons.handshake_rounded),
+                                label: const Text("Settle"),
+                                onPressed: _openSettleUp,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: primary,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14)),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(
+                                    Icons.notifications_none_rounded),
+                                label: const Text("Remind"),
+                                onPressed: _remind,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.deepOrange,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  side: BorderSide(
+                                      color: Colors.deepOrange.shade100),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14)),
+                                  backgroundColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
 
-                          // Per-group breakdown (pairwise only)
-                          StreamBuilder<List<GroupModel>>(
-                            stream:
-                            GroupService().streamGroups(widget.userPhone),
-                            builder: (context, groupSnap) {
-                              final groups = groupSnap.data ?? [];
-                              String nameFor(String bucketId) {
-                                if (bucketId == '__none__') {
-                                  return 'Outside groups';
-                                }
-                                final g = groups.firstWhere(
-                                      (x) => x.id == bucketId,
-                                  orElse: () => GroupModel(
-                                    id: bucketId,
-                                    name: 'Group',
-                                    memberPhones: const [],
-                                    createdBy: '',
-                                    createdAt: DateTime.now(),
-                                  ),
-                                );
-                                return g.name;
+                        // Per-group breakdown (pairwise only)
+                        StreamBuilder<List<GroupModel>>(
+                          stream: GroupService().streamGroups(widget.userPhone),
+                          builder: (context, groupSnap) {
+                            final groups = groupSnap.data ?? [];
+                            String nameFor(String bucketId) {
+                              if (bucketId == '__none__') {
+                                return 'Outside groups';
                               }
-
-                              final entries = buckets.entries
-                                  .where((e) =>
-                              e.value.owe > 0 || e.value.owed > 0)
-                                  .toList()
-                                ..sort((a, b) =>
-                                (b.value.net.compareTo(a.value.net)));
-
-                              if (entries.isEmpty) {
-                                return const SizedBox.shrink();
-                              }
-
-                              return _card(
-                                context,
-                                padding:
-                                const EdgeInsets.fromLTRB(16, 8, 16, 6),
-                                child: Theme(
-                                  data: Theme.of(context).copyWith(
-                                      dividerColor: Colors.transparent),
-                                  child: ExpansionTile(
-                                    tilePadding: EdgeInsets.zero,
-                                    childrenPadding: EdgeInsets.zero,
-                                    initiallyExpanded: _breakdownExpanded,
-                                    onExpansionChanged: (v) =>
-                                        setState(() =>
-                                        _breakdownExpanded = v),
-                                    title: Row(
-                                      children: [
-                                        const Icon(Icons.bar_chart_rounded,
-                                            color: Colors.teal),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          "Breakdown",
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 16,
-                                            color: Colors.teal.shade900,
-                                          ),
-                                        ),
-                                        const Spacer(),
-                                        Builder(builder: (_) {
-                                          final netColor = netHeader >= 0
-                                              ? Colors.green
-                                              : Colors.redAccent;
-                                          final netText =
-                                              "${netHeader >= 0 ? '+' : '-'} ₹${netHeader.abs().toStringAsFixed(2)}";
-                                          return Container(
-                                            padding: const EdgeInsets
-                                                .symmetric(
-                                                horizontal: 10,
-                                                vertical: 6),
-                                            decoration: BoxDecoration(
-                                              color: netColor
-                                                  .withOpacity(0.12),
-                                              borderRadius:
-                                              BorderRadius.circular(999),
-                                            ),
-                                            child: Text(
-                                              netText,
-                                              style: TextStyle(
-                                                  color: netColor,
-                                                  fontWeight:
-                                                  FontWeight.w800),
-                                            ),
-                                          );
-                                        }),
-                                        const SizedBox(width: 8),
-                                        AnimatedRotation(
-                                          turns: _breakdownExpanded
-                                              ? 0.5
-                                              : 0.0,
-                                          duration: const Duration(
-                                              milliseconds: 180),
-                                          child: const Icon(Icons
-                                              .keyboard_arrow_down_rounded),
-                                        ),
-                                      ],
-                                    ),
-                                    children: [
-                                      const SizedBox(height: 6),
-                                      ...entries.map((e) {
-                                        final b = e.value;
-                                        final title = nameFor(e.key);
-                                        final netColor = b.net >= 0
-                                            ? Colors.green
-                                            : Colors.redAccent;
-                                        final netText =
-                                            "${b.net >= 0 ? '+' : '-'} ₹${b.net.abs().toStringAsFixed(2)}";
-
-                                        return Padding(
-                                          padding: const EdgeInsets
-                                              .symmetric(vertical: 2),
-                                          child: Row(
-                                            children: [
-                                              CircleAvatar(
-                                                radius: 14,
-                                                backgroundColor: Colors.teal
-                                                    .withOpacity(.10),
-                                                child: const Icon(
-                                                    Icons
-                                                        .folder_copy_rounded,
-                                                    size: 16,
-                                                    color: Colors.teal),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                  CrossAxisAlignment
-                                                      .start,
-                                                  children: [
-                                                    Text(title,
-                                                        style: const TextStyle(
-                                                            fontWeight:
-                                                            FontWeight
-                                                                .w600),
-                                                        overflow: TextOverflow
-                                                            .ellipsis),
-                                                    Text(
-                                                      "You owe: ₹${b.owe.toStringAsFixed(2)}   •   Owes you: ₹${b.owed.toStringAsFixed(2)}",
-                                                      style: TextStyle(
-                                                          color: Colors
-                                                              .grey[800]),
-                                                      overflow: TextOverflow
-                                                          .ellipsis,
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              FittedBox(
-                                                fit: BoxFit.scaleDown,
-                                                child: Container(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 6),
-                                                  decoration: BoxDecoration(
-                                                    color: netColor
-                                                        .withOpacity(0.12),
-                                                    borderRadius:
-                                                    BorderRadius
-                                                        .circular(999),
-                                                  ),
-                                                  child: Text(
-                                                    netText,
-                                                    style: TextStyle(
-                                                        color: netColor,
-                                                        fontWeight:
-                                                        FontWeight.w800),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      }),
-                                      const SizedBox(height: 6),
-                                    ],
-                                  ),
+                              final g = groups.firstWhere(
+                                (x) => x.id == bucketId,
+                                orElse: () => GroupModel(
+                                  id: bucketId,
+                                  name: 'Group',
+                                  memberPhones: const [],
+                                  createdBy: '',
+                                  createdAt: DateTime.now(),
                                 ),
                               );
-                            },
-                          ),
-                          const SizedBox(height: 16),
+                              return g.name;
+                            }
 
-                          // Pairwise history list with group names
-                          _card(
-                            context,
-                            padding:
-                            const EdgeInsets.fromLTRB(16, 14, 16, 6),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "Shared History",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 16,
-                                    color: Colors.teal.shade900,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                // (NEW) settlement-safe Shared History (prevents pixel overflow)
-                                StreamBuilder<List<GroupModel>>(
-                                  stream: GroupService()
-                                      .streamGroups(widget.userPhone),
-                                  builder: (context, gSnap) {
-                                    final groups = gSnap.data ?? [];
-                                    final groupNames = <String, String>{
-                                      for (final g in groups) g.id: g.name
-                                    };
+                            final entries = buckets.entries
+                                .where(
+                                    (e) => e.value.owe > 0 || e.value.owed > 0)
+                                .toList()
+                              ..sort((a, b) =>
+                                  (b.value.net.compareTo(a.value.net)));
 
-                                    const int historyAdEvery = 0;
-                                    final int blockSize = historyAdEvery + 1;
-                                    final int adCount = historyAdEvery > 0
-                                        ? pairwise.length ~/ historyAdEvery
-                                        : 0;
-                                    final int totalItems = pairwise.length + adCount;
+                            if (entries.isEmpty) {
+                              return const SizedBox.shrink();
+                            }
 
-                                    return ListView.builder(
-                                      itemCount: totalItems,
-                                      shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
-                                      itemBuilder: (_, idx) {
-                                        final bool isAdSlot = historyAdEvery > 0 && blockSize > 0 &&
-                                            (idx + 1) % blockSize == 0;
-                                        if (isAdSlot) {
-                                          return const SizedBox.shrink();
-                                        }
-
-                                        final adsBefore = historyAdEvery > 0 ? (idx + 1) ~/ blockSize : 0;
-                                        final dataIndex = idx - adsBefore;
-                                        final ex = pairwise[dataIndex];
-                                        final isSettlement =
-                                        isSettlementLike(ex);
-                                        final title = isSettlement
-                                            ? "Settlement"
-                                            : (ex.label?.isNotEmpty == true
-                                            ? ex.label!
-                                            : (ex.category?.isNotEmpty ==
-                                            true
-                                            ? ex.category!
-                                            : "Expense"));
-
-                                        final groupName = (ex.groupId != null &&
-                                            ex.groupId!.isNotEmpty)
-                                            ? (groupNames[ex.groupId] ??
-                                            "Group")
-                                            : null;
-
-                                        // From *your* perspective: + means owed to you, - means you owe
-                                        final impact = _yourImpact(ex);
-                                        final amountColor = impact >= 0
-                                            ? Colors.green.shade700
-                                            : Colors.redAccent;
-                                        final amountText =
-                                            "₹${ex.amount.toStringAsFixed(2)}";
-
-                                        // files for this row
-                                        final files =
-                                        _attachmentsOf(ex);
-
-                                        // trailing pill (compact)
-                                        Widget trailingPill(String t) =>
-                                            FittedBox(
-                                              fit: BoxFit.scaleDown,
-                                              child: Container(
-                                                padding: const EdgeInsets
-                                                    .symmetric(
-                                                    horizontal: 10,
-                                                    vertical: 6),
-                                                decoration: BoxDecoration(
-                                                  color: amountColor
-                                                      .withOpacity(0.12),
-                                                  borderRadius:
-                                                  BorderRadius.circular(
-                                                      999),
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize:
-                                                  MainAxisSize.min,
-                                                  children: [
-                                                    Icon(
-                                                        impact >= 0
-                                                            ? Icons
-                                                            .trending_up_rounded
-                                                            : Icons
-                                                            .trending_down_rounded,
-                                                        size: 14,
-                                                        color:
-                                                        amountColor),
-                                                    const SizedBox(width: 6),
-                                                    Text(t,
-                                                        style: TextStyle(
-                                                            fontWeight:
-                                                            FontWeight
-                                                                .w800,
-                                                            color:
-                                                            amountColor)),
-                                                  ],
-                                                ),
-                                              ),
-                                            );
-
-                                        final payer =
-                                        _nameFor(ex.payerId);
-                                        final recip = ex.friendIds.isNotEmpty
-                                            ? _nameFor(ex.friendIds.first)
-                                            : (widget.friend.phone ==
-                                            ex.payerId
-                                            ? "You"
-                                            : _displayName);
-
-                                        final maxInfoWidth =
-                                            MediaQuery.of(context)
-                                                .size
-                                                .width *
-                                                0.55;
-
-                                        return Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 12, vertical: 8),
-                                          child: InkWell(
-                                            onTap: () =>
-                                                _showExpenseDetailsFriend(
-                                                    context, ex),
-                                            onLongPress: () =>
-                                                _deleteEntry(ex),
-                                            child: Row(
-                                              crossAxisAlignment:
-                                              CrossAxisAlignment.center,
-                                              children: [
-                                                // leading
-                                                Container(
-                                                  height: 40,
-                                                  width: 40,
-                                                  decoration: BoxDecoration(
-                                                    color: (isSettlement
-                                                        ? Colors.teal
-                                                        : Colors.indigo)
-                                                        .withOpacity(0.10),
-                                                    borderRadius:
-                                                    BorderRadius.circular(
-                                                        10),
-                                                  ),
-                                                  child: Icon(
-                                                      isSettlement
-                                                          ? Icons.handshake
-                                                          : Icons
-                                                          .receipt_long_rounded,
-                                                      color: isSettlement
-                                                          ? Colors.teal
-                                                          : Colors.indigo),
-                                                ),
-                                                const SizedBox(width: 12),
-
-                                                // main text column (takes remaining width)
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                    CrossAxisAlignment
-                                                        .start,
-                                                    children: [
-                                                      // title
-                                                      Text(
-                                                        title,
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: const TextStyle(
-                                                            fontWeight:
-                                                            FontWeight
-                                                                .w700,
-                                                            fontSize: 15),
-                                                      ),
-                                                      const SizedBox(height: 2),
-                                                      Wrap(
-                                                        spacing: 8,
-                                                        runSpacing: 4,
-                                                        crossAxisAlignment:
-                                                        WrapCrossAlignment
-                                                            .center,
-                                                        children: [
-                                                          // date
-                                                          Row(
-                                                            mainAxisSize:
-                                                            MainAxisSize
-                                                                .min,
-                                                            children: [
-                                                              const Icon(
-                                                                  Icons
-                                                                      .calendar_today_rounded,
-                                                                  size: 12,
-                                                                  color: Colors
-                                                                      .black54),
-                                                              const SizedBox(
-                                                                  width: 4),
-                                                              Text(
-                                                                "${_fmtShort(ex.date)} ${ex.date.year}",
-                                                                style: const TextStyle(
-                                                                    fontSize:
-                                                                    12,
-                                                                    color: Colors
-                                                                        .black87),
-                                                                overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                              ),
-                                                            ],
-                                                          ),
-                                                          // payer → recipient (compact and ellipsized)
-                                                          Row(
-                                                            mainAxisSize:
-                                                            MainAxisSize
-                                                                .min,
-                                                            children: [
-                                                              const Icon(
-                                                                  Icons
-                                                                      .swap_horiz,
-                                                                  size: 12,
-                                                                  color: Colors
-                                                                      .black54),
-                                                              const SizedBox(
-                                                                  width: 4),
-                                                              ConstrainedBox(
-                                                                constraints:
-                                                                BoxConstraints(
-                                                                    maxWidth:
-                                                                    maxInfoWidth),
-                                                                child: Text(
-                                                                  isSettlement
-                                                                      ? "$payer → $recip"
-                                                                      : "Paid by $payer",
-                                                                  style: const TextStyle(
-                                                                      fontSize:
-                                                                      12,
-                                                                      color: Colors
-                                                                          .black87),
-                                                                  maxLines: 1,
-                                                                  overflow:
-                                                                  TextOverflow
-                                                                      .ellipsis,
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                          // group badge (wraps if narrow)
-                                                          if (groupName !=
-                                                              null)
-                                                            Container(
-                                                              padding:
-                                                              const EdgeInsets
-                                                                  .symmetric(
-                                                                  horizontal:
-                                                                  8,
-                                                                  vertical:
-                                                                  3),
-                                                              decoration:
-                                                              BoxDecoration(
-                                                                color: Colors
-                                                                    .blueGrey
-                                                                    .withOpacity(
-                                                                    0.10),
-                                                                borderRadius:
-                                                                BorderRadius
-                                                                    .circular(
-                                                                    999),
-                                                              ),
-                                                              child: Text(
-                                                                groupName,
-                                                                style: const TextStyle(
-                                                                    fontSize:
-                                                                    11,
-                                                                    fontWeight:
-                                                                    FontWeight
-                                                                        .w600),
-                                                                overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                              ),
-                                                            ),
-                                                        ],
-                                                      ),
-
-                                                      // ===== Attachments row (thumbnails / chips) =====
-                                                      if (files.isNotEmpty)
-                                                        Padding(
-                                                          padding:
-                                                          const EdgeInsets
-                                                              .only(
-                                                              top: 6),
-                                                          child: SizedBox(
-                                                            height: 56,
-                                                            child: ListView
-                                                                .separated(
-                                                                scrollDirection:
-                                                                Axis
-                                                                    .horizontal,
-                                                                itemCount: math.min(
-                                                                    files.length,
-                                                                    10),
-                                                                separatorBuilder:
-                                                                    (_, __) =>
-                                                                const SizedBox(
-                                                                    width:
-                                                                    6),
-                                                                itemBuilder: (_, idx) {
-                                                                  final url = files[idx];
-
-                                                                  final thumb = _isImageUrl(url)
-                                                                      ? ClipRRect(
-                                                                    borderRadius: BorderRadius.circular(8),
-                                                                    child: AspectRatio(
-                                                                      aspectRatio: 1,
-                                                                      child: Image.network(url, fit: BoxFit.cover),
-                                                                    ),
-                                                                  )
-                                                                      : Container(
-                                                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-                                                                    decoration: BoxDecoration(
-                                                                      color: Colors.blueGrey.withOpacity(0.10),
-                                                                      borderRadius: BorderRadius.circular(8),
-                                                                    ),
-                                                                    child: Row(
-                                                                      mainAxisSize: MainAxisSize.min,
-                                                                      children: [
-                                                                        const Icon(Icons.attach_file, size: 14, color: Colors.blueGrey),
-                                                                        const SizedBox(width: 4),
-                                                                        Text(
-                                                                          "File",
-                                                                          style: TextStyle(
-                                                                            fontSize: 12,
-                                                                            color: Colors.blueGrey.shade800,
-                                                                            fontWeight: FontWeight.w600,
-                                                                          ),
-                                                                        ),
-                                                                      ],
-                                                                    ),
-                                                                  );
-
-                                                                  // 🔒 parent row ke InkWell se conflict na ho, isliye GestureDetector + opaque
-                                                                  return GestureDetector(
-                                                                    behavior: HitTestBehavior.opaque,
-                                                                    onTap: () => _openAttachment(url),
-                                                                    child: thumb,
-                                                                  );
-                                                                }
-
-
-                                                            ),
-                                                          ),
-                                                        ),
-                                                    ],
-                                                  ),
-                                                ),
-
-                                                const SizedBox(width: 8),
-
-                                                // trailing amount (scale down to avoid overflow)
-                                                trailingPill(amountText),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                // ------------------ 2) CHART ------------------
-                Builder(builder: (context) {
-                  final categoryTotals = <String, double>{};
-                  for (final expense in pairwise) {
-                    final cat = _categoryLabelForExpense(expense);
-                    categoryTotals.update(cat, (value) => value + expense.amount.abs(),
-                        ifAbsent: () => expense.amount.abs());
-                  }
-                  final palette = [
-                    Colors.teal,
-                    Colors.indigo,
-                    Colors.deepPurple,
-                    Colors.orange,
-                    Colors.pink,
-                    Colors.blueGrey,
-                  ];
-                  var colorIndex = 0;
-                  final slices = categoryTotals.entries
-                      .map((entry) => PieSlice(
-                            key: entry.key,
-                            label: entry.key,
-                            value: entry.value,
-                            color: palette[colorIndex++ % palette.length],
-                          ))
-                      .toList()
-                    ..sort((a, b) => b.value.compareTo(a.value));
-                  final totalSpending =
-                      slices.fold<double>(0, (sum, slice) => sum + slice.value);
-                  final filteredExpenses = _selectedCategorySlice == null
-                      ? pairwise
-                      : pairwise
-                          .where((e) =>
-                              _categoryLabelForExpense(e) ==
-                              _selectedCategorySlice!.label)
-                          .toList();
-                  final friendsById = <String, FriendModel>{
-                    widget.friend.phone: widget.friend,
-                    widget.userPhone: _selfFriendModel,
-                  };
-
-                  return RefreshIndicator(
-                    onRefresh: _refreshAll,
-                    child: SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(16, 22, 16, safeBottom + 22),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            detail.GlassCard(
-                              padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
+                            return _card(
+                              context,
+                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+                              child: Theme(
+                                data: Theme.of(context)
+                                    .copyWith(dividerColor: Colors.transparent),
+                                child: ExpansionTile(
+                                  tilePadding: EdgeInsets.zero,
+                                  childrenPadding: EdgeInsets.zero,
+                                  initiallyExpanded: _breakdownExpanded,
+                                  onExpansionChanged: (v) =>
+                                      setState(() => _breakdownExpanded = v),
+                                  title: Row(
                                     children: [
+                                      const Icon(Icons.bar_chart_rounded,
+                                          color: Colors.teal),
+                                      const SizedBox(width: 8),
                                       Text(
-                                        'Spending by category',
+                                        "Breakdown",
                                         style: TextStyle(
                                           fontWeight: FontWeight.w800,
                                           fontSize: 16,
@@ -2259,105 +1817,661 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                         ),
                                       ),
                                       const Spacer(),
-                                      Icon(Icons.pie_chart_rounded,
-                                          color: Colors.teal.shade700, size: 18),
+                                      Builder(builder: (_) {
+                                        final netColor = netHeader >= 0
+                                            ? Colors.green
+                                            : Colors.redAccent;
+                                        final netText =
+                                            "${netHeader >= 0 ? '+' : '-'} ₹${netHeader.abs().toStringAsFixed(2)}";
+                                        return Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: netColor.withOpacity(0.12),
+                                            borderRadius:
+                                                BorderRadius.circular(999),
+                                          ),
+                                          child: Text(
+                                            netText,
+                                            style: TextStyle(
+                                                color: netColor,
+                                                fontWeight: FontWeight.w800),
+                                          ),
+                                        );
+                                      }),
+                                      const SizedBox(width: 8),
+                                      AnimatedRotation(
+                                        turns: _breakdownExpanded ? 0.5 : 0.0,
+                                        duration:
+                                            const Duration(milliseconds: 180),
+                                        child: const Icon(
+                                            Icons.keyboard_arrow_down_rounded),
+                                      ),
                                     ],
                                   ),
-                                  const SizedBox(height: 16),
-                                  Center(
-                                    child: SizedBox(
-                                      height: 220,
-                                      width: 220,
-                                      child: PieTouchChart(
-                                        slices: slices,
-                                        selected: _selectedCategorySlice,
-                                        onSelect: _onSliceSelected,
+                                  children: [
+                                    const SizedBox(height: 6),
+                                    ...entries.map((e) {
+                                      final b = e.value;
+                                      final title = nameFor(e.key);
+                                      final netColor = b.net >= 0
+                                          ? Colors.green
+                                          : Colors.redAccent;
+                                      final netText =
+                                          "${b.net >= 0 ? '+' : '-'} ₹${b.net.abs().toStringAsFixed(2)}";
+
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 2),
+                                        child: Row(
+                                          children: [
+                                            CircleAvatar(
+                                              radius: 14,
+                                              backgroundColor:
+                                                  Colors.teal.withOpacity(.10),
+                                              child: const Icon(
+                                                  Icons.folder_copy_rounded,
+                                                  size: 16,
+                                                  color: Colors.teal),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(title,
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600),
+                                                      overflow: TextOverflow
+                                                          .ellipsis),
+                                                  Text(
+                                                    "You owe: ₹${b.owe.toStringAsFixed(2)}   •   Owes you: ₹${b.owed.toStringAsFixed(2)}",
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 10,
+                                                        vertical: 6),
+                                                decoration: BoxDecoration(
+                                                  color: netColor
+                                                      .withOpacity(0.12),
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                          999),
+                                                ),
+                                                child: Text(
+                                                  netText,
+                                                  style: TextStyle(
+                                                      color: netColor,
+                                                      fontWeight:
+                                                          FontWeight.w800),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }),
+                                    const SizedBox(height: 6),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Pairwise history list with group names
+                        _card(
+                          context,
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Shared History",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                  color: Colors.teal.shade900,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              // (NEW) settlement-safe Shared History (prevents pixel overflow)
+                              StreamBuilder<List<GroupModel>>(
+                                stream: GroupService()
+                                    .streamGroups(widget.userPhone),
+                                builder: (context, gSnap) {
+                                  final groups = gSnap.data ?? [];
+                                  final groupNames = <String, String>{
+                                    for (final g in groups) g.id: g.name
+                                  };
+
+                                  const int historyAdEvery = 0;
+                                  final int blockSize = historyAdEvery + 1;
+                                  final int adCount = historyAdEvery > 0
+                                      ? pairwise.length ~/ historyAdEvery
+                                      : 0;
+                                  final int totalItems =
+                                      pairwise.length + adCount;
+
+                                  return ListView.builder(
+                                    itemCount: totalItems,
+                                    shrinkWrap: true,
+                                    physics:
+                                        const NeverScrollableScrollPhysics(),
+                                    itemBuilder: (_, idx) {
+                                      final bool isAdSlot =
+                                          historyAdEvery > 0 &&
+                                              blockSize > 0 &&
+                                              (idx + 1) % blockSize == 0;
+                                      if (isAdSlot) {
+                                        return const SizedBox.shrink();
+                                      }
+
+                                      final adsBefore = historyAdEvery > 0
+                                          ? (idx + 1) ~/ blockSize
+                                          : 0;
+                                      final dataIndex = idx - adsBefore;
+                                      final ex = pairwise[dataIndex];
+                                      final isSettlement = isSettlementLike(ex);
+                                      final title = isSettlement
+                                          ? "Settlement"
+                                          : (ex.label?.isNotEmpty == true
+                                              ? ex.label!
+                                              : (ex.category?.isNotEmpty == true
+                                                  ? ex.category!
+                                                  : "Expense"));
+
+                                      final groupName = (ex.groupId != null &&
+                                              ex.groupId!.isNotEmpty)
+                                          ? (groupNames[ex.groupId] ?? "Group")
+                                          : null;
+
+                                      // From *your* perspective: + means owed to you, - means you owe
+                                      final impact = _yourImpact(ex);
+                                      final amountColor = impact >= 0
+                                          ? Colors.green.shade700
+                                          : Colors.redAccent;
+                                      final amountText =
+                                          "₹${ex.amount.toStringAsFixed(2)}";
+
+                                      // files for this row
+                                      final files = _attachmentsOf(ex);
+
+                                      // trailing pill (compact)
+                                      Widget trailingPill(String t) =>
+                                          FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 6),
+                                              decoration: BoxDecoration(
+                                                color: amountColor
+                                                    .withOpacity(0.12),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                      impact >= 0
+                                                          ? Icons
+                                                              .trending_up_rounded
+                                                          : Icons
+                                                              .trending_down_rounded,
+                                                      size: 14,
+                                                      color: amountColor),
+                                                  const SizedBox(width: 6),
+                                                  Text(t,
+                                                      style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w800,
+                                                          color: amountColor)),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+
+                                      final payer = _nameFor(ex.payerId);
+                                      final recip = ex.friendIds.isNotEmpty
+                                          ? _nameFor(ex.friendIds.first)
+                                          : (widget.friend.phone == ex.payerId
+                                              ? "You"
+                                              : _displayName);
+
+                                      final maxInfoWidth =
+                                          MediaQuery.of(context).size.width *
+                                              0.55;
+
+                                      return Container(
+                                        margin:
+                                            const EdgeInsets.only(bottom: 12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius:
+                                              BorderRadius.circular(16),
+                                          border: Border.all(
+                                              color: Colors.grey.shade100),
+                                          boxShadow: [
+                                            BoxShadow(
+                                                color: Colors.black
+                                                    .withOpacity(0.02),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 2))
+                                          ],
+                                        ),
+                                        child: InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(16),
+                                          onTap: () =>
+                                              _showExpenseDetailsFriend(
+                                                  context, ex),
+                                          onLongPress: () => _deleteEntry(ex),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(16),
+                                            child: Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                // Date Box (Modern Calendar Look)
+                                                Container(
+                                                  width: 50,
+                                                  padding: const EdgeInsets
+                                                      .symmetric(vertical: 8),
+                                                  decoration: BoxDecoration(
+                                                    color:
+                                                        const Color(0xFFF5F7FA),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            12),
+                                                  ),
+                                                  child: Column(
+                                                    children: [
+                                                      Text(
+                                                        ex.date.day.toString(),
+                                                        style: const TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            fontSize: 18,
+                                                            height: 1,
+                                                            color:
+                                                                Colors.black87),
+                                                      ),
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        DateFormat('MMM')
+                                                            .format(ex.date)
+                                                            .toUpperCase(),
+                                                        style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                            fontSize: 10,
+                                                            color: Colors
+                                                                .grey[500]),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 16),
+
+                                                // Content
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        title,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: const TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                            fontSize: 16,
+                                                            color:
+                                                                Colors.black87),
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      Text(
+                                                        isSettlement
+                                                            ? "$payer paid $recip"
+                                                            : "$payer paid $amountText",
+                                                        style: TextStyle(
+                                                            fontSize: 13,
+                                                            color: Colors
+                                                                .grey[600],
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .w500),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                      if (files.isNotEmpty)
+                                                        Padding(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .only(top: 6),
+                                                          child: Icon(
+                                                              Icons
+                                                                  .attachment_rounded,
+                                                              size: 14,
+                                                              color: Colors
+                                                                  .grey[400]),
+                                                        ),
+                                                    ],
+                                                  ),
+                                                ),
+
+                                                // Amount
+                                                Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.end,
+                                                  children: [
+                                                    Text(
+                                                      impact == 0
+                                                          ? "SETTLED"
+                                                          : (impact > 0
+                                                              ? "YOU LENT"
+                                                              : "YOU BORROWED"),
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: impact == 0
+                                                            ? Colors.grey
+                                                            : (impact > 0
+                                                                ? amountColor
+                                                                : amountColor),
+                                                        letterSpacing: 0.5,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      impact == 0
+                                                          ? "-"
+                                                          : "₹${impact.abs().toStringAsFixed(2)}",
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                        color: impact == 0
+                                                            ? Colors.grey[400]
+                                                            : amountColor,
+                                                        fontSize: 16,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // ------------------ 2) CHART ------------------
+              _AnimatedTabWrapper(
+                  delay: const Duration(milliseconds: 100),
+                  child: Builder(builder: (context) {
+                    final categoryTotals = <String, double>{};
+                    for (final expense in pairwise) {
+                      final cat = _categoryLabelForExpense(expense);
+                      categoryTotals.update(
+                          cat, (value) => value + expense.amount.abs(),
+                          ifAbsent: () => expense.amount.abs());
+                    }
+                    final palette = [
+                      Colors.teal,
+                      Colors.indigo,
+                      Colors.deepPurple,
+                      Colors.orange,
+                      Colors.pink,
+                      Colors.blueGrey,
+                    ];
+                    var colorIndex = 0;
+                    final slices = categoryTotals.entries
+                        .map((entry) => PieSlice(
+                              key: entry.key,
+                              label: entry.key,
+                              value: entry.value,
+                              color: palette[colorIndex++ % palette.length],
+                            ))
+                        .toList()
+                      ..sort((a, b) => b.value.compareTo(a.value));
+                    final totalSpending = slices.fold<double>(
+                        0, (sum, slice) => sum + slice.value);
+                    final filteredExpenses = _selectedCategorySlice == null
+                        ? pairwise
+                        : pairwise
+                            .where((e) =>
+                                _categoryLabelForExpense(e) ==
+                                _selectedCategorySlice!.label)
+                            .toList();
+                    final friendsById = <String, FriendModel>{
+                      widget.friend.phone: widget.friend,
+                      widget.userPhone: _selfFriendModel,
+                    };
+
+                    return RefreshIndicator(
+                      onRefresh: _refreshAll,
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: Padding(
+                          padding:
+                              EdgeInsets.fromLTRB(16, 22, 16, safeBottom + 22),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              detail.GlassCard(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 16, 16, 18),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          'Spending by category',
+                                          style: GoogleFonts.inter(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 16,
+                                            color: Colors.teal.shade900,
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                        Icon(Icons.pie_chart_rounded,
+                                            color: Colors.teal.shade700,
+                                            size: 18),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Center(
+                                      child: SizedBox(
+                                        height: 220,
+                                        width: 220,
+                                        child: PieTouchChart(
+                                          slices: slices,
+                                          selected: _selectedCategorySlice,
+                                          onSelect: _onSliceSelected,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    CategoryLegendRow(
+                                      slices: slices,
+                                      total: totalSpending,
+                                      selected: _selectedCategorySlice,
+                                      onSelect: _onSliceSelected,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              const SleekAdCard(
+                                margin: EdgeInsets.symmetric(horizontal: 4),
+                                radius: 16,
+                              ),
+                              const SizedBox(height: 16),
+                              Container(
+                                key: _chartListAnchorKey,
+                                margin:
+                                    const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(24),
+                                  border:
+                                      Border.all(color: Colors.grey.shade100),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.04),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 8),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(24),
+                                  child: UnifiedTransactionList(
+                                    key: ValueKey(
+                                        'friend-chart-${_selectedCategorySlice?.key ?? 'all'}'),
+                                    expenses: filteredExpenses,
+                                    incomes: const [],
+                                    friendsById: friendsById,
+                                    userPhone: widget.userPhone,
+                                    onEdit: (tx) {
+                                      if (tx is ExpenseItem) {
+                                        _editEntry(tx);
+                                      }
+                                    },
+                                    onDelete: (tx) {
+                                      if (tx is ExpenseItem) {
+                                        _deleteEntry(tx);
+                                      }
+                                    },
+                                    showTopBannerAd: false,
+                                    showBottomBannerAd: true,
+                                    inlineAdAfterIndex: 2,
+                                    enableInlineAds: true,
+                                    emptyBuilder: (ctx) => Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 24),
+                                      child: Text(
+                                        _selectedCategorySlice == null
+                                            ? 'No shared expenses yet.'
+                                            : 'No expenses in ${_selectedCategorySlice!.label}.',
+                                        textAlign: TextAlign.center,
+                                        style: Theme.of(ctx)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.w600),
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 16),
-                                  CategoryLegendRow(
-                                    slices: slices,
-                                    total: totalSpending,
-                                    selected: _selectedCategorySlice,
-                                    onSelect: _onSliceSelected,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            const SleekAdCard(
-                              margin: EdgeInsets.symmetric(horizontal: 4),
-                              radius: 16,
-                            ),
-                            const SizedBox(height: 16),
-                            Container(
-                              key: _chartListAnchorKey,
-                              child: UnifiedTransactionList(
-                                key: ValueKey(
-                                    'friend-chart-${_selectedCategorySlice?.key ?? 'all'}'),
-                                expenses: filteredExpenses,
-                                incomes: const [],
-                                friendsById: friendsById,
-                                userPhone: widget.userPhone,
-                                onEdit: (tx) {
-                                  if (tx is ExpenseItem) {
-                                    _editEntry(tx);
-                                  }
-                                },
-                                onDelete: (tx) {
-                                  if (tx is ExpenseItem) {
-                                    _deleteEntry(tx);
-                                  }
-                                },
-                                showTopBannerAd: false,
-                                showBottomBannerAd: true,
-                                inlineAdAfterIndex: 2,
-                                enableInlineAds: true,
-                                emptyBuilder: (ctx) => Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 24),
-                                  child: Text(
-                                    _selectedCategorySlice == null
-                                        ? 'No shared expenses yet.'
-                                        : 'No expenses in ${_selectedCategorySlice!.label}.',
-                                    textAlign: TextAlign.center,
-                                    style: Theme.of(ctx)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(fontWeight: FontWeight.w600),
-                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  })),
+
+              // ------------------ 3) ANALYTICS ------------------
+              _AnimatedTabWrapper(
+                delay: const Duration(milliseconds: 200),
+                child: RefreshIndicator(
+                  onRefresh: _refreshAll,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 16,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: FriendAnalyticsTab(
+                          expenses: pairwise,
+                          currentUserPhone: widget.userPhone,
+                          friend: widget.friend,
                         ),
                       ),
                     ),
-                  );
-                }),
-
-                // ------------------ 3) ANALYTICS ------------------
-                RefreshIndicator(
-                  onRefresh: _refreshAll,
-                  child: FriendAnalyticsTab(
-                    expenses: pairwise,
-                    currentUserPhone: widget.userPhone,
-                    friend: widget.friend,
                   ),
                 ),
+              ),
 
-                // ------------------ 4) CHAT ------------------
-                SafeArea(
+              // ------------------ 4) CHAT ------------------
+              _AnimatedTabWrapper(
+                delay: const Duration(milliseconds: 300),
+                child: SafeArea(
                   top: false,
-                  child: PartnerChatTab(
-                    currentUserId: widget.userPhone,
-                    partnerUserId: widget.friend.phone,
+                  child: Container(
+                    margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(24)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 20,
+                          offset: const Offset(0, -6),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(24)),
+                      child: PartnerChatTab(
+                        currentUserId: widget.userPhone,
+                        partnerUserId: widget.friend.phone,
+                      ),
+                    ),
                   ),
                 ),
-              ],
-            );
-          },
-        ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -2427,7 +2541,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
           Row(children: [
             Text(title,
                 style:
-                const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                    const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
           ]),
           const SizedBox(height: 8),
           child,
@@ -2438,14 +2552,13 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
 
   Widget _chip(
       {required String text,
-        required Color fg,
-        required Color bg,
-        required IconData icon}) {
+      required Color fg,
+      required Color bg,
+      required IconData icon}) {
     return Container(
-      padding:
-      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration:
-      BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -2549,10 +2662,8 @@ class _SummaryStat extends StatelessWidget {
     final bg = theme.colorScheme.primary.withOpacity(
       theme.brightness == Brightness.dark ? 0.18 : 0.12,
     );
-    final textColor =
-        theme.textTheme.bodyMedium?.color ?? (theme.brightness == Brightness.dark
-            ? Colors.white
-            : Colors.black87);
+    final textColor = theme.textTheme.bodyMedium?.color ??
+        (theme.brightness == Brightness.dark ? Colors.white : Colors.black87);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -2572,9 +2683,9 @@ class _SummaryStat extends StatelessWidget {
               Text(
                 label,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: textColor.withOpacity(0.7),
-                  fontWeight: FontWeight.w600,
-                ) ??
+                      color: textColor.withOpacity(0.7),
+                      fontWeight: FontWeight.w600,
+                    ) ??
                     TextStyle(
                       fontSize: 12,
                       color: textColor.withOpacity(0.7),
@@ -2584,9 +2695,9 @@ class _SummaryStat extends StatelessWidget {
               Text(
                 value,
                 style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: textColor,
-                ) ??
+                      fontWeight: FontWeight.w800,
+                      color: textColor,
+                    ) ??
                     TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
@@ -2639,11 +2750,11 @@ class _Pill extends StatelessWidget {
   final EdgeInsetsGeometry padding;
 
   const _Pill(
-      this.text, {
-        this.base = AppColors.mint,
-        this.padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        super.key,
-      });
+    this.text, {
+    this.base = AppColors.mint,
+    this.padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2663,5 +2774,54 @@ class _Pill extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _AnimatedTabWrapper extends StatefulWidget {
+  final Widget child;
+  final Duration delay;
+
+  const _AnimatedTabWrapper({required this.child, this.delay = Duration.zero});
+
+  @override
+  State<_AnimatedTabWrapper> createState() => _AnimatedTabWrapperState();
+}
+
+class _AnimatedTabWrapperState extends State<_AnimatedTabWrapper>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _fade;
+  late Animation<Offset> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600));
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _slide = Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero)
+        .animate(
+            CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+
+    if (widget.delay == Duration.zero) {
+      _controller.forward();
+    } else {
+      Future.delayed(widget.delay, () {
+        if (mounted) _controller.forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+        opacity: _fade,
+        child: SlideTransition(position: _slide, child: widget.child));
   }
 }

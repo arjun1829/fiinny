@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
-import 'dart:io';
+import 'dart:io' if (dart.library.html) 'file_stub.dart';
 
 class CrowdSourcingService {
   CrowdSourcingService._();
@@ -15,29 +15,39 @@ class CrowdSourcingService {
   Future<void> init() async {
     if (_isLoaded) return;
     try {
-      // 1. Try to load from "cache" (Application Documents)
-      final cacheFile = await _getCacheFile();
-      if (await cacheFile.exists()) {
-        final content = await cacheFile.readAsString();
-        final json = jsonDecode(content);
-        if (json is Map && json.containsKey('mappings')) {
-          _dictionary = Map<String, dynamic>.from(json['mappings']);
-          _isLoaded = true;
-          debugPrint('[Crowd] Loaded from local cache (${_dictionary.length} entries)');
-          return;
+      if (!kIsWeb) {
+        // 1. Try to load from "cache" (Application Documents)
+        final cacheFile = await _getCacheFile();
+        if (cacheFile != null && await cacheFile.exists()) {
+          final content = await cacheFile.readAsString();
+          final json = jsonDecode(content);
+          if (json is Map && json.containsKey('mappings')) {
+            _dictionary = Map<String, dynamic>.from(json['mappings']);
+            _isLoaded = true;
+            debugPrint(
+                '[Crowd] Loaded from local cache (${_dictionary.length} entries)');
+            return;
+          }
         }
       }
 
       // 2. Fallback to bundled asset
-      final assetContent = await rootBundle.loadString('assets/enrich/merchants_crowd_v1.json');
+      final assetContent =
+          await rootBundle.loadString('assets/enrich/merchants_crowd_v1.json');
       final json = jsonDecode(assetContent);
       if (json is Map && json.containsKey('mappings')) {
         _dictionary = Map<String, dynamic>.from(json['mappings']);
         _isLoaded = true;
-        debugPrint('[Crowd] Loaded from bundled asset (${_dictionary.length} entries)');
-        
-        // Save to cache for next time (simulate "first download" behavior)
-        await cacheFile.writeAsString(assetContent);
+        debugPrint(
+            '[Crowd] Loaded from bundled asset (${_dictionary.length} entries)');
+
+        if (!kIsWeb) {
+          // Save to cache for next time (simulate "first download" behavior)
+          final cacheFile = await _getCacheFile();
+          if (cacheFile != null) {
+            await cacheFile.writeAsString(assetContent);
+          }
+        }
       }
     } catch (e) {
       debugPrint('[Crowd] Failed to init: $e');
@@ -60,9 +70,15 @@ class CrowdSourcingService {
     // In future: Push to Firestore "unverified_mappings" collection
     debugPrint('[Crowd] Vote recorded: $merchant -> $category');
   }
-  
-  Future<File> _getCacheFile() async {
-    final directory = await getApplicationDocumentsDirectory();
-    return File('${directory.path}/merchants_crowd_local.json');
+
+  Future<File?> _getCacheFile() async {
+    if (kIsWeb) return null;
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      return File('${directory.path}/merchants_crowd_local.json');
+    } catch (e) {
+      debugPrint('[Crowd] Failed to get cache directory: $e');
+      return null;
+    }
   }
 }

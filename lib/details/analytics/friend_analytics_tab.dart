@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/analytics/aggregators.dart';
 import '../../group/group_balance_math.dart' show computeSplits;
@@ -47,43 +48,54 @@ class _FriendAnalyticsTabState extends State<FriendAnalyticsTab> {
     );
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final option in _periodOptions)
-                ChoiceChip(
-                  label: Text(
-                    _labelFor(option),
-                    style: TextStyle(
-                      color: _period == option ? Colors.white : Colors.black87,
-                      fontWeight: _period == option ? FontWeight.w700 : FontWeight.w600,
-                      fontSize: 13,
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final option in _periodOptions)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(
+                        _labelFor(option),
+                        style: GoogleFonts.inter(
+                          color:
+                              _period == option ? Colors.white : Colors.black87,
+                          fontWeight: _period == option
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          fontSize: 13,
+                        ),
+                      ),
+                      selected: _period == option,
+                      onSelected: (_) => setState(() => _period = option),
+                      selectedColor: Colors.black,
+                      backgroundColor: Colors.white,
+                      showCheckmark: false,
+                      shape: StadiumBorder(
+                        side: BorderSide(
+                          color: _period == option
+                              ? Colors.transparent
+                              : Colors.grey.shade200,
+                        ),
+                      ),
+                      elevation: _period == option ? 4 : 0,
+                      shadowColor: Colors.black.withOpacity(0.2),
+                      pressElevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
                     ),
                   ),
-                  selected: _period == option,
-                  onSelected: (_) => setState(() => _period = option),
-                  selectedColor: Colors.black,
-                  backgroundColor: Colors.white,
-                  showCheckmark: false,
-                  shape: StadiumBorder(
-                    side: BorderSide(
-                      color: _period == option ? Colors.transparent : Colors.grey.shade300,
-                    ),
-                  ),
-                  elevation: _period == option ? 2 : 0,
-                  pressElevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           _summaryCard(stats),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           _categoryCard(stats),
         ],
       ),
@@ -119,54 +131,65 @@ class _FriendAnalyticsTabState extends State<FriendAnalyticsTab> {
       netColor = Colors.grey.shade700;
     }
 
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Summary',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Summary',
+            style: GoogleFonts.inter(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.black87,
             ),
-            const SizedBox(height: 12),
-            _metricRow('Total shared', stats.totalShared, highlight: true),
-            const SizedBox(height: 10),
-            _metricRow('You paid', stats.youPaid),
-            const SizedBox(height: 8),
-            _metricRow('${widget.friend.name} paid', stats.friendPaid),
-            const SizedBox(height: 8),
-            _metricRow('Your share', stats.yourShare),
-            const SizedBox(height: 8),
-            _metricRow('${widget.friend.name} share', stats.friendShare),
-            const SizedBox(height: 12),
-            Divider(color: Colors.grey.shade300),
-            const SizedBox(height: 12),
-            Text(netLabel, style: TextStyle(color: netColor, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            Text(
-              'Settlements · You paid ${_currency.format(stats.settlementPaidByYou)} · '
-              'You received ${_currency.format(stats.settlementPaidByFriend)}',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 20),
+          _metricRow('Total shared', stats.totalShared, highlight: true),
+          const SizedBox(height: 12),
+          _metricRow('You paid', stats.youPaid),
+          const SizedBox(height: 8),
+          _metricRow('${widget.friend.name} paid', stats.friendPaid),
+          const SizedBox(height: 8),
+          _metricRow('Your share', stats.yourShare),
+          const SizedBox(height: 8),
+          _metricRow('${widget.friend.name} share', stats.friendShare),
+          const SizedBox(height: 20),
+          Divider(color: Colors.grey.shade100, height: 1),
+          const SizedBox(height: 20),
+          Text(netLabel,
+              style: GoogleFonts.inter(
+                  color: netColor, fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 12),
+          Text(
+            'Settlements: You paid ${_currency.format(stats.settlementPaidByYou)} · '
+            'Received ${_currency.format(stats.settlementPaidByFriend)}',
+            style: GoogleFonts.inter(
+              color: Colors.grey.shade500,
+              fontSize: 12,
+              height: 1.5,
             ),
-            const SizedBox(height: 8),
-            Text(
-              '${stats.transactionCount} transactions in range',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${stats.transactionCount} transactions in range',
+            style: GoogleFonts.inter(
+              color: Colors.grey.shade400,
+              fontSize: 11,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -176,52 +199,102 @@ class _FriendAnalyticsTabState extends State<FriendAnalyticsTab> {
       ..sort((a, b) => b.value.compareTo(a.value));
     final total = stats.categoryTotals.values.fold<double>(0, (s, v) => s + v);
 
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Top categories',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Top Spend Categories',
+            style: GoogleFonts.inter(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.black87,
             ),
-            const SizedBox(height: 12),
-            if (entries.isEmpty)
-              Text(
-                'No spends recorded in this range.',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: Colors.grey.shade600),
-              )
-            else
-              ...entries.take(4).map((entry) {
-                final pct = total <= 0
-                    ? 0
-                    : ((entry.value / total) * 100).clamp(0, 100);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          entry.key,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      Text('${pct.toStringAsFixed(0)}% · ${_currency.format(entry.value)}'),
-                    ],
+          ),
+          const SizedBox(height: 20),
+          if (entries.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text(
+                  'No spends recorded in this range.',
+                  style: GoogleFonts.inter(
+                    color: Colors.grey.shade400,
+                    fontWeight: FontWeight.w500,
                   ),
-                );
-              }),
-          ],
-        ),
+                ),
+              ),
+            )
+          else
+            ...entries.take(4).map((entry) {
+              final pct =
+                  total <= 0 ? 0 : ((entry.value / total) * 100).clamp(0, 100);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            entry.key,
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade800,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          _currency.format(entry.value),
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: pct / 100,
+                              minHeight: 6,
+                              backgroundColor: Colors.grey.shade100,
+                              color: Colors.teal.shade400,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          '${pct.toStringAsFixed(0)}%',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: Colors.grey.shade500,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
       ),
     );
   }
@@ -232,17 +305,20 @@ class _FriendAnalyticsTabState extends State<FriendAnalyticsTab> {
         Expanded(
           child: Text(
             label,
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: Colors.grey.shade700),
+            style: GoogleFonts.inter(
+              color: Colors.grey.shade600,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
         Text(
           _currency.format(value),
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: highlight ? FontWeight.w700 : FontWeight.w600,
-              ),
+          style: GoogleFonts.inter(
+            fontSize: highlight ? 18 : 14,
+            fontWeight: highlight ? FontWeight.w700 : FontWeight.w600,
+            color: highlight ? Colors.black87 : Colors.grey.shade800,
+          ),
         ),
       ],
     );
