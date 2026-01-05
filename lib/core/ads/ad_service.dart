@@ -1,16 +1,21 @@
 // lib/core/ads/ad_service.dart
 import 'dart:async';
-import 'dart:io' show Platform;
+// import 'dart:io' show Platform; // Removed for web compatibility
 import 'package:flutter/foundation.dart'
-    show SynchronousFuture, debugPrint, kIsWeb, kReleaseMode;
+    show
+        SynchronousFuture,
+        debugPrint,
+        kIsWeb,
+        kReleaseMode,
+        defaultTargetPlatform,
+        TargetPlatform;
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../../services/ad_config.dart';
 import 'ad_ids.dart';
 
 /// Default to false. Enable special diagnostics explicitly with
 /// --dart-define=DIAG_BUILD=true (does not skip iOS init).
-const bool kDiagBuild =
-    bool.fromEnvironment('DIAG_BUILD', defaultValue: false);
+const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: false);
 
 String maskAdIdentifier(String value) {
   if (value.isEmpty) return value;
@@ -56,15 +61,21 @@ class AdService {
 
   static Future<void> initLater() async {
     try {
-      if (kIsWeb) { _ready = false; return; }
+      if (kIsWeb) {
+        _ready = false;
+        return;
+      }
 
       final bannerId = AdIds.banner;
       final appId = AdIds.appId;
       final missingIds = bannerId.isEmpty ||
           appId.isEmpty ||
-          bannerId.contains('xxxx') || appId.contains('xxxx') ||
-          bannerId.contains('zzzz') || appId.contains('zzzz') ||
-          bannerId.contains('fill') || appId.contains('fill');
+          bannerId.contains('xxxx') ||
+          appId.contains('xxxx') ||
+          bannerId.contains('zzzz') ||
+          appId.contains('zzzz') ||
+          bannerId.contains('fill') ||
+          appId.contains('fill');
 
       assert(() {
         debugPrint(
@@ -77,7 +88,9 @@ class AdService {
         return true;
       }());
 
-      if (!kIsWeb && Platform.isIOS && missingIds) {
+      if (!kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.iOS &&
+          missingIds) {
         debugPrint('[AdService] iOS AdMob IDs missing – skipping init.');
         _ready = false;
         return;
@@ -100,12 +113,10 @@ class AdService {
     try {
       final initStatus = await MobileAds.instance.initialize();
       assert(() {
-        final entries = initStatus.adapterStatuses.entries
-            .map((entry) {
+        final entries = initStatus.adapterStatuses.entries.map((entry) {
           final state = entry.value.state.toString().split('.').last;
           return '${entry.key}:$state(${entry.value.description})';
-        })
-            .join(', ');
+        }).join(', ');
         debugPrint('[AdService] MobileAds initialised (adapters: $entries)');
         return true;
       }());
@@ -124,13 +135,15 @@ class AdService {
       // Reverting to the original behavior for this catch block, as the `missingIds` check
       // is already handled in `initLater` before calling `_initializeInternal`.
       _ready = false;
-      debugPrint('[AdService] Google Mobile Ads init failed: $err\n$stackTrace');
+      debugPrint(
+          '[AdService] Google Mobile Ads init failed: $err\n$stackTrace');
     }
   }
 
   bool _shouldEnableAds() {
     if (kIsWeb) return false;
-    if (!(Platform.isAndroid || Platform.isIOS)) return false;
+    if (!(defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS)) return false;
 
     // FORCE ENABLE for "original ads" request
     return true;
@@ -146,10 +159,14 @@ class AdService {
         onAdLoaded: (ad) {
           ad.fullScreenContentCallback = FullScreenContentCallback(
             onAdDismissedFullScreenContent: (ad) {
-              ad.dispose(); _inter = null; preloadInterstitial();
+              ad.dispose();
+              _inter = null;
+              preloadInterstitial();
             },
             onAdFailedToShowFullScreenContent: (ad, err) {
-              ad.dispose(); _inter = null; preloadInterstitial();
+              ad.dispose();
+              _inter = null;
+              preloadInterstitial();
             },
           );
           _inter = ad;
@@ -168,10 +185,14 @@ class AdService {
         onAdLoaded: (ad) {
           ad.fullScreenContentCallback = FullScreenContentCallback(
             onAdDismissedFullScreenContent: (ad) {
-              ad.dispose(); _rewarded = null; preloadRewarded();
+              ad.dispose();
+              _rewarded = null;
+              preloadRewarded();
             },
             onAdFailedToShowFullScreenContent: (ad, err) {
-              ad.dispose(); _rewarded = null; preloadRewarded();
+              ad.dispose();
+              _rewarded = null;
+              preloadRewarded();
             },
           );
           _rewarded = ad;
@@ -213,9 +234,9 @@ class AdService {
       return false;
     }
     _inter = null;
-    // We wrap show in a completer or just await it. 
+    // We wrap show in a completer or just await it.
     // The Google Mobile Ads SDK `show()` returns Future<void>.
-    // It doesn't tell us when it's closed easily here without the full screen content callback logic, 
+    // It doesn't tell us when it's closed easily here without the full screen content callback logic,
     // BUT the callback handled in preloadInterstitial is what reloads the ad.
     // For blocking flow (await until closed), the SDK's show() DOES NOT wait for close. It just shows.
     // However, usually we want to wait for user to close it.
@@ -225,15 +246,19 @@ class AdService {
     // We will return true immediately and let the ad overlay.
     await ad.show();
     _lastInterShown = DateTime.now();
-    _actionsSinceInter = 0; 
+    _actionsSinceInter = 0;
     return true;
   }
 
   // ---------- Rewarded logic ----------
-  Future<bool> showRewarded({required void Function(int, String) onReward}) async {
+  Future<bool> showRewarded(
+      {required void Function(int, String) onReward}) async {
     if (!_adsEnabled) return false;
     final ad = _rewarded;
-    if (ad == null) { preloadRewarded(); return false; }
+    if (ad == null) {
+      preloadRewarded();
+      return false;
+    }
     _rewarded = null;
     bool granted = false;
     await ad.show(onUserEarnedReward: (ad, rewardItem) {

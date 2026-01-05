@@ -1,4 +1,5 @@
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite/sqflite.dart'
+    if (dart.library.html) '../stubs/sqflite_stub.dart';
 import 'package:path/path.dart';
 import '../models/transaction_item.dart';
 import '../models/goal_model.dart';
@@ -55,7 +56,7 @@ class SQLiteService {
   Future<List<TransactionItem>> getTransactions() async {
     final dbClient = await db;
     final List<Map<String, dynamic>> maps =
-    await dbClient.query('transactions', orderBy: 'date DESC');
+        await dbClient.query('transactions', orderBy: 'date DESC');
     return maps.map((e) => TransactionItem.fromMap(e)).toList();
   }
 
@@ -73,6 +74,4 @@ class SQLiteService {
     );
     return maps.isNotEmpty;
   }
-
-
 }
