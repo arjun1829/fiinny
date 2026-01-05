@@ -16,11 +16,13 @@ class MerchantAlias {
     RegExp(r'CCA?VENUE', caseSensitive: false): 'CCAVENUE',
     RegExp(r'BILLDESK', caseSensitive: false): 'BILLDESK',
 
-    // -------- Wallets / Super-apps --------
+    // -------- Wallets / Super-apps / Fintech --------
     RegExp(r'PAYTM\s*WALLET|PAYTM', caseSensitive: false): 'PAYTM',
     RegExp(r'AMAZON\s*PAY', caseSensitive: false): 'AMAZON PAY',
     RegExp(r'PHONEPE|BHARATPE', caseSensitive: false): 'PHONEPE',
     RegExp(r'GOOGLE\s*PAY|G(?:OOGLE)?\s*PAY', caseSensitive: false): 'GOOGLE PAY',
+    RegExp(r'CRED\b|CRED_CLUB', caseSensitive: false): 'CRED',
+    RegExp(r'FAMPAY', caseSensitive: false): 'FAMPAY',
 
     // -------- Apple/Google subscriptions --------
     RegExp(r'APPLE\.COM/BILL|APPLE\s*SERVICES?', caseSensitive: false): 'APPLE',
@@ -37,15 +39,18 @@ class MerchantAlias {
     RegExp(r'MICROSOFT', caseSensitive: false): 'MICROSOFT',
 
     // -------- Food / Q-commerce --------
-    RegExp(r'SWIGGY', caseSensitive: false): 'SWIGGY',
+    RegExp(r'SWIGGY|INSTAMART', caseSensitive: false): 'SWIGGY', // Often SWIGGY instamart
     RegExp(r'ZOMATO', caseSensitive: false): 'ZOMATO',
-    RegExp(r'BLINKIT', caseSensitive: false): 'BLINKIT',
+    RegExp(r'BLINKIT|GROFERS', caseSensitive: false): 'BLINKIT',
     RegExp(r'ZEPTO', caseSensitive: false): 'ZEPTO',
     RegExp(r'BIGBASKET|BBNOW', caseSensitive: false): 'BIGBASKET',
     RegExp(r'DOMINOS', caseSensitive: false): 'DOMINOS',
     RegExp(r'PIZZA\s*HUT', caseSensitive: false): 'PIZZA HUT',
     RegExp(r'MCDONALD', caseSensitive: false): 'MCDONALDS',
     RegExp(r'KFC', caseSensitive: false): 'KFC',
+    RegExp(r'SUBWAY', caseSensitive: false): 'SUBWAY',
+    RegExp(r'BURGER\s*KING', caseSensitive: false): 'BURGER KING',
+    RegExp(r'STARBUCKS|TATA\s*STARBUCKS', caseSensitive: false): 'STARBUCKS',
 
     // -------- Shopping --------
     RegExp(r'AMAZON(?!\s*PAY)', caseSensitive: false): 'AMAZON',
@@ -53,7 +58,13 @@ class MerchantAlias {
     RegExp(r'MEESHO', caseSensitive: false): 'MEESHO',
     RegExp(r'NYKAA', caseSensitive: false): 'NYKAA',
     RegExp(r'AJIO', caseSensitive: false): 'AJIO',
-    RegExp(r'DMART|D-MART', caseSensitive: false): 'DMART',
+    RegExp(r'DMART|D-MART|AVENUE\s*SUPERMARTS', caseSensitive: false): 'DMART',
+    RegExp(r'MYNTRA', caseSensitive: false): 'MYNTRA',
+    RegExp(r'UNIQLO', caseSensitive: false): 'UNIQLO',
+    RegExp(r'ZARA', caseSensitive: false): 'ZARA',
+    RegExp(r'H&M|H\s*AND\s*M', caseSensitive: false): 'H&M',
+    RegExp(r'DECATHLON', caseSensitive: false): 'DECATHLON',
+    RegExp(r'IKEA', caseSensitive: false): 'IKEA',
 
     // -------- Travel / Mobility --------
     RegExp(r'IRCTC', caseSensitive: false): 'IRCTC',
@@ -61,13 +72,19 @@ class MerchantAlias {
     RegExp(r'MAKEMYTRIP|MMT', caseSensitive: false): 'MAKEMYTRIP',
     RegExp(r'IXIGO', caseSensitive: false): 'IXIGO',
     RegExp(r'YATRA', caseSensitive: false): 'YATRA',
+    RegExp(r'GOIBIBO', caseSensitive: false): 'GOIBIBO',
+    RegExp(r'AGODA', caseSensitive: false): 'AGODA',
+    RegExp(r'AIRBNB', caseSensitive: false): 'AIRBNB',
     RegExp(r'UBER', caseSensitive: false): 'UBER',
     RegExp(r'OLA', caseSensitive: false): 'OLA',
     RegExp(r'RAPIDO', caseSensitive: false): 'RAPIDO',
+    RegExp(r'BLUESMART', caseSensitive: false): 'BLUESMART',
+    RegExp(r'INDIGO', caseSensitive: false): 'INDIGO',
+    RegExp(r'AIR\s*INDIA', caseSensitive: false): 'AIR INDIA',
 
     // -------- Telecom / Broadband / DTH --------
     RegExp(r'JIO\s*FIBER|JIOFIBER', caseSensitive: false): 'JIOFIBER',
-    RegExp(r'JIO', caseSensitive: false): 'JIO',
+    RegExp(r'JIO', caseSensitive: false): 'JIO', // Catch-all for Jio Mobile
     RegExp(r'AIRTEL\s*X?STREAM', caseSensitive: false): 'AIRTEL XSTREAM',
     RegExp(r'AIRTEL', caseSensitive: false): 'AIRTEL',
     RegExp(r'VODAFONE\s*IDEA', caseSensitive: false): 'VI',
@@ -77,11 +94,12 @@ class MerchantAlias {
     RegExp(r'TATA\s*PLAY|TATASKY', caseSensitive: false): 'TATA PLAY',
     RegExp(r'SUN\s*DIRECT', caseSensitive: false): 'SUN DIRECT',
     RegExp(r'HATHWAY', caseSensitive: false): 'HATHWAY',
+    RegExp(r'BESCOM', caseSensitive: false): 'BESCOM',
 
     // -------- Fuel --------
     RegExp(r'HPCL|HINDUSTAN PETROLEUM', caseSensitive: false): 'HPCL',
     RegExp(r'BPCL|BHARAT PETROLEUM', caseSensitive: false): 'BPCL',
-    RegExp(r'IOCL|INDIAN OIL', caseSensitive: false): 'IOCL',
+    RegExp(r'IOCL|INDIAN OIL', caseSensitive: false): 'INDIAN OIL',
     RegExp(r'SHELL', caseSensitive: false): 'SHELL',
     RegExp(r'NAYARA', caseSensitive: false): 'NAYARA ENERGY',
     RegExp(r'JIO[-\s]?BP|JIOBP', caseSensitive: false): 'JIO-BP',
