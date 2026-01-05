@@ -36,11 +36,19 @@ class _InsightFeedScreenState extends State<InsightFeedScreen> with SingleTicker
   List<InsightModel> _insights = [];
   bool _loadingInsights = true;
 
+  String? _currentSessionId;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _fetchInsights();
+    _initSession();
+  }
+
+  Future<void> _initSession() async {
+    final sessionId = await _chatService.getOrCreateSession(widget.userId);
+    if (mounted) setState(() => _currentSessionId = sessionId);
   }
 
   Future<void> _fetchInsights() async {
@@ -102,7 +110,9 @@ class _InsightFeedScreenState extends State<InsightFeedScreen> with SingleTicker
     if (image == null) return;
 
     // Show preview or just send? For now, sending directly.
-    _chatService.sendUserMessage(widget.userId, "[Sent a Receipt Image]");
+    if (_currentSessionId != null) {
+      _chatService.sendUserMessage(widget.userId, _currentSessionId!, "[Sent a Receipt Image]");
+    }
     
     // Simulate thinking
     await Future.delayed(const Duration(milliseconds: 600));
@@ -111,10 +121,14 @@ class _InsightFeedScreenState extends State<InsightFeedScreen> with SingleTicker
     try {
       // We need to modify ActionRouter to accept image path or handle this manually here. 
       // For Phase 3, we call the service directly via a specific router intent convention.
-      final response = await _router.route("scan receipt ${image.path}", widget.userId, widget.userData);
-      await _chatService.addAiResponse(widget.userId, response);
+      if (_currentSessionId != null) {
+        final response = await _router.route("scan receipt ${image.path}", widget.userId, widget.userData);
+        await _chatService.addAiResponse(widget.userId, _currentSessionId!, response);
+      }
     } catch (e) {
-      await _chatService.addAiResponse(widget.userId, "Error scanning receipt: $e");
+      if (_currentSessionId != null) {
+        await _chatService.addAiResponse(widget.userId, _currentSessionId!, "Error scanning receipt: $e");
+      }
     }
   }
 
@@ -122,7 +136,9 @@ class _InsightFeedScreenState extends State<InsightFeedScreen> with SingleTicker
     final text = _inputController.text.trim();
     if (text.isEmpty) return;
     
-    _chatService.sendUserMessage(widget.userId, text);
+    if (_currentSessionId != null) {
+      _chatService.sendUserMessage(widget.userId, _currentSessionId!, text);
+    }
     _inputController.clear();
     
     // Scroll to bottom
@@ -141,10 +157,14 @@ class _InsightFeedScreenState extends State<InsightFeedScreen> with SingleTicker
 
     // Execute Action via Router (Phase 9)
     try {
-      final response = await _router.route(text, widget.userId, widget.userData);
-      await _chatService.addAiResponse(widget.userId, response);
+      if (_currentSessionId != null) {
+        final response = await _router.route(text, widget.userId, widget.userData);
+        await _chatService.addAiResponse(widget.userId, _currentSessionId!, response);
+      }
     } catch (e) {
-      await _chatService.addAiResponse(widget.userId, "I encountered an error trying to do that: $e");
+      if (_currentSessionId != null) {
+        await _chatService.addAiResponse(widget.userId, _currentSessionId!, "I encountered an error trying to do that: $e");
+      }
     }
   }
 
@@ -341,8 +361,10 @@ class _InsightFeedScreenState extends State<InsightFeedScreen> with SingleTicker
     return Column(
       children: [
         Expanded(
-          child: StreamBuilder<List<AiMessage>>(
-            stream: _chatService.streamMessages(widget.userId),
+          child: _currentSessionId == null
+              ? const Center(child: CircularProgressIndicator())
+              : StreamBuilder<List<AiMessage>>(
+                  stream: _chatService.streamMessages(widget.userId, _currentSessionId!),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());

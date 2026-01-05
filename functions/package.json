@@ -20,6 +20,7 @@
     "predeploy": "npm run build"
   },
   "dependencies": {
+    "openai": "^4.77.3",
     "date-fns": "^4.1.0",
     "firebase-admin": "^12.5.0",
     "firebase-functions": "^6.4.0"

@@ -1,10 +1,8 @@
 // lib/services/sms/sms_ingestor.dart
 import 'dart:collection';
 
-import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
-import 'package:telephony/telephony.dart'
-    if (dart.library.html) '../../stubs/telephony_stub.dart';
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb, kDebugMode;
+import 'package:telephony/telephony.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:workmanager/workmanager.dart' as wm;
 
@@ -487,10 +485,8 @@ class SmsIngestor {
   }
 
   // debug logs
-  static const bool _DEBUG_INGEST = true;
-  void _log(String s) {
-    if (_DEBUG_INGEST) print('[SmsIngestor] $s');
-  }
+  // debug logs
+  void _log(String s) { if (kDebugMode) print('[SmsIngestor] $s'); }
 
   Telephony? _telephony;
   final ExpenseService _expense = ExpenseService();
