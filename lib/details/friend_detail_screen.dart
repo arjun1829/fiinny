@@ -1124,11 +1124,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                 onTap: () => Navigator.pop(ctx, 'edit'),
               ),
               ListTile(
-                leading: const Icon(Icons.travel_explore_outlined),
-                title: const Text('Search web'),
-                onTap: () => Navigator.pop(ctx, 'search'),
-              ),
-              ListTile(
                 leading: const Icon(Icons.copy_outlined),
                 title: const Text('Copy phone number'),
                 onTap: () => Navigator.pop(ctx, 'copy'),
@@ -1163,19 +1158,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
           setState(() => _friendDisplayName = name);
         }
         break;
-      case 'search':
-        final query = _displayName.trim().isNotEmpty
-            ? _displayName.trim()
-            : widget.friend.phone;
-        final searchUrl = Uri.parse(
-            'https://www.google.com/search?q=${Uri.encodeComponent(query)}');
-        if (!await launchUrl(searchUrl, mode: LaunchMode.externalApplication)) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not open search')),
-          );
-        }
-        break;
       case 'copy':
         await Clipboard.setData(ClipboardData(text: widget.friend.phone));
         if (!mounted) return;
@@ -1194,6 +1176,143 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
   }
 
   // ======================= UI HELPERS =======================
+  Widget _buildSharedGroupsSection(
+    BuildContext context,
+    List<GroupModel> allGroups,
+    List<ExpenseItem> pairwise,
+  ) {
+    // Filter groups where this friend is a member OR where we have a transaction
+    // Normalize phone numbers for comparison (remove spaces/dashes)
+    String normalize(String p) => p.replaceAll(RegExp(r'\s+|-'), '');
+    final friendPhone = normalize(widget.friend.phone);
+    final groupIdsInTx =
+        pairwise.map((e) => e.groupId).whereType<String>().toSet();
+
+    final shared = allGroups.where((g) {
+      if (g.id == '__none__') return false;
+
+      // 1. Check membership
+      final hasMember = g.memberPhones.any((m) => normalize(m) == friendPhone);
+      if (hasMember) return true;
+
+      // 2. Check if we have transactions in this group
+      if (groupIdsInTx.contains(g.id)) return true;
+
+      return false;
+    }).toList();
+
+    if (shared.isEmpty) return const SizedBox.shrink();
+
+    return _card(
+      context,
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.groups_rounded, color: Colors.teal.shade800, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                "Shared Groups",
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                  color: Colors.teal.shade900,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  "${shared.length}",
+                  style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      color: Colors.teal.shade800),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: shared.length,
+            separatorBuilder: (_, __) =>
+                Divider(height: 1, color: Colors.grey.shade100),
+            itemBuilder: (context, idx) {
+              final g = shared[idx];
+              return InkWell(
+                onTap: () {
+                  Navigator.pushNamed(
+                    context,
+                    '/group-detail',
+                    arguments: {'groupId': g.id, 'groupName': g.name},
+                  );
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      // Group Avatar
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                          image:
+                              (g.avatarUrl != null && g.avatarUrl!.isNotEmpty)
+                                  ? DecorationImage(
+                                      image: NetworkImage(g.avatarUrl!),
+                                      fit: BoxFit.cover)
+                                  : null,
+                        ),
+                        child: (g.avatarUrl == null || g.avatarUrl!.isEmpty)
+                            ? Center(
+                                child: Text(
+                                    g.name.characters.first.toUpperCase(),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold)))
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              g.name,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 15),
+                            ),
+                            Text(
+                              "${g.memberCount} members",
+                              style: TextStyle(
+                                  color: Colors.grey.shade600, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right_rounded,
+                          size: 20, color: Colors.grey.shade400),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   BoxDecoration _cardDeco(BuildContext context) {
     return BoxDecoration(
       color: Colors.white,
@@ -1222,6 +1341,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     required double owed,
     required int txCount,
     required int bucketCount,
+    required int sharedGroupCount,
   }) {
     final theme = Theme.of(context);
     final net = double.parse((owed - owe).toStringAsFixed(2));
@@ -1293,6 +1413,62 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                             ),
                           ),
                         ),
+
+                      // NEW: Stats Chips Row
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.receipt_long_rounded,
+                                    size: 12, color: Colors.grey.shade700),
+                                const SizedBox(width: 4),
+                                Text(
+                                  "Transactions: $txCount",
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey.shade800),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.groups_rounded,
+                                    size: 12, color: Colors.grey.shade700),
+                                const SizedBox(width: 4),
+                                Text(
+                                  "Shared groups: $sharedGroupCount",
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey.shade800),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -1682,12 +1858,39 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         // UX: Premium friend summary card (UI-only)
-                        _friendSummaryCard(
-                          owe: totalOwe,
-                          owed: totalOwed,
-                          txCount: pairwise.length,
-                          bucketCount: buckets.length,
-                        ),
+                        // UX: Premium friend summary card (UI-only)
+                        StreamBuilder<List<GroupModel>>(
+                            stream:
+                                GroupService().streamGroups(widget.userPhone),
+                            builder: (context, snapshot) {
+                              final groups = snapshot.data ?? [];
+                              // Logic to count shared groups
+                              String normalize(String p) =>
+                                  p.replaceAll(RegExp(r'\s+|-'), '');
+                              final friendPhone =
+                                  normalize(widget.friend.phone);
+                              final groupIdsInTx = pairwise
+                                  .map((e) => e.groupId)
+                                  .whereType<String>()
+                                  .toSet();
+
+                              final sharedCount = groups.where((g) {
+                                if (g.id == '__none__') return false;
+                                final hasMember = g.memberPhones
+                                    .any((m) => normalize(m) == friendPhone);
+                                if (hasMember) return true;
+                                if (groupIdsInTx.contains(g.id)) return true;
+                                return false;
+                              }).length;
+
+                              return _friendSummaryCard(
+                                owe: totalOwe,
+                                owed: totalOwed,
+                                txCount: pairwise.length,
+                                bucketCount: buckets.length,
+                                sharedGroupCount: sharedCount,
+                              );
+                            }),
                         const SizedBox(height: 12),
                         const SleekAdCard(
                           margin: EdgeInsets.symmetric(horizontal: 4),
@@ -1705,7 +1908,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                             Expanded(
                               child: OutlinedButton.icon(
                                 icon: const Icon(Icons.add_rounded),
-                                label: const Text("Add"),
+                                // CHANGED: Label is now "Add Expense"
+                                label: const Text("Add Expense"),
                                 onPressed: _openAddExpense,
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: Colors.teal.shade700,
@@ -1935,301 +2139,72 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                         const SizedBox(height: 16),
 
                         // Pairwise history list with group names
+                        // ------------------ (NEW) SHARED GROUPS ------------------
+                        StreamBuilder<List<GroupModel>>(
+                            stream:
+                                GroupService().streamGroups(widget.userPhone),
+                            builder: (context, snapshot) {
+                              final groups = snapshot.data ?? [];
+                              return _buildSharedGroupsSection(
+                                  context, groups, pairwise);
+                            }),
+                        const SizedBox(height: 16),
+
+                        // ------------------ TRANSACTIONS ------------------
                         _card(
                           context,
-                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                          padding: EdgeInsets.zero,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                "Shared History",
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 16,
-                                  color: Colors.teal.shade900,
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                                child: Text(
+                                  "Transactions",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 16,
+                                    color: Colors.teal.shade900,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 10),
-                              // (NEW) settlement-safe Shared History (prevents pixel overflow)
-                              StreamBuilder<List<GroupModel>>(
-                                stream: GroupService()
-                                    .streamGroups(widget.userPhone),
-                                builder: (context, gSnap) {
-                                  final groups = gSnap.data ?? [];
-                                  final groupNames = <String, String>{
-                                    for (final g in groups) g.id: g.name
-                                  };
-
-                                  const int historyAdEvery = 0;
-                                  final int blockSize = historyAdEvery + 1;
-                                  final int adCount = historyAdEvery > 0
-                                      ? pairwise.length ~/ historyAdEvery
-                                      : 0;
-                                  final int totalItems =
-                                      pairwise.length + adCount;
-
-                                  return ListView.builder(
-                                    itemCount: totalItems,
-                                    shrinkWrap: true,
-                                    physics:
-                                        const NeverScrollableScrollPhysics(),
-                                    itemBuilder: (_, idx) {
-                                      final bool isAdSlot =
-                                          historyAdEvery > 0 &&
-                                              blockSize > 0 &&
-                                              (idx + 1) % blockSize == 0;
-                                      if (isAdSlot) {
-                                        return const SizedBox.shrink();
-                                      }
-
-                                      final adsBefore = historyAdEvery > 0
-                                          ? (idx + 1) ~/ blockSize
-                                          : 0;
-                                      final dataIndex = idx - adsBefore;
-                                      final ex = pairwise[dataIndex];
-                                      final isSettlement = isSettlementLike(ex);
-                                      final title = isSettlement
-                                          ? "Settlement"
-                                          : (ex.label?.isNotEmpty == true
-                                              ? ex.label!
-                                              : (ex.category?.isNotEmpty == true
-                                                  ? ex.category!
-                                                  : "Expense"));
-
-                                      final groupName = (ex.groupId != null &&
-                                              ex.groupId!.isNotEmpty)
-                                          ? (groupNames[ex.groupId] ?? "Group")
-                                          : null;
-
-                                      // From *your* perspective: + means owed to you, - means you owe
-                                      final impact = _yourImpact(ex);
-                                      final amountColor = impact >= 0
-                                          ? Colors.green.shade700
-                                          : Colors.redAccent;
-                                      final amountText =
-                                          "₹${ex.amount.toStringAsFixed(2)}";
-
-                                      // files for this row
-                                      final files = _attachmentsOf(ex);
-
-                                      // trailing pill (compact)
-                                      Widget trailingPill(String t) =>
-                                          FittedBox(
-                                            fit: BoxFit.scaleDown,
-                                            child: Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 6),
-                                              decoration: BoxDecoration(
-                                                color: amountColor
-                                                    .withOpacity(0.12),
-                                                borderRadius:
-                                                    BorderRadius.circular(999),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(
-                                                      impact >= 0
-                                                          ? Icons
-                                                              .trending_up_rounded
-                                                          : Icons
-                                                              .trending_down_rounded,
-                                                      size: 14,
-                                                      color: amountColor),
-                                                  const SizedBox(width: 6),
-                                                  Text(t,
-                                                      style: TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w800,
-                                                          color: amountColor)),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-
-                                      final payer = _nameFor(ex.payerId);
-                                      final recip = ex.friendIds.isNotEmpty
-                                          ? _nameFor(ex.friendIds.first)
-                                          : (widget.friend.phone == ex.payerId
-                                              ? "You"
-                                              : _displayName);
-
-                                      final maxInfoWidth =
-                                          MediaQuery.of(context).size.width *
-                                              0.55;
-
-                                      return Container(
-                                        margin:
-                                            const EdgeInsets.only(bottom: 12),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius:
-                                              BorderRadius.circular(16),
-                                          border: Border.all(
-                                              color: Colors.grey.shade100),
-                                          boxShadow: [
-                                            BoxShadow(
-                                                color: Colors.black
-                                                    .withOpacity(0.02),
-                                                blurRadius: 8,
-                                                offset: const Offset(0, 2))
-                                          ],
-                                        ),
-                                        child: InkWell(
-                                          borderRadius:
-                                              BorderRadius.circular(16),
-                                          onTap: () =>
-                                              _showExpenseDetailsFriend(
-                                                  context, ex),
-                                          onLongPress: () => _deleteEntry(ex),
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(16),
-                                            child: Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                // Date Box (Modern Calendar Look)
-                                                Container(
-                                                  width: 50,
-                                                  padding: const EdgeInsets
-                                                      .symmetric(vertical: 8),
-                                                  decoration: BoxDecoration(
-                                                    color:
-                                                        const Color(0xFFF5F7FA),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            12),
-                                                  ),
-                                                  child: Column(
-                                                    children: [
-                                                      Text(
-                                                        ex.date.day.toString(),
-                                                        style: const TextStyle(
-                                                            fontWeight:
-                                                                FontWeight.w800,
-                                                            fontSize: 18,
-                                                            height: 1,
-                                                            color:
-                                                                Colors.black87),
-                                                      ),
-                                                      const SizedBox(height: 2),
-                                                      Text(
-                                                        DateFormat('MMM')
-                                                            .format(ex.date)
-                                                            .toUpperCase(),
-                                                        style: TextStyle(
-                                                            fontWeight:
-                                                                FontWeight.w700,
-                                                            fontSize: 10,
-                                                            color: Colors
-                                                                .grey[500]),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 16),
-
-                                                // Content
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                        title,
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: const TextStyle(
-                                                            fontWeight:
-                                                                FontWeight.w700,
-                                                            fontSize: 16,
-                                                            color:
-                                                                Colors.black87),
-                                                      ),
-                                                      const SizedBox(height: 4),
-                                                      Text(
-                                                        isSettlement
-                                                            ? "$payer paid $recip"
-                                                            : "$payer paid $amountText",
-                                                        style: TextStyle(
-                                                            fontSize: 13,
-                                                            color: Colors
-                                                                .grey[600],
-                                                            fontWeight:
-                                                                FontWeight
-                                                                    .w500),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                      ),
-                                                      if (files.isNotEmpty)
-                                                        Padding(
-                                                          padding:
-                                                              const EdgeInsets
-                                                                  .only(top: 6),
-                                                          child: Icon(
-                                                              Icons
-                                                                  .attachment_rounded,
-                                                              size: 14,
-                                                              color: Colors
-                                                                  .grey[400]),
-                                                        ),
-                                                    ],
-                                                  ),
-                                                ),
-
-                                                // Amount
-                                                Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.end,
-                                                  children: [
-                                                    Text(
-                                                      impact == 0
-                                                          ? "SETTLED"
-                                                          : (impact > 0
-                                                              ? "YOU LENT"
-                                                              : "YOU BORROWED"),
-                                                      style: TextStyle(
-                                                        fontSize: 10,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                        color: impact == 0
-                                                            ? Colors.grey
-                                                            : (impact > 0
-                                                                ? amountColor
-                                                                : amountColor),
-                                                        letterSpacing: 0.5,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      impact == 0
-                                                          ? "-"
-                                                          : "₹${impact.abs().toStringAsFixed(2)}",
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w800,
-                                                        color: impact == 0
-                                                            ? Colors.grey[400]
-                                                            : amountColor,
-                                                        fontSize: 16,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  );
+                              const SizedBox(height: 4),
+                              UnifiedTransactionList(
+                                key:
+                                    ValueKey('history-list-${pairwise.length}'),
+                                expenses: pairwise,
+                                incomes: const [],
+                                friendsById: {
+                                  widget.friend.phone: widget.friend,
                                 },
+                                userPhone: widget.userPhone,
+                                previewCount: 1000,
+                                enableScrolling: false,
+                                showTopBannerAd: false,
+                                showBottomBannerAd: false,
+                                enableInlineAds: false,
+                                onEdit: (tx) {
+                                  if (tx is ExpenseItem) _editEntry(tx);
+                                },
+                                onDelete: (tx) {
+                                  if (tx is ExpenseItem) _deleteEntry(tx);
+                                },
+                                enableSwipeActions: true,
+                                showCategoryDropdown: false,
+                                enableDetailsSheet: true,
+                                emptyBuilder: (ctx) => Padding(
+                                  padding: const EdgeInsets.all(24.0),
+                                  child: Center(
+                                    child: Text(
+                                      "No transactions yet",
+                                      style: TextStyle(
+                                          color: Colors.grey.shade500),
+                                    ),
+                                  ),
+                                ),
                               ),
+                              const SizedBox(height: 12),
                             ],
                           ),
                         ),

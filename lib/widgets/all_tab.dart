@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/friend_model.dart';
 import '../models/group_model.dart';
 import '../models/expense_item.dart';
-import '../screens/friend_detail_screen.dart';
-import '../screens/group_detail_screen.dart';
+import '../details/friend_detail_screen.dart';
+import '../details/group_detail_screen.dart';
 
 class AllTab extends StatefulWidget {
   final List<FriendModel> friends;
@@ -31,13 +31,13 @@ class _AllTabState extends State<AllTab> {
   String _sortBy = 'recent';
 
   double get totalOwedToYou => widget.friends.fold(0.0, (sum, f) {
-    final net = widget.netBalancesByFriend[f.id] ?? 0;
-    return net > 0 ? sum + net : sum;
-  });
+        final net = widget.netBalancesByFriend[f.id] ?? 0;
+        return net > 0 ? sum + net : sum;
+      });
   double get totalYouOwe => widget.friends.fold(0.0, (sum, f) {
-    final net = widget.netBalancesByFriend[f.id] ?? 0;
-    return net < 0 ? sum - net : sum;
-  });
+        final net = widget.netBalancesByFriend[f.id] ?? 0;
+        return net < 0 ? sum - net : sum;
+      });
   double get netOverall => totalOwedToYou - totalYouOwe;
 
   List<FriendModel> get topOwing {
@@ -86,10 +86,10 @@ class _AllTabState extends State<AllTab> {
         net: net,
         subtitle: lastExpense.isNotEmpty
             ? (lastExpense.first.type == "Settlement"
-            ? (net < 0 ? "You settled up" : "They settled up")
-            : (net < 0
-            ? "You owe"
-            : (net > 0 ? "They owe you" : "All settled")))
+                ? (net < 0 ? "You settled up" : "They settled up")
+                : (net < 0
+                    ? "You owe"
+                    : (net > 0 ? "They owe you" : "All settled")))
             : "",
         time: lastActivity[f.id] ?? DateTime(2000),
         isNew: isNew,
@@ -98,7 +98,7 @@ class _AllTabState extends State<AllTab> {
     // Groups
     for (final g in widget.groups) {
       final groupExpenses =
-      widget.expenses.where((e) => e.groupId == g.id).toList();
+          widget.expenses.where((e) => e.groupId == g.id).toList();
       final last = groupExpenses.isNotEmpty
           ? groupExpenses.reduce((a, b) => a.date.isAfter(b.date) ? a : b)
           : null;
@@ -192,8 +192,8 @@ class _AllTabState extends State<AllTab> {
                                 color: netOverall > 0
                                     ? Colors.green
                                     : netOverall < 0
-                                    ? Colors.red
-                                    : Colors.teal,
+                                        ? Colors.red
+                                        : Colors.teal,
                                 fontSize: 15,
                               ),
                             ),
@@ -208,7 +208,7 @@ class _AllTabState extends State<AllTab> {
                         style: TextStyle(fontWeight: FontWeight.w600),
                       ),
                       ...topOwing.map(
-                            (f) => Padding(
+                        (f) => Padding(
                           padding: const EdgeInsets.only(left: 10, top: 2),
                           child: Text(
                             "${f.name} owes you ₹${widget.netBalancesByFriend[f.id]!.toStringAsFixed(0)}",
@@ -247,12 +247,13 @@ class _AllTabState extends State<AllTab> {
             final color = row.net > 0
                 ? Colors.green
                 : row.net < 0
-                ? Colors.red
-                : Colors.grey;
+                    ? Colors.red
+                    : Colors.grey;
             return Card(
               margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               color: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               elevation: 2,
               child: ListTile(
                 onTap: () {
@@ -261,8 +262,10 @@ class _AllTabState extends State<AllTab> {
                       context,
                       MaterialPageRoute(
                         builder: (_) => FriendDetailScreen(
-                          friend: widget.friends.firstWhere((f) => f.id == row.id),
-                          userId: widget.userId,
+                          friend:
+                              widget.friends.firstWhere((f) => f.id == row.id),
+                          userPhone: widget.userId,
+                          userName: 'You',
                         ),
                       ),
                     );
@@ -275,7 +278,9 @@ class _AllTabState extends State<AllTab> {
                           builder: (_) => GroupDetailScreen(
                             userId: widget.userId,
                             group: group,
-                            friendsById: {for (final f in widget.friends) f.id: f},
+                            friendsById: {
+                              for (final f in widget.friends) f.id: f
+                            },
                           ),
                         ),
                       );
@@ -293,7 +298,8 @@ class _AllTabState extends State<AllTab> {
                       child: Text(
                         row.name,
                         style: TextStyle(
-                          fontWeight: row.isNew ? FontWeight.bold : FontWeight.w600,
+                          fontWeight:
+                              row.isNew ? FontWeight.bold : FontWeight.w600,
                           fontSize: 17,
                           color: Theme.of(context).textTheme.titleLarge?.color,
                         ),
@@ -304,8 +310,8 @@ class _AllTabState extends State<AllTab> {
                       row.net > 0
                           ? "+₹${row.net.toStringAsFixed(0)}"
                           : row.net < 0
-                          ? "-₹${(-row.net).toStringAsFixed(0)}"
-                          : "Settled",
+                              ? "-₹${(-row.net).toStringAsFixed(0)}"
+                              : "Settled",
                       style: TextStyle(
                         color: color,
                         fontWeight: FontWeight.bold,
@@ -325,14 +331,14 @@ class _AllTabState extends State<AllTab> {
                 ),
                 trailing: row.isNew
                     ? Container(
-                  margin: const EdgeInsets.only(left: 4),
-                  width: 11,
-                  height: 11,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).primaryColor,
-                    shape: BoxShape.circle,
-                  ),
-                )
+                        margin: const EdgeInsets.only(left: 4),
+                        width: 11,
+                        height: 11,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).primaryColor,
+                          shape: BoxShape.circle,
+                        ),
+                      )
                     : null,
               ),
             );
