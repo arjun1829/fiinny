@@ -23,7 +23,7 @@ class GroupSettingsSheet extends StatelessWidget {
   final String currentUserPhone;
   final GroupModel group;
   final List<FriendModel> members; // resolved
-  final VoidCallback? onChanged;   // call to refresh parent
+  final VoidCallback? onChanged; // call to refresh parent
 
   const GroupSettingsSheet({
     Key? key,
@@ -34,20 +34,21 @@ class GroupSettingsSheet extends StatelessWidget {
   }) : super(key: key);
 
   static Future<void> show(
-      BuildContext context, {
-        required String currentUserPhone,
-        required GroupModel group,
-        required List<FriendModel> members,
-        VoidCallback? onChanged,
-      }) {
+    BuildContext context, {
+    required String currentUserPhone,
+    required GroupModel group,
+    required List<FriendModel> members,
+    VoidCallback? onChanged,
+  }) {
     return showModalBottomSheet(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
       showDragHandle: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      backgroundColor: const Color(0xFFF8F9FA),
       builder: (_) => FractionallySizedBox(
         heightFactor: 0.96,
         child: GroupSettingsSheet(
@@ -65,74 +66,63 @@ class GroupSettingsSheet extends StatelessWidget {
   // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Column(
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA), // Fintech background
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close_rounded, color: Colors.black87),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        title: const Text(
+          'Group Settings',
+          style: TextStyle(
+            color: Colors.black87,
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(6, 16, 12, 4),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    'Group settings',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                const SizedBox(width: 48),
-              ],
-            ),
+          _FintechHeaderCard(
+            name: group.name,
+            memberCount: members.length,
+            avatarUrl: group.avatarUrl,
+            onRename: () => _rename(context),
+            onChangePhoto: () => _changePhoto(context),
           ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 24),
-              children: [
-                _GlassHeaderCard(
-                  name: group.name,
-                  memberCount: members.length,
-                  avatarUrl: group.avatarUrl,
-                  onRename: () => _rename(context),
-                  onChangePhoto: () => _changePhoto(context),
-                ),
-
-                const SizedBox(height: 18),
-                _SectionLabel('Members'),
-
-                _GlassActionButton(
-                  icon: Icons.group_add_rounded,
-                  title: 'Add members',
-                  subtitle: 'Review list, then add from contacts',
-                  onTap: () => _openAddMembersFlow(context),
-                ),
-                _GlassActionButton(
-                  icon: Icons.person_remove_alt_1_rounded,
-                  title: 'Remove members',
-                  onTap: () => _removeMembers(context),
-                ),
-
-                const SizedBox(height: 18),
-                _SectionLabel('Danger zone'),
-
-                _GlassActionButton(
-                  icon: Icons.exit_to_app_rounded,
-                  title: 'Leave group',
-                  danger: true,
-                  onTap: () => _leaveGroup(context),
-                ),
-                if (_isCreator)
-                  _GlassActionButton(
-                    icon: Icons.delete_forever_rounded,
-                    title: 'Delete group',
-                    danger: true,
-                    onTap: () => _deleteGroup(context),
-                  ),
-              ],
-            ),
+          const SizedBox(height: 32),
+          _SectionLabel('MEMBERS'),
+          _FintechActionButton(
+            icon: Icons.person_add_alt_1_rounded,
+            title: 'Add members',
+            subtitle: 'Invite your friends from contacts',
+            onTap: () => _openAddMembersFlow(context),
           ),
+          _FintechActionButton(
+            icon: Icons.person_remove_alt_1_rounded,
+            title: 'Remove members',
+            onTap: () => _removeMembers(context),
+          ),
+          const SizedBox(height: 32),
+          _SectionLabel('DANGER ZONE'),
+          _FintechActionButton(
+            icon: Icons.exit_to_app_rounded,
+            title: 'Leave group',
+            danger: true,
+            onTap: () => _leaveGroup(context),
+          ),
+          if (_isCreator)
+            _FintechActionButton(
+              icon: Icons.delete_forever_rounded,
+              title: 'Delete group',
+              danger: true,
+              onTap: () => _deleteGroup(context),
+            ),
         ],
       ),
     );
@@ -191,7 +181,8 @@ class GroupSettingsSheet extends StatelessWidget {
   Future<void> _leaveGroup(BuildContext context) async {
     if (_isCreator) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Creators can't leave. Transfer ownership first.")),
+        const SnackBar(
+            content: Text("Creators can't leave. Transfer ownership first.")),
       );
       return;
     }
@@ -201,8 +192,12 @@ class GroupSettingsSheet extends StatelessWidget {
         title: const Text('Leave group?'),
         content: const Text('You will be removed from this group.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Leave')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Leave')),
         ],
       ),
     );
@@ -220,9 +215,12 @@ class GroupSettingsSheet extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete group?'),
-        content: const Text('This cannot be undone and removes history for everyone.'),
+        content: const Text(
+            'This cannot be undone and removes history for everyone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () => Navigator.pop(ctx, true),
@@ -232,7 +230,10 @@ class GroupSettingsSheet extends StatelessWidget {
       ),
     );
     if (ok != true) return;
-    await FirebaseFirestore.instance.collection('groups').doc(group.id).delete();
+    await FirebaseFirestore.instance
+        .collection('groups')
+        .doc(group.id)
+        .delete();
     if (context.mounted) Navigator.pop(context); // close settings
     Navigator.of(context).maybePop(); // pop detail screen
   }
@@ -411,20 +412,25 @@ class GroupSettingsSheet extends StatelessWidget {
               ),
               if ((group.avatarUrl ?? '').isNotEmpty)
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                  title: const Text('Remove photo', style: TextStyle(color: Colors.redAccent)),
+                  leading:
+                      const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  title: const Text('Remove photo',
+                      style: TextStyle(color: Colors.redAccent)),
                   onTap: () async {
                     Navigator.pop(ctx);
                     showDialog(
                       context: context,
                       barrierDismissible: false,
-                      builder: (_) => const Center(child: CircularProgressIndicator()),
+                      builder: (_) =>
+                          const Center(child: CircularProgressIndicator()),
                     );
                     try {
                       final prev = (group.avatarUrl ?? '').trim();
                       if (prev.isNotEmpty) {
                         try {
-                          await FirebaseStorage.instance.refFromURL(prev).delete();
+                          await FirebaseStorage.instance
+                              .refFromURL(prev)
+                              .delete();
                         } catch (_) {}
                       }
                       await FirebaseFirestore.instance
@@ -469,14 +475,16 @@ class GroupSettingsSheet extends StatelessWidget {
 
 // ---------------- Glass UI Pieces ----------------
 
-class _GlassHeaderCard extends StatelessWidget {
+// ---------------- Fintech UI Pieces ----------------
+
+class _FintechHeaderCard extends StatelessWidget {
   final String name;
   final int memberCount;
   final String? avatarUrl;
   final VoidCallback onRename;
   final VoidCallback onChangePhoto;
 
-  const _GlassHeaderCard({
+  const _FintechHeaderCard({
     required this.name,
     required this.memberCount,
     required this.avatarUrl,
@@ -486,91 +494,108 @@ class _GlassHeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: _glassDecoration(context),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Stack(
-            children: [
-              CircleAvatar(
-                radius: 34,
+    return Column(
+      children: [
+        const SizedBox(height: 10),
+        Stack(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 4),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: CircleAvatar(
+                radius: 50, // Larger avatar
+                backgroundColor: Colors.teal.shade50,
                 backgroundImage: (avatarUrl != null && avatarUrl!.isNotEmpty)
                     ? NetworkImage(avatarUrl!)
                     : null,
                 child: (avatarUrl == null || avatarUrl!.isEmpty)
                     ? Text(
-                  name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
-                )
+                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.teal.shade700,
+                        ),
+                      )
                     : null,
               ),
-              Positioned(
-                bottom: -2,
-                right: -2,
-                child: Material(
-                  color: const Color(0xFF10B981), // mint badge
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: onChangePhoto,
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: Icon(Icons.photo_camera_rounded, size: 16, color: Colors.white),
-                    ),
+            ),
+            Positioned(
+              bottom: 4,
+              right: 4,
+              child: GestureDetector(
+                onTap: onChangePhoto,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(color: Colors.black12, blurRadius: 4),
+                    ],
                   ),
+                  child: Icon(Icons.camera_alt_rounded,
+                      size: 20, color: Colors.teal.shade700),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: onRename,
-                      icon: const Icon(Icons.edit_rounded),
-                      tooltip: 'Rename',
-                    )
-                  ],
-                ),
-                Text(
-                  '$memberCount member${memberCount == 1 ? '' : 's'}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.7),
-                  ),
-                ),
-              ],
             ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(width: 40), // spacer for symmetry
+            Flexible(
+              child: Text(
+                name,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.black,
+                  letterSpacing: -0.5,
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: onRename,
+              icon: Icon(Icons.edit_rounded,
+                  size: 20, color: Colors.blueGrey.shade300),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+        Text(
+          '$memberCount members',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey.shade600,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-class _GlassActionButton extends StatelessWidget {
+class _FintechActionButton extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? subtitle;
   final bool danger;
   final VoidCallback? onTap;
 
-  const _GlassActionButton({
+  const _FintechActionButton({
     required this.icon,
     required this.title,
     this.subtitle,
@@ -580,69 +605,55 @@ class _GlassActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textColor = danger ? const Color(0xFFFF6B6B) : Theme.of(context).textTheme.bodyLarge?.color;
+    final titleColor = danger ? Colors.redAccent : Colors.blueGrey.shade900;
+    final iconColor = danger ? Colors.redAccent : Colors.teal.shade700;
+    final borderColor = danger ? Colors.red.shade100 : Colors.grey.shade200;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: _glassDecoration(context),
-      child: InkWell(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ListTile(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Icon(icon, size: 22, color: danger ? const Color(0xFFFF6B6B) : const Color(0xFF10B981)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title,
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: textColor,
-                          fontWeight: FontWeight.w600,
-                        )),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle!,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ]
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right_rounded, size: 20),
-            ],
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: danger ? Colors.red.shade50 : Colors.teal.shade50,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: iconColor, size: 24),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: titleColor,
+            fontWeight: FontWeight.w700,
+            fontSize: 16,
           ),
         ),
+        subtitle: subtitle != null
+            ? Text(
+                subtitle!,
+                style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+              )
+            : null,
+        trailing: Icon(Icons.chevron_right_rounded,
+            color: Colors.grey.shade400, size: 24),
       ),
     );
   }
-}
-
-BoxDecoration _glassDecoration(BuildContext context) {
-  // Mint-glass look: subtle gradient, light border, soft shadow.
-  return BoxDecoration(
-    gradient: const LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [
-        Color(0x66ECFDF5), // mint glass
-        Color(0x33D1FAE5),
-      ],
-    ),
-    borderRadius: BorderRadius.circular(16),
-    border: Border.all(color: const Color(0x55B7F7E7)),
-    boxShadow: const [
-      BoxShadow(
-        blurRadius: 16,
-        offset: Offset(0, 6),
-        color: Color(0x1A000000),
-      ),
-    ],
-  );
 }
 
 class _SectionLabel extends StatelessWidget {
@@ -652,12 +663,14 @@ class _SectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10, top: 6),
+      padding: const EdgeInsets.only(left: 4, bottom: 12),
       child: Text(
         text,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.3,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+          color: Colors.blueGrey.shade300,
+          letterSpacing: 1.2,
         ),
       ),
     );
@@ -704,17 +717,19 @@ class _AddMembersReviewSheetState extends State<_AddMembersReviewSheet> {
                     )
                   else
                     ...widget.members.map((m) => ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                      leading: CircleAvatar(child: Text(_initials(m.name))),
-                      title: Text(m.name),
-                      subtitle: Row(
-                        children: [
-                          if ((m.phone ?? '').isNotEmpty) Text(m.phone!),
-                          if ((m.phone ?? '').isEmpty && (m.email ?? '').isNotEmpty)
-                            Text(m.email!),
-                        ],
-                      ),
-                    )),
+                          contentPadding:
+                              const EdgeInsets.symmetric(horizontal: 4),
+                          leading: CircleAvatar(child: Text(_initials(m.name))),
+                          title: Text(m.name),
+                          subtitle: Row(
+                            children: [
+                              if ((m.phone ?? '').isNotEmpty) Text(m.phone!),
+                              if ((m.phone ?? '').isEmpty &&
+                                  (m.email ?? '').isNotEmpty)
+                                Text(m.email!),
+                            ],
+                          ),
+                        )),
                 ],
               ),
             ),
@@ -728,27 +743,28 @@ class _AddMembersReviewSheetState extends State<_AddMembersReviewSheet> {
                     onPressed: _busy
                         ? null
                         : () async {
-                      setState(() => _busy = true);
-                      final changed = await showModalBottomSheet<bool>(
-                        context: context,
-                        isScrollControlled: true,
-                        useSafeArea: true,
-                        showDragHandle: true,
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-                        ),
-                        builder: (_) => _ContactsPickerSheet(
-                          groupId: widget.groupId,
-                          defaultCountryCode: inferCountryCode(
-                            widget.currentUserPhone,
-                            fallback: kDefaultCountryCode,
-                          ),
-                        ),
-                      );
-                      if (!mounted) return;
-                      setState(() => _busy = false);
-                      Navigator.pop(context, changed == true);
-                    },
+                            setState(() => _busy = true);
+                            final changed = await showModalBottomSheet<bool>(
+                              context: context,
+                              isScrollControlled: true,
+                              useSafeArea: true,
+                              showDragHandle: true,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: BorderRadius.vertical(
+                                    top: Radius.circular(18)),
+                              ),
+                              builder: (_) => _ContactsPickerSheet(
+                                groupId: widget.groupId,
+                                defaultCountryCode: inferCountryCode(
+                                  widget.currentUserPhone,
+                                  fallback: kDefaultCountryCode,
+                                ),
+                              ),
+                            );
+                            if (!mounted) return;
+                            setState(() => _busy = false);
+                            Navigator.pop(context, changed == true);
+                          },
                     icon: const Icon(Icons.contacts_rounded),
                     label: Text(_busy ? 'Opening…' : 'Add from contacts'),
                     style: ElevatedButton.styleFrom(
@@ -859,7 +875,8 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
                   fillColor: Theme.of(context).cardColor.withOpacity(0.6),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: Theme.of(context).dividerColor),
+                    borderSide:
+                        BorderSide(color: Theme.of(context).dividerColor),
                   ),
                 ),
                 onChanged: (_) => setState(() {}),
@@ -882,7 +899,8 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
                     return ListTile(
                       leading: CircleAvatar(
                         child: Text(
-                          (c.displayName.isNotEmpty ? c.displayName[0] : '?').toUpperCase(),
+                          (c.displayName.isNotEmpty ? c.displayName[0] : '?')
+                              .toUpperCase(),
                         ),
                       ),
                       title: Text(c.displayName),
@@ -894,7 +912,9 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
                             if (v == true) {
                               if (normalized.isNotEmpty) {
                                 _selectedPhones[normalized] =
-                                    displayName.isNotEmpty ? displayName : normalized;
+                                    displayName.isNotEmpty
+                                        ? displayName
+                                        : normalized;
                               }
                             } else {
                               _selectedPhones.remove(normalized);
@@ -909,7 +929,9 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
                           } else {
                             if (normalized.isNotEmpty) {
                               _selectedPhones[normalized] =
-                                  displayName.isNotEmpty ? displayName : normalized;
+                                  displayName.isNotEmpty
+                                      ? displayName
+                                      : normalized;
                             }
                           }
                         });
@@ -930,7 +952,8 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
                         ? 'Add selected'
                         : 'Add ${_selectedPhones.length} selected'),
                     onPressed: _selectedPhones.isEmpty ? null : _commitAdd,
-                    style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                    style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14)),
                   ),
                 ),
               ),
@@ -961,7 +984,8 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
 
   Future<void> _commitAdd() async {
     // Write to group's memberPhones array
-    final entries = _selectedPhones.entries.where((e) => e.key.isNotEmpty).toList();
+    final entries =
+        _selectedPhones.entries.where((e) => e.key.isNotEmpty).toList();
     if (entries.isEmpty) return;
     final phones = entries.map((e) => e.key).toList();
     final names = {
@@ -969,7 +993,8 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
         e.key: e.value.trim().isEmpty ? e.key : e.value.trim(),
     };
     try {
-      await GroupService().addMembers(widget.groupId, phones, displayNames: names);
+      await GroupService()
+          .addMembers(widget.groupId, phones, displayNames: names);
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
@@ -979,7 +1004,8 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
           content: Text(
             mapFirebaseError(
               e,
-              fallback: 'Failed to add members. Please check your Firebase connection and try again.',
+              fallback:
+                  'Failed to add members. Please check your Firebase connection and try again.',
             ),
           ),
         ),
@@ -1000,21 +1026,32 @@ class _EmptyState extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(top: 6, bottom: 10),
       padding: const EdgeInsets.all(16),
-      decoration: _glassDecoration(context),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline_rounded),
+          Icon(Icons.info_outline_rounded, color: Colors.blueGrey.shade400),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: Theme.of(context).textTheme.titleSmall),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.7),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
                   ),
                 ),
               ],

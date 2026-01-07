@@ -1,5 +1,6 @@
 // lib/details/group_detail_screen.dart
-import '../chat/io_file_ops.dart' if (dart.library.html) '../chat/io_file_ops_stub.dart';
+import '../chat/io_file_ops.dart'
+    if (dart.library.html) '../chat/io_file_ops_stub.dart';
 
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -8,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -44,7 +46,6 @@ import '../details/recurring/group_recurring_screen.dart';
 
 import '../widgets/ads/sleek_ad_card.dart';
 import '../ui/comp/glass_card.dart' as detail;
-import '../ui/comp/pill_chip.dart';
 import '../ui/fx/motion.dart';
 import '../ui/typography/amount_text.dart';
 import '../widgets/charts/category_legend_row.dart';
@@ -68,7 +69,8 @@ Future<Uri?> _safeDownloadUri(String raw) async {
       return Uri.parse(d);
     }
 
-    final looksLikeStorage = uri.host.contains('firebasestorage.googleapis.com');
+    final looksLikeStorage =
+        uri.host.contains('firebasestorage.googleapis.com');
     final hasToken = uri.queryParameters.containsKey('token');
     if (looksLikeStorage && !hasToken) {
       final ref = FirebaseStorage.instance.refFromURL(raw);
@@ -110,17 +112,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   Map<String, String> _memberDisplayNames = {};
   List<Map<String, dynamic>> get _shareFaces => _members
       .map((m) => {
-    'id': m.phone,
-    'name': (m.name.isNotEmpty && m.name != m.phone)
-        ? m.name
-        : _maskPhoneForDisplay(m.phone),
-    'avatarUrl': m.avatar.startsWith('http') ? m.avatar : null,
-  })
+            'id': m.phone,
+            'name': (m.name.isNotEmpty && m.name != m.phone)
+                ? m.name
+                : _maskPhoneForDisplay(m.phone),
+            'avatarUrl': m.avatar.startsWith('http') ? m.avatar : null,
+          })
       .toList();
 
   PieSlice? _selectedCategorySlice;
   final GlobalKey _chartListAnchorKey = GlobalKey();
-
 
   // Chat prefill when user taps "Discuss" on an expense
   String? _pendingChatDraft;
@@ -129,14 +130,17 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   String _maskPhoneForDisplay(String phone) {
     final digits = phone.replaceAll(RegExp(r'\D'), '');
     if (digits.isEmpty) return 'Member';
-    final last4 = digits.length >= 4 ? digits.substring(digits.length - 4) : digits;
+    final last4 =
+        digits.length >= 4 ? digits.substring(digits.length - 4) : digits;
     return 'Member ($last4)'; // e.g., Member (4821)
   }
 
   bool _looksLikeImageName(String? s) {
     final n = (s ?? '').toLowerCase();
-    return n.endsWith('.jpg') || n.endsWith('.jpeg') ||
-        n.endsWith('.png') || n.endsWith('.gif') ||
+    return n.endsWith('.jpg') ||
+        n.endsWith('.jpeg') ||
+        n.endsWith('.png') ||
+        n.endsWith('.gif') ||
         n.endsWith('.webp');
   }
 
@@ -213,7 +217,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               builder: (_) => Dialog(
                 insetPadding: const EdgeInsets.all(16),
                 child: InteractiveViewer(
-                  child: Image.network(resolved.toString(), fit: BoxFit.contain),
+                  child:
+                      Image.network(resolved.toString(), fit: BoxFit.contain),
                 ),
               ),
             );
@@ -238,9 +243,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
   }
 
-
-
-
   Widget _attachmentTile({
     required String url,
     String? name,
@@ -256,14 +258,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           : 'Attachment';
     }
 
-
-
     String _fmtBytesLocal(int b) {
       if (b <= 0) return '';
-      const units = ['B','KB','MB','GB','TB'];
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
       double v = b.toDouble();
       int i = 0;
-      while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+      while (v >= 1024 && i < units.length - 1) {
+        v /= 1024;
+        i++;
+      }
       return '${v < 10 ? v.toStringAsFixed(1) : v.toStringAsFixed(0)} ${units[i]}';
     }
 
@@ -273,14 +276,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       onTap: () async {
         final launchUri = await _safeDownloadUri(url);
         if (launchUri == null) return;
-        final ok = await launchUrl(launchUri, mode: LaunchMode.externalApplication);
+        final ok =
+            await launchUrl(launchUri, mode: LaunchMode.externalApplication);
         if (!ok && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Could not open $displayName')),
           );
         }
       },
-
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
@@ -305,7 +308,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   ),
                   if (sizeText.isNotEmpty)
                     Text(sizeText,
-                        style: TextStyle(fontSize: 11, color: Colors.grey[700])),
+                        style:
+                            TextStyle(fontSize: 11, color: Colors.grey[700])),
                 ],
               ),
             ),
@@ -317,7 +321,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
   }
 
-
   String _nameFor(String phone) {
     if (phone == widget.userId) return 'You';
     final f = _friend(phone);
@@ -327,18 +330,17 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     return _maskPhoneForDisplay(phone);
   }
 
-
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
   }
 
-
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this); // Overview / Chart / Analytics / Chat
+    _tabController = TabController(
+        length: 4, vsync: this); // Overview / Chart / Analytics / Chat
     _group = widget.group;
     _fetchMembers();
   }
@@ -347,7 +349,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     setState(() => _loadingMembers = true);
     final latest = await GroupService().getGroupById(_group.id);
     final activeGroup = latest ?? _group;
-    final displayNames = Map<String, String>.from(activeGroup.memberDisplayNames ?? {});
+    final displayNames =
+        Map<String, String>.from(activeGroup.memberDisplayNames ?? {});
     final friends = <FriendModel>[];
     FriendModel? creator;
 
@@ -355,7 +358,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     String? findNameFuzzy(String phone) {
       // 1. Exact match
       if (displayNames.containsKey(phone)) return displayNames[phone];
-      
+
       // 2. Normalized match (strip non-digits)
       final norm = phone.replaceAll(RegExp(r'\D'), '');
       if (norm.isEmpty) return null;
@@ -366,24 +369,54 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         // Usually suffix match is safest for phones (last 10 digits)
         if (keyNorm == norm) return entry.value;
         if (keyNorm.length >= 10 && norm.length >= 10) {
-           if (keyNorm.endsWith(norm) || norm.endsWith(keyNorm)) return entry.value;
+          if (keyNorm.endsWith(norm) || norm.endsWith(keyNorm))
+            return entry.value;
         }
       }
       return null;
     }
 
     for (final phone in activeGroup.memberPhones) {
-      final fetched = await FriendService().getFriendByPhone(widget.userId, phone);
+      final fetched =
+          await FriendService().getFriendByPhone(widget.userId, phone);
       if (fetched != null) {
         friends.add(fetched);
         if (phone == activeGroup.createdBy) creator = fetched;
         continue;
       }
 
+      // If not a local friend, try fetching their global user profile for avatar/name
+      FriendModel? globalProfile;
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(phone)
+            .get();
+        if (userDoc.exists) {
+          final data = userDoc.data();
+          if (data != null) {
+            // Be robust: check common field names for avatars
+            final av = (data['avatar'] ?? data['avatarUrl'] ?? data['photoUrl'])
+                as String?;
+            globalProfile = FriendModel(
+              phone: phone,
+              name: (data['name'] as String?)?.trim() ?? phone,
+              avatar: av?.trim() ?? "👤",
+            );
+          }
+        }
+      } catch (_) {}
+
+      if (globalProfile != null) {
+        friends.add(globalProfile);
+        if (phone == activeGroup.createdBy) creator = globalProfile;
+        continue;
+      }
+
       final fuzzyName = findNameFuzzy(phone);
-      final fallbackName = (fuzzyName != null && fuzzyName.trim().isNotEmpty) 
-          ? fuzzyName.trim() 
-          : phone; // Show phone instead of "Member (xxxx)"
+      final fallbackName = (fuzzyName != null && fuzzyName.trim().isNotEmpty)
+          ? fuzzyName.trim()
+          : phone;
 
       final placeholder = FriendModel(
         phone: phone,
@@ -504,12 +537,23 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   // ---------- Helpers ----------
   FriendModel _friend(String phone) => _members.firstWhere(
         (f) => f.phone == phone,
-    orElse: () => FriendModel(phone: phone, name: phone, avatar: '👤'),
-  );
+        orElse: () => FriendModel(phone: phone, name: phone, avatar: '👤'),
+      );
 
   String _fmtShort(DateTime dt) {
     const months = [
-      'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return '${dt.day} ${months[dt.month - 1]}';
   }
@@ -523,7 +567,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     setState(() {
       _pendingChatDraft = msg;
     });
-    _tabController.animateTo(2); // Chat tab
+    // CHANGED: Index 3 corresponds to the Chat tab (0=Overview, 1=Chart, 2=Analytics, 3=Chat)
+    _tabController.animateTo(3);
   }
 
   // Delete everywhere (all participants + optional group path)
@@ -539,13 +584,18 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 
     // User-scoped copies
     for (final p in phones) {
-      final userDoc = fs.collection('users').doc(p).collection('expenses').doc(e.id);
+      final userDoc =
+          fs.collection('users').doc(p).collection('expenses').doc(e.id);
       batch.delete(userDoc);
     }
 
     // Group-scoped canonical copy (if your backend uses this)
     if ((e.groupId ?? '').isNotEmpty) {
-      final groupDoc = fs.collection('groups').doc(e.groupId).collection('expenses').doc(e.id);
+      final groupDoc = fs
+          .collection('groups')
+          .doc(e.groupId)
+          .collection('expenses')
+          .doc(e.id);
       batch.delete(groupDoc);
     }
 
@@ -575,10 +625,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           'This will permanently delete “${e.label?.isNotEmpty == true ? e.label! : e.category ?? 'Expense'}” for all members.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white),
             child: const Text('Delete'),
           ),
         ],
@@ -614,7 +668,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     String cleanNote = e.note;
     String? noteUrl;
     {
-      final m = RegExp(r'(https?:\/\/[^\s]+)', caseSensitive: false).firstMatch(cleanNote);
+      final m = RegExp(r'(https?:\/\/[^\s]+)', caseSensitive: false)
+          .firstMatch(cleanNote);
       if (m != null) {
         noteUrl = m.group(0);
         cleanNote = cleanNote
@@ -623,7 +678,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             .trim();
       }
     }
-
 
     showModalBottomSheet(
       context: context,
@@ -640,7 +694,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           children: [
             // Grabber
             Container(
-              height: 4, width: 44, margin: const EdgeInsets.only(bottom: 12),
+              height: 4,
+              width: 44,
+              margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
                 color: Colors.grey[300],
                 borderRadius: BorderRadius.circular(3),
@@ -657,13 +713,17 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w800),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   "₹${e.amount.toStringAsFixed(2)}",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: cs.primary),
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: cs.primary),
                 ),
               ],
             ),
@@ -683,7 +743,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                 const Spacer(),
                 Text(
                   "${_fmtShort(e.date)} ${e.date.year}  "
-                      "${e.date.hour.toString().padLeft(2, '0')}:${e.date.minute.toString().padLeft(2, '0')}",
+                  "${e.date.hour.toString().padLeft(2, '0')}:${e.date.minute.toString().padLeft(2, '0')}",
                   style: TextStyle(color: Colors.grey.shade700),
                 ),
               ],
@@ -693,7 +753,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               const SizedBox(height: 6),
               Row(
                 children: [
-                  const Text("Category: ", style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text("Category: ",
+                      style: TextStyle(fontWeight: FontWeight.w600)),
                   Flexible(child: Text(e.category!)),
                 ],
               ),
@@ -745,12 +806,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               const SizedBox(height: 6),
               _attachmentView(
                 url: e.attachmentUrl!,
-                name: e.attachmentName,          // ok if null; tile will derive a name
-                sizeBytes: e.attachmentSize,     // ok if null; size hidden
+                name: e.attachmentName, // ok if null; tile will derive a name
+                sizeBytes: e.attachmentSize, // ok if null; size hidden
               ),
             ],
-
-
 
             const Divider(height: 22),
 
@@ -759,7 +818,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               alignment: Alignment.centerLeft,
               child: Text(
                 "Split",
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: cs.primary),
+                style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    color: cs.primary),
               ),
             ),
             const SizedBox(height: 8),
@@ -768,18 +830,22 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               final isYou = s.key == widget.userId;
               final owes = s.key != e.payerId; // payer "paid", others "owe"
               final who = isYou ? "You" : _nameFor(s.key);
-              final subtitle = owes ? (isYou ? "You owe" : "Owes") : (isYou ? "You paid" : "Paid");
+              final subtitle = owes
+                  ? (isYou ? "You owe" : "Owes")
+                  : (isYou ? "You paid" : "Paid");
               final amtColor = owes ? cs.error : Colors.green.shade700;
 
               return ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 leading: _avatar(s.key),
-                title: Text(who, style: const TextStyle(fontWeight: FontWeight.w600)),
+                title: Text(who,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: Text("$subtitle ₹${s.value.toStringAsFixed(2)}"),
                 trailing: Text(
                   "₹${s.value.toStringAsFixed(2)}",
-                  style: TextStyle(fontWeight: FontWeight.w700, color: amtColor),
+                  style:
+                      TextStyle(fontWeight: FontWeight.w700, color: amtColor),
                 ),
               );
             }),
@@ -805,7 +871,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                     Navigator.pop(context);
                     Future.delayed(
                       Duration.zero,
-                          () => _openEditExpense(e),
+                      () => _openEditExpense(e),
                     );
                   },
                 ),
@@ -826,290 +892,489 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
   }
 
-
   Widget _avatar(String phone, {double radius = 16}) {
     final f = _friend(phone);
     final a = f.avatar;
-    if (a.startsWith('http')) {
-      return CircleAvatar(radius: radius, backgroundImage: NetworkImage(a));
+    final displayName = _nameFor(phone);
+    final initial = displayName.isNotEmpty
+        ? displayName.characters.first.toUpperCase()
+        : '?';
+
+    // Check if avatar string looks like a URL
+    if (a.isNotEmpty && (a.startsWith('http') || a.startsWith('https'))) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: Colors.grey[200],
+        foregroundImage: NetworkImage(a),
+        child: Text(
+          initial,
+          style: TextStyle(
+              fontSize: radius * 1.1,
+              fontWeight: FontWeight.w700,
+              color: Colors.teal.shade900),
+        ),
+      );
     }
-    final displayName  = _nameFor(phone);
-    final initial = displayName .isNotEmpty ? displayName .characters.first.toUpperCase() : '?';
-    return CircleAvatar(radius: radius, child: Text(initial));
+    // Fallback if no image URL
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: Colors.teal.shade100,
+      child: Text(
+        initial,
+        style: TextStyle(
+            fontSize: radius * 1.1,
+            fontWeight: FontWeight.w700,
+            color: Colors.teal.shade900),
+      ),
+    );
   }
 
+  Widget _activityCard(ExpenseItem e) {
+    final title = e.label?.isNotEmpty == true
+        ? e.label!
+        : (e.category?.isNotEmpty == true ? e.category! : "Expense");
+    final youDelta = _yourImpact(e);
 
-  // ---------- UI ----------
-  @override
-  Widget build(BuildContext context) {
-    final labelColor = Colors.teal.shade900;
-    final unselected = Colors.teal.shade600;
+    // Modern Colors
+    final amountColor =
+        youDelta >= 0 ? const Color(0xFF00C853) : const Color(0xFFFF3D00);
 
     return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFFF7FBFF), Color(0xFFEFF5FF)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
       ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          title: Text(_group.name),
-          backgroundColor: Colors.white,
-          elevation: 2,
-          actions: [
-            IconButton(
-              tooltip: 'Settings',
-              icon: const Icon(Icons.settings_rounded),
-              onPressed: _openSettings,
-            ),
-          ],
-          bottom: TabBar(
-            controller: _tabController,
-            labelColor: labelColor,
-            unselectedLabelColor: unselected,
-            labelStyle: const TextStyle(fontWeight: FontWeight.w800),
-            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
-            indicatorColor: Colors.teal.shade800,
-            indicatorWeight: 3,
-            tabs: const [
-              Tab(text: 'Overview'),
-              Tab(text: 'Chart'),
-              Tab(text: 'Analytics'),
-              Tab(text: 'Chat'),
-            ],
-          ),
-        ),
-        body: _loadingMembers
-            ? const Center(child: CircularProgressIndicator())
-            : StreamBuilder<List<ExpenseItem>>(
-          stream: ExpenseService()
-              .getGroupExpensesStream(widget.userId, _group.id),
-          builder: (context, snapshot) {
-            final expenses = snapshot.data ?? [];
-            final safeBottom = context.adsBottomPadding();
-
-            if (kDebugMode && expenses.isEmpty) {
-              debugPrint(
-                  '[GroupDetailScreen] No expenses found for group ${_group.id} yet.');
-            }
-
-            // Pairwise math (YOU vs each member), group-only — unified logic
-            final pairNet =
-                ledger.pairwiseNetForUserInGroup(expenses, widget.userId, _group.id);
-            final headerTotals = ledger.summarizeForHeader(pairNet);
-            final owedToYou = headerTotals.owedToYou;
-            final youOwe = headerTotals.youOwe;
-
-            return TabBarView(
-              controller: _tabController,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _showExpenseDetailsUpgraded(context, e),
+          onLongPress: () => _confirmDelete(e),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ============ OVERVIEW ============
-                RefreshIndicator(
-                  onRefresh: _fetchMembers,
-                  child: ListView(
-                    padding: EdgeInsets.fromLTRB(16, 16, 16, safeBottom + 24),
+                // Date Box
+                Container(
+                  width: 48,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F7FA),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
                     children: [
-                      _headerCard(
-                        owe: youOwe,
-                        owed: owedToYou,
-                        txCount: expenses.length,
+                      Text(
+                        e.date.day.toString(),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 18,
+                            height: 1,
+                            color: Colors.black87),
                       ),
-                      const SizedBox(height: 12),
-                      const SleekAdCard(
-                        margin: EdgeInsets.symmetric(horizontal: 4),
-                        radius: 16,
+                      const SizedBox(height: 2),
+                      Text(
+                        DateFormat('MMM').format(e.date).toUpperCase(),
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
+                            color: Colors.grey[500]),
                       ),
-                      const SizedBox(height: 14),
-                      _recurringShortcutCard(),
-                      const SizedBox(height: 14),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
 
+                // Details Column
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                            color: Colors.black87),
+                      ),
+                      const SizedBox(height: 8),
 
-
-                      _actionsRow(expenses),
-                      const SizedBox(height: 16),
-                      _balancesByMember(pairNet),
-                      const SizedBox(height: 16),
-                      _recentActivity(expenses),
+                      // "Paid by" Row with Profile Picture
+                      Row(
+                        children: [
+                          // VISUAL CHANGE: Profile Pic (Avatar) is here
+                          _avatar(e.payerId, radius: 12),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              "Paid by ${_nameFor(e.payerId)}",
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[700],
+                                  fontWeight: FontWeight.w500),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
 
-                // ============ CHART ============
-                Builder(builder: (context) {
-                  final categoryTotals = <String, double>{};
-                  for (final expense in expenses) {
-                    final cat = _categoryLabelForExpense(expense);
-                    categoryTotals.update(cat, (value) => value + expense.amount.abs(),
-                        ifAbsent: () => expense.amount.abs());
-                  }
-                  final palette = [
-                    Colors.teal,
-                    Colors.indigo,
-                    Colors.deepPurple,
-                    Colors.orange,
-                    Colors.pink,
-                    Colors.blueGrey,
-                  ];
-                  var colorIndex = 0;
-                  final slices = categoryTotals.entries
-                      .map((entry) => PieSlice(
-                            key: entry.key,
-                            label: entry.key,
-                            value: entry.value,
-                            color: palette[colorIndex++ % palette.length],
-                          ))
-                      .toList()
-                    ..sort((a, b) => b.value.compareTo(a.value));
-                  final totalSpending =
-                      slices.fold<double>(0, (sum, slice) => sum + slice.value);
-                  final filteredExpenses = _selectedCategorySlice == null
-                      ? expenses
-                      : expenses
-                          .where((e) =>
-                              _categoryLabelForExpense(e) ==
-                              _selectedCategorySlice!.label)
-                          .toList();
-                  final friendsById = <String, FriendModel>{
-                    for (final member in _members) member.phone: member,
-                    widget.userId: _selfFriend,
-                  };
+                const SizedBox(width: 8),
 
-                  return RefreshIndicator(
-                    onRefresh: _fetchMembers,
-                    child: SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(16, 20, 16, safeBottom + 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            detail.GlassCard(
-                              padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
+                // Amount Column
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      youDelta == 0
+                          ? "SETTLED"
+                          : (youDelta > 0 ? "YOU LENT" : "YOU BORROWED"),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: youDelta == 0 ? Colors.grey : amountColor,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "₹${e.amount.toStringAsFixed(0)}",
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black87,
+                        fontSize: 16,
+                      ),
+                    ),
+                    if (youDelta != 0)
+                      Text(
+                        "${youDelta > 0 ? '+' : ''}₹${youDelta.abs().toStringAsFixed(0)}",
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: amountColor,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---------- UI ----------
+  @override
+  Widget build(BuildContext context) {
+    // NEW: Clean background color instead of gradient
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
+      appBar: AppBar(
+        title: Text(
+          _group.name,
+          style: const TextStyle(
+              fontWeight: FontWeight.w800, color: Colors.black87),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        iconTheme: const IconThemeData(color: Colors.black87),
+        shape: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+        actions: [
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: _openSettings,
+          ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: Colors.teal.shade800,
+          unselectedLabelColor: Colors.grey.shade500,
+          labelStyle:
+              const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
+          indicatorColor: Colors.teal.shade800,
+          indicatorSize: TabBarIndicatorSize.label,
+          indicatorWeight: 3,
+          tabs: const [
+            Tab(text: 'Overview'),
+            Tab(text: 'Chart'),
+            Tab(text: 'Analytics'),
+            Tab(text: 'Chat'),
+          ],
+        ),
+      ),
+      body: _loadingMembers
+          ? const Center(child: CircularProgressIndicator())
+          : StreamBuilder<List<ExpenseItem>>(
+              stream: ExpenseService()
+                  .getGroupExpensesStream(widget.userId, _group.id),
+              builder: (context, snapshot) {
+                final expenses = snapshot.data ?? [];
+                final safeBottom = context.adsBottomPadding();
+
+                if (kDebugMode && expenses.isEmpty) {
+                  debugPrint(
+                      '[GroupDetailScreen] No expenses found for group ${_group.id} yet.');
+                }
+
+                // Pairwise math (YOU vs each member), group-only — unified logic
+                final pairNet = ledger.pairwiseNetForUserInGroup(
+                    expenses, widget.userId, _group.id);
+                final headerTotals = ledger.summarizeForHeader(pairNet);
+                final owedToYou = headerTotals.owedToYou;
+                final youOwe = headerTotals.youOwe;
+
+                return TabBarView(
+                  controller: _tabController,
+                  children: [
+                    // ============ OVERVIEW ============
+                    RefreshIndicator(
+                      onRefresh: _fetchMembers,
+                      child: ListView(
+                        padding:
+                            EdgeInsets.fromLTRB(16, 16, 16, safeBottom + 24),
+                        children: [
+                          _headerCard(
+                            owe: youOwe,
+                            owed: owedToYou,
+                            txCount: expenses.length,
+                          ),
+                          const SizedBox(height: 12),
+                          const SleekAdCard(
+                            margin: EdgeInsets.symmetric(horizontal: 4),
+                            radius: 16,
+                          ),
+                          const SizedBox(height: 14),
+                          _recurringShortcutCard(),
+                          const SizedBox(height: 14),
+                          _actionsRow(expenses),
+                          const SizedBox(height: 16),
+                          _balancesByMember(pairNet),
+                          const SizedBox(height: 16),
+                          _recentActivity(expenses),
+                        ],
+                      ),
+                    ),
+
+                    // ============ CHART ============
+                    Builder(builder: (context) {
+                      final categoryTotals = <String, double>{};
+                      for (final expense in expenses) {
+                        final cat = _categoryLabelForExpense(expense);
+                        categoryTotals.update(
+                            cat, (value) => value + expense.amount.abs(),
+                            ifAbsent: () => expense.amount.abs());
+                      }
+                      final palette = [
+                        Colors.teal,
+                        Colors.indigo,
+                        Colors.deepPurple,
+                        Colors.orange,
+                        Colors.pink,
+                        Colors.blueGrey,
+                      ];
+                      var colorIndex = 0;
+                      final slices = categoryTotals.entries
+                          .map((entry) => PieSlice(
+                                key: entry.key,
+                                label: entry.key,
+                                value: entry.value,
+                                color: palette[colorIndex++ % palette.length],
+                              ))
+                          .toList()
+                        ..sort((a, b) => b.value.compareTo(a.value));
+                      final totalSpending = slices.fold<double>(
+                          0, (sum, slice) => sum + slice.value);
+                      final filteredExpenses = _selectedCategorySlice == null
+                          ? expenses
+                          : expenses
+                              .where((e) =>
+                                  _categoryLabelForExpense(e) ==
+                                  _selectedCategorySlice!.label)
+                              .toList();
+                      final friendsById = <String, FriendModel>{
+                        for (final member in _members) member.phone: member,
+                        widget.userId: _selfFriend,
+                      };
+
+                      return RefreshIndicator(
+                        onRefresh: _fetchMembers,
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                                16, 20, 16, safeBottom + 24),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                detail.GlassCard(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(16, 16, 16, 18),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        'Spending by category',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 16,
-                                          color: Colors.teal.shade900,
+                                      Row(
+                                        children: [
+                                          Text(
+                                            'Spending by category',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 16,
+                                              color: Colors.teal.shade900,
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          Icon(Icons.pie_chart_outline_rounded,
+                                              color: Colors.teal.shade700,
+                                              size: 18),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Center(
+                                        child: SizedBox(
+                                          height: 220,
+                                          width: 220,
+                                          child: PieTouchChart(
+                                            slices: slices,
+                                            selected: _selectedCategorySlice,
+                                            onSelect: _onSliceSelected,
+                                          ),
                                         ),
                                       ),
-                                      const Spacer(),
-                                      Icon(Icons.pie_chart_outline_rounded,
-                                          color: Colors.teal.shade700, size: 18),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Center(
-                                    child: SizedBox(
-                                      height: 220,
-                                      width: 220,
-                                      child: PieTouchChart(
+                                      const SizedBox(height: 16),
+                                      CategoryLegendRow(
                                         slices: slices,
+                                        total: totalSpending,
                                         selected: _selectedCategorySlice,
                                         onSelect: _onSliceSelected,
                                       ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  CategoryLegendRow(
-                                    slices: slices,
-                                    total: totalSpending,
-                                    selected: _selectedCategorySlice,
-                                    onSelect: _onSliceSelected,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            const SleekAdCard(
-                              margin: EdgeInsets.symmetric(horizontal: 4),
-                              radius: 16,
-                            ),
-                            const SizedBox(height: 16),
-                            Container(
-                              key: _chartListAnchorKey,
-                              child: UnifiedTransactionList(
-                                key: ValueKey(
-                                    'group-chart-${_selectedCategorySlice?.key ?? 'all'}'),
-                                expenses: filteredExpenses,
-                                incomes: const [],
-                                friendsById: friendsById,
-                                userPhone: widget.userId,
-                                onEdit: (tx) {
-                                  if (tx is ExpenseItem) {
-                                    _openEditExpense(tx);
-                                  }
-                                },
-                                onDelete: (tx) {
-                                  if (tx is ExpenseItem) {
-                                    _confirmDelete(tx);
-                                  }
-                                },
-                                showTopBannerAd: false,
-                                showBottomBannerAd: true,
-                                inlineAdAfterIndex: 2,
-                                enableInlineAds: true,
-                                emptyBuilder: (ctx) => Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 24),
-                                  child: Text(
-                                    _selectedCategorySlice == null
-                                        ? 'No group expenses yet.'
-                                        : 'No expenses in ${_selectedCategorySlice!.label}.',
-                                    textAlign: TextAlign.center,
-                                    style: Theme.of(ctx)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                    ],
                                   ),
                                 ),
-                              ),
+                                const SizedBox(height: 12),
+                                const SleekAdCard(
+                                  margin: EdgeInsets.symmetric(horizontal: 4),
+                                  radius: 16,
+                                ),
+                                const SizedBox(height: 16),
+                                Container(
+                                  key: _chartListAnchorKey,
+                                  margin:
+                                      const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(24),
+                                    border:
+                                        Border.all(color: Colors.grey.shade100),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.04),
+                                        blurRadius: 16,
+                                        offset: const Offset(0, 8),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(24),
+                                    child: UnifiedTransactionList(
+                                      key: ValueKey(
+                                          'group-chart-${_selectedCategorySlice?.key ?? 'all'}'),
+                                      expenses: filteredExpenses,
+                                      incomes: const [],
+                                      friendsById: friendsById,
+                                      userPhone: widget.userId,
+                                      onEdit: (tx) {
+                                        if (tx is ExpenseItem) {
+                                          _openEditExpense(tx);
+                                        }
+                                      },
+                                      onDelete: (tx) {
+                                        if (tx is ExpenseItem) {
+                                          _confirmDelete(tx);
+                                        }
+                                      },
+                                      onDiscuss: (tx) {
+                                        if (tx is ExpenseItem) {
+                                          _goDiscussExpense(tx);
+                                        }
+                                      },
+                                      showTopBannerAd: false,
+                                      showBottomBannerAd: true,
+                                      inlineAdAfterIndex: 2,
+                                      enableInlineAds: true,
+                                      emptyBuilder: (ctx) => Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 24),
+                                        child: Text(
+                                          _selectedCategorySlice == null
+                                              ? 'No group expenses yet.'
+                                              : 'No expenses in ${_selectedCategorySlice!.label}.',
+                                          textAlign: TextAlign.center,
+                                          style: Theme.of(ctx)
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.copyWith(
+                                                  fontWeight: FontWeight.w600),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
+                        ),
+                      );
+                    }),
+
+                    // ============ ANALYTICS ============
+                    RefreshIndicator(
+                      onRefresh: _fetchMembers,
+                      child: GroupAnalyticsTab(
+                        expenses: expenses,
+                        currentUserPhone: widget.userId,
+                        group: _group,
+                        members: _members,
+                        memberDisplayNames: _memberDisplayNames,
+                      ),
+                    ),
+
+                    // ============ CHAT ============
+                    SafeArea(
+                      top: false,
+                      bottom: false,
+                      child: Padding(
+                        padding: EdgeInsets.only(bottom: safeBottom),
+                        child: GroupChatTab(
+                          groupId: _group.id,
+                          currentUserId: widget.userId,
+                          participants: _group.memberPhones,
+                          initialDraft: _pendingChatDraft,
                         ),
                       ),
                     ),
-                  );
-                }),
-
-                // ============ ANALYTICS ============
-                RefreshIndicator(
-                  onRefresh: _fetchMembers,
-                  child: GroupAnalyticsTab(
-                    expenses: expenses,
-                    currentUserPhone: widget.userId,
-                    group: _group,
-                    members: _members,
-                    memberDisplayNames: _memberDisplayNames,
-                  ),
-                ),
-
-                // ============ CHAT ============
-                SafeArea(
-                  top: false,
-                  bottom: false,
-                  child: Padding(
-                    padding: EdgeInsets.only(bottom: safeBottom),
-                    child: GroupChatTab(
-                      groupId: _group.id,
-                      currentUserId: widget.userId,
-                      participants: _group.memberPhones,
-                      initialDraft: _pendingChatDraft,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
+                  ],
+                );
+              },
+            ),
     );
   }
 
@@ -1126,152 +1391,190 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     final settled = owe.abs() < 0.01 && owed.abs() < 0.01;
     final membersCount = _members.length;
 
+    // Modern Fintech Colors
+    final posColor = const Color(0xFF00C853); // Vivid Green
+    final negColor = const Color(0xFFFF3D00); // Vivid Red
     final netColor = net > 0.01
-        ? Colors.teal.shade700
+        ? posColor
         : net < -0.01
-            ? theme.colorScheme.error
-            : theme.colorScheme.onSurface.withOpacity(.64);
+            ? negColor
+            : Colors.grey.shade600;
 
-    final netLabel = net.abs() < 0.01
-        ? 'Settled'
-        : net > 0
-            ? '+ ₹${net.toStringAsFixed(2)}'
-            : '- ₹${(-net).toStringAsFixed(2)}';
-
-    final chipStyle = theme.textTheme.labelLarge?.copyWith(
-      fontFeatures: const [ui.FontFeature.tabularFigures()],
-    );
-
-    Widget amountChip(String label, double amount,
-        {Color? color, IconData? icon}) {
-      final chipColor = color ??
-          (amount >= 0 ? Colors.teal.shade700 : theme.colorScheme.error);
-      return PillChip(
-        label,
-        icon: icon,
-        fg: chipColor,
-        bg: chipColor.withOpacity(0.14),
-        textStyle: chipStyle,
-      );
-    }
-
-    return detail.GlassCard(
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Hero(
-                tag: 'group:${_group.id}',
-                child: _groupAvatar(radius: 30),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _group.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Created by $creatorLabel • $membersCount members • $txCount transactions',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.textTheme.bodySmall?.color?.withOpacity(.74),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+          // 1. Profile / Group Info
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Hero(
+                  tag: 'group:${_group.id}',
+                  child: _groupAvatar(radius: 28),
                 ),
-              ),
-              AnimatedSwitcher(
-                duration: kMed,
-                switchInCurve: kEase,
-                switchOutCurve: kEase,
-                child: PillChip(
-                  'Net $netLabel',
-                  key: ValueKey(netLabel),
-                  fg: netColor,
-                  bg: netColor.withOpacity(0.18),
-                  textStyle: theme.textTheme.labelLarge?.copyWith(
-                    fontFeatures: const [ui.FontFeature.tabularFigures()],
-                    fontWeight: FontWeight.w800,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _group.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black87,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$membersCount members • $txCount txns',
+                        style: TextStyle(
+                          color: Colors.grey.shade500,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              amountChip(
-                owe <= 0.01
-                    ? 'Group owes you ₹0.00'
-                    : 'Group owes you ₹${owed.toStringAsFixed(2)}',
-                owed,
-                icon: Icons.call_received_rounded,
-                color: Colors.teal.shade700,
-              ),
-              amountChip(
-                owe <= 0.01
-                    ? 'You owe group ₹0.00'
-                    : 'You owe group ₹${owe.toStringAsFixed(2)}',
-                -owe,
-                icon: Icons.call_made_rounded,
-                color: theme.colorScheme.error,
-              ),
-              if (settled)
-                PillChip(
-                  'All settled',
-                  icon: Icons.check_circle,
-                  fg: theme.colorScheme.onSurface.withOpacity(.72),
-                  bg: theme.colorScheme.onSurface.withOpacity(.08),
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              PillChip(
-                'Transactions: $txCount',
-                icon: Icons.receipt_long_rounded,
-                textStyle: theme.textTheme.labelLarge,
-              ),
-              PillChip(
-                'Members: $membersCount',
-                icon: Icons.groups_rounded,
-                textStyle: theme.textTheme.labelLarge,
-              ),
-            ],
-          ),
-          if (_shareFaces.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: ShareBadge(
-                participants: _shareFaces,
-                dense: true,
-                onTap: _openSettings,
-              ),
+                if (_shareFaces.isNotEmpty)
+                  ShareBadge(
+                    participants: _shareFaces,
+                    dense: true,
+                    onTap: _openSettings,
+                  ),
+              ],
             ),
-          ],
+          ),
+
+          const Divider(
+              height: 1,
+              thickness: 1,
+              indent: 20,
+              endIndent: 20,
+              color: Color(0xFFF5F5F5)),
+
+          // 2. Net Balance Display
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+            child: Column(
+              children: [
+                Text(
+                  net.abs() < 0.01
+                      ? "ALL SETTLED"
+                      : (net > 0 ? "GROUP OWES YOU" : "YOU OWE GROUP"),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade400,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  net.abs() < 0.01
+                      ? "No Dues"
+                      : "₹${net.abs().toStringAsFixed(2)}",
+                  style: TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.w900,
+                    color: netColor,
+                    letterSpacing: -1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 3. Mini Breakdown (Only if not settled)
+          if (!settled)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF5F5), // Soft Red
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("YOU OWE",
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.red.shade300)),
+                          const SizedBox(height: 4),
+                          Text("₹${owe.toStringAsFixed(0)}",
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.red.shade700)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F5E9), // Soft Green
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("OWED TO YOU",
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.green.shade300)),
+                          const SizedBox(height: 4),
+                          Text("₹${owed.toStringAsFixed(0)}",
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.green.shade700)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
         ],
       ),
     );
   }
+
   Widget _recurringShortcutCard() {
-    return _glassCard(
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
+      ),
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
@@ -1287,34 +1590,33 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               ),
             );
           },
-          child: Row(
-            children: [
-              Container(
-                height: 40,
-                width: 40,
-                decoration: BoxDecoration(
-                  color: Colors.teal.withOpacity(.10),
-                  borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Container(
+                  height: 36,
+                  width: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey.withOpacity(.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.repeat_rounded,
+                      color: Colors.blueGrey.shade700, size: 20),
                 ),
-                child: const Icon(Icons.repeat_rounded, color: Colors.teal),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Recurring',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Recurring Expenses',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: Colors.black87),
+                  ),
                 ),
-              ),
-              Text(
-                'View all',
-                style: TextStyle(
-                  color: Colors.teal.shade700,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(width: 6),
-              const Icon(Icons.chevron_right),
-            ],
+                Icon(Icons.chevron_right, color: Colors.grey.shade400),
+              ],
+            ),
           ),
         ),
       ),
@@ -1322,47 +1624,58 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   }
 
   Widget _actionsRow(List<ExpenseItem> expenses) {
-    return _glassCard(
-      child: Row(
-        children: [
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: _openAddExpense,
-              icon: const Icon(Icons.add),
-              label: const Text("Add Expense"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: _openAddExpense,
+            icon: const Icon(Icons.add_rounded),
+            // CHANGED: Label is now "Add Expense"
+            label: const Text("Add Expense"),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.teal.shade700,
+              backgroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              side: BorderSide(color: Colors.teal.shade100),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: _openSettleUp,
-              icon: const Icon(Icons.handshake),
-              label: const Text("Settle Up"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal.shade800,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: ElevatedButton.icon(
+            onPressed: _openSettleUp,
+            icon: const Icon(Icons.handshake_rounded),
+            label: const Text("Settle"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.teal.shade800,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
             ),
           ),
-          const SizedBox(width: 10),
-          IconButton.filled(
+        ),
+        const SizedBox(width: 10),
+        // CHANGED: Matching Friend Screen Style (Outlined instead of Filled)
+        Expanded(
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.notifications_none_rounded),
+            label: const Text("Remind"),
             onPressed: () => _openRemind(expenses),
-            style: ButtonStyle(
-              backgroundColor: MaterialStatePropertyAll(Colors.orange.shade600),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.deepOrange,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              side: BorderSide(color: Colors.deepOrange.shade100),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+              backgroundColor: Colors.white,
             ),
-            icon: const Icon(Icons.notifications_active_rounded, color: Colors.white),
-            tooltip: 'Send reminder',
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1370,100 +1683,119 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     final rows = pairNet.entries.toList()
       ..sort((a, b) => b.value.abs().compareTo(a.value.abs())); // big first
 
-    // how many members currently unsettled (non-zero balance)?
     final unsettledCount = rows.where((e) => e.value.abs() > 0.005).length;
-    final headerSubtitle = unsettledCount == 0 ? 'All settled' : '$unsettledCount unsettled';
+    final headerSubtitle =
+        unsettledCount == 0 ? 'All settled' : '$unsettledCount unsettled';
 
-    return _glassCard(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-      child: Theme( // hide ExpansionTile divider ripple seams
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 4))
+        ],
+      ),
+      child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: _balancesExpanded,
           onExpansionChanged: (v) => setState(() => _balancesExpanded = v),
-          tilePadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          childrenPadding: const EdgeInsets.only(top: 8, bottom: 8),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          childrenPadding: const EdgeInsets.only(top: 0, bottom: 12),
           title: Row(
             children: [
               Text(
-                "Balances by member",
+                "Member Balances",
                 style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.teal.shade900,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey.shade800,
                 ),
               ),
-              const SizedBox(width: 8),
+              const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.teal.withOpacity(.10),
-                  borderRadius: BorderRadius.circular(999),
+                  color: Colors.grey.withOpacity(.10),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   headerSubtitle,
                   style: TextStyle(
-                    color: Colors.teal.shade900,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11),
                 ),
               ),
             ],
           ),
-          // Body
           children: [
             if (rows.isEmpty)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text("All settled for now.", style: TextStyle(color: Colors.grey[700])),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text("No balances yet.",
+                    style: TextStyle(color: Colors.grey[500])),
               )
             else
               ...rows.map((e) {
                 final phone = e.key;
-                final amount = e.value; // + => they owe you, - => you owe them
+                final amount = e.value;
                 final f = _friend(phone);
                 final displayName = _nameFor(phone);
-
                 final avatarUrl = f.avatar;
-                final leading = avatarUrl.startsWith('http')
-                    ? CircleAvatar(backgroundImage: NetworkImage(avatarUrl))
-                    : CircleAvatar(child: Text((displayName.isNotEmpty ? displayName[0] : '?').toUpperCase()));
 
-                final sentence = amount > 0
-                    ? "$displayName owes you ₹${amount.toStringAsFixed(2)}"
-                    : "You owe $displayName ₹${(-amount).toStringAsFixed(2)}";
+                final isPositive = amount > 0;
+                final color = isPositive
+                    ? const Color(0xFF00C853)
+                    : const Color(0xFFFF3D00);
 
-                final amtColor = amount > 0 ? Colors.teal.shade800 : Colors.redAccent;
-
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(.05),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      )
-                    ],
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
+                return Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Row(
                     children: [
-                      leading,
-                      const SizedBox(width: 10),
+                      if (avatarUrl.startsWith('http'))
+                        CircleAvatar(
+                            radius: 16,
+                            backgroundImage: NetworkImage(avatarUrl))
+                      else
+                        CircleAvatar(
+                            radius: 16,
+                            backgroundColor: Colors.grey[100],
+                            child: Text(
+                                (displayName.isNotEmpty ? displayName[0] : '?')
+                                    .toUpperCase(),
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.black87))),
+                      const SizedBox(width: 12),
                       Expanded(
-                        child: Text(
-                          sentence,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
+                        child: Text(displayName,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 14)),
                       ),
-                      Text(
-                        "₹${amount.abs().toStringAsFixed(0)}",
-                        style: TextStyle(fontWeight: FontWeight.w800, color: amtColor),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            "₹${amount.abs().toStringAsFixed(2)}",
+                            style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: color,
+                                fontSize: 14),
+                          ),
+                          Text(
+                            (isPositive ? "owes you" : "you owe").toUpperCase(),
+                            style: TextStyle(
+                                fontSize: 10,
+                                color: color.withOpacity(0.8),
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1474,7 +1806,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       ),
     );
   }
-
 
   // Helper: friendly date section label
   String _friendlyDateLabel(DateTime dt) {
@@ -1493,12 +1824,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 // Helper: tiny category icon
   IconData _categoryIcon(String? cat) {
     final c = (cat ?? '').toLowerCase();
-    if (c.contains('food') || c.contains('lunch') || c.contains('dinner')) return Icons.restaurant_rounded;
-    if (c.contains('travel') || c.contains('trip') || c.contains('flight')) return Icons.flight_takeoff_rounded;
+    if (c.contains('food') || c.contains('lunch') || c.contains('dinner'))
+      return Icons.restaurant_rounded;
+    if (c.contains('travel') || c.contains('trip') || c.contains('flight'))
+      return Icons.flight_takeoff_rounded;
     if (c.contains('stay') || c.contains('hotel')) return Icons.hotel_rounded;
-    if (c.contains('cab') || c.contains('ride') || c.contains('uber')) return Icons.local_taxi_rounded;
+    if (c.contains('cab') || c.contains('ride') || c.contains('uber'))
+      return Icons.local_taxi_rounded;
     if (c.contains('grocer')) return Icons.local_grocery_store_rounded;
-    if (c.contains('movie') || c.contains('fun') || c.contains('entertain')) return Icons.local_activity_rounded;
+    if (c.contains('movie') || c.contains('fun') || c.contains('entertain'))
+      return Icons.local_activity_rounded;
     return Icons.category_outlined;
   }
 
@@ -1523,7 +1858,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           children: [
             const Icon(Icons.receipt_long_outlined),
             const SizedBox(width: 8),
-            Text("No group activity yet.", style: TextStyle(color: Colors.grey.shade700)),
+            Text("No group activity yet.",
+                style: TextStyle(color: Colors.grey.shade700)),
           ],
         ),
       );
@@ -1534,7 +1870,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     String? lastSection;
     final children = <Widget>[
       Text("Recent activity",
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.teal.shade900)),
+          style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: Colors.teal.shade900)),
       const SizedBox(height: 8),
     ];
 
@@ -1563,198 +1902,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       inserted++;
     }
 
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: children);
-  }
-
-  Widget _activityCard(ExpenseItem e) {
-    final payer = _friend(e.payerId);
-    final splits = gbm.computeSplits(e);
-    final title = e.label?.isNotEmpty == true
-        ? e.label!
-        : (e.category?.isNotEmpty == true ? e.category! : "Expense");
-    final cat = e.category;
-    final youDelta = _yourImpact(e); // + => you’re owed, - => you owe
-
-    // People preview (first 3)
-    final previewPhones = splits.keys.take(3).toList();
-    final more = splits.length - previewPhones.length;
-
-    final impactBg = (youDelta >= 0 ? Colors.green : Colors.red).withOpacity(.10);
-    final impactFg = youDelta >= 0 ? Colors.green.shade700 : Colors.redAccent;
-    final impactText =
-    youDelta >= 0 ? "You’re owed ₹${youDelta.toStringAsFixed(0)}" : "You owe ₹${(-youDelta).toStringAsFixed(0)}";
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 6),
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(.72),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(.6)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(.06),
-                blurRadius: 12,
-                offset: const Offset(0, 6),
-              )
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Top row: payer + title + amount + overflow
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  _avatar(e.payerId, radius: 16),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.withOpacity(.12),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      "₹${e.amount.toStringAsFixed(0)}",
-                      style: TextStyle(fontWeight: FontWeight.w800, color: Colors.teal.shade900),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  PopupMenuButton<String>(
-                    tooltip: 'More',
-                    onSelected: (v) {
-                      if (v == 'discuss') _goDiscussExpense(e);
-                      if (v == 'delete') _confirmDelete(e);
-                      if (v == 'details') _showExpenseDetailsUpgraded(context, e);
-                    },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(
-                        value: 'details',
-                        child: ListTile(
-                          leading: Icon(Icons.info_outline),
-                          title: Text('Details'),
-                          dense: true,
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'discuss',
-                        child: ListTile(
-                          leading: Icon(Icons.chat_bubble_outline),
-                          title: Text('Discuss'),
-                          dense: true,
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: ListTile(
-                          leading: Icon(Icons.delete_outline, color: Colors.redAccent),
-                          title: Text('Delete', style: TextStyle(color: Colors.redAccent)),
-                          dense: true,
-                        ),
-                      ),
-                    ],
-                    icon: const Icon(Icons.more_vert),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 8),
-
-              // Meta row: your impact + category + date + people avatars
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  _chip(
-                    bg: impactBg,
-                    fg: impactFg,
-                    icon: youDelta >= 0 ? Icons.call_received_rounded : Icons.call_made_rounded,
-                    text: impactText,
-                  ),
-                  if (cat != null && cat.isNotEmpty)
-                    _chip(
-                      bg: Colors.indigo.withOpacity(.08),
-                      fg: Colors.indigo.shade900,
-                      icon: _categoryIcon(cat),
-                      text: cat,
-                    ),
-                  _chip(
-                    bg: Colors.grey.withOpacity(.10),
-                    fg: Colors.grey.shade900,
-                    icon: Icons.event,
-                    text: "${_fmtShort(e.date)} ${e.date.year}",
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ...previewPhones.map((p) => Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: _avatar(p, radius: 10),
-                      )),
-                      if (more > 0)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.teal.withOpacity(.12),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            "+$more",
-                            style: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-
-              if (e.note.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(e.note, style: TextStyle(color: Colors.grey.shade800), maxLines: 1, overflow: TextOverflow.ellipsis),
-              ],
-
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Text(
-                    "Paid by ${_nameFor(e.payerId)}",
-                    style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w600, fontSize: 12),
-                  ),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: () => _showExpenseDetailsUpgraded(context, e),
-                    icon: const Icon(Icons.info_outline, size: 18),
-                    label: const Text("Details"),
-                    style: TextButton.styleFrom(foregroundColor: Colors.teal.shade800),
-                  ),
-                  const SizedBox(width: 6),
-                  TextButton.icon(
-                    onPressed: () => _goDiscussExpense(e),
-                    icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                    label: const Text("Discuss"),
-                    style: TextButton.styleFrom(foregroundColor: Colors.orange.shade800),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return Column(
+        crossAxisAlignment: CrossAxisAlignment.start, children: children);
   }
 
 // UPGRADED DETAILS SHEET (clear header + "your impact")
@@ -1776,8 +1925,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 4, width: 44, margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(3)),
+              height: 4,
+              width: 44,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(3)),
             ),
             // Header
             Row(
@@ -1792,27 +1945,35 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   child: Text(
                     e.label?.isNotEmpty == true
                         ? e.label!
-                        : (e.category?.isNotEmpty == true ? e.category! : "Expense"),
+                        : (e.category?.isNotEmpty == true
+                            ? e.category!
+                            : "Expense"),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w800),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Text("₹${e.amount.toStringAsFixed(2)}",
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w800)),
               ],
             ),
             const SizedBox(height: 10),
 
             // Meta row
             Wrap(
-              spacing: 8, runSpacing: 8,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 _chip(
-                  bg: (youDelta >= 0 ? Colors.green : Colors.red).withOpacity(.10),
+                  bg: (youDelta >= 0 ? Colors.green : Colors.red)
+                      .withOpacity(.10),
                   fg: youDelta >= 0 ? Colors.green.shade700 : Colors.redAccent,
-                  icon: youDelta >= 0 ? Icons.call_received_rounded : Icons.call_made_rounded,
+                  icon: youDelta >= 0
+                      ? Icons.call_received_rounded
+                      : Icons.call_made_rounded,
                   text: youDelta >= 0
                       ? "You’re owed ₹${youDelta.toStringAsFixed(0)}"
                       : "You owe ₹${(-youDelta).toStringAsFixed(0)}",
@@ -1829,7 +1990,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   fg: Colors.grey.shade900,
                   icon: Icons.event,
                   text:
-                  "${_fmtShort(e.date)} ${e.date.year}  ${e.date.hour.toString().padLeft(2, '0')}:${e.date.minute.toString().padLeft(2, '0')}",
+                      "${_fmtShort(e.date)} ${e.date.year}  ${e.date.hour.toString().padLeft(2, '0')}:${e.date.minute.toString().padLeft(2, '0')}",
                 ),
                 _chip(
                   bg: Colors.grey.withOpacity(.10),
@@ -1844,7 +2005,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               const SizedBox(height: 10),
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text("Note: ${e.note}", style: TextStyle(color: Colors.grey.shade800)),
+                child: Text("Note: ${e.note}",
+                    style: TextStyle(color: Colors.grey.shade800)),
               ),
             ],
 
@@ -1854,7 +2016,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               alignment: Alignment.centerLeft,
               child: Text(
                 "Split details",
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Colors.teal.shade900),
+                style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    color: Colors.teal.shade900),
               ),
             ),
             const SizedBox(height: 8),
@@ -1870,10 +2035,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 leading: _avatar(s.key),
-                title: Text(_nameFor(s.key), style: const TextStyle(fontWeight: FontWeight.w600)),
+                title: Text(_nameFor(s.key),
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: Text("$subtitle ₹${s.value.toStringAsFixed(2)}"),
                 trailing: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: (owes ? Colors.red : Colors.green).withOpacity(.12),
                     borderRadius: BorderRadius.circular(999),
@@ -1910,14 +2077,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                     Navigator.pop(context);
                     Future.delayed(
                       Duration.zero,
-                          () => _openEditExpense(e),
+                      () => _openEditExpense(e),
                     );
                   },
                 ),
                 const SizedBox(width: 8),
                 TextButton.icon(
-                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                  label: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                  icon:
+                      const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  label: const Text('Delete',
+                      style: TextStyle(color: Colors.redAccent)),
                   onPressed: () {
                     Navigator.pop(context);
                     _confirmDelete(e);
@@ -1930,7 +2099,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       ),
     );
   }
-
 
   // ---------- Common UI bits ----------
   Widget _glassCard({required Widget child, EdgeInsets? padding}) {
@@ -1967,7 +2135,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1981,7 +2150,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 
   Widget _groupAvatar({double radius = 28}) {
     final raw = (_group.avatarUrl ?? '').trim();
-    if (raw.isNotEmpty && (raw.startsWith('http://') || raw.startsWith('https://'))) {
+    if (raw.isNotEmpty &&
+        (raw.startsWith('http://') || raw.startsWith('https://'))) {
       return CircleAvatar(
         radius: radius,
         backgroundColor: Colors.white,
@@ -2072,10 +2242,8 @@ class _SummaryStat extends StatelessWidget {
     final bg = theme.colorScheme.primary.withOpacity(
       theme.brightness == Brightness.dark ? 0.18 : 0.12,
     );
-    final textColor =
-        theme.textTheme.bodyMedium?.color ?? (theme.brightness == Brightness.dark
-            ? Colors.white
-            : Colors.black87);
+    final textColor = theme.textTheme.bodyMedium?.color ??
+        (theme.brightness == Brightness.dark ? Colors.white : Colors.black87);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -2095,9 +2263,9 @@ class _SummaryStat extends StatelessWidget {
               Text(
                 label,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: textColor.withOpacity(0.7),
-                  fontWeight: FontWeight.w600,
-                ) ??
+                      color: textColor.withOpacity(0.7),
+                      fontWeight: FontWeight.w600,
+                    ) ??
                     TextStyle(
                       fontSize: 12,
                       color: textColor.withOpacity(0.7),
@@ -2107,9 +2275,9 @@ class _SummaryStat extends StatelessWidget {
               Text(
                 value,
                 style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: textColor,
-                ) ??
+                      fontWeight: FontWeight.w800,
+                      color: textColor,
+                    ) ??
                     TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
@@ -2187,14 +2355,16 @@ class _GroupChatTabState extends State<GroupChatTab> {
   bool _uploading = false;
   String _fmtBytes(int b) {
     if (b <= 0) return '';
-    const units = ['B','KB','MB','GB','TB'];
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     double v = b.toDouble();
     int i = 0;
-    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i++;
+    }
     final digits = v < 10 ? 1 : 0;
     return '${v.toStringAsFixed(digits)} ${units[i]}';
   }
-
 
   DocumentReference<Map<String, dynamic>> get _threadRef =>
       FirebaseFirestore.instance.collection('group_chats').doc(widget.groupId);
@@ -2202,24 +2372,14 @@ class _GroupChatTabState extends State<GroupChatTab> {
   CollectionReference<Map<String, dynamic>> get _messagesRef =>
       _threadRef.collection('messages');
 
-  // Compact icon used in the composer like PartnerChatTab
-  Widget _miniIcon({
-    required IconData icon,
-    String? tooltip,
-    VoidCallback? onPressed,
-  }) {
-    return IconButton(
-      icon: Icon(icon, size: 18),
-      tooltip: tooltip,
-      onPressed: onPressed,
-      padding: EdgeInsets.zero,
-      visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-      splashRadius: 18,
-      color: Colors.teal,
-    );
+  String _nameFor(String phone) {
+    if (phone == widget.currentUserId) return 'You';
+    final digits = phone.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return 'Member';
+    final last4 =
+        digits.length >= 4 ? digits.substring(digits.length - 4) : digits;
+    return 'Member ($last4)';
   }
-
 
   @override
   void initState() {
@@ -2297,7 +2457,6 @@ class _GroupChatTabState extends State<GroupChatTab> {
       default:
         lastPreview = msg;
     }
-
 
     await _threadRef.set({
       'lastMessage': lastPreview,
@@ -2387,8 +2546,6 @@ class _GroupChatTabState extends State<GroupChatTab> {
     }
   }
 
-
-
   Future<void> _pickAnyFile() async {
     try {
       final res = await FilePicker.platform.pickFiles(
@@ -2401,8 +2558,9 @@ class _GroupChatTabState extends State<GroupChatTab> {
       final name = file.name;
       final ext = (file.extension ?? '').toLowerCase();
       final extMime = _mimeFromExtension(ext);
-      final mime =
-      extMime == 'application/octet-stream' ? _guessMimeByName(name) : extMime;
+      final mime = extMime == 'application/octet-stream'
+          ? _guessMimeByName(name)
+          : extMime;
 
       if (kIsWeb) {
         final bytes = file.bytes;
@@ -2432,11 +2590,11 @@ class _GroupChatTabState extends State<GroupChatTab> {
   }
 
   Future<void> _uploadBytes(
-      Uint8List bytes,
-      String name,
-      String mime, {
-        required String typeHint,
-      }) async {
+    Uint8List bytes,
+    String name,
+    String mime, {
+    required String typeHint,
+  }) async {
     setState(() => _uploading = true);
     try {
       final ref = FirebaseStorage.instance
@@ -2467,11 +2625,11 @@ class _GroupChatTabState extends State<GroupChatTab> {
   }
 
   Future<void> _uploadFilePath(
-      String path,
-      String name,
-      String mime, {
-        required String typeHint,
-      }) async {
+    String path,
+    String name,
+    String mime, {
+    required String typeHint,
+  }) async {
     setState(() => _uploading = true);
     try {
       final ref = FirebaseStorage.instance
@@ -2502,7 +2660,6 @@ class _GroupChatTabState extends State<GroupChatTab> {
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
-
   }
 
   // ---- Message actions ----
@@ -2513,7 +2670,7 @@ class _GroupChatTabState extends State<GroupChatTab> {
     if ((data['type'] ?? 'text') != 'text') return;
 
     final controller =
-    TextEditingController(text: (data['message'] ?? '').toString());
+        TextEditingController(text: (data['message'] ?? '').toString());
     final newText = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2524,7 +2681,8 @@ class _GroupChatTabState extends State<GroupChatTab> {
           decoration: const InputDecoration(border: OutlineInputBorder()),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
               onPressed: () => Navigator.pop(ctx, controller.text.trim()),
               child: const Text('Save')),
@@ -2548,7 +2706,8 @@ class _GroupChatTabState extends State<GroupChatTab> {
     }, SetOptions(merge: true));
   }
 
-  Future<void> _deleteMessage(DocumentSnapshot<Map<String, dynamic>> doc) async {
+  Future<void> _deleteMessage(
+      DocumentSnapshot<Map<String, dynamic>> doc) async {
     final data = doc.data();
     if (data == null) return;
     if (data['from'] != widget.currentUserId) return;
@@ -2559,8 +2718,12 @@ class _GroupChatTabState extends State<GroupChatTab> {
         title: const Text('Delete message?'),
         content: const Text('This will delete the message for all members.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete')),
         ],
       ),
     );
@@ -2576,56 +2739,81 @@ class _GroupChatTabState extends State<GroupChatTab> {
     await doc.reference.delete();
   }
 
-  Future<void> _clearChat() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Clear chat?'),
-        content: const Text('This will delete all messages for all members.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Clear')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-
-    try {
-      const batchSize = 50;
-      while (true) {
-        final snap = await _messagesRef.orderBy('timestamp').limit(batchSize).get();
-        if (snap.docs.isEmpty) break;
-        final batch = FirebaseFirestore.instance.batch();
-        for (final d in snap.docs) {
-          final fu = (d.data()['fileUrl'] ?? '').toString();
-          if (fu.isNotEmpty) {
-            try {
-              await FirebaseStorage.instance.refFromURL(fu).delete();
-            } catch (_) {}
-          }
-          batch.delete(d.reference);
-        }
-        await batch.commit();
-        if (snap.docs.length < batchSize) break;
-      }
-      _toast('Chat cleared');
-    } catch (_) {
-      _toast('Failed to clear chat');
-    }
-  }
-
   // ---- Pickers (compact) ----
   final List<String> _emojiBank = const [
-    '😀','😁','😂','🤣','😊','😍','😘','😎','🤗','🤩',
-    '👍','👏','🙏','🙌','🔥','✨','🎉','❤️','💙','💚',
-    '💛','💜','🧡','💯','✅','❌','🤝','🙋','👊','🤞',
-    '🤔','😴','😭','😤','😇','😜','🤪','🥳','🤯','🥹',
+    '😀',
+    '😁',
+    '😂',
+    '🤣',
+    '😊',
+    '😍',
+    '😘',
+    '😎',
+    '🤗',
+    '🤩',
+    '👍',
+    '👏',
+    '🙏',
+    '🙌',
+    '🔥',
+    '✨',
+    '🎉',
+    '❤️',
+    '💙',
+    '💚',
+    '💛',
+    '💜',
+    '🧡',
+    '💯',
+    '✅',
+    '❌',
+    '🤝',
+    '🙋',
+    '👊',
+    '🤞',
+    '🤔',
+    '😴',
+    '😭',
+    '😤',
+    '😇',
+    '😜',
+    '🤪',
+    '🥳',
+    '🤯',
+    '🥹',
   ];
 
   final List<String> _stickerBank = const [
-    '🎉','🎂','🥳','💐','🌟','💪','🫶','🤍','🧠','🚀',
-    '🍕','☕','🍫','🍰','🏆','🕺','💃','🎶','🧩','🛡️',
-    '🐱','🐶','🐼','🐨','🐧','🦄','🐥','🐵','🐯','🐸',
+    '🎉',
+    '🎂',
+    '🥳',
+    '💐',
+    '🌟',
+    '💪',
+    '🫶',
+    '🤍',
+    '🧠',
+    '🚀',
+    '🍕',
+    '☕',
+    '🍫',
+    '🍰',
+    '🏆',
+    '🕺',
+    '💃',
+    '🎶',
+    '🧩',
+    '🛡️',
+    '🐱',
+    '🐶',
+    '🐼',
+    '🐨',
+    '🐧',
+    '🦄',
+    '🐥',
+    '🐵',
+    '🐯',
+    '🐸',
   ];
 
   Widget _buildEmojiPicker() {
@@ -2690,7 +2878,6 @@ class _GroupChatTabState extends State<GroupChatTab> {
     );
   }
 
-
   // ---- UI helpers ----
   void _toast(String msg) {
     if (!mounted) return;
@@ -2750,10 +2937,10 @@ class _GroupChatTabState extends State<GroupChatTab> {
   }
 
   void _onBubbleLongPress(
-      DocumentSnapshot<Map<String, dynamic>> d,
-      bool isMe,
-      String type,
-      ) async {
+    DocumentSnapshot<Map<String, dynamic>> d,
+    bool isMe,
+    String type,
+  ) async {
     final actions = <Widget>[];
 
     if (isMe && type == 'text') {
@@ -2804,8 +2991,8 @@ class _GroupChatTabState extends State<GroupChatTab> {
   }
 
   Future<void> _onOpenAttachment(Map<String, dynamic> data) async {
-    final raw  = (data['fileUrl']  ?? '').toString();
-    final mime = (data['mime']     ?? '').toString();
+    final raw = (data['fileUrl'] ?? '').toString();
+    final mime = (data['mime'] ?? '').toString();
     final name = (data['fileName'] ?? '').toString();
 
     if (raw.isEmpty) return;
@@ -2835,9 +3022,6 @@ class _GroupChatTabState extends State<GroupChatTab> {
     if (!ok) _toast('Could not open $name');
   }
 
-
-
-
   @override
   void dispose() {
     _msgController.dispose();
@@ -2849,292 +3033,349 @@ class _GroupChatTabState extends State<GroupChatTab> {
   Widget build(BuildContext context) {
     final pickerVisible = _pickingEmoji || _pickingSticker;
 
-    // local compact icon helper (keeps this snippet self-contained)
+    // Helper for bottom bar icons
     Widget miniIcon({
       required IconData icon,
       String? tooltip,
       VoidCallback? onPressed,
     }) {
       return IconButton(
-        icon: Icon(icon, size: 18, color: Colors.teal),
+        icon: Icon(icon, size: 24, color: Colors.blueGrey.shade400),
         tooltip: tooltip,
         onPressed: onPressed,
         padding: EdgeInsets.zero,
-        visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-        splashRadius: 18,
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        splashRadius: 24,
       );
     }
 
     return Column(
       children: [
-        // Messages
+        // 1. Messages List
         Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _messagesRef
-                .orderBy('timestamp', descending: true)
-                .limit(200)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final docs = snapshot.data?.docs ?? [];
-              if (docs.isEmpty) {
-                return const Center(child: Text("No messages yet."));
-              }
+          child: Container(
+            color: const Color(
+                0xFFF8F9FA), // Clean background matching Friend Screen
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _messagesRef
+                  .orderBy('timestamp', descending: true)
+                  .limit(200)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final docs = snapshot.data?.docs ?? [];
+                if (docs.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Colors.blueGrey.withOpacity(0.05),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.chat_bubble_outline_rounded,
+                              size: 40, color: Colors.blueGrey.shade200),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          "Start the conversation",
+                          style: TextStyle(
+                              color: Colors.blueGrey.shade400,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  );
+                }
 
-              const chatAdEvery = 0;
-              final blockSize = chatAdEvery + 1;
-              final adCount = chatAdEvery > 0 ? docs.length ~/ chatAdEvery : 0;
-              final totalItems = docs.length + adCount;
+                // Remove ad logic for cleaner UI
+                final totalItems = docs.length;
 
-              return ListView.builder(
-                controller: _scrollController,
-                reverse: true,
-                itemCount: totalItems,
-                itemBuilder: (context, i) {
-                  final isAdSlot = chatAdEvery > 0 && blockSize > 0 && (i + 1) % blockSize == 0;
-                  if (isAdSlot) {
-                    return const SizedBox.shrink();
-                  }
+                return ListView.builder(
+                  controller: _scrollController,
+                  reverse: true,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                  itemCount: totalItems,
+                  itemBuilder: (context, i) {
+                    final d = docs[i];
+                    final data = d.data();
+                    final isMe = data['from'] == widget.currentUserId;
+                    final msg = (data['message'] ?? '') as String;
+                    final type = (data['type'] ?? 'text') as String;
+                    final ts = (data['timestamp'] as Timestamp?);
+                    final timeStr = ts != null
+                        ? TimeOfDay.fromDateTime(ts.toDate()).format(context)
+                        : '';
+                    final edited = data['edited'] == true;
 
-                  final adsBefore = chatAdEvery > 0 ? (i + 1) ~/ blockSize : 0;
-                  final messageIndex = i - adsBefore;
-                  final d = docs[messageIndex];
-                  final data = d.data();
-                  final isMe = data['from'] == widget.currentUserId;
-                  final msg = (data['message'] ?? '') as String;
-                  final type = (data['type'] ?? 'text') as String;
-                  final ts = (data['timestamp'] as Timestamp?);
-                  final timeStr = ts != null
-                      ? TimeOfDay.fromDateTime(ts.toDate()).format(context)
-                      : '';
-                  final edited = data['edited'] == true;
+                    // Exact Friend Screen Bubble Colors
+                    final bubbleColor = isMe
+                        ? const Color(0xFFE0F2F1) // Soft Teal
+                        : Colors.white;
 
-                  final bubbleColor = isMe
-                      ? Colors.teal.withOpacity(0.15)
-                      : Colors.grey.withOpacity(0.15);
+                    final align = isMe
+                        ? CrossAxisAlignment.end
+                        : CrossAxisAlignment.start;
+                    final borderRadius = BorderRadius.only(
+                      topLeft: const Radius.circular(16),
+                      topRight: const Radius.circular(16),
+                      bottomLeft: isMe
+                          ? const Radius.circular(16)
+                          : const Radius.circular(4),
+                      bottomRight: isMe
+                          ? const Radius.circular(4)
+                          : const Radius.circular(16),
+                    );
 
-                  Widget content;
-                  if (type == 'sticker') {
-                    content = Text(msg, style: const TextStyle(fontSize: 34));
-                  } else if (type == 'image') {
-                    content = GestureDetector(
-                      onTap: () => _onOpenAttachment(data),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.network(
-                          (data['fileUrl'] ?? '').toString(),
-                          width: 210,
-                          height: 210,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const SizedBox(
-                            width: 210,
-                            height: 120,
-                            child: Center(child: Icon(Icons.broken_image)),
+                    Widget content;
+                    if (type == 'sticker') {
+                      content = Text(msg, style: const TextStyle(fontSize: 48));
+                    } else if (type == 'image') {
+                      content = GestureDetector(
+                        onTap: () => _onOpenAttachment(data),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.network(
+                            (data['fileUrl'] ?? '').toString(),
+                            width: 240,
+                            height: 240,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const SizedBox(
+                              width: 240,
+                              height: 120,
+                              child: Center(child: Icon(Icons.broken_image)),
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  } else if (type == 'file') {
-                    final url  = (data['fileUrl'] ?? '').toString();
-                    final name = (data['fileName'] ?? '').toString();
-                    final size = (data['size'] ?? 0) as int;
+                      );
+                    } else if (type == 'file') {
+                      final name = (data['fileName'] ?? '').toString();
+                      final size = (data['size'] ?? 0) as int;
+                      String displayName =
+                          name.isNotEmpty ? name : 'Attachment';
+                      final prettySize = _fmtBytes(size);
 
-                    // Derive a display name ONLY from fileName or the URL's last path segment.
-                    String displayName = name;
-                    if (displayName.isEmpty && url.isNotEmpty) {
-                      final u = Uri.tryParse(url);
-                      displayName = (u != null && u.pathSegments.isNotEmpty)
-                          ? u.pathSegments.last
-                          : 'Attachment';
+                      content = InkWell(
+                        onTap: () => _onOpenAttachment(data),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.04),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.insert_drive_file_rounded,
+                                  size: 24, color: Colors.teal),
+                              const SizedBox(width: 10),
+                              Flexible(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      displayName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14),
+                                    ),
+                                    if (prettySize.isNotEmpty)
+                                      Text(prettySize,
+                                          style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[700])),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    } else {
+                      // Text
+                      content = Text(
+                        msg,
+                        style: TextStyle(
+                          color: Colors.blueGrey.shade900,
+                          fontSize: 15,
+                          height: 1.4,
+                        ),
+                      );
                     }
 
-                    final prettySize = _fmtBytes(size); // helper below
-
-                    content = InkWell(
-                      onTap: () => _onOpenAttachment(data),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.insert_drive_file, size: 18),
-                            const SizedBox(width: 8),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 200),
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: align,
+                        children: [
+                          if (!isMe) ...[
+                            Padding(
+                              padding:
+                                  const EdgeInsets.only(left: 4, bottom: 4),
+                              child: Text(
+                                _nameFor(data['from']),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.teal.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                          GestureDetector(
+                            onLongPress: () =>
+                                _onBubbleLongPress(d, isMe, type),
+                            child: Container(
+                              constraints: BoxConstraints(
+                                  maxWidth:
+                                      MediaQuery.of(context).size.width * 0.75),
+                              padding: EdgeInsets.symmetric(
+                                horizontal:
+                                    (type == 'sticker' || type == 'image')
+                                        ? 6
+                                        : 14,
+                                vertical: (type == 'sticker' || type == 'image')
+                                    ? 6
+                                    : 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: bubbleColor,
+                                borderRadius: borderRadius,
+                                boxShadow: [
+                                  BoxShadow(
+                                      color: Colors.black.withOpacity(0.04),
+                                      blurRadius: 2,
+                                      offset: const Offset(0, 1))
+                                ],
+                              ),
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
-                                  Text(
-                                    displayName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  content,
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (edited)
+                                        Text('edited ',
+                                            style: TextStyle(
+                                                fontSize: 10,
+                                                fontStyle: FontStyle.italic,
+                                                color: Colors.grey[500])),
+                                      Text(
+                                        timeStr,
+                                        style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.grey[500]),
+                                      ),
+                                    ],
                                   ),
-                                  if (prettySize.isNotEmpty)
-                                    Text(prettySize,
-                                        style: TextStyle(fontSize: 11, color: Colors.grey[700])),
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            const Icon(Icons.open_in_new, size: 16),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     );
-                  }
-
-                  else {
-                    content = Text(
-                      msg,
-                      style: TextStyle(
-                        color: isMe ? Colors.teal[900] : Colors.grey[900],
-                        fontWeight: isMe ? FontWeight.w600 : FontWeight.w400,
-                      ),
-                    );
-                  }
-
-                  return Align(
-                    alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                    child: GestureDetector(
-                      onLongPress: () => _onBubbleLongPress(d, isMe, type),
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        padding: EdgeInsets.symmetric(
-                          horizontal: (type == 'sticker' || type == 'image') ? 8 : 12,
-                          vertical: (type == 'sticker' || type == 'image') ? 8 : 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: bubbleColor,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          crossAxisAlignment:
-                          isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                          children: [
-                            content,
-                            const SizedBox(height: 4),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  timeStr,
-                                  style: TextStyle(fontSize: 11, color: Colors.grey[700]),
-                                ),
-                                if (edited) ...[
-                                  const SizedBox(width: 6),
-                                  Text('edited',
-                                      style: TextStyle(fontSize: 10, color: Colors.grey[600])),
-                                ]
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
+                  },
+                );
+              },
+            ),
           ),
         ),
 
-        if (_uploading) const LinearProgressIndicator(minHeight: 2),
-
+        if (_uploading)
+          const LinearProgressIndicator(minHeight: 2, color: Colors.teal),
         if (pickerVisible) const Divider(height: 1),
 
-        // Emoji / Sticker picker area
+        // Emoji/Sticker Area
         AnimatedCrossFade(
-          crossFadeState:
-          pickerVisible ? CrossFadeState.showFirst : CrossFadeState.showSecond,
-          duration: const Duration(milliseconds: 180),
-          firstChild: _pickingEmoji ? _buildEmojiPicker() : _buildStickerPicker(),
+          crossFadeState: pickerVisible
+              ? CrossFadeState.showFirst
+              : CrossFadeState.showSecond,
+          duration: const Duration(milliseconds: 200),
+          firstChild:
+              _pickingEmoji ? _buildEmojiPicker() : _buildStickerPicker(),
           secondChild: const SizedBox.shrink(),
         ),
 
-        const Divider(height: 1),
-
-        // Composer (compact, PartnerChatTab-style)
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        // 2. Modern Input Bar (Matching Friend Screen)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.08),
+                offset: const Offset(0, -1),
+                blurRadius: 4,
+              ),
+            ],
+          ),
+          child: SafeArea(
+            top: false,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 miniIcon(
-                  icon: Icons.attach_file_rounded,
+                  icon: Icons.add_circle_outline_rounded,
                   tooltip: 'Attach',
                   onPressed: _showAttachmentSheet,
                 ),
                 miniIcon(
-                  icon: Icons.emoji_emotions_outlined,
+                  icon: _pickingEmoji
+                      ? Icons.keyboard_alt_rounded
+                      : Icons.emoji_emotions_outlined,
                   tooltip: 'Emoji',
-                  onPressed: () {
-                    setState(() {
-                      _pickingSticker = false;
-                      _pickingEmoji = !_pickingEmoji;
-                    });
-                  },
+                  onPressed: () => setState(() {
+                    _pickingSticker = false;
+                    _pickingEmoji = !_pickingEmoji;
+                  }),
                 ),
-                miniIcon(
-                  icon: Icons.auto_awesome,
-                  tooltip: 'Stickers',
-                  onPressed: () {
-                    setState(() {
-                      _pickingEmoji = false;
-                      _pickingSticker = !_pickingSticker;
-                    });
-                  },
-                ),
-
-                // Expanding input
                 Expanded(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 40),
+                  child: Container(
+                    margin:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F2F5),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
                     child: TextField(
                       controller: _msgController,
                       keyboardType: TextInputType.multiline,
-                      textInputAction: TextInputAction.newline,
                       minLines: 1,
-                      maxLines: 6,
+                      maxLines: 5,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: const InputDecoration(
-                        hintText: "Type a message…",
+                        hintText: "Message",
                         isDense: true,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(12)),
-                        ),
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        border: InputBorder.none,
+                        hintStyle: TextStyle(color: Colors.grey),
                       ),
                     ),
                   ),
                 ),
-
-                miniIcon(
-                  icon: Icons.send_rounded,
-                  tooltip: 'Send',
-                  onPressed: () => _sendMessage(text: _msgController.text),
-                ),
-
-                PopupMenuButton<String>(
-                  padding: EdgeInsets.zero,
-                  iconSize: 18,
-                  constraints: const BoxConstraints(minWidth: 140),
-                  icon: const Icon(Icons.more_vert, color: Colors.teal, size: 18),
-                  onSelected: (v) {
-                    if (v == 'clear') _clearChat();
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'clear', child: Text('Clear chat')),
-                  ],
+                // Send Button
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2, right: 4),
+                  child: CircleAvatar(
+                    radius: 22,
+                    backgroundColor: Colors.teal.shade700,
+                    child: IconButton(
+                      icon: const Icon(Icons.send_rounded,
+                          size: 20, color: Colors.white),
+                      onPressed: () => _sendMessage(text: _msgController.text),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -3143,5 +3384,4 @@ class _GroupChatTabState extends State<GroupChatTab> {
       ],
     );
   }
-
 }

@@ -5,7 +5,7 @@ import '../models/friend_model.dart';
 import '../services/group_service.dart';
 import '../services/friend_service.dart';
 import 'add_group_screen.dart';
-import 'group_detail_screen.dart';
+import '../details/group_detail_screen.dart';
 
 // Mint/Tiffany palette
 const Color tiffanyBlue = Color(0xFF81e6d9);
@@ -33,7 +33,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
   void _loadFriends() {
     FriendService().getFriendsStream(widget.userId).listen((friends) {
       setState(() {
-        _friendsById = { for (var f in friends) f.id: f };
+        _friendsById = {for (var f in friends) f.id: f};
         _loadingFriends = false;
       });
     });
@@ -47,7 +47,8 @@ class _GroupsScreenState extends State<GroupsScreen> {
         preferredSize: const Size.fromHeight(85),
         child: ClipRRect(
           borderRadius: const BorderRadius.only(
-            bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20),
+            bottomLeft: Radius.circular(20),
+            bottomRight: Radius.circular(20),
           ),
           child: Container(
             height: 85,
@@ -63,7 +64,8 @@ class _GroupsScreenState extends State<GroupsScreen> {
             ),
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 19, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 19, vertical: 8),
                 child: Row(
                   children: [
                     Text(
@@ -78,13 +80,15 @@ class _GroupsScreenState extends State<GroupsScreen> {
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: Icon(Icons.group_add_rounded, color: deepTeal, size: 29),
+                      icon: Icon(Icons.group_add_rounded,
+                          color: deepTeal, size: 29),
                       tooltip: "Create Group",
                       onPressed: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => AddGroupScreen(userId: widget.userId),
+                            builder: (_) =>
+                                AddGroupScreen(userId: widget.userId),
                           ),
                         );
                       },
@@ -102,58 +106,69 @@ class _GroupsScreenState extends State<GroupsScreen> {
           _loadingFriends
               ? const Center(child: CircularProgressIndicator())
               : StreamBuilder<List<GroupModel>>(
-            stream: GroupService().getUserGroupsStream(widget.userId),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (snapshot.hasError) {
-                return Center(child: Text("Error: ${snapshot.error}"));
-              }
-              final groups = snapshot.data ?? [];
-              if (groups.isEmpty) {
-                return Center(
-                  child: Text(
-                    'No groups yet.\nTap + to create one!',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.teal, fontSize: 18, fontWeight: FontWeight.w500),
-                  ),
-                );
-              }
-              return ListView.builder(
-                padding: const EdgeInsets.only(top: 98, left: 14, right: 14, bottom: 16),
-                itemCount: groups.length,
-                itemBuilder: (ctx, i) {
-                  final g = groups[i];
-                  return _GlassDiamondCard(
-                    child: ListTile(
-                      title: Text(
-                        g.name,
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19, color: deepTeal),
-                      ),
-                      subtitle: Text(
-                        '${g.memberPhones.length} members',
-                        style: TextStyle(color: Colors.teal[700], fontSize: 14, fontWeight: FontWeight.w400),
-                      ),
-                      trailing: Icon(Icons.chevron_right, color: deepTeal),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => GroupDetailScreen(
-                              userId: widget.userId,
-                              group: g,
-                              friendsById: _friendsById,
+                  stream: GroupService().getUserGroupsStream(widget.userId),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Center(child: Text("Error: ${snapshot.error}"));
+                    }
+                    final groups = snapshot.data ?? [];
+                    if (groups.isEmpty) {
+                      return Center(
+                        child: Text(
+                          'No groups yet.\nTap + to create one!',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              color: Colors.teal,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500),
+                        ),
+                      );
+                    }
+                    return ListView.builder(
+                      padding: const EdgeInsets.only(
+                          top: 98, left: 14, right: 14, bottom: 16),
+                      itemCount: groups.length,
+                      itemBuilder: (ctx, i) {
+                        final g = groups[i];
+                        return _GlassDiamondCard(
+                          child: ListTile(
+                            title: Text(
+                              g.name,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 19,
+                                  color: deepTeal),
                             ),
+                            subtitle: Text(
+                              '${g.memberPhones.length} members',
+                              style: TextStyle(
+                                  color: Colors.teal[700],
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w400),
+                            ),
+                            trailing:
+                                Icon(Icons.chevron_right, color: deepTeal),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => GroupDetailScreen(
+                                    userId: widget.userId,
+                                    group: g,
+                                    friendsById: _friendsById,
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         );
                       },
-                    ),
-                  );
-                },
-              );
-            },
-          ),
+                    );
+                  },
+                ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
