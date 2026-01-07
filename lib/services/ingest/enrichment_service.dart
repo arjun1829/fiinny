@@ -5,6 +5,7 @@ import '../user_overrides.dart';
 import '../../config/app_config.dart';
 import '../merchants/merchant_alias_service.dart';
 import '../merchants/brand_service.dart';
+import '../crowd/crowd_sourcing_service.dart';
 
 /// Result object for enriched transaction data
 class EnrichedTxn {
@@ -30,7 +31,7 @@ class EnrichmentService {
   static final EnrichmentService instance = EnrichmentService._();
 
   /// Main entry point to enrich a transaction.
-  /// 
+  ///
   /// [rawText]: The full SMS or Email body (masked is fine).
   /// [amount]: Transaction amount.
   /// [date]: Transaction date.
@@ -46,16 +47,15 @@ class EnrichmentService {
     String currency = 'INR', // Default to INR for backward compatibility
     String regionCode = 'IN',
   }) async {
-    
     // 1. Check User Overrides (Highest Priority)
     // We need a "key" to look up overrides. We'll try to extract a rough key first.
-    // Since we don't have the clean merchant name yet, we might miss some overrides 
-    // if they are keyed by the *clean* name. 
+    // Since we don't have the clean merchant name yet, we might miss some overrides
+    // if they are keyed by the *clean* name.
     // However, the old system keyed by "merchantKey" which was often just the raw string or a simple guess.
-    // For now, we will skip this check *here* and do it *after* we get a merchant name, 
-    // OR we can try to guess a key now. 
+    // For now, we will skip this check *here* and do it *after* we get a merchant name,
+    // OR we can try to guess a key now.
     // BETTER APPROACH: Let's get the merchant name from LLM/Rules first, then check overrides.
-    
+
     // 2. LLM Call (Primary Engine)
     if (AiConfig.llmOn) {
       try {
@@ -63,33 +63,34 @@ class EnrichmentService {
         var cleanedText = rawText;
         const noisePhrases = [
           'any errors or omissions',
-          'we maintain strict', 
+          'we maintain strict',
           'security standards',
           'please do not reply',
           'system generated',
         ];
         for (final phrase in noisePhrases) {
-          cleanedText = cleanedText.replaceAll(RegExp(phrase, caseSensitive: false), '');
+          cleanedText =
+              cleanedText.replaceAll(RegExp(phrase, caseSensitive: false), '');
         }
 
         if (merchantRegex != null && merchantRegex.trim().isNotEmpty) {
-           final m = merchantRegex.trim();
-           // Quick check to ensure regex didn't pick up noise
-           bool isNoise = false;
-           for (final phrase in noisePhrases) {
-             if (m.toLowerCase().contains(phrase)) {
-               isNoise = true;
-               break;
-             }
-           }
-           if (!isNoise) {
-             // We modify the hints list (copy it) or just append string
-             cleanedText = "Possible Merchant: $m\n" + cleanedText;
-           }
+          final m = merchantRegex.trim();
+          // Quick check to ensure regex didn't pick up noise
+          bool isNoise = false;
+          for (final phrase in noisePhrases) {
+            if (m.toLowerCase().contains(phrase)) {
+              isNoise = true;
+              break;
+            }
+          }
+          if (!isNoise) {
+            // We modify the hints list (copy it) or just append string
+            cleanedText = "Possible Merchant: $m\n" + cleanedText;
+          }
         }
 
         final enrichedDesc = hints.join('; ') + '; ' + cleanedText;
-        
+
         final labels = await TxExtractor.labelUnknown([
           TxRaw(
             amount: amount,
@@ -103,13 +104,15 @@ class EnrichmentService {
 
         if (labels.isNotEmpty) {
           final l = labels.first;
-          
+
           // Check override with the LLM-derived merchant name
-          final overrideCat = await UserOverrides.getCategoryForMerchant(userId, l.merchantNorm.toUpperCase());
+          final overrideCat = await UserOverrides.getCategoryForMerchant(
+              userId, l.merchantNorm.toUpperCase());
           if (overrideCat != null) {
-             return EnrichedTxn(
+            return EnrichedTxn(
               category: overrideCat,
-              subcategory: l.subcategory, // Keep LLM subcategory if available, or empty?
+              subcategory:
+                  l.subcategory, // Keep LLM subcategory if available, or empty?
               merchantName: l.merchantNorm,
               confidence: 1.0,
               source: 'user_override',
@@ -153,19 +156,22 @@ class EnrichmentService {
         merchantName: brand.displayName,
         confidence: 0.95,
         source: 'brand_registry',
-        tags: const [], 
+        tags: const [],
       );
     }
 
     // [NEW] Check Crowd-Sourced Dictionary (The "Hive Mind")
     // Ensure it's initialized (noop if already loaded)
-    await CrowdSourcingService.instance.init(); 
-    final crowdMatch = CrowdSourcingService.instance.lookup(cleanMerchant != 'Unknown' ? cleanMerchant : (merchantRegex ?? ''));
+    await CrowdSourcingService.instance.init();
+    final crowdMatch = CrowdSourcingService.instance.lookup(
+        cleanMerchant != 'Unknown' ? cleanMerchant : (merchantRegex ?? ''));
     if (crowdMatch != null) {
       return EnrichedTxn(
         category: crowdMatch['nav'] ?? 'Others',
         subcategory: crowdMatch['sub'] ?? 'others',
-        merchantName: cleanMerchant != 'Unknown' ? cleanMerchant : (merchantRegex ?? 'Unknown'),
+        merchantName: cleanMerchant != 'Unknown'
+            ? cleanMerchant
+            : (merchantRegex ?? 'Unknown'),
         confidence: (crowdMatch['c'] as num?)?.toDouble() ?? 0.85,
         source: 'crowd_hive',
         tags: const [],
@@ -174,12 +180,12 @@ class EnrichmentService {
 
     // If no brand profile or crowd match, fall back to heuristic rules
     final ruleResult = CategoryRules.categorizeMerchant(rawText, merchantRegex);
-    
+
     // If rules gave a decent name, use it, otherwise use our normalized one
-    // Actually CategoryRules doesn't return a name, it returns a category. 
+    // Actually CategoryRules doesn't return a name, it returns a category.
     // We use 'cleanMerchant' as the name if it's not 'Unknown', else 'Unknown'.
-    final finalName = (cleanMerchant != 'Unknown' && cleanMerchant.isNotEmpty) 
-        ? cleanMerchant 
+    final finalName = (cleanMerchant != 'Unknown' && cleanMerchant.isNotEmpty)
+        ? cleanMerchant
         : (merchantRegex ?? 'Unknown');
 
     return EnrichedTxn(

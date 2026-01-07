@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'package:lifemap/core/ads/ads_banner_card.dart';
 
@@ -30,7 +31,6 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   final _imagePicker = ImagePicker();
 
   List<Map<String, dynamic>> _attachedTxs = [];
-
 
   bool _pickingEmoji = false;
   bool _pickingSticker = false;
@@ -81,9 +81,7 @@ class PartnerChatTabState extends State<PartnerChatTab> {
       case 'pptx':
         return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
       default:
-
         return null;
-
     }
   }
 
@@ -122,7 +120,6 @@ class PartnerChatTabState extends State<PartnerChatTab> {
       _attachedTxs.removeAt(index);
     });
   }
-
 
   Future<void> _ensureThreadDoc() async {
     final doc = await _threadRef.get();
@@ -201,7 +198,8 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   // ---------- Attachments ----------
   Future<void> _pickFromCamera() async {
     try {
-      final shot = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 85);
+      final shot = await _imagePicker.pickImage(
+          source: ImageSource.camera, imageQuality: 85);
       if (shot == null) return;
       await _uploadImageXFile(shot);
     } catch (e) {
@@ -211,7 +209,8 @@ class PartnerChatTabState extends State<PartnerChatTab> {
 
   Future<void> _pickFromGallery() async {
     try {
-      final img = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      final img = await _imagePicker.pickImage(
+          source: ImageSource.gallery, imageQuality: 85);
       if (img == null) return;
       await _uploadImageXFile(img);
     } catch (e) {
@@ -234,11 +233,13 @@ class PartnerChatTabState extends State<PartnerChatTab> {
       if (kIsWeb) {
         final bytes = file.bytes;
         if (bytes == null) return;
-        await _uploadBytes(bytes, name, mime, typeHint: _isImageMime(mime) ? 'image' : 'file');
+        await _uploadBytes(bytes, name, mime,
+            typeHint: _isImageMime(mime) ? 'image' : 'file');
       } else {
         final path = file.path;
         if (path == null) return;
-        await _uploadFilePath(path, name, mime, typeHint: _isImageMime(mime) ? 'image' : 'file');
+        await _uploadFilePath(path, name, mime,
+            typeHint: _isImageMime(mime) ? 'image' : 'file');
       }
     } catch (e) {
       _toast('File picker error');
@@ -269,11 +270,11 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   }
 
   Future<void> _uploadBytes(
-      Uint8List bytes,
-      String name,
-      String mime, {
-        required String typeHint,
-      }) async {
+    Uint8List bytes,
+    String name,
+    String mime, {
+    required String typeHint,
+  }) async {
     setState(() => _uploading = true);
     try {
       final ref = FirebaseStorage.instance
@@ -304,11 +305,11 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   }
 
   Future<void> _uploadFilePath(
-      String path,
-      String name,
-      String mime, {
-        required String typeHint,
-      }) async {
+    String path,
+    String name,
+    String mime, {
+    required String typeHint,
+  }) async {
     setState(() => _uploading = true);
     try {
       final ref = FirebaseStorage.instance
@@ -347,7 +348,8 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     if (data['from'] != widget.currentUserId) return;
     if ((data['type'] ?? 'text') != 'text') return;
 
-    final controller = TextEditingController(text: (data['message'] ?? '').toString());
+    final controller =
+        TextEditingController(text: (data['message'] ?? '').toString());
     final newText = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -360,8 +362,11 @@ class PartnerChatTabState extends State<PartnerChatTab> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('Save')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('Save')),
         ],
       ),
     );
@@ -385,7 +390,8 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     }, SetOptions(merge: true));
   }
 
-  Future<void> _deleteMessage(DocumentSnapshot<Map<String, dynamic>> doc) async {
+  Future<void> _deleteMessage(
+      DocumentSnapshot<Map<String, dynamic>> doc) async {
     final data = doc.data();
     if (data == null) return;
     if (data['from'] != widget.currentUserId) return;
@@ -394,10 +400,15 @@ class PartnerChatTabState extends State<PartnerChatTab> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete message?'),
-        content: const Text('This will delete the message for both participants.'),
+        content:
+            const Text('This will delete the message for both participants.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete')),
         ],
       ),
     );
@@ -418,10 +429,15 @@ class PartnerChatTabState extends State<PartnerChatTab> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Clear chat?'),
-        content: const Text('This will delete all messages for both participants.'),
+        content:
+            const Text('This will delete all messages for both participants.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Clear')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Clear')),
         ],
       ),
     );
@@ -430,7 +446,8 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     try {
       const batchSize = 50;
       while (true) {
-        final snap = await _messagesRef.orderBy('timestamp').limit(batchSize).get();
+        final snap =
+            await _messagesRef.orderBy('timestamp').limit(batchSize).get();
         if (snap.docs.isEmpty) break;
         final batch = FirebaseFirestore.instance.batch();
         for (final d in snap.docs) {
@@ -453,16 +470,79 @@ class PartnerChatTabState extends State<PartnerChatTab> {
 
   // ---------- Pickers UI ----------
   final List<String> _emojiBank = const [
-    '😀','😁','😂','🤣','😊','😍','😘','😎','🤗','🤩',
-    '👍','👏','🙏','🙌','🔥','✨','🎉','❤️','💙','💚',
-    '💛','💜','🧡','💯','✅','❌','🤝','🙋','👊','🤞',
-    '🤔','😴','😭','😤','😇','😜','🤪','🥳','🤯','🥹',
+    '😀',
+    '😁',
+    '😂',
+    '🤣',
+    '😊',
+    '😍',
+    '😘',
+    '😎',
+    '🤗',
+    '🤩',
+    '👍',
+    '👏',
+    '🙏',
+    '🙌',
+    '🔥',
+    '✨',
+    '🎉',
+    '❤️',
+    '💙',
+    '💚',
+    '💛',
+    '💜',
+    '🧡',
+    '💯',
+    '✅',
+    '❌',
+    '🤝',
+    '🙋',
+    '👊',
+    '🤞',
+    '🤔',
+    '😴',
+    '😭',
+    '😤',
+    '😇',
+    '😜',
+    '🤪',
+    '🥳',
+    '🤯',
+    '🥹',
   ];
 
   final List<String> _stickerBank = const [
-    '🎉','🎂','🥳','💐','🌟','💪','🫶','🤍','🧠','🚀',
-    '🍕','☕','🍫','🍰','🏆','🕺','💃','🎶','🧩','🛡️',
-    '🐱','🐶','🐼','🐨','🐧','🦄','🐥','🐵','🐯','🐸',
+    '🎉',
+    '🎂',
+    '🥳',
+    '💐',
+    '🌟',
+    '💪',
+    '🫶',
+    '🤍',
+    '🧠',
+    '🚀',
+    '🍕',
+    '☕',
+    '🍫',
+    '🍰',
+    '🏆',
+    '🕺',
+    '💃',
+    '🎶',
+    '🧩',
+    '🛡️',
+    '🐱',
+    '🐶',
+    '🐼',
+    '🐨',
+    '🐧',
+    '🦄',
+    '🐥',
+    '🐵',
+    '🐯',
+    '🐸',
   ];
 
   Widget _buildEmojiPicker() {
@@ -585,7 +665,8 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     );
   }
 
-  void _onBubbleLongPress(DocumentSnapshot<Map<String, dynamic>> d, bool isMe, String type) async {
+  void _onBubbleLongPress(
+      DocumentSnapshot<Map<String, dynamic>> d, bool isMe, String type) async {
     final actions = <Widget>[];
 
     if (isMe && type == 'text') {
@@ -689,280 +770,421 @@ class PartnerChatTabState extends State<PartnerChatTab> {
       children: [
         // Messages
         Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _messagesRef.orderBy('timestamp', descending: true).limit(200).snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final docs = snapshot.data?.docs ?? [];
-              if (docs.isEmpty) {
-                return const Center(child: Text("No messages yet."));
-              }
-
-              const chatAdEvery = 20;
-              final blockSize = chatAdEvery + 1;
-              final adCount = chatAdEvery > 0 ? docs.length ~/ chatAdEvery : 0;
-              final totalItems = docs.length + adCount;
-
-              return ListView.builder(
-                controller: _scrollController,
-                reverse: true,
-                itemCount: totalItems,
-                itemBuilder: (context, i) {
-                  final isAdSlot = chatAdEvery > 0 && blockSize > 0 && (i + 1) % blockSize == 0;
-                  if (isAdSlot) {
-                    final slot = (i + 1) ~/ blockSize;
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      child: AdsBannerCard(
-                        placement: 'friend_chat_midroll_$slot',
-                        inline: true,
-                        inlineMaxHeight: 100,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                        minHeight: 72,
-                      ),
-                    );
-                  }
-
-                  final adsBefore = chatAdEvery > 0 ? (i + 1) ~/ blockSize : 0;
-                  final messageIndex = i - adsBefore;
-                  final d = docs[messageIndex];
-                  final data = d.data();
-                  final isMe = data['from'] == widget.currentUserId;
-                  final msg = (data['message'] ?? '') as String;
-                  final type = (data['type'] ?? 'text') as String;
-                  final ts = (data['timestamp'] as Timestamp?);
-                  final timeStr = ts != null
-                      ? TimeOfDay.fromDateTime(ts.toDate()).format(context)
-                      : '';
-                  final edited = data['edited'] == true;
-
-                  final bubbleColor = isMe
-                      ? Colors.teal.withOpacity(0.15)
-                      : Colors.grey.withOpacity(0.15);
-
-                  Widget content;
-                  if (type == 'sticker') {
-                    content = Text(msg, style: const TextStyle(fontSize: 34));
-                  } else if (type == 'image') {
-                    content = GestureDetector(
-                      onTap: () => _onOpenAttachment(data),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.network(
-                          (data['fileUrl'] ?? '').toString(),
-                          width: 210,
-                          height: 210,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const SizedBox(
-                            width: 210, height: 120, child: Center(child: Icon(Icons.broken_image)),
-                          ),
-                        ),
-                      ),
-                    );
-                  } else if (type == 'file') {
-                    content = InkWell(
-                      onTap: () => _onOpenAttachment(data),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.picture_as_pdf, size: 20),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              (data['fileName'] ?? 'file').toString(),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  } else if (type == 'discussion') {
-                    final txs = List.from(data['transactions'] ?? []);
-                    content = Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF2F4F7), // slightly cooler grey
+              // Optional: Add a subtle pattern if you had an asset
+              // image: DecorationImage(image: AssetImage('assets/doodle_bg.png'), opacity: 0.05, fit: BoxFit.cover),
+            ),
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _messagesRef
+                  .orderBy('timestamp', descending: true)
+                  .limit(200)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final docs = snapshot.data?.docs ?? [];
+                if (docs.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        if (txs.isNotEmpty)
-                          ...txs.map((tx) => _buildEmbeddedTxCard(tx)).toList(),
-                        if (msg.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            msg,
-                            style: TextStyle(
-                              color: isMe ? Colors.teal[900] : Colors.grey[900],
-                            ),
+                        Icon(Icons.chat_bubble_outline_rounded,
+                            size: 48, color: Colors.grey.shade300),
+                        const SizedBox(height: 16),
+                        Text(
+                          "Start the conversation",
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade400,
                           ),
-                        ]
+                        ),
                       ],
-                    );
-                  } else {
-                    content = Text(
-                      msg,
-                      style: TextStyle(
-                        color: isMe ? Colors.teal[900] : Colors.grey[900],
-                        fontWeight: isMe ? FontWeight.w600 : FontWeight.w400,
-                      ),
-                    );
-                  }
-
-                  return Align(
-                    alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                    child: GestureDetector(
-                      onLongPress: () => _onBubbleLongPress(d, isMe, type),
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        padding: EdgeInsets.symmetric(
-                          horizontal: (type == 'sticker' || type == 'image') ? 8 : 12,
-                          vertical: (type == 'sticker' || type == 'image') ? 8 : 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: bubbleColor,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                          children: [
-                            content,
-                            const SizedBox(height: 4),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  timeStr,
-                                  style: TextStyle(fontSize: 11, color: Colors.grey[700]),
-                                ),
-                                if (edited) ...[
-                                  const SizedBox(width: 6),
-                                  Text('edited', style: TextStyle(fontSize: 10, color: Colors.grey[600])),
-                                ]
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
                     ),
                   );
-                },
-              );
-            },
+                }
+
+                const chatAdEvery = 20;
+                final blockSize = chatAdEvery + 1;
+                final adCount =
+                    chatAdEvery > 0 ? docs.length ~/ chatAdEvery : 0;
+                final totalItems = docs.length + adCount;
+
+                return ListView.builder(
+                  controller: _scrollController,
+                  reverse: true,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                  itemCount: totalItems,
+                  itemBuilder: (context, i) {
+                    final isAdSlot = chatAdEvery > 0 &&
+                        blockSize > 0 &&
+                        (i + 1) % blockSize == 0;
+                    if (isAdSlot) {
+                      final slot = (i + 1) ~/ blockSize;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        child: AdsBannerCard(
+                          placement: 'friend_chat_midroll_$slot',
+                          inline: true,
+                          inlineMaxHeight: 100,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 10),
+                          minHeight: 72,
+                        ),
+                      );
+                    }
+
+                    final adsBefore =
+                        chatAdEvery > 0 ? (i + 1) ~/ blockSize : 0;
+                    final messageIndex = i - adsBefore;
+                    final d = docs[messageIndex];
+                    final data = d.data();
+                    final isMe = data['from'] == widget.currentUserId;
+                    final msg = (data['message'] ?? '') as String;
+                    final type = (data['type'] ?? 'text') as String;
+                    final ts = (data['timestamp'] as Timestamp?);
+                    final timeStr = ts != null
+                        ? TimeOfDay.fromDateTime(ts.toDate()).format(context)
+                        : '';
+                    final edited = data['edited'] == true;
+
+                    // Modern Bubble Decoration (Premium)
+                    final bubbleDecoration = isMe
+                        ? BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.teal.shade600,
+                                Colors.teal.shade400
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(20),
+                              topRight: Radius.circular(4),
+                              bottomLeft: Radius.circular(20),
+                              bottomRight: Radius.circular(20),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.teal.shade600.withOpacity(0.3),
+                                blurRadius: 12,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          )
+                        : BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(4),
+                              topRight: Radius.circular(20),
+                              bottomLeft: Radius.circular(20),
+                              bottomRight: Radius.circular(20),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.04),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          );
+
+                    Widget content;
+                    if (type == 'sticker') {
+                      content = Text(msg, style: const TextStyle(fontSize: 34));
+                    } else if (type == 'image') {
+                      content = GestureDetector(
+                        onTap: () => _onOpenAttachment(data),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.network(
+                            (data['fileUrl'] ?? '').toString(),
+                            width: 210,
+                            height: 210,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const SizedBox(
+                              width: 210,
+                              height: 120,
+                              child: Center(child: Icon(Icons.broken_image)),
+                            ),
+                          ),
+                        ),
+                      );
+                    } else if (type == 'file') {
+                      content = InkWell(
+                        onTap: () => _onOpenAttachment(data),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: isMe
+                                ? Colors.white.withOpacity(0.2)
+                                : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.description_rounded,
+                                  size: 20,
+                                  color: isMe
+                                      ? Colors.white
+                                      : Colors.grey.shade700),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  (data['fileName'] ?? 'file').toString(),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                  style: GoogleFonts.inter(
+                                    color: isMe ? Colors.white : Colors.black87,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    } else if (type == 'discussion') {
+                      // ... (Use existing logic or enhance slightly)
+                      final txs = List.from(data['transactions'] ?? []);
+                      content = Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (txs.isNotEmpty)
+                            ...txs
+                                .map((tx) => _buildEmbeddedTxCard(tx))
+                                .toList(),
+                          if (msg.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              msg,
+                              style: GoogleFonts.inter(
+                                color: isMe ? Colors.white : Colors.black87,
+                                fontSize: 15,
+                                height: 1.4,
+                              ),
+                            ),
+                          ]
+                        ],
+                      );
+                    } else {
+                      content = Text(
+                        msg,
+                        style: GoogleFonts.inter(
+                          color: isMe ? Colors.white : const Color(0xFF1F2937),
+                          fontSize: 15,
+                          height: 1.4,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      );
+                    }
+
+                    return Align(
+                      alignment:
+                          isMe ? Alignment.centerRight : Alignment.centerLeft,
+                      child: GestureDetector(
+                        onLongPress: () => _onBubbleLongPress(d, isMe, type),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: EdgeInsets.symmetric(
+                            horizontal:
+                                (type == 'sticker' || type == 'image') ? 8 : 16,
+                            vertical:
+                                (type == 'sticker' || type == 'image') ? 8 : 12,
+                          ),
+                          constraints: BoxConstraints(
+                              maxWidth:
+                                  MediaQuery.of(context).size.width * 0.75),
+                          decoration: bubbleDecoration,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment
+                                .end, // Always align time to end within bubble
+                            children: [
+                              content,
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    timeStr,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      color: isMe
+                                          ? Colors.white.withOpacity(0.7)
+                                          : Colors.grey.shade500,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  if (edited) ...[
+                                    const SizedBox(width: 4),
+                                    Icon(Icons.edit_rounded,
+                                        size: 10,
+                                        color: isMe
+                                            ? Colors.white.withOpacity(0.7)
+                                            : Colors.grey.shade500),
+                                  ]
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ),
 
         if (_uploading)
-          const LinearProgressIndicator(minHeight: 2),
+          const LinearProgressIndicator(
+              minHeight: 2,
+              backgroundColor: Colors.transparent,
+              color: Colors.teal),
 
         if (pickerVisible) const Divider(height: 1),
 
         // Emoji / Sticker picker area
         AnimatedCrossFade(
-          crossFadeState: pickerVisible ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+          crossFadeState: pickerVisible
+              ? CrossFadeState.showFirst
+              : CrossFadeState.showSecond,
           duration: const Duration(milliseconds: 180),
-          firstChild: _pickingEmoji ? _buildEmojiPicker() : _buildStickerPicker(),
+          firstChild:
+              _pickingEmoji ? _buildEmojiPicker() : _buildStickerPicker(),
           secondChild: const SizedBox.shrink(),
         ),
 
-        const Divider(height: 1),
-
-        // Composer (compact + overflow-safe)
         // Input area
         _buildContextArea(),
-        SafeArea(
-          top: false,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: Colors.grey[200]!)),
-            ),
-            child: Column(
+        _buildContextArea(),
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24), // Floating margins
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+            borderRadius: BorderRadius.circular(32), // Capsule shape
+          ),
+          child: SafeArea(
+            top: false,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    _smallIconButton(
-                      icon: Icons.add_circle_outline_rounded,
-                      tooltip: "Attach",
-                      color: Colors.grey[600]!,
-                      onPressed: _showAttachmentSheet,
+                _smallIconButton(
+                  icon: Icons.add_circle_outline_rounded,
+                  tooltip: "Attach",
+                  color: Colors.grey.shade600,
+                  onPressed: _showAttachmentSheet,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F4F6),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.transparent),
                     ),
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey[100],
-                          borderRadius: BorderRadius.circular(20),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            (_pickingEmoji)
+                                ? Icons.keyboard_rounded
+                                : Icons.emoji_emotions_outlined,
+                            color: Colors.grey.shade500,
+                          ),
+                          iconSize: 22,
+                          padding: EdgeInsets.zero,
+                          constraints:
+                              const BoxConstraints(minWidth: 40, minHeight: 40),
+                          onPressed: () {
+                            setState(() {
+                              _pickingSticker = false;
+                              _pickingEmoji = !_pickingEmoji;
+                            });
+                          },
                         ),
-                        margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              icon: Icon(
-                                (_pickingEmoji)
-                                    ? Icons.keyboard_rounded
-                                    : Icons.emoji_emotions_outlined,
-                                color: Colors.grey[600],
-                              ),
-                              iconSize: 22,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                              onPressed: () {
-                                setState(() {
-                                  _pickingSticker = false;
-                                  _pickingEmoji = !_pickingEmoji;
-                                });
-                              },
+                        Expanded(
+                          child: TextField(
+                            controller: _msgController,
+                            minLines: 1,
+                            maxLines: 5,
+                            textCapitalization: TextCapitalization.sentences,
+                            style: GoogleFonts.inter(
+                                fontSize: 15, color: Colors.black87),
+                            decoration: InputDecoration(
+                              hintText: "Type a message...",
+                              hintStyle: GoogleFonts.inter(
+                                  color: Colors.grey.shade400),
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 12, horizontal: 0),
                             ),
-                            Expanded(
-                              child: TextField(
-                                controller: _msgController,
-                                minLines: 1,
-                                maxLines: 5,
-                                textCapitalization: TextCapitalization.sentences,
-                                decoration: const InputDecoration(
-                                  hintText: "Type a message",
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-                                ),
-                                onTap: () {
-                                  setState(() {
-                                    _pickingEmoji = false;
-                                    _pickingSticker = false;
-                                  });
-                                },
-                              ),
-                            ),
-                          ],
+                            onTap: () {
+                              setState(() {
+                                _pickingEmoji = false;
+                                _pickingSticker = false;
+                              });
+                            },
+                          ),
                         ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.teal.shade600,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.teal.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
                       ),
-                    ),
-                    _smallIconButton(
-                      icon: Icons.send_rounded,
-                      tooltip: "Send",
-                      color: Colors.teal,
-                      onPressed: () {
-                        if (_attachedTxs.isNotEmpty) {
-                          _sendMessage(
-                            text: _msgController.text,
-                            type: 'discussion',
-                            extra: {'transactions': _attachedTxs},
-                          );
-                        } else {
-                          _sendMessage(text: _msgController.text, type: 'text');
-                        }
-                      },
-                    ),
-                  ],
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.send_rounded,
+                        color: Colors.white, size: 20),
+                    tooltip: "Send",
+                    constraints:
+                        const BoxConstraints(minWidth: 44, minHeight: 44),
+                    onPressed: () {
+                      if (_attachedTxs.isNotEmpty) {
+                        _sendMessage(
+                          text: _msgController.text,
+                          type: 'discussion',
+                          extra: {'transactions': _attachedTxs},
+                        );
+                      } else {
+                        _sendMessage(text: _msgController.text, type: 'text');
+                      }
+                    },
+                  ),
                 ),
               ],
             ),
           ),
         ),
-
-
       ],
     );
   }
@@ -1009,14 +1231,17 @@ class PartnerChatTabState extends State<PartnerChatTab> {
                   const SizedBox(width: 4),
                   Text(
                     "₹${amount.toStringAsFixed(0)}",
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                   const SizedBox(width: 4),
-                  Text(category, style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+                  Text(category,
+                      style: TextStyle(fontSize: 12, color: Colors.grey[700])),
                   const SizedBox(width: 6),
                   InkWell(
                     onTap: () => _removeAttachment(i),
-                    child: Icon(Icons.close_rounded, size: 16, color: Colors.grey[500]),
+                    child: Icon(Icons.close_rounded,
+                        size: 16, color: Colors.grey[500]),
                   )
                 ],
               ),
@@ -1050,7 +1275,9 @@ class PartnerChatTabState extends State<PartnerChatTab> {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: isIncome ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                  color: isIncome
+                      ? Colors.green.withOpacity(0.1)
+                      : Colors.red.withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -1065,7 +1292,8 @@ class PartnerChatTabState extends State<PartnerChatTab> {
                 children: [
                   Text(
                     "₹${amount.toStringAsFixed(0)}",
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   Text(
                     category,
@@ -1076,8 +1304,10 @@ class PartnerChatTabState extends State<PartnerChatTab> {
             ],
           ),
           if (note.toString().isNotEmpty) ...[
-             const SizedBox(height: 4),
-             Text(note, style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+            const SizedBox(height: 4),
+            Text(note,
+                style:
+                    const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
           ]
         ],
       ),
