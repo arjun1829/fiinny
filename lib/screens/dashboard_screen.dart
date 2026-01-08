@@ -1939,6 +1939,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                             onAddCard: () {
                               SnackThrottle.show(context, "Add Card feature coming soon!");
                             },
+                            onViewAll: () {
+                              Navigator.pushNamed(
+                                context,
+                                '/cards-management',
+                                arguments: widget.userPhone,
+                              );
+                            },
                             onCardSelected: (slug) {
                                // Assuming we can get Bank Name from slug simply by capitalizing or mapped logic
                                // For display purposes, convert slug like 'hdfc' -> 'HDFC'

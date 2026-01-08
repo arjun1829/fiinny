@@ -25,6 +25,7 @@ import 'screens/gmail_link_screen.dart';
 import 'screens/premium_paywall.dart';
 import 'screens/transactions_screen.dart';
 import 'screens/subscriptions/subscriptions_screen.dart'; // ✅ NEW Subscription Screen
+import 'screens/cards_management_screen.dart'; // ✅ NEW Cards Management Screen
 
 // ---------- Services for typed args ----------
 import 'services/user_data.dart';
@@ -241,6 +242,12 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
     case '/transactionAmount':
       if (args is String) {
         return MaterialPageRoute(builder: (_) => TransactionAmountScreen(userId: args));
+      }
+      break;
+
+    case '/cards-management':
+      if (args is String) {
+        return MaterialPageRoute(builder: (_) => CardsManagementScreen(userId: args));
       }
       break;
 
