@@ -141,6 +141,9 @@ class LoanModel {
   final bool isClosed;
   final DateTime? createdAt;
 
+  // Document links
+  final String? sanctionLetterUrl;
+
   const LoanModel({
     this.id,
     required this.userId,
@@ -169,6 +172,7 @@ class LoanModel {
     this.share,
     this.shareMemberPhones,
     this.note,
+    this.sanctionLetterUrl,
     this.isClosed = false,
     this.createdAt,
   });
@@ -252,6 +256,7 @@ class LoanModel {
           : null,
       shareMemberPhones: _asStringListN(json['shareMemberPhones']),
       note: _asStringN(json['note']),
+      sanctionLetterUrl: _asStringN(json['sanctionLetterUrl']),
       isClosed: (json['isClosed'] as bool?) ?? false,
       createdAt: _asDate(json['createdAt']),
     );
@@ -314,6 +319,7 @@ class LoanModel {
       if (shareMemberPhones != null && shareMemberPhones!.isNotEmpty)
         'shareMemberPhones': shareMemberPhones,
       if (note != null && note!.isNotEmpty) 'note': note,
+      if (sanctionLetterUrl != null) 'sanctionLetterUrl': sanctionLetterUrl,
       'isClosed': isClosed,
       if (createdAt != null) 'createdAt': _outDate(createdAt),
     };
@@ -451,6 +457,7 @@ class LoanModel {
     LoanShare? share,
     List<String>? shareMemberPhones,
     String? note,
+    String? sanctionLetterUrl,
     bool? isClosed,
     DateTime? createdAt,
   }) {
@@ -482,6 +489,7 @@ class LoanModel {
       share: share ?? this.share,
       shareMemberPhones: shareMemberPhones ?? this.shareMemberPhones,
       note: note ?? this.note,
+      sanctionLetterUrl: sanctionLetterUrl ?? this.sanctionLetterUrl,
       isClosed: isClosed ?? this.isClosed,
       createdAt: createdAt ?? this.createdAt,
     );
