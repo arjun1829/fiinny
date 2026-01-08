@@ -53,7 +53,9 @@ export default function CareersPage() {
                     </div>
 
                     <div className="space-y-6">
-                        <JobCard />
+                        {JOBS.map((job, index) => (
+                            <JobCard key={index} job={job} />
+                        ))}
                     </div>
                 </div>
             </section>
@@ -68,7 +70,34 @@ export default function CareersPage() {
     );
 }
 
-function JobCard() {
+const JOBS = [
+    {
+        title: "Founding Engineer Intern (Product + Tech)",
+        tags: ["Internship", "Remote"],
+        description: "Work directly with the founder to ship real features. A unique opportunity for generalists to build across product and engineering.",
+        points: [
+            { icon: Briefcase, text: "Work on Flutter UI, bug fixes & features" },
+            { icon: CheckCircle2, text: "Assist with Firebase & backend setup" },
+            { icon: GraduationCap, text: "Final-year students or 0-2 yrs exp" },
+            { icon: Clock, text: "2-3 months • ₹15k - ₹20k / month" },
+        ],
+        link: "https://www.linkedin.com/jobs/view/4328585672/",
+    },
+    {
+        title: "UI/UX Designer (Intern / Contract)",
+        tags: ["Internship", "Remote"],
+        description: "Design mobile app screens for Android and iOS. Improve existing UI for usability, clarity, and visual consistency.",
+        points: [
+            { icon: Briefcase, text: "Design mobile app screens for Android & iOS" },
+            { icon: CheckCircle2, text: "Create wireframes, flows & prototypes in Figma" },
+            { icon: GraduationCap, text: "Students or early-career (0-2 years exp)" },
+            { icon: Clock, text: "3 months • ₹12,000 / month" },
+        ],
+        link: "https://www.linkedin.com/jobs/view/4358147854/",
+    }
+];
+
+function JobCard({ job }: { job: typeof JOBS[0] }) {
     return (
         <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -79,44 +108,34 @@ function JobCard() {
             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6 relative z-10">
                 <div className="flex-1">
                     <div className="flex flex-wrap gap-2 mb-4">
-                        <span className="px-3 py-1 rounded-full bg-teal-50 text-teal-700 text-xs font-bold uppercase tracking-wider">
-                            Internship
-                        </span>
-                        <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold uppercase tracking-wider flex items-center gap-1">
-                            <Laptop className="w-3 h-3" /> Remote
-                        </span>
+                        {job.tags.map((tag, i) => (
+                            <span key={i} className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${tag === 'Remote' ? 'bg-slate-100 text-slate-600 flex items-center gap-1' : 'bg-teal-50 text-teal-700'}`}>
+                                {tag === 'Remote' && <Laptop className="w-3 h-3" />}
+                                {tag}
+                            </span>
+                        ))}
                     </div>
 
                     <h3 className="text-2xl font-bold text-slate-900 mb-2 group-hover:text-teal-600 transition-colors">
-                        Founding Engineer Intern (Product + Tech)
+                        {job.title}
                     </h3>
                     <p className="text-slate-500 mb-6 max-w-2xl">
-                        Work directly with the founder to ship real features. A unique opportunity for generalists to build across product and engineering.
+                        {job.description}
                     </p>
 
                     <div className="grid md:grid-cols-2 gap-y-2 gap-x-8 text-sm text-slate-600 mb-8">
-                        <div className="flex items-center gap-2">
-                            <Briefcase className="w-4 h-4 text-teal-500" />
-                            <span>Work on Flutter UI, bug fixes & features</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-teal-500" />
-                            <span>Assist with Firebase & backend setup</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <GraduationCap className="w-4 h-4 text-teal-500" />
-                            <span>Final-year students or 0-2 yrs exp</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-teal-500" />
-                            <span>2-3 months • ₹15k - ₹20k / month</span>
-                        </div>
+                        {job.points.map((point, i) => (
+                            <div key={i} className="flex items-center gap-2">
+                                <point.icon className="w-4 h-4 text-teal-500" />
+                                <span>{point.text}</span>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
                 <div className="flex-shrink-0">
                     <a
-                        href="https://www.linkedin.com/jobs/view/4328585672/"
+                        href={job.link}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center justify-center px-6 py-3 text-sm font-bold text-white transition-all bg-slate-900 rounded-xl hover:bg-teal-600 hover:shadow-lg hover:-translate-y-0.5"
