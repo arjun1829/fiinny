@@ -1,7 +1,8 @@
 // lib/services/sms/sms_ingestor.dart
 import 'dart:collection';
 
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb, kDebugMode;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb, kDebugMode;
 import 'package:telephony/telephony.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:workmanager/workmanager.dart' as wm;
@@ -17,6 +18,8 @@ import '../enrich/counterparty_extractor.dart';
 import '../../config/app_config.dart';
 import '../ai/tx_extractor.dart';
 import '../ingest/enrichment_service.dart';
+import '../../logic/loan_detection_parser.dart';
+import '../../brain/loan_detection_service.dart';
 
 import 'sms_permission_helper.dart';
 import '../ingest_index_service.dart';
@@ -487,7 +490,9 @@ class SmsIngestor {
 
   // debug logs
   // debug logs
-  void _log(String s) { if (kDebugMode) print('[SmsIngestor] $s'); }
+  void _log(String s) {
+    if (kDebugMode) print('[SmsIngestor] $s');
+  }
 
   Telephony? _telephony;
   final ExpenseService _expense = ExpenseService();
@@ -889,6 +894,55 @@ class SmsIngestor {
   }) async {
     // Drop pure-OTP messages early.
     if (_looksLikeOtpOnly(body)) return;
+
+    // --- SMART LOAN DETECTION START ---
+    try {
+      final loanRes = LoanDetectionParser.parse(body);
+      if (loanRes != null) {
+        // We found a high-confidence loan text
+        final lender = loanRes.counterPartyName ??
+            (loanRes.type == LoanType.given ? 'Borrower' : 'Lender');
+        final key = 'TEXT|${lender.toUpperCase()}|${loanRes.amount.toInt()}';
+
+        // Use LoanSuggestion model from brain/loan_detection_service.dart
+        final suggestion = LoanSuggestion(
+          key: key,
+          lender: lender,
+          emi: loanRes.amount,
+          firstSeen: ts,
+          lastSeen: ts,
+          occurrences: 1,
+          autopay: false,
+          paymentDay: ts.day,
+          confidence: loanRes.confidence,
+        );
+
+        final ref = FirebaseFirestore.instance
+            .collection('users')
+            .doc(userPhone)
+            .collection('loan_suggestions')
+            .doc(key);
+
+        // Merge so we don't overwrite if it exists (maybe update lastSeen/occurrences if we were smarter,
+        // but for now simple additive is safe)
+        // If it exists and status is new, we might want to increment occurrences?
+        // For now, follow "treat as valid suggestion" instruction.
+        final existing = await ref.get();
+        if (!existing.exists ||
+            (existing.data()?['status'] ?? 'new') == 'new') {
+          await ref.set(suggestion.toJson(), SetOptions(merge: true));
+          if (existing.exists) {
+            await ref.update({
+              'lastSeen': Timestamp.fromDate(ts),
+              'occurrences': FieldValue.increment(1),
+            });
+          }
+        }
+      }
+    } catch (e) {
+      _log('Loan parser error: $e');
+    }
+    // --- SMART LOAN DETECTION END ---
 
     // Detect issuer bank/tier from sender+body (major vs other/unknown).
     final detectedBank = _detectBankFromSms(address: address, body: body);
