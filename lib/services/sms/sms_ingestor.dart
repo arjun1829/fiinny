@@ -11,6 +11,7 @@ import '../expense_service.dart';
 import '../income_service.dart';
 import '../../models/expense_item.dart';
 import '../../models/income_item.dart';
+import '../credit_card_service.dart'; // added
 
 import '../enrich/counterparty_extractor.dart';
 
@@ -497,6 +498,7 @@ class SmsIngestor {
   final ExpenseService _expense = ExpenseService();
   final IncomeService _income = IncomeService();
   final IngestIndexService _index = IngestIndexService();
+  final CreditCardService _creditCardService = CreditCardService();
   String? _scheduledTaskId;
 
   bool get _isAndroid =>
@@ -949,6 +951,11 @@ class SmsIngestor {
 
     final looksTxn = _passesTxnGate(body, sender: address, bank: detectedBank);
 
+    // NEW: Check for Loan Offers (before dropping as promo)
+    if (_loanOffer(body)) {
+      await _processAndRecordLoanOffer(userPhone, body, detectedBank.code ?? _guessIssuerBank(address: address, body: body));
+    }
+
     if (_looksLikePromoOrInfo(body) && !looksTxn) {
       _log('skip promo/info sms');
       return;
@@ -1004,6 +1011,17 @@ class SmsIngestor {
       r'\b(EMI|AUTOPAY|AUTO[- ]?DEBIT|NACH|E-?MANDATE|MANDATE)\b',
       caseSensitive: false,
     ).hasMatch(body);
+
+    // Opportunistic Limit Update from Transaction SMS
+    final avlLimit = _extractAvailableLimit(body);
+    if (avlLimit != null && (bank != null || last4 != null)) {
+      await _creditCardService.updateCardMetadataByMatch(
+        userPhone,
+        bankName: bank, // might be null
+        last4: last4,   // might be null
+        availableLimit: avlLimit,
+      );
+    }
 
     // Card bill detection (statement/due) → write a bill_reminder (not an expense)
     if (bill != null) {
@@ -2328,6 +2346,53 @@ class SmsIngestor {
     }
     return out;
   }
+  // ─────────────────────── Extractions (New) ──────────────────────────────────
+
+  double? _extractAvailableLimit(String text) {
+    // "Avl Lmt: Rs 12000", "Available Credit Limit: 50,000", "Limit Available: 10000"
+    final avlRx = RegExp(
+       r'(?:Avl|Available)\s*(?:Cr|Credit)?\s*(?:Lmt|Limit|Bal|Balance)[\s:-]*(?:Rs\.?|INR)?\s*([0-9,]+(?:\.\d{1,2})?)',
+       caseSensitive: false,
+    );
+    final m = avlRx.firstMatch(text);
+    if (m != null) {
+      final numStr = (m.group(1) ?? '').replaceAll(RegExp(r'[^0-9.]'), '');
+      return double.tryParse(numStr);
+    }
+    return null;
+  }
+
+  Future<void> _processAndRecordLoanOffer(String userId, String body, String? bank) async {
+    // Extract loan amount
+    final amtRx = RegExp(
+      r'(?:Loan|limit|offer)\s*(?:of|upto|up\s*to)?\s*(?:Rs\.?|INR)?\s*([0-9,]+(?:\.\d{1,2})?)',
+      caseSensitive: false,
+    );
+    final amtMatch = amtRx.firstMatch(body);
+    double? amount;
+    if (amtMatch != null) {
+       final s = amtMatch.group(1)!.replaceAll(',', '');
+       amount = double.tryParse(s);
+    }
+
+    if (amount == null) return; // not interesting if no amount
+
+    await _creditCardService.recordLoanOffer(userId, 'global_offers', { // using dummy ID if unknown, or matching logic inside service
+       'raw': body,
+       'amount': amount,
+       'bank': bank,
+       'type': 'pre_approved_loan',
+    });
+    
+    if (bank != null) {
+       await _creditCardService.updateCardMetadataByMatch(
+         userId,
+         bankName: bank,
+         last4: null,
+       );
+    }
+  }
+
 }
 
 // ── Small value class for card bill meta ──────────────────────────────────────

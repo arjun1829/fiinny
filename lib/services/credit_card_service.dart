@@ -158,4 +158,72 @@ class CreditCardService {
     await addPayment(userId, cardId, p);
     await recomputeCycleStatus(userId, cardId, latest.id);
   }
+
+  // ---- Metadata Updates (Limits, Rewards, Loans) ----
+  Future<void> updateCardMetadata(
+    String userId,
+    String cardId, {
+    double? availableLimit,
+    double? totalLimit,
+    double? rewardPoints,
+    double? lastStatementBalance,
+  }) async {
+    final Map<String, dynamic> updates = {};
+    if (availableLimit != null) updates['availableCredit'] = availableLimit; // map to model field
+    if (totalLimit != null) updates['creditLimit'] = totalLimit;
+    if (rewardPoints != null) updates['rewardPoints'] = rewardPoints;
+    if (lastStatementBalance != null) updates['lastStatementBalance'] = lastStatementBalance;
+
+    if (updates.isNotEmpty) {
+      await _cardDoc(userId, cardId).set(updates, SetOptions(merge: true));
+    }
+  }
+
+  Future<void> recordLoanOffer(
+    String userId,
+    String cardId,
+    Map<String, dynamic> offerDetails,
+  ) async {
+    // timestamp the offer
+    offerDetails['detectedAt'] = DateTime.now().toIso8601String();
+    
+    // Add to specific loan offers sub-collection OR array in card doc
+    // Using arrayUnion on card doc for simplicity as per plan
+    await _cardDoc(userId, cardId).update({
+      'loanOffers': FieldValue.arrayUnion([offerDetails])
+    });
+  }
+  Future<void> updateCardMetadataByMatch(
+    String userId, {
+    required String? bankName,
+    required String? last4,
+    double? availableLimit,
+    double? totalLimit,
+    double? rewardPoints,
+    double? lastStatementBalance,
+  }) async {
+    if (bankName == null && last4 == null) return;
+
+    final cards = await getUserCards(userId);
+    // Best effort match
+    final match = cards.cast<CreditCardModel?>().firstWhere(
+      (c) {
+        final bMatch = bankName == null || c?.bankName.toUpperCase() == bankName.toUpperCase();
+        final lMatch = last4 == null || c?.last4Digits == last4;
+        return bMatch && lMatch;
+      },
+      orElse: () => null,
+    );
+
+    if (match != null) {
+      await updateCardMetadata(
+        userId,
+        match!.id,
+        availableLimit: availableLimit,
+        totalLimit: totalLimit,
+        rewardPoints: rewardPoints,
+        lastStatementBalance: lastStatementBalance,
+      );
+    }
+  }
 }
