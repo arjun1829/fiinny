@@ -11,6 +11,7 @@ class BankCardsCarousel extends StatefulWidget {
   final VoidCallback onAddCard;
   final Function(String slug)? onCardSelected;
   final String? selectedBankSlug;
+  final VoidCallback? onViewAll;
 
   const BankCardsCarousel({
     Key? key,
@@ -20,6 +21,7 @@ class BankCardsCarousel extends StatefulWidget {
     required this.onAddCard,
     this.onCardSelected,
     this.selectedBankSlug,
+    this.onViewAll,
   }) : super(key: key);
 
   @override
@@ -144,7 +146,29 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("My Cards", style: Fx.title.copyWith(fontSize: 18)),
+              Expanded(
+                child: InkWell(
+                  onTap: widget.onViewAll,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text("My Cards", style: Fx.title.copyWith(fontSize: 18)),
+                        if (widget.onViewAll != null) ...[
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 16,
+                            color: Fx.mintDark,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
               TextButton.icon(
                 onPressed: widget.onAddCard,
                 icon: const Icon(Icons.add, size: 16),

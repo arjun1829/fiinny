@@ -42,6 +42,7 @@ Thumbs.db
 !package.json
 !tsconfig.json
 !app/google-services.json
+!**/_meta.json
 # Be careful with json, but we definitely want to ignore service accounts
 google-services.json
 key.properties

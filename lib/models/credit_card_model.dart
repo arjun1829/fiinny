@@ -54,8 +54,11 @@ class CreditCardModel {
   final String? rewardsInfo; // aggregated text or points summary
 
   // v2 additions (all optional/back-compat)
-  final double? creditLimit; // latest seen
-  final double? availableCredit; // latest seen
+  final double? creditLimit; // latest seen (Total Limit)
+  final double? availableCredit; // latest seen (Available Limit)
+  final double? rewardPoints; // latest reward balance
+  final double? lastStatementBalance; // balance from last statement (for repayment logic)
+  final List<dynamic>? loanOffers; // raw list of loan offers/promos
   final bool? autopayEnabled;
   final List<String>? issuerEmails; // whitelisted senders for this card
 
@@ -79,6 +82,9 @@ class CreditCardModel {
     this.rewardsInfo,
     this.creditLimit,
     this.availableCredit,
+    this.rewardPoints,
+    this.lastStatementBalance,
+    this.loanOffers,
     this.autopayEnabled,
     this.issuerEmails,
     this.pdfPassFormat,
@@ -123,6 +129,17 @@ class CreditCardModel {
           : (json['availableCredit'] is double)
               ? json['availableCredit']
               : null,
+      rewardPoints: (json['rewardPoints'] is int)
+          ? (json['rewardPoints'] as int).toDouble()
+          : (json['rewardPoints'] is double)
+              ? json['rewardPoints']
+              : null,
+      lastStatementBalance: (json['lastStatementBalance'] is int)
+          ? (json['lastStatementBalance'] as int).toDouble()
+          : (json['lastStatementBalance'] is double)
+              ? json['lastStatementBalance']
+              : null,
+      loanOffers: json['loanOffers'] as List<dynamic>?,
       autopayEnabled: json['autopayEnabled'],
       issuerEmails: (json['issuerEmails'] is List)
           ? (json['issuerEmails'] as List).map((e) => e.toString()).toList()
@@ -148,6 +165,9 @@ class CreditCardModel {
         'rewardsInfo': rewardsInfo,
         'creditLimit': creditLimit,
         'availableCredit': availableCredit,
+        'rewardPoints': rewardPoints,
+        'lastStatementBalance': lastStatementBalance,
+        'loanOffers': loanOffers,
         'autopayEnabled': autopayEnabled,
         'issuerEmails': issuerEmails,
         'pdfPassFormat': pdfPassFormatToString(pdfPassFormat ?? PdfPassFormat.none),
@@ -173,6 +193,9 @@ class CreditCardModel {
     String? rewardsInfo,
     double? creditLimit,
     double? availableCredit,
+    double? rewardPoints,
+    double? lastStatementBalance,
+    List<dynamic>? loanOffers,
     bool? autopayEnabled,
     List<String>? issuerEmails,
     PdfPassFormat? pdfPassFormat,
@@ -194,6 +217,9 @@ class CreditCardModel {
       rewardsInfo: rewardsInfo ?? this.rewardsInfo,
       creditLimit: creditLimit ?? this.creditLimit,
       availableCredit: availableCredit ?? this.availableCredit,
+      rewardPoints: rewardPoints ?? this.rewardPoints,
+      lastStatementBalance: lastStatementBalance ?? this.lastStatementBalance,
+      loanOffers: loanOffers ?? this.loanOffers,
       autopayEnabled: autopayEnabled ?? this.autopayEnabled,
       issuerEmails: issuerEmails ?? this.issuerEmails,
       pdfPassFormat: pdfPassFormat ?? this.pdfPassFormat,
