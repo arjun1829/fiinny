@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/friend_model.dart';
 import '../models/expense_item.dart';
 import '../models/group_model.dart';
-import '../screens/friend_detail_screen.dart';
+import '../details/friend_detail_screen.dart';
 
 class FriendsTab extends StatefulWidget {
   final List<FriendModel> friends;
@@ -46,27 +46,33 @@ class _FriendsTabState extends State<FriendsTab> {
     final friendList = List<FriendModel>.from(widget.friends);
     Map<String, DateTime> lastActivity = {};
     for (var f in friendList) {
-      final related = widget.expenses.where((e) =>
-      e.payerId == f.phone || e.friendIds.contains(f.phone));
+      final related = widget.expenses
+          .where((e) => e.payerId == f.phone || e.friendIds.contains(f.phone));
       lastActivity[f.phone] = related.isNotEmpty
           ? related.map((e) => e.date).reduce((a, b) => a.isAfter(b) ? a : b)
           : DateTime(2000);
     }
     if (_sortBy == 'recent') {
-      friendList.sort((a, b) => lastActivity[b.phone]!.compareTo(lastActivity[a.phone]!));
+      friendList.sort(
+          (a, b) => lastActivity[b.phone]!.compareTo(lastActivity[a.phone]!));
     } else {
-      friendList.sort((a, b) => (widget.netBalances[b.phone] ?? 0).abs().compareTo(
-          (widget.netBalances[a.phone] ?? 0).abs()));
+      friendList.sort((a, b) => (widget.netBalances[b.phone] ?? 0)
+          .abs()
+          .compareTo((widget.netBalances[a.phone] ?? 0).abs()));
     }
 
-    final unsettled = friendList.where((f) => (widget.netBalances[f.phone] ?? 0).abs() > 0.5).toList();
-    final settled = friendList.where((f) => (widget.netBalances[f.phone] ?? 0).abs() <= 0.5).toList();
+    final unsettled = friendList
+        .where((f) => (widget.netBalances[f.phone] ?? 0).abs() > 0.5)
+        .toList();
+    final settled = friendList
+        .where((f) => (widget.netBalances[f.phone] ?? 0).abs() <= 0.5)
+        .toList();
 
     final owingFriends = widget.friends
         .where((f) => (widget.netBalances[f.phone] ?? 0) > 0)
         .toList()
-      ..sort((a, b) =>
-          (widget.netBalances[b.phone] ?? 0).compareTo(widget.netBalances[a.phone] ?? 0));
+      ..sort((a, b) => (widget.netBalances[b.phone] ?? 0)
+          .compareTo(widget.netBalances[a.phone] ?? 0));
     final topOwing = owingFriends.take(2).toList();
 
     return ListView(
@@ -77,7 +83,8 @@ class _FriendsTabState extends State<FriendsTab> {
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 18),
           child: Card(
             color: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
             elevation: 3,
             child: Padding(
               padding: const EdgeInsets.all(17),
@@ -98,7 +105,8 @@ class _FriendsTabState extends State<FriendsTab> {
                     children: [
                       Column(
                         children: [
-                          Text("You’re owed", style: TextStyle(color: Colors.green[700])),
+                          Text("You’re owed",
+                              style: TextStyle(color: Colors.green[700])),
                           Text(
                             "₹${widget.totalOwedToYou.toStringAsFixed(0)}",
                             style: const TextStyle(
@@ -111,7 +119,8 @@ class _FriendsTabState extends State<FriendsTab> {
                       ),
                       Column(
                         children: [
-                          Text("You owe", style: TextStyle(color: Colors.red[700])),
+                          Text("You owe",
+                              style: TextStyle(color: Colors.red[700])),
                           Text(
                             "₹${widget.totalYouOwe.toStringAsFixed(0)}",
                             style: const TextStyle(
@@ -124,7 +133,8 @@ class _FriendsTabState extends State<FriendsTab> {
                       ),
                       Column(
                         children: [
-                          Text("Net", style: TextStyle(fontWeight: FontWeight.w500)),
+                          Text("Net",
+                              style: TextStyle(fontWeight: FontWeight.w500)),
                           Text(
                             "₹${widget.netOverall.toStringAsFixed(0)}",
                             style: TextStyle(
@@ -132,8 +142,8 @@ class _FriendsTabState extends State<FriendsTab> {
                               color: widget.netOverall > 0
                                   ? Colors.green
                                   : widget.netOverall < 0
-                                  ? Colors.red
-                                  : Colors.teal,
+                                      ? Colors.red
+                                      : Colors.teal,
                               fontSize: 15,
                             ),
                           ),
@@ -148,7 +158,7 @@ class _FriendsTabState extends State<FriendsTab> {
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                     ...topOwing.map(
-                          (f) => Padding(
+                      (f) => Padding(
                         padding: const EdgeInsets.only(left: 10, top: 2),
                         child: Text(
                           "${f.name} owes you ₹${widget.netBalances[f.phone]!.toStringAsFixed(0)}",
@@ -200,12 +210,13 @@ class _FriendsTabState extends State<FriendsTab> {
           final balColor = net > 0
               ? Colors.green
               : net < 0
-              ? Colors.red
-              : Colors.grey;
+                  ? Colors.red
+                  : Colors.grey;
           return Card(
             margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             color: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             elevation: 2,
             child: ListTile(
               onTap: () {
@@ -214,12 +225,14 @@ class _FriendsTabState extends State<FriendsTab> {
                   MaterialPageRoute(
                     builder: (_) => FriendDetailScreen(
                       friend: friend,
-                      userId: widget.userId,
+                      userPhone: widget.userId,
+                      userName: 'You',
                     ),
                   ),
                 ).then((_) => widget.reloadData());
               },
-              leading: Text(friend.avatar, style: const TextStyle(fontSize: 32)),
+              leading:
+                  Text(friend.avatar, style: const TextStyle(fontSize: 32)),
               title: Row(
                 children: [
                   Expanded(
@@ -237,8 +250,8 @@ class _FriendsTabState extends State<FriendsTab> {
                     net > 0
                         ? "+₹${net.toStringAsFixed(0)}"
                         : net < 0
-                        ? "-₹${(-net).toStringAsFixed(0)}"
-                        : "Settled",
+                            ? "-₹${(-net).toStringAsFixed(0)}"
+                            : "Settled",
                     style: TextStyle(
                       color: balColor,
                       fontWeight: FontWeight.bold,
@@ -249,7 +262,7 @@ class _FriendsTabState extends State<FriendsTab> {
               ),
               subtitle: friend.phone != null && friend.phone!.isNotEmpty
                   ? Text(friend.phone!,
-                  style: TextStyle(color: Colors.teal[700], fontSize: 13.5))
+                      style: TextStyle(color: Colors.teal[700], fontSize: 13.5))
                   : null,
             ),
           );
@@ -267,46 +280,57 @@ class _FriendsTabState extends State<FriendsTab> {
               secondChild: Column(
                 children: [
                   ...settled.map((friend) => Card(
-                    margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
-                    elevation: 1,
-                    color: Colors.grey[100],
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    child: ListTile(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => FriendDetailScreen(
-                              friend: friend,
-                              userId: widget.userId,
-                            ),
-                          ),
-                        ).then((_) => widget.reloadData());
-                      },
-                      leading: Text(friend.avatar, style: const TextStyle(fontSize: 32, color: Colors.grey)),
-                      title: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              friend.name,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey[600],
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 0, vertical: 4),
+                        elevation: 1,
+                        color: Colors.grey[100],
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        child: ListTile(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => FriendDetailScreen(
+                                  friend: friend,
+                                  userPhone: widget.userId,
+                                  userName: 'You',
+                                ),
                               ),
-                            ),
+                            ).then((_) => widget.reloadData());
+                          },
+                          leading: Text(friend.avatar,
+                              style: const TextStyle(
+                                  fontSize: 32, color: Colors.grey)),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  friend.name,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                "Settled",
+                                style: TextStyle(
+                                    color: Colors.grey,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ],
                           ),
-                          Text(
-                            "Settled",
-                            style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                      subtitle: Text("All Settled!", style: TextStyle(color: Colors.grey[600], fontSize: 13)),
-                    ),
-                  )),
+                          subtitle: Text("All Settled!",
+                              style: TextStyle(
+                                  color: Colors.grey[600], fontSize: 13)),
+                        ),
+                      )),
                 ],
               ),
-              crossFadeState: _showSettled ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+              crossFadeState: _showSettled
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
               duration: const Duration(milliseconds: 300),
             ),
           ),
