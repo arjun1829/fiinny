@@ -7,12 +7,22 @@ import '../../models/credit_card_payment.dart';
 import '../../services/credit_card_service.dart';
 import '../../services/cards/card_due_notifier.dart';
 import '../../services/notification_service.dart';
+import '../../models/expense_item.dart'; // Added import
+
 
 class CardDetailScreen extends StatefulWidget {
-  const CardDetailScreen({super.key, required this.userId, required this.card});
+  const CardDetailScreen({
+    super.key, 
+    required this.userId, 
+    required this.card,
+    this.recentTransactions = const [],
+  });
+
 
   final String userId;
   final CreditCardModel card;
+  final List<ExpenseItem> recentTransactions; // New parameter
+
 
   @override
   State<CardDetailScreen> createState() => _CardDetailScreenState();
@@ -189,7 +199,31 @@ class _CardDetailScreenState extends State<CardDetailScreen>
               const SnackBar(content: Text('Marked paid')),
             );
           },
-        )
+        ),
+        const SizedBox(height: 24),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Text('Recent Transactions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+        const SizedBox(height: 8),
+        if (widget.recentTransactions.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text('No recent transactions found for this card.'),
+          )
+        else
+          ...widget.recentTransactions.take(10).map((e) => ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Colors.grey[100],
+              child: Text(e.category?.isNotEmpty == true ? e.category![0].toUpperCase() : '💸'),
+            ),
+            title: Text(e.note.isEmpty ? (e.label ?? 'Expense') : e.note),
+            subtitle: Text(DateFormat('d MMM, h:mm a').format(e.date)),
+            trailing: Text(
+              '₹${e.amount.toStringAsFixed(0)}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          )),
       ],
     );
   }

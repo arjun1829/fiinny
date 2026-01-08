@@ -24,8 +24,11 @@ import './recurring/recurring_engine.dart';
 
 import './ingest_index_service.dart';
 import './tx_key.dart';
+import './ingest_index_service.dart';
+import './tx_key.dart';
 import 'notification_service.dart';
 import './ingest_state_service.dart';
+import './credit_card_service.dart'; // import added
 import './ingest_job_queue.dart';
 import './ingest/cross_source_reconcile.dart';   // merge
 import './merchants/merchant_alias_service.dart'; // alias normalize
@@ -434,7 +437,7 @@ class GmailService {
   GoogleSignInAccount? _currentUser;
 
   final IngestIndexService _index = IngestIndexService();
-  // lib/services/gmail_service.dart  (inside class GmailService)
+  final CreditCardService _creditCardService = CreditCardService(); // added service
   static const bool WRITE_BILL_AS_EXPENSE = false; // ← turn OFF to avoid double-count
 
   String _billDocId({
@@ -774,6 +777,55 @@ class GmailService {
       return raw;
     }
     return null;
+  }
+
+  // New Credit Card Metadata Extraction
+  Map<String, double> _extractCreditCardMetadata(String text) {
+    final Map<String, double> meta = {};
+    
+    // Helper to parse amount like "Rs. 1,00,000" or "INR 50000.00"
+    double? parseAmt(String raw) {
+      final numStr = raw.replaceAll(RegExp(r'[^0-9.]'), '');
+      return double.tryParse(numStr);
+    }
+
+    // 1. Available Limit
+    // "Avl Lmt: Rs 12000", "Available Credit Limit: 50,000", "Limit Available: 10000"
+    final avlRx = RegExp(
+       r'(?:Avl|Available)\s*(?:Cr|Credit)?\s*(?:Lmt|Limit|Bal|Balance)[\s:-]*(?:Rs\.?|INR)?\s*([0-9,]+(?:\.\d{1,2})?)',
+       caseSensitive: false,
+    );
+    final avlMatch = avlRx.firstMatch(text);
+    if (avlMatch != null) {
+      final v = parseAmt(avlMatch.group(1)!);
+      if (v != null) meta['availableLimit'] = v;
+    }
+
+    // 2. Total Limit
+    // "Total Credit Limit: 1,00,000", "Max Limit: INR 199999.00"
+    final totRx = RegExp(
+       r'(?:Total|Max)\s*(?:Cr|Credit)?\s*(?:Lmt|Limit)[\s:-]*(?:Rs\.?|INR)?\s*([0-9,]+(?:\.\d{1,2})?)',
+       caseSensitive: false,
+    );
+    final totMatch = totRx.firstMatch(text);
+    if (totMatch != null) {
+      final v = parseAmt(totMatch.group(1)!);
+      if (v != null) meta['totalLimit'] = v;
+    }
+
+    // 3. Reward Points
+    // "Reward Points: 500", "Points Balance: 1200", "Reward Points Balance is 500"
+    final ptsRx = RegExp(
+      r'(?:Reward|Loyalty)\s*Points(?:\s*Balance)?(?:[\s:-]+|(?:\s+is\s+))([0-9,]+)',
+      caseSensitive: false,
+    );
+    final ptsMatch = ptsRx.firstMatch(text);
+    if (ptsMatch != null) {
+      final v = parseAmt(ptsMatch.group(1)!);
+      if (v != null) meta['rewardPoints'] = v;
+    }
+
+    return meta;
   }
 
   // ---------------------------------------------------------------------------
@@ -1258,11 +1310,38 @@ class GmailService {
       }
 
       _log('WRITE/UPSERT CC BillReminder total=$total bank=${bank ?? "-"} last4=${cardLast4 ?? "-"}');
+      
+      // Update metadata too if found in bill
+      final ccMeta = _extractCreditCardMetadata(combined);
+      if (ccMeta.isNotEmpty && (bank != null || cardLast4 != null)) {
+         await _creditCardService.updateCardMetadataByMatch(
+            userId,
+            bankName: bank,
+            last4: cardLast4,
+            availableLimit: ccMeta['availableLimit'],
+            totalLimit: ccMeta['totalLimit'],
+            rewardPoints: ccMeta['rewardPoints'],
+         );
+      }
+
       return msgDate;
     }
 
 
-    // Otherwise, proceed with normal debit/credit
+
+    // Opportunistic Metadata Update (for normal txns too)
+    final ccMeta = _extractCreditCardMetadata(combined);
+    if (ccMeta.isNotEmpty && (bank != null || cardLast4 != null)) {
+         await _creditCardService.updateCardMetadataByMatch(
+            userId,
+            bankName: bank, // might be null
+            last4: cardLast4, // might be null
+            availableLimit: ccMeta['availableLimit'],
+            totalLimit: ccMeta['totalLimit'],
+            rewardPoints: ccMeta['rewardPoints'],
+         );
+    }
+
     if (direction == null) return null;
     if (amount == null || amount <= 0) return null;
     if (direction == 'credit') {

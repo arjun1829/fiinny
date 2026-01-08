@@ -1,0 +1,391 @@
+# 📘 CREDIT CARD MANAGEMENT MODULE
+
+*(Fiinny – Core Financial Health Stack)*
+
+---
+
+## 1️⃣ PROBLEM BUSINESS REQUIREMENT (PBR)
+
+### 1.1 Problem Statement
+
+Credit cards have become **one of the biggest silent financial traps** in India.
+
+Key realities:
+
+* Users hold **multiple credit cards** across banks
+* Spend without realizing **billing cycles, due dates, and interest impact**
+* Pay only **Minimum Due**, leading to **compounding interest**
+* Miss payments → **late fees + credit score damage**
+* Don’t understand:
+
+  * How interest is calculated
+  * Which card to use for what spend
+  * When to convert to EMI or close a card
+* Rewards, cashback, and offers are **under-utilized or misused**
+* Credit limit misuse leads to **poor credit utilization ratio**
+
+**Result:**
+Users *think* credit cards are helping cash flow, but they actually:
+
+* Lose money
+* Damage credit score
+* Get stuck in revolving debt cycles
+
+---
+
+### 1.2 Who Faces This Problem?
+
+**Primary Personas (India-focused):**
+
+1. Young professionals (22–35)
+
+   * 2–5 credit cards
+   * Salary-based lifestyle inflation
+2. Middle-income families
+
+   * High EMI + credit card overlap
+3. Freelancers / self-employed
+
+   * Irregular income
+   * Revolving credit dependence
+4. Cashback / rewards chasers
+
+   * Spend-driven misuse
+5. Financially unaware users
+
+   * Don’t understand APR, utilization, billing cycles
+
+---
+
+### 1.3 Why Existing Solutions Fail
+
+| Existing Option         | Why It Fails                  |
+| ----------------------- | ----------------------------- |
+| Bank apps               | Single-card view only         |
+| Excel / manual tracking | Too complex & error-prone     |
+| Generic finance apps    | No India-specific card logic  |
+| Credit score apps       | Only show score, not behavior |
+| SMS alerts              | Reactive, not preventive      |
+
+---
+
+### 1.4 Business Opportunity
+
+If users manage **credit cards better**, they:
+
+* Save interest
+* Improve credit score
+* Become eligible for better loans
+* Trust the platform deeply
+
+👉 Credit Card Module becomes a **gateway to full financial control**, upsell, and long-term retention.
+
+---
+
+## 2️⃣ CURRENT STATE (AS-IS)
+
+### 2.1 User Behavior Today
+
+* Uses cards blindly
+* Remembers due dates manually
+* Pays minimum due frequently
+* Converts purchases to EMI without impact clarity
+* Uses wrong card for wrong category
+* Discovers fees **after statement generation**
+
+---
+
+### 2.2 Data Silos
+
+| Data              | Location          |
+| ----------------- | ----------------- |
+| Card details      | Bank app          |
+| Transactions      | SMS / emails      |
+| Rewards           | Separate portals  |
+| Credit score      | Third-party apps  |
+| Bills & due dates | Calendar / memory |
+
+---
+
+### 2.3 Risks in AS-IS
+
+* Financial leakage
+* Credit score deterioration
+* Psychological stress
+* Over-leveraging
+* Long-term debt accumulation
+
+---
+
+## 3️⃣ TO-BE STATE (DESIGN VISION)
+
+### 3.1 Vision Statement
+
+> **“Fiinny becomes the single brain that tells users how to use credit cards wisely — before damage happens.”**
+
+---
+
+### 3.2 Core Outcomes
+
+* One dashboard for **all credit cards**
+* Proactive alerts, not reactive reminders
+* Spend intelligence & optimization
+* Credit score protection
+* Clear action suggestions
+
+---
+
+### 3.3 Success Metrics (KPIs)
+
+| Metric                  | Target Impact     |
+| ----------------------- | ----------------- |
+| Missed payments         | ↓ 90%             |
+| Interest paid           | ↓ 25–40%          |
+| Credit utilization      | Optimized to <30% |
+| Minimum due payments    | ↓ sharply         |
+| User trust & engagement | ↑                 |
+
+---
+
+## 4️⃣ FUNCTIONAL DESIGN (TO-BE)
+
+---
+
+### 4.1 Card Onboarding & Discovery
+
+**User can add cards via:**
+
+* Manual entry
+* SMS parsing (bank alerts)
+* Email scanning (statements)
+* UPI / account linkage (future)
+
+**Captured Attributes:**
+
+* Bank
+* Card name/type
+* Credit limit
+* Billing cycle
+* Due date
+* Interest rate (APR)
+* Annual fees
+* Rewards structure
+
+---
+
+### 4.2 Unified Credit Card Dashboard
+
+For each card:
+
+* Outstanding balance
+* Available credit
+* Credit utilization %
+* Last payment
+* Next due date
+* Minimum due vs Total due
+* Interest meter (visual)
+
+Overall view:
+
+* Total credit limit
+* Total outstanding
+* Utilization ratio
+* Risk score (low / medium / high)
+
+---
+
+### 4.3 Smart Spend Classification
+
+* Auto-categorize card spends
+* Detect:
+
+  * EMI vs non-EMI
+  * Revolving balances
+  * Cash advances (high-risk)
+* Track spend by:
+
+  * Category
+  * Merchant
+  * Card
+
+---
+
+### 4.4 Billing Cycle Intelligence
+
+Fiinny understands:
+
+* Purchase date vs billing cycle
+* Grace period
+* Interest-free window
+
+**Insights like:**
+
+* “If you buy today, you get 45 days interest-free”
+* “Wait 3 days for next billing cycle”
+
+---
+
+### 4.5 Payment Strategy Engine
+
+Suggestions:
+
+* Pay full vs partial
+* Which card to pay first
+* When minimum due is dangerous
+* Snowball vs avalanche repayment logic
+
+---
+
+### 4.6 Rewards & Offer Optimization
+
+* Detect unused reward points
+* Recommend:
+
+  * Best card for fuel / travel / shopping
+  * Cashback vs points usage
+* Alert on expiring points
+
+---
+
+### 4.7 Credit Score Protection
+
+* Utilization threshold alerts
+* Late payment risk alerts
+* Hard inquiry awareness
+* Card closure impact simulation
+
+---
+
+### 4.8 EMI & Balance Transfer Intelligence
+
+* Identify high-interest EMIs
+* Suggest:
+
+  * Lower-cost EMI
+  * Balance transfer options
+* Foreclosure vs continuation analysis
+
+---
+
+## 5️⃣ PRODUCT DESIGN DOCUMENT (PDD)
+
+---
+
+### 5.1 Core Modules
+
+1. Card Registry
+2. Transaction Engine
+3. Billing Cycle Engine
+4. Interest Calculator
+5. Rewards Engine
+6. Risk Engine
+7. Recommendation Engine
+8. Notification Engine
+
+---
+
+### 5.2 Rules & Logic (Business Level)
+
+* Credit utilization > 30% → warning
+* Minimum due paid consecutively → risk flag
+* Interest > benchmark → optimization suggestion
+* EMI overlap > threshold → consolidation suggestion
+
+---
+
+### 5.3 Notification Types
+
+* Due date reminders (T-5, T-2, T-1)
+* Utilization breach
+* High-interest warning
+* Rewards expiry
+* Better card suggestion
+
+---
+
+## 6️⃣ PROJECT EPICS & USER STORIES
+
+---
+
+### Epic 1: Card Onboarding
+
+* As a user, I want to add all my cards easily
+* As a user, I want cards auto-detected from SMS
+
+---
+
+### Epic 2: Credit Health Dashboard
+
+* As a user, I want to see my total exposure
+* As a user, I want to know if I’m at risk
+
+---
+
+### Epic 3: Smart Payments
+
+* As a user, I want to know how much to pay
+* As a user, I want reminders before it’s too late
+
+---
+
+### Epic 4: Spend Optimization
+
+* As a user, I want to use the right card
+* As a user, I want to maximize rewards
+
+---
+
+### Epic 5: Risk & Score Protection
+
+* As a user, I want to avoid credit score damage
+* As a user, I want to plan card closures safely
+
+---
+
+### Epic 6: EMI & Transfer Advisory
+
+* As a user, I want cheaper options
+* As a user, I want clarity before EMI conversion
+
+---
+
+## 7️⃣ DEPENDENCIES & ASSUMPTIONS
+
+* SMS & email access permissions
+* Bank metadata repository (interest rates, fees)
+* Reward catalog maintenance
+* Regulatory compliance (India – RBI)
+
+---
+
+## 8️⃣ PHASED ROLLOUT PLAN
+
+| Phase   | Scope                            |
+| ------- | -------------------------------- |
+| Phase 1 | Card tracking + reminders        |
+| Phase 2 | Spend & utilization intelligence |
+| Phase 3 | Rewards & EMI optimization       |
+| Phase 4 | AI-driven card strategy          |
+| Phase 5 | Bank partnerships & offers       |
+
+---
+
+## 9️⃣ STRATEGIC IMPORTANCE TO FIINNY
+
+* Credit Cards = **daily engagement surface**
+* Natural bridge to:
+
+  * Loans
+  * Credit score
+  * BNPL
+  * Wealth products
+* Builds **deep financial trust**
+
+---
+
+## 10️⃣ NEXT NATURAL EXTENSION (WHEN YOU’RE READY)
+
+* Credit score engine
+* BNPL tracking
+* Overdraft & Pay Later management
+* Full credit lifecycle management
