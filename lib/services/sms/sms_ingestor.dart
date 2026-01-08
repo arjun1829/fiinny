@@ -499,6 +499,7 @@ class SmsIngestor {
   final IncomeService _income = IncomeService();
   final IngestIndexService _index = IngestIndexService();
   final CreditCardService _creditCardService = CreditCardService();
+  final LoanDetectionService _loanDetectionService = LoanDetectionService();
   String? _scheduledTaskId;
 
   bool get _isAndroid =>
@@ -1411,6 +1412,21 @@ class SmsIngestor {
         await RecurringEngine.maybeAttachToLoan(userPhone, expRef.id);
         await RecurringEngine.markPaidIfInWindow(userPhone, expRef.id);
       } catch (_) {}
+
+      try {
+        // LMS Magic Detection
+        await _loanDetectionService.checkLoanTransaction(userPhone, {
+          'amount': amount,
+          'merchant': merchantNorm.isNotEmpty ? merchantNorm : counterparty,
+          'category': finalCategory,
+          'subcategory': finalSubcategory,
+          'note': note,
+          'date': Timestamp.fromDate(ts),
+          'description': body,
+        });
+      } catch (e) {
+        _log('LMS check error: $e');
+      }
 
       try {
         await IngestJobQueue.enqueue(
