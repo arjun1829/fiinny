@@ -1,5 +1,6 @@
 // lib/models/loan_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
+import '../logic/loan_detection_parser.dart';
 
 /// How interest is calculated for this loan.
 enum LoanInterestMethod { reducing, flat }
@@ -19,30 +20,36 @@ enum LoanShareMode { equal, custom }
 
 class LoanShareMember {
   final String? name;
-  final String? phone;   // for lookups / contacts
-  final String? userId;  // if friend is also an app user
+  final String? phone; // for lookups / contacts
+  final String? userId; // if friend is also an app user
   final double? percent; // only used when mode == custom
 
   const LoanShareMember({this.name, this.phone, this.userId, this.percent});
 
   factory LoanShareMember.fromJson(Map<String, dynamic> j) => LoanShareMember(
-    name: (j['name'] ?? '').toString().trim().isEmpty ? null : (j['name'] as String),
-    phone: (j['phone'] ?? '').toString().trim().isEmpty ? null : (j['phone'] as String),
-    userId: (j['userId'] ?? '').toString().trim().isEmpty ? null : (j['userId'] as String),
-    percent: j['percent'] is num ? (j['percent'] as num).toDouble() : null,
-  );
+        name: (j['name'] ?? '').toString().trim().isEmpty
+            ? null
+            : (j['name'] as String),
+        phone: (j['phone'] ?? '').toString().trim().isEmpty
+            ? null
+            : (j['phone'] as String),
+        userId: (j['userId'] ?? '').toString().trim().isEmpty
+            ? null
+            : (j['userId'] as String),
+        percent: j['percent'] is num ? (j['percent'] as num).toDouble() : null,
+      );
 
   Map<String, dynamic> toJson() => {
-    if (name != null && name!.isNotEmpty) 'name': name,
-    if (phone != null && phone!.isNotEmpty) 'phone': phone,
-    if (userId != null && userId!.isNotEmpty) 'userId': userId,
-    if (percent != null) 'percent': percent,
-  };
+        if (name != null && name!.isNotEmpty) 'name': name,
+        if (phone != null && phone!.isNotEmpty) 'phone': phone,
+        if (userId != null && userId!.isNotEmpty) 'userId': userId,
+        if (percent != null) 'percent': percent,
+      };
 }
 
 class LoanShare {
   final bool isShared;
-  final LoanShareMode mode;            // equal | custom
+  final LoanShareMode mode; // equal | custom
   final List<LoanShareMember> members; // empty => not shared
 
   const LoanShare({
@@ -66,10 +73,10 @@ class LoanShare {
   }
 
   Map<String, dynamic> toJson() => {
-    'isShared': isShared,
-    'mode': mode.name,
-    'members': members.map((m) => m.toJson()).toList(),
-  };
+        'isShared': isShared,
+        'mode': mode.name,
+        'members': members.map((m) => m.toJson()).toList(),
+      };
 }
 
 /// v2 model notes:
@@ -127,8 +134,8 @@ class LoanModel {
   final List<String>? tags;
 
   // Sharing / split (optional)
-  final LoanShare? share;                 // structured sharing
-  final List<String>? shareMemberPhones;  // flattened for arrayContains queries
+  final LoanShare? share; // structured sharing
+  final List<String>? shareMemberPhones; // flattened for arrayContains queries
 
   final String? note;
   final bool isClosed;
@@ -183,7 +190,8 @@ class LoanModel {
     return double.tryParse(v.toString().trim());
   }
 
-  static double _asDouble(dynamic v, {double fallback = 0.0}) => _asDoubleN(v) ?? fallback;
+  static double _asDouble(dynamic v, {double fallback = 0.0}) =>
+      _asDoubleN(v) ?? fallback;
 
   static int? _asIntN(dynamic v) {
     if (v == null) return null;
@@ -230,7 +238,9 @@ class LoanModel {
       emi: _asDoubleN(json['emi']),
       tenureMonths: _asIntN(json['tenureMonths']),
       paymentDayOfMonth: _asIntN(json['paymentDayOfMonth']),
-      reminderEnabled: json['reminderEnabled'] is bool ? json['reminderEnabled'] as bool : null,
+      reminderEnabled: json['reminderEnabled'] is bool
+          ? json['reminderEnabled'] as bool
+          : null,
       reminderDaysBefore: _asIntN(json['reminderDaysBefore']),
       reminderTime: _asStringN(json['reminderTime']),
       autopay: json['autopay'] is bool ? json['autopay'] as bool : null,
@@ -248,7 +258,25 @@ class LoanModel {
   }
 
   // Alias for Firestore docs
-  factory LoanModel.fromFirestore(Map<String, dynamic> data, String id) => LoanModel.fromJson(data, id);
+  factory LoanModel.fromFirestore(Map<String, dynamic> data, String id) =>
+      LoanModel.fromJson(data, id);
+
+  factory LoanModel.fromParserResult(LoanParseResult result,
+      {String userId = ''}) {
+    final isGiven = result.type == LoanType.given;
+    return LoanModel(
+      userId: userId,
+      title: result.counterPartyName ?? (isGiven ? 'Loan Given' : 'Loan Taken'),
+      amount: result.amount,
+      lenderType: 'Friend', // Default for text-detected loans
+      lenderName: result.counterPartyName,
+      // If given, we might mark it differently if the model supported it,
+      // but matching existing schema:
+      note: 'Detected from text (${result.type.name})',
+      createdAt: DateTime.now(),
+      startDate: DateTime.now(),
+    );
+  }
 
   // -------------------------------- JSON ----------------------------------
 
@@ -283,7 +311,8 @@ class LoanModel {
       if (lastPaymentAmount != null) 'lastPaymentAmount': lastPaymentAmount,
       if (tags != null && tags!.isNotEmpty) 'tags': tags,
       if (share != null) 'share': share!.toJson(),
-      if (shareMemberPhones != null && shareMemberPhones!.isNotEmpty) 'shareMemberPhones': shareMemberPhones,
+      if (shareMemberPhones != null && shareMemberPhones!.isNotEmpty)
+        'shareMemberPhones': shareMemberPhones,
       if (note != null && note!.isNotEmpty) 'note': note,
       'isClosed': isClosed,
       if (createdAt != null) 'createdAt': _outDate(createdAt),
@@ -315,7 +344,8 @@ class LoanModel {
   }
 
   /// Returns the safe day-of-month clamped to 1..28 (avoids month-end bugs).
-  int? get safePaymentDay => paymentDayOfMonth == null ? null : paymentDayOfMonth!.clamp(1, 28);
+  int? get safePaymentDay =>
+      paymentDayOfMonth == null ? null : paymentDayOfMonth!.clamp(1, 28);
 
   /// Compute next payment date using [paymentDayOfMonth] (clamped) and [dueDate].
   /// - If closed => null
@@ -366,13 +396,14 @@ class LoanModel {
 
   // ----------- Sharing helpers (optional; useful for UI calculations) -----------
 
-  bool get isShared => (share?.isShared ?? false) && (share?.members.isNotEmpty ?? false);
+  bool get isShared =>
+      (share?.isShared ?? false) && (share?.members.isNotEmpty ?? false);
 
   /// Returns this member’s percent if custom mode is used; otherwise null (equal split).
   double? sharePercentForPhone(String phone) {
     if (share == null || share!.mode != LoanShareMode.custom) return null;
     final m = share!.members.firstWhere(
-          (e) => (e.phone ?? '').trim() == phone.trim(),
+      (e) => (e.phone ?? '').trim() == phone.trim(),
       orElse: () => const LoanShareMember(),
     );
     return m.percent;
@@ -459,7 +490,8 @@ class LoanModel {
   // ----------------------------- Utils / internals -----------------------------
 
   static int _daysInMonth(int year, int month) {
-    final firstOfNext = (month == 12) ? DateTime(year + 1, 1, 1) : DateTime(year, month + 1, 1);
+    final firstOfNext =
+        (month == 12) ? DateTime(year + 1, 1, 1) : DateTime(year, month + 1, 1);
     return firstOfNext.subtract(const Duration(days: 1)).day;
   }
 
@@ -477,16 +509,21 @@ class LoanModel {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is LoanModel &&
-              runtimeType == other.runtimeType &&
-              id == other.id &&
-              userId == other.userId &&
-              title == other.title &&
-              amount == other.amount &&
-              lenderType == other.lenderType &&
-              isClosed == other.isClosed;
+      other is LoanModel &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          userId == other.userId &&
+          title == other.title &&
+          amount == other.amount &&
+          lenderType == other.lenderType &&
+          isClosed == other.isClosed;
 
   @override
   int get hashCode =>
-      id.hashCode ^ userId.hashCode ^ title.hashCode ^ amount.hashCode ^ lenderType.hashCode ^ isClosed.hashCode;
+      id.hashCode ^
+      userId.hashCode ^
+      title.hashCode ^
+      amount.hashCode ^
+      lenderType.hashCode ^
+      isClosed.hashCode;
 }
