@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../models/loan_model.dart';
+import '../logic/loan_detection_parser.dart';
 
 /// Shared palette (matches Add Transaction)
 const Color kBg = Color(0xFFF8FAF9);
@@ -155,13 +156,15 @@ class _AddLoanWizardState extends State<AddLoanWizard> {
 
   // ---------- draft build ----------
   AddLoanDraft _draft() {
-    double? _toD(String s) => s.trim().isEmpty ? null : double.tryParse(s.trim());
+    double? _toD(String s) =>
+        s.trim().isEmpty ? null : double.tryParse(s.trim());
     int? _toI(String s) => s.trim().isEmpty ? null : int.tryParse(s.trim());
 
     return AddLoanDraft(
       title: _title.text.trim(),
       lenderType: _lenderType,
-      lenderName: _lenderName.text.trim().isEmpty ? null : _lenderName.text.trim(),
+      lenderName:
+          _lenderName.text.trim().isEmpty ? null : _lenderName.text.trim(),
       amount: double.tryParse(_amount.text.trim()) ?? 0,
       originalAmount: _toD(_original.text),
       emi: _toD(_emi.text),
@@ -221,7 +224,9 @@ class _AddLoanWizardState extends State<AddLoanWizard> {
     if (_step == 2 && !_valid2()) return;
     if (_step < 3) {
       setState(() => _step += 1);
-      _pg.animateToPage(_step, duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic);
+      _pg.animateToPage(_step,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic);
     }
   }
 
@@ -229,13 +234,50 @@ class _AddLoanWizardState extends State<AddLoanWizard> {
     FocusScope.of(context).unfocus();
     if (_step > 0) {
       setState(() => _step -= 1);
-      _pg.animateToPage(_step, duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic);
+      _pg.animateToPage(_step,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic);
     } else {
       Navigator.pop(context);
     }
   }
 
-  void _toast(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  void _toast(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  void _onNoteChanged(String v) {
+    // Smart detection
+    final res = LoanDetectionParser.parse(v);
+    if (res != null) {
+      // Check if meaningful change to avoid loops/flicker
+      bool changed = false;
+      final newAmount = res.amount;
+      if (newAmount > 0 && (double.tryParse(_amount.text) ?? 0) != newAmount) {
+        _amount.text = newAmount.toStringAsFixed(0);
+        changed = true;
+      }
+
+      // Map loan type
+      // existing types: 'Bank', 'NBFC', 'Other'
+      // If given -> maybe 'Other'? Or stay.
+      // If taken -> maybe check name?
+      // The prompt says "update the Amount or Loan Type".
+      // If I took a loan, maybe it's Bank or Other.
+      // I'll stick to updating Amount mostly, unless I map 'Friend' -> 'Other'
+
+      // Actually, AddLoanWizard has _lenderType.
+      // If text implies "I lent", but the wizard controls just "Lender Type", it's ambiguous.
+      // Use best judgment:
+      if (res.type == LoanType.given) {
+        // If I lent, the "Lender" is technically me, but usually we record the "Borrower" as the entity?
+        // No, LoanModel records "Lender".
+        // If I write "Lent 500 to Bob", Bob is the borrower.
+        // I will assume for now I don't change lenderType blindly unless it's a known bank name.
+      }
+
+      if (changed) setState(() {});
+    }
+  }
 
   // ---------- UI ----------
   @override
@@ -262,7 +304,8 @@ class _AddLoanWizardState extends State<AddLoanWizard> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
-              child: _StepperBar(current: _step, total: steps.length, labels: steps),
+              child: _StepperBar(
+                  current: _step, total: steps.length, labels: steps),
             ),
             Expanded(
               child: PageView(
@@ -300,6 +343,7 @@ class _AddLoanWizardState extends State<AddLoanWizard> {
                     },
                     onClearDue: () => setState(() => _finalDue = null),
                     noteCtrl: _note,
+                    onNoteChange: _onNoteChanged,
                     reminders: _reminders,
                     onReminders: (v) => setState(() => _reminders = v),
                     onBack: _back,
@@ -385,7 +429,8 @@ class _StepBasics extends StatelessWidget {
         _Box(
           child: TextField(
             controller: lenderNameCtrl,
-            decoration: _inputDec().copyWith(hintText: 'Eg: HDFC, Bajaj Finance'),
+            decoration:
+                _inputDec().copyWith(hintText: 'Eg: HDFC, Bajaj Finance'),
           ),
         ),
         const SizedBox(height: 28),
@@ -470,6 +515,7 @@ class _StepSchedule extends StatelessWidget {
   final VoidCallback onClearDue;
 
   final TextEditingController noteCtrl;
+  final ValueChanged<String>? onNoteChange;
   final bool reminders;
   final ValueChanged<bool> onReminders;
 
@@ -484,6 +530,7 @@ class _StepSchedule extends StatelessWidget {
     required this.onPickDue,
     required this.onClearDue,
     required this.noteCtrl,
+    this.onNoteChange,
     required this.reminders,
     required this.onReminders,
     required this.onBack,
@@ -524,7 +571,8 @@ class _StepSchedule extends StatelessWidget {
           Expanded(
             child: _Box(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                 child: Text(
                   finalDue == null ? 'Not set' : _dateTxt(finalDue!),
                   style: TextStyle(
@@ -539,11 +587,13 @@ class _StepSchedule extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: onPickDue,
             icon: const Icon(Icons.event_rounded, color: kPrimary),
-            label: const Text('Pick', style: TextStyle(color: kPrimary, fontWeight: FontWeight.w700)),
+            label: const Text('Pick',
+                style: TextStyle(color: kPrimary, fontWeight: FontWeight.w700)),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: kPrimary),
               backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
@@ -552,12 +602,16 @@ class _StepSchedule extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: onClearDue,
               icon: const Icon(Icons.clear_rounded, color: Colors.red),
-              label: const Text('Clear', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700)),
+              label: const Text('Clear',
+                  style: TextStyle(
+                      color: Colors.red, fontWeight: FontWeight.w700)),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: Color(0xFFE57373)),
                 backgroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               ),
             ),
           ],
@@ -569,14 +623,17 @@ class _StepSchedule extends StatelessWidget {
           child: TextField(
             controller: noteCtrl,
             maxLines: 2,
-            decoration: _inputDec().copyWith(hintText: 'Optional note'),
+            onChanged: onNoteChange,
+            decoration: _inputDec()
+                .copyWith(hintText: 'Optional note (e.g. borrowed 500)'),
           ),
         ),
         const SizedBox(height: 8),
         SwitchListTile.adaptive(
           value: reminders,
           onChanged: onReminders,
-          title: const Text('Payment reminders', style: TextStyle(fontWeight: FontWeight.w800)),
+          title: const Text('Payment reminders',
+              style: TextStyle(fontWeight: FontWeight.w800)),
           subtitle: const Text('Get a nudge near your payment day'),
           contentPadding: EdgeInsets.zero,
           activeColor: kPrimary,
@@ -610,15 +667,20 @@ class _StepReview extends StatelessWidget {
   Widget build(BuildContext context) {
     final rows = <_KV>[
       _KV('Title', data.title),
-      _KV('Lender', "${data.lenderType}${(data.lenderName ?? '').isNotEmpty ? ' • ${data.lenderName}' : ''}"),
+      _KV('Lender',
+          "${data.lenderType}${(data.lenderName ?? '').isNotEmpty ? ' • ${data.lenderName}' : ''}"),
       _KV('Outstanding', "₹ ${data.amount.toStringAsFixed(0)}"),
-      if (data.originalAmount != null) _KV('Original', "₹ ${data.originalAmount!.toStringAsFixed(0)}"),
-      if (data.emi != null) _KV('EMI', "₹ ${data.emi!.toStringAsFixed(0)} / mo"),
+      if (data.originalAmount != null)
+        _KV('Original', "₹ ${data.originalAmount!.toStringAsFixed(0)}"),
+      if (data.emi != null)
+        _KV('EMI', "₹ ${data.emi!.toStringAsFixed(0)} / mo"),
       if (data.interestRate != null) _KV('Rate', "${data.interestRate}%"),
       if (data.tenureMonths != null) _KV('Tenure', "${data.tenureMonths} mo"),
-      if (data.paymentDayOfMonth != null) _KV('Pay on', "Day ${data.paymentDayOfMonth}"),
+      if (data.paymentDayOfMonth != null)
+        _KV('Pay on', "Day ${data.paymentDayOfMonth}"),
       if (data.finalDueDate != null)
-        _KV('Final Due', "${data.finalDueDate!.day.toString().padLeft(2,'0')}-${data.finalDueDate!.month.toString().padLeft(2,'0')}-${data.finalDueDate!.year}"),
+        _KV('Final Due',
+            "${data.finalDueDate!.day.toString().padLeft(2, '0')}-${data.finalDueDate!.month.toString().padLeft(2, '0')}-${data.finalDueDate!.year}"),
       _KV('Reminders', data.reminderEnabled ? 'On' : 'Off'),
       if ((data.note ?? '').isNotEmpty) _KV('Note', data.note!),
     ];
@@ -637,12 +699,15 @@ class _StepReview extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Row(children: [
                     Expanded(
-                      child: Text(kv.k, style: const TextStyle(color: kSubtle, fontWeight: FontWeight.w700)),
+                      child: Text(kv.k,
+                          style: const TextStyle(
+                              color: kSubtle, fontWeight: FontWeight.w700)),
                     ),
                     Expanded(
                       child: Text(kv.v,
                           textAlign: TextAlign.right,
-                          style: const TextStyle(color: kText, fontWeight: FontWeight.w800)),
+                          style: const TextStyle(
+                              color: kText, fontWeight: FontWeight.w800)),
                     ),
                   ]),
                 );
@@ -673,7 +738,8 @@ class _StepperBar extends StatelessWidget {
   final int current;
   final int total;
   final List<String> labels;
-  const _StepperBar({required this.current, required this.total, required this.labels});
+  const _StepperBar(
+      {required this.current, required this.total, required this.labels});
 
   @override
   Widget build(BuildContext context) {
@@ -725,7 +791,8 @@ class _H2 extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       t,
-      style: const TextStyle(color: kText, fontWeight: FontWeight.w800, fontSize: 16),
+      style: const TextStyle(
+          color: kText, fontWeight: FontWeight.w800, fontSize: 16),
     );
   }
 }
@@ -749,7 +816,8 @@ class _LabeledField extends StatelessWidget {
       label: label,
       child: TextField(
         controller: controller,
-        keyboardType: keyboardType ?? const TextInputType.numberWithOptions(decimal: true),
+        keyboardType: keyboardType ??
+            const TextInputType.numberWithOptions(decimal: true),
         decoration: _inputDec().copyWith(hintText: hint),
       ),
     );
@@ -768,7 +836,10 @@ class _Box extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: kLine),
-        boxShadow: const [BoxShadow(color: Color(0x0F000000), blurRadius: 10, offset: Offset(0,4))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x0F000000), blurRadius: 10, offset: Offset(0, 4))
+        ],
       ),
       child: child,
     );
@@ -776,7 +847,9 @@ class _Box extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label!, style: const TextStyle(color: kText, fontWeight: FontWeight.w700, fontSize: 13.5)),
+        Text(label!,
+            style: const TextStyle(
+                color: kText, fontWeight: FontWeight.w700, fontSize: 13.5)),
         const SizedBox(height: 6),
         box,
       ],
@@ -788,7 +861,8 @@ class _PrimaryButton extends StatelessWidget {
   final String text;
   final VoidCallback? onPressed;
   final bool loading;
-  const _PrimaryButton({required this.text, required this.onPressed, this.loading=false});
+  const _PrimaryButton(
+      {required this.text, required this.onPressed, this.loading = false});
   @override
   Widget build(BuildContext context) {
     return ElevatedButton(
@@ -802,10 +876,15 @@ class _PrimaryButton extends StatelessWidget {
       ),
       child: loading
           ? const SizedBox(
-        width: 22, height: 22,
-        child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
-      )
-          : Text(text, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800)),
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
+            )
+          : Text(text,
+              style:
+                  const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800)),
     );
   }
 }
@@ -836,19 +915,28 @@ class _GlassCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white, borderRadius: BorderRadius.circular(18),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: kLine, width: 1),
-        boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0,8))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 8))
+        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
-        child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3), child: child),
+        child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3), child: child),
       ),
     );
   }
 }
 
-class _KV { final String k; final String v; const _KV(this.k, this.v); }
+class _KV {
+  final String k;
+  final String v;
+  const _KV(this.k, this.v);
+}
 
 InputDecoration _inputDec() {
   final base = OutlineInputBorder(
@@ -856,10 +944,12 @@ InputDecoration _inputDec() {
     borderSide: const BorderSide(color: kLine, width: 1),
   );
   return InputDecoration(
-    filled: true, fillColor: Colors.white,
+    filled: true,
+    fillColor: Colors.white,
     hintStyle: const TextStyle(color: kSubtle),
     contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
     enabledBorder: base,
-    focusedBorder: base.copyWith(borderSide: const BorderSide(color: kPrimary, width: 1.4)),
+    focusedBorder: base.copyWith(
+        borderSide: const BorderSide(color: kPrimary, width: 1.4)),
   );
 }

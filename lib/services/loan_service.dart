@@ -2,6 +2,7 @@
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/loan_model.dart';
+import '../logic/loan_detection_parser.dart';
 
 class LoanService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -16,9 +17,9 @@ class LoanService {
       _raw.where('userId', isEqualTo: userId);
 
   /// Typed converter (handy for reads/writes)
-  CollectionReference<LoanModel> get _typed =>
-      _raw.withConverter<LoanModel>(
-        fromFirestore: (snap, _) => LoanModel.fromJson(snap.data() ?? {}, snap.id),
+  CollectionReference<LoanModel> get _typed => _raw.withConverter<LoanModel>(
+        fromFirestore: (snap, _) =>
+            LoanModel.fromJson(snap.data() ?? {}, snap.id),
         toFirestore: (loan, _) => loan.toJson(asTimestamp: true),
       );
 
@@ -29,14 +30,15 @@ class LoanService {
   /// Ordered by createdAt desc if index exists; falls back gracefully.
   Future<List<LoanModel>> getLoans(String userId) async {
     try {
-      final snap = await _userQuery(userId)
-          .orderBy('createdAt', descending: true)
-          .get();
+      final snap =
+          await _userQuery(userId).orderBy('createdAt', descending: true).get();
       return snap.docs.map((d) => LoanModel.fromJson(d.data(), d.id)).toList();
     } on FirebaseException catch (e) {
       if (e.code == 'failed-precondition') {
         final snap = await _userQuery(userId).get(); // no index yet
-        return snap.docs.map((d) => LoanModel.fromJson(d.data(), d.id)).toList();
+        return snap.docs
+            .map((d) => LoanModel.fromJson(d.data(), d.id))
+            .toList();
       }
       rethrow;
     }
@@ -46,7 +48,8 @@ class LoanService {
     return _userQuery(userId)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((s) => s.docs.map((d) => LoanModel.fromJson(d.data(), d.id)).toList());
+        .map((s) =>
+            s.docs.map((d) => LoanModel.fromJson(d.data(), d.id)).toList());
   }
 
   Future<LoanModel?> getById(String loanId) async {
@@ -72,17 +75,17 @@ class LoanService {
   Future<void> saveLoan(LoanModel loan) async {
     if (loan.id == null) throw ArgumentError('saveLoan requires loan.id');
     await _raw.doc(loan.id!).set(
-      loan.toJson(asTimestamp: true),
-      SetOptions(merge: true),
-    );
+          loan.toJson(asTimestamp: true),
+          SetOptions(merge: true),
+        );
   }
 
   /// Patch specific fields. Converts DateTime -> Timestamp if [asTimestamp] true.
   Future<void> patch(
-      String loanId,
-      Map<String, dynamic> fields, {
-        bool asTimestamp = true,
-      }) async {
+    String loanId,
+    Map<String, dynamic> fields, {
+    bool asTimestamp = true,
+  }) async {
     fields.removeWhere((_, v) => v == null);
     if (asTimestamp) {
       fields.updateAll((k, v) {
@@ -105,11 +108,11 @@ class LoanService {
   // ----------------------------- Reminders / Prefs -----------------------------
 
   Future<void> setReminderPrefs(
-      String loanId, {
-        bool? enabled,
-        int? daysBefore,
-        String? timeHHmm,
-      }) {
+    String loanId, {
+    bool? enabled,
+    int? daysBefore,
+    String? timeHHmm,
+  }) {
     return patch(loanId, {
       if (enabled != null) 'reminderEnabled': enabled,
       if (daysBefore != null) 'reminderDaysBefore': daysBefore,
@@ -164,7 +167,8 @@ class LoanService {
       if (!snap.exists) throw StateError('Loan not found');
 
       final loan = LoanModel.fromJson(snap.data()!, snap.id);
-      final newOutstanding = (loan.amount - paymentAmount).clamp(0.0, double.infinity);
+      final newOutstanding =
+          (loan.amount - paymentAmount).clamp(0.0, double.infinity);
 
       final now = paidAt ?? DateTime.now();
 
@@ -190,7 +194,8 @@ class LoanService {
         .where('isClosed', isEqualTo: false)
         .orderBy('startDate', descending: true)
         .snapshots()
-        .map((s) => s.docs.map((d) => LoanModel.fromJson(d.data(), d.id)).toList());
+        .map((s) =>
+            s.docs.map((d) => LoanModel.fromJson(d.data(), d.id)).toList());
   }
 
   Stream<List<LoanModel>> closedLoansStream(String userId) {
@@ -198,7 +203,8 @@ class LoanService {
         .where('isClosed', isEqualTo: true)
         .orderBy('startDate', descending: true)
         .snapshots()
-        .map((s) => s.docs.map((d) => LoanModel.fromJson(d.data(), d.id)).toList());
+        .map((s) =>
+            s.docs.map((d) => LoanModel.fromJson(d.data(), d.id)).toList());
   }
 
   Stream<List<LoanModel>> overdueLoansStream(String userId) {
@@ -214,9 +220,11 @@ class LoanService {
     });
   }
 
-  Stream<List<LoanModel>> highInterestStream(String userId, {double threshold = 24}) {
-    return loansStream(userId).map((list) =>
-        list.where((l) => (l.interestRate ?? 0) >= threshold && !l.isClosed).toList());
+  Stream<List<LoanModel>> highInterestStream(String userId,
+      {double threshold = 24}) {
+    return loansStream(userId).map((list) => list
+        .where((l) => (l.interestRate ?? 0) >= threshold && !l.isClosed)
+        .toList());
   }
 
   Future<List<LoanModel>> byLenderType(String userId, String lenderType) async {
@@ -237,13 +245,13 @@ class LoanService {
 
   Future<int> countOpenLoans(String userId) async {
     final snap =
-    await _userQuery(userId).where('isClosed', isEqualTo: false).get();
+        await _userQuery(userId).where('isClosed', isEqualTo: false).get();
     return snap.docs.length;
   }
 
   Future<double> sumOutstanding(String userId) async {
     final snap =
-    await _userQuery(userId).where('isClosed', isEqualTo: false).get();
+        await _userQuery(userId).where('isClosed', isEqualTo: false).get();
 
     double sum = 0;
     for (final d in snap.docs) {
@@ -252,8 +260,7 @@ class LoanService {
           data['remaining'] ??
           data['remainingPrincipal'] ??
           data['amount'] ??
-          0)
-      as num;
+          0) as num;
       sum += numish.toDouble();
     }
     return sum;
@@ -263,7 +270,7 @@ class LoanService {
     final loans = await getLoans(userId);
     final total = loans.fold<double>(0, (a, l) => a + l.amount);
     final activePrincipal =
-    loans.where((l) => !l.isClosed).fold<double>(0, (a, l) => a + l.amount);
+        loans.where((l) => !l.isClosed).fold<double>(0, (a, l) => a + l.amount);
     final closedPrincipal = total - activePrincipal;
     final monthlyEmi = loans
         .where((l) => !l.isClosed && (l.emi ?? 0) > 0)
@@ -286,26 +293,34 @@ class LoanService {
   /// array for efficient queries.
   /// members: [{ name, phone, userId, percent }]
   Future<void> setSharing(
-      String loanId, {
-        required List<Map<String, dynamic>> members,
-        bool equalSplit = true,
-      }) async {
+    String loanId, {
+    required List<Map<String, dynamic>> members,
+    bool equalSplit = true,
+  }) async {
     // sanitize & coerce
-    final cleaned = members.map((m) {
-      final name = (m['name'] ?? '').toString().trim();
-      final phone = (m['phone'] ?? '').toString().trim();
-      final userId = (m['userId'] ?? '').toString().trim();
-      final pct = (m['percent'] is num) ? (m['percent'] as num).toDouble() : null;
+    final cleaned = members
+        .map((m) {
+          final name = (m['name'] ?? '').toString().trim();
+          final phone = (m['phone'] ?? '').toString().trim();
+          final userId = (m['userId'] ?? '').toString().trim();
+          final pct =
+              (m['percent'] is num) ? (m['percent'] as num).toDouble() : null;
 
-      return {
-        if (name.isNotEmpty) 'name': name,
-        if (phone.isNotEmpty) 'phone': phone,
-        if (userId.isNotEmpty) 'userId': userId,
-        if (pct != null) 'percent': pct,
-      };
-    }).where((m) => m.isNotEmpty).toList();
+          return {
+            if (name.isNotEmpty) 'name': name,
+            if (phone.isNotEmpty) 'phone': phone,
+            if (userId.isNotEmpty) 'userId': userId,
+            if (pct != null) 'percent': pct,
+          };
+        })
+        .where((m) => m.isNotEmpty)
+        .toList();
 
-    final phones = cleaned.map((e) => (e['phone'] ?? '').toString()).where((p) => p.isNotEmpty).toSet().toList();
+    final phones = cleaned
+        .map((e) => (e['phone'] ?? '').toString())
+        .where((p) => p.isNotEmpty)
+        .toSet()
+        .toList();
 
     await patch(loanId, {
       'share': {
@@ -333,19 +348,18 @@ class LoanService {
 
   /// Fetch loans shared with a phone number (works even if user isn’t the owner).
   Future<List<LoanModel>> loansSharedWithPhone(String phone) async {
-    final snap = await _raw
-        .where('shareMemberPhones', arrayContains: phone)
-        .get();
+    final snap =
+        await _raw.where('shareMemberPhones', arrayContains: phone).get();
 
     return snap.docs.map((d) => LoanModel.fromJson(d.data(), d.id)).toList();
   }
-
 
   // -------------------------------- Analytics --------------------------------
 
   /// Upcoming EMIs within [withinDays]; uses model.nextPaymentDate() and falls back
   /// to estimated EMI if missing.
-  Future<List<LoanEmiDue>> upcomingEmis(String userId, {int withinDays = 14}) async {
+  Future<List<LoanEmiDue>> upcomingEmis(String userId,
+      {int withinDays = 14}) async {
     final loans = (await getLoans(userId)).where((l) => !l.isClosed).toList();
     final now = DateTime.now();
     final horizon = now.add(Duration(days: withinDays));
@@ -365,7 +379,9 @@ class LoanService {
   // ------------------------------ Calculations -------------------------------
 
   double? _estimateEmi(LoanModel l) {
-    if (l.interestRate == null || l.tenureMonths == null || l.tenureMonths! <= 0) {
+    if (l.interestRate == null ||
+        l.tenureMonths == null ||
+        l.tenureMonths! <= 0) {
       return null;
     }
     final P = l.amount;
@@ -381,6 +397,21 @@ class LoanService {
       final pow = math.pow(1 + r, n) as double;
       return (P * r * pow) / (pow - 1);
     }
+  }
+
+  // ------------------------------ Detection -------------------------------
+
+  /// Mass detection from a list of strings (e.g. recent SMS history).
+  List<LoanModel> detectLoansFromTexts(List<String> messages,
+      {String userId = ''}) {
+    final results = <LoanModel>[];
+    for (final msg in messages) {
+      final res = LoanDetectionParser.parse(msg);
+      if (res != null) {
+        results.add(LoanModel.fromParserResult(res, userId: userId));
+      }
+    }
+    return results;
   }
 }
 
