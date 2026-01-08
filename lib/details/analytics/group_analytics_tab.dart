@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/analytics/aggregators.dart';
-import '../../group/group_balance_math.dart' show computeSplits, pairwiseNetForUser;
+import '../../group/group_balance_math.dart'
+    show computeSplits, pairwiseNetForUser;
 import '../../models/expense_item.dart';
 import '../../models/friend_model.dart';
 import '../../models/group_model.dart';
@@ -70,7 +71,8 @@ class _GroupAnalyticsTabState extends State<GroupAnalyticsTab> {
                     _labelFor(option),
                     style: TextStyle(
                       color: _period == option ? Colors.white : Colors.black87,
-                      fontWeight: _period == option ? FontWeight.w700 : FontWeight.w600,
+                      fontWeight:
+                          _period == option ? FontWeight.w700 : FontWeight.w600,
                       fontSize: 13,
                     ),
                   ),
@@ -81,12 +83,15 @@ class _GroupAnalyticsTabState extends State<GroupAnalyticsTab> {
                   showCheckmark: false,
                   shape: StadiumBorder(
                     side: BorderSide(
-                      color: _period == option ? Colors.transparent : Colors.grey.shade300,
+                      color: _period == option
+                          ? Colors.transparent
+                          : Colors.grey.shade300,
                     ),
                   ),
                   elevation: _period == option ? 2 : 0,
                   pressElevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
             ],
           ),
@@ -117,41 +122,48 @@ class _GroupAnalyticsTabState extends State<GroupAnalyticsTab> {
   }
 
   Widget _summaryCard(_GroupAnalyticsStats stats) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Group summary',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 12),
-            _metricRow('Total spend', stats.totalSpend, bold: true),
-            const SizedBox(height: 10),
-            _metricRow('You paid', stats.youPaid),
-            const SizedBox(height: 8),
-            _metricRow('Your share', stats.yourShare),
-            const SizedBox(height: 8),
-            _metricRow('Settlements paid', stats.settlementPaid),
-            const SizedBox(height: 8),
-            _metricRow('Settlements received', stats.settlementReceived),
-            const SizedBox(height: 12),
-            Text(
-              '${stats.transactionCount} transactions in range',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.grey.shade600),
-            ),
-          ],
-        ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Group summary',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+          _metricRow('Total spend', stats.totalSpend, bold: true),
+          const SizedBox(height: 10),
+          _metricRow('You paid', stats.youPaid),
+          const SizedBox(height: 8),
+          _metricRow('Your share', stats.yourShare),
+          const SizedBox(height: 8),
+          _metricRow('Settlements paid', stats.settlementPaid),
+          const SizedBox(height: 8),
+          _metricRow('Settlements received', stats.settlementReceived),
+          const SizedBox(height: 12),
+          Text(
+            '${stats.transactionCount} transactions in range',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: Colors.grey.shade600),
+          ),
+        ],
       ),
     );
   }
@@ -162,54 +174,62 @@ class _GroupAnalyticsTabState extends State<GroupAnalyticsTab> {
         .toList()
       ..sort((a, b) => b.value.abs().compareTo(a.value.abs()));
 
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Member balances',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+          if (entries.isEmpty)
             Text(
-              'Member balances',
+              'Everyone is settled for this range.',
               style: Theme.of(context)
                   .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 12),
-            if (entries.isEmpty)
-              Text(
-                'Everyone is settled for this range.',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: Colors.grey.shade600),
-              )
-            else
-              ...entries.take(5).map((entry) {
-                final name = _displayName(entry.key);
-                final amount = _currency.format(entry.value.abs());
-                final positive = entry.value >= 0;
-                final color = positive ? Colors.teal.shade700 : Colors.deepOrange.shade700;
-                final text = positive ? 'owes you' : 'you owe';
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          name,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
+                  .bodyMedium
+                  ?.copyWith(color: Colors.grey.shade600),
+            )
+          else
+            ...entries.take(5).map((entry) {
+              final name = _displayName(entry.key);
+              final amount = _currency.format(entry.value.abs());
+              final positive = entry.value >= 0;
+              final color =
+                  positive ? Colors.teal.shade700 : Colors.deepOrange.shade700;
+              final text = positive ? 'owes you' : 'you owe';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      Text('$text $amount', style: TextStyle(color: color)),
-                    ],
-                  ),
-                );
-              }),
-          ],
-        ),
+                    ),
+                    Text('$text $amount', style: TextStyle(color: color)),
+                  ],
+                ),
+              );
+            }),
+        ],
       ),
     );
   }
@@ -219,52 +239,59 @@ class _GroupAnalyticsTabState extends State<GroupAnalyticsTab> {
       ..sort((a, b) => b.value.compareTo(a.value));
     final total = stats.categoryTotals.values.fold<double>(0, (s, v) => s + v);
 
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Top categories',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+          if (entries.isEmpty)
             Text(
-              'Top categories',
+              'No spends recorded in this range.',
               style: Theme.of(context)
                   .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 12),
-            if (entries.isEmpty)
-              Text(
-                'No spends recorded in this range.',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: Colors.grey.shade600),
-              )
-            else
-              ...entries.take(5).map((entry) {
-                final pct = total <= 0
-                    ? 0
-                    : ((entry.value / total) * 100).clamp(0, 100);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          entry.key,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
+                  .bodyMedium
+                  ?.copyWith(color: Colors.grey.shade600),
+            )
+          else
+            ...entries.take(5).map((entry) {
+              final pct =
+                  total <= 0 ? 0 : ((entry.value / total) * 100).clamp(0, 100);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        entry.key,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      Text('${pct.toStringAsFixed(0)}% · ${_currency.format(entry.value)}'),
-                    ],
-                  ),
-                );
-              }),
-          ],
-        ),
+                    ),
+                    Text(
+                        '${pct.toStringAsFixed(0)}% · ${_currency.format(entry.value)}'),
+                  ],
+                ),
+              );
+            }),
+        ],
       ),
     );
   }
@@ -294,7 +321,9 @@ class _GroupAnalyticsTabState extends State<GroupAnalyticsTab> {
   String _displayName(String phone) {
     if (phone == widget.currentUserPhone) return 'You';
     final friend = _memberById[phone];
-    if (friend != null && friend.name.isNotEmpty && friend.name != friend.phone) {
+    if (friend != null &&
+        friend.name.isNotEmpty &&
+        friend.name != friend.phone) {
       return friend.name;
     }
     final mapped = widget.memberDisplayNames[phone];
@@ -358,7 +387,8 @@ class _GroupAnalyticsStats {
     }
 
     final categoryTotals = AnalyticsAgg.byExpenseCategorySmart(normalExpenses);
-    final memberNet = pairwiseNetForUser(filtered, currentUser, onlyGroupId: groupId);
+    final memberNet =
+        pairwiseNetForUser(filtered, currentUser, onlyGroupId: groupId);
 
     return _GroupAnalyticsStats(
       totalSpend: totalSpend,

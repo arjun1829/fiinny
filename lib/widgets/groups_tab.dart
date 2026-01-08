@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/group_model.dart';
 import '../models/friend_model.dart';
 import '../models/expense_item.dart';
-import '../screens/group_detail_screen.dart';
+import '../details/group_detail_screen.dart';
 
 class GroupsTab extends StatelessWidget {
   final List<GroupModel> groups;
@@ -56,7 +56,8 @@ class GroupsTab extends StatelessWidget {
     }
 
     return Chip(
-      label: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+      label: Text(label,
+          style: TextStyle(color: color, fontWeight: FontWeight.w600)),
       backgroundColor: color.withOpacity(0.14),
       shape: const StadiumBorder(),
     );
@@ -88,50 +89,53 @@ class GroupsTab extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Text(
                 "No groups yet. Tap + to add.",
-                style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w500),
+                style: TextStyle(
+                    color: Colors.grey[700], fontWeight: FontWeight.w500),
               ),
             )
           else
             ...groups.map((g) => Card(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              elevation: 2.5,
-              color: Colors.white,
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Colors.teal[100],
-                  radius: 22,
-                  child: Icon(Icons.groups_rounded, color: theme.primaryColor, size: 28),
-                ),
-                title: Text(
-                  g.name,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16.5,
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                ),
-                subtitle: Text(
-                  "Members: ${g.memberIds.length}",
-                  style: TextStyle(color: Colors.teal[800], fontSize: 13.5),
-                ),
-                trailing: _groupSummary(context, g),
-                onTap: () async {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => GroupDetailScreen(
-                        userId: userId,
-                        group: g,
-                        friendsById: friendsById,
+                  elevation: 2.5,
+                  color: Colors.white,
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.teal[100],
+                      radius: 22,
+                      child: Icon(Icons.groups_rounded,
+                          color: theme.primaryColor, size: 28),
+                    ),
+                    title: Text(
+                      g.name,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16.5,
                       ),
                     ),
-                  );
-                  if (result == true) onRefresh();
-                },
-              ),
-            )),
+                    subtitle: Text(
+                      "Members: ${g.memberIds.length}",
+                      style: TextStyle(color: Colors.teal[800], fontSize: 13.5),
+                    ),
+                    trailing: _groupSummary(context, g),
+                    onTap: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => GroupDetailScreen(
+                            userId: userId,
+                            group: g,
+                            friendsById: friendsById,
+                          ),
+                        ),
+                      );
+                      if (result == true) onRefresh();
+                    },
+                  ),
+                )),
           const SizedBox(height: 32),
         ],
       ),
