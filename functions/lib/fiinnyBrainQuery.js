@@ -2,10 +2,18 @@ import * as functions from "firebase-functions";
 import { getFirestore } from "firebase-admin/firestore";
 import OpenAI from "openai";
 const db = getFirestore();
-// Initialize OpenAI
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
+// Initialize OpenAI (Lazy)
+let openaiInstance = null;
+function getOpenAI() {
+    if (openaiInstance)
+        return openaiInstance;
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) {
+        throw new Error("Missing OPENAI_API_KEY in environment");
+    }
+    openaiInstance = new OpenAI({ apiKey: key });
+    return openaiInstance;
+}
 export const fiinnyBrainQuery = functions.https.onRequest(async (req, res) => {
     // CORS
     res.set("Access-Control-Allow-Origin", "*");
@@ -36,6 +44,7 @@ export const fiinnyBrainQuery = functions.https.onRequest(async (req, res) => {
             return `ID: ${doc.id} | ${d.date?.toDate?.().toISOString().split('T')[0]} | ₹${d.amount} | ${d.category} | ${d.description}`;
         }).join("\n");
         // Call OpenAI with function calling
+        const openai = getOpenAI();
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini", // Cheap and fast
             messages: [
@@ -142,6 +151,7 @@ TOOLS:
             console.log("Function Call Triggered:", functionName, functionArgs);
             const apiResponse = await handleToolCall(userPhone, functionName, functionArgs);
             // Get final response from OpenAI
+            const openai = getOpenAI();
             const finalCompletion = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 messages: [

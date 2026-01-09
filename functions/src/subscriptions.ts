@@ -1,18 +1,38 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onRequest } from "firebase-functions/v2/https";
-import * as admin from "firebase-admin";
+import { initializeApp, getApps } from "firebase-admin/app";
+import { getFirestore, Timestamp, FieldValue } from "firebase-admin/firestore";
 import * as crypto from "crypto";
 // @ts-ignore: razorpay doesn't always have types easily available
 import Razorpay from "razorpay";
 
-const db = admin.firestore();
+if (getApps().length === 0) initializeApp();
+const db = getFirestore();
 
 // Initialize Razorpay
-// TODO: Make sure to set these in your .env file or Firebase secrets
-const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID || "",
-    key_secret: process.env.RAZORPAY_KEY_SECRET || "",
-});
+// Lazy init helper
+let razorpayInstance: any = null;
+
+function getRazorpay() {
+    if (razorpayInstance) return razorpayInstance;
+
+    const key_id = process.env.RAZORPAY_KEY_ID;
+    const key_secret = process.env.RAZORPAY_KEY_SECRET;
+
+    if (!key_id || !key_secret) {
+        console.error("Razorpay keys missing from environment. key_id present? ", !!key_id);
+        throw new Error("Razorpay configuration missing");
+    }
+
+    // Debug log (mask secrets)
+    console.log(`Razorpay Init: KeyID=${key_id.substring(0, 5)}...`);
+
+    razorpayInstance = new Razorpay({
+        key_id: key_id,
+        key_secret: key_secret,
+    });
+    return razorpayInstance;
+}
 
 /**
  * Create a Razorpay Order (for One-time/Yearly) or use Subscription API (not implemented fully here yet).
@@ -53,8 +73,8 @@ export const createPaymentOrder = onCall(
             if (userSubDoc.exists) {
                 const subData = userSubDoc.data();
                 if (subData && subData.status === 'active' && subData.expiry_date) {
-                    const now = admin.firestore.Timestamp.now();
-                    const expiry = subData.expiry_date as admin.firestore.Timestamp;
+                    const now = Timestamp.now();
+                    const expiry = subData.expiry_date as Timestamp;
 
                     // Only prorate if upgrading (e.g., Premium -> Pro) and current sub is not expired
                     // And we are not just renewing the same plan
@@ -93,7 +113,7 @@ export const createPaymentOrder = onCall(
             const options = {
                 amount: amountInPaise,
                 currency: "INR",
-                receipt: `receipt_${uid}_${Date.now()}`,
+                receipt: `rcpt_${uid.substring(0, 10)}_${Date.now()}`,
                 notes: {
                     uid: uid,
                     plan: plan,
@@ -102,7 +122,8 @@ export const createPaymentOrder = onCall(
                 },
             };
 
-            const order = await razorpay.orders.create(options);
+            const rzp = getRazorpay();
+            const order = await rzp.orders.create(options);
 
             return {
                 order_id: order.id,
@@ -110,8 +131,17 @@ export const createPaymentOrder = onCall(
                 amount: amountInPaise,
             };
         } catch (error: any) {
-            console.error("Razorpay Error:", error);
-            throw new HttpsError("internal", error.message || "Failed to create order");
+            console.error("Razorpay Error Raw:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
+
+            // Extract meaningful message
+            let msg = "Failed to create order";
+            if (error.error && error.error.description) {
+                msg = error.error.description;
+            } else if (error.message) {
+                msg = error.message;
+            }
+
+            throw new HttpsError("internal", msg);
         }
     }
 );
@@ -133,7 +163,7 @@ export const cancelSubscription = onCall(
             await db.collection("subscriptions").doc(uid).update({
                 auto_renew: false,
                 status: 'canceled_pending_expiry', // Custom status to show UI "Canceling"
-                updated_at: admin.firestore.FieldValue.serverTimestamp()
+                updated_at: FieldValue.serverTimestamp()
             });
             return { success: true };
         } catch (error: any) {
@@ -185,17 +215,17 @@ export const verifyPaymentSignature = onCall(
         // Payment Verified -> Activate Subscription
         const uid = request.auth.uid;
         const now = new Date();
-        const purchaseDate = admin.firestore.Timestamp.fromDate(now);
+        const purchaseDate = Timestamp.fromDate(now);
 
-        let expiryDate: admin.firestore.Timestamp;
+        let expiryDate: Timestamp;
         if (cycle === "yearly") {
             const d = new Date(now);
             d.setFullYear(d.getFullYear() + 1);
-            expiryDate = admin.firestore.Timestamp.fromDate(d);
+            expiryDate = Timestamp.fromDate(d);
         } else {
             const d = new Date(now);
             d.setMonth(d.getMonth() + 1);
-            expiryDate = admin.firestore.Timestamp.fromDate(d);
+            expiryDate = Timestamp.fromDate(d);
         }
 
         const subData = {
