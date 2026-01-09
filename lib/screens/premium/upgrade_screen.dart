@@ -4,6 +4,14 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:lifemap/services/subscription_service.dart';
 import 'package:lifemap/models/subscription_model.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:convert';
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+
+@JS('openRazorpayWeb')
+external void _openRazorpayWeb(JSString options, JSFunction successCallback, JSFunction failureCallback);
+
 
 class UpgradeScreen extends StatefulWidget {
   const UpgradeScreen({super.key});
@@ -100,9 +108,39 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
         }
       };
 
-      _razorpay.open(options);
+      if (kIsWeb) {
+        // --- WEB IMPLEMENTATION (JS Interop) ---
+        final jsonOptions = jsonEncode(options);
+        
+        // Success Handler
+        final successCallback = (JSString paymentId, JSString orderId, JSString signature) {
+           _handlePaymentSuccess(PaymentSuccessResponse(
+             paymentId.toDart,
+             orderId.toDart,
+             signature.toDart,
+             null // extra 'data' argument
+           ));
+        }.toJS;
 
-    } catch (e) {
+        // Failure Handler
+        final failureCallback = (JSString code, JSString message) {
+           _handlePaymentError(PaymentFailureResponse(
+             0, // Razerpay web returns string codes, plugin expects int. Using 0 (unknown).
+             "[${code.toDart}] ${message.toDart}",
+             null // extra 'error' argument
+           ));
+        }.toJS;
+
+        _openRazorpayWeb(jsonOptions.toJS, successCallback, failureCallback);
+        // ---------------------------------------
+      } else {
+        // --- MOBILE IMPLEMENTATION (Plugin) ---
+        _razorpay.open(options);
+        // --------------------------------------
+      }
+
+    } catch (e, stack) {
+      debugPrint("Payment Start Error: $e\n$stack");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Failed to initiate payment: $e")),
       );
