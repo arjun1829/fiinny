@@ -1,88 +1,168 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart';
+import 'package:lifemap/models/subscription_model.dart';
 import 'package:lifemap/models/subscription_item.dart';
-import 'package:lifemap/services/auth_service.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 
-class SubscriptionService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final AuthService _auth = AuthService();
+class SubscriptionService extends ChangeNotifier {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: 'asia-south1');
+  
+  SubscriptionModel? _currentSubscription;
+  SubscriptionModel? get currentSubscription => _currentSubscription;
 
-  String get _userId => _auth.currentUser?.uid ?? '';
-  // Assuming phone is used for path based on the user_data.dart or similar patterns, 
-  // but let's stick to a standard collection path for now or check other services.
-  // The SubscriptionItem model doc says `/users/{userPhone}/subscriptions/{subscriptionId}`.
-  // We'll trust that for now, but usually it's uid. Let's verify commonly used paths.
-  // Actually, let's use a safe collection reference based on UID if possible, 
-  // or pass the user identifier. 
-  // For now, I'll assume we can get the correct path context. 
-  
-  // Let's implement a standard collection reference assuming 'users/{uid}/subscriptions'
-  // If the app uses phone numbers as IDs, we might need to adjust.
-  
-  CollectionReference<Map<String, dynamic>> _getSubsRef(String userId) {
-    return _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('subscriptions');
+  bool get isPremium => _currentSubscription?.isPremium ?? false;
+  bool get isPro => _currentSubscription?.isPro ?? false;
+
+  Future<void> fetchSubscription(String uid) async {
+    try {
+      final doc = await _db.collection('subscriptions').doc(uid).get();
+      if (doc.exists && doc.data() != null) {
+        _currentSubscription = SubscriptionModel.fromMap(doc.data()!, doc.id);
+      } else {
+        _currentSubscription = SubscriptionModel(userId: uid); // Default free
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error fetching subscription: $e");
+    }
+  }
+
+  /// 1. Create Order on Backend
+  Future<Map<String, dynamic>> createOrder(String plan, String cycle) async {
+    try {
+      final result = await _functions.httpsCallable('createPaymentOrder').call({
+        'plan': plan,
+        'cycle': cycle,
+      });
+      return Map<String, dynamic>.from(result.data);
+    } catch (e) {
+      debugPrint("Error creating order: $e");
+      rethrow;
+    }
+  }
+
+  /// 2. Verify Payment on Backend
+  Future<void> verifyPayment({
+    required String paymentId,
+    required String orderId,
+    required String signature,
+    required String plan,
+    required String cycle,
+  }) async {
+    try {
+      await _functions.httpsCallable('verifyPaymentSignature').call({
+        'razorpay_payment_id': paymentId,
+        'razorpay_order_id': orderId,
+        'razorpay_signature': signature,
+        'plan': plan,
+        'cycle': cycle,
+      });
+      // Refresh subscription after verification
+      if (_currentSubscription != null) {
+        await fetchSubscription(_currentSubscription!.userId);
+      }
+    } catch (e) {
+      debugPrint("Error verifying payment: $e");
+      rethrow;
+    }
+  }
+
+  /// 3. Cancel Subscription (Disable Auto-Renew)
+  Future<void> cancelSubscription() async {
+    try {
+      await _functions.httpsCallable('cancelSubscription').call();
+      if (_currentSubscription != null) {
+        await fetchSubscription(_currentSubscription!.userId);
+      }
+    } catch (e) {
+      debugPrint("Error cancelling subscription: $e");
+      rethrow;
+    }
+  }
+
+  String get formattedExpiry {
+    if (_currentSubscription?.expiryDate == null) return "N/A";
+    final date = _currentSubscription!.expiryDate!;
+    return "${date.day}/${date.month}/${date.year}";
+  }
+
+  // --- CRUD for Expense Subscriptions (Netflix, etc.) ---
+
+  Future<void> addSubscription(String userId, SubscriptionItem item) async {
+    try {
+      final docRef = _db.collection('users').doc(userId).collection('subscriptions').doc();
+      final newItem = item.copyWith(id: docRef.id);
+      await docRef.set(newItem.toJson());
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error adding subscription expense: $e");
+      rethrow;
+    }
+  }
+
+  Future<void> updateSubscription(String userId, SubscriptionItem item) async {
+    if (item.id == null) return;
+    try {
+      await _db
+          .collection('users')
+          .doc(userId)
+          .collection('subscriptions')
+          .doc(item.id)
+          .update(item.toJson());
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error updating subscription expense: $e");
+      rethrow;
+    }
+  }
+
+  Future<void> deleteSubscription(String userId, String itemId) async {
+    try {
+      await _db
+          .collection('users')
+          .doc(userId)
+          .collection('subscriptions')
+          .doc(itemId)
+          .delete();
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error deleting subscription expense: $e");
+      rethrow;
+    }
   }
 
   Stream<List<SubscriptionItem>> streamSubscriptions(String userId) {
-    if (userId.isEmpty) return Stream.value([]);
-    
-    return _getSubsRef(userId).snapshots().map((snapshot) {
+    return _db
+        .collection('users')
+        .doc(userId)
+        .collection('subscriptions')
+        .snapshots()
+        .map((snapshot) {
       return snapshot.docs.map((doc) {
         return SubscriptionItem.fromJson(doc.id, doc.data());
       }).toList();
     });
   }
 
-  Future<void> addSubscription(String userId, SubscriptionItem item) async {
-    if (userId.isEmpty) return;
-    await _getSubsRef(userId).add(item.toJson());
-  }
-
-  Future<void> updateSubscription(String userId, SubscriptionItem item) async {
-    if (userId.isEmpty || item.id == null) return;
-    await _getSubsRef(userId).doc(item.id).update(item.toJson());
-  }
-
-  Future<void> deleteSubscription(String userId, String id) async {
-    if (userId.isEmpty) return;
-    await _getSubsRef(userId).doc(id).delete();
-  }
-
-  /// Calculates the next due date for a subscription
-  DateTime calculateNextDueDate(DateTime anchorDate, String frequency, int? intervalDays) {
-    final now = DateTime.now();
-    DateTime nextDate = anchorDate;
-
-    // simplistic logic, improve with recurrence library if needed
-    while (nextDate.isBefore(now)) {
-      switch (frequency.toLowerCase()) {
-        case 'weekly':
-          nextDate = nextDate.add(const Duration(days: 7));
-          break;
-        case 'monthly':
-          // Add 1 month, handling edge cases like Jan 31 -> Feb 28
-          nextDate = DateTime(nextDate.year, nextDate.month + 1, nextDate.day);
-          break;
-        case 'yearly':
-          nextDate = DateTime(nextDate.year + 1, nextDate.month, nextDate.day);
-          break;
-        case 'daily':
-          nextDate = nextDate.add(const Duration(days: 1));
-          break;
-        case 'custom':
-          if (intervalDays != null && intervalDays > 0) {
-            nextDate = nextDate.add(Duration(days: intervalDays));
-          } else {
-             // Fallback
-             return nextDate; 
-          }
-          break;
-        default:
-          return nextDate; // Should not happen
-      }
+  DateTime calculateNextDueDate(DateTime last, String frequency, int? customDays) {
+    if (customDays != null && customDays > 0) {
+      return last.add(Duration(days: customDays));
     }
-    return nextDate;
+    switch (frequency.toLowerCase()) {
+      case 'yearly':
+        return DateTime(last.year + 1, last.month, last.day);
+      case 'quarterly':
+        return DateTime(last.year, last.month + 3, last.day);
+      case 'monthly':
+        return DateTime(last.year, last.month + 1, last.day);
+      case 'weekly':
+        return last.add(const Duration(days: 7));
+      case 'daily':
+        return last.add(const Duration(days: 1));
+      default:
+        return last.add(const Duration(days: 30));
+    }
   }
 }

@@ -26,6 +26,7 @@ import 'screens/premium_paywall.dart';
 import 'screens/transactions_screen.dart';
 import 'screens/subscriptions/subscriptions_screen.dart'; // ✅ NEW Subscription Screen
 import 'screens/cards_management_screen.dart'; // ✅ NEW Cards Management Screen
+import 'screens/premium/upgrade_screen.dart'; // [NEW]
 
 // ---------- Services for typed args ----------
 import 'services/user_data.dart';
@@ -133,11 +134,11 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
       }
       break;
 
+
+
     case '/premium':
-      if (args is String) {
-        return MaterialPageRoute(builder: (_) => PremiumPaywallScreen(userPhone: args));
-      }
-      break;
+      // UpgradeScreen handles logic internally, we don't strictly need the phone argument but we accept it to avoid errors if passed.
+      return MaterialPageRoute(builder: (_) => const UpgradeScreen());
 
   // Optional aliases: route them to AnalyticsScreen as well (no preset filter needed)
     case '/analytics-weekly':

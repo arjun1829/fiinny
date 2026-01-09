@@ -11,6 +11,9 @@ import '../services/income_service.dart';
 import '../services/contact_name_service.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
+import '../services/subscription_service.dart';
+import 'premium/upgrade_screen.dart';
 import '../themes/tokens.dart';
 
 class FiinnyBrainChatScreen extends StatefulWidget {
@@ -210,6 +213,48 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 🔒 Access Control
+    final subscription = Provider.of<SubscriptionService>(context);
+    if (!subscription.isPremium) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Fiinny AI')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.lock_outline, size: 64, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text(
+                'Unlock Fiinny Brain',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              ),
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text(
+                  'Get AI-powered insights, spending analysis, and smart alerts with Premium.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const UpgradeScreen()),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                ),
+                child: const Text('Upgrade to Premium', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Row(

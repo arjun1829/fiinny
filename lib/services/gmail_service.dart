@@ -456,10 +456,7 @@ class GmailService {
   GoogleSignInAccount? _currentUser;
 
   final IngestIndexService _index = IngestIndexService();
-  // lib/services/gmail_service.dart  (inside class GmailService)
-  static const bool WRITE_BILL_AS_EXPENSE =
-      false; // ← turn OFF to avoid double-count
-  final CreditCardService _creditCardService = CreditCardService(); // added service
+  final CreditCardService _creditCardService = CreditCardService();
   static const bool WRITE_BILL_AS_EXPENSE = false; // ← turn OFF to avoid double-count
 
   String _billDocId({
@@ -1482,29 +1479,9 @@ class GmailService {
 
       _log(
           'WRITE/UPSERT CC BillReminder total=$total bank=${bank ?? "-"} last4=${cardLast4 ?? "-"}');
-      return msgDate;
-    }
-
-    // Otherwise, proceed with normal debit/credit
-      _log('WRITE/UPSERT CC BillReminder total=$total bank=${bank ?? "-"} last4=${cardLast4 ?? "-"}');
       
-      // Update metadata too if found in bill
-      final ccMeta = _extractCreditCardMetadata(combined);
-      if (ccMeta.isNotEmpty && (bank != null || cardLast4 != null)) {
-         await _creditCardService.updateCardMetadataByMatch(
-            userId,
-            bankName: bank,
-            last4: cardLast4,
-            availableLimit: ccMeta['availableLimit'],
-            totalLimit: ccMeta['totalLimit'],
-            rewardPoints: ccMeta['rewardPoints'],
-         );
-      }
-
       return msgDate;
     }
-
-
 
     // Opportunistic Metadata Update (for normal txns too)
     final ccMeta = _extractCreditCardMetadata(combined);

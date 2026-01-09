@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:lifemap/services/subscription_service.dart';
 
 import '../../core/ads/ad_ids.dart';
 import '../../core/ads/ad_service.dart';
@@ -117,6 +119,12 @@ class _SleekAdCardState extends State<SleekAdCard> {
 
   @override
   Widget build(BuildContext context) {
+    // 1. Check Premium Status
+    final sub = Provider.of<SubscriptionService>(context);
+    if (sub.isPremium) {
+      return const SizedBox.shrink();
+    }
+
     if (!_flagResolved) {
       return const SizedBox.shrink();
     }
