@@ -190,13 +190,13 @@ export const onChatMessageCreated = onDocumentCreated({ document: "chats/{thread
     }
 });
 // 🆕 Oracle LLM job consumer (ESM needs .js)
-// export { onIngestJobCreate } from "./oracleCategorizer.js";
-// export * from "./notifications.js";
-// export * from "./streaks.js";
-// export * from "./watchdog.js";
-// export * from "./social_notifications.js";
+export { onIngestJobCreate } from "./oracleCategorizer.js";
+export * from "./notifications.js";
+export * from "./streaks.js";
+export * from "./watchdog.js";
+export * from "./social_notifications.js";
 export { createPaymentOrder, verifyPaymentSignature, cancelSubscription, razorpayWebhook } from "./subscriptions.js";
-// export { fiinnyBrainQuery } from "./fiinnyBrainQuery.js";
+export { fiinnyBrainQuery } from "./fiinnyBrainQuery.js";
 /* ----------------------- New: Cloud reminder pipeline ---------------------- */
 /**
  * Compute the planned "fireAt" using:
