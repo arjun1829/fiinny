@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import 'package:provider/provider.dart';
+import '../../services/subscription_service.dart';
 import 'ad_slots.dart';
 
 /// Decorative wrapper that keeps banner ad placements visible even while
@@ -107,6 +109,11 @@ class _AdsBannerCardState extends State<AdsBannerCard> with AutomaticKeepAliveCl
   @override
   Widget build(BuildContext context) {
     super.build(context);
+
+    // Globally hide ads for Premium/Pro users
+    final isPremium = Provider.of<SubscriptionService>(context).isPremium;
+    if (isPremium) return const SizedBox.shrink();
+
     final placeholder = widget.placeholder ??
         _DefaultAdPlaceholder(placement: widget.placement, alignment: widget.alignment);
 

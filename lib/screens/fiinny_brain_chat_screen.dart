@@ -11,7 +11,9 @@ import '../services/income_service.dart';
 import '../services/contact_name_service.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/subscription_service.dart';
 import 'premium/upgrade_screen.dart';
 import '../themes/tokens.dart';
@@ -134,6 +136,10 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty || _currentSessionId == null) return;
 
+    // Check Daily Limit
+    final allowed = await _checkAndConsumeDailyLimit();
+    if (!allowed) return;
+
     setState(() {
       _isProcessing = true;
     });
@@ -213,48 +219,8 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 🔒 Access Control
-    final subscription = Provider.of<SubscriptionService>(context);
-    if (!subscription.isPremium) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Fiinny AI')),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.lock_outline, size: 64, color: Colors.grey),
-              const SizedBox(height: 16),
-              const Text(
-                'Unlock Fiinny Brain',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-              const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Text(
-                  'Get AI-powered insights, spending analysis, and smart alerts with Premium.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, color: Colors.grey),
-                ),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const UpgradeScreen()),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                ),
-                child: const Text('Upgrade to Premium', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
+    // 🔒 Access Control REMOVED (Replaced by soft limits)
+    
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -540,6 +506,56 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
                   : const Icon(Icons.send, color: Colors.white),
               onPressed: _isProcessing ? null : _sendMessage,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+  Future<bool> _checkAndConsumeDailyLimit() async {
+    final sub = Provider.of<SubscriptionService>(context, listen: false);
+    if (sub.isPro) return true; // Unlimited
+
+    final int limit = sub.isPremium ? 20 : 10; 
+    
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+    final key = 'brain_prompts_${now.year}_${now.month}_${now.day}';
+    final count = prefs.getInt(key) ?? 0;
+
+    if (count >= limit) {
+      _showLimitReachedDialog(limit, sub.isPremium);
+      return false;
+    }
+
+    await prefs.setInt(key, count + 1);
+    return true;
+  }
+
+  void _showLimitReachedDialog(int limit, bool isPremium) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Daily Limit Reached'),
+        content: Text(
+          isPremium
+            ? "You've used your $limit daily Premium prompts. Upgrade to Pro for unlimited access!"
+            : "You've used your $limit free prompts. Upgrade to Premium for 20 prompts/day or Pro for unlimited!",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context), 
+            child: const Text("OK", style: TextStyle(color: Colors.grey))
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context, 
+                MaterialPageRoute(builder: (_) => const UpgradeScreen())
+              );
+            },
+            style: FilledButton.styleFrom(backgroundColor: Fx.mintDark),
+            child: const Text("Upgrade"),
           ),
         ],
       ),

@@ -833,8 +833,10 @@ class _DashboardScreenState extends State<DashboardScreen>
       final todayKey = 'manual_sync_count_${now.year}_${now.month}_${now.day}';
       int count = prefs.getInt(todayKey) ?? 0;
 
-      // Limit: 3 free syncs per day
-      if (count >= 3) {
+      final isPremium = Provider.of<SubscriptionService>(context, listen: false).isPremium;
+
+      // Limit: 3 free syncs per day (unless Premium)
+      if (count >= 3 && !isPremium) {
         // Force watch Ad
         final shown = await AdService.I.showInterstitialForce();
         if (shown) {
@@ -1894,10 +1896,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                         const SizedBox(height: 12),
                       ],
                       
-                      Padding(
-                        padding: horizontalPadding,
-                        child: _buildDashboardAdCard(),
-                      ),
+                      if (!sub.isPremium)
+                        Padding(
+                          padding: horizontalPadding,
+                          child: _buildDashboardAdCard(),
+                        ),
                       const SizedBox(height: 12),
                       Padding(
                         padding: horizontalPadding,
