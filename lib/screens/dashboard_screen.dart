@@ -58,6 +58,7 @@ import '../fiinny_assets/modules/portfolio/services/asset_service.dart' as PAsse
 import '../fiinny_assets/modules/portfolio/models/asset_model.dart' as PAssetModel;
 import '../fiinny_assets/modules/portfolio/models/price_quote.dart';
 import '../fiinny_assets/modules/portfolio/services/market_data_yahoo.dart';
+import 'package:provider/provider.dart';
 import '../services/notif_prefs_service.dart';
 import '../services/notifs/social_events_watch.dart';
 import '../widgets/hidden_charges_card.dart';
@@ -198,6 +199,88 @@ class _DashboardScreenState extends State<DashboardScreen>
         ),
       ],
       placeholder: _dashboardAdPlaceholder(),
+    );
+  }
+
+  Widget _buildPremiumCTA(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.amber.shade700, Colors.amber.shade500],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.amber.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => Navigator.pushNamed(context, '/premium', arguments: widget.userPhone),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.star_rounded, color: Colors.white, size: 24),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Upgrade to Premium",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        "Remove ads & unlock AI Insights",
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    "Try Now",
+                    style: TextStyle(
+                      color: Colors.amber.shade800,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1798,9 +1881,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                   )
                 else
                   (() {
+                    final sub = Provider.of<SubscriptionService>(context);
                     final sections = <Widget>[
                       const SizedBox(height: 6),
                       CriticalAlertBanner(userId: widget.userPhone),
+                      
+                      if (!sub.isPremium) ...[
+                        Padding(
+                          padding: horizontalPadding,
+                          child: _buildPremiumCTA(context),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      
                       Padding(
                         padding: horizontalPadding,
                         child: _buildDashboardAdCard(),

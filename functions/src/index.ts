@@ -219,12 +219,14 @@ export const onChatMessageCreated = onDocumentCreated(
   }
 );
 
+
 // 🆕 Oracle LLM job consumer (ESM needs .js)
 export { onIngestJobCreate } from "./oracleCategorizer.js";
 export * from "./notifications.js";
 export * from "./streaks.js";
 export * from "./watchdog.js";
 export * from "./social_notifications.js";
+export * from "./subscriptions.js"; // <-- Added
 export { fiinnyBrainQuery } from "./fiinnyBrainQuery.js";
 
 

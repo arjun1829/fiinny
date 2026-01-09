@@ -10,6 +10,8 @@ import '../widgets/dashboard/bank_card_item.dart';
 import '../widgets/dashboard/bank_overview_dialog.dart';
 import 'credit_cards/add_card_sheet.dart';
 import 'credit_cards/card_detail_screen.dart';
+import 'package:provider/provider.dart'; // Provider
+import '../../services/subscription_service.dart'; // SubscriptionService
 
 class CardsManagementScreen extends StatefulWidget {
   final String userId;
@@ -23,6 +25,11 @@ class CardsManagementScreen extends StatefulWidget {
 class _CardsManagementScreenState extends State<CardsManagementScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  // ...
+  
+  void _openUpgrade() {
+    Navigator.of(context).pushNamed('/premium');
+  }
   bool _loading = true;
   List<ExpenseItem> _expenses = [];
   List<IncomeItem> _incomes = [];
@@ -195,6 +202,18 @@ class _CardsManagementScreenState extends State<CardsManagementScreen>
             icon: const Icon(Icons.add),
             tooltip: 'Add Card', 
             onPressed: () async {
+              final sub = Provider.of<SubscriptionService>(context, listen: false);
+              // Free limit: 1 card
+              if (!sub.isPremium && _creditCards.isNotEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text("Free plan limit reached (1 card). Upgrade to add more."),
+                    action: SnackBarAction(label: "Upgrade", onPressed: _openUpgrade),
+                  ),
+                );
+                return;
+              }
+
               // Simple add card sheet for credit cards
               final added = await showModalBottomSheet<bool>(
                 context: context,

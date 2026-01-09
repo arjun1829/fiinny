@@ -611,7 +611,7 @@ export default function Dashboard() {
                                 </button>
 
                                 <div className="pt-4 mt-4 border-t border-slate-100">
-                                    <Link href="/subscription">
+                                    <Link href="/dashboard/subscription">
                                         <div className="w-full bg-slate-900 rounded-xl p-4 cursor-pointer hover:shadow-lg transition-all group relative overflow-hidden">
                                             <div className="absolute top-0 right-0 w-24 h-24 bg-teal-500/20 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2" />
                                             <div className="relative z-10">

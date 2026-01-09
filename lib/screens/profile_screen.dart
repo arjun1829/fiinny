@@ -10,10 +10,13 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData, SystemUiOverlayStyle;
+import 'package:lifemap/screens/premium/upgrade_screen.dart'; // or wherever
+import 'package:lifemap/screens/premium/manage_subscription_screen.dart';
 import 'package:lifemap/screens/auth_gate.dart';
 
 import 'package:lifemap/themes/theme_provider.dart';
 import '../services/backup_service.dart';
+import '../services/subscription_service.dart';
 
 // 👇 Notifications & Reviews imports (kept)
 import '../services/notif_prefs_service.dart';
@@ -372,6 +375,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _exportData() async {
+    final sub = Provider.of<SubscriptionService>(context, listen: false);
+    if (!sub.isPremium) {
+      _showUpgradeDialog("Unlock Data Export", "Export your financial data to JSON/CSV with Premium.");
+      return;
+    }
+
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final phoneId = _getUserPhone(user);
@@ -391,6 +400,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
     setState(() => _saving = false);
+  }
+
+  void _showUpgradeDialog(String title, String desc) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.lock_outline, size: 48, color: Colors.amber),
+            const SizedBox(height: 16),
+            Text(desc, textAlign: TextAlign.center),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/premium');
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.black),
+            child: const Text("Upgrade", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _logout() async {
@@ -697,6 +737,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _subscriptionSection(BuildContext context) {
+    final sub = Provider.of<SubscriptionService>(context);
+    final isPremium = sub.isPremium;
+    final planName = isPremium ? (sub.isPro ? "Pro Plan" : "Premium Plan") : "Free Plan";
+    final color = isPremium ? Colors.amber.shade700 : Theme.of(context).colorScheme.primary;
+
+    void _handleTap() {
+        if (isPremium) {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const ManageSubscriptionScreen()));
+        } else {
+            // Need the current userPhone. The class member 'userPhone' holds it.
+            Navigator.pushNamed(context, '/premium', arguments: userPhone);
+        }
+    }
+
+    return _cardContainer(
+      child: ListTile(
+        leading: Icon(isPremium ? Icons.star : Icons.star_outline, color: color, size: 28),
+        title: Text(planName, style: TextStyle(fontWeight: FontWeight.w800, color: Theme.of(context).textTheme.bodyLarge?.color)),
+        subtitle: Text(isPremium ? "Manage your subscription" : "Upgrade to unlock all features", style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color)),
+        trailing: isPremium 
+            ? const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey)
+            : ElevatedButton(
+                onPressed: _handleTap,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.amberAccent,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+                child: const Text("Upgrade"),
+              ),
+        onTap: _handleTap,
       ),
     );
   }
@@ -1098,6 +1174,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           // --- Header with completeness ---
           _headerSection(context),
+
+          const SizedBox(height: 12),
+
+          // NEW: Subscription Management (Top Priority)
+          _subscriptionSection(context),
 
           const SizedBox(height: 12),
 

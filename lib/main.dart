@@ -1,5 +1,6 @@
 // lib/main.dart
 import 'dart:async';
+import 'package:lifemap/services/subscription_service.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 // import 'dart:io' show Platform; // Removed for Web compatibility
 import 'dart:ui';
@@ -373,12 +374,26 @@ class _DiagAppState extends State<_DiagApp> {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<ThemeProvider>(
-      create: (_) {
-        final provider = ThemeProvider();
-        unawaited(provider.loadTheme());
-        return provider;
-      },
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<ThemeProvider>(
+          create: (_) {
+            final provider = ThemeProvider();
+            unawaited(provider.loadTheme());
+            return provider;
+          },
+        ),
+        ChangeNotifierProvider<SubscriptionService>(
+          create: (_) {
+            final service = SubscriptionService();
+            final user = FirebaseAuth.instance.currentUser;
+            if (user != null) {
+              unawaited(service.fetchSubscription(user.uid));
+            }
+            return service;
+          },
+        ),
+      ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
           return MaterialApp(
