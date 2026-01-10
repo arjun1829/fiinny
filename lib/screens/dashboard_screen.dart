@@ -1801,9 +1801,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                         child: IconButton(
                           tooltip: 'Fiinny AI',
                             icon: const Icon(
-                              Icons.psychology_rounded,
+                              Icons.chat_bubble_outline_rounded,
                               color: Fx.mintDark,
-                              size: 28,
+                              size: 24,
                             ),
                           onPressed: () {
                             Navigator.push(
