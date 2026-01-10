@@ -12,6 +12,7 @@ import '../core/filters/transaction_filter.dart';
 import '../models/expense_item.dart';
 import '../models/friend_model.dart';
 import '../models/income_item.dart';
+import '../models/group_model.dart';
 import '../services/expense_service.dart';
 import '../services/income_service.dart';
 import '../services/user_overrides.dart';
@@ -32,6 +33,8 @@ class UnifiedTransactionList extends StatefulWidget {
   final Function(dynamic tx)? onAddComment; // New callback
   final Function(dynamic tx)?
       onDiscuss; // 🔥 NEW: callback for Chat tab navigation
+
+  final List<GroupModel>? groups;
 
   final bool showBillIcon;
   final String userPhone;
@@ -255,6 +258,7 @@ class UnifiedTransactionList extends StatefulWidget {
     this.emptyBuilder,
     this.onRowTapIntercept,
     this.enableInlineAds = true,
+    this.groups,
     this.enableScrolling = false,
   }) : super(key: key);
 
@@ -734,6 +738,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'displayCurrency': targetCurrency,
         'origCurrency': itemCurrency,
         'origAmount': rawAmount,
+        'groupId': e.groupId,
+        'payerId': e.payerId,
       };
     }));
 
@@ -939,6 +945,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'categorySource': categorySource,
         'merchantKey': merchantKey.isEmpty ? null : merchantKey,
         'title': title,
+        'groupId': _readString(doc, ['groupId']) ??
+            _readString(doc, ['meta', 'groupId']),
+        'payerId': doc['payerId']?.toString(),
       });
     }
 
@@ -2482,37 +2491,164 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         GestureDetector(
-                          onTap: () => _editCounterparty(
-                            txId: id,
-                            isIncome: isIncome,
-                            current: counterparty,
-                            payload: payload,
-                            normalized: tx,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.max,
+                          onTap: () {
+                            final pId = tx['payerId']?.toString();
+                            // Navigate to friend if it's someone else
+                            if (pId != null &&
+                                pId.isNotEmpty &&
+                                pId != widget.userPhone) {
+                              Navigator.pushNamed(
+                                context,
+                                '/friend-detail',
+                                arguments: {
+                                  'friendId': pId,
+                                  'friendName': displayName,
+                                },
+                              );
+                            } else {
+                              _editCounterparty(
+                                txId: id,
+                                isIncome: isIncome,
+                                current: counterparty,
+                                payload: payload,
+                                normalized: tx,
+                              );
+                            }
+                          },
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: Text(
-                                  displayName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 16.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFF111827),
+                              Row(
+                                mainAxisSize: MainAxisSize.max,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      displayName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 15,
+                                        color: Color(0xFF0F1E1C),
+                                      ),
+                                    ),
+                                  ),
+                                  if (billUrl.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 6),
+                                      child: Icon(Icons.receipt_long_rounded,
+                                          size: 14, color: Colors.grey[400]),
+                                    ),
+                                ],
+                              ),
+                              if (tx['groupId'] != null &&
+                                  tx['groupId'].toString().isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      Navigator.pushNamed(
+                                        context,
+                                        '/group-detail',
+                                        arguments: {
+                                          'groupId': tx['groupId'].toString(),
+                                        },
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.teal.shade50,
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                            color: Colors.teal.shade100),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.group_outlined,
+                                              size: 10,
+                                              color: Colors.teal.shade700),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            "View Group",
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.teal.shade800,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 4),
-                              const Icon(
-                                Icons.edit_outlined,
-                                size: 14,
-                                color: Color(0xFF9CA3AF),
-                              ),
                             ],
                           ),
                         ),
+                        if (tx['groupId'] != null &&
+                            tx['groupId'].toString().isNotEmpty &&
+                            widget.groups != null)
+                          Builder(builder: (context) {
+                            final gId = tx['groupId'].toString();
+                            final group = widget.groups!.firstWhere(
+                              (g) => g.id == gId,
+                              orElse: () => GroupModel(
+                                id: gId,
+                                name: 'Group',
+                                memberPhones: [],
+                                createdBy: '',
+                                createdAt: DateTime.now(),
+                              ),
+                            );
+                            return InkWell(
+                              onTap: () {
+                                Navigator.pushNamed(
+                                  context,
+                                  '/group-detail',
+                                  arguments: {
+                                    'groupId': group.id,
+                                    'groupName': group.name,
+                                    'group': group,
+                                  },
+                                );
+                              },
+                              child: Container(
+                                margin:
+                                    const EdgeInsets.only(top: 4, bottom: 2),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.blueGrey.withOpacity(0.10),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                      color: Colors.blueGrey.withOpacity(0.2)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.groups_rounded,
+                                        size: 13,
+                                        color: Theme.of(context).primaryColor),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        group.name,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Theme.of(context).primaryColor,
+                                          decoration: TextDecoration.underline,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
                         const SizedBox(height: 4),
                         Row(
                           children: [

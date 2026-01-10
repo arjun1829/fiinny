@@ -10,8 +10,8 @@ import '../../services/expense_service.dart';
 
 import '../../widgets/add_friend_dialog.dart';
 import '../../widgets/add_friend_expense_dialog.dart';
-import '../../widgets/add_group_expense_dialog.dart';
 import '../../widgets/add_group_dialog.dart';
+import '../../widgets/add_group_expense_dialog.dart';
 
 class ActivityScreen extends StatefulWidget {
   final String userPhone;
@@ -60,16 +60,16 @@ class _ActivityScreenState extends State<ActivityScreen> {
   }
 
   Future<void> _openGroupExpense(
-      GroupModel g, List<FriendModel> allFriends) async {
+      GroupModel g, List<FriendModel> friends) async {
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (_) => AddGroupExpenseScreen(
         userPhone: widget.userPhone,
+        group: g,
         userName: 'You',
         userAvatar: null,
-        group: g,
-        allFriends: allFriends,
+        allFriends: friends,
       ),
     );
     if (ok == true && mounted) setState(() {});
@@ -133,21 +133,20 @@ class _ActivityScreenState extends State<ActivityScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: const Color(0xFFF8F9FA), // Clean background
       appBar: AppBar(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        backgroundColor: Colors.white,
         elevation: 0,
-        surfaceTintColor: Theme.of(context).scaffoldBackgroundColor,
+        centerTitle: true,
+        shape: Border(bottom: BorderSide(color: Colors.grey.shade200)),
         leading: IconButton(
-          icon: Icon(Icons.close_rounded,
-              color: Theme.of(context).textTheme.bodyLarge?.color),
+          icon: const Icon(Icons.close_rounded, color: Colors.black87),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(
+        title: const Text(
           'Add an expense',
           style: TextStyle(
-              color: Theme.of(context).textTheme.bodyLarge?.color,
-              fontWeight: FontWeight.w800),
+              color: Colors.black87, fontWeight: FontWeight.w800, fontSize: 17),
         ),
       ),
       body: SafeArea(
@@ -164,7 +163,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   builder: (context, grSnap) {
                     final groups = grSnap.data ?? [];
 
-                    // --- recency map (friendPhone / groupId -> latest date)
+                    // --- [LOGIC REMAINS UNCHANGED: Sorting/Filtering code] ---
                     final Map<String, DateTime> lastSeen = {};
                     for (final e in tx) {
                       for (final f in e.friendIds) {
@@ -180,7 +179,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
                       }
                     }
 
-                    // --- sort
                     final recentFriends = [...friends]..sort((a, b) {
                         final ad = lastSeen[a.phone] ??
                             DateTime.fromMillisecondsSinceEpoch(0);
@@ -196,7 +194,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
                         return bd.compareTo(ad);
                       });
 
-                    // --- filter
                     final fq = _q.isEmpty
                         ? recentFriends
                         : recentFriends
@@ -208,72 +205,51 @@ class _ActivityScreenState extends State<ActivityScreen> {
                         : recentGroups
                             .where((g) => _match(_q, g.name))
                             .toList();
+                    // ---------------------------------------------------------
 
                     return Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 640),
                         child: ListView(
                           physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
                           children: [
-                            // Search — subtle focus animation
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              curve: Curves.easeOut,
+                            // Search Bar (Modern Flat Style)
+                            Container(
                               decoration: BoxDecoration(
-                                boxShadow: _searchFocus.hasFocus
-                                    ? [
-                                        const BoxShadow(
-                                            color: Color(0x14000000),
-                                            blurRadius: 16,
-                                            offset: Offset(0, 8))
-                                      ]
-                                    : const [],
-                                borderRadius: BorderRadius.circular(14),
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey.shade300),
                               ),
                               child: TextField(
                                 controller: _searchCtrl,
                                 focusNode: _searchFocus,
-                                decoration: InputDecoration(
-                                  prefixIcon: const Icon(Icons.search_rounded),
+                                decoration: const InputDecoration(
+                                  prefixIcon: Icon(Icons.search_rounded,
+                                      color: Colors.grey),
                                   hintText: 'Enter name or phone…',
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 12),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    borderSide:
-                                        BorderSide(color: Colors.grey.shade300),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    borderSide:
-                                        BorderSide(color: Colors.grey.shade300),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    borderSide: BorderSide(
-                                        color: Theme.of(context).primaryColor),
-                                  ),
+                                  hintStyle: TextStyle(color: Colors.grey),
+                                  border: InputBorder.none,
+                                  contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 14),
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 20),
 
-                            // Quick actions (bouncy)
+                            // Quick actions
                             Row(
                               children: [
                                 Expanded(
                                   child: _Bouncy(
                                     onTap: _addFromContacts,
-                                    child: _QuickChip(
-                                      icon: Icons.contact_phone_rounded,
-                                      label: 'Add from contacts',
+                                    child: const _QuickChip(
+                                      icon: Icons.person_add_alt_1_rounded,
+                                      label: 'Add contact',
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: _Bouncy(
                                     onTap: () async {
@@ -292,20 +268,20 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                     },
                                     child: const _QuickChip(
                                       icon: Icons.group_add_rounded,
-                                      label: 'Add group',
+                                      label: 'Create group',
                                     ),
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 24),
 
                             if (fq.isNotEmpty) ...[
-                              const _SectionHeader('Recent'),
+                              const _SectionHeader('Recent Friends'),
                               ...List.generate(
                                 fq.take(6).length,
                                 (i) => _SlideFade(
-                                  delayMs: 40 * i,
+                                  delayMs: 30 * i,
                                   child: _Bouncy(
                                     onTap: () => _openFriendExpense(fq[i]),
                                     child: _PickerTile(
@@ -320,11 +296,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
                             ],
 
                             if (gq.isNotEmpty) ...[
-                              const _SectionHeader('Groups'),
+                              const _SectionHeader('Your Groups'),
                               ...List.generate(
                                 gq.length,
                                 (i) => _SlideFade(
-                                  delayMs: 40 * i,
+                                  delayMs: 30 * i,
                                   child: _Bouncy(
                                     onTap: () =>
                                         _openGroupExpense(gq[i], friends),
@@ -343,11 +319,14 @@ class _ActivityScreenState extends State<ActivityScreen> {
                               Padding(
                                 padding: const EdgeInsets.only(top: 60),
                                 child: Column(
-                                  children: const [
+                                  children: [
                                     Icon(Icons.search_off_rounded,
-                                        size: 40, color: Colors.grey),
-                                    SizedBox(height: 8),
-                                    Text('No matches yet'),
+                                        size: 48, color: Colors.grey.shade300),
+                                    const SizedBox(height: 12),
+                                    Text('No matches found',
+                                        style: TextStyle(
+                                            color: Colors.grey.shade500,
+                                            fontWeight: FontWeight.w600)),
                                   ],
                                 ),
                               ),
@@ -376,27 +355,30 @@ class _QuickChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 44,
+      height: 48,
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: Colors.grey.shade300),
         borderRadius: BorderRadius.circular(12),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-              color: Color(0x16000000), blurRadius: 12, offset: Offset(0, 6))
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 4,
+              offset: const Offset(0, 2))
         ],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: Theme.of(context).primaryColor, size: 20),
+          Icon(icon, color: Colors.teal.shade700, size: 20),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
               label,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                  fontWeight: FontWeight.w700, color: Colors.black87),
             ),
           ),
         ],
@@ -412,13 +394,14 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10, left: 4),
       child: Text(
-        text,
+        text.toUpperCase(),
         style: const TextStyle(
           fontWeight: FontWeight.w800,
-          fontSize: 13,
-          color: Colors.black54,
+          fontSize: 12,
+          color: Colors.grey,
+          letterSpacing: 1.0,
         ),
       ),
     );
@@ -439,18 +422,33 @@ class _PickerTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: Colors.grey.shade200),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
       ),
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: leading,
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: subtitle == null ? null : Text(subtitle!),
-        trailing: const Icon(Icons.chevron_right_rounded),
+        title: Text(title,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        subtitle: subtitle == null
+            ? null
+            : Text(subtitle!,
+                style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500)),
+        trailing:
+            Icon(Icons.chevron_right_rounded, color: Colors.grey.shade300),
       ),
     );
   }
