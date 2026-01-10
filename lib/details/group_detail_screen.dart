@@ -16,8 +16,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../models/group_model.dart';
-import '../models/friend_model.dart';
+import 'package:lifemap/models/group_model.dart';
+import 'package:lifemap/models/friend_model.dart';
 import '../models/expense_item.dart';
 
 import '../services/expense_service.dart';
@@ -730,23 +730,49 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             const SizedBox(height: 8),
 
             // Paid by + date
-            Row(
-              children: [
-                _avatar(e.payerId, radius: 12),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    "Paid by ${_nameFor(e.payerId)}",
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
+            InkWell(
+              onTap: e.payerId == widget.userId
+                  ? null
+                  : () {
+                      Navigator.pushNamed(
+                        context,
+                        '/friend-detail',
+                        arguments: {
+                          'friendId': e.payerId,
+                          'friendName': _nameFor(e.payerId),
+                        },
+                      );
+                    },
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    _avatar(e.payerId, radius: 12),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        "Paid by ${_nameFor(e.payerId)}",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: e.payerId == widget.userId
+                              ? null
+                              : Theme.of(context).primaryColor,
+                          decoration: e.payerId == widget.userId
+                              ? null
+                              : TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      "${_fmtShort(e.date)} ${e.date.year}  "
+                      "${e.date.hour.toString().padLeft(2, '0')}:${e.date.minute.toString().padLeft(2, '0')}",
+                      style: TextStyle(color: Colors.grey.shade700),
+                    ),
+                  ],
                 ),
-                const Spacer(),
-                Text(
-                  "${_fmtShort(e.date)} ${e.date.year}  "
-                  "${e.date.hour.toString().padLeft(2, '0')}:${e.date.minute.toString().padLeft(2, '0')}",
-                  style: TextStyle(color: Colors.grey.shade700),
-                ),
-              ],
+              ),
             ),
 
             if ((e.category ?? '').isNotEmpty) ...[
@@ -968,7 +994,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   width: 48,
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF5F7FA),
+                    color: const Color(0xFFF5F7FA), // Soft grey
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
@@ -994,12 +1020,11 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                 ),
                 const SizedBox(width: 16),
 
-                // Details Column
+                // Details
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Title
                       Text(
                         title,
                         maxLines: 1,
@@ -1009,33 +1034,63 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                             fontSize: 16,
                             color: Colors.black87),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
 
-                      // "Paid by" Row with Profile Picture
-                      Row(
-                        children: [
-                          // VISUAL CHANGE: Profile Pic (Avatar) is here
-                          _avatar(e.payerId, radius: 12),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              "Paid by ${_nameFor(e.payerId)}",
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey[700],
-                                  fontWeight: FontWeight.w500),
-                              overflow: TextOverflow.ellipsis,
+                      // --- CLICKABLE PAYER ROW ---
+                      GestureDetector(
+                        onTap: () {
+                          // Prevent self-navigation
+                          if (e.payerId == widget.userId) return;
+
+                          Navigator.pushNamed(
+                            context,
+                            '/friend-detail',
+                            arguments: {
+                              'friendId': e.payerId,
+                              'friendName': _nameFor(e.payerId),
+                            },
+                          );
+                        },
+                        behavior:
+                            HitTestBehavior.opaque, // Ensures tap is caught
+                        child: Row(
+                          children: [
+                            _avatar(e.payerId, radius: 12),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text.rich(
+                                TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: "Paid by ",
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey[700],
+                                          fontWeight: FontWeight.w500),
+                                    ),
+                                    TextSpan(
+                                      text: _nameFor(e.payerId),
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.black87,
+                                          fontWeight: FontWeight.w700,
+                                          decoration: TextDecoration.underline),
+                                    ),
+                                  ],
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
+                      // ---------------------------
                     ],
                   ),
                 ),
-
                 const SizedBox(width: 8),
 
-                // Amount Column
+                // Amount
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [

@@ -885,7 +885,7 @@ class GmailService {
   // New Credit Card Metadata Extraction
   Map<String, double> _extractCreditCardMetadata(String text) {
     final Map<String, double> meta = {};
-    
+
     // Helper to parse amount like "Rs. 1,00,000" or "INR 50000.00"
     double? parseAmt(String raw) {
       final numStr = raw.replaceAll(RegExp(r'[^0-9.]'), '');
@@ -895,8 +895,8 @@ class GmailService {
     // 1. Available Limit
     // "Avl Lmt: Rs 12000", "Available Credit Limit: 50,000", "Limit Available: 10000"
     final avlRx = RegExp(
-       r'(?:Avl|Available)\s*(?:Cr|Credit)?\s*(?:Lmt|Limit|Bal|Balance)[\s:-]*(?:Rs\.?|INR)?\s*([0-9,]+(?:\.\d{1,2})?)',
-       caseSensitive: false,
+      r'(?:Avl|Available)\s*(?:Cr|Credit)?\s*(?:Lmt|Limit|Bal|Balance)[\s:-]*(?:Rs\.?|INR)?\s*([0-9,]+(?:\.\d{1,2})?)',
+      caseSensitive: false,
     );
     final avlMatch = avlRx.firstMatch(text);
     if (avlMatch != null) {
@@ -907,8 +907,8 @@ class GmailService {
     // 2. Total Limit
     // "Total Credit Limit: 1,00,000", "Max Limit: INR 199999.00"
     final totRx = RegExp(
-       r'(?:Total|Max)\s*(?:Cr|Credit)?\s*(?:Lmt|Limit)[\s:-]*(?:Rs\.?|INR)?\s*([0-9,]+(?:\.\d{1,2})?)',
-       caseSensitive: false,
+      r'(?:Total|Max)\s*(?:Cr|Credit)?\s*(?:Lmt|Limit)[\s:-]*(?:Rs\.?|INR)?\s*([0-9,]+(?:\.\d{1,2})?)',
+      caseSensitive: false,
     );
     final totMatch = totRx.firstMatch(text);
     if (totMatch != null) {
@@ -1479,21 +1479,24 @@ class GmailService {
 
       _log(
           'WRITE/UPSERT CC BillReminder total=$total bank=${bank ?? "-"} last4=${cardLast4 ?? "-"}');
+<<<<<<< HEAD
       
+=======
+>>>>>>> 97c5c0f (Finalize navigation implementation and standardize routes)
       return msgDate;
     }
 
     // Opportunistic Metadata Update (for normal txns too)
     final ccMeta = _extractCreditCardMetadata(combined);
     if (ccMeta.isNotEmpty && (bank != null || cardLast4 != null)) {
-         await _creditCardService.updateCardMetadataByMatch(
-            userId,
-            bankName: bank, // might be null
-            last4: cardLast4, // might be null
-            availableLimit: ccMeta['availableLimit'],
-            totalLimit: ccMeta['totalLimit'],
-            rewardPoints: ccMeta['rewardPoints'],
-         );
+      await _creditCardService.updateCardMetadataByMatch(
+        userId,
+        bankName: bank, // might be null
+        last4: cardLast4, // might be null
+        availableLimit: ccMeta['availableLimit'],
+        totalLimit: ccMeta['totalLimit'],
+        rewardPoints: ccMeta['rewardPoints'],
+      );
     }
 
     if (direction == null) return null;

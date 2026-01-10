@@ -15,6 +15,7 @@ class GroupActivityTab extends StatelessWidget {
   /// Optional actions exposed to the parent
   final void Function(ExpenseItem e)? onEdit;
   final void Function(ExpenseItem e)? onDelete;
+
   /// Use this to jump to Chat tab and prefill context
   final void Function(ExpenseItem e)? onComment;
 
@@ -32,8 +33,8 @@ class GroupActivityTab extends StatelessWidget {
   // ---------- Helpers ----------
   FriendModel _friend(String phone) => members.firstWhere(
         (f) => f.phone == phone,
-    orElse: () => FriendModel(phone: phone, name: phone, avatar: "👤"),
-  );
+        orElse: () => FriendModel(phone: phone, name: phone, avatar: "👤"),
+      );
 
   Widget _avatar(String phone, {double radius = 16}) {
     final f = _friend(phone);
@@ -41,13 +42,25 @@ class GroupActivityTab extends StatelessWidget {
     if (a.startsWith('http')) {
       return CircleAvatar(radius: radius, backgroundImage: NetworkImage(a));
     }
-    final text = (a.isNotEmpty ? a : (f.name.isNotEmpty ? f.name[0] : '?')).toUpperCase();
+    final text = (a.isNotEmpty ? a : (f.name.isNotEmpty ? f.name[0] : '?'))
+        .toUpperCase();
     return CircleAvatar(radius: radius, child: Text(text));
   }
 
   String _fmtShort(DateTime dt) {
     const months = [
-      'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return '${dt.day} ${months[dt.month - 1]}';
   }
@@ -80,7 +93,8 @@ class GroupActivityTab extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 4, width: 44,
+              height: 4,
+              width: 44,
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
                 color: Colors.grey[300],
@@ -96,16 +110,20 @@ class GroupActivityTab extends StatelessWidget {
                   child: Text(
                     e.label?.isNotEmpty == true
                         ? e.label!
-                        : (e.category?.isNotEmpty == true ? e.category! : "Expense"),
+                        : (e.category?.isNotEmpty == true
+                            ? e.category!
+                            : "Expense"),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w800),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   "₹${e.amount.toStringAsFixed(2)}",
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w800),
                 ),
               ],
             ),
@@ -113,12 +131,36 @@ class GroupActivityTab extends StatelessWidget {
             // Payer / date
             Row(
               children: [
-                const Text("Paid by: ", style: TextStyle(fontWeight: FontWeight.w700)),
+                const Text("Paid by: ",
+                    style: TextStyle(fontWeight: FontWeight.w700)),
                 _avatar(e.payerId, radius: 12),
                 const SizedBox(width: 8),
-                Text(
-                  payer.phone == currentUserPhone ? "You" : payer.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                InkWell(
+                  onTap: payer.phone == currentUserPhone
+                      ? null
+                      : () {
+                          Navigator.pushNamed(
+                            context,
+                            '/friend-detail',
+                            arguments: {
+                              'friendId': payer.phone,
+                              'friendName': payer.name,
+                            },
+                          );
+                        },
+                  borderRadius: BorderRadius.circular(4),
+                  child: Text(
+                    payer.phone == currentUserPhone ? "You" : payer.name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      decoration: payer.phone == currentUserPhone
+                          ? null
+                          : TextDecoration.underline,
+                      color: payer.phone == currentUserPhone
+                          ? null
+                          : Theme.of(context).primaryColor,
+                    ),
+                  ),
                 ),
                 const Spacer(),
                 Text(
@@ -131,7 +173,8 @@ class GroupActivityTab extends StatelessWidget {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  const Text("Category: ", style: TextStyle(fontWeight: FontWeight.w700)),
+                  const Text("Category: ",
+                      style: TextStyle(fontWeight: FontWeight.w700)),
                   Flexible(child: Text(e.category!)),
                 ],
               ),
@@ -186,28 +229,36 @@ class GroupActivityTab extends StatelessWidget {
                 OutlinedButton.icon(
                   icon: const Icon(Icons.chat_bubble_outline),
                   label: const Text('Discuss'),
-                  onPressed: onComment == null ? null : () {
-                    Navigator.pop(context);
-                    onComment!(e);
-                  },
+                  onPressed: onComment == null
+                      ? null
+                      : () {
+                          Navigator.pop(context);
+                          onComment!(e);
+                        },
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.edit),
                   label: const Text('Edit'),
-                  onPressed: onEdit == null ? null : () {
-                    Navigator.pop(context);
-                    onEdit!(e);
-                  },
+                  onPressed: onEdit == null
+                      ? null
+                      : () {
+                          Navigator.pop(context);
+                          onEdit!(e);
+                        },
                 ),
                 const SizedBox(width: 8),
                 TextButton.icon(
-                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                  label: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
-                  onPressed: onDelete == null ? null : () {
-                    Navigator.pop(context);
-                    onDelete!(e);
-                  },
+                  icon:
+                      const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  label: const Text('Delete',
+                      style: TextStyle(color: Colors.redAccent)),
+                  onPressed: onDelete == null
+                      ? null
+                      : () {
+                          Navigator.pop(context);
+                          onDelete!(e);
+                        },
                 ),
               ],
             ),
@@ -225,9 +276,11 @@ class GroupActivityTab extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.receipt_long_outlined, size: 42, color: Colors.grey.shade500),
+            Icon(Icons.receipt_long_outlined,
+                size: 42, color: Colors.grey.shade500),
             const SizedBox(height: 8),
-            Text("No group activity yet.", style: TextStyle(color: Colors.grey.shade700)),
+            Text("No group activity yet.",
+                style: TextStyle(color: Colors.grey.shade700)),
           ],
         ),
       );
@@ -263,15 +316,15 @@ class GroupActivityTab extends StatelessWidget {
               child: Text(title.toUpperCase(), style: headerStyle),
             ),
             ...list.map((e) => _GlassExpenseCard(
-              expense: e,
-              currentUserPhone: currentUserPhone,
-              friendResolver: _friend,
-              avatarBuilder: _avatar,
-              onTap: () => _showExpenseDetails(context, e),
-              onEdit: onEdit,
-              onDelete: onDelete,
-              onComment: onComment,
-            )),
+                  expense: e,
+                  currentUserPhone: currentUserPhone,
+                  friendResolver: _friend,
+                  avatarBuilder: _avatar,
+                  onTap: () => _showExpenseDetails(context, e),
+                  onEdit: onEdit,
+                  onDelete: onDelete,
+                  onComment: onComment,
+                )),
             const SizedBox(height: 8),
           ],
         );
@@ -312,7 +365,9 @@ class _GlassExpenseCard extends StatelessWidget {
     final splits = computeSplits(expense);
     final title = expense.label?.isNotEmpty == true
         ? expense.label!
-        : (expense.category?.isNotEmpty == true ? expense.category! : "Expense");
+        : (expense.category?.isNotEmpty == true
+            ? expense.category!
+            : "Expense");
     final cat = expense.category;
 
     // People preview (first 3)
@@ -352,12 +407,14 @@ class _GlassExpenseCard extends StatelessWidget {
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 16),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.teal.withOpacity(.12),
                       borderRadius: BorderRadius.circular(999),
@@ -376,17 +433,30 @@ class _GlassExpenseCard extends StatelessWidget {
                     onSelected: (v) {
                       if (v == 'edit' && onEdit != null) onEdit!(expense);
                       if (v == 'delete' && onDelete != null) onDelete!(expense);
-                      if (v == 'discuss' && onComment != null) onComment!(expense);
+                      if (v == 'discuss' && onComment != null)
+                        onComment!(expense);
                     },
                     itemBuilder: (_) => [
-                      const PopupMenuItem(value: 'discuss', child: ListTile(
-                          leading: Icon(Icons.chat_bubble_outline), title: Text('Discuss'), dense: true)),
-                      const PopupMenuItem(value: 'edit', child: ListTile(
-                          leading: Icon(Icons.edit), title: Text('Edit'), dense: true)),
-                      const PopupMenuItem(value: 'delete', child: ListTile(
-                          leading: Icon(Icons.delete_outline, color: Colors.redAccent),
-                          title: Text('Delete', style: TextStyle(color: Colors.redAccent)),
-                          dense: true)),
+                      const PopupMenuItem(
+                          value: 'discuss',
+                          child: ListTile(
+                              leading: Icon(Icons.chat_bubble_outline),
+                              title: Text('Discuss'),
+                              dense: true)),
+                      const PopupMenuItem(
+                          value: 'edit',
+                          child: ListTile(
+                              leading: Icon(Icons.edit),
+                              title: Text('Edit'),
+                              dense: true)),
+                      const PopupMenuItem(
+                          value: 'delete',
+                          child: ListTile(
+                              leading: Icon(Icons.delete_outline,
+                                  color: Colors.redAccent),
+                              title: Text('Delete',
+                                  style: TextStyle(color: Colors.redAccent)),
+                              dense: true)),
                     ],
                     icon: const Icon(Icons.more_vert),
                   ),
@@ -400,23 +470,35 @@ class _GlassExpenseCard extends StatelessWidget {
                 runSpacing: 6,
                 children: [
                   if (cat != null && cat.isNotEmpty)
-                    _chip(icon: Icons.category_outlined, text: cat, fg: Colors.indigo.shade900, bg: Colors.indigo.withOpacity(.08)),
-                  _chip(icon: Icons.event, text: _dateStr(expense.date), fg: Colors.grey.shade900, bg: Colors.grey.withOpacity(.10)),
+                    _chip(
+                        icon: Icons.category_outlined,
+                        text: cat,
+                        fg: Colors.indigo.shade900,
+                        bg: Colors.indigo.withOpacity(.08)),
+                  _chip(
+                      icon: Icons.event,
+                      text: _dateStr(expense.date),
+                      fg: Colors.grey.shade900,
+                      bg: Colors.grey.withOpacity(.10)),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       ...previewPhones.map((p) => Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: avatarBuilder(p, radius: 10),
-                      )),
+                            padding: const EdgeInsets.only(right: 4),
+                            child: avatarBuilder(p, radius: 10),
+                          )),
                       if (more > 0)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.teal.withOpacity(.12),
                             borderRadius: BorderRadius.circular(999),
                           ),
-                          child: Text("+$more", style: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.w700)),
+                          child: Text("+$more",
+                              style: TextStyle(
+                                  color: Colors.teal.shade900,
+                                  fontWeight: FontWeight.w700)),
                         ),
                     ],
                   ),
@@ -438,23 +520,50 @@ class _GlassExpenseCard extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Text(
-                    "Paid by ${payer.phone == currentUserPhone ? "You" : payer.name}",
-                    style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w600, fontSize: 12),
+                  InkWell(
+                    onTap: payer.phone == currentUserPhone
+                        ? null
+                        : () {
+                            Navigator.pushNamed(
+                              context,
+                              '/friend-detail',
+                              arguments: {
+                                'friendId': payer.phone,
+                                'friendName': payer.name,
+                              },
+                            );
+                          },
+                    borderRadius: BorderRadius.circular(4),
+                    child: Text(
+                      "Paid by ${payer.phone == currentUserPhone ? "You" : payer.name}",
+                      style: TextStyle(
+                        color: payer.phone == currentUserPhone
+                            ? Colors.grey.shade800
+                            : Theme.of(context).primaryColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                        decoration: payer.phone == currentUserPhone
+                            ? null
+                            : TextDecoration.underline,
+                      ),
+                    ),
                   ),
                   const Spacer(),
                   TextButton.icon(
                     onPressed: () => onTap(),
                     icon: const Icon(Icons.info_outline, size: 18),
                     label: const Text("Details"),
-                    style: TextButton.styleFrom(foregroundColor: Colors.teal.shade800),
+                    style: TextButton.styleFrom(
+                        foregroundColor: Colors.teal.shade800),
                   ),
                   const SizedBox(width: 6),
                   TextButton.icon(
-                    onPressed: onComment == null ? null : () => onComment!(expense),
+                    onPressed:
+                        onComment == null ? null : () => onComment!(expense),
                     icon: const Icon(Icons.chat_bubble_outline, size: 18),
                     label: const Text("Discuss"),
-                    style: TextButton.styleFrom(foregroundColor: Colors.orange.shade800),
+                    style: TextButton.styleFrom(
+                        foregroundColor: Colors.orange.shade800),
                   ),
                 ],
               ),
@@ -473,7 +582,8 @@ class _GlassExpenseCard extends StatelessWidget {
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
