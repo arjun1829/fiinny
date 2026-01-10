@@ -64,6 +64,10 @@ post_install do |installer|
       defs << '$(inherited)' unless defs.include?('$(inherited)')
       defs << 'PERMISSION_CONTACTS=1' unless defs.include?('PERMISSION_CONTACTS=1')
       bs['GCC_PREPROCESSOR_DEFINITIONS'] = defs
+      
+      # Silence warnings to prevent build failure on newer gitlab runners / xcode
+      bs['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+      bs['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
     end
   end
 
