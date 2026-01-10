@@ -2141,7 +2141,7 @@ class _ActivityTabBody extends StatelessWidget {
     );
   }
 
-  Widget _historyTile(ExpenseItem e) {
+  Widget _historyTile(BuildContext context, ExpenseItem e) {
     final isSettlement = _isSettlement(e);
     final title = isSettlement
         ? 'Settlement'
@@ -2221,18 +2221,61 @@ class _ActivityTabBody extends StatelessWidget {
                                 fontSize: 12, color: Colors.black87)),
                       ],
                     ),
-                    if (groupName != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.blueGrey.withOpacity(0.10),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          groupName,
-                          style: const TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.w600),
+                    if (groupName != null && e.groupId != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Material(
+                          color: Colors.blueGrey.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          child: InkWell(
+                            onTap: () {
+                              // Fallback for group model
+                              final groups = _groupMap.values.toList();
+                              final group = groups.firstWhere(
+                                (g) => g.id == e.groupId,
+                                orElse: () => GroupModel(
+                                  id: e.groupId!,
+                                  name: groupName,
+                                  memberPhones: [],
+                                  createdBy: '',
+                                  createdAt: DateTime.now(),
+                                ),
+                              );
+
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => GroupDetailScreen(
+                                    userId: userPhone,
+                                    group: group,
+                                  ),
+                                ),
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.groups_rounded,
+                                      size: 14,
+                                      color: Theme.of(context).primaryColor),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    groupName,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: Theme.of(context).primaryColor,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                   ],
@@ -2402,7 +2445,7 @@ class _ActivityTabBody extends StatelessWidget {
     );
   }
 
-  Widget _buildSharedHistory() {
+  Widget _buildSharedHistory(BuildContext context) {
     final sorted = [...expenses]..sort((a, b) => b.date.compareTo(a.date));
     if (sorted.isEmpty) {
       return const Text('No shared history yet.',
@@ -2413,7 +2456,7 @@ class _ActivityTabBody extends StatelessWidget {
       children: [
         for (int i = 0; i < items.length; i++) ...[
           if (i > 0) const SizedBox(height: 12),
-          _historyTile(items[i]),
+          _historyTile(context, items[i]),
         ],
       ],
     );
@@ -2453,7 +2496,8 @@ class _ActivityTabBody extends StatelessWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(16, 16, 16, safeBottom),
         children: [
-          _sectionCard(title: 'Shared History', child: _buildSharedHistory()),
+          _sectionCard(
+              title: 'Shared History', child: _buildSharedHistory(context)),
           _sectionCard(
               title: 'Recent Group Activity', child: _buildGroupActivity()),
         ],

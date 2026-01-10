@@ -47,6 +47,8 @@ import 'details/shared/partner_capabilities.dart';
 import 'details/recurring/friend_recurring_screen.dart';
 import 'details/friend_detail_route_screen.dart';
 import 'details/group_detail_route_screen.dart';
+import 'details/friend_detail_screen.dart';
+import 'details/group_detail_screen.dart';
 
 import 'screens/tx_day_details_screen.dart';
 
@@ -68,7 +70,6 @@ final Map<String, WidgetBuilder> appRoutes = {
 
   // Subscription Feature
 
-
   // Settings
   '/settings/notifications': (_) => const NotificationPrefsScreen(),
   '/settings/gmail': (ctx) {
@@ -77,13 +78,19 @@ final Map<String, WidgetBuilder> appRoutes = {
   },
 
   // ------- Deeplink targets (kept as safe stubs for now) -------
-  '/partner-dashboard': (_) => const _SimpleStubScreen(title: 'Partner Dashboard'),
+  '/partner-dashboard': (_) =>
+      const _SimpleStubScreen(title: 'Partner Dashboard'),
   '/friends': (_) => const _SimpleStubScreen(title: 'Friends & Settle Up'),
   '/budget': (_) => const _SimpleStubScreen(title: 'Weekly Budget'),
   '/transactions': (ctx) {
     final phone = ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
     return TransactionsScreen(userPhone: phone);
   },
+
+  '/friend-detail': (context) => FriendDetailScreen(
+      userPhone: '', userName: '', friend: null as dynamic), // Placeholder
+  '/group-detail': (context) =>
+      GroupDetailScreen(userId: '', group: null as dynamic), // Placeholder
 };
 
 /// Routes that require arguments (or custom building) are handled here.
@@ -99,60 +106,68 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
       }
       if (args is Map<String, dynamic> && args['userPhone'] is String) {
         return MaterialPageRoute(
-          builder: (_) => TxDayDetailsScreen(userPhone: args['userPhone'] as String),
+          builder: (_) =>
+              TxDayDetailsScreen(userPhone: args['userPhone'] as String),
         );
       }
       break;
 
     case '/dashboard':
       if (args is String) {
-        return MaterialPageRoute(builder: (_) => DashboardScreen(userPhone: args));
+        return MaterialPageRoute(
+            builder: (_) => DashboardScreen(userPhone: args));
       }
       break;
 
     case '/subscriptions':
       if (args is String) {
-        return MaterialPageRoute(builder: (_) => SubscriptionsScreen(userId: args));
+        return MaterialPageRoute(
+            builder: (_) => SubscriptionsScreen(userId: args));
       }
       break;
 
-  // Accept both '/expense' and '/expenses'
+    // Accept both '/expense' and '/expenses'
     case '/expense':
     case '/expenses':
       if (args is String) {
-        return MaterialPageRoute(builder: (_) => ExpensesScreen(userPhone: args));
+        return MaterialPageRoute(
+            builder: (_) => ExpensesScreen(userPhone: args));
       }
       break;
 
     case '/analytics':
-    // Accept either a raw String phone or a Map {'userPhone': '<phone>'}
+      // Accept either a raw String phone or a Map {'userPhone': '<phone>'}
       if (args is String) {
-        return MaterialPageRoute(builder: (_) => AnalyticsScreen(userPhone: args));
+        return MaterialPageRoute(
+            builder: (_) => AnalyticsScreen(userPhone: args));
       }
       if (args is Map<String, dynamic> && args['userPhone'] is String) {
-        return MaterialPageRoute(builder: (_) => AnalyticsScreen(userPhone: args['userPhone'] as String));
+        return MaterialPageRoute(
+            builder: (_) =>
+                AnalyticsScreen(userPhone: args['userPhone'] as String));
       }
       break;
-
-
 
     case '/premium':
       // UpgradeScreen handles logic internally, we don't strictly need the phone argument but we accept it to avoid errors if passed.
       return MaterialPageRoute(builder: (_) => const UpgradeScreen());
 
-  // Optional aliases: route them to AnalyticsScreen as well (no preset filter needed)
+    // Optional aliases: route them to AnalyticsScreen as well (no preset filter needed)
     case '/analytics-weekly':
     case '/analytics-monthly':
       if (args is String) {
-        return MaterialPageRoute(builder: (_) => AnalyticsScreen(userPhone: args));
+        return MaterialPageRoute(
+            builder: (_) => AnalyticsScreen(userPhone: args));
       }
       if (args is Map<String, dynamic> && args['userPhone'] is String) {
-        return MaterialPageRoute(builder: (_) => AnalyticsScreen(userPhone: args['userPhone'] as String));
+        return MaterialPageRoute(
+            builder: (_) =>
+                AnalyticsScreen(userPhone: args['userPhone'] as String));
       }
       break;
 
     case '/notifications':
-    // Optional String userId
+      // Optional String userId
       final userId = args is String ? args : null;
       return MaterialPageRoute(
         builder: (_) => Scaffold(
@@ -174,7 +189,8 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
 
     case '/add':
       if (args is String) {
-        return MaterialPageRoute(builder: (_) => AddTransactionScreen(userId: args));
+        return MaterialPageRoute(
+            builder: (_) => AddTransactionScreen(userId: args));
       }
       break;
 
@@ -184,7 +200,7 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
       }
       break;
 
-  // Legacy AddAsset (kept for backward compat)
+    // Legacy AddAsset (kept for backward compat)
     case '/addAsset':
       if (args is String) {
         return MaterialPageRoute(builder: (_) => AddAssetScreen(userId: args));
@@ -196,13 +212,15 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
         return MaterialPageRoute(builder: (_) => LoansScreen(userId: args));
       }
       if (args is Map<String, dynamic> && args['userId'] is String) {
-        return MaterialPageRoute(builder: (_) => LoansScreen(userId: args['userId'] as String));
+        return MaterialPageRoute(
+            builder: (_) => LoansScreen(userId: args['userId'] as String));
       }
       break;
 
     case '/assets':
       if (args is Map<String, dynamic> && args['userId'] is String) {
-        return MaterialPageRoute(builder: (_) => AssetsScreen(userId: args['userId'] as String));
+        return MaterialPageRoute(
+            builder: (_) => AssetsScreen(userId: args['userId'] as String));
       }
       break;
 
@@ -236,27 +254,30 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
 
     case '/transactionCount':
       if (args is String) {
-        return MaterialPageRoute(builder: (_) => TransactionCountScreen(userId: args));
+        return MaterialPageRoute(
+            builder: (_) => TransactionCountScreen(userId: args));
       }
       break;
 
     case '/transactionAmount':
       if (args is String) {
-        return MaterialPageRoute(builder: (_) => TransactionAmountScreen(userId: args));
+        return MaterialPageRoute(
+            builder: (_) => TransactionAmountScreen(userId: args));
       }
       break;
 
     case '/cards-management':
       if (args is String) {
-        return MaterialPageRoute(builder: (_) => CardsManagementScreen(userId: args));
+        return MaterialPageRoute(
+            builder: (_) => CardsManagementScreen(userId: args));
       }
       break;
 
-  /* ------------------ NEW: Friend Recurring (deeplink target) ------------------ */
+    /* ------------------ NEW: Friend Recurring (deeplink target) ------------------ */
     case '/friend-recurring':
-    // Accept:
-    //   - String friendId
-    //   - Map { friendId, userPhone?, friendName?, section? }
+      // Accept:
+      //   - String friendId
+      //   - Map { friendId, userPhone?, friendName?, section? }
       {
         String? friendId;
         String? userPhone;
@@ -266,8 +287,10 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
           friendId = args;
         } else if (args is Map<String, dynamic>) {
           if (args['friendId'] is String) friendId = args['friendId'] as String;
-          if (args['userPhone'] is String) userPhone = args['userPhone'] as String?;
-          if (args['friendName'] is String) friendName = args['friendName'] as String?;
+          if (args['userPhone'] is String)
+            userPhone = args['userPhone'] as String?;
+          if (args['friendName'] is String)
+            friendName = args['friendName'] as String?;
           // args['section'] is optional; if you need it later, read it in the screen via settings.arguments
         }
 
@@ -283,7 +306,8 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
               friendId: friendId!,
               friendName: friendName,
             ),
-            settings: settings, // keep settings so screen can inspect section if needed
+            settings:
+                settings, // keep settings so screen can inspect section if needed
           );
         }
       }

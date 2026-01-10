@@ -21,9 +21,9 @@ import 'models/shared_item.dart';
 import 'models/recurring_scope.dart';
 import 'services/recurring_service.dart';
 
-import '../models/friend_model.dart';
+import 'package:lifemap/models/friend_model.dart';
 import '../models/expense_item.dart';
-import '../models/group_model.dart';
+import 'package:lifemap/models/group_model.dart';
 import '../models/loan_model.dart';
 import '../services/expense_service.dart';
 import '../services/group_service.dart';
@@ -52,6 +52,7 @@ import 'package:lifemap/sharing/widgets/partner_chat_tab.dart';
 // Shared split logic
 import '../group/group_balance_math.dart' show computeSplits;
 import '../group/ledger_math.dart' as ledger;
+import 'package:lifemap/details/group_detail_screen.dart';
 
 class FriendDetailScreen extends StatefulWidget {
   final String userPhone; // current user
@@ -2139,74 +2140,313 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                         const SizedBox(height: 16),
 
                         // Pairwise history list with group names
-                        // ------------------ (NEW) SHARED GROUPS ------------------
+                        // ------------------ (NEW) SHARED GROUPS & TRANSACTIONS ------------------
+                        // NEW: List of Tiles with Clickable Group Badge
                         StreamBuilder<List<GroupModel>>(
-                            stream:
-                                GroupService().streamGroups(widget.userPhone),
-                            builder: (context, snapshot) {
-                              final groups = snapshot.data ?? [];
-                              return _buildSharedGroupsSection(
-                                  context, groups, pairwise);
-                            }),
-                        const SizedBox(height: 16),
+                          stream: GroupService().streamGroups(widget.userPhone),
+                          builder: (context, gSnap) {
+                            final groups = gSnap.data ?? [];
+                            final groupNames = <String, String>{
+                              for (final g in groups) g.id: g.name
+                            };
+                            const int historyAdEvery = 0;
+                            final int blockSize = historyAdEvery + 1;
+                            final int adCount = historyAdEvery > 0
+                                ? pairwise.length ~/ historyAdEvery
+                                : 0;
+                            final int totalItems = pairwise.length + adCount;
 
-                        // ------------------ TRANSACTIONS ------------------
-                        _card(
-                          context,
-                          padding: EdgeInsets.zero,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(16, 14, 16, 6),
-                                child: Text(
-                                  "Transactions",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 16,
-                                    color: Colors.teal.shade900,
+                            return ListView.builder(
+                              itemCount: totalItems,
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemBuilder: (_, idx) {
+                                final bool isAdSlot = historyAdEvery > 0 &&
+                                    blockSize > 0 &&
+                                    (idx + 1) % blockSize == 0;
+                                if (isAdSlot) return const SizedBox.shrink();
+
+                                final adsBefore = historyAdEvery > 0
+                                    ? (idx + 1) ~/ blockSize
+                                    : 0;
+                                final dataIndex = idx - adsBefore;
+                                final ex = pairwise[dataIndex];
+                                final isSettlement = isSettlementLike(ex);
+                                final title = isSettlement
+                                    ? "Settlement"
+                                    : (ex.label?.isNotEmpty == true
+                                        ? ex.label!
+                                        : (ex.category?.isNotEmpty == true
+                                            ? ex.category!
+                                            : "Expense"));
+
+                                // Find Group Name
+                                final groupName = (ex.groupId != null &&
+                                        ex.groupId!.isNotEmpty)
+                                    ? (groupNames[ex.groupId] ?? "Group")
+                                    : null;
+
+                                final impact = _yourImpact(ex);
+                                final amountColor = impact >= 0
+                                    ? const Color(0xFF00C853)
+                                    : const Color(0xFFFF3D00);
+                                final amountText =
+                                    "₹${ex.amount.toStringAsFixed(2)}";
+                                final files = _attachmentsOf(ex);
+
+                                final payer = _nameFor(ex.payerId);
+                                final recip = ex.friendIds.isNotEmpty
+                                    ? _nameFor(ex.friendIds.first)
+                                    : (widget.friend.phone == ex.payerId
+                                        ? "You"
+                                        : _displayName);
+
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border:
+                                        Border.all(color: Colors.grey.shade200),
+                                    boxShadow: [
+                                      BoxShadow(
+                                          color: Colors.black.withOpacity(0.02),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2))
+                                    ],
                                   ),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              UnifiedTransactionList(
-                                key:
-                                    ValueKey('history-list-${pairwise.length}'),
-                                expenses: pairwise,
-                                incomes: const [],
-                                friendsById: {
-                                  widget.friend.phone: widget.friend,
-                                },
-                                userPhone: widget.userPhone,
-                                previewCount: 1000,
-                                enableScrolling: false,
-                                showTopBannerAd: false,
-                                showBottomBannerAd: false,
-                                enableInlineAds: false,
-                                onEdit: (tx) {
-                                  if (tx is ExpenseItem) _editEntry(tx);
-                                },
-                                onDelete: (tx) {
-                                  if (tx is ExpenseItem) _deleteEntry(tx);
-                                },
-                                enableSwipeActions: true,
-                                showCategoryDropdown: false,
-                                enableDetailsSheet: true,
-                                emptyBuilder: (ctx) => Padding(
-                                  padding: const EdgeInsets.all(24.0),
-                                  child: Center(
-                                    child: Text(
-                                      "No transactions yet",
-                                      style: TextStyle(
-                                          color: Colors.grey.shade500),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(16),
+                                    onTap: () =>
+                                        _showExpenseDetailsFriend(context, ex),
+                                    onLongPress: () => _deleteEntry(ex),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          // Date Box
+                                          Container(
+                                            width: 50,
+                                            padding: const EdgeInsets.symmetric(
+                                                vertical: 8),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFF5F7FA),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Column(
+                                              children: [
+                                                Text(
+                                                  ex.date.day.toString(),
+                                                  style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      fontSize: 18,
+                                                      height: 1,
+                                                      color: Colors.black87),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  DateFormat('MMM')
+                                                      .format(ex.date)
+                                                      .toUpperCase(),
+                                                  style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      fontSize: 10,
+                                                      color: Colors.grey[500]),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 16),
+
+                                          // Content
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  title,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      fontSize: 16,
+                                                      color: Colors.black87),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  isSettlement
+                                                      ? "$payer paid $recip"
+                                                      : "$payer paid $amountText",
+                                                  style: TextStyle(
+                                                      fontSize: 13,
+                                                      color: Colors.grey[600],
+                                                      fontWeight:
+                                                          FontWeight.w500),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+
+                                                // --- CLICKABLE GROUP BADGE ---
+                                                if (groupName != null &&
+                                                    ex.groupId != null)
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                            top: 6),
+                                                    child: Material(
+                                                      color: Colors.transparent,
+                                                      child: InkWell(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(6),
+                                                        onTap: () {
+                                                          // Navigation Logic
+                                                          GroupModel
+                                                              targetGroup;
+                                                          try {
+                                                            targetGroup = groups
+                                                                .firstWhere((g) =>
+                                                                    g.id ==
+                                                                    ex.groupId);
+                                                          } catch (e) {
+                                                            // Fallback
+                                                            targetGroup =
+                                                                GroupModel(
+                                                              id: ex.groupId!,
+                                                              name: groupName,
+                                                              memberPhones: [],
+                                                              createdBy: '',
+                                                              createdAt:
+                                                                  DateTime
+                                                                      .now(),
+                                                            );
+                                                          }
+                                                          Navigator.push(
+                                                            context,
+                                                            MaterialPageRoute(
+                                                              builder: (_) =>
+                                                                  GroupDetailScreen(
+                                                                userId: widget
+                                                                    .userPhone,
+                                                                group:
+                                                                    targetGroup,
+                                                              ),
+                                                            ),
+                                                          );
+                                                        },
+                                                        child: Container(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                                  horizontal: 6,
+                                                                  vertical: 2),
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            color: Colors
+                                                                .blueGrey
+                                                                .withOpacity(
+                                                                    0.08),
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        6),
+                                                            border: Border.all(
+                                                                color: Colors
+                                                                    .blueGrey
+                                                                    .withOpacity(
+                                                                        0.2)),
+                                                          ),
+                                                          child: Text(
+                                                            groupName,
+                                                            style: TextStyle(
+                                                                fontSize: 10,
+                                                                color: Colors
+                                                                        .blueGrey[
+                                                                    700],
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700,
+                                                                decoration:
+                                                                    TextDecoration
+                                                                        .underline),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                // -----------------------------
+
+                                                if (files.isNotEmpty)
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                            top: 6),
+                                                    child: Icon(
+                                                        Icons
+                                                            .attachment_rounded,
+                                                        size: 14,
+                                                        color:
+                                                            Colors.grey[400]),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+
+                                          // Amount
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
+                                            children: [
+                                              Text(
+                                                impact == 0
+                                                    ? "SETTLED"
+                                                    : (impact > 0
+                                                        ? "YOU LENT"
+                                                        : "YOU BORROWED"),
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: impact == 0
+                                                      ? Colors.grey
+                                                      : (impact > 0
+                                                          ? amountColor
+                                                          : amountColor),
+                                                  letterSpacing: 0.5,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                impact == 0
+                                                    ? "-"
+                                                    : "₹${impact.abs().toStringAsFixed(2)}",
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                  color: impact == 0
+                                                      ? Colors.grey[400]
+                                                      : amountColor,
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                            ],
-                          ),
+                                );
+                              },
+                            );
+                          },
                         ),
                       ],
                     ),

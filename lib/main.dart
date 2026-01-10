@@ -15,7 +15,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
 import 'package:workmanager/workmanager.dart';
 import 'firebase_options.dart';
-import 'routes.dart';
+import 'package:lifemap/routes.dart';
 import 'core/ads/ad_service.dart';
 import 'core/ads/ads_shell.dart';
 
