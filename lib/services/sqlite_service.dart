@@ -20,7 +20,7 @@ class SQLiteService {
     final path = join(await getDatabasesPath(), 'fiinny.db');
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE transactions(
@@ -33,6 +33,14 @@ class SQLiteService {
             source TEXT
           )
         ''');
+        
+        // Create Indexes for transactions
+        await db.execute('CREATE INDEX idx_transactions_amount ON transactions(amount)');
+        await db.execute('CREATE INDEX idx_transactions_type ON transactions(type)');
+        await db.execute('CREATE INDEX idx_transactions_category ON transactions(category)');
+        await db.execute('CREATE INDEX idx_transactions_date ON transactions(date)');
+        await db.execute('CREATE INDEX idx_transactions_source ON transactions(source)');
+
         await db.execute('''
           CREATE TABLE goals(
             id TEXT PRIMARY KEY,
@@ -43,6 +51,15 @@ class SQLiteService {
             emoji TEXT
           )
         ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('CREATE INDEX idx_transactions_amount ON transactions(amount)');
+          await db.execute('CREATE INDEX idx_transactions_type ON transactions(type)');
+          await db.execute('CREATE INDEX idx_transactions_category ON transactions(category)');
+          await db.execute('CREATE INDEX idx_transactions_date ON transactions(date)');
+          await db.execute('CREATE INDEX idx_transactions_source ON transactions(source)');
+        }
       },
     );
   }
