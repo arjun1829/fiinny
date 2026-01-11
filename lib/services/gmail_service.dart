@@ -457,7 +457,8 @@ class GmailService {
 
   final IngestIndexService _index = IngestIndexService();
   final CreditCardService _creditCardService = CreditCardService();
-  static const bool WRITE_BILL_AS_EXPENSE = false; // ← turn OFF to avoid double-count
+  static const bool WRITE_BILL_AS_EXPENSE =
+      false; // ← turn OFF to avoid double-count
 
   String _billDocId({
     required String? bank,
@@ -1479,7 +1480,10 @@ class GmailService {
 
       _log(
           'WRITE/UPSERT CC BillReminder total=$total bank=${bank ?? "-"} last4=${cardLast4 ?? "-"}');
+<<<<<<< HEAD
       
+=======
+>>>>>>> f17c75f095cce93b98b7a0a1bb0867e2950af063
       return msgDate;
     }
 
