@@ -55,7 +55,7 @@ class LoanDetectionService {
       Query q = _fs.collection('users').doc(userId).collection('expenses')
           .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
           .orderBy('date').limit(page);
-      if (cursor != null) q = (q as Query).startAfterDocument(cursor);
+      if (cursor != null) q = (q).startAfterDocument(cursor);
       final snap = await q.get();
       if (snap.docs.isEmpty) break;
       exps.addAll(snap.docs.map((d) => ExpenseItem.fromFirestore(d)));

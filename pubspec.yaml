@@ -1,7 +1,7 @@
 name: lifemap
 description: A premium personal finance & social app (2025)
 publish_to: "none"
-version: 1.0.5+8681
+version: 1.0.5+8685
 
 environment:
   sdk: ">=3.2.0 <4.0.0"
@@ -15,12 +15,12 @@ dependencies:
   shared_preferences: ^2.3.3
   intl: ^0.20.2
   uuid: ^4.2.2
-  rxdart: ^0.27.7
+  rxdart: ^0.28.0
   crypto: ^3.0.3
   http: ^1.2.0
   http_parser: ^4.0.2
   path: ^1.8.3
-  sqflite: ^2.4.1
+  sqflite: ^2.4.2
   flutter_svg: ^2.0.10+1
   timeago: ^3.6.1
 
@@ -31,7 +31,7 @@ dependencies:
   cloud_functions: ^6.0.5
   firebase_storage: ^13.0.5
   google_sign_in: ^6.3.0
-  googleapis: ^14.0.0
+  googleapis: ^15.0.0
   googleapis_auth: ^2.0.0
   firebase_ui_auth: ^3.0.1
   firebase_ui_oauth_google: ^2.0.1
@@ -44,13 +44,13 @@ dependencies:
   workmanager: ^0.9.0+3
 
   # UI & Animations
-  google_fonts: ^6.1.0
+  google_fonts: ^7.0.0
   animations: ^2.0.11
-  fl_chart: 0.66.2
+  fl_chart: ^1.1.0
   table_calendar: ^3.0.9
 
   # Media
-  video_player: ^2.8.6
+  video_player: ^2.9.2
   image_picker: ^1.1.0
 
   # Device Access
@@ -58,17 +58,17 @@ dependencies:
   speech_to_text: ^7.0.0
   flutter_contacts: ^1.1.9+2
   intl_phone_field: ^3.2.0
-  url_launcher: ^6.3.0
+  url_launcher: ^6.3.1
   share_plus: ^12.0.1
-  telephony: ^0.2.0
+  # telephony: ^0.2.0
 
   # ML / OCR
-  google_mlkit_entity_extraction: ^0.15.1
+  #google_mlkit_entity_extraction: 16.0.0-beta6
   file_picker: ^10.3.8
   firebase_messaging: ^16.1.0
 
   app_tracking_transparency: ^2.0.4
-  google_mobile_ads: ^5.1.0
+  google_mobile_ads: ^7.0.0
   package_info_plus: ^9.0.0
   device_info_plus: ^12.3.0
   html_unescape: ^2.0.0
@@ -76,15 +76,20 @@ dependencies:
   # Optional (commented)
   # firebase_messaging: ^15.1.0
   firebase_crashlytics: ^5.0.6
-  app_links: ^6.3.2
+  app_links: 6.4.1
   razorpay_flutter: ^1.4.0
+  path_provider: ^2.1.5
+
   # firebase_dynamic_links: ^6.0.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_native_splash: ^2.4.1
-  flutter_launcher_icons: ^0.13.1
+
+  flutter_native_splash: ^2.4.4
+  flutter_launcher_icons: ^0.14.3
+dependency_overrides:
+  vector_math: ^2.1.5
 
 flutter:
   uses-material-design: true

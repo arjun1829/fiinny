@@ -1,15 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="com.KaranArjunTechnologies.lifemap">
+    xmlns:tools="http://schemas.android.com/tools" package="com.KaranArjunTechnologies.lifemap">
 
     <!-- Contacts (existing) -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.WRITE_CONTACTS" />
 
     <!-- Storage (scoped for <=32) -->
-    <uses-permission
-        android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <!-- <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" /> -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
@@ -30,30 +27,13 @@
     <!-- Not all devices have telephony; don't block install -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
-    <application
-        android:label="Fiinny"
-        android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true"
-        android:networkSecurityConfig="@xml/network_security_config">
+    <application android:label="Fiinny" android:name="${applicationName}" android:icon="@mipmap/ic_launcher" android:usesCleartextTraffic="true" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/network_security_config">
 
         <!-- ✅ AdMob App ID -->
-        <meta-data
-            android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3087779657197986~6549865319" />
+        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-3087779657197986~6549865319" />
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:launchMode="singleTop"
-            android:taskAffinity=""
-            android:theme="@style/LaunchTheme"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize">
-            <meta-data
-                android:name="io.flutter.embedding.android.NormalTheme"
-                android:resource="@style/NormalTheme" />
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:taskAffinity="" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -69,10 +49,7 @@
         </activity>
 
         <!-- ✅ Telephony plugin receiver for realtime SMS ingest -->
-        <receiver
-            android:name="com.shounakmulay.telephony.sms.SmsReceiver"
-            android:exported="true"
-            android:permission="android.permission.BROADCAST_SMS">
+        <receiver android:name="com.shounakmulay.telephony.sms.SmsReceiver" android:exported="true" android:permission="android.permission.BROADCAST_SMS">
             <!-- High priority so OEM filters don't swallow alerts -->
             <intent-filter android:priority="999">
                 <!-- Standard SMS -->
@@ -84,9 +61,7 @@
         </receiver>
 
         <!-- (Optional) If you want to re-init listeners after reboot:
-        <receiver
-            android:name=".boot.BootCompletedReceiver"
-            android:exported="true">
+        <receiver android:name=".boot.BootCompletedReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
@@ -94,9 +69,7 @@
         -->
 
         <!-- Required by Flutter -->
-        <meta-data
-            android:name="flutterEmbedding"
-            android:value="2" />
+        <meta-data android:name="flutterEmbedding" android:value="2" />
     </application>
 
     <!-- Existing queries -->

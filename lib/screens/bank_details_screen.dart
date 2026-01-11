@@ -3,9 +3,9 @@ import '../../models/expense_item.dart';
 import '../../models/income_item.dart';
 import '../../models/friend_model.dart';
 import '../../themes/tokens.dart';
-import '../dashboard/bank_cards_carousel.dart';
-import '../unified_transaction_list.dart';
-import '../dashboard/transaction_modal.dart';
+import '../widgets/dashboard/bank_cards_carousel.dart';
+import '../widgets/unified_transaction_list.dart';
+import '../widgets/dashboard/transaction_modal.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/expense_service.dart';
 
@@ -44,7 +44,11 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
     // Basic friend fetching if needed for UnifiedTransactionList
     // Ideally this should be passed in or handled by a provider
     try {
-      final snap = await FirebaseFirestore.instance.collection('users').doc(widget.userPhone).collection('friends').get();
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userPhone)
+          .collection('friends')
+          .get();
       final map = <String, FriendModel>{};
       for (var doc in snap.docs) {
         final f = FriendModel.fromMap(doc.data());
@@ -93,7 +97,7 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
           // Carousel
           Padding(
             padding: const EdgeInsets.only(bottom: 16),
-             child: BankCardsCarousel(
+            child: BankCardsCarousel(
               expenses: widget.allExpenses, // Pass ALL to render cards
               incomes: widget.allIncomes,
               userName: widget.userName,
@@ -102,7 +106,7 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
               onCardSelected: _onCardSelected,
             ),
           ),
-          
+
           Expanded(
             child: Container(
               color: Colors.white,
@@ -110,13 +114,13 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
-                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                     child: Text(
-                       _selectedSlug == null 
-                           ? "All Transactions" 
-                           : "Transactions • ${_selectedSlug?.toUpperCase()}",
-                       style: Fx.h6.copyWith(fontWeight: FontWeight.bold),
-                     ),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Text(
+                      _selectedSlug == null
+                          ? "All Transactions"
+                          : "Transactions • ${_selectedSlug?.toUpperCase()}",
+                      style: Fx.h6.copyWith(fontWeight: FontWeight.bold),
+                    ),
                   ),
                   Expanded(
                     child: UnifiedTransactionList(
@@ -125,27 +129,31 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
                       friendsById: _friendsMap,
                       userPhone: widget.userPhone,
                       previewCount: 100, // Show more in details
-                      enableScrolling: true, // Allow internal scroll since we are in a Column (expanded)
-                       // Add edit handlers
+                      enableScrolling:
+                          true, // Allow internal scroll since we are in a Column (expanded)
+                      // Add edit handlers
                       onEdit: (tx) async {
-                         // Open edit modal
-                         if (tx is ExpenseItem) {
-                            await showModalBottomSheet(
-                              context: context,
-                              isScrollControlled: true,
-                              builder: (_) => TransactionModal(
-                                expense: tx,
-                                userPhone: widget.userPhone,
-                                onSave: (updated) => ExpenseService().updateExpense(widget.userPhone, updated),
-                                onDelete: (id) => ExpenseService().deleteExpense(widget.userPhone, id),
-                              ),
-                            );
-                            setState(() {}); // Refresh local if possible, but simpler to rely on parent rebuild or stream
-                            // For minimal changes, we might need to handle state updates.
-                            // However, UnifiedTransactionList is stateless regarding *data*, it takes list.
-                            // If we update data in backend, this screen won't auto-refresh unless we re-fetch or use a Stream.
-                            // For now, assume parent rebuilds or we trigger a refresh callback if needed.
-                         }
+                        // Open edit modal
+                        if (tx is ExpenseItem) {
+                          await showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            builder: (_) => TransactionModal(
+                              expense: tx,
+                              userPhone: widget.userPhone,
+                              onSave: (updated) => ExpenseService()
+                                  .updateExpense(widget.userPhone, updated),
+                              onDelete: (id) => ExpenseService()
+                                  .deleteExpense(widget.userPhone, id),
+                            ),
+                          );
+                          setState(
+                              () {}); // Refresh local if possible, but simpler to rely on parent rebuild or stream
+                          // For minimal changes, we might need to handle state updates.
+                          // However, UnifiedTransactionList is stateless regarding *data*, it takes list.
+                          // If we update data in backend, this screen won't auto-refresh unless we re-fetch or use a Stream.
+                          // For now, assume parent rebuilds or we trigger a refresh callback if needed.
+                        }
                       },
                     ),
                   ),

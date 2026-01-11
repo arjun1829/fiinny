@@ -427,6 +427,7 @@ class _AttachmentsBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final images = attachments.where(isImage).toList();
     final others = attachments.where((a) => !isImage(a)).toList();
 

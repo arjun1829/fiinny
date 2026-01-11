@@ -21,8 +21,7 @@ import '../themes/tokens.dart';
 import '../widgets/charts/bar_chart_simple.dart';
 import '../widgets/unified_transaction_list.dart';
 import 'edit_expense_screen.dart';
-import 'expenses_screen.dart'
-    show ExpenseFilterConfig, ExpenseFiltersScreen;
+import 'expenses_screen.dart' show ExpenseFilterConfig, ExpenseFiltersScreen;
 import '../widgets/finance/bank_card_widget.dart';
 import '../widgets/finance/add_card_sheet.dart';
 import '../services/credit_card_service.dart';
@@ -32,9 +31,9 @@ import '../widgets/dashboard/bank_overview_dialog.dart';
 import '../services/user_data.dart';
 
 class _ChartBucket {
-  final DateTime date;      // Start of the bucket period
-  final String label;       // Display label (e.g. "4 AM", "Mon", "Jan")
-  final double total;       // Total spend in this bucket
+  final DateTime date; // Start of the bucket period
+  final String label; // Display label (e.g. "4 AM", "Mon", "Jan")
+  final double total; // Total spend in this bucket
   final Map<String, double> categoryBreakdown; // Stacked breakdown
 
   const _ChartBucket({
@@ -139,15 +138,11 @@ const List<String> _kMainExpenseCategories = <String>[
 
 String _formatBankLabel(String bank) {
   if (bank.isEmpty || bank == 'UNKNOWN') return 'Unknown Bank';
-  final parts = bank
-      .split(' ')
-      .where((part) => part.isNotEmpty)
-      .map((part) {
-        final first = part.substring(0, 1).toUpperCase();
-        final rest = part.length > 1 ? part.substring(1).toLowerCase() : '';
-        return first + rest;
-      })
-      .toList();
+  final parts = bank.split(' ').where((part) => part.isNotEmpty).map((part) {
+    final first = part.substring(0, 1).toUpperCase();
+    final rest = part.length > 1 ? part.substring(1).toLowerCase() : '';
+    return first + rest;
+  }).toList();
   return parts.isEmpty ? 'Unknown Bank' : parts.join(' ');
 }
 
@@ -286,8 +281,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   };
 
   // Banks & Cards selection (screen-wide filter)
-  String? _bankFilter;   // normalized uppercase bank name
-  String? _last4Filter;  // last 4 digits for specific account
+  String? _bankFilter; // normalized uppercase bank name
+  String? _last4Filter; // last 4 digits for specific account
 
   // Filters from the expense Filters screen
   Set<String> _selectedCategories = {};
@@ -494,8 +489,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         return (start: d1, end: d0);
       case 'Week':
       case 'W':
-        final start =
-            DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+        final start = DateTime(now.year, now.month, now.day)
+            .subtract(Duration(days: now.weekday - 1));
         final end = start.add(const Duration(days: 6));
         return (start: start, end: end);
       case 'Month':
@@ -517,7 +512,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         return (start: start, end: end);
       case 'Year':
       case 'Y':
-        return (start: DateTime(now.year, 1, 1), end: DateTime(now.year, 12, 31));
+        return (
+          start: DateTime(now.year, 1, 1),
+          end: DateTime(now.year, 12, 31)
+        );
       case 'All':
       default:
         return (start: DateTime(2000), end: DateTime(2100));
@@ -603,8 +601,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
       setState(() {
         _periodToken = _mapExpensePeriodToAnalytics(config.periodToken);
-        _period =
-            config.customRange != null ? Period.custom : _periodForToken(_periodToken);
+        _period = config.customRange != null
+            ? Period.custom
+            : _periodForToken(_periodToken);
         _custom = config.customRange != null
             ? CustomRange(inclusiveRange.start, inclusiveRange.end)
             : null;
@@ -615,9 +614,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         _selectedMerchants = {
           for (final m in config.merchants) m.trim().toUpperCase()
         }..removeWhere((m) => m.isEmpty);
-        _selectedBanks = {
-          for (final b in config.banks) b.trim().toUpperCase()
-        }..removeWhere((b) => b.isEmpty);
+        _selectedBanks = {for (final b in config.banks) b.trim().toUpperCase()}
+          ..removeWhere((b) => b.isEmpty);
         _friendFilterPhones = {...config.friendPhones};
         _groupFilterIds = {...config.groupIds};
 
@@ -653,7 +651,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         return DateTimeRange(start: s, end: s.add(const Duration(days: 1)));
       case 'W':
         final monday = sod(now).subtract(Duration(days: now.weekday - 1));
-        return DateTimeRange(start: monday, end: monday.add(const Duration(days: 7)));
+        return DateTimeRange(
+            start: monday, end: monday.add(const Duration(days: 7)));
       case 'Y':
         final start = DateTime(now.year, 1, 1);
         return DateTimeRange(start: start, end: DateTime(now.year + 1, 1, 1));
@@ -683,10 +682,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       case 'M':
       default:
         final start = DateTime(now.year, now.month, 1);
-        final effectiveStart = _includeSalaryOverflow 
-            ? start.subtract(const Duration(days: 3)) 
+        final effectiveStart = _includeSalaryOverflow
+            ? start.subtract(const Duration(days: 3))
             : start;
-        return DateTimeRange(start: effectiveStart, end: DateTime(now.year, now.month + 1, 1));
+        return DateTimeRange(
+            start: effectiveStart, end: DateTime(now.year, now.month + 1, 1));
     }
   }
 
@@ -884,8 +884,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           .where((e) =>
               _inRange(e.date, range) &&
               _normalizeMainCategory(
-                AnalyticsAgg.resolveExpenseCategory(e),
-              ) ==
+                    AnalyticsAgg.resolveExpenseCategory(e),
+                  ) ==
                   category)
           .toList();
       _openTxDrilldown(
@@ -898,7 +898,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           .where((i) =>
               _inRange(i.date, range) &&
               AnalyticsAgg.resolveIncomeCategory(i) == category)
-              .toList();
+          .toList();
       _openTxDrilldown(
         title: 'Income • $category · ${INR.f(total)}',
         exp: const [],
@@ -906,12 +906,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       );
     }
   }
-
-
-
-
-
-
 
   Future<void> _openCategoryDetailForMonth({
     required String category,
@@ -925,8 +919,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     ];
 
     DateTime selected = DateTime(month.year, month.month, 1);
-    if (!monthDates.any(
-        (m) => m.year == selected.year && m.month == selected.month)) {
+    if (!monthDates
+        .any((m) => m.year == selected.year && m.month == selected.month)) {
       selected = monthDates.last;
     }
 
@@ -951,7 +945,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 .where((b) => filter.isEmpty || filter.contains(b.name))
                 .toList();
 
-            int _cmp(String a, String b) => a.toLowerCase().compareTo(b.toLowerCase());
+            int _cmp(String a, String b) =>
+                a.toLowerCase().compareTo(b.toLowerCase());
 
             visible.sort((a, b) {
               switch (sort) {
@@ -992,8 +987,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         ),
                         ListTile(
                           title: const Text('Alphabetical: Z to A'),
-                          onTap: () =>
-                              Navigator.pop(context, _SubcategorySort.alphaDesc),
+                          onTap: () => Navigator.pop(
+                              context, _SubcategorySort.alphaDesc),
                         ),
                       ],
                     ),
@@ -1006,7 +1001,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             }
 
             Future<void> _pickFilters() async {
-              final temp = filter.isEmpty ? Set<String>.from(allSubs) : Set<String>.from(filter);
+              final temp = filter.isEmpty
+                  ? Set<String>.from(allSubs)
+                  : Set<String>.from(filter);
               await showModalBottomSheet<void>(
                 context: context,
                 builder: (context) {
@@ -1020,7 +1017,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 16, vertical: 10),
                               child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   TextButton(
                                     onPressed: () {
@@ -1043,7 +1041,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                             ),
                             const Divider(height: 1),
                             SizedBox(
-                              height: math.min(360, allSubs.length * 56).toDouble(),
+                              height:
+                                  math.min(360, allSubs.length * 56).toDouble(),
                               child: ListView(
                                 children: [
                                   for (final sub in allSubs)
@@ -1069,7 +1068,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                 onPressed: () {
                                   Navigator.pop(context);
                                   setSheetState(() {
-                                    if (temp.length == allSubs.length || temp.isEmpty) {
+                                    if (temp.length == allSubs.length ||
+                                        temp.isEmpty) {
                                       filter = <String>{};
                                     } else {
                                       filter = Set<String>.from(temp);
@@ -1124,7 +1124,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       const SizedBox(height: 4),
                       Text(
                         'Total for $monthLabel: ${INR.f(monthTotal)}',
-                        style: Fx.label.copyWith(color: Fx.text.withOpacity(.75)),
+                        style:
+                            Fx.label.copyWith(color: Fx.text.withOpacity(.75)),
                       ),
                       const SizedBox(height: 8),
                       _buildMonthSelector(
@@ -1144,31 +1145,31 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                             ? Center(
                                 child: Text(
                                   'No subcategories for this month with current filters.',
-                                  style: Fx.label.copyWith(
-                                      color: Fx.text.withOpacity(.7)),
+                                  style: Fx.label
+                                      .copyWith(color: Fx.text.withOpacity(.7)),
                                 ),
                               )
                             : ListView.separated(
                                 itemBuilder: (_, index) {
                                   final bucket = visible[index];
-                                  final start =
-                                      DateTime(selected.year, selected.month, 1);
-                                  final end =
-                                      DateTime(selected.year, selected.month + 1, 1);
-                                  final range = DateTimeRange(
-                                      start: start, end: end);
+                                  final start = DateTime(
+                                      selected.year, selected.month, 1);
+                                  final end = DateTime(
+                                      selected.year, selected.month + 1, 1);
+                                  final range =
+                                      DateTimeRange(start: start, end: end);
 
                                   return ListTile(
                                     contentPadding: EdgeInsets.zero,
                                     title: Text(
                                       bucket.name,
-                                      style: Fx.label
-                                          .copyWith(fontWeight: FontWeight.w600),
+                                      style: Fx.label.copyWith(
+                                          fontWeight: FontWeight.w600),
                                     ),
                                     subtitle: Text(
                                       '${bucket.txCount} tx',
-                                      style: Fx.label
-                                          .copyWith(color: Fx.text.withOpacity(.7)),
+                                      style: Fx.label.copyWith(
+                                          color: Fx.text.withOpacity(.7)),
                                     ),
                                     trailing: Text(
                                       INR.f(bucket.amount),
@@ -1177,14 +1178,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                       ),
                                     ),
                                     onTap: () {
-                                      final matches = _applyBankFiltersToExpenses(
+                                      final matches =
+                                          _applyBankFiltersToExpenses(
                                         _allExp,
                                       ).where((e) {
                                         return !e.date.isBefore(start) &&
                                             e.date.isBefore(end) &&
                                             _normalizeMainCategory(
                                                   AnalyticsAgg
-                                                      .resolveExpenseCategory(e),
+                                                      .resolveExpenseCategory(
+                                                          e),
                                                 ) ==
                                                 category &&
                                             _resolveExpenseSubcategory(e) ==
@@ -1200,7 +1203,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                     },
                                   );
                                 },
-                                separatorBuilder: (_, __) => const Divider(height: 1),
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1),
                                 itemCount: visible.length,
                               ),
                       ),
@@ -1232,11 +1236,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                for (final token in periods)
-                  _buildPeriodDockItem(token),
+                for (final token in periods) _buildPeriodDockItem(token),
                 _buildPeriodDockIcon(),
-                if (_periodToken == 'M')
-                  _buildSalaryOverflowCheckbox(),
+                if (_periodToken == 'M') _buildSalaryOverflowCheckbox(),
               ],
             ),
           ),
@@ -1259,20 +1261,28 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-             Icon(
-               _includeSalaryOverflow ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
-               size: 18,
-               color: _includeSalaryOverflow ? (Colors.teal[800] ?? Colors.teal) : Colors.grey,
-             ),
-             const SizedBox(width: 4),
-             Text(
-               'Include last 3 days',
-               style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: _includeSalaryOverflow ? FontWeight.w600 : FontWeight.normal,
-                  color: _includeSalaryOverflow ? (Colors.teal[800] ?? Colors.teal) : Colors.grey[700],
-               ),
-             ),
+            Icon(
+              _includeSalaryOverflow
+                  ? Icons.check_box_rounded
+                  : Icons.check_box_outline_blank_rounded,
+              size: 18,
+              color: _includeSalaryOverflow
+                  ? (Colors.teal[800] ?? Colors.teal)
+                  : Colors.grey,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              'Include last 3 days',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: _includeSalaryOverflow
+                    ? FontWeight.w600
+                    : FontWeight.normal,
+                color: _includeSalaryOverflow
+                    ? (Colors.teal[800] ?? Colors.teal)
+                    : Colors.grey[700],
+              ),
+            ),
           ],
         ),
       ),
@@ -1280,99 +1290,113 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Widget _buildPeriodDockItem(String token) {
-     final bool isSelected = _range == null && _periodToken == token;
-     final label = token == 'All Time' ? 'All' : token;
-     return InkWell(
-       onTap: () {
-          setState(() {
-            _periodToken = token;
-            _range = null;
-            _custom = null;
-            _period = _periodForToken(token);
-            _invalidateAggCache();
-          });
-       },
-       borderRadius: BorderRadius.circular(12),
-       child: AnimatedContainer(
-         duration: const Duration(milliseconds: 200),
-         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-         decoration: BoxDecoration(
-           color: isSelected ? Colors.white : Colors.transparent,
-           borderRadius: BorderRadius.circular(12),
-           boxShadow: isSelected ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))] : [],
-         ),
-         child: Text(
-           label,
-           style: TextStyle(
-             color: isSelected ? Colors.black : Colors.grey[600],
-             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-             fontSize: 13,
-           ),
-         ),
-       ),
-     );
+    final bool isSelected = _range == null && _periodToken == token;
+    final label = token == 'All Time' ? 'All' : token;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _periodToken = token;
+          _range = null;
+          _custom = null;
+          _period = _periodForToken(token);
+          _invalidateAggCache();
+        });
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2))
+                ]
+              : [],
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.black : Colors.grey[600],
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildPeriodDockIcon() {
-     final bool isSelected = _range != null;
-     return InkWell(
-       onTap: () async {
-          final now = DateTime.now();
-          final firstDate = DateTime(now.year - 5);
-          final lastDate = DateTime(now.year + 2);
+    final bool isSelected = _range != null;
+    return InkWell(
+      onTap: () async {
+        final now = DateTime.now();
+        final firstDate = DateTime(now.year - 5);
+        final lastDate = DateTime(now.year + 2);
 
-          final picked = await showDateRangePicker(
-            context: context,
-            firstDate: firstDate,
-            lastDate: lastDate,
-            initialDateRange: _range,
-            builder: (context, child) {
-              return Theme(
-                data: Theme.of(context).copyWith(
-                  colorScheme: const ColorScheme.light(
-                    primary: Fx.mintDark,
-                    onPrimary: Colors.white,
-                    surface: Colors.white,
-                    onSurface: Colors.black,
-                  ),
+        final picked = await showDateRangePicker(
+          context: context,
+          firstDate: firstDate,
+          lastDate: lastDate,
+          initialDateRange: _range,
+          builder: (context, child) {
+            return Theme(
+              data: Theme.of(context).copyWith(
+                colorScheme: const ColorScheme.light(
+                  primary: Fx.mintDark,
+                  onPrimary: Colors.white,
+                  surface: Colors.white,
+                  onSurface: Colors.black,
                 ),
-                child: child!,
-              );
-            },
-          );
+              ),
+              child: child!,
+            );
+          },
+        );
 
-          if (picked != null) {
-            final start = DateTime(
-                picked.start.year, picked.start.month, picked.start.day);
-            final endInclusive = DateTime(
-                picked.end.year, picked.end.month, picked.end.day);
-            setState(() {
-              _range = DateTimeRange(
-                start: start,
-                end: endInclusive.add(const Duration(days: 1)),
-              );
-              _period = Period.custom;
-              _custom = CustomRange(start, endInclusive);
-              _invalidateAggCache();
-            });
-          }
-       },
-       borderRadius: BorderRadius.circular(12),
-       child: AnimatedContainer(
-         duration: const Duration(milliseconds: 200),
-         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-         decoration: BoxDecoration(
-           color: isSelected ? Colors.white : Colors.transparent,
-           borderRadius: BorderRadius.circular(12),
-           boxShadow: isSelected ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))] : [],
-         ),
-         child: Icon(
-           Icons.calendar_today_rounded,
-           size: 16,
-           color: isSelected ? Colors.black : Colors.grey[600],
-         ),
-       ),
-     );
+        if (picked != null) {
+          final start =
+              DateTime(picked.start.year, picked.start.month, picked.start.day);
+          final endInclusive =
+              DateTime(picked.end.year, picked.end.month, picked.end.day);
+          setState(() {
+            _range = DateTimeRange(
+              start: start,
+              end: endInclusive.add(const Duration(days: 1)),
+            );
+            _period = Period.custom;
+            _custom = CustomRange(start, endInclusive);
+            _invalidateAggCache();
+          });
+        }
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2))
+                ]
+              : [],
+        ),
+        child: Icon(
+          Icons.calendar_today_rounded,
+          size: 16,
+          color: isSelected ? Colors.black : Colors.grey[600],
+        ),
+      ),
+    );
   }
 
   Widget _scopeFiltersRow(List<_CardGroup> cardGroups) {
@@ -1995,9 +2019,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   /// Convenience labels for month buckets, e.g. ["Dec", "Jan", "Feb", ...].
   List<String> _labelsForMonthSpends(List<_ChartBucket> buckets) {
     final fmt = DateFormat('MMM');
-    return buckets
-        .map((b) => fmt.format(b.date))
-        .toList();
+    return buckets.map((b) => fmt.format(b.date)).toList();
   }
 
   List<_MonthlyCategoryStack> _buildMonthlyCategoryStacks(int monthCount) {
@@ -2026,7 +2048,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           .toList()
         ..sort((a, b) => b.value.compareTo(a.value));
 
-      stacks.add(_MonthlyCategoryStack(monthDate.year, monthDate.month, segments));
+      stacks.add(
+          _MonthlyCategoryStack(monthDate.year, monthDate.month, segments));
     }
 
     return stacks;
@@ -2049,7 +2072,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       }
       out.add(_ChartBucket(
         date: date,
-        label: i == 0 ? 'Today' : (i == 1 ? 'Yesterday' : DateFormat('d MMM').format(date)),
+        label: i == 0
+            ? 'Today'
+            : (i == 1 ? 'Yesterday' : DateFormat('d MMM').format(date)),
         total: total,
         categoryBreakdown: const {},
       ));
@@ -2061,7 +2086,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final now = DateTime.now();
     final baseExp = _applyBankFiltersToExpenses(_allExp);
     final out = <_ChartBucket>[];
-    
+
     // Find start of current week (Monday)
     final currentMonday = DateTime(now.year, now.month, now.day)
         .subtract(Duration(days: now.weekday - 1));
@@ -2069,7 +2094,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     for (int i = weekCount - 1; i >= 0; i--) {
       final start = currentMonday.subtract(Duration(days: i * 7));
       final end = start.add(const Duration(days: 7));
-      
+
       double total = 0;
       for (final e in baseExp) {
         if (!e.date.isBefore(start) && e.date.isBefore(end)) total += e.amount;
@@ -2093,7 +2118,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       final year = now.year - i;
       final start = DateTime(year, 1, 1);
       final end = DateTime(year + 1, 1, 1);
-      
+
       double total = 0;
       for (final e in baseExp) {
         if (!e.date.isBefore(start) && e.date.isBefore(end)) total += e.amount;
@@ -2111,18 +2136,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   List<_ChartBucket> _buildAllTimeBucket() {
     final baseExp = _applyBankFiltersToExpenses(_allExp);
     double total = baseExp.fold(0, (sum, e) => sum + e.amount);
-    
+
     // Minimal date found or 2000
     DateTime minDate = DateTime(2000);
     if (baseExp.isNotEmpty) {
-       var d = baseExp.first.date;
-       for(final e in baseExp) if(e.date.isBefore(d)) d = e.date;
-       minDate = DateTime(d.year, d.month, 1); // just a reference
+      var d = baseExp.first.date;
+      for (final e in baseExp) if (e.date.isBefore(d)) d = e.date;
+      minDate = DateTime(d.year, d.month, 1); // just a reference
     }
 
     return [
       _ChartBucket(
-        date: minDate, 
+        date: minDate,
         label: 'All Time',
         total: total,
         categoryBreakdown: const {},
@@ -2132,30 +2157,37 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   List<_ChartBucket> _buildAdaptiveBuckets() {
     switch (_periodToken) {
-      case 'D': return _buildLastDaysSpends();
-      case 'W': return _buildLastWeeksSpends();
-      case 'Y': return _buildLastYearsSpends();
-      case 'All Time': return _buildAllTimeBucket();
-      case 'M': 
-      default: return _buildLastMonthSpends();
+      case 'D':
+        return _buildLastDaysSpends();
+      case 'W':
+        return _buildLastWeeksSpends();
+      case 'Y':
+        return _buildLastYearsSpends();
+      case 'All Time':
+        return _buildAllTimeBucket();
+      case 'M':
+      default:
+        return _buildLastMonthSpends();
     }
   }
 
   Map<String, double> _categoryTotalsForRange(DateTime start, DateTime end) {
-     final key = 'expByCatRange-${start.millisecondsSinceEpoch}-${end.millisecondsSinceEpoch}-$_bankFilter-$_instrumentFilter-v$_rev';
-     return _memo(key, () {
-        final base = _applyBankFiltersToExpenses(_allExp);
-        final out = <String, double>{};
-        for (final e in base) {
-          if (!e.date.isBefore(start) && e.date.isBefore(end)) {
-            final legacy = AnalyticsAgg.resolveExpenseCategory(e);
-            final cat = _normalizeMainCategory(legacy);
-            out[cat] = (out[cat] ?? 0) + e.amount;
-          }
+    final key =
+        'expByCatRange-${start.millisecondsSinceEpoch}-${end.millisecondsSinceEpoch}-$_bankFilter-$_instrumentFilter-v$_rev';
+    return _memo(key, () {
+      final base = _applyBankFiltersToExpenses(_allExp);
+      final out = <String, double>{};
+      for (final e in base) {
+        if (!e.date.isBefore(start) && e.date.isBefore(end)) {
+          final legacy = AnalyticsAgg.resolveExpenseCategory(e);
+          final cat = _normalizeMainCategory(legacy);
+          out[cat] = (out[cat] ?? 0) + e.amount;
         }
-        final entries = out.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-        return Map<String, double>.fromEntries(entries);
-     });
+      }
+      final entries = out.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      return Map<String, double>.fromEntries(entries);
+    });
   }
 
   String _resolveExpenseSubcategory(ExpenseItem e) {
@@ -2260,7 +2292,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       final labelInstrument = _normInstrument(rawInstrument);
 
       final normalizedNetwork = (network ?? '').trim();
-      final key = '${rawBank.toUpperCase()}|$labelInstrument|${l4 ?? ''}|${normalizedNetwork.toUpperCase()}';
+      final key =
+          '${rawBank.toUpperCase()}|$labelInstrument|${l4 ?? ''}|${normalizedNetwork.toUpperCase()}';
       final group = map.putIfAbsent(
         key,
         () => _CardGroup(
@@ -2325,20 +2358,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       // Analytics uses only last ~18 months of data for performance.
       final now = DateTime.now();
       final cutoff = DateTime(now.year, now.month - 18, 1);
-      _allExp =
-          _allExp.where((e) => !e.date.isBefore(cutoff)).toList();
-      _allInc =
-          _allInc.where((i) => !i.date.isBefore(cutoff)).toList();
+      _allExp = _allExp.where((e) => !e.date.isBefore(cutoff)).toList();
+      _allInc = _allInc.where((i) => !i.date.isBefore(cutoff)).toList();
       _rev++;
       _invalidateAggCache();
 
       if (_selectedCategoryMonth == null) {
         _selectedCategoryMonth = DateTime(now.year, now.month, 1);
       }
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(widget.userPhone).get();
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userPhone)
+          .get();
       if (mounted) {
         setState(() {
-             _userName = userDoc.data()?['name'];
+          _userName = userDoc.data()?['name'];
         });
       }
     } catch (_) {}
@@ -2382,8 +2416,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     }
 
     final start = DateFormat('d MMM').format(range.start);
-    final end = DateFormat('d MMM')
-        .format(range.end.subtract(const Duration(days: 1)));
+    final end =
+        DateFormat('d MMM').format(range.end.subtract(const Duration(days: 1)));
     return '$start - $end';
   }
 
@@ -2441,8 +2475,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             ),
             trailing: Text(
               INR.f(bankNet),
-              style:
-                  Fx.number.copyWith(color: bankColor, fontWeight: FontWeight.w800),
+              style: Fx.number
+                  .copyWith(color: bankColor, fontWeight: FontWeight.w800),
             ),
           ),
         ];
@@ -2470,8 +2504,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               dense: true,
               contentPadding: EdgeInsets.zero,
               selected: _isBankSelected(bank, last4: account.last4),
-              onTap: () =>
-                  _toggleBankSelection(bank, last4: account.last4),
+              onTap: () => _toggleBankSelection(bank, last4: account.last4),
               leading: _bankLogo(
                 bank,
                 network: account.network,
@@ -2506,8 +2539,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 Expanded(
                   child: Text(
                     _formatBankLabel(bank),
-                    style:
-                        Fx.label.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
+                    style: Fx.label
+                        .copyWith(fontWeight: FontWeight.w800, fontSize: 16),
                   ),
                 ),
                 Text(
@@ -2527,7 +2560,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       appBar: AppBar(
         title: Text(
           'Analytics',
-          style: Fx.title.copyWith(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blueGrey[900]),
+          style: Fx.title.copyWith(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.blueGrey[900]),
         ),
         centerTitle: false,
         elevation: 0,
@@ -2577,22 +2613,23 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         onAddCard: () {
                           // TODO: Implement add card
                           ScaffoldMessenger.of(context).showSnackBar(
-                             const SnackBar(content: Text("Add Card feature coming soon!")),
-                           );
+                            const SnackBar(
+                                content: Text("Add Card feature coming soon!")),
+                          );
                         },
                         onCardSelected: (slug) {
-                           final bankName = slug.toUpperCase();
-                           showDialog(
-                             context: context,
-                             builder: (_) => BankOverviewDialog(
-                               bankSlug: slug,
-                               bankName: bankName,
-                               allExpenses: _allExp,
-                               allIncomes: _allInc,
-                               userPhone: widget.userPhone,
-                               userName: _userName ?? 'User',
-                             ),
-                           );
+                          final bankName = slug.toUpperCase();
+                          showDialog(
+                            context: context,
+                            builder: (_) => BankOverviewDialog(
+                              bankSlug: slug,
+                              bankName: bankName,
+                              allExpenses: _allExp,
+                              allIncomes: _allInc,
+                              userPhone: widget.userPhone,
+                              userName: _userName ?? 'User',
+                            ),
+                          );
                         },
                       ),
                       _analyticsBannerCard(),
@@ -2617,7 +2654,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           _buildSoftPill(
                             label: 'Savings accounts',
                             isSelected: _scope == SpendScope.savingsAccounts,
-                            onTap: () => _changeScope(SpendScope.savingsAccounts),
+                            onTap: () =>
+                                _changeScope(SpendScope.savingsAccounts),
                           ),
                           _buildSoftPill(
                             label: 'Credit cards',
@@ -2635,8 +2673,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           child: ConstrainedBox(
                             constraints: BoxConstraints(
                               // screen width minus the 16 px left/right list padding
-                              maxWidth:
-                                  MediaQuery.of(context).size.width - 32,
+                              maxWidth: MediaQuery.of(context).size.width - 32,
                             ),
                             child: InputChip(
                               avatar: const Icon(
@@ -2660,8 +2697,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                 _invalidateAggCache();
                               }),
                               deleteIcon: const Icon(Icons.close, size: 16),
-                              backgroundColor:
-                                  Colors.teal.withOpacity(.10),
+                              backgroundColor: Colors.teal.withOpacity(.10),
                               shape: const StadiumBorder(),
                               selected: true,
                             ),
@@ -2689,7 +2725,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _sectionHeader('Transactions', Icons.list_alt_rounded),
+                            _sectionHeader(
+                                'Transactions', Icons.list_alt_rounded),
                             const SizedBox(height: 6),
                             Wrap(
                               spacing: 8,
@@ -2768,8 +2805,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           const SizedBox(height: 12),
           Text(
             'Nothing to show yet',
-            style:
-                theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
           Text(
@@ -2794,12 +2831,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   DateTimeRange _getRangeForBucketDate(DateTime date) {
-    if (_periodToken == 'D') return DateTimeRange(start: date, end: date.add(const Duration(days: 1)));
-    if (_periodToken == 'W') return DateTimeRange(start: date, end: date.add(const Duration(days: 7)));
-    if (_periodToken == 'Y') return DateTimeRange(start: date, end: DateTime(date.year + 1, 1, 1));
-    if (_periodToken == 'All Time') return DateTimeRange(start: date, end: DateTime(3000));
+    if (_periodToken == 'D')
+      return DateTimeRange(start: date, end: date.add(const Duration(days: 1)));
+    if (_periodToken == 'W')
+      return DateTimeRange(start: date, end: date.add(const Duration(days: 7)));
+    if (_periodToken == 'Y')
+      return DateTimeRange(start: date, end: DateTime(date.year + 1, 1, 1));
+    if (_periodToken == 'All Time')
+      return DateTimeRange(start: date, end: DateTime(3000));
     // M
-    return DateTimeRange(start: date, end: DateTime(date.year, date.month + 1, 1));
+    return DateTimeRange(
+        start: date, end: DateTime(date.year, date.month + 1, 1));
   }
 
   Widget _buildBucketSelector({
@@ -2825,44 +2867,49 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  void _openCategoryDetailForBucket(String category, DateTime start, DateTime end, double amount) {
-     final subBuckets = _subcategoryBucketsForRangeAndCategory(start, end, category);
-     
-     if (subBuckets.isEmpty) {
-       ScaffoldMessenger.of(context).showSnackBar(
-         SnackBar(content: Text('No transactions found for $category')),
-       );
-       return;
-     }
+  void _openCategoryDetailForBucket(
+      String category, DateTime start, DateTime end, double amount) {
+    final subBuckets =
+        _subcategoryBucketsForRangeAndCategory(start, end, category);
 
-     showModalBottomSheet(
-       context: context,
-       isScrollControlled: true,
-       backgroundColor: Colors.transparent,
-       builder: (context) => _SubcategoryBreakdownSheet(
-         category: category,
-         start: start,
-         end: end,
-         totalAmount: amount,
-         subBuckets: subBuckets,
-         onSubcategoryTap: (subcategory, subAmount) {
-           // Drill down to transactions for this subcategory
-           final expInRange = _applyBankFiltersToExpenses(_allExp).where((e) {
-             return !e.date.isBefore(start) && 
-                    e.date.isBefore(end) &&
-                    _normalizeMainCategory(AnalyticsAgg.resolveExpenseCategory(e)) == category &&
-                    _resolveExpenseSubcategory(e) == subcategory;
-           }).toList();
-           
-           Navigator.pop(context); // Close the sheet first
-           _openTxDrilldown(
-             title: '$category • $subcategory (${DateFormat("d MMM").format(start)} - ${DateFormat("d MMM").format(end.subtract(const Duration(days:1)))})',
-             exp: expInRange,
-             inc: const [],
-           );
-         },
-       ),
-     );
+    if (subBuckets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No transactions found for $category')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _SubcategoryBreakdownSheet(
+        category: category,
+        start: start,
+        end: end,
+        totalAmount: amount,
+        subBuckets: subBuckets,
+        onSubcategoryTap: (subcategory, subAmount) {
+          // Drill down to transactions for this subcategory
+          final expInRange = _applyBankFiltersToExpenses(_allExp).where((e) {
+            return !e.date.isBefore(start) &&
+                e.date.isBefore(end) &&
+                _normalizeMainCategory(
+                        AnalyticsAgg.resolveExpenseCategory(e)) ==
+                    category &&
+                _resolveExpenseSubcategory(e) == subcategory;
+          }).toList();
+
+          Navigator.pop(context); // Close the sheet first
+          _openTxDrilldown(
+            title:
+                '$category • $subcategory (${DateFormat("d MMM").format(start)} - ${DateFormat("d MMM").format(end.subtract(const Duration(days: 1)))})',
+            exp: expInRange,
+            inc: const [],
+          );
+        },
+      ),
+    );
   }
 
   void _openTxDrilldown({
@@ -2896,7 +2943,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                
+
                 // Header
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
@@ -2918,9 +2965,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     ],
                   ),
                 ),
-                
+
                 const Divider(height: 1),
-                
+
                 // Transaction list
                 Expanded(
                   child: exp.isEmpty && inc.isEmpty
@@ -2946,28 +2993,43 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                             previewCount: 10000, // Show all
                             filterType: 'All',
                             showBillIcon: true,
-                            enableScrolling: false, // Let SingleChildScrollView handle it
+                            enableScrolling:
+                                false, // Let SingleChildScrollView handle it
                             onEdit: (item) async {
                               await _handleEdit(item);
-                              if (mounted) Navigator.pop(context); // Close sheet to reflect changes
+                              if (mounted)
+                                Navigator.pop(
+                                    context); // Close sheet to reflect changes
                             },
                             onDelete: (item) async {
                               await _handleDelete(item);
-                              if (mounted) Navigator.pop(context); // Close sheet to reflect changes
+                              if (mounted)
+                                Navigator.pop(
+                                    context); // Close sheet to reflect changes
                             },
-                            onChangeCategory: ({required String txId, required String newCategory, required dynamic payload}) async {
+                            onChangeCategory: (
+                                {required String txId,
+                                required String newCategory,
+                                required dynamic payload}) async {
                               if (payload is ExpenseItem) {
-                                final updated = payload.copyWith(category: newCategory);
-                                await _expenseSvc.updateExpense(widget.userPhone, updated);
+                                final updated =
+                                    payload.copyWith(category: newCategory);
+                                await _expenseSvc.updateExpense(
+                                    widget.userPhone, updated);
                                 await _bootstrap();
                               }
                             },
-                            onChangeSubcategory: ({required String txId, required String newSubcategory, required dynamic payload}) async {
-                               if (payload is ExpenseItem) {
-                                 final updated = payload.copyWith(subcategory: newSubcategory);
-                                 await _expenseSvc.updateExpense(widget.userPhone, updated);
-                                 await _bootstrap();
-                               }
+                            onChangeSubcategory: (
+                                {required String txId,
+                                required String newSubcategory,
+                                required dynamic payload}) async {
+                              if (payload is ExpenseItem) {
+                                final updated = payload.copyWith(
+                                    subcategory: newSubcategory);
+                                await _expenseSvc.updateExpense(
+                                    widget.userPhone, updated);
+                                await _bootstrap();
+                              }
                             },
                             emptyBuilder: (context) => const SizedBox(),
                           ),
@@ -3003,29 +3065,34 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ),
       );
     }
-    
+
     _ChartBucket? selectedBucket;
     if (_selectedCategoryMonth != null) {
-        try {
-           selectedBucket = buckets.firstWhere((b) => b.date.isAtSameMomentAs(_selectedCategoryMonth!));
-        } catch (_) {}
+      try {
+        selectedBucket = buckets.firstWhere(
+            (b) => b.date.isAtSameMomentAs(_selectedCategoryMonth!));
+      } catch (_) {}
     }
     if (selectedBucket == null) {
-       selectedBucket = buckets.isNotEmpty ? buckets.last : null;
+      selectedBucket = buckets.isNotEmpty ? buckets.last : null;
     }
-    
+
     if (selectedBucket == null) return const SizedBox();
 
     final range = _getRangeForBucketDate(selectedBucket.date);
     final byCat = _categoryTotalsForRange(range.start, range.end);
-    
-    final entries = byCat.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+
+    final entries = byCat.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
     final hasData = entries.isNotEmpty && entries.any((e) => e.value.abs() > 0);
     final total = entries.fold<double>(0, (sum, e) => sum + e.value);
 
     String periodLabel = selectedBucket.label;
-    if (_periodToken == 'M') periodLabel = DateFormat('MMMM y').format(selectedBucket.date); 
-    if (_periodToken == 'W') periodLabel = '${DateFormat('d MMM').format(range.start)} - ${DateFormat('d MMM').format(range.end.subtract(const Duration(days: 1)))}';
+    if (_periodToken == 'M')
+      periodLabel = DateFormat('MMMM y').format(selectedBucket.date);
+    if (_periodToken == 'W')
+      periodLabel =
+          '${DateFormat('d MMM').format(range.start)} - ${DateFormat('d MMM').format(range.end.subtract(const Duration(days: 1)))}';
 
     return GlassCard(
       radius: Fx.r24,
@@ -3055,47 +3122,48 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 8),
-
           _buildBucketSelector(
             buckets: buckets,
             selected: selectedBucket,
             onSelect: (b) {
-               setState(() => _selectedCategoryMonth = b.date);
+              setState(() => _selectedCategoryMonth = b.date);
             },
           ),
           const SizedBox(height: 10),
-
           if (!hasData)
-             Padding(
-                padding: const EdgeInsets.all(4),
-                child: Text('No spends found for this period.', style: Fx.label.copyWith(color: Fx.text.withOpacity(.7))),
-             )
+            Padding(
+              padding: const EdgeInsets.all(4),
+              child: Text('No spends found for this period.',
+                  style: Fx.label.copyWith(color: Fx.text.withOpacity(.7))),
+            )
           else
-             ListView.separated(
-               shrinkWrap: true,
-               physics: const NeverScrollableScrollPhysics(),
-               itemCount: entries.length,
-               separatorBuilder: (_, __) => const Divider(height: 1),
-               itemBuilder: (_, index) {
-                 final entry = entries[index];
-                 final cat = entry.key;
-                 final amount = entry.value;
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: entries.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, index) {
+                final entry = entries[index];
+                final cat = entry.key;
+                final amount = entry.value;
 
-                 return ListTile(
-                   contentPadding: EdgeInsets.zero,
-                   leading: Icon(
-                     _iconForCategory(cat),
-                     color: _categoryColors[cat] ?? Fx.mintDark,
-                   ),
-                   title: Text(cat, style: Fx.label.copyWith(fontWeight: FontWeight.w600)),
-                   trailing: Text(
-                     INR.f(amount),
-                     style: Fx.number.copyWith(fontWeight: FontWeight.w700),
-                   ),
-                   onTap: () => _openCategoryDetailForBucket(cat, range.start, range.end, amount),
-                 );
-               },
-             ),
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    _iconForCategory(cat),
+                    color: _categoryColors[cat] ?? Fx.mintDark,
+                  ),
+                  title: Text(cat,
+                      style: Fx.label.copyWith(fontWeight: FontWeight.w600)),
+                  trailing: Text(
+                    INR.f(amount),
+                    style: Fx.number.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  onTap: () => _openCategoryDetailForBucket(
+                      cat, range.start, range.end, amount),
+                );
+              },
+            ),
         ],
       ),
     );
@@ -3109,7 +3177,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   List<_ChartBucket> _generateChartBuckets() {
     final range = _range ?? _rangeOrDefault();
     final start = range.start;
-    final end = range.end.subtract(const Duration(milliseconds: 1)); // adjust strictly
+    final end =
+        range.end.subtract(const Duration(milliseconds: 1)); // adjust strictly
 
     final diff = end.difference(start);
     final days = diff.inDays;
@@ -3134,14 +3203,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       useMonths = true;
     } else {
       // Custom range fallback
-      if (days <= 1) useHours = true;
-      else if (days <= 31) useSays = true;
-      else useMonths = true;
+      if (days <= 1)
+        useHours = true;
+      else if (days <= 31)
+        useSays = true;
+      else
+        useMonths = true;
     }
-    
+
     // Generate empty buckets
     final buckets = <_ChartBucket>[];
-    
+
     // Helper to get expense data (filtered)
     // We need to re-fetch relevant expenses based on method.
     // Optimization: Filter _allExp once for the whole range, then bucketize.
@@ -3152,23 +3224,23 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     // Generators
     if (useHours) {
       // 0 to 23 hours for the specific day
-      // Note: If custom range matches 2 days, this logic might be simplistic, 
+      // Note: If custom range matches 2 days, this logic might be simplistic,
       // but for 'D' it's always TODAY 00:00 to 23:59
       final baseDate = DateTime(start.year, start.month, start.day);
       for (int i = 0; i < 24; i++) {
         final bucketStart = baseDate.add(Duration(hours: i));
         final bucketEnd = bucketStart.add(const Duration(hours: 1));
-        
-        final bucketExp = expInRange.where((e) => 
-          !e.date.isBefore(bucketStart) && e.date.isBefore(bucketEnd)
-        );
-        
+
+        final bucketExp = expInRange.where(
+            (e) => !e.date.isBefore(bucketStart) && e.date.isBefore(bucketEnd));
+
         double total = 0;
         final catMap = <String, double>{};
-        for(final e in bucketExp) {
-           total += e.amount;
-           final cat = _normalizeMainCategory(AnalyticsAgg.resolveExpenseCategory(e));
-           catMap[cat] = (catMap[cat] ?? 0) + e.amount;
+        for (final e in bucketExp) {
+          total += e.amount;
+          final cat =
+              _normalizeMainCategory(AnalyticsAgg.resolveExpenseCategory(e));
+          catMap[cat] = (catMap[cat] ?? 0) + e.amount;
         }
 
         // Label: "4 PM" or "4"
@@ -3176,8 +3248,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         final ampm = i < 12 ? 'AM' : 'PM';
         // Simplified label to avoid clutter: only even hours or every 4 hours?
         // Let chart decide, just provide "4 PM"
-        final label = '$hourC $ampm'; 
-        
+        final label = '$hourC $ampm';
+
         buckets.add(_ChartBucket(
           date: bucketStart,
           label: label,
@@ -3189,21 +3261,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       // Iterate from start month to end month
       DateTime ptr = DateTime(start.year, start.month, 1);
       final stop = DateTime(end.year, end.month, 1);
-      
+
       while (!ptr.isAfter(stop)) {
         final bucketStart = DateTime(ptr.year, ptr.month, 1);
         final bucketEnd = DateTime(ptr.year, ptr.month + 1, 1);
-        
-        final bucketExp = expInRange.where((e) => 
-          !e.date.isBefore(bucketStart) && e.date.isBefore(bucketEnd)
-        );
+
+        final bucketExp = expInRange.where(
+            (e) => !e.date.isBefore(bucketStart) && e.date.isBefore(bucketEnd));
 
         double total = 0;
         final catMap = <String, double>{};
-        for(final e in bucketExp) {
-           total += e.amount;
-           final cat = _normalizeMainCategory(AnalyticsAgg.resolveExpenseCategory(e));
-           catMap[cat] = (catMap[cat] ?? 0) + e.amount;
+        for (final e in bucketExp) {
+          total += e.amount;
+          final cat =
+              _normalizeMainCategory(AnalyticsAgg.resolveExpenseCategory(e));
+          catMap[cat] = (catMap[cat] ?? 0) + e.amount;
         }
 
         buckets.add(_ChartBucket(
@@ -3212,38 +3284,39 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           total: total,
           categoryBreakdown: catMap,
         ));
-        
+
         ptr = DateTime(ptr.year, ptr.month + 1, 1);
       }
     } else {
       // Days
       DateTime ptr = DateTime(start.year, start.month, start.day);
-      final stop = DateTime(end.year, end.month, end.day); // can match end exactly for exclusive check loop?
-      
+      final stop = DateTime(end.year, end.month,
+          end.day); // can match end exactly for exclusive check loop?
+
       // Safety cap for custom ranges
       int count = 0;
       while (ptr.isBefore(range.end) && count < 60) {
         final bucketStart = DateTime(ptr.year, ptr.month, ptr.day);
         final bucketEnd = bucketStart.add(const Duration(days: 1));
-        
-        final bucketExp = expInRange.where((e) => 
-          !e.date.isBefore(bucketStart) && e.date.isBefore(bucketEnd)
-        );
+
+        final bucketExp = expInRange.where(
+            (e) => !e.date.isBefore(bucketStart) && e.date.isBefore(bucketEnd));
 
         double total = 0;
         final catMap = <String, double>{};
-        for(final e in bucketExp) {
-           total += e.amount;
-           final cat = _normalizeMainCategory(AnalyticsAgg.resolveExpenseCategory(e));
-           catMap[cat] = (catMap[cat] ?? 0) + e.amount;
+        for (final e in bucketExp) {
+          total += e.amount;
+          final cat =
+              _normalizeMainCategory(AnalyticsAgg.resolveExpenseCategory(e));
+          catMap[cat] = (catMap[cat] ?? 0) + e.amount;
         }
 
         // Label: "Mon", "Tue" for Week; "1", "2" for Month
         String label = '';
         if (_periodToken == 'W') {
-           label = DateFormat('E').format(bucketStart);
+          label = DateFormat('E').format(bucketStart);
         } else {
-           label = bucketStart.day.toString();
+          label = bucketStart.day.toString();
         }
 
         buckets.add(_ChartBucket(
@@ -3265,14 +3338,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Widget _dynamicTrendCard() {
     final buckets = _generateChartBuckets();
     if (buckets.isEmpty || buckets.every((b) => b.total == 0)) {
-       // Show placeholder state if truly empty? 
-       // Or just show zero-state chart.
+      // Show placeholder state if truly empty?
+      // Or just show zero-state chart.
     }
 
     // Identify period label
     String title = 'Trends';
     String subtitle = 'Spending over time';
-    
+
     if (_periodToken == 'D') {
       title = 'Today\'s Spend';
       subtitle = 'Hourly breakdown';
@@ -3298,12 +3371,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.65), 
+        color: Colors.white.withOpacity(0.65),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF004D40).withOpacity(0.08), 
+            color: const Color(0xFF004D40).withOpacity(0.08),
             blurRadius: 24,
             offset: const Offset(0, 12),
           ),
@@ -3315,7 +3388,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-               Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -3350,12 +3423,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               ),
             ],
           ),
-          
+
           Text(
             subtitle,
-            style: Fx.label.copyWith(color: Fx.text.withOpacity(0.5), fontSize: 13),
+            style: Fx.label
+                .copyWith(color: Fx.text.withOpacity(0.5), fontSize: 13),
           ),
-          
+
           const SizedBox(height: 24),
 
           // Chart Area
@@ -3365,7 +3439,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ? _buildTrendChart(buckets)
                 : _buildStackedChart(buckets),
           ),
-          
+
           if (_lastMonthsView == 'Breakdown') ...[
             const SizedBox(height: 16),
             _buildBreakdownLegend(buckets),
@@ -3435,7 +3509,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         maxY: maxY,
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
-            tooltipBgColor: Colors.black87,
+            getTooltipColor: (group) => Colors.black87,
             getTooltipItem: (group, groupIndex, rod, rodIndex) {
               final bucket = buckets[groupIndex];
               return BarTooltipItem(
@@ -3449,7 +3523,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   TextSpan(
                     text: INR.f(bucket.total),
                     style: const TextStyle(
-                      color: Color(0xFFE0E0E0), 
+                      color: Color(0xFFE0E0E0),
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),
@@ -3466,10 +3540,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               showTitles: true,
               getTitlesWidget: (value, meta) {
                 final idx = value.toInt();
-                if (idx < 0 || idx >= buckets.length) return const SizedBox.shrink();
+                if (idx < 0 || idx >= buckets.length)
+                  return const SizedBox.shrink();
                 // Thin out labels if too many
-                if (buckets.length > 15 && idx % 2 != 0) return const SizedBox.shrink(); 
-                if (buckets.length > 30 && idx % 4 != 0) return const SizedBox.shrink();
+                if (buckets.length > 15 && idx % 2 != 0)
+                  return const SizedBox.shrink();
+                if (buckets.length > 30 && idx % 4 != 0)
+                  return const SizedBox.shrink();
 
                 return Padding(
                   padding: const EdgeInsets.only(top: 8.0),
@@ -3486,9 +3563,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               reservedSize: 30,
             ),
           ),
-          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         gridData: FlGridData(
           show: true,
@@ -3516,7 +3596,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   end: Alignment.topCenter,
                 ),
                 width: buckets.length > 20 ? 8 : 16,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(4)),
               )
             ],
           );
@@ -3526,46 +3607,47 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Widget _buildBreakdownLegend(List<_ChartBucket> buckets) {
-      // Aggregate all categories
-      final agg = <String, double>{};
-      for(final b in buckets) {
-         b.categoryBreakdown.forEach((cat, amt) {
-            agg[cat] = (agg[cat] ?? 0) + amt;
-         });
-      }
+    // Aggregate all categories
+    final agg = <String, double>{};
+    for (final b in buckets) {
+      b.categoryBreakdown.forEach((cat, amt) {
+        agg[cat] = (agg[cat] ?? 0) + amt;
+      });
+    }
 
-      // Sort by amount desc
-      final sorted = agg.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
-      
-      return Wrap(
-        spacing: 16,
-        runSpacing: 8,
-        children: sorted.map((e) {
-             final color = _categoryColors[e.key] ?? Colors.grey;
-             return Row(
-               mainAxisSize: MainAxisSize.min,
-               children: [
-                 Container(
-                   width: 12, height: 12,
-                   decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-                 ),
-                 const SizedBox(width: 6),
-                 Text(
-                   e.key,
-                   style: Fx.label.copyWith(fontSize: 12),
-                 ),
-               ],
-             );
-        }).toList(),
-      );
+    // Sort by amount desc
+    final sorted = agg.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return Wrap(
+      spacing: 16,
+      runSpacing: 8,
+      children: sorted.map((e) {
+        final color = _categoryColors[e.key] ?? Colors.grey;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              e.key,
+              style: Fx.label.copyWith(fontSize: 12),
+            ),
+          ],
+        );
+      }).toList(),
+    );
   }
 
   Widget _buildStackedChart(List<_ChartBucket> buckets) {
-    // MaxY 
+    // MaxY
     double maxY = 0;
-    for(final b in buckets) {
-       if (b.total > maxY) maxY = b.total;
+    for (final b in buckets) {
+      if (b.total > maxY) maxY = b.total;
     }
     if (maxY == 0) maxY = 100;
     maxY *= 1.1;
@@ -3575,85 +3657,95 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         alignment: BarChartAlignment.spaceAround,
         maxY: maxY,
         barTouchData: BarTouchData(
-           touchTooltipData: BarTouchTooltipData(
-             tooltipBgColor: Colors.black87,
-             getTooltipItem: (group, groupIndex, rod, rodIndex) {
-               final bucket = buckets[groupIndex];
-               return BarTooltipItem(
-                 '${bucket.label}\n',
-                 const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                 children: [
-                   TextSpan(
-                     text: INR.f(bucket.total),
-                     style: const TextStyle(color: Colors.white70, fontSize: 12),
-                   ),
-                 ],
-               );
-             }
-           ),
+          touchTooltipData: BarTouchTooltipData(
+              getTooltipColor: (group) => Colors.black87,
+              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                final bucket = buckets[groupIndex];
+                return BarTooltipItem(
+                  '${bucket.label}\n',
+                  const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold),
+                  children: [
+                    TextSpan(
+                      text: INR.f(bucket.total),
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                );
+              }),
         ),
         titlesData: FlTitlesData(
           bottomTitles: AxisTitles(
-             sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (val, _) {
-                  final idx = val.toInt();
-                   if (idx < 0 || idx >= buckets.length) return const SizedBox.shrink();
-                   // Thin out labels
-                   if (buckets.length > 15 && idx % 2 != 0) return const SizedBox.shrink(); 
-                   if (buckets.length > 30 && idx % 4 != 0) return const SizedBox.shrink();
-                   return Padding(
-                     padding: const EdgeInsets.only(top: 8),
-                     child: Text(buckets[idx].label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                   );
-                },
-                reservedSize: 30,
-             ),
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (val, _) {
+                final idx = val.toInt();
+                if (idx < 0 || idx >= buckets.length)
+                  return const SizedBox.shrink();
+                // Thin out labels
+                if (buckets.length > 15 && idx % 2 != 0)
+                  return const SizedBox.shrink();
+                if (buckets.length > 30 && idx % 4 != 0)
+                  return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(buckets[idx].label,
+                      style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                );
+              },
+              reservedSize: 30,
+            ),
           ),
-          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles:false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles:false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles:false)),
+          leftTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         gridData: FlGridData(show: false),
         borderData: FlBorderData(show: false),
         barGroups: buckets.asMap().entries.map((entry) {
-           final idx = entry.key;
-           final bucket = entry.value;
-           return BarChartGroupData(
-             x: idx,
-             barRods: [
-               BarChartRodData(
-                 toY: bucket.total,
-                 width: buckets.length > 20 ? 8 : 16,
-                 rodStackItems: _buildRodStackItems(bucket.categoryBreakdown, bucket.total),
-                 borderRadius: BorderRadius.all(Radius.zero),
-               ),
-             ],
-           );
+          final idx = entry.key;
+          final bucket = entry.value;
+          return BarChartGroupData(
+            x: idx,
+            barRods: [
+              BarChartRodData(
+                toY: bucket.total,
+                width: buckets.length > 20 ? 8 : 16,
+                rodStackItems:
+                    _buildRodStackItems(bucket.categoryBreakdown, bucket.total),
+                borderRadius: BorderRadius.all(Radius.zero),
+              ),
+            ],
+          );
         }).toList(),
       ),
     );
   }
 
-  List<BarChartRodStackItem> _buildRodStackItems(Map<String, double> breakdown, double total) {
-     if (total == 0) return [];
-     
-     final sorted = breakdown.entries.toList()
-        ..sort((a,b) => b.value.compareTo(a.value));
-     
-     final items = <BarChartRodStackItem>[];
-     double currentY = 0;
-     
-     for(final e in sorted) {
-        final amt = e.value;
-        if (amt <= 0) continue; 
-        
-        final color = _categoryColors[e.key] ?? Colors.grey;
-        items.add(BarChartRodStackItem(currentY, currentY + amt, color));
-        currentY += amt;
-     }
-     
-     return items;
+  List<BarChartRodStackItem> _buildRodStackItems(
+      Map<String, double> breakdown, double total) {
+    if (total == 0) return [];
+
+    final sorted = breakdown.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final items = <BarChartRodStackItem>[];
+    double currentY = 0;
+
+    for (final e in sorted) {
+      final amt = e.value;
+      if (amt <= 0) continue;
+
+      final color = _categoryColors[e.key] ?? Colors.grey;
+      items.add(BarChartRodStackItem(currentY, currentY + amt, color));
+      currentY += amt;
+    }
+
+    return items;
   }
 
   Widget _buildMyCardsSection() {
@@ -3667,12 +3759,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             children: [
               Text(
                 'My Cards',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
               IconButton(
                 icon: const Icon(Icons.add_circle_outline),
                 onPressed: () async {
-                   final added = await showModalBottomSheet<bool>(
+                  final added = await showModalBottomSheet<bool>(
                     context: context,
                     isScrollControlled: true,
                     useSafeArea: true,
@@ -3680,8 +3775,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     builder: (_) => AddCardSheet(userId: widget.userPhone),
                   );
                   if (added == true) {
-                     final cards = await _cardSvc.getUserCards(widget.userPhone);
-                     if (mounted) setState(() => _myCards = cards);
+                    final cards = await _cardSvc.getUserCards(widget.userPhone);
+                    if (mounted) setState(() => _myCards = cards);
                   }
                 },
               )
@@ -3696,7 +3791,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     icon: const Icon(Icons.add),
                     label: const Text('Add your first card'),
                     onPressed: () async {
-                       final added = await showModalBottomSheet<bool>(
+                      final added = await showModalBottomSheet<bool>(
                         context: context,
                         isScrollControlled: true,
                         useSafeArea: true,
@@ -3704,8 +3799,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         builder: (_) => AddCardSheet(userId: widget.userPhone),
                       );
                       if (added == true) {
-                         final cards = await _cardSvc.getUserCards(widget.userPhone);
-                         if (mounted) setState(() => _myCards = cards);
+                        final cards =
+                            await _cardSvc.getUserCards(widget.userPhone);
+                        if (mounted) setState(() => _myCards = cards);
                       }
                     },
                   ),
@@ -3718,7 +3814,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     return BankCardWidget(
                       card: _myCards[i],
                       onTap: () {
-                         // Optional: show details
+                        // Optional: show details
                       },
                     );
                   },
@@ -3748,12 +3844,14 @@ class _SubcategoryBreakdownSheet extends StatefulWidget {
   });
 
   @override
-  State<_SubcategoryBreakdownSheet> createState() => _SubcategoryBreakdownSheetState();
+  State<_SubcategoryBreakdownSheet> createState() =>
+      _SubcategoryBreakdownSheetState();
 }
 
-class _SubcategoryBreakdownSheetState extends State<_SubcategoryBreakdownSheet> {
+class _SubcategoryBreakdownSheetState
+    extends State<_SubcategoryBreakdownSheet> {
   _SubcategorySort _sortBy = _SubcategorySort.amountDesc;
-  
+
   List<_SubcategoryBucket> get _sortedBuckets {
     final list = List<_SubcategoryBucket>.from(widget.subBuckets);
     switch (_sortBy) {
@@ -3775,8 +3873,9 @@ class _SubcategoryBreakdownSheetState extends State<_SubcategoryBreakdownSheet> 
 
   @override
   Widget build(BuildContext context) {
-    final dateRange = '${DateFormat("d MMM").format(widget.start)} - ${DateFormat("d MMM").format(widget.end.subtract(const Duration(days: 1)))}';
-    
+    final dateRange =
+        '${DateFormat("d MMM").format(widget.start)} - ${DateFormat("d MMM").format(widget.end.subtract(const Duration(days: 1)))}';
+
     return DraggableScrollableSheet(
       initialChildSize: 0.75,
       minChildSize: 0.5,
@@ -3799,7 +3898,7 @@ class _SubcategoryBreakdownSheetState extends State<_SubcategoryBreakdownSheet> 
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              
+
               // Header
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
@@ -3858,7 +3957,7 @@ class _SubcategoryBreakdownSheetState extends State<_SubcategoryBreakdownSheet> 
                       ],
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Sort options
                     Row(
                       children: [
@@ -3876,13 +3975,17 @@ class _SubcategoryBreakdownSheetState extends State<_SubcategoryBreakdownSheet> 
                             scrollDirection: Axis.horizontal,
                             child: Row(
                               children: [
-                                _buildSortChip('Amount ↓', _SubcategorySort.amountDesc),
+                                _buildSortChip(
+                                    'Amount ↓', _SubcategorySort.amountDesc),
                                 const SizedBox(width: 6),
-                                _buildSortChip('Amount ↑', _SubcategorySort.amountAsc),
+                                _buildSortChip(
+                                    'Amount ↑', _SubcategorySort.amountAsc),
                                 const SizedBox(width: 6),
-                                _buildSortChip('A-Z', _SubcategorySort.alphaAsc),
+                                _buildSortChip(
+                                    'A-Z', _SubcategorySort.alphaAsc),
                                 const SizedBox(width: 6),
-                                _buildSortChip('Z-A', _SubcategorySort.alphaDesc),
+                                _buildSortChip(
+                                    'Z-A', _SubcategorySort.alphaDesc),
                               ],
                             ),
                           ),
@@ -3892,22 +3995,26 @@ class _SubcategoryBreakdownSheetState extends State<_SubcategoryBreakdownSheet> 
                   ],
                 ),
               ),
-              
+
               const Divider(height: 1),
-              
+
               // Subcategory list
               Expanded(
                 child: ListView.separated(
                   controller: scrollController,
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   itemCount: _sortedBuckets.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 1, indent: 72),
                   itemBuilder: (context, index) {
                     final bucket = _sortedBuckets[index];
-                    final percentage = (bucket.amount / widget.totalAmount * 100).toStringAsFixed(1);
-                    
+                    final percentage =
+                        (bucket.amount / widget.totalAmount * 100)
+                            .toStringAsFixed(1);
+
                     return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 4),
                       leading: Container(
                         width: 48,
                         height: 48,
@@ -3953,7 +4060,8 @@ class _SubcategoryBreakdownSheetState extends State<_SubcategoryBreakdownSheet> 
                           ),
                         ],
                       ),
-                      onTap: () => widget.onSubcategoryTap(bucket.name, bucket.amount),
+                      onTap: () =>
+                          widget.onSubcategoryTap(bucket.name, bucket.amount),
                     );
                   },
                 ),
@@ -3964,7 +4072,7 @@ class _SubcategoryBreakdownSheetState extends State<_SubcategoryBreakdownSheet> 
       },
     );
   }
-  
+
   Widget _buildSortChip(String label, _SubcategorySort sort) {
     final isSelected = _sortBy == sort;
     return GestureDetector(

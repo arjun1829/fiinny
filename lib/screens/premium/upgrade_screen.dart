@@ -6,11 +6,11 @@ import 'package:lifemap/models/subscription_model.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
-import 'dart:js_interop';
-import 'dart:js_interop_unsafe';
+// import 'dart:js_interop';
+// import 'dart:js_interop_unsafe';
 
-@JS('openRazorpayWeb')
-external void _openRazorpayWeb(JSString options, JSFunction successCallback, JSFunction failureCallback);
+// @JS('openRazorpayWeb')
+// external void _openRazorpayWeb(JSString options, JSFunction successCallback, JSFunction failureCallback);
 
 
 class UpgradeScreen extends StatefulWidget {
@@ -110,6 +110,8 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
 
       if (kIsWeb) {
         // --- WEB IMPLEMENTATION (JS Interop) ---
+        debugPrint("Web payment disabled for mobile build");
+        /*
         final jsonOptions = jsonEncode(options);
         
         // Success Handler
@@ -132,6 +134,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
         }.toJS;
 
         _openRazorpayWeb(jsonOptions.toJS, successCallback, failureCallback);
+        */
         // ---------------------------------------
       } else {
         // --- MOBILE IMPLEMENTATION (Plugin) ---

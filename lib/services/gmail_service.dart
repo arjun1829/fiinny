@@ -1479,10 +1479,7 @@ class GmailService {
 
       _log(
           'WRITE/UPSERT CC BillReminder total=$total bank=${bank ?? "-"} last4=${cardLast4 ?? "-"}');
-<<<<<<< HEAD
       
-=======
->>>>>>> 97c5c0f (Finalize navigation implementation and standardize routes)
       return msgDate;
     }
 

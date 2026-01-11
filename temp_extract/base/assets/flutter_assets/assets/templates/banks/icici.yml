@@ -1,0 +1,15 @@
+id: icici_debit_v1
+applies_if:
+  sender_any: ['ICICIB', 'ICICI', 'alerts']
+  contains_any: ['debited', 'a/c', 'inr']
+extract:
+  amount: { regex: "(?:inr|rs\\.?|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)" }
+  account_tail: { regex: "a/?c(?:ount)?\\s*(?:xx|x){0,3}([0-9]{3,4})" }
+  merchant: { regex: "(?:at|to)\\s+([a-z0-9 &\\-_.]{2,40})" }
+  datetime: { regex: "(?:on|dt)\\s*([0-9]{1,2}[-/][a-z]{3}[-/][0-9]{2}\\s*[0-9:]{4,5}\\s*[ap]m?)" }
+classify:
+  direction: "DEBIT"
+  instrument: "ACCOUNT"
+  confidence: "0.94"
+post:
+  category_hint: "Shopping"
