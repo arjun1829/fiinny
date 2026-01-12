@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'package:characters/characters.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:table_calendar/table_calendar.dart';
+
 import 'package:intl/intl.dart';
 
 import '../core/analytics/aggregators.dart';
@@ -25,8 +25,8 @@ import '../themes/custom_card.dart';
 import '../themes/tokens.dart';
 import 'bulk_split_screen.dart';
 
-
 import '../services/user_data.dart'; // Needed for data passing
+import '../widgets/calendar_expense_view.dart'; // [NEW]
 
 class ExpensesScreen extends StatefulWidget {
   final String userPhone;
@@ -41,7 +41,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   String _selectedFilter = "Month";
   String _chartType = "Pie";
   String _dataType = "All";
-  String _viewMode = 'summary';
 
   // Data
   List<ExpenseItem> allExpenses = [];
@@ -59,7 +58,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   // Calendar state
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-  Map<DateTime, double> _dailyTotals = {};
+
   List<ExpenseItem> _expensesForSelectedDay = [];
 
   // Multi-select & Bulk Edit/Delete
@@ -92,8 +91,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     if (filteredExpenses.isEmpty) return [];
     final byCategory = _topN(_buildByCategory<ExpenseItem>(
       filteredExpenses,
-          (e) => e.type,
-          (e) => e.amount,
+      (e) => e.type,
+      (e) => e.amount,
     ));
 
     final colors = [
@@ -124,8 +123,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     if (filteredIncomes.isEmpty) return [];
     final byCategory = _topN(_buildByCategory<IncomeItem>(
       filteredIncomes,
-          (i) => i.type,
-          (i) => i.amount,
+      (i) => i.type,
+      (i) => i.amount,
     ));
 
     final colors = [
@@ -184,7 +183,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         return (start: d1, end: d0);
       case 'Week':
       case 'W':
-        final start = _d(now).subtract(Duration(days: now.weekday - 1)); // Monday
+        final start =
+            _d(now).subtract(Duration(days: now.weekday - 1)); // Monday
         final end = start.add(const Duration(days: 6));
         return (start: start, end: end);
       case 'Month':
@@ -206,7 +206,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         return (start: start, end: end);
       case 'Year':
       case 'Y':
-        return (start: DateTime(now.year, 1, 1), end: DateTime(now.year, 12, 31));
+        return (
+          start: DateTime(now.year, 1, 1),
+          end: DateTime(now.year, 12, 31)
+        );
       case 'All':
       default:
         return (start: DateTime(2000), end: DateTime(2100));
@@ -215,19 +218,22 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   // ------- Data wiring -------
   void _listenToData() {
-    _expSub = ExpenseService().getExpensesStream(widget.userPhone).listen((expenses) {
+    _expSub =
+        ExpenseService().getExpensesStream(widget.userPhone).listen((expenses) {
       if (!mounted) return;
       allExpenses = expenses;
       _scheduleRecompute();
     });
 
-    _incSub = IncomeService().getIncomesStream(widget.userPhone).listen((incomes) {
+    _incSub =
+        IncomeService().getIncomesStream(widget.userPhone).listen((incomes) {
       if (!mounted) return;
       allIncomes = incomes;
       _scheduleRecompute();
     });
 
-    _friendSub = FriendService().streamFriends(widget.userPhone).listen((friends) {
+    _friendSub =
+        FriendService().streamFriends(widget.userPhone).listen((friends) {
       if (!mounted) return;
       setState(() {
         _friends = friends;
@@ -236,7 +242,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         _friendPhoneSet.clear();
         for (final f in friends) {
           if (f.name.isNotEmpty) _friendNameTokens.add(f.name.toLowerCase());
-          if (f.phone.isNotEmpty) _friendPhoneSet.add(f.phone.replaceAll(RegExp(r'[^0-9]'), ''));
+          if (f.phone.isNotEmpty)
+            _friendPhoneSet.add(f.phone.replaceAll(RegExp(r'[^0-9]'), ''));
         }
       });
     });
@@ -251,7 +258,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   void _recomputeInternal() {
     _applyFilter();
-    _generateDailyTotals();
+    // _generateDailyTotals(); // Moved to CalendarExpenseView
     _updateExpensesForSelectedDay(_selectedDay ?? DateTime.now());
   }
 
@@ -385,8 +392,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           const SizedBox(height: 12),
           Text(
             'Nothing here yet',
-            style:
-                theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
           Text(
@@ -417,7 +424,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         final note = (e.note).toLowerCase();
         final label = (e.label ?? '').toLowerCase();
         final type = (e.type).toLowerCase();
-        if (!(note.contains(q) || label.contains(q) || type.contains(q))) return false;
+        if (!(note.contains(q) || label.contains(q) || type.contains(q)))
+          return false;
       }
       if (_selectedCategories.isNotEmpty) {
         final cat = e.type.trim().isEmpty ? 'Other' : e.type.trim();
@@ -425,12 +433,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       }
       if (_searchFrom != null && _searchTo != null) {
         final d = _d(e.date);
-        if (d.isBefore(_d(_searchFrom!)) || d.isAfter(_d(_searchTo!))) return false;
+        if (d.isBefore(_d(_searchFrom!)) || d.isAfter(_d(_searchTo!)))
+          return false;
       }
       if (!_matchesBankFilters(e.issuerBank, e.cardLast4)) {
         return false;
       }
-      if (!_matchesMerchantFilters(e.counterparty ?? e.upiVpa ?? e.label ?? '')) {
+      if (!_matchesMerchantFilters(
+          e.counterparty ?? e.upiVpa ?? e.label ?? '')) {
         return false;
       }
       if (_friendFilterPhones.isNotEmpty) {
@@ -457,7 +467,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         final note = (i.note).toLowerCase();
         final label = (i.label ?? '').toLowerCase();
         final type = (i.type).toLowerCase();
-        if (!(note.contains(q) || label.contains(q) || type.contains(q))) return false;
+        if (!(note.contains(q) || label.contains(q) || type.contains(q)))
+          return false;
       }
       if (_selectedCategories.isNotEmpty) {
         final cat = i.type.trim().isEmpty ? 'Other' : i.type.trim();
@@ -465,12 +476,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       }
       if (_searchFrom != null && _searchTo != null) {
         final d = _d(i.date);
-        if (d.isBefore(_d(_searchFrom!)) || d.isAfter(_d(_searchTo!))) return false;
+        if (d.isBefore(_d(_searchFrom!)) || d.isAfter(_d(_searchTo!)))
+          return false;
       }
       if (!_matchesBankFilters(i.issuerBank, null)) {
         return false;
       }
-      if (!_matchesMerchantFilters(i.counterparty ?? i.upiVpa ?? i.label ?? '')) {
+      if (!_matchesMerchantFilters(
+          i.counterparty ?? i.upiVpa ?? i.label ?? '')) {
         return false;
       }
       if (_searchFrom != null && _searchTo != null) {
@@ -554,7 +567,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         return DateFormat('d MMM y').format(start);
       }
       final sameYear = start.year == end.year;
-      final startFormat = DateFormat(sameYear ? 'd MMM' : 'd MMM y').format(start);
+      final startFormat =
+          DateFormat(sameYear ? 'd MMM' : 'd MMM y').format(start);
       final endFormat = DateFormat('d MMM y').format(end);
       return '$startFormat – $endFormat';
     }
@@ -616,7 +630,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     if (_selectedCategories.isNotEmpty) {
       final sorted = _selectedCategories.toList()..sort();
       final first = sorted.first;
-      final label = sorted.length == 1 ? first : '$first + ${sorted.length - 1} more';
+      final label =
+          sorted.length == 1 ? first : '$first + ${sorted.length - 1} more';
       chips.add(InputChip(
         label: Text(label),
         onDeleted: () {
@@ -659,7 +674,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final friendPhones = _friendFilterPhones.toList()..sort();
     for (final phone in friendPhones) {
       final friendName = _friendsById[phone]?.name.trim();
-      final label = (friendName != null && friendName.isNotEmpty) ? friendName : phone;
+      final label =
+          (friendName != null && friendName.isNotEmpty) ? friendName : phone;
       chips.add(InputChip(
         label: Text(label),
         onDeleted: () {
@@ -718,7 +734,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               _searchFrom == null &&
               _searchTo == null;
         case '2D':
-          return _selectedFilter == '2D' && _searchFrom == null && _searchTo == null;
+          return _selectedFilter == '2D' &&
+              _searchFrom == null &&
+              _searchTo == null;
         case 'Week':
           return (_selectedFilter == 'Week' || _selectedFilter == 'W') &&
               _searchFrom == null &&
@@ -773,7 +791,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text('Select period',
-                    style: Fx.label.copyWith(fontSize: 16, fontWeight: FontWeight.w600)),
+                    style: Fx.label
+                        .copyWith(fontSize: 16, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 12),
                 ...[
                   ('Day', 'Day'),
@@ -928,8 +947,11 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   Widget _buildFiltersButton() {
     return ActionChip(
-      avatar: const Icon(Icons.filter_alt_rounded, size: 16, color: Colors.white),
-      label: const Text('Filters', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+      avatar:
+          const Icon(Icons.filter_alt_rounded, size: 16, color: Colors.white),
+      label: const Text('Filters',
+          style: TextStyle(
+              color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
       backgroundColor: Fx.mintDark,
       side: BorderSide.none,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -937,91 +959,388 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 
-  void _generateDailyTotals() {
-    _dailyTotals.clear();
-    for (var e in allExpenses) {
-      final date = _d(e.date);
-      _dailyTotals[date] = (_dailyTotals[date] ?? 0) + e.amount;
-    }
-  }
+  // void _generateDailyTotals() {
+  //   _dailyTotals.clear();
+  //   for (var e in allExpenses) {
+  //     final date = _d(e.date);
+  //     _dailyTotals[date] = (_dailyTotals[date] ?? 0) + e.amount;
+  //   }
+  // }
 
   void _updateExpensesForSelectedDay(DateTime date) {
     final d = _d(date);
-    _expensesForSelectedDay = allExpenses.where((e) => _d(e.date) == d).toList();
+    _expensesForSelectedDay =
+        allExpenses.where((e) => _d(e.date) == d).toList();
   }
-
-
 
   // ------- Build -------
   @override
+  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    // Check if we are in "Teal" theme (dark teal background)
-    // We can check primaryColor or scaffoldBackgroundColor
-    final isTealTheme = theme.scaffoldBackgroundColor == const Color(0xFF00423D);
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-
-        title: const Text("Expenses", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+    return DefaultTabController(
+      length: 5,
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: false,
-        actions: [
-          Tooltip(
-            message: "Calendar View",
-            child: IconButton(
-              icon: Icon(
-                Icons.calendar_today,
-                color: _viewMode == 'calendar' ? Fx.mintDark : Colors.black54,
-                size: 24,
-              ),
+        appBar: AppBar(
+          title: const Text("Expenses",
+              style:
+                  TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.white,
+          elevation: 0,
+          centerTitle: false,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.search, color: Colors.black54),
               onPressed: () {
-                setState(() => _viewMode = _viewMode == 'calendar' ? 'list' : 'calendar');
+                // Focus search or navigate
               },
             ),
-          ),
-          Tooltip(
-            message: "Summary",
-            child: IconButton(
-              icon: Icon(
-                Icons.dashboard_rounded,
-                color: _viewMode == 'summary' ? Fx.mintDark : Colors.black54,
-                size: 24,
+            Tooltip(
+              message: "Analytics",
+              child: IconButton(
+                icon: const Icon(
+                  Icons.insights_rounded,
+                  color: Colors.black54,
+                  size: 24,
+                ),
+                onPressed: () async {
+                  await Navigator.pushNamed(
+                    context,
+                    '/analytics',
+                    arguments: widget.userPhone,
+                  );
+                },
               ),
-              onPressed: () => setState(() => _viewMode = 'summary'),
             ),
-          ),
-          Tooltip(
-            message: "Analytics",
-            child: IconButton(
-              icon: const Icon(
-                Icons.insights_rounded,
-                color: Colors.black54,
-                size: 24,
-              ),
-              onPressed: () async {
-                await Navigator.pushNamed(
-                  context,
-                  '/analytics',
-                  arguments: widget.userPhone,
-                );
-              },
-            ),
-          ),
-
-          const SizedBox(width: 8),
-        ],
-      ),
-      floatingActionButton: _buildFAB(context),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(child: _getCurrentView(context)),
+            const SizedBox(width: 8),
           ],
+          bottom: PreferredSize(
+            preferredSize:
+                const Size.fromHeight(100), // Height for DateNav + TabBar
+            child: Column(
+              children: [
+                _buildDateNavigator(),
+                const TabBar(
+                  isScrollable: true,
+                  labelColor: Colors.teal,
+                  unselectedLabelColor: Colors.grey,
+                  indicatorColor: Colors.teal,
+                  labelStyle: TextStyle(fontWeight: FontWeight.bold),
+                  tabs: [
+                    Tab(text: "Daily"),
+                    Tab(text: "Calendar"),
+                    Tab(text: "Monthly"),
+                    Tab(text: "Summary"),
+                    Tab(text: "Description"),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        floatingActionButton: _buildFAB(context),
+        body: SafeArea(
+          child: TabBarView(
+            children: [
+              // Daily View (Single Day)
+              _singleDayView(context),
+
+              // Calendar View
+              _calendarTabView(context),
+
+              // Monthly View (List of Month)
+              _summaryView(context),
+
+              // Summary View (Stats Card)
+              _onlySummaryCard(context),
+
+              // Description View
+              _descriptionView(context),
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _singleDayView(BuildContext context) {
+    if (_selectedDay == null) {
+      _selectedDay = DateTime.now();
+      _updateExpensesForSelectedDay(_selectedDay!);
+    }
+    final dateStr = DateFormat('EEEE, d MMM').format(_selectedDay!);
+
+    return Column(
+      children: [
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left, color: Colors.black54),
+                onPressed: () {
+                  setState(() {
+                    _selectedDay =
+                        _selectedDay!.subtract(const Duration(days: 1));
+                    _updateExpensesForSelectedDay(_selectedDay!);
+                  });
+                },
+              ),
+              Text(
+                dateStr,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right, color: Colors.black54),
+                onPressed: () {
+                  setState(() {
+                    _selectedDay = _selectedDay!.add(const Duration(days: 1));
+                    _updateExpensesForSelectedDay(_selectedDay!);
+                  });
+                },
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: UnifiedTransactionList(
+            expenses: _expensesForSelectedDay,
+            userPhone: widget.userPhone,
+            incomes: const [], // TODO: filter incomes for selected day if needed
+            previewCount: 100,
+            filterType: _dataType,
+            friendsById: _friendsById,
+            showBillIcon: true,
+            emptyBuilder: (context) => Center(
+              child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.calendar_today_rounded,
+                        size: 48, color: Colors.grey.shade300),
+                    const SizedBox(height: 16),
+                    Text(
+                      "No transactions",
+                      style: TextStyle(color: Colors.grey.shade400),
+                    ),
+                  ]),
+            ),
+            multiSelectEnabled: _multiSelectMode,
+            selectedIds: _selectedTxIds,
+            onSelectTx: (txId, selected) {
+              setState(() {
+                if (selected) {
+                  _selectedTxIds.add(txId);
+                } else {
+                  _selectedTxIds.remove(txId);
+                }
+              });
+            },
+            onEdit: (tx) async {
+              if (_multiSelectMode) return;
+              if (tx is ExpenseItem) {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EditExpenseScreen(
+                      userPhone: widget.userPhone,
+                      expense: tx,
+                    ),
+                  ),
+                );
+                _scheduleRecompute(); // Refresh list to catch edits
+              }
+            },
+            onDelete: (tx) async {
+              if (_multiSelectMode) return;
+              if (tx is ExpenseItem) {
+                await ExpenseService().deleteExpense(
+                  widget.userPhone,
+                  tx.id,
+                );
+                _scheduleRecompute();
+              }
+            },
+            onSplit: (tx) async {
+              if (_multiSelectMode) return;
+              if (tx is ExpenseItem) {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EditExpenseScreen(
+                      userPhone: widget.userPhone,
+                      expense: tx,
+                      initialStep: 1,
+                    ),
+                  ),
+                );
+                _scheduleRecompute();
+              }
+            },
+            onAddComment: (tx) => _openCommentDialog(tx),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateNavigator() {
+    final dateStr = DateFormat('MMM y').format(_focusedDay);
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back_ios,
+                size: 16, color: Colors.black54),
+            onPressed: () {
+              setState(() {
+                _focusedDay =
+                    DateTime(_focusedDay.year, _focusedDay.month - 1, 1);
+                // Update filter to this month
+                final start = DateTime(_focusedDay.year, _focusedDay.month, 1);
+                final end =
+                    DateTime(_focusedDay.year, _focusedDay.month + 1, 0);
+                _searchFrom = start;
+                _searchTo = end;
+                _selectedFilter = 'Custom';
+              });
+              _scheduleRecompute();
+            },
+          ),
+          InkWell(
+            onTap: () async {
+              final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _focusedDay,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100));
+              if (picked != null) {
+                setState(() {
+                  _focusedDay = picked;
+                  final start =
+                      DateTime(_focusedDay.year, _focusedDay.month, 1);
+                  final end =
+                      DateTime(_focusedDay.year, _focusedDay.month + 1, 0);
+                  _searchFrom = start;
+                  _searchTo = end;
+                  _selectedFilter = 'Custom';
+                });
+                _scheduleRecompute();
+              }
+            },
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
+              child: Text(
+                dateStr,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.arrow_forward_ios,
+                size: 16, color: Colors.black54),
+            onPressed: () {
+              setState(() {
+                _focusedDay =
+                    DateTime(_focusedDay.year, _focusedDay.month + 1, 1);
+                final start = DateTime(_focusedDay.year, _focusedDay.month, 1);
+                final end =
+                    DateTime(_focusedDay.year, _focusedDay.month + 1, 0);
+                _searchFrom = start;
+                _searchTo = end;
+                _selectedFilter = 'Custom';
+              });
+              _scheduleRecompute();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _calendarTabView(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          flex: 3,
+          child: CalendarExpenseView(
+            expenses: filteredExpenses,
+            focusedDay: _focusedDay,
+            onDaySelected: (selected, focused) {
+              setState(() {
+                _selectedDay = selected;
+                _focusedDay = focused;
+              });
+              _updateExpensesForSelectedDay(selected);
+            },
+          ),
+        ),
+        const Divider(height: 1),
+        if (_selectedDay != null)
+          Expanded(
+            flex: 2,
+            child: UnifiedTransactionList(
+              expenses: _expensesForSelectedDay,
+              userPhone: widget.userPhone,
+              incomes: const [],
+              previewCount: 50,
+              friendsById: _friendsById,
+              filterType: 'Expense',
+              showBillIcon: true,
+              emptyBuilder: (_) => Center(
+                  child: Text(
+                      "No expenses on ${DateFormat('MMM d').format(_selectedDay!)}",
+                      style: const TextStyle(color: Colors.grey))),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _descriptionView(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: TextField(
+            controller: _searchController,
+            decoration: const InputDecoration(
+              labelText: "Search Description, Category, Note...",
+              prefixIcon: Icon(Icons.search),
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+            ),
+            onChanged: (val) {
+              _debounce?.cancel();
+              _debounce = Timer(const Duration(milliseconds: 300), () {
+                setState(() => _searchQuery = val);
+                _scheduleRecompute();
+              });
+            },
+          ),
+        ),
+        Expanded(
+          child: UnifiedTransactionList(
+            expenses: filteredExpenses,
+            incomes: filteredIncomes,
+            userPhone: widget.userPhone,
+            friendsById: _friendsById,
+            filterType: _dataType,
+            showBillIcon: true,
+            emptyBuilder: (_) => _noTransactionsPlaceholder(_dataType),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1059,17 +1378,31 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 
-  Widget _getCurrentView(BuildContext context) {
-    switch (_viewMode) {
-      case 'calendar':
-        return _calendarView(context);
-      case 'charts':
-        return _chartsView(context);
-      default:
-        return _summaryView(context);
-    }
-  }
+  Widget _onlySummaryCard(BuildContext context) {
+    final bankCardStats = _computeBankCardStats();
+    final periodLabel = _currentPeriodLabel();
+    final txCount = filteredExpenses.length + filteredIncomes.length;
 
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: _SummaryRingCard(
+        spent: periodTotalExpense,
+        received: periodTotalIncome,
+        bankCount: bankCardStats.$1,
+        cardCount: bankCardStats.$2,
+        txCount: txCount,
+        periodLabel: periodLabel,
+        onTapPeriod: _showPeriodPickerBottomSheet,
+        onTap: () async {
+          await Navigator.pushNamed(
+            context,
+            '/analytics',
+            arguments: widget.userPhone,
+          );
+        },
+      ),
+    );
+  }
 
   Widget _summaryView(BuildContext context) {
     final bankCardStats = _computeBankCardStats();
@@ -1123,13 +1456,17 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  if (!_selectedTxIds.containsAll(
-                      [...filteredExpenses.map((e) => e.id), ...filteredIncomes.map((i) => i.id)]))
+                  if (!_selectedTxIds.containsAll([
+                    ...filteredExpenses.map((e) => e.id),
+                    ...filteredIncomes.map((i) => i.id)
+                  ]))
                     TextButton(
                       onPressed: () {
                         setState(() {
-                          _selectedTxIds.addAll(filteredExpenses.map((e) => e.id));
-                          _selectedTxIds.addAll(filteredIncomes.map((i) => i.id));
+                          _selectedTxIds
+                              .addAll(filteredExpenses.map((e) => e.id));
+                          _selectedTxIds
+                              .addAll(filteredIncomes.map((i) => i.id));
                         });
                       },
                       style: TextButton.styleFrom(
@@ -1150,7 +1487,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.call_split, color: Colors.cyanAccent),
+                    icon:
+                        const Icon(Icons.call_split, color: Colors.cyanAccent),
                     tooltip: "Bulk Split",
                     onPressed: _selectedTxIds.isEmpty ? null : _openBulkSplit,
                   ),
@@ -1161,16 +1499,17 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         ? null
                         : () async {
                             final newLabel = await _showLabelDialog();
-                            if (newLabel != null && newLabel.trim().isNotEmpty) {
-                              for (final tx in filteredExpenses
-                                  .where((e) => _selectedTxIds.contains(e.id))) {
+                            if (newLabel != null &&
+                                newLabel.trim().isNotEmpty) {
+                              for (final tx in filteredExpenses.where(
+                                  (e) => _selectedTxIds.contains(e.id))) {
                                 await ExpenseService().updateExpense(
                                   widget.userPhone,
                                   tx.copyWith(label: newLabel),
                                 );
                               }
-                              for (final inc in filteredIncomes
-                                  .where((i) => _selectedTxIds.contains(i.id))) {
+                              for (final inc in filteredIncomes.where(
+                                  (i) => _selectedTxIds.contains(i.id))) {
                                 await IncomeService().updateIncome(
                                   widget.userPhone,
                                   inc.copyWith(label: newLabel),
@@ -1399,18 +1738,15 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 
-
-
-
-
-
   Future<void> _openBulkSplit() async {
     final result = await Navigator.push<BulkSplitResult>(
       context,
       MaterialPageRoute(
         builder: (_) => BulkSplitScreen(
           userPhone: widget.userPhone,
-          expenses: filteredExpenses.where((e) => _selectedTxIds.contains(e.id)).toList(),
+          expenses: filteredExpenses
+              .where((e) => _selectedTxIds.contains(e.id))
+              .toList(),
         ),
       ),
     );
@@ -1433,238 +1769,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       _scheduleRecompute();
     }
   }
-
-  Widget _calendarView(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(10, 12, 10, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          CustomDiamondCard(
-            borderRadius: 26,
-            padding: const EdgeInsets.all(10),
-            glassGradient: const [
-              Colors.white,
-              Colors.white,
-            ],
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.today_rounded,
-                        color: Colors.teal,
-                        size: 24,
-                      ),
-                      tooltip: "Pick Date",
-                      onPressed: () async {
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate: _focusedDay,
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime(2100),
-                        );
-                        if (picked != null) {
-                          setState(() {
-                            _selectedDay = picked;
-                            _focusedDay = picked;
-                          });
-                          _updateExpensesForSelectedDay(picked);
-                        }
-                      },
-                    ),
-                  ],
-                ),
-                TableCalendar(
-                  focusedDay: _focusedDay,
-                  firstDay: DateTime(2000),
-                  lastDay: DateTime(2100),
-                  calendarFormat: CalendarFormat.month,
-                  availableCalendarFormats: const {
-                    CalendarFormat.month: 'Month',
-                  },
-                  selectedDayPredicate: (day) {
-                    return _selectedDay != null &&
-                        day.year == _selectedDay!.year &&
-                        day.month == _selectedDay!.month &&
-                        day.day == _selectedDay!.day;
-                  },
-                  onDaySelected: (selectedDay, focusedDay) {
-                    setState(() {
-                      _selectedDay = selectedDay;
-                      _focusedDay = focusedDay;
-                    });
-                    _updateExpensesForSelectedDay(selectedDay);
-                  },
-                  calendarBuilders: CalendarBuilders(
-                    defaultBuilder: (context, date, focusedDay) {
-                      final key = _d(date);
-                      final total = _dailyTotals[key] ?? 0;
-                      return Center(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '${date.day}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              if (total > 0)
-                                Text(
-                                  '₹${total.toStringAsFixed(0)}',
-                                  style: TextStyle(
-                                    fontSize: 10.5,
-                                    color: Colors.red[400],
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                    todayBuilder: (context, date, focusedDay) {
-                      final key = _d(date);
-                      final total = _dailyTotals[key] ?? 0;
-                      return Container(
-                        decoration: BoxDecoration(
-                          color: Colors.teal[100],
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '${date.day}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                if (total > 0)
-                                  Text(
-                                    '₹${total.toStringAsFixed(0)}',
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      color: Colors.red[800],
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            transitionBuilder: (child, animation) => FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.04),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              ),
-            ),
-            child: CustomDiamondCard(
-              key: ValueKey(
-                'day-${_selectedDay?.toIso8601String() ?? ''}-${_expensesForSelectedDay.length}-${_transactionPanelKey()}',
-              ),
-              borderRadius: 24,
-              glassGradient: const [
-                Colors.white,
-                Colors.white,
-              ],
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
-              child: UnifiedTransactionList(
-                expenses: _expensesForSelectedDay,
-                userPhone: widget.userPhone,
-                incomes: const [],
-                previewCount: 15,
-                filterType: "Expense",
-                friendsById: _friendsById,
-                showBillIcon: true,
-                emptyBuilder: (context) =>
-                    _noTransactionsPlaceholder(_dataType == "All" ? "Expense" : _dataType),
-                multiSelectEnabled: _multiSelectMode,
-                selectedIds: _selectedTxIds,
-                onSelectTx: (txId, selected) {
-                  setState(() {
-                    if (selected) {
-                      _selectedTxIds.add(txId);
-                    } else {
-                      _selectedTxIds.remove(txId);
-                    }
-                  });
-                },
-                onEdit: (tx) async {
-                  if (_multiSelectMode) return;
-                  if (tx is ExpenseItem) {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EditExpenseScreen(
-                          userPhone: widget.userPhone,
-                          expense: tx,
-                        ),
-                      ),
-                    );
-                    _scheduleRecompute();
-                  }
-                },
-                onDelete: (tx) async {
-                  if (_multiSelectMode) return;
-                  if (tx is ExpenseItem) {
-                    await ExpenseService().deleteExpense(
-                      widget.userPhone,
-                      tx.id,
-                    );
-                    _scheduleRecompute();
-                  }
-                },
-                onSplit: (tx) async {
-                  if (_multiSelectMode) return;
-                  if (tx is ExpenseItem) {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EditExpenseScreen(
-                          userPhone: widget.userPhone,
-                          expense: tx,
-                          initialStep: 1,
-                        ),
-                      ),
-                    );
-                    _scheduleRecompute();
-                  }
-                },
-                onAddComment: (tx) => _openCommentDialog(tx),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
 
   Widget _chartsView(BuildContext context) {
     return SingleChildScrollView(
@@ -1809,8 +1913,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         borderData: FlBorderData(show: false),
                         gridData: FlGridData(
                           show: true,
-                          horizontalInterval:
-                              (_expenseMaxAmount() / 4).clamp(1, double.infinity),
+                          horizontalInterval: (_expenseMaxAmount() / 4)
+                              .clamp(1, double.infinity),
                         ),
                       ),
                       swapAnimationDuration: const Duration(milliseconds: 650),
@@ -1871,8 +1975,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         borderData: FlBorderData(show: false),
                         gridData: FlGridData(
                           show: true,
-                          horizontalInterval:
-                              (_incomeMaxAmount() / 4).clamp(1, double.infinity),
+                          horizontalInterval: (_incomeMaxAmount() / 4)
+                              .clamp(1, double.infinity),
                         ),
                       ),
                       swapAnimationDuration: const Duration(milliseconds: 650),
@@ -1914,7 +2018,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   previewCount: 15,
                   friendsById: _friendsById,
                   showBillIcon: true,
-                  emptyBuilder: (context) => _noTransactionsPlaceholder(_dataType),
+                  emptyBuilder: (context) =>
+                      _noTransactionsPlaceholder(_dataType),
                   multiSelectEnabled: _multiSelectMode,
                   selectedIds: _selectedTxIds,
                   onSelectTx: (txId, selected) {
@@ -1976,6 +2081,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       ),
     );
   }
+
   // ---------- Chart helpers (with Top-N + "Other") ----------
   Map<String, double> _buildByCategory<T>(Iterable<T> items,
       String Function(T) typeOf, double Function(T) amountOf) {
@@ -1991,8 +2097,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final entries = map.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     final top = entries.take(n).toList();
-    final rest =
-    entries.skip(n).fold<double>(0, (s, e) => s + e.value);
+    final rest = entries.skip(n).fold<double>(0, (s, e) => s + e.value);
     return {
       for (final e in top) e.key: e.value,
       if (rest > 0) 'Other': rest,
@@ -2004,8 +2109,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final byCategory = _topN(
       _buildByCategory<ExpenseItem>(
         filteredExpenses,
-            (e) => e.type,
-            (e) => e.amount,
+        (e) => e.type,
+        (e) => e.amount,
       ),
     );
 
@@ -2050,8 +2155,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final byCategory = _topN(
       _buildByCategory<IncomeItem>(
         filteredIncomes,
-            (i) => i.type,
-            (i) => i.amount,
+        (i) => i.type,
+        (i) => i.amount,
       ),
     );
 
@@ -2099,8 +2204,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final byCategory = _topN(
       _buildByCategory<ExpenseItem>(
         filteredExpenses,
-            (e) => e.type,
-            (e) => e.amount,
+        (e) => e.type,
+        (e) => e.amount,
       ),
     ).entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value)); // desc
@@ -2146,8 +2251,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     if (filteredExpenses.isEmpty) return 100.0;
     final byCategory = _buildByCategory<ExpenseItem>(
       filteredExpenses,
-          (e) => e.type,
-          (e) => e.amount,
+      (e) => e.type,
+      (e) => e.amount,
     );
     final double maxVal = byCategory.isEmpty
         ? 0.0
@@ -2159,8 +2264,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   List<String> _expenseCategories() {
     final byCategory = _buildByCategory<ExpenseItem>(
       filteredExpenses,
-          (e) => e.type,
-          (e) => e.amount,
+      (e) => e.type,
+      (e) => e.amount,
     );
     return byCategory.keys.toList();
   }
@@ -2169,8 +2274,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final byCategory = _topN(
       _buildByCategory<IncomeItem>(
         filteredIncomes,
-            (i) => i.type,
-            (i) => i.amount,
+        (i) => i.type,
+        (i) => i.amount,
       ),
     ).entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value)); // desc
@@ -2216,8 +2321,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     if (filteredIncomes.isEmpty) return 100.0;
     final byCategory = _buildByCategory<IncomeItem>(
       filteredIncomes,
-          (i) => i.type,
-          (i) => i.amount,
+      (i) => i.type,
+      (i) => i.amount,
     );
     final double maxVal = byCategory.isEmpty
         ? 0.0
@@ -2228,8 +2333,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   List<String> _incomeCategories() {
     final byCategory = _buildByCategory<IncomeItem>(
       filteredIncomes,
-          (i) => i.type,
-          (i) => i.amount,
+      (i) => i.type,
+      (i) => i.amount,
     );
     return byCategory.keys.toList();
   }
@@ -2242,7 +2347,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete transactions?'),
-        content: Text('Are you sure you want to $subject? This cannot be undone.'),
+        content:
+            Text('Are you sure you want to $subject? This cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -2250,7 +2356,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
+            style:
+                TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
             child: const Text('Delete'),
           ),
         ],
@@ -2271,7 +2378,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           decoration: const InputDecoration(hintText: 'Enter new label…'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () {
               result = controller.text.trim();
@@ -2288,7 +2396,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   Future<void> _openCommentDialog(dynamic tx) async {
     if (tx is! ExpenseItem && tx is! IncomeItem) return;
 
-    final String currentNote = (tx is ExpenseItem ? tx.note : (tx as IncomeItem).note) ?? '';
+    final String currentNote =
+        (tx is ExpenseItem ? tx.note : (tx as IncomeItem).note) ?? '';
     final controller = TextEditingController(text: currentNote);
 
     final newNote = await showDialog<String>(
@@ -2396,7 +2505,8 @@ class _SummaryRingCard extends StatelessWidget {
 
     final incomeStyle = TextStyle(
       fontWeight: FontWeight.w700,
-      fontSize: valuesEqual ? equalSize : (incomeIsBigger ? bigSize : smallSize),
+      fontSize:
+          valuesEqual ? equalSize : (incomeIsBigger ? bigSize : smallSize),
       color: Colors.green.shade600,
     );
 
@@ -2450,7 +2560,8 @@ class _SummaryRingCard extends StatelessWidget {
                         alignment: Alignment.centerRight,
                         child: TextButton(
                           style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             backgroundColor: Colors.grey[100],
@@ -2461,21 +2572,30 @@ class _SummaryRingCard extends StatelessWidget {
                           onPressed: onTapPeriod,
                           child: Text(
                             periodLabel,
-                            style: Fx.label.copyWith(fontWeight: FontWeight.w600),
+                            style:
+                                Fx.label.copyWith(fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
                         ),
                       ),
                       const SizedBox(height: 10),
-                      Text(
-                        formatter.format(spentValue),
-                        style: spentStyle,
-                        textAlign: TextAlign.right,
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          formatter.format(spentValue),
+                          style: spentStyle,
+                          textAlign: TextAlign.right,
+                        ),
                       ),
                       const SizedBox(height: 6),
-                      Text(
-                        formatter.format(incomeValue),
-                        style: incomeStyle,
-                        textAlign: TextAlign.right,
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          formatter.format(incomeValue),
+                          style: incomeStyle,
+                          textAlign: TextAlign.right,
+                        ),
                       ),
                       const SizedBox(height: 10),
                       Text(
@@ -2506,7 +2626,7 @@ class _MiniDonutChart extends StatelessWidget {
   final List<PieChartSectionData> sections;
 
   /// visual tweaks
-  final double height;        // overall height of the donut area
+  final double height; // overall height of the donut area
   final double ringThickness; // thin ring, like Analytics
 
   const _MiniDonutChart({
@@ -2519,7 +2639,8 @@ class _MiniDonutChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final inr0 = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+    final inr0 =
+        NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
     if (sections.isEmpty) {
       return SizedBox(
@@ -2527,9 +2648,12 @@ class _MiniDonutChart extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black54)),
+            Text(title,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w600, color: Colors.black54)),
             const SizedBox(height: 6),
-            const Text("No data", style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text("No data",
+                style: TextStyle(fontWeight: FontWeight.w600)),
           ],
         ),
       );
@@ -2542,17 +2666,17 @@ class _MiniDonutChart extends StatelessWidget {
           // compute a clean radius and center gap so the ring is thin
           final size = math.min(c.maxWidth, height).toDouble();
 
-          final outerRadius = size / 2 - 8;              // padding from edges
-          final centerSpace = (outerRadius - ringThickness).clamp(0.0, outerRadius).toDouble();
-
+          final outerRadius = size / 2 - 8; // padding from edges
+          final centerSpace =
+              (outerRadius - ringThickness).clamp(0.0, outerRadius).toDouble();
 
           // rebuild sections with our desired radius (keeps colors/values)
           final slimSections = sections.map((s) {
             return PieChartSectionData(
               value: s.value,
               color: s.color,
-              title: '',                 // keep donut clean (labels in center)
-              radius: outerRadius,       // uniform radius for all slices
+              title: '', // keep donut clean (labels in center)
+              radius: outerRadius, // uniform radius for all slices
             );
           }).toList();
 
@@ -2562,9 +2686,9 @@ class _MiniDonutChart extends StatelessWidget {
               PieChart(
                 PieChartData(
                   sections: slimSections,
-                  sectionsSpace: 2,                 // subtle separation
-                  startDegreeOffset: -90,           // 12 o'clock start
-                  centerSpaceRadius: centerSpace,   // makes it a slim ring
+                  sectionsSpace: 2, // subtle separation
+                  startDegreeOffset: -90, // 12 o'clock start
+                  centerSpaceRadius: centerSpace, // makes it a slim ring
                   pieTouchData: PieTouchData(enabled: false),
                   borderData: FlBorderData(show: false),
                 ),
@@ -2649,7 +2773,6 @@ class ExpenseFilterConfig {
   }
 }
 
-
 class ExpenseFiltersScreen extends StatefulWidget {
   final ExpenseFilterConfig initialConfig;
   final List<ExpenseItem> expenses;
@@ -2722,13 +2845,12 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         .map((b) => b.trim())
         .where((b) => b.isNotEmpty)
         .map((b) {
-          if (!b.contains('|')) return _normalizeBank(b);
-          final parts = b.split('|');
-          final bank = _normalizeBank(parts.first);
-          final card = parts.length > 1 ? parts[1].trim() : '';
-          return card.isEmpty ? bank : '$bank|$card';
-        })
-        .toSet();
+      if (!b.contains('|')) return _normalizeBank(b);
+      final parts = b.split('|');
+      final bank = _normalizeBank(parts.first);
+      final card = parts.length > 1 ? parts[1].trim() : '';
+      return card.isEmpty ? bank : '$bank|$card';
+    }).toSet();
     _friendPhones = Set<String>.from(widget.initialConfig.friendPhones);
     _groupIds = Set<String>.from(widget.initialConfig.groupIds);
 
@@ -2749,7 +2871,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
 
     final merchantMap = AnalyticsAgg.byMerchant(widget.expenses);
     _merchantLogos = {
-      for (final key in merchantMap.keys) key.toUpperCase(): _merchantLogoAsset(key),
+      for (final key in merchantMap.keys)
+        key.toUpperCase(): _merchantLogoAsset(key),
     };
 
     final brandEntries = <String, double>{};
@@ -2770,7 +2893,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     final bankNetworks = <String, String?>{};
     final cardNetworks = <String, String?>{};
 
-    void addBank(String? bank, {String? cardLast4, String? logo, String? network}) {
+    void addBank(String? bank,
+        {String? cardLast4, String? logo, String? network}) {
       final normalized = _normalizeBank(bank);
       if (normalized.isEmpty) return;
       final cards = bankMap.putIfAbsent(normalized, () => <String>{});
@@ -2824,7 +2948,9 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       }
     }
     _groupOptions = groupIdSet.toList()
-      ..sort((a, b) => _groupNameForId(a).toLowerCase().compareTo(_groupNameForId(b).toLowerCase()));
+      ..sort((a, b) => _groupNameForId(a)
+          .toLowerCase()
+          .compareTo(_groupNameForId(b).toLowerCase()));
 
     _amountFormat = NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹');
   }
@@ -2896,7 +3022,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
             ),
             selected: selected,
             selectedTileColor: Colors.grey.shade200,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             onTap: () {
               setState(() {
                 _selectedSection = section;
@@ -2971,7 +3098,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
             contentPadding: EdgeInsets.zero,
             value: option.value,
             groupValue: currentValue,
-            title: Text(option.key, style: const TextStyle(color: Colors.black)),
+            title:
+                Text(option.key, style: const TextStyle(color: Colors.black)),
             onChanged: (_) => _selectPeriod(option.value),
           ),
         RadioListTile<String>(
@@ -3037,8 +3165,10 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
           contentPadding: EdgeInsets.zero,
           value: _selectedCategories.isEmpty,
           secondary: const Icon(Icons.category_rounded, color: Colors.black54),
-          title: const Text('All categories', style: TextStyle(color: Colors.black)),
-          subtitle: const Text('Show everything', style: TextStyle(color: Colors.black54, fontSize: 12)),
+          title: const Text('All categories',
+              style: TextStyle(color: Colors.black)),
+          subtitle: const Text('Show everything',
+              style: TextStyle(color: Colors.black54, fontSize: 12)),
           onChanged: (val) {
             if (val == true) {
               setState(() => _selectedCategories = {});
@@ -3048,7 +3178,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         if (_categoryOptions.isEmpty)
           const Padding(
             padding: EdgeInsets.only(top: 8),
-            child: Text('No categories found', style: TextStyle(color: Colors.black54)),
+            child: Text('No categories found',
+                style: TextStyle(color: Colors.black54)),
           )
         else
           ..._categoryOptions.map((category) {
@@ -3058,13 +3189,15 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
               contentPadding: EdgeInsets.zero,
               value: selected,
               secondary: Icon(_categoryIcon(category), color: Colors.black54),
-              title: Text(category, style: const TextStyle(color: Colors.black)),
+              title:
+                  Text(category, style: const TextStyle(color: Colors.black)),
               onChanged: (val) {
                 setState(() {
                   if (val == true) {
                     _selectedCategories = {..._selectedCategories, category};
                   } else {
-                    _selectedCategories = {..._selectedCategories}..remove(category);
+                    _selectedCategories = {..._selectedCategories}
+                      ..remove(category);
                   }
                 });
               },
@@ -3089,9 +3222,12 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
           dense: true,
           contentPadding: EdgeInsets.zero,
           value: _selectedMerchants.isEmpty,
-          secondary: const Icon(Icons.store_mall_directory_rounded, color: Colors.black54),
-          title: const Text('All merchants', style: TextStyle(color: Colors.black)),
-          subtitle: const Text('Show everything', style: TextStyle(color: Colors.black54, fontSize: 12)),
+          secondary: const Icon(Icons.store_mall_directory_rounded,
+              color: Colors.black54),
+          title: const Text('All merchants',
+              style: TextStyle(color: Colors.black)),
+          subtitle: const Text('Show everything',
+              style: TextStyle(color: Colors.black54, fontSize: 12)),
           onChanged: (val) {
             if (val == true) {
               setState(() => _selectedMerchants = {});
@@ -3101,27 +3237,39 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         if (brandEntries.isEmpty && peopleEntries.isEmpty)
           const Padding(
             padding: EdgeInsets.only(top: 8),
-            child: Text('No merchants available', style: TextStyle(color: Colors.black54)),
+            child: Text('No merchants available',
+                style: TextStyle(color: Colors.black54)),
           )
         else ...[
           if (brandEntries.isNotEmpty) ...[
             const SizedBox(height: 8),
-            const Text('Brands', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
+            const Text('Brands',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black)),
             const SizedBox(height: 4),
-            ...brandEntries.map((entry) => _buildMerchantTile(entry, isPerson: false)),
+            ...brandEntries
+                .map((entry) => _buildMerchantTile(entry, isPerson: false)),
           ],
           if (peopleEntries.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const Text('People', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
+            const Text('People',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black)),
             const SizedBox(height: 4),
-            ...peopleEntries.map((entry) => _buildMerchantTile(entry, isPerson: true)),
+            ...peopleEntries
+                .map((entry) => _buildMerchantTile(entry, isPerson: true)),
           ],
         ],
       ],
     );
   }
 
-  Widget _buildMerchantTile(MapEntry<String, double> entry, {required bool isPerson}) {
+  Widget _buildMerchantTile(MapEntry<String, double> entry,
+      {required bool isPerson}) {
     final key = entry.key.trim().toUpperCase();
     final selected = _selectedMerchants.contains(key);
     return CheckboxListTile(
@@ -3129,8 +3277,10 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       contentPadding: EdgeInsets.zero,
       value: selected,
       secondary: _merchantAvatar(entry.key, isPerson: isPerson),
-      title: Text(_formatMerchant(entry.key), style: const TextStyle(color: Colors.black)),
-      subtitle: Text(_formatAmount(entry.value), style: const TextStyle(color: Colors.black54, fontSize: 12)),
+      title: Text(_formatMerchant(entry.key),
+          style: const TextStyle(color: Colors.black)),
+      subtitle: Text(_formatAmount(entry.value),
+          style: const TextStyle(color: Colors.black54, fontSize: 12)),
       onChanged: (val) {
         setState(() {
           if (val == true) {
@@ -3153,9 +3303,11 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
           dense: true,
           contentPadding: EdgeInsets.zero,
           value: _selectedBanks.isEmpty,
-          secondary: const Icon(Icons.account_balance_rounded, color: Colors.black54),
+          secondary:
+              const Icon(Icons.account_balance_rounded, color: Colors.black54),
           title: const Text('All banks', style: TextStyle(color: Colors.black)),
-          subtitle: const Text('Show everything', style: TextStyle(color: Colors.black54, fontSize: 12)),
+          subtitle: const Text('Show everything',
+              style: TextStyle(color: Colors.black54, fontSize: 12)),
           onChanged: (val) {
             if (val == true) {
               setState(() => _selectedBanks = {});
@@ -3165,12 +3317,15 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         if (_bankOptions.isEmpty)
           const Padding(
             padding: EdgeInsets.only(top: 8),
-            child: Text('No banks detected', style: TextStyle(color: Colors.black54)),
+            child: Text('No banks detected',
+                style: TextStyle(color: Colors.black54)),
           )
         else
           ..._bankOptions.map((bank) {
             final isBankSelected = _selectedBanks.contains(bank);
-            final cards = List<String>.from(_bankToCards[bank] ?? const <String>{})..sort();
+            final cards =
+                List<String>.from(_bankToCards[bank] ?? const <String>{})
+                  ..sort();
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -3184,7 +3339,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                     overrideLogo: _bankLogos[bank],
                     size: 40,
                   ),
-                  title: Text(_displayBankName(bank), style: const TextStyle(color: Colors.black)),
+                  title: Text(_displayBankName(bank),
+                      style: const TextStyle(color: Colors.black)),
                   onChanged: (val) {
                     setState(() {
                       if (val == true) {
@@ -3192,7 +3348,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                       } else {
                         final updated = {..._selectedBanks};
                         updated.remove(bank);
-                        updated.removeWhere((entry) => entry.startsWith('$bank|'));
+                        updated
+                            .removeWhere((entry) => entry.startsWith('$bank|'));
                         _selectedBanks = updated;
                       }
                     });
@@ -3204,22 +3361,28 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                     child: CheckboxListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      value: _selectedBanks.contains(_encodeBankSelection(bank, card)),
+                      value: _selectedBanks
+                          .contains(_encodeBankSelection(bank, card)),
                       secondary: _bankLogo(
                         _displayBankName(bank),
-                        network: _cardNetworks['$bank|$card'] ?? _bankPrimaryNetworks[bank],
+                        network: _cardNetworks['$bank|$card'] ??
+                            _bankPrimaryNetworks[bank],
                         overrideLogo: _bankLogos[bank],
                         size: 32,
                       ),
-                      title: Text('••$card', style: const TextStyle(color: Colors.black)),
-                      subtitle: Text(_displayBankName(bank), style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                      title: Text('••$card',
+                          style: const TextStyle(color: Colors.black)),
+                      subtitle: Text(_displayBankName(bank),
+                          style: const TextStyle(
+                              color: Colors.black54, fontSize: 12)),
                       onChanged: (val) {
                         final selectionKey = _encodeBankSelection(bank, card);
                         setState(() {
                           if (val == true) {
                             _selectedBanks = {..._selectedBanks, selectionKey};
                           } else {
-                            _selectedBanks = {..._selectedBanks}..remove(selectionKey);
+                            _selectedBanks = {..._selectedBanks}
+                              ..remove(selectionKey);
                           }
                         });
                       },
@@ -3239,7 +3402,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         _buildSectionTitle('Friends'),
         const SizedBox(height: 6),
         if (_friends.isEmpty)
-          const Text('No friends added yet', style: TextStyle(color: Colors.black54))
+          const Text('No friends added yet',
+              style: TextStyle(color: Colors.black54))
         else
           ..._friends.map((friend) {
             final selected = _friendPhones.contains(friend.phone);
@@ -3253,7 +3417,9 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                 style: const TextStyle(color: Colors.black),
               ),
               subtitle: friend.name.isNotEmpty
-                  ? Text(friend.phone, style: const TextStyle(color: Colors.black54, fontSize: 12))
+                  ? Text(friend.phone,
+                      style:
+                          const TextStyle(color: Colors.black54, fontSize: 12))
                   : null,
               onChanged: (val) {
                 setState(() {
@@ -3283,7 +3449,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     }
     String label;
     if (avatarValue.isNotEmpty) {
-      label = avatarValue.length <= 2 ? avatarValue : avatarValue.characters.first;
+      label =
+          avatarValue.length <= 2 ? avatarValue : avatarValue.characters.first;
     } else if (friend.name.isNotEmpty) {
       label = friend.name.characters.first;
     } else {
@@ -3292,7 +3459,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     return CircleAvatar(
       radius: 18,
       backgroundColor: Colors.grey.shade200,
-      child: Text(label.toUpperCase(), style: const TextStyle(color: Colors.black)),
+      child: Text(label.toUpperCase(),
+          style: const TextStyle(color: Colors.black)),
     );
   }
 
@@ -3314,10 +3482,12 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
               contentPadding: EdgeInsets.zero,
               value: selected,
               secondary: _groupAvatar(groupId, group),
-              title: Text(_groupNameForId(groupId), style: const TextStyle(color: Colors.black)),
+              title: Text(_groupNameForId(groupId),
+                  style: const TextStyle(color: Colors.black)),
               subtitle: memberCount > 0
                   ? Text('$memberCount member${memberCount == 1 ? '' : 's'}',
-                      style: const TextStyle(color: Colors.black54, fontSize: 12))
+                      style:
+                          const TextStyle(color: Colors.black54, fontSize: 12))
                   : null,
               onChanged: (val) {
                 setState(() {
@@ -3344,11 +3514,13 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       );
     }
     final name = _groupNameForId(groupId);
-    final label = name.isNotEmpty ? name.characters.first : groupId.characters.first;
+    final label =
+        name.isNotEmpty ? name.characters.first : groupId.characters.first;
     return CircleAvatar(
       radius: 18,
       backgroundColor: Colors.grey.shade200,
-      child: Text(label.toUpperCase(), style: const TextStyle(color: Colors.black)),
+      child: Text(label.toUpperCase(),
+          style: const TextStyle(color: Colors.black)),
     );
   }
 
@@ -3370,8 +3542,10 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               ),
               child: const Text('Apply'),
             ),
@@ -3478,7 +3652,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     return candidates.isNotEmpty ? candidates.first : null;
   }
 
-  Widget _bankLogo(String? bank, {String? network, String? overrideLogo, double size = 36}) {
+  Widget _bankLogo(String? bank,
+      {String? network, String? overrideLogo, double size = 36}) {
     final asset = bank != null ? _bankLogoAsset(bank, network: network) : null;
     Widget? image;
     if (asset != null) {
@@ -3566,14 +3741,19 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
 
   IconData _categoryIcon(String type) {
     final t = type.toLowerCase();
-    if (t.contains('food') || t.contains('restaurant')) return Icons.restaurant_rounded;
+    if (t.contains('food') || t.contains('restaurant'))
+      return Icons.restaurant_rounded;
     if (t.contains('grocery')) return Icons.shopping_cart_rounded;
     if (t.contains('rent')) return Icons.home_rounded;
-    if (t.contains('fuel') || t.contains('petrol')) return Icons.local_gas_station_rounded;
+    if (t.contains('fuel') || t.contains('petrol'))
+      return Icons.local_gas_station_rounded;
     if (t.contains('shopping')) return Icons.shopping_bag_rounded;
-    if (t.contains('health') || t.contains('medicine')) return Icons.local_hospital_rounded;
-    if (t.contains('travel') || t.contains('flight') || t.contains('train')) return Icons.flight_takeoff_rounded;
-    if (t.contains('entertainment') || t.contains('movie')) return Icons.movie_rounded;
+    if (t.contains('health') || t.contains('medicine'))
+      return Icons.local_hospital_rounded;
+    if (t.contains('travel') || t.contains('flight') || t.contains('train'))
+      return Icons.flight_takeoff_rounded;
+    if (t.contains('entertainment') || t.contains('movie'))
+      return Icons.movie_rounded;
     if (t.contains('education')) return Icons.school_rounded;
     if (t.contains('loan')) return Icons.account_balance_rounded;
     return Icons.category_rounded;
@@ -3584,15 +3764,18 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     final start = _customRange!.start;
     final end = _customRange!.end;
     final now = DateTime.now();
-    final yesterday = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 1));
-    return DateUtils.isSameDay(start, yesterday) && DateUtils.isSameDay(end, yesterday);
+    final yesterday = DateTime(now.year, now.month, now.day)
+        .subtract(const Duration(days: 1));
+    return DateUtils.isSameDay(start, yesterday) &&
+        DateUtils.isSameDay(end, yesterday);
   }
 
   Future<void> _pickCustomRange() async {
     final now = DateTime.now();
     final initial = _customRange ??
         DateTimeRange(
-          start: DateTime(now.year, now.month, now.day).subtract(const Duration(days: 6)),
+          start: DateTime(now.year, now.month, now.day)
+              .subtract(const Duration(days: 6)),
           end: DateTime(now.year, now.month, now.day),
         );
     final result = await showDateRangePicker(
@@ -3603,7 +3786,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     );
     if (result != null) {
       setState(() {
-        final start = DateTime(result.start.year, result.start.month, result.start.day);
+        final start =
+            DateTime(result.start.year, result.start.month, result.start.day);
         final end = DateTime(result.end.year, result.end.month, result.end.day);
         _customRange = DateTimeRange(start: start, end: end);
         _periodToken = 'Custom';
@@ -3632,7 +3816,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       backgroundColor: Colors.grey.shade200,
       child: Text(
         merchant.isNotEmpty ? merchant.characters.first.toUpperCase() : 'M',
-        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
+        style:
+            const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
       ),
     );
   }
@@ -3642,7 +3827,9 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     for (final friend in _friends) {
       final nameLower = friend.name.trim().toLowerCase();
       if (nameLower.isEmpty) continue;
-      if (lower == nameLower || lower.contains(nameLower) || nameLower.contains(lower)) {
+      if (lower == nameLower ||
+          lower.contains(nameLower) ||
+          nameLower.contains(lower)) {
         return friend;
       }
     }
@@ -3656,10 +3843,14 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     }
     final digits = lower.replaceAll(RegExp(r'[^0-9]'), '');
     if (digits.length >= 8 && digits.length <= 12) return true;
-    if (_friendPhoneSet.any((phone) => phone.replaceAll(RegExp(r'[^0-9]'), '').endsWith(digits) && digits.isNotEmpty)) {
+    if (_friendPhoneSet.any((phone) =>
+        phone.replaceAll(RegExp(r'[^0-9]'), '').endsWith(digits) &&
+        digits.isNotEmpty)) {
       return true;
     }
-    if (lower.contains('@') && !lower.contains('amazon') && !lower.contains('paytm')) {
+    if (lower.contains('@') &&
+        !lower.contains('amazon') &&
+        !lower.contains('paytm')) {
       return true;
     }
     return false;
@@ -3681,8 +3872,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     return trimmed
         .split(RegExp(r'\s+'))
         .where((word) => word.isNotEmpty)
-        .map((word) => '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}')
+        .map((word) =>
+            '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}')
         .join(' ');
   }
-
 }
