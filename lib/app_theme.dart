@@ -15,16 +15,16 @@ final darkTheme = ThemeData.dark().copyWith(
 final glassTheme = appTheme.copyWith(
   scaffoldBackgroundColor: Colors.white.withOpacity(0.7),
   cardColor: Colors.white.withOpacity(0.7),
-  dialogBackgroundColor: Colors.white.withOpacity(0.8),
+  dialogTheme: DialogThemeData(backgroundColor: Colors.white.withOpacity(0.8)),
   // You can enhance glass effect here as needed.
 );
 
 // ---- NEW: Tiffany Blue / Mint “Fresh” Theme ----
 const Color tiffanyBlue = Color(0xFF81e6d9);
-const Color mintGreen   = Color(0xFFb9f5d8);
-const Color deepTeal    = Color(0xFF09857a);
-const Color lightMint   = Color(0xFFF2FFFA);
-const Color coral       = Color(0xFFFFD6A5);
+const Color mintGreen = Color(0xFFb9f5d8);
+const Color deepTeal = Color(0xFF09857a);
+const Color lightMint = Color(0xFFF2FFFA);
+const Color coral = Color(0xFFFFD6A5);
 
 final ThemeData freshTheme = ThemeData(
   brightness: Brightness.light,
@@ -49,7 +49,6 @@ final ThemeData freshTheme = ThemeData(
     elevation: 6,
   ),
   cardColor: Colors.white.withOpacity(0.85),
-  dialogBackgroundColor: mintGreen.withOpacity(0.92),
   textTheme: TextTheme(
     titleLarge: TextStyle(color: deepTeal, fontWeight: FontWeight.bold),
     bodyMedium: TextStyle(color: deepTeal),
@@ -80,4 +79,5 @@ final ThemeData freshTheme = ThemeData(
     ),
     labelStyle: TextStyle(color: deepTeal),
   ),
+  dialogTheme: DialogThemeData(backgroundColor: mintGreen.withOpacity(0.92)),
 );

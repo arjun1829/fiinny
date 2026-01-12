@@ -1,5 +1,5 @@
 import 'dart:collection';
-import 'package:telephony/telephony.dart';
+// import 'package:telephony/telephony.dart';
 import 'package:flutter/foundation.dart';
 
 import '../connector.dart';
@@ -10,7 +10,7 @@ import '../../config/bank_profiles.dart';
 class AndroidSmsConnector extends SourceConnector {
   AndroidSmsConnector({required super.region, required super.userId});
 
-  Telephony? _telephony;
+  // Telephony? _telephony;
   
   // Cache for recent message keys to avoid duplicates in realtime listener
   static const int _recentCap = 400;
@@ -23,14 +23,16 @@ class AndroidSmsConnector extends SourceConnector {
     if (!_isAndroid) return;
     if (!region.allowSmsIngestion) return;
     
-    _telephony = Telephony.instance;
+    // _telephony = Telephony.instance;
     // Check permissions? Usually handled by UI before calling this.
   }
 
   @override
   Future<List<RawTransactionEvent>> backfill({int days = 90}) async {
-    if (!_isAndroid || !region.allowSmsIngestion || _telephony == null) return [];
+    // if (!_isAndroid || !region.allowSmsIngestion || _telephony == null) return [];
+    return [];
 
+    /*
     final now = DateTime.now();
     final since = now.subtract(Duration(days: days));
 
@@ -58,6 +60,7 @@ class AndroidSmsConnector extends SourceConnector {
     }
 
     return events;
+    */
   }
 
   @override
@@ -79,7 +82,7 @@ class AndroidSmsConnector extends SourceConnector {
     return false;
   }
 
-  RawTransactionEvent? _parseSms(SmsMessage m, DateTime ts) {
+  RawTransactionEvent? _parseSms(dynamic m, DateTime ts) {
     final body = m.body ?? '';
     final address = m.address ?? '';
 

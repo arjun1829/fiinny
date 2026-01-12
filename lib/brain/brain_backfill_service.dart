@@ -10,15 +10,20 @@ class BrainBackfillService {
 
   /// Process all expenses & incomes for a user.
   /// If [force] is false, only items missing brain fields or with older version get updated.
-  Future<Map<String,int>> backfillUser(String userPhone, {bool force = false, int pageSize = 300}) async {
+  Future<Map<String, int>> backfillUser(String userPhone,
+      {bool force = false, int pageSize = 300}) async {
     int updatedExpenses = 0, updatedIncomes = 0;
 
     // EXPENSES
     DocumentSnapshot? cursor;
     while (true) {
-      Query q = _fs.collection('users').doc(userPhone).collection('expenses')
-          .orderBy('date').limit(pageSize);
-      if (cursor != null) q = (q as Query).startAfterDocument(cursor);
+      Query q = _fs
+          .collection('users')
+          .doc(userPhone)
+          .collection('expenses')
+          .orderBy('date')
+          .limit(pageSize);
+      if (cursor != null) q = (q).startAfterDocument(cursor);
       final snap = await q.get();
       if (snap.docs.isEmpty) break;
 
@@ -41,9 +46,13 @@ class BrainBackfillService {
     // INCOMES
     cursor = null;
     while (true) {
-      Query q = _fs.collection('users').doc(userPhone).collection('incomes')
-          .orderBy('date').limit(pageSize);
-      if (cursor != null) q = (q as Query).startAfterDocument(cursor);
+      Query q = _fs
+          .collection('users')
+          .doc(userPhone)
+          .collection('incomes')
+          .orderBy('date')
+          .limit(pageSize);
+      if (cursor != null) q = (q).startAfterDocument(cursor);
       final snap = await q.get();
       if (snap.docs.isEmpty) break;
 

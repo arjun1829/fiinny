@@ -121,7 +121,17 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
     }
     _selectedPayerPhone = widget.expense.payerId;
     _selectedGroupId = widget.expense.groupId;
-    _selectedFriendPhones = List<String>.from(widget.expense.friendIds);
+    
+    // Logic Fix: Ensure we don't lose the friend if we swap payer to "You"
+    // The previous logic only loaded `friendIds`. If the friend paid, they are the payer,
+    // and might NOT be in `friendIds` (depending on how backend stores it).
+    // Safest is to combine friendIds + payerId (excluding self) to get all participants.
+    final allParticipants = <String>{...widget.expense.friendIds};
+    if (widget.expense.payerId != widget.userPhone) {
+      allParticipants.add(widget.expense.payerId);
+    }
+    _selectedFriendPhones = allParticipants.toList();
+    
     _cachedFriendSelection = List<String>.from(_selectedFriendPhones);
 
     // Init labels: bring existing label to dropdown list if not present

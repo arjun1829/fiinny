@@ -2146,6 +2146,719 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     );
   }
 
+  List<_ListItem> _flattenItems(Map<String, List<Map<String, dynamic>>> groupedMap) {
+    final items = <_ListItem>[];
+    final groupedEntries = groupedMap.entries.toList();
+
+    for (int idx = 0; idx < groupedEntries.length; idx++) {
+      final entry = groupedEntries[idx];
+      final rawLabel = entry.key;
+      final txs = entry.value;
+      final dateLabel = _displayGroupLabel(rawLabel);
+
+      // Top Banner
+      if (idx == 0 && widget.showTopBannerAd) {
+        items.add(_TopBannerItem());
+      }
+
+      // Date Header
+      if (dateLabel.isNotEmpty) {
+        items.add(_DateHeaderItem(dateLabel));
+      }
+
+      // Transactions
+      for (int i = 0; i < txs.length; i++) {
+        items.add(_TransactionItem(
+          txs[i],
+          indexInGroup: i,
+          showSeparator: i > 0,
+        ));
+
+        // Inline Ad
+        if (widget.enableInlineAds && i == widget.inlineAdAfterIndex) {
+          items.add(_InlineAdItem('txn_list_inline'));
+        }
+      }
+    }
+
+    // Show More & Bottom Banner
+    if (shownCount < allTx.length) {
+      items.add(_ShowMoreItem());
+      if (widget.showBottomBannerAd) {
+        items.add(_BottomBannerItem());
+      }
+    }
+
+    return items;
+  }
+
+  Widget _buildTransactionRow(BuildContext context, _TransactionItem item) {
+    final tx = item.tx;
+    final i = item.indexInGroup;
+    final bool isIncome = tx['type'] == 'income';
+    final String id = (tx['id'] ?? '').toString();
+    final String category =
+        (tx['category'] ?? (isIncome ? 'Income' : 'General')).toString();
+    final String note = (tx['note'] ?? '').toString();
+    final String? title = (tx['title'] as String?);
+    final List<String> labels = (tx['labels'] is List)
+        ? List<String>.from(tx['labels'])
+        : const <String>[];
+    final double amount =
+        (tx['amount'] is num) ? (tx['amount'] as num).toDouble() : 0.0;
+
+    final String? bankLogo = tx['bankLogo'] as String?;
+    final String? brandLogo = tx['brandLogo'] as String?;
+    final String? schemeLogo = tx['schemeLogo'] as String?;
+    final String? merchant = (tx['merchant'] as String?)?.trim();
+    final String? cardLast4 = tx['cardLast4'] as String?;
+    final String? channel = tx['channel'] as String?;
+    final String? instrument = (tx['instrument'] as String?) ?? channel;
+    final String? network = tx['network'] as String?;
+    final String? issuerBank = tx['issuerBank'] as String?;
+    final String? counterparty = tx['counterparty'] as String?;
+    final bool isInternational = (tx['isInternational'] == true);
+    final bool hasFees = (tx['hasFees'] == true);
+    final String? tags = (tx['tags'] as String?);
+    final double categoryConfidence = (tx['categoryConfidence'] is num)
+        ? (tx['categoryConfidence'] as num).toDouble()
+        : 0.0;
+    final String categorySource = (tx['categorySource'] ?? '').toString();
+
+    final raw = tx['raw'];
+
+    String? friendsStr;
+    try {
+      if (tx['mode'] == 'legacy' &&
+          !isIncome &&
+          (raw.friendIds != null) &&
+          raw.friendIds.isNotEmpty) {
+        friendsStr = raw.friendIds
+            .map((fid) => widget.friendsById[fid]?.name ?? "Friend")
+            .join(', ');
+      }
+    } catch (_) {
+      friendsStr = null;
+    }
+
+    final String displayName = (counterparty ?? '')
+            .toString()
+            .trim()
+            .isNotEmpty
+        ? counterparty!.trim()
+        : (merchant != null && merchant.isNotEmpty ? merchant : 'Unknown');
+
+    final String showLine2 = () {
+      if (title != null && title.trim().isNotEmpty) return title.trim();
+      if (note.isNotEmpty) {
+        return note.length > 40 ? "${note.substring(0, 40)}..." : note;
+      }
+      return '';
+    }();
+
+    final bool isSelectable =
+        widget.multiSelectEnabled && widget.onSelectTx != null;
+    final bool isSelected = isSelectable && widget.selectedIds.contains(id);
+
+    final dynamic payload = tx['mode'] == 'unified' ? tx : raw;
+
+    String billUrl = '';
+    if (widget.showBillIcon) {
+      if (tx['mode'] == 'unified') {
+        final rawMap = (tx['raw'] is Map<String, dynamic>)
+            ? tx['raw'] as Map<String, dynamic>
+            : <String, dynamic>{};
+        billUrl = _billUrlFromUnified(rawMap);
+      } else {
+        billUrl = _billUrlFromLegacy(raw);
+      }
+    }
+
+    Widget leadingVisual;
+    if (brandLogo != null && brandLogo.isNotEmpty) {
+      leadingVisual = ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: _logo(brandLogo, w: 32, h: 32),
+      );
+    } else if (bankLogo != null && bankLogo.isNotEmpty) {
+      leadingVisual = ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: _logo(bankLogo, w: 30, h: 30),
+      );
+    } else {
+      leadingVisual = CircleAvatar(
+        radius: 16,
+        backgroundColor: isIncome ? Colors.green[50] : Colors.pink[50],
+        child: Icon(
+          getCategoryIcon(category, isIncome: isIncome),
+          color: isIncome ? Colors.green[700] : Colors.pink[700],
+          size: 18,
+        ),
+      );
+    }
+
+    final sourceLabel = () {
+      final s = categorySource.toLowerCase();
+      if (s == 'llm') return 'LLM';
+      if (s == 'rules') return 'Rules';
+      if (s == 'user_override') return 'Manual';
+      if (s.isNotEmpty) return s.toUpperCase();
+      return null;
+    }();
+    final methodChipLabels = _methodChipLabels(
+      instrument: instrument,
+      channel: channel,
+      cardLast4: cardLast4,
+      network: network,
+      isInternational: isInternational,
+      hasFees: hasFees,
+      tags: tags,
+    );
+    final rowChips = <Widget>[];
+    if (labels.isNotEmpty) {
+      rowChips.addAll(labels.take(3).map((l) => _chip('#$l')));
+      if (labels.length > 3) {
+        rowChips.add(_chip('+${labels.length - 3}'));
+      }
+    }
+    if (sourceLabel != null) {
+      rowChips.add(_chip(sourceLabel));
+    }
+    if (categorySource == 'llm' &&
+        categoryConfidence > 0 &&
+        categoryConfidence < 0.6) {
+      rowChips.add(_chip('Review'));
+    }
+
+    final row = Dismissible(
+      key: ValueKey('dismiss_${id}_${tx.hashCode}_$i'),
+      direction: ((widget.onDelete != null || widget.onEdit != null) &&
+              widget.enableSwipeActions)
+          ? DismissDirection.horizontal
+          : DismissDirection.none,
+      background: (widget.enableSwipeActions && widget.onEdit != null)
+          ? _buildSwipeBackground(
+              alignment: Alignment.centerLeft,
+              icon: Icons.edit,
+              label: 'Edit',
+              color: Colors.blue.withOpacity(0.15),
+            )
+          : const SizedBox(),
+      secondaryBackground:
+          (widget.enableSwipeActions && widget.onDelete != null)
+              ? _buildSwipeBackground(
+                  alignment: Alignment.centerRight,
+                  icon: Icons.delete,
+                  label: 'Delete',
+                  color: Colors.red.withOpacity(0.15),
+                )
+              : const SizedBox(),
+      confirmDismiss: (direction) async {
+        if (direction == DismissDirection.startToEnd) {
+          if (widget.onEdit != null) {
+            widget.onEdit!(payload);
+          }
+          return false;
+        }
+        if (direction == DismissDirection.endToStart) {
+          if (widget.onDelete == null) return false;
+          return _confirmDeleteTransaction(context, payload);
+        }
+        return false;
+      },
+      onDismissed: (direction) {
+        if (direction == DismissDirection.endToStart &&
+            widget.onDelete != null) {
+          final indexInAll = allTx.indexOf(tx);
+          if (indexInAll >= 0) {
+            _handleDelete(tx, indexInAll, payload);
+          }
+        }
+      },
+      child: GestureDetector(
+        key: ValueKey(id),
+        behavior: HitTestBehavior.opaque,
+        onTap: isSelectable
+            ? () => widget.onSelectTx!(id, !isSelected)
+            : () {
+                if (widget.onRowTapIntercept != null) {
+                  final handled = widget.onRowTapIntercept!(tx);
+                  if (handled == true) return;
+                }
+                if (!widget.enableDetailsSheet) return;
+
+                if (tx['mode'] == 'unified') {
+                  _showDetailsScreenFromUnified(
+                    tx,
+                    context,
+                    methodChipLabels: methodChipLabels,
+                  );
+                } else {
+                  _showDetailsScreenLegacy(
+                    raw,
+                    isIncome,
+                    context,
+                    methodChipLabels: methodChipLabels,
+                  );
+                }
+              },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          constraints: const BoxConstraints(minHeight: 58),
+          margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.deepPurple.withOpacity(0.09)
+                : Colors.white.withOpacity(0.93),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.028),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+            border: isSelected
+                ? Border.all(color: Colors.deepPurple, width: 1.4)
+                : null,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (isSelectable)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Checkbox(
+                    value: isSelected,
+                    onChanged: (val) =>
+                        widget.onSelectTx!(id, val ?? false),
+                    activeColor: Colors.deepPurple,
+                    visualDensity: VisualDensity.compact,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                  ),
+                ),
+              SizedBox(
+                width: 48, // slightly wider for time
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    leadingVisual,
+                    const SizedBox(height: 4),
+                    Text(
+                      DateFormat('h:mm a').format(tx['date'] as DateTime),
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[600],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (schemeLogo != null && schemeLogo.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: _logo(schemeLogo, w: 18, h: 18),
+                ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        final pId = tx['payerId']?.toString();
+                        // Navigate to friend if it's someone else
+                        if (pId != null &&
+                            pId.isNotEmpty &&
+                            pId != widget.userPhone) {
+                          Navigator.pushNamed(
+                            context,
+                            '/friend-detail',
+                            arguments: {
+                              'friendId': pId,
+                              'friendName': displayName,
+                            },
+                          );
+                        } else {
+                          _editCounterparty(
+                            txId: id,
+                            isIncome: isIncome,
+                            current: counterparty,
+                            payload: payload,
+                            normalized: tx,
+                          );
+                        }
+                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.max,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  displayName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: Color(0xFF0F1E1C),
+                                  ),
+                                ),
+                              ),
+                              if (billUrl.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 6),
+                                  child: Icon(Icons.receipt_long_rounded,
+                                      size: 14, color: Colors.grey[400]),
+                                ),
+                            ],
+                          ),
+                          if (tx['groupId'] != null &&
+                              tx['groupId'].toString().isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: GestureDetector(
+                                onTap: () {
+                                  Navigator.pushNamed(
+                                    context,
+                                    '/group-detail',
+                                    arguments: {
+                                      'groupId': tx['groupId'].toString(),
+                                    },
+                                  );
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.teal.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                        color: Colors.teal.shade100),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.group_outlined,
+                                          size: 10,
+                                          color: Colors.teal.shade700),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        "View Group",
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.teal.shade800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (tx['groupId'] != null &&
+                        tx['groupId'].toString().isNotEmpty &&
+                        widget.groups != null)
+                      Builder(builder: (context) {
+                        final gId = tx['groupId'].toString();
+                        final group = widget.groups!.firstWhere(
+                          (g) => g.id == gId,
+                          orElse: () => GroupModel(
+                            id: gId,
+                            name: 'Group',
+                            memberPhones: [],
+                            createdBy: '',
+                            createdAt: DateTime.now(),
+                          ),
+                        );
+                        return InkWell(
+                          onTap: () {
+                            Navigator.pushNamed(
+                              context,
+                              '/group-detail',
+                              arguments: {
+                                'groupId': group.id,
+                                'groupName': group.name,
+                                'group': group,
+                              },
+                            );
+                          },
+                          child: Container(
+                            margin:
+                                const EdgeInsets.only(top: 4, bottom: 2),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.blueGrey.withOpacity(0.10),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                  color: Colors.blueGrey.withOpacity(0.2)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.groups_rounded,
+                                    size: 13,
+                                    color: Theme.of(context).primaryColor),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    group.name,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: Theme.of(context).primaryColor,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: widget.showCategoryDropdown
+                              ? SizedBox(
+                                  height: 26,
+                                  child: _categoryDropdown(
+                                    txId: id,
+                                    current: category,
+                                    isIncome: isIncome,
+                                    payload: payload,
+                                    normalized: tx,
+                                  ),
+                                )
+                              : Text(
+                                  category,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13.5,
+                                    color: Color(0xFF4B5563),
+                                  ),
+                                ),
+                        ),
+                        Container(
+                          width: 1,
+                          height: 14,
+                          color: Colors.grey.withOpacity(0.3),
+                          margin: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        Expanded(
+                          child: _subcategoryDropdown(
+                            txId: id,
+                            currentCategory: category,
+                            currentSubcategory:
+                                (tx['subcategory'] ?? '').toString(),
+                            isIncome: isIncome,
+                            payload: payload,
+                            normalized: tx,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (showLine2.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: Text(
+                          showLine2,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.black.withOpacity(0.75),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    if (rowChips.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: -6,
+                          children: rowChips,
+                        ),
+                      ),
+                    if (tx['mode'] == 'legacy')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2.0),
+                        child: Row(
+                          children: [
+                            if (friendsStr != null) ...[
+                              Icon(Icons.person_2_rounded,
+                                  size: 15, color: Colors.deepPurple[500]),
+                              Flexible(
+                                child: Text(
+                                  " $friendsStr",
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: Colors.deepPurple[700],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            if (tx['type'] == 'income' &&
+                                (raw.source ?? '')
+                                    .toString()
+                                    .isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              Icon(Icons.input_rounded,
+                                  size: 15, color: Colors.teal[600]),
+                              Flexible(
+                                child: Text(
+                                  " ${raw.source}",
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: Colors.teal[700],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _amountPill(amount, isIncome),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.showBillIcon && billUrl.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.receipt_long_rounded,
+                              size: 18, color: Colors.brown),
+                          tooltip: 'View bill',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _showBillImage(context, billUrl),
+                        ),
+                      // if (widget.onAddComment != null)
+                      //    IconButton(
+                      //      icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: Colors.blueGrey),
+                      //      tooltip: 'Add Comment/Note',
+                      //      visualDensity: VisualDensity.compact,
+                      //      onPressed: () => widget.onAddComment?.call(payload),
+                      //    ),
+                      if (tx['mode'] == 'legacy' &&
+                          !isIncome &&
+                          widget.onSplit != null)
+                        IconButton(
+                          icon: const Icon(Icons.group,
+                              size: 18, color: Colors.deepPurple),
+                          tooltip: 'Split',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => widget.onSplit?.call(payload),
+                        ),
+                      if (widget.onEdit != null || widget.onDelete != null)
+                        PopupMenuButton<_TxAction>(
+                          icon: const Icon(Icons.more_horiz_rounded,
+                              color: Colors.blueGrey, size: 20),
+                          tooltip: 'More actions',
+                          onSelected: (action) async {
+                            switch (action) {
+                              case _TxAction.edit:
+                                widget.onEdit?.call(payload);
+                                break;
+                              case _TxAction.delete:
+                                if (widget.onDelete == null) break;
+                                final confirmed =
+                                    await _confirmDeleteTransaction(
+                                        context, payload);
+                                if (confirmed) widget.onDelete!(payload);
+                                break;
+                            }
+                          },
+                          itemBuilder: (ctx) {
+                            return [
+                              if (widget.onEdit != null)
+                                PopupMenuItem<_TxAction>(
+                                  value: _TxAction.edit,
+                                  child: Row(
+                                    children: const [
+                                      Icon(Icons.edit,
+                                          size: 18, color: Colors.blueGrey),
+                                      SizedBox(width: 8),
+                                      Text('Edit'),
+                                    ],
+                                  ),
+                                ),
+                              if (widget.onDelete != null)
+                                PopupMenuItem<_TxAction>(
+                                  value: _TxAction.delete,
+                                  child: Row(
+                                    children: const [
+                                      Icon(Icons.delete_outline,
+                                          size: 18,
+                                          color: Colors.redAccent),
+                                      SizedBox(width: 8),
+                                      Text('Delete',
+                                          style: TextStyle(
+                                              color: Colors.redAccent)),
+                                    ],
+                                  ),
+                                ),
+                            ];
+                          },
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (item.showSeparator) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: Colors.grey.withOpacity(0.15),
+            indent: 20,
+            endIndent: 20,
+          ),
+          row,
+        ],
+      );
+    }
+
+    return row;
+  }
+
   @override
   Widget build(BuildContext context) {
     debugPrint(
@@ -2163,744 +2876,65 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
     final groupedMap =
         groupTx(allTx.take(shownCount).toList(), _activeFilter.groupBy);
-    final groupedEntries = groupedMap.entries.toList();
+    
+    // Flatten items for lazy rendering
+    final items = _flattenItems(groupedMap);
 
-    final groupCount = groupedEntries.length;
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      shrinkWrap: !widget.enableScrolling,
+      // If we want scrolling, use standard physics; else disable it (for nested listing)
+      physics: widget.enableScrolling
+          ? const AlwaysScrollableScrollPhysics()
+          : const NeverScrollableScrollPhysics(),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
 
-    // Build all group sections into a flat list of widgets (no inner scrolling).
-    final List<Widget> children = [];
-
-    for (int idx = 0; idx < groupCount; idx++) {
-      final entry = groupedEntries[idx];
-      final rawLabel = entry.key;
-      final txs = entry.value;
-      final dateLabel = _displayGroupLabel(rawLabel);
-
-      final rows = <Widget>[];
-
-      // Top banner ad once at the very top
-      if (idx == 0 && widget.showTopBannerAd) {
-        rows.add(
-          Padding(
+        if (item is _TopBannerItem) {
+          return Padding(
             padding:
                 const EdgeInsets.only(left: 10, right: 10, top: 10, bottom: 6),
             child: _adBanner('txn_list_top'),
-          ),
-        );
-      }
+          );
+        }
 
-      // Date chip
-      if (dateLabel.isNotEmpty) {
-        rows.add(
-          Container(
+        if (item is _DateHeaderItem) {
+          return Container(
+            alignment: Alignment.centerLeft,
             margin:
                 const EdgeInsets.only(left: 14, right: 8, top: 8, bottom: 2),
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: Text(
-              dateLabel,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: Color(0xFF0F1E1C),
-              ),
-            ),
-          ),
-        );
-      }
-
-      // Each transaction row
-      for (int i = 0; i < txs.length; i++) {
-        final tx = txs[i];
-        final bool isIncome = tx['type'] == 'income';
-        final String id = (tx['id'] ?? '').toString();
-        final String category =
-            (tx['category'] ?? (isIncome ? 'Income' : 'General')).toString();
-        final String note = (tx['note'] ?? '').toString();
-        final String? title = (tx['title'] as String?);
-        final List<String> labels = (tx['labels'] is List)
-            ? List<String>.from(tx['labels'])
-            : const <String>[];
-        final double amount =
-            (tx['amount'] is num) ? (tx['amount'] as num).toDouble() : 0.0;
-
-        final String? bankLogo = tx['bankLogo'] as String?;
-        final String? brandLogo = tx['brandLogo'] as String?;
-        final String? schemeLogo = tx['schemeLogo'] as String?;
-        final String? merchant = (tx['merchant'] as String?)?.trim();
-        final String? cardLast4 = tx['cardLast4'] as String?;
-        final String? channel = tx['channel'] as String?;
-        final String? instrument = (tx['instrument'] as String?) ?? channel;
-        final String? network = tx['network'] as String?;
-        final String? issuerBank = tx['issuerBank'] as String?;
-        final String? counterparty = tx['counterparty'] as String?;
-        final bool isInternational = (tx['isInternational'] == true);
-        final bool hasFees = (tx['hasFees'] == true);
-        final String? tags = (tx['tags'] as String?);
-        final double categoryConfidence = (tx['categoryConfidence'] is num)
-            ? (tx['categoryConfidence'] as num).toDouble()
-            : 0.0;
-        final String categorySource = (tx['categorySource'] ?? '').toString();
-
-        final raw = tx['raw'];
-
-        String? friendsStr;
-        try {
-          if (tx['mode'] == 'legacy' &&
-              !isIncome &&
-              (raw.friendIds != null) &&
-              raw.friendIds.isNotEmpty) {
-            friendsStr = raw.friendIds
-                .map((fid) => widget.friendsById[fid]?.name ?? "Friend")
-                .join(', ');
-          }
-        } catch (_) {
-          friendsStr = null;
-        }
-
-        final String displayName = (counterparty ?? '')
-                .toString()
-                .trim()
-                .isNotEmpty
-            ? counterparty!.trim()
-            : (merchant != null && merchant.isNotEmpty ? merchant : 'Unknown');
-
-        final String showLine2 = () {
-          if (title != null && title.trim().isNotEmpty) return title.trim();
-          if (note.isNotEmpty) {
-            return note.length > 40 ? "${note.substring(0, 40)}..." : note;
-          }
-          return '';
-        }();
-
-        final bool isSelectable =
-            widget.multiSelectEnabled && widget.onSelectTx != null;
-        final bool isSelected = isSelectable && widget.selectedIds.contains(id);
-
-        final dynamic payload = tx['mode'] == 'unified' ? tx : raw;
-
-        String billUrl = '';
-        if (widget.showBillIcon) {
-          if (tx['mode'] == 'unified') {
-            final rawMap = (tx['raw'] is Map<String, dynamic>)
-                ? tx['raw'] as Map<String, dynamic>
-                : <String, dynamic>{};
-            billUrl = _billUrlFromUnified(rawMap);
-          } else {
-            billUrl = _billUrlFromLegacy(raw);
-          }
-        }
-
-        Widget leadingVisual;
-        if (brandLogo != null && brandLogo.isNotEmpty) {
-          leadingVisual = ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: _logo(brandLogo, w: 32, h: 32),
-          );
-        } else if (bankLogo != null && bankLogo.isNotEmpty) {
-          leadingVisual = ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: _logo(bankLogo, w: 30, h: 30),
-          );
-        } else {
-          leadingVisual = CircleAvatar(
-            radius: 16,
-            backgroundColor: isIncome ? Colors.green[50] : Colors.pink[50],
-            child: Icon(
-              getCategoryIcon(category, isIncome: isIncome),
-              color: isIncome ? Colors.green[700] : Colors.pink[700],
-              size: 18,
-            ),
-          );
-        }
-
-        final sourceLabel = () {
-          final s = categorySource.toLowerCase();
-          if (s == 'llm') return 'LLM';
-          if (s == 'rules') return 'Rules';
-          if (s == 'user_override') return 'Manual';
-          if (s.isNotEmpty) return s.toUpperCase();
-          return null;
-        }();
-        final methodChipLabels = _methodChipLabels(
-          instrument: instrument,
-          channel: channel,
-          cardLast4: cardLast4,
-          network: network,
-          isInternational: isInternational,
-          hasFees: hasFees,
-          tags: tags,
-        );
-        final rowChips = <Widget>[];
-        if (labels.isNotEmpty) {
-          rowChips.addAll(labels.take(3).map((l) => _chip('#$l')));
-          if (labels.length > 3) {
-            rowChips.add(_chip('+${labels.length - 3}'));
-          }
-        }
-        if (sourceLabel != null) {
-          rowChips.add(_chip(sourceLabel));
-        }
-        if (categorySource == 'llm' &&
-            categoryConfidence > 0 &&
-            categoryConfidence < 0.6) {
-          rowChips.add(_chip('Review'));
-        }
-
-        final row = Dismissible(
-          key: ValueKey('dismiss_${id}_${tx.hashCode}_$i'),
-          direction: ((widget.onDelete != null || widget.onEdit != null) &&
-                  widget.enableSwipeActions)
-              ? DismissDirection.horizontal
-              : DismissDirection.none,
-          background: (widget.enableSwipeActions && widget.onEdit != null)
-              ? _buildSwipeBackground(
-                  alignment: Alignment.centerLeft,
-                  icon: Icons.edit,
-                  label: 'Edit',
-                  color: Colors.blue.withOpacity(0.15),
-                )
-              : const SizedBox(),
-          secondaryBackground:
-              (widget.enableSwipeActions && widget.onDelete != null)
-                  ? _buildSwipeBackground(
-                      alignment: Alignment.centerRight,
-                      icon: Icons.delete,
-                      label: 'Delete',
-                      color: Colors.red.withOpacity(0.15),
-                    )
-                  : const SizedBox(),
-          confirmDismiss: (direction) async {
-            if (direction == DismissDirection.startToEnd) {
-              if (widget.onEdit != null) {
-                widget.onEdit!(payload);
-              }
-              return false;
-            }
-            if (direction == DismissDirection.endToStart) {
-              if (widget.onDelete == null) return false;
-              return _confirmDeleteTransaction(context, payload);
-            }
-            return false;
-          },
-          onDismissed: (direction) {
-            if (direction == DismissDirection.endToStart &&
-                widget.onDelete != null) {
-              final indexInAll = allTx.indexOf(tx);
-              if (indexInAll >= 0) {
-                _handleDelete(tx, indexInAll, payload);
-              }
-            }
-          },
-          child: GestureDetector(
-            key: ValueKey(id),
-            behavior: HitTestBehavior.opaque,
-            onTap: isSelectable
-                ? () => widget.onSelectTx!(id, !isSelected)
-                : () {
-                    if (widget.onRowTapIntercept != null) {
-                      final handled = widget.onRowTapIntercept!(tx);
-                      if (handled == true) return;
-                    }
-                    if (!widget.enableDetailsSheet) return;
-
-                    if (tx['mode'] == 'unified') {
-                      _showDetailsScreenFromUnified(
-                        tx,
-                        context,
-                        methodChipLabels: methodChipLabels,
-                      );
-                    } else {
-                      _showDetailsScreenLegacy(
-                        raw,
-                        isIncome,
-                        context,
-                        methodChipLabels: methodChipLabels,
-                      );
-                    }
-                  },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              constraints: const BoxConstraints(minHeight: 58),
-              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
               decoration: BoxDecoration(
-                color: isSelected
-                    ? Colors.deepPurple.withOpacity(0.09)
-                    : Colors.white.withOpacity(0.93),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.028),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-                border: isSelected
-                    ? Border.all(color: Colors.deepPurple, width: 1.4)
-                    : null,
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(13),
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  if (isSelectable)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: Checkbox(
-                        value: isSelected,
-                        onChanged: (val) =>
-                            widget.onSelectTx!(id, val ?? false),
-                        activeColor: Colors.deepPurple,
-                        visualDensity: VisualDensity.compact,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                      ),
-                    ),
-                  SizedBox(
-                    width: 48, // slightly wider for time
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        leadingVisual,
-                        const SizedBox(height: 4),
-                        Text(
-                          DateFormat('h:mm a').format(tx['date'] as DateTime),
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey[600],
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (schemeLogo != null && schemeLogo.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 6),
-                      child: _logo(schemeLogo, w: 18, h: 18),
-                    ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        GestureDetector(
-                          onTap: () {
-                            final pId = tx['payerId']?.toString();
-                            // Navigate to friend if it's someone else
-                            if (pId != null &&
-                                pId.isNotEmpty &&
-                                pId != widget.userPhone) {
-                              Navigator.pushNamed(
-                                context,
-                                '/friend-detail',
-                                arguments: {
-                                  'friendId': pId,
-                                  'friendName': displayName,
-                                },
-                              );
-                            } else {
-                              _editCounterparty(
-                                txId: id,
-                                isIncome: isIncome,
-                                current: counterparty,
-                                payload: payload,
-                                normalized: tx,
-                              );
-                            }
-                          },
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisSize: MainAxisSize.max,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      displayName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 15,
-                                        color: Color(0xFF0F1E1C),
-                                      ),
-                                    ),
-                                  ),
-                                  if (billUrl.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(left: 6),
-                                      child: Icon(Icons.receipt_long_rounded,
-                                          size: 14, color: Colors.grey[400]),
-                                    ),
-                                ],
-                              ),
-                              if (tx['groupId'] != null &&
-                                  tx['groupId'].toString().isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      Navigator.pushNamed(
-                                        context,
-                                        '/group-detail',
-                                        arguments: {
-                                          'groupId': tx['groupId'].toString(),
-                                        },
-                                      );
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.teal.shade50,
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
-                                            color: Colors.teal.shade100),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(Icons.group_outlined,
-                                              size: 10,
-                                              color: Colors.teal.shade700),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            "View Group",
-                                            style: TextStyle(
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.w700,
-                                              color: Colors.teal.shade800,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        if (tx['groupId'] != null &&
-                            tx['groupId'].toString().isNotEmpty &&
-                            widget.groups != null)
-                          Builder(builder: (context) {
-                            final gId = tx['groupId'].toString();
-                            final group = widget.groups!.firstWhere(
-                              (g) => g.id == gId,
-                              orElse: () => GroupModel(
-                                id: gId,
-                                name: 'Group',
-                                memberPhones: [],
-                                createdBy: '',
-                                createdAt: DateTime.now(),
-                              ),
-                            );
-                            return InkWell(
-                              onTap: () {
-                                Navigator.pushNamed(
-                                  context,
-                                  '/group-detail',
-                                  arguments: {
-                                    'groupId': group.id,
-                                    'groupName': group.name,
-                                    'group': group,
-                                  },
-                                );
-                              },
-                              child: Container(
-                                margin:
-                                    const EdgeInsets.only(top: 4, bottom: 2),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: Colors.blueGrey.withOpacity(0.10),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                      color: Colors.blueGrey.withOpacity(0.2)),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.groups_rounded,
-                                        size: 13,
-                                        color: Theme.of(context).primaryColor),
-                                    const SizedBox(width: 4),
-                                    Flexible(
-                                      child: Text(
-                                        group.name,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: Theme.of(context).primaryColor,
-                                          decoration: TextDecoration.underline,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: widget.showCategoryDropdown
-                                  ? SizedBox(
-                                      height: 26,
-                                      child: _categoryDropdown(
-                                        txId: id,
-                                        current: category,
-                                        isIncome: isIncome,
-                                        payload: payload,
-                                        normalized: tx,
-                                      ),
-                                    )
-                                  : Text(
-                                      category,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 13.5,
-                                        color: Color(0xFF4B5563),
-                                      ),
-                                    ),
-                            ),
-                            Container(
-                              width: 1,
-                              height: 14,
-                              color: Colors.grey.withOpacity(0.3),
-                              margin: const EdgeInsets.symmetric(horizontal: 8),
-                            ),
-                            Expanded(
-                              child: _subcategoryDropdown(
-                                txId: id,
-                                currentCategory: category,
-                                currentSubcategory:
-                                    (tx['subcategory'] ?? '').toString(),
-                                isIncome: isIncome,
-                                payload: payload,
-                                normalized: tx,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (showLine2.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4.0),
-                            child: Text(
-                              showLine2,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                color: Colors.black.withOpacity(0.75),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        if (rowChips.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4.0),
-                            child: Wrap(
-                              spacing: 6,
-                              runSpacing: -6,
-                              children: rowChips,
-                            ),
-                          ),
-                        if (tx['mode'] == 'legacy')
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2.0),
-                            child: Row(
-                              children: [
-                                if (friendsStr != null) ...[
-                                  Icon(Icons.person_2_rounded,
-                                      size: 15, color: Colors.deepPurple[500]),
-                                  Flexible(
-                                    child: Text(
-                                      " $friendsStr",
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        color: Colors.deepPurple[700],
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                if (tx['type'] == 'income' &&
-                                    (raw.source ?? '')
-                                        .toString()
-                                        .isNotEmpty) ...[
-                                  const SizedBox(width: 8),
-                                  Icon(Icons.input_rounded,
-                                      size: 15, color: Colors.teal[600]),
-                                  Flexible(
-                                    child: Text(
-                                      " ${raw.source}",
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        color: Colors.teal[700],
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      _amountPill(amount, isIncome),
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (widget.showBillIcon && billUrl.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.receipt_long_rounded,
-                                  size: 18, color: Colors.brown),
-                              tooltip: 'View bill',
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () => _showBillImage(context, billUrl),
-                            ),
-                          // if (widget.onAddComment != null)
-                          //    IconButton(
-                          //      icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: Colors.blueGrey),
-                          //      tooltip: 'Add Comment/Note',
-                          //      visualDensity: VisualDensity.compact,
-                          //      onPressed: () => widget.onAddComment?.call(payload),
-                          //    ),
-                          if (tx['mode'] == 'legacy' &&
-                              !isIncome &&
-                              widget.onSplit != null)
-                            IconButton(
-                              icon: const Icon(Icons.group,
-                                  size: 18, color: Colors.deepPurple),
-                              tooltip: 'Split',
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () => widget.onSplit?.call(payload),
-                            ),
-                          if (widget.onEdit != null || widget.onDelete != null)
-                            PopupMenuButton<_TxAction>(
-                              icon: const Icon(Icons.more_horiz_rounded,
-                                  color: Colors.blueGrey, size: 20),
-                              tooltip: 'More actions',
-                              onSelected: (action) async {
-                                switch (action) {
-                                  case _TxAction.edit:
-                                    widget.onEdit?.call(payload);
-                                    break;
-                                  case _TxAction.delete:
-                                    if (widget.onDelete == null) break;
-                                    final confirmed =
-                                        await _confirmDeleteTransaction(
-                                            context, payload);
-                                    if (confirmed) widget.onDelete!(payload);
-                                    break;
-                                }
-                              },
-                              itemBuilder: (ctx) {
-                                return [
-                                  if (widget.onEdit != null)
-                                    PopupMenuItem<_TxAction>(
-                                      value: _TxAction.edit,
-                                      child: Row(
-                                        children: const [
-                                          Icon(Icons.edit,
-                                              size: 18, color: Colors.blueGrey),
-                                          SizedBox(width: 8),
-                                          Text('Edit'),
-                                        ],
-                                      ),
-                                    ),
-                                  if (widget.onDelete != null)
-                                    PopupMenuItem<_TxAction>(
-                                      value: _TxAction.delete,
-                                      child: Row(
-                                        children: const [
-                                          Icon(Icons.delete_outline,
-                                              size: 18,
-                                              color: Colors.redAccent),
-                                          SizedBox(width: 8),
-                                          Text('Delete',
-                                              style: TextStyle(
-                                                  color: Colors.redAccent)),
-                                        ],
-                                      ),
-                                    ),
-                                ];
-                              },
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
+              child: Text(
+                item.label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  color: Color(0xFF0F1E1C),
+                ),
               ),
-            ),
-          ),
-        );
-
-        // Add separator between items (except the first one)
-        if (i > 0) {
-          rows.add(
-            Divider(
-              height: 1,
-              thickness: 1,
-              color: Colors.grey.withOpacity(0.15),
-              indent: 20,
-              endIndent: 20,
             ),
           );
         }
 
-        rows.add(row);
+        if (item is _TransactionItem) {
+          return _buildTransactionRow(context, item);
+        }
 
-        if (widget.enableInlineAds && i == widget.inlineAdAfterIndex) {
-          rows.add(
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: _inlineAdCard('txn_list_inline'),
-            ),
+        if (item is _InlineAdItem) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: _inlineAdCard(item.placement),
           );
         }
-      }
 
-      rows.add(const SizedBox(height: 2));
-
-      children.add(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: rows,
-        ),
-      );
-    }
-
-    // Show More & bottom banner (same as your `idx >= groupCount` branch)
-    if (shownCount < allTx.length) {
-      children.add(
-        Column(
-          children: [
-            Center(
+        if (item is _ShowMoreItem) {
+           return Center(
               child: TextButton(
                 child: const Text("Show More"),
                 onPressed: () {
@@ -2909,32 +2943,19 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                   });
                 },
               ),
-            ),
-            if (widget.showBottomBannerAd)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _adBanner('txn_list_bottom'),
-              ),
-          ],
-        ),
-      );
-    }
+            );
+        }
 
-    // Build the core content as a flat Column of all group sections, rows, and ads.
-    final column = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: children,
+        if (item is _BottomBannerItem) {
+           return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _adBanner('txn_list_bottom'),
+          );
+        }
+
+        return const SizedBox.shrink();
+      },
     );
-
-    if (widget.enableScrolling) {
-      return ListView(
-        padding: EdgeInsets.zero,
-        children: [column],
-      );
-    }
-
-    return column;
   }
 
   Widget _chip(String label) {
@@ -3173,3 +3194,29 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 }
 
 // Old bespoke ad widgets replaced by reusable [AdsBannerCard].
+
+// --- Helper classes for flat list rendering ---
+abstract class _ListItem {}
+
+class _TopBannerItem extends _ListItem {}
+
+class _DateHeaderItem extends _ListItem {
+  final String label;
+  _DateHeaderItem(this.label);
+}
+
+class _TransactionItem extends _ListItem {
+  final Map<String, dynamic> tx;
+  final int indexInGroup; 
+  final bool showSeparator;
+  _TransactionItem(this.tx, {this.indexInGroup = 0, this.showSeparator = false});
+}
+
+class _InlineAdItem extends _ListItem {
+  final String placement;
+  _InlineAdItem(this.placement);
+}
+
+class _ShowMoreItem extends _ListItem {}
+
+class _BottomBannerItem extends _ListItem {}

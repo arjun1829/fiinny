@@ -650,45 +650,94 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 14),
-        _SlideFade(
-          delayMs: 0,
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Colors.grey.shade200),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 14, offset: Offset(0, 8))],
+        const Text("Who paid?",
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _payerCard(
+                phone: currentUser.phone,
+                name: "You",
+                avatar: _avatarYou(r: 22),
+              ),
             ),
-            child: Column(
-              children: [
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: _avatarYou(),
-                  title: const Text("You", style: TextStyle(fontWeight: FontWeight.w700)),
-                  trailing: Radio<String>(
-                    value: currentUser.phone,
-                    groupValue: _selectedPayerPhone,
-                    onChanged: (v) => setState(() => _selectedPayerPhone = v),
-                  ),
-                ),
-                const Divider(height: 0),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: _avatarFriend(widget.friend),
-                  title: Text(widget.friend.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: Text(widget.friend.phone, style: const TextStyle(color: Colors.black54)),
-                  trailing: Radio<String>(
-                    value: widget.friend.phone,
-                    groupValue: _selectedPayerPhone,
-                    onChanged: (v) => setState(() => _selectedPayerPhone = v),
-                  ),
-                ),
-              ],
+            const SizedBox(width: 16),
+            Expanded(
+              child: _payerCard(
+                phone: widget.friend.phone,
+                name: widget.friend.name,
+                avatar: _avatarFriend(widget.friend, r: 22),
+              ),
             ),
-          ),
+          ],
         ),
       ],
+    );
+  }
+
+  Widget _payerCard(
+      {required String phone, required String name, required Widget avatar}) {
+    final isSelected = _selectedPayerPhone == phone;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedPayerPhone = phone),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? _kIndigo.withOpacity(0.06) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? _kIndigo : Colors.grey.shade200,
+            width: isSelected ? 2 : 1,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                      color: _kIndigo.withOpacity(0.15),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6))
+                ]
+              : [
+                  const BoxShadow(
+                      color: Color(0x0A000000),
+                      blurRadius: 8,
+                      offset: Offset(0, 4))
+                ],
+        ),
+        child: Column(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                avatar,
+                if (isSelected)
+                  const Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: CircleAvatar(
+                      radius: 10,
+                      backgroundColor: Colors.white,
+                      child:
+                          Icon(Icons.check_circle, color: _kIndigo, size: 18),
+                    ),
+                  )
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              name,
+              style: TextStyle(
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isSelected ? _kIndigo : Colors.black87,
+                fontSize: 15,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -935,17 +984,8 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
                         ),
                       ),
                     ),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 200),
-                      switchInCurve: Curves.easeInOut,
-                      switchOutCurve: Curves.easeInOut,
-                      child: _step >= 2
-                          ? const SleekAdCard(
-                              margin: EdgeInsets.fromLTRB(12, 6, 12, 6),
-                              radius: 14,
-                            )
-                          : const SizedBox.shrink(),
-                    ),
+                    // Ad removed as requested
+                    const SizedBox.shrink(),
 
                     // Footer
                     const SizedBox(height: 12),

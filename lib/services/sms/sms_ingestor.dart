@@ -3,7 +3,7 @@ import 'dart:collection';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb, kDebugMode;
-import 'package:telephony/telephony.dart';
+// import 'package:telephony/telephony.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:workmanager/workmanager.dart' as wm;
 
@@ -494,7 +494,7 @@ class SmsIngestor {
     if (kDebugMode) print('[SmsIngestor] $s');
   }
 
-  Telephony? _telephony;
+  // Telephony? _telephony;
   final ExpenseService _expense = ExpenseService();
   final IncomeService _income = IncomeService();
   final IngestIndexService _index = IngestIndexService();
@@ -505,10 +505,10 @@ class SmsIngestor {
   bool get _isAndroid =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
-  Telephony? _ensureTelephony() {
-    if (!_isAndroid) return null;
-    return _telephony ??= Telephony.instance;
-  }
+  // Telephony? _ensureTelephony() {
+  //   if (!_isAndroid) return null;
+  //   return _telephony ??= Telephony.instance;
+  // }
 
   // Recent event guard (OEMs sometimes double-fire callbacks)
   static const int _recentCap = 400;
@@ -539,6 +539,9 @@ class SmsIngestor {
     required String userPhone,
     int days = TEST_BACKFILL_DAYS,
   }) async {
+    _log('SMS backfill DISABLED (telephony removed for iOS build fixes)');
+    return;
+    /*
     if (!_isAndroid) {
       _log('skip SMS backfill (not Android)');
       return;
@@ -567,7 +570,7 @@ class SmsIngestor {
     DateTime? newest;
     for (final m in msgs) {
       if (processed >= TEST_MAX_MSGBATCH) break;
-
+      
       final ts = DateTime.fromMillisecondsSinceEpoch(
         m.date ?? now.millisecondsSinceEpoch,
       );
@@ -597,6 +600,7 @@ class SmsIngestor {
           .setProgress(userPhone, lastSmsTs: newest);
     }
     _log('backfill done: processed=$processed newest=$newest');
+    */
   }
 
   Future<void> _maybeAttachToCardBillPayment({
@@ -661,6 +665,9 @@ class SmsIngestor {
     required String userPhone,
     int newerThanDays = INITIAL_HISTORY_DAYS,
   }) async {
+    _log('SMS initial backfill DISABLED');
+    return;
+    /*
     if (!_isAndroid) {
       _log('skip SMS backfill (not Android)');
       return;
@@ -722,9 +729,13 @@ class SmsIngestor {
         lastSmsTs: lastSeen,
       );
     }
+    */
   }
 
   Future<void> startRealtime({required String userPhone}) async {
+    _log('SMS realtime listener DISABLED');
+    return;
+    /*
     if (!_isAndroid) return;
     final granted = await SmsPermissionHelper.hasPermissions();
     if (!granted) return;
@@ -760,6 +771,7 @@ class SmsIngestor {
     } catch (_) {
       // some OEMs restrict background listeners
     }
+    */
   }
 
   Future<void> scheduleDaily48hSync(String userPhone) async {

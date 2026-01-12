@@ -1480,6 +1480,7 @@ class GmailService {
 
       _log(
           'WRITE/UPSERT CC BillReminder total=$total bank=${bank ?? "-"} last4=${cardLast4 ?? "-"}');
+
       return msgDate;
     }
 

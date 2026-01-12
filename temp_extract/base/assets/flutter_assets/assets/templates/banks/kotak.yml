@@ -1,0 +1,14 @@
+id: kotak_debit_v1
+applies_if:
+  sender_any: ['KOTAKB', 'KOTAK', 'alerts']
+  contains_any: ['debited', 'inr', 'a/c']
+extract:
+  amount: { regex: "(?:inr|₹|rs\\.?)+\\s*([0-9,]+\\.?[0-9]{0,2})" }
+  account_tail: { regex: "a/?c(?:ount)?\\s*(?:xx|x){0,3}([0-9]{3,4})" }
+  merchant: { regex: "(?:at|to)\\s+([a-z0-9 &\\-_.]{2,40})" }
+classify:
+  direction: "DEBIT"
+  instrument: "ACCOUNT"
+  confidence: "0.91"
+post:
+  category_hint: "Groceries"

@@ -8,7 +8,7 @@ class RecurringItem {
   final double monthlyAmount;  // approx monthly cost (avg or last)
   final DateTime lastDate;
   final DateTime nextDueDate;
-  final List<String> tags;     // from items (union)
+  final int occurrences; // added
 
   RecurringItem({
     required this.key,
@@ -18,6 +18,7 @@ class RecurringItem {
     required this.lastDate,
     required this.nextDueDate,
     required this.tags,
+    required this.occurrences,
   });
 }
 
@@ -100,6 +101,7 @@ class CadenceDetector {
         lastDate: last,
         nextDueDate: next,
         tags: tagsUnion.toList(),
+        occurrences: list.length,
       ));
     });
 

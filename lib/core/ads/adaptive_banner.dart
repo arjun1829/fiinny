@@ -1,12 +1,8 @@
 // lib/core/ads/adaptive_banner.dart
 import 'dart:async';
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-import '../flags/remote_flags.dart';
 import 'ad_service.dart';
 
 class AdaptiveBanner extends StatefulWidget {

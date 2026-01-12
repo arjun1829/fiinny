@@ -2163,8 +2163,47 @@ class _ActivityTabBody extends StatelessWidget {
         : null;
     final payer = _nameFor(e.payerId);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          if (e.groupId != null && e.groupId!.isNotEmpty) {
+            final group = _groupMap[e.groupId!] ??
+                GroupModel(
+                  id: e.groupId!,
+                  name: groupName ?? 'Group',
+                  memberPhones: [],
+                  createdBy: '',
+                  createdAt: DateTime.now(),
+                );
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) =>
+                      GroupDetailScreen(userId: userPhone, group: group)),
+            );
+          } else if (e.friendIds.isNotEmpty) {
+            // Find the primary friend to show context for
+            // (Usually the single friend in 1:1, or first in split)
+            final friendPhone = e.friendIds.first;
+            final friend = _friendMap[friendPhone] ??
+                FriendModel(
+                    phone: friendPhone, name: friendPhone, avatar: '');
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => FriendDetailScreen(
+                      userPhone: userPhone,
+                      userName: "You",
+                      friend: friend)),
+            );
+          }
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -2330,10 +2369,10 @@ class _ActivityTabBody extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ),),);
   }
 
-  Widget _groupActivityTile(ExpenseItem e) {
+  Widget _groupActivityTile(BuildContext context, ExpenseItem e) {
     final groupName = (e.groupId != null && e.groupId!.isNotEmpty)
         ? (_groupMap[e.groupId!]?.name ?? 'Group')
         : 'Group';
@@ -2355,9 +2394,29 @@ class _ActivityTabBody extends StatelessWidget {
         ? e.label!
         : (e.category?.isNotEmpty == true ? e.category! : 'Expense');
 
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          final group = _groupMap[e.groupId!] ??
+              GroupModel(
+                id: e.groupId ?? '',
+                name: groupName,
+                memberPhones: [],
+                createdBy: '',
+                createdAt: DateTime.now(),
+              );
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) =>
+                    GroupDetailScreen(userId: userPhone, group: group)),
+          );
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(.88),
         borderRadius: BorderRadius.circular(16),
@@ -2442,7 +2501,7 @@ class _ActivityTabBody extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ),),);
   }
 
   Widget _buildSharedHistory(BuildContext context) {
@@ -2462,7 +2521,7 @@ class _ActivityTabBody extends StatelessWidget {
     );
   }
 
-  Widget _buildGroupActivity() {
+  Widget _buildGroupActivity(BuildContext context) {
     final grouped = expenses
         .where((e) => e.groupId != null && e.groupId!.isNotEmpty)
         .toList()
@@ -2475,7 +2534,7 @@ class _ActivityTabBody extends StatelessWidget {
       children: [
         for (int i = 0; i < grouped.length && i < 40; i++) ...[
           if (i > 0) const SizedBox(height: 12),
-          _groupActivityTile(grouped[i]),
+          _groupActivityTile(context, grouped[i]),
         ],
       ],
     );
@@ -2499,7 +2558,7 @@ class _ActivityTabBody extends StatelessWidget {
           _sectionCard(
               title: 'Shared History', child: _buildSharedHistory(context)),
           _sectionCard(
-              title: 'Recent Group Activity', child: _buildGroupActivity()),
+              title: 'Recent Group Activity', child: _buildGroupActivity(context)),
         ],
       ),
     );

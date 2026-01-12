@@ -324,13 +324,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
       try {
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
-          await user.updateEmail(newEmail);
+          await user.verifyBeforeUpdateEmail(newEmail);
+          // Note: Email not updated in Auth until verified. updating Firestore for reference.
           await FirebaseFirestore.instance.collection('users').doc(_getUserPhone(user)).set({
-            'email': newEmail,
-            'email_linked_at': FieldValue.serverTimestamp(),
+            'pending_email': newEmail, // Store as pending
+            'email_update_requested_at': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
+          
+          if (mounted) {
+             ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Verification email sent! Please check your inbox to confirm the change.")),
+            );
+          }
         }
-        setState(() => userEmail = newEmail);
+        // Don't update local userEmail immediately since it requires verification
+        // setState(() => userEmail = newEmail); 
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(

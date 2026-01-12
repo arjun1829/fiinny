@@ -26,17 +26,12 @@ val keystoreProperties = Properties()
 val requestedTasks = gradle.startParameter.taskNames
 val isReleaseTaskRequested = requestedTasks.any { task ->
     task.contains("Release", ignoreCase = true) ||
-        task.contains("bundle", ignoreCase = true) ||
-        task.contains("publish", ignoreCase = true)
+            task.contains("bundle", ignoreCase = true) ||
+            task.contains("publish", ignoreCase = true)
 }
 
 /*
- * 🔐 Resolve the keystore metadata from a local key.properties file. We look in a
- * handful of common locations so both macOS/Linux CI and developer machines can
- * produce release builds with the *same* signing key that Play requires for
- * upgrades. If we can't find the file we fail fast for release builds instead of
- * silently falling back to the debug keystore (which would generate the
- * "does not allow existing users to update" error in Play Console).
+ * 🔐 Resolve keystore metadata safely
  */
 val keystorePropertiesFile = listOf(
     rootProject.file("android/key.properties"),
@@ -52,45 +47,52 @@ if (keystorePropertiesFile != null) {
 android {
     namespace = "com.KaranArjunTechnologies.lifemap"
     compileSdk = 36
-    ndkVersion = "28.0.12433566"
+    ndkVersion = "28.2.13676358"
 
-    /* ✅ Use Java 17 to satisfy modern toolchains */
+    /* ✅ Java 17 – stable & recommended */
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
         isCoreLibraryDesugaringEnabled = true
     }
-    kotlinOptions { jvmTarget = "17" }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 
     defaultConfig {
         applicationId = "com.KaranArjunTechnologies.lifemap"
-        minSdk = flutter.minSdkVersion
+        minSdk = 24
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    /* =====================================================
+     * Android 15 – 16 KB PAGE SIZE (OFFICIAL, SAFE SETUP)
+     * ===================================================== */
     packaging {
-        // jniLibs { useLegacyPackaging = true } // Removed for 16KB alignment support
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+
+        // Required for Android 15 / 16 KB page devices
+        jniLibs {
+            useLegacyPackaging = false
+        }
     }
 
     signingConfigs {
         if (keystoreProperties.isNotEmpty()) {
             create("release") {
-                val storeFilePath = keystoreProperties["storeFile"] as String?
-                    ?: throw GradleException("storeFile missing from key.properties")
+                val storeFilePath = keystoreProperties["storeFile"] as String
                 val resolvedStoreFile = File(storeFilePath)
-                storeFile = if (resolvedStoreFile.isAbsolute) {
-                    resolvedStoreFile
-                } else {
-                    rootProject.file(storeFilePath)
-                }
-                storePassword = keystoreProperties["storePassword"] as String?
-                    ?: throw GradleException("storePassword missing from key.properties")
-                keyAlias = keystoreProperties["keyAlias"] as String?
-                    ?: throw GradleException("keyAlias missing from key.properties")
-                keyPassword = keystoreProperties["keyPassword"] as String?
-                    ?: throw GradleException("keyPassword missing from key.properties")
+                storeFile =
+                    if (resolvedStoreFile.isAbsolute) resolvedStoreFile
+                    else rootProject.file(storeFilePath)
+
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
             }
         }
     }
@@ -108,8 +110,9 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
         }
+
         getByName("debug") {
-            // releaseSigning?.let { signingConfig = it }
+            // default debug config
         }
     }
 }
@@ -119,14 +122,14 @@ flutter {
 }
 
 dependencies {
-    // Align all Firebase artifacts to the same version via BOM
+    // 🔥 Firebase BOM – unchanged
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
 
-    // Needed by flutter_local_notifications and friends
+    // Java 17 desugaring
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.core:core-ktx:1.13.1")
 
-    // ✋ Do NOT add firebase-messaging directly here — FlutterFire provides it.
+    // ✋ Do NOT add firebase-messaging manually
 }
