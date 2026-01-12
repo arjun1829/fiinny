@@ -4,12 +4,11 @@ import '../services/expense_service.dart';
 import '../services/balance_service.dart';
 import '../widgets/activity_feed_widget.dart';
 import '../widgets/settleup_dialog.dart';
-import '../services/activity_service.dart'; // <-- brings in ActivityItem, ActivityType
-import '../widgets/activity_feed_widget.dart';
-import '../models/expense_item.dart';        // already used, keep this import
+import '../services/activity_service.dart';
+import '../models/expense_item.dart';
+import 'group_chat_tab.dart';
 
-
-class GroupDetailScreen extends StatelessWidget {
+class GroupDetailScreen extends StatefulWidget {
   final String userId;
   final GroupModel group;
 
@@ -20,75 +19,228 @@ class GroupDetailScreen extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<GroupDetailScreen> createState() => _GroupDetailScreenState();
+}
+
+class _GroupDetailScreenState extends State<GroupDetailScreen> {
+  int _selectedIndex = 3; // Default to Chat (3)
+
+  void _showSettleUpDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => SettleUpDialog(
+        userPhone: widget.userId,
+        friends: const [],
+        groups: [widget.group],
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final group = widget.group;
+    final backgroundColor =
+        const Color(0xFFF1F5F9); // User's requested BG color
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(group.name),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.handshake_rounded),
-            tooltip: 'Settle Up',
-            onPressed: () {
-              // Settle up with any group member
-              showDialog(
-                context: context,
-                builder: (context) => SettleUpDialog(
-                  userPhone: userId,
-                  friends: [], // For group, you may want to filter only group members (excluding self)
-                  groups: [group],
+      backgroundColor: backgroundColor,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ------------------------------------------------
+            // CUSTOM APP BAR (Minimizing standard AppBar usage to match custom feel if needed,
+            // but user code just showed Tab Bar. We'll keep a minimal header for navigation)
+            // ------------------------------------------------
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.black),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  Text(
+                    group.name,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.handshake_rounded,
+                        color: Colors.black),
+                    tooltip: 'Settle Up',
+                    onPressed: () => _showSettleUpDialog(context),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.settings, color: Colors.black54),
+                    onPressed: () {},
+                  )
+                ],
+              ),
+            ),
+
+            // ------------------------------------------------
+            // 1. TOP CUSTOM TAB BAR (User's Code)
+            // ------------------------------------------------
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
+              child: Container(
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200], // Light grey background for tab bar
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    _buildTabItem("History", 0),
+                    _buildTabItem("Chart", 1),
+                    _buildTabItem("Analytics", 2),
+                    _buildTabItem("Chat", 3), // Active tab logic via index
+                  ],
+                ),
+              ),
+            ),
+
+            // ------------------------------------------------
+            // 2. BODY CONTENT (Switched based on tab)
+            // ------------------------------------------------
+            Expanded(
+              child: _buildBody(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    switch (_selectedIndex) {
+      case 0:
+        return _buildHistoryTab();
+      case 1:
+        return const Center(child: Text("Chart View Placeholder"));
+      case 2:
+        return const Center(child: Text("Analytics View Placeholder"));
+      case 3:
+        return _buildChatTab();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  // Helper widget for Top Tab Bar Items (Adapted from user code)
+  Widget _buildTabItem(String text, int index) {
+    final isActive = _selectedIndex == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedIndex = index),
+        child: Padding(
+          padding: const EdgeInsets.all(4.0),
+          child: Container(
+            decoration: BoxDecoration(
+              color: isActive ? Colors.white : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: isActive
+                  ? [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.05), blurRadius: 4)
+                    ]
+                  : [],
+            ),
+            child: Center(
+              child: Text(
+                text,
+                style: TextStyle(
+                  color: isActive ? const Color(0xFF0F8A7E) : Colors.grey[600],
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- TAB 0: HISTORY (Balance + Feed) ---
+  Widget _buildHistoryTab() {
+    return Column(
+      children: [
+        // Balance Card
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: StreamBuilder<BalanceResult>(
+            stream: BalanceService().streamUserBalances(widget.userId),
+            builder: (context, snapshot) {
+              final groupBalances = snapshot.data?.perGroupNet ?? {};
+              final net = groupBalances[widget.group.id] ?? 0.0;
+              final positive = net >= 0;
+              final color = positive ? Colors.green : Colors.redAccent;
+
+              return Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+                  child: Column(
+                    children: [
+                      Text(
+                        positive ? "Owed to You" : "You Owe Group",
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          color: color,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "₹${net.abs().toStringAsFixed(2)}",
+                        style: TextStyle(
+                          fontSize: 22,
+                          color: color,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               );
             },
-          )
-        ],
-      ),
-      body: Column(
-        children: [
-          // Live per-member group balances
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-            child: StreamBuilder<BalanceResult>(
-              stream: BalanceService().streamUserBalances(userId),
-              builder: (context, snapshot) {
-                final groupBalances = snapshot.data?.perGroupNet ?? {};
-                final net = groupBalances[group.id] ?? 0.0;
-                final color = net >= 0 ? Colors.blue : Colors.redAccent;
-                return Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                  color: color.withOpacity(0.14),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
-                    child: Column(
-                      children: [
-                        Text(
-                          net >= 0 ? "Owed to You" : "You Owe Group",
-                          style: TextStyle(fontSize: 15, color: color, fontWeight: FontWeight.bold),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          "₹${net.abs().toStringAsFixed(2)}",
-                          style: TextStyle(fontSize: 23, color: color, fontWeight: FontWeight.w700),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
           ),
-          Divider(height: 2),
-          // List all transactions in this group
-          Expanded(
-            child: StreamBuilder<List<ExpenseItem>>(
-              stream: ExpenseService().getGroupExpensesStream(userId, group.id),
-              builder: (context, snapshot) {
-                final txs = snapshot.data ?? [];
-                return ActivityFeedWidget(
-                  activities: txs.map((e) =>
-                      ActivityItem(
+        ),
+
+        const Divider(height: 1),
+
+        // Activity Feed
+        Expanded(
+          child: StreamBuilder<List<ExpenseItem>>(
+            stream: ExpenseService()
+                .getGroupExpensesStream(widget.userId, widget.group.id),
+            builder: (context, snapshot) {
+              final txs = snapshot.data ?? [];
+              return ActivityFeedWidget(
+                activities: txs
+                    .map(
+                      (e) => ActivityItem(
                         id: e.id,
-                        type: e.isBill || (e.label ?? '').toLowerCase().contains('settle')
+                        type: e.isBill ||
+                                (e.label ?? '').toLowerCase().contains('settle')
                             ? ActivityType.settleup
                             : ActivityType.expense,
                         amount: e.amount,
@@ -96,18 +248,28 @@ class GroupDetailScreen extends StatelessWidget {
                         note: e.note,
                         date: e.date,
                         friendId: null,
-                        groupId: group.id,
+                        groupId: widget.group.id,
                         payerId: e.payerId,
                         receiverId: null,
-                        isSettleUp: e.isBill || (e.label ?? '').toLowerCase().contains('settle'),
+                        isSettleUp: e.isBill ||
+                            (e.label ?? '').toLowerCase().contains('settle'),
                       ),
-                  ).toList(),
-                );
-              },
-            ),
+                    )
+                    .toList(),
+              );
+            },
           ),
-        ],
-      ),
+        ),
+      ],
+    );
+  }
+
+  // --- TAB 3: CHAT ---
+  Widget _buildChatTab() {
+    return GroupChatTab(
+      groupId: widget.group.id,
+      currentUserId: widget.userId,
+      onSettleUp: () => _showSettleUpDialog(context),
     );
   }
 }
