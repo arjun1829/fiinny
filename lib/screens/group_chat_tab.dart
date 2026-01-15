@@ -10,20 +10,25 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-class PartnerChatTab extends StatefulWidget {
-  final String partnerUserId; // phone-based id
-  final String currentUserId; // phone-based id
-  const PartnerChatTab({
+import 'package:lifemap/core/ads/ads_banner_card.dart';
+
+class GroupChatTab extends StatefulWidget {
+  final String groupId;
+  final String currentUserId;
+  final VoidCallback onSettleUp;
+
+  const GroupChatTab({
     Key? key,
-    required this.partnerUserId,
+    required this.groupId,
     required this.currentUserId,
+    required this.onSettleUp,
   }) : super(key: key);
 
   @override
-  State<PartnerChatTab> createState() => PartnerChatTabState();
+  State<GroupChatTab> createState() => GroupChatTabState();
 }
 
-class PartnerChatTabState extends State<PartnerChatTab> {
+class GroupChatTabState extends State<GroupChatTab> {
   final _msgController = TextEditingController();
   final _scrollController = ScrollController();
   final _imagePicker = ImagePicker();
@@ -33,19 +38,21 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   bool _pickingEmoji = false;
   bool _pickingSticker = false;
   bool _uploading = false;
-  Widget _miniIcon({
+
+  // Helper for small icons
+  Widget _smallIconButton({
     required IconData icon,
     String? tooltip,
     VoidCallback? onPressed,
+    Color color = Colors.teal,
   }) {
     return IconButton(
-      icon: Icon(icon, size: 18),
+      icon: Icon(icon, color: color, size: 24),
       tooltip: tooltip,
       onPressed: onPressed,
       padding: EdgeInsets.zero,
-      visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-      splashRadius: 18,
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      splashRadius: 20,
     );
   }
 
@@ -84,9 +91,7 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   }
 
   String get _threadId {
-    final a = widget.currentUserId.trim();
-    final b = widget.partnerUserId.trim();
-    return (a.compareTo(b) <= 0) ? '${a}_$b' : '${b}_$a';
+    return widget.groupId;
   }
 
   DocumentReference<Map<String, dynamic>> get _threadRef =>
@@ -105,7 +110,7 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     setState(() {
       for (final tx in txs) {
         // avoid duplicates
-        final id = tx['date'].toString(); // ideally use a real ID if available
+        final id = tx['date'].toString();
         if (!_attachedTxs.any((e) => e['date'].toString() == id)) {
           _attachedTxs.add(tx);
         }
@@ -113,23 +118,23 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     });
   }
 
+  void _removeAttachment(int index) {
+    setState(() {
+      _attachedTxs.removeAt(index);
+    });
+  }
+
   Future<void> _ensureThreadDoc() async {
     final doc = await _threadRef.get();
     if (!doc.exists) {
       await _threadRef.set({
-        'participants': [widget.currentUserId, widget.partnerUserId],
+        'participants': [widget.currentUserId],
         'createdAt': FieldValue.serverTimestamp(),
         'lastMessage': null,
         'lastFrom': null,
         'lastAt': FieldValue.serverTimestamp(),
         'lastType': null,
       });
-    } else {
-      await _threadRef.set({
-        'participants': FieldValue.arrayUnion(
-          [widget.currentUserId, widget.partnerUserId],
-        ),
-      }, SetOptions(merge: true));
     }
   }
 
@@ -145,17 +150,14 @@ class PartnerChatTabState extends State<PartnerChatTab> {
 
     await _messagesRef.add({
       'from': widget.currentUserId,
-      'to': widget.partnerUserId,
       'message': msg,
       'timestamp': now,
-      'type': type, // 'text' | 'sticker' | 'image' | 'file' | 'discussion'
+      'type': type,
       'edited': false,
       ...extra,
     });
 
     final lastPreview = switch (type) {
-      'image' => '[photo]',
-      'file' => extra['fileName'] ?? '[file]',
       'image' => '[photo]',
       'file' => extra['fileName'] ?? '[file]',
       'sticker' => msg,
@@ -416,50 +418,6 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     await doc.reference.delete();
   }
 
-  Future<void> _clearChat() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Clear chat?'),
-        content:
-            const Text('This will delete all messages for both participants.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Clear')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-
-    try {
-      const batchSize = 50;
-      while (true) {
-        final snap =
-            await _messagesRef.orderBy('timestamp').limit(batchSize).get();
-        if (snap.docs.isEmpty) break;
-        final batch = FirebaseFirestore.instance.batch();
-        for (final d in snap.docs) {
-          final fu = (d.data()['fileUrl'] ?? '').toString();
-          if (fu.isNotEmpty) {
-            try {
-              await FirebaseStorage.instance.refFromURL(fu).delete();
-            } catch (_) {}
-          }
-          batch.delete(d.reference);
-        }
-        await batch.commit();
-        if (snap.docs.length < batchSize) break;
-      }
-      _toast('Chat cleared');
-    } catch (e) {
-      _toast('Failed to clear chat');
-    }
-  }
-
   // ---------- Pickers UI ----------
   final List<String> _emojiBank = const [
     '😀',
@@ -599,62 +557,13 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     );
   }
 
-  // ---------- UI helpers ----------
   void _toast(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   void _showAttachmentSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Theme.of(context).cardColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt_rounded),
-              title: const Text('Camera'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickFromCamera();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_rounded),
-              title: const Text('Photo from gallery'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickFromGallery();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.attach_file_rounded),
-              title: const Text('File / PDF'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickAnyFile();
-              },
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.emoji_emotions),
-              title: const Text('Sticker pack'),
-              onTap: () {
-                Navigator.pop(ctx);
-                setState(() {
-                  _pickingEmoji = false;
-                  _pickingSticker = true;
-                });
-              },
-            ),
-          ],
-        ),
-      ),
-    );
+    widget.onSettleUp();
   }
 
   void _onBubbleLongPress(
@@ -707,7 +616,23 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     );
   }
 
-  // ---------- small icon button helper (compact controls) ----------
+  void _onOpenAttachment(Map<String, dynamic> data) {
+    final url = (data['fileUrl'] ?? '').toString();
+    if (url.isEmpty) return;
+
+    // Simple logic: just copy link or show dialog
+    if ((data['mime'] ?? '').toString().startsWith('image/')) {
+      showDialog(
+        context: context,
+        builder: (_) => Dialog(
+          child: Image.network(url, fit: BoxFit.contain),
+        ),
+      );
+    } else {
+      Clipboard.setData(ClipboardData(text: url));
+      _toast('Link copied');
+    }
+  }
 
   @override
   void dispose() {
@@ -718,17 +643,18 @@ class PartnerChatTabState extends State<PartnerChatTab> {
 
   @override
   Widget build(BuildContext context) {
-    // 1. USE THESE COLORS
-    final Color _kTealColor = const Color(0xFF00897B);
-    final Color _kBgColor = const Color(0xFFF1F5F9);
-
     final pickerVisible = _pickingEmoji || _pickingSticker;
 
+    // Exact Background Color from Screenshot
+    final backgroundColor = const Color(0xFFF1F5F9);
+    // Exact Teal Color from Screenshot
+    final tealColor = const Color(0xFF00897B);
+
     return Scaffold(
-      backgroundColor: _kBgColor,
+      backgroundColor: backgroundColor,
       body: Column(
         children: [
-          // MESSAGES LIST
+          // 1. MESSAGES LIST
           Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: _messagesRef
@@ -742,9 +668,11 @@ class PartnerChatTabState extends State<PartnerChatTab> {
                 final docs = snapshot.data?.docs ?? [];
                 if (docs.isEmpty) {
                   return Center(
-                    child: Text("Start the discussion",
-                        style: GoogleFonts.inter(
-                            fontSize: 16, color: Colors.grey.shade400)),
+                    child: Text(
+                      "Say Hi! 👋",
+                      style: GoogleFonts.inter(
+                          fontSize: 16, color: Colors.grey.shade400),
+                    ),
                   );
                 }
 
@@ -766,15 +694,12 @@ class PartnerChatTabState extends State<PartnerChatTab> {
                         : '';
                     final fileUrl = data['fileUrl'] as String?;
 
-                    // LOGIC: Show sender name for others
-                    final senderName = !isMe ? "Member" : null;
-
                     return ChatBubble(
                       text: msg,
                       time: timeStr,
                       isMe: isMe,
-                      senderName: senderName,
-                      color: _kTealColor,
+                      senderName: null,
+                      color: tealColor,
                       type: type,
                       imageUrl: type == 'image' ? fileUrl : null,
                       onLongPress: () => _onBubbleLongPress(d, isMe, type),
@@ -785,13 +710,7 @@ class PartnerChatTabState extends State<PartnerChatTab> {
             ),
           ),
 
-          if (_uploading)
-            LinearProgressIndicator(
-                minHeight: 2,
-                backgroundColor: Colors.transparent,
-                color: _kTealColor),
-
-          // CONTEXT AREA (Expenses) - KEEPING YOUR LOGIC
+          // 2. CONTEXT AREA (Transaction Attachments)
           if (_attachedTxs.isNotEmpty)
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -806,7 +725,7 @@ class PartnerChatTabState extends State<PartnerChatTab> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.receipt, color: _kTealColor),
+                  Icon(Icons.receipt, color: tealColor),
                   const SizedBox(width: 8),
                   Text("${_attachedTxs.length} expenses attached"),
                   const Spacer(),
@@ -818,6 +737,7 @@ class PartnerChatTabState extends State<PartnerChatTab> {
               ),
             ),
 
+          // 3. EMOJI/STICKER PICKER
           if (pickerVisible) const Divider(height: 1),
           AnimatedCrossFade(
             crossFadeState: pickerVisible
@@ -829,68 +749,82 @@ class PartnerChatTabState extends State<PartnerChatTab> {
             secondChild: const SizedBox.shrink(),
           ),
 
-          // INPUT BAR (PILL SHAPE - MANDATORY CODE)
+          // 4. THE INPUT BAR (Matches your Screenshot Design)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             decoration: BoxDecoration(
               color: Colors.white,
+              // Rounded top corners for the container
               borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(24), topRight: Radius.circular(24)),
+                topLeft: Radius.circular(24),
+                topRight: Radius.circular(24),
+              ),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, -2))
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, -2),
+                ),
               ],
             ),
             child: SafeArea(
               top: false,
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center, // CRITICAL FIX
                 children: [
+                  // A. Plus Icon (OUTSIDE the rectangle)
                   InkWell(
-                      onTap: _showAttachmentSheet,
-                      child: Icon(Icons.add_circle_outline,
-                          color: Colors.grey[600], size: 28)),
+                    onTap: _showAttachmentSheet,
+                    child: Icon(Icons.add_circle_outline,
+                        color: Colors.grey[600], size: 28),
+                  ),
                   const SizedBox(width: 8),
+
+                  // B. Emoji Icon (Inside Grey Circle)
                   InkWell(
                     onTap: () => setState(() {
                       _pickingSticker = false;
                       _pickingEmoji = !_pickingEmoji;
                     }),
                     child: Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(
+                          8), // Padding to make circle larger
                       decoration: BoxDecoration(
-                          color: Colors.grey[200], shape: BoxShape.circle),
+                        color: Colors.grey[200], // Light grey circle
+                        shape: BoxShape.circle,
+                      ),
                       child: Icon(
-                          (_pickingEmoji)
-                              ? Icons.keyboard
-                              : Icons.sentiment_satisfied_alt,
-                          color: Colors.grey[600],
-                          size: 20),
+                        (_pickingEmoji)
+                            ? Icons.keyboard
+                            : Icons.sentiment_satisfied_alt,
+                        color: Colors.grey[600],
+                        size: 20,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
+
+                  // C. Text Input Field (The "Rectangular" Pill)
                   Expanded(
                     child: Container(
-                      constraints:
-                          const BoxConstraints(minHeight: 45, maxHeight: 100),
+                      height: 45,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: Colors.grey[300]!)),
+                        color: Colors.white,
+                        borderRadius:
+                            BorderRadius.circular(24), // Fully rounded pill
+                        border:
+                            Border.all(color: Colors.grey[300]!), // Grey border
+                      ),
                       child: TextField(
                         controller: _msgController,
-                        maxLines: null,
                         style: GoogleFonts.inter(fontSize: 15),
                         decoration: const InputDecoration(
                           hintText: "Type a message...",
                           border: InputBorder.none,
-                          isDense: true,
                           hintStyle:
                               TextStyle(color: Colors.grey, fontSize: 14),
-                          contentPadding: EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 10), // ALIGNMENT FIX
+                          // Centers text vertically
+                          contentPadding: EdgeInsets.only(bottom: 7),
                         ),
                         onTap: () => setState(() {
                           _pickingEmoji = false;
@@ -900,24 +834,28 @@ class PartnerChatTabState extends State<PartnerChatTab> {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  InkWell(
-                    onTap: () {
-                      if (_attachedTxs.isNotEmpty) {
-                        _sendMessage(
-                            text: _msgController.text,
-                            type: 'discussion',
-                            extra: {'transactions': _attachedTxs});
-                      } else {
-                        _sendMessage(text: _msgController.text, type: 'text');
-                      }
-                    },
-                    child: Container(
-                      width: 45,
-                      height: 45,
-                      decoration: const BoxDecoration(
-                          color: Color(0xFF00897B), shape: BoxShape.circle),
-                      child:
+
+                  // D. Send Button (Teal Circle with Arrow)
+                  Container(
+                    width: 45,
+                    height: 45,
+                    decoration: BoxDecoration(
+                      color: tealColor, // Matches chat bubbles
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      icon:
                           const Icon(Icons.send, color: Colors.white, size: 20),
+                      onPressed: () {
+                        if (_attachedTxs.isNotEmpty) {
+                          _sendMessage(
+                              text: _msgController.text,
+                              type: 'discussion',
+                              extra: {'transactions': _attachedTxs});
+                        } else {
+                          _sendMessage(text: _msgController.text, type: 'text');
+                        }
+                      },
                     ),
                   ),
                 ],
@@ -930,14 +868,16 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   }
 }
 
-// 3. REPLACE/ADD THE CHAT BUBBLE CLASS AT THE BOTTOM:
+// --------------------------------------------------------------------------
+// REPLACED ChatBubble CLASS (USER provided UI FIX)
+// --------------------------------------------------------------------------
 class ChatBubble extends StatelessWidget {
   final String text;
   final String time;
   final bool isMe;
   final String? senderName;
   final Color color;
-  final String type;
+  final String type; // 'text', 'image', 'sticker'
   final String? imageUrl;
   final VoidCallback onLongPress;
 
@@ -955,6 +895,7 @@ class ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 1. Sticker Mode (No Bubble Background)
     if (type == 'sticker') {
       return GestureDetector(
         onLongPress: onLongPress,
@@ -968,74 +909,97 @@ class ChatBubble extends StatelessWidget {
       );
     }
 
+    // 2. Standard Chat Bubble
     return GestureDetector(
       onLongPress: onLongPress,
       child: Column(
         crossAxisAlignment:
             isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
+          // Show sender name for others
           if (!isMe && senderName != null)
             Padding(
               padding: const EdgeInsets.only(left: 12, bottom: 4),
-              child: Text(senderName!,
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+              child: Text(
+                senderName!,
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
             ),
+
           Container(
             margin: const EdgeInsets.only(bottom: 12),
             constraints: BoxConstraints(
                 maxWidth: MediaQuery.of(context).size.width * 0.75),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: isMe ? color : Colors.white,
+              // EXACT TEAL COLOR for you, White for others
+              color: isMe ? const Color(0xFF00897B) : Colors.white,
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(16),
                 topRight: const Radius.circular(16),
+                // The "Tail" logic: Square off the bottom corner depending on sender
                 bottomLeft: isMe ? const Radius.circular(16) : Radius.zero,
                 bottomRight: isMe ? Radius.zero : const Radius.circular(16),
               ),
               boxShadow: [
+                // Soft shadow for received messages (white bubbles)
                 if (!isMe)
                   BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 5,
-                      offset: const Offset(0, 2)),
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 5,
+                    offset: const Offset(0, 2),
+                  ),
               ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                // Image Handling
                 if (type == 'image' && imageUrl != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8.0),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.network(imageUrl!, fit: BoxFit.cover),
+                      child: Image.network(
+                        imageUrl!,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (ctx, child, progress) {
+                          if (progress == null) return child;
+                          return SizedBox(
+                            height: 150,
+                            width: 200,
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: isMe
+                                    ? Colors.white
+                                    : const Color(0xFF00897B),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   )
-                else if (type == 'file')
-                  Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.description,
-                        color: isMe ? Colors.white : Colors.grey),
-                    const SizedBox(width: 8),
-                    Flexible(
-                        child: Text(text,
-                            style: GoogleFonts.inter(
-                                color: isMe ? Colors.white : Colors.black87,
-                                decoration: TextDecoration.underline))),
-                  ])
                 else
-                  Text(text,
-                      style: GoogleFonts.inter(
-                          color: isMe ? Colors.white : Colors.black87,
-                          fontSize: 15,
-                          height: 1.3)),
+                  Text(
+                    text,
+                    style: GoogleFonts.inter(
+                      // White text for you, Black for others
+                      color: isMe ? Colors.white : Colors.black87,
+                      fontSize: 15,
+                      height: 1.3,
+                    ),
+                  ),
                 const SizedBox(height: 4),
-                Text(time,
-                    style: TextStyle(
-                        color: isMe
-                            ? Colors.white.withOpacity(0.7)
-                            : Colors.grey[500],
-                        fontSize: 10)),
+                Text(
+                  time,
+                  style: TextStyle(
+                    // Lighter text for timestamp
+                    color:
+                        isMe ? Colors.white.withOpacity(0.7) : Colors.grey[500],
+                    fontSize: 10,
+                  ),
+                ),
               ],
             ),
           ),
