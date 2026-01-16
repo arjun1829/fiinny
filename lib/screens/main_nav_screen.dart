@@ -162,7 +162,7 @@ class _MainNavScreenState extends State<MainNavScreen>
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             border: Border(
               top: BorderSide(
-                color: Colors.grey.withOpacity(0.13),
+                color: Colors.grey.withValues(alpha: 0.13),
                 width: 1.2,
               ),
             ),
@@ -199,7 +199,7 @@ class _MainNavScreenState extends State<MainNavScreen>
                               color: Theme.of(context)
                                   .colorScheme
                                   .primary
-                                  .withOpacity(0.10),
+                                  .withValues(alpha: 0.10),
                             )
                           : null,
                       child: SizedBox(
@@ -245,10 +245,10 @@ class ShinePainter extends CustomPainter {
     final paint = Paint()
       ..shader = LinearGradient(
         colors: [
-          Colors.white.withOpacity(0.00),
-          Colors.white.withOpacity(0.22),
-          Colors.white.withOpacity(0.45),
-          Colors.white.withOpacity(0.00),
+          Colors.white.withValues(alpha: 0.00),
+          Colors.white.withValues(alpha: 0.22),
+          Colors.white.withValues(alpha: 0.45),
+          Colors.white.withValues(alpha: 0.00),
         ],
         stops: const [0.09, 0.32, 0.68, 0.93],
         begin: Alignment.topLeft,

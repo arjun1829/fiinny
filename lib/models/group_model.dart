@@ -4,6 +4,7 @@ class GroupModel {
   final String id; // Firestore doc ID (group-level)
   final String name;
   final List<String> memberPhones; // Unique: phone numbers of all members
+  List<String> get memberIds => memberPhones;
   final Map<String, String>? memberAvatars; // phone -> avatarUrl or emoji/initial
   final Map<String, String>? memberDisplayNames; // phone -> contact display name (optional)
   final String createdBy; // phone (not UID)

@@ -143,7 +143,7 @@ class GoalService {
       final snap = await txn.get(ref);
       if (!snap.exists) throw Exception('Goal not found');
 
-      final goal = GoalModel.fromDoc(snap as DocumentSnapshot<Map<String, dynamic>>);
+      final goal = GoalModel.fromDoc(snap);
       var newSaved = goal.savedAmount + delta;
 
       if (clampToTarget) {

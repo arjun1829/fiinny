@@ -202,7 +202,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
       labelText: label,
       prefixIcon: icon != null ? Icon(icon) : null,
       filled: true,
-      fillColor: Theme.of(context).primaryColor.withOpacity(.06),
+      fillColor: Theme.of(context).primaryColor.withValues(alpha: .06),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -375,7 +375,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
           child: LinearProgressIndicator(
             value: (_step + 1) / 4,
             minHeight: 8,
-            backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+            backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
             valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
           ),
         ),
@@ -385,7 +385,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withOpacity(.10),
+                color: Theme.of(context).primaryColor.withValues(alpha: .10),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(Icons.attach_money_rounded, color: Theme.of(context).primaryColor),
@@ -424,7 +424,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          value: _type,
+          initialValue: _type,
           items: const [
             'General', 'Food', 'Travel', 'Rent', 'Shopping', 'Utilities', 'Other',
           ].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
@@ -454,7 +454,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
       children: [
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          value: _selectedPayer?.phone,
+          initialValue: _selectedPayer?.phone,
           items: payerChoices.map((f) {
             return DropdownMenuItem<String>(
               value: f.phone,
@@ -477,7 +477,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
         // Group (hidden if invoked from friend/group context)
         if (widget.contextFriend == null && widget.contextGroup == null)
           DropdownButtonFormField<GroupModel?>(
-            value: _selectedGroup,
+            initialValue: _selectedGroup,
             items: <DropdownMenuItem<GroupModel?>>[
               const DropdownMenuItem<GroupModel?>(value: null, child: Text("-- No Group --")),
               ...widget.groups.map((g) => DropdownMenuItem<GroupModel?>(value: g, child: Text(g.name))),
@@ -551,7 +551,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
           onChanged: (_) => _toggleCustomSplit(),
           title: const Text("Custom Split", style: TextStyle(fontWeight: FontWeight.w700)),
           subtitle: const Text("Turn off for equal split"),
-          activeColor: Theme.of(context).primaryColor,
+          activeTrackColor: Theme.of(context).primaryColor,
         ),
         if (_customSplitMode) ...[
           const SizedBox(height: 4),
@@ -649,7 +649,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
           children: [
             Switch.adaptive(
               value: _isBill,
-              activeColor: Theme.of(context).primaryColor,
+              activeTrackColor: Theme.of(context).primaryColor,
               onChanged: (v) => setState(() => _isBill = v),
             ),
             const SizedBox(width: 6),
@@ -705,11 +705,11 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
-                                colors: [Theme.of(context).cardColor.withOpacity(0.96), Colors.white.withOpacity(0.90)],
+                                colors: [Theme.of(context).cardColor.withValues(alpha: 0.96), Colors.white.withValues(alpha: 0.90)],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
-                              border: Border.all(color: Colors.white.withOpacity(0.6)),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
                               boxShadow: const [
                                 BoxShadow(color: Color(0x1F000000), blurRadius: 20, offset: Offset(0, 8)),
                               ],
@@ -751,7 +751,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                             icon: const Icon(Icons.chevron_left_rounded),
                             label: const Text("Back"),
                             style: OutlinedButton.styleFrom(
-                              side: BorderSide(color: Theme.of(context).primaryColor.withOpacity(.4)),
+                              side: BorderSide(color: Theme.of(context).primaryColor.withValues(alpha: .4)),
                               foregroundColor: Theme.of(context).primaryColor,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

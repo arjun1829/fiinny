@@ -44,7 +44,7 @@ class _FriendsTabState extends State<FriendsTab> {
 
     // Sorting and grouping logic
     final friendList = List<FriendModel>.from(widget.friends);
-    Map<String, DateTime> lastActivity = {};
+    final Map<String, DateTime> lastActivity = {};
     for (var f in friendList) {
       final related = widget.expenses
           .where((e) => e.payerId == f.phone || e.friendIds.contains(f.phone));
@@ -260,8 +260,8 @@ class _FriendsTabState extends State<FriendsTab> {
                   ),
                 ],
               ),
-              subtitle: friend.phone != null && friend.phone!.isNotEmpty
-                  ? Text(friend.phone!,
+              subtitle: friend.phone.isNotEmpty
+                  ? Text(friend.phone,
                       style: TextStyle(color: Colors.teal[700], fontSize: 13.5))
                   : null,
             ),

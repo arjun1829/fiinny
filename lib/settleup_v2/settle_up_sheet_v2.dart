@@ -1,6 +1,5 @@
 import 'dart:math';
 
-import 'package:characters/characters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lifemap/ui/tokens.dart' show AppColors, AppSpacing, AppRadii;
@@ -306,7 +305,7 @@ class _SettleUpSheetV2State extends State<SettleUpSheetV2> {
   Widget _buildAmountSection() {
     final summaryAmount = _controller.totalSelectedOutstanding.abs();
     final summaryLabel = _controller.isReceiveFlow ? 'You get back' : 'You owe';
-    final summaryColor = _controller.isReceiveFlow ? Theme.of(context).colorScheme.primary : Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(.72) ?? Theme.of(context).textTheme.bodyMedium?.color;
+    final summaryColor = _controller.isReceiveFlow ? Theme.of(context).colorScheme.primary : Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: .72) ?? Theme.of(context).textTheme.bodyMedium?.color;
     final quickOptions = _buildQuickOptions();
 
     return Column(
@@ -321,7 +320,7 @@ class _SettleUpSheetV2State extends State<SettleUpSheetV2> {
                 Text(
                   summaryLabel,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: Theme.of(context).textTheme.labelLarge?.color?.withOpacity(.72),
+                        color: Theme.of(context).textTheme.labelLarge?.color?.withValues(alpha: .72),
                       ),
                 ),
                 const SizedBox(height: 6),
@@ -355,7 +354,7 @@ class _SettleUpSheetV2State extends State<SettleUpSheetV2> {
                 decoration: InputDecoration(
                   labelText: 'Amount',
                   labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(.6),
+                        color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: .6),
                       ),
                   prefixText: '₹ ',
                   prefixStyle: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -363,14 +362,14 @@ class _SettleUpSheetV2State extends State<SettleUpSheetV2> {
                       ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppRadii.md),
-                    borderSide: BorderSide(color: Theme.of(context).dividerColor.withOpacity(.2)),
+                    borderSide: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: .2)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppRadii.md),
                     borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.6),
                   ),
                   filled: true,
-                  fillColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(.4),
+                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: .4),
                 ),
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'^[0-9]*[.]?[0-9]{0,2}')),
@@ -440,7 +439,7 @@ class _SettleUpSheetV2State extends State<SettleUpSheetV2> {
                     width: 46,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: theme.dividerColor.withOpacity(.28),
+                      color: theme.dividerColor.withValues(alpha: .28),
                       borderRadius: BorderRadius.circular(999),
                     ),
                   ),
@@ -448,7 +447,7 @@ class _SettleUpSheetV2State extends State<SettleUpSheetV2> {
                   GlassCard(
                     padding: const EdgeInsets.all(AppSpacing.l),
                     borderRadius: 24,
-                    color: theme.colorScheme.surfaceVariant.withOpacity(.4),
+                    color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: .4),
                     child: _buildHeader(),
                   ),
                   const SizedBox(height: AppSpacing.l),
@@ -461,14 +460,14 @@ class _SettleUpSheetV2State extends State<SettleUpSheetV2> {
                           GlassCard(
                             padding: const EdgeInsets.all(AppSpacing.l),
                             borderRadius: 24,
-                            color: theme.colorScheme.surfaceVariant.withOpacity(.3),
+                            color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: .3),
                             child: _buildGroups(),
                           ),
                           const SizedBox(height: AppSpacing.l),
                           GlassCard(
                             padding: const EdgeInsets.all(AppSpacing.l),
                             borderRadius: 24,
-                            color: theme.colorScheme.surfaceVariant.withOpacity(.3),
+                            color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: .3),
                             child: _buildAmountSection(),
                           ),
                         ],
@@ -530,13 +529,13 @@ class _FriendHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final neutralColor = textTheme.bodySmall?.color?.withOpacity(.72) ?? textTheme.bodyMedium?.color;
+    final neutralColor = textTheme.bodySmall?.color?.withValues(alpha: .72) ?? textTheme.bodyMedium?.color;
 
     Widget buildChip(String label, double amount, Color color) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: color.withOpacity(.12),
+          color: color.withValues(alpha: .12),
           borderRadius: BorderRadius.circular(999),
         ),
         child: Row(
@@ -560,7 +559,7 @@ class _FriendHeader extends StatelessWidget {
         ? CircleAvatar(radius: 28, backgroundImage: NetworkImage(avatarUrl!))
         : CircleAvatar(
             radius: 28,
-            backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(.16),
+            backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: .16),
             child: Text(
               name.characters.isNotEmpty ? name.characters.first.toUpperCase() : '👤',
               style: TextStyle(
@@ -585,12 +584,12 @@ class _FriendHeader extends StatelessWidget {
                 tristate: true,
                 onChanged: (_) => onToggleAll(),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                side: BorderSide(color: Theme.of(context).dividerColor.withOpacity(.5)),
-                fillColor: MaterialStateProperty.resolveWith((states) {
-                  if (states.contains(MaterialState.selected)) {
+                side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: .5)),
+                fillColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.selected)) {
                     return Theme.of(context).colorScheme.primary;
                   }
-                  return Theme.of(context).colorScheme.surfaceVariant;
+                  return Theme.of(context).colorScheme.surfaceContainerHighest;
                 }),
               ),
             ),
@@ -669,7 +668,7 @@ class _SummaryBar extends StatelessWidget {
         : 'MARK ₹${amount.toStringAsFixed(2)} AS PAID';
     final valueColor = isReceiveFlow
         ? theme.colorScheme.primary
-        : theme.textTheme.bodyLarge?.color?.withOpacity(.72) ?? theme.textTheme.bodyMedium?.color;
+        : theme.textTheme.bodyLarge?.color?.withValues(alpha: .72) ?? theme.textTheme.bodyMedium?.color;
 
     return Material(
       color: Colors.transparent,
@@ -685,7 +684,7 @@ class _SummaryBar extends StatelessWidget {
           color: theme.colorScheme.surface,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(.08),
+              color: Colors.black.withValues(alpha: .08),
               blurRadius: 24,
               offset: const Offset(0, -8),
             ),

@@ -27,7 +27,7 @@ class ProgressTiny extends StatelessWidget {
   /// Corner radius for both track and thumb.
   final BorderRadiusGeometry radius;
 
-  /// Optional custom track color (defaults to `color.withOpacity(.12)`).
+  /// Optional custom track color (defaults to `color.withValues(alpha: .12)`).
   final Color? trackColor;
 
   /// Animation duration (when [animate] is true).
@@ -60,9 +60,9 @@ class ProgressTiny extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = indeterminate ? 0.0 : value.clamp(0.0, 1.0);
-    final track = trackColor ?? color.withOpacity(.12);
+    final track = trackColor ?? color.withValues(alpha: .12);
 
-    Widget bar = LayoutBuilder(
+    final Widget bar = LayoutBuilder(
       builder: (_, constraints) {
         final maxW = constraints.maxWidth;
         final targetW = maxW * v;
@@ -77,7 +77,7 @@ class ProgressTiny extends StatelessWidget {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                color.withOpacity(.90),
+                color.withValues(alpha: .90),
                 color,
               ],
             ),
@@ -110,7 +110,7 @@ class ProgressTiny extends StatelessWidget {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      color.withOpacity(.90),
+                      color.withValues(alpha: .90),
                       color,
                     ],
                   ),
@@ -143,7 +143,7 @@ class ProgressTiny extends StatelessWidget {
                         TextStyle(
                           fontSize: height <= 8 ? 10 : 12,
                           fontWeight: FontWeight.w800,
-                          color: Colors.black.withOpacity(.65),
+                          color: Colors.black.withValues(alpha: .65),
                         ),
                   ),
                 ),
@@ -254,7 +254,7 @@ class _StripePainter extends CustomPainter {
         end: Alignment.centerRight,
         colors: [
           Colors.transparent,
-          glow.withOpacity(.35),
+          glow.withValues(alpha: .35),
           Colors.transparent,
         ],
         stops: const [0.0, 0.5, 1.0],

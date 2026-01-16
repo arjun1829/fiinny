@@ -137,7 +137,7 @@ class _GroupChartTabState extends State<GroupChartTab> {
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 12,
             offset: const Offset(0, 6),
           )
@@ -163,7 +163,7 @@ class _GroupChartTabState extends State<GroupChartTab> {
       ),
       selected: selected,
       selectedColor: Colors.teal.shade700,
-      backgroundColor: Colors.teal.withOpacity(.10),
+      backgroundColor: Colors.teal.withValues(alpha: .10),
       onSelected: (_) => onTap(),
       showCheckmark: false,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -229,13 +229,13 @@ class _GroupChartTabState extends State<GroupChartTab> {
                     label: const Text('Custom'),
                     avatar: const Icon(Icons.date_range, size: 16),
                     onPressed: _pickCustomRange,
-                    backgroundColor: Colors.indigo.withOpacity(.08),
+                    backgroundColor: Colors.indigo.withValues(alpha: .08),
                   ),
                   if (_time == _TimeFilter.custom && (_from != null || _to != null))
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.indigo.withOpacity(.08),
+                        color: Colors.indigo.withValues(alpha: .08),
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
@@ -249,9 +249,9 @@ class _GroupChartTabState extends State<GroupChartTab> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(.08),
+                        color: Colors.orange.withValues(alpha: .08),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.orange.withOpacity(.3)),
+                        border: Border.all(color: Colors.orange.withValues(alpha: .3)),
                       ),
                       child: DropdownButton<String>(
                         value: _category,
@@ -295,19 +295,19 @@ class _GroupChartTabState extends State<GroupChartTab> {
                   _miniChip(
                     color: Colors.green,
                     text: owed > 0 ? "Owed to you ₹${owed.toStringAsFixed(0)}" : "No credit",
-                    bg: Colors.green.withOpacity(.10),
+                    bg: Colors.green.withValues(alpha: .10),
                   ),
                   _miniChip(
                     color: Colors.redAccent,
                     text: owe > 0 ? "You owe ₹${owe.toStringAsFixed(0)}" : "No dues",
-                    bg: Colors.red.withOpacity(.10),
+                    bg: Colors.red.withValues(alpha: .10),
                   ),
                   _miniChip(
                     color: (owed - owe) >= 0 ? Colors.teal.shade800 : Colors.orange.shade800,
                     text: (owed - owe) >= 0
                         ? "Net +₹${(owed - owe).toStringAsFixed(0)}"
                         : "Net -₹${(owe - owed).toStringAsFixed(0)}",
-                    bg: (owed - owe) >= 0 ? Colors.teal.withOpacity(.10) : Colors.orange.withOpacity(.10),
+                    bg: (owed - owe) >= 0 ? Colors.teal.withValues(alpha: .10) : Colors.orange.withValues(alpha: .10),
                   ),
                 ],
               ),

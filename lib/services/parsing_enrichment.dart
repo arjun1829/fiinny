@@ -23,12 +23,13 @@
 //   // refinedFields['merchant'] -> "Swiggy"
 //   // refinedFields['category'] -> "Dining"
 
-import '../parsing_core/enrich/merchant_registry.dart';
+import '../../core/config/merchant_registry.dart';
 import '../parsing_core/enrich/category_mapper.dart';
 import '../parsing_core/models/parsed_txn.dart';
 
 class ParsingEnrichment {
-  ParsingEnrichment({MerchantRegistry? merchantRegistry, CategoryMapper? categoryMapper})
+  ParsingEnrichment(
+      {MerchantRegistry? merchantRegistry, CategoryMapper? categoryMapper})
       : _mer = merchantRegistry ?? MerchantRegistry(),
         _cat = categoryMapper ?? CategoryMapper();
 

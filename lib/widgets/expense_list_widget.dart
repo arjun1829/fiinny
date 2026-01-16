@@ -195,14 +195,14 @@ class ExpenseListWidget extends StatelessWidget {
           chips.add(_chip(
             text: settleText,
             fg: Colors.teal.shade900,
-            bg: Colors.teal.withOpacity(.10),
+            bg: Colors.teal.withValues(alpha: .10),
             icon: Icons.handshake,
           ));
         } else {
           chips.add(_chip(
             text: paidByYou ? "You paid" : "Paid by ${friend != null ? friend!.name : 'member'}",
             fg: Colors.grey.shade900,
-            bg: Colors.grey.withOpacity(.12),
+            bg: Colors.grey.withValues(alpha: .12),
             icon: Icons.person,
           ));
         }
@@ -211,7 +211,7 @@ class ExpenseListWidget extends StatelessWidget {
           chips.add(_chip(
             text: e.category!.trim(),
             fg: Colors.indigo.shade900,
-            bg: Colors.indigo.withOpacity(.08),
+            bg: Colors.indigo.withValues(alpha: .08),
             icon: _categoryIcon(e.category),
           ));
         }
@@ -224,7 +224,7 @@ class ExpenseListWidget extends StatelessWidget {
             chips.add(_chip(
               text: "You ${_money(yourShare, noPaise: true)}",
               fg: Colors.black87,
-              bg: Colors.grey.withOpacity(.12),
+              bg: Colors.grey.withValues(alpha: .12),
               icon: Icons.account_circle,
             ));
           }
@@ -234,7 +234,7 @@ class ExpenseListWidget extends StatelessWidget {
               chips.add(_chip(
                 text: "${friend!.name} ${_money(fs, noPaise: true)}",
                 fg: Colors.black87,
-                bg: Colors.grey.withOpacity(.12),
+                bg: Colors.grey.withValues(alpha: .12),
                 icon: Icons.account_circle_outlined,
               ));
             }
@@ -251,7 +251,7 @@ class ExpenseListWidget extends StatelessWidget {
           chips.add(_chip(
             text: "Note",
             fg: Colors.orange.shade900,
-            bg: Colors.orange.withOpacity(.10),
+            bg: Colors.orange.withValues(alpha: .10),
             icon: Icons.sticky_note_2_outlined,
           ));
         }
@@ -259,7 +259,7 @@ class ExpenseListWidget extends StatelessWidget {
           chips.add(_chip(
             text: "Attachment",
             fg: Colors.blueGrey.shade900,
-            bg: Colors.blueGrey.withOpacity(.10),
+            bg: Colors.blueGrey.withValues(alpha: .10),
             icon: Icons.attach_file_rounded,
           ));
         }
@@ -271,15 +271,15 @@ class ExpenseListWidget extends StatelessWidget {
           chips.add(_chip(
             text: "in $gName",
             fg: Colors.teal.shade900,
-            bg: Colors.teal.withOpacity(.10),
+            bg: Colors.teal.withValues(alpha: .10),
             icon: Icons.groups_rounded,
           ));
         }
 
         // Visual styles
         final Color accent = isSettlement ? Colors.teal : Colors.indigo;
-        final Color cardBorder = accent.withOpacity(.14);
-        final Color cardBg = accent.withOpacity(.06);
+        final Color cardBorder = accent.withValues(alpha: .14);
+        final Color cardBg = accent.withValues(alpha: .06);
 
         return InkWell(
           borderRadius: BorderRadius.circular(16),
@@ -290,7 +290,7 @@ class ExpenseListWidget extends StatelessWidget {
               color: cardBg,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: cardBorder),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))],
             ),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
@@ -299,7 +299,7 @@ class ExpenseListWidget extends StatelessWidget {
                 // leading bubble
                 Container(
                   width: 44, height: 44,
-                  decoration: BoxDecoration(color: accent.withOpacity(.15), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: accent.withValues(alpha: .15), shape: BoxShape.circle),
                   child: Icon(isSettlement ? Icons.handshake : Icons.receipt_long_rounded, color: accent),
                 ),
                 const SizedBox(width: 10),

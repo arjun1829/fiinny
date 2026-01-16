@@ -33,19 +33,19 @@ class GlassCard extends StatelessWidget {
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
       colors: [
-        Colors.white.withOpacity(isDark ? 0.12 : 0.55),
-        Colors.white.withOpacity(isDark ? 0.08 : 0.32),
+        Colors.white.withValues(alpha: isDark ? 0.12 : 0.55),
+        Colors.white.withValues(alpha: isDark ? 0.08 : 0.32),
       ],
     );
     final effectiveShadow = boxShadow ?? [
       BoxShadow(
-        color: Colors.black.withOpacity(isDark ? 0.28 : 0.06),
+        color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.06),
         blurRadius: 20,
         offset: const Offset(0, 12),
       ),
     ];
     final effectiveBorder = borderColor ??
-        Colors.white.withOpacity(isDark ? 0.14 : 0.38);
+        Colors.white.withValues(alpha: isDark ? 0.14 : 0.38);
 
     Widget surface = Container(
       decoration: BoxDecoration(

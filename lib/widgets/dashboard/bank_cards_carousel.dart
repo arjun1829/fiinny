@@ -24,12 +24,15 @@ class BankCardsCarousel extends StatefulWidget {
     this.onViewAll,
   }) : super(key: key);
 
+  static String slugBankStatic(String bankName) {
+    return bankName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
+  }
+
   @override
   State<BankCardsCarousel> createState() => _BankCardsCarouselState();
 }
 
 class _BankCardsCarouselState extends State<BankCardsCarousel> {
-  
   List<_BankGroup> _groups = [];
 
   @override
@@ -41,7 +44,8 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
   @override
   void didUpdateWidget(covariant BankCardsCarousel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.expenses != widget.expenses || oldWidget.incomes != widget.incomes) {
+    if (oldWidget.expenses != widget.expenses ||
+        oldWidget.incomes != widget.incomes) {
       _processGroups();
     }
   }
@@ -49,16 +53,24 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
   void _processGroups() {
     final map = <String, _BankGroup>{};
 
-    void add({required double amount, required bool isDebit, String? bank, String? type, String? last4, String? network}) {
+    void add(
+        {required double amount,
+        required bool isDebit,
+        String? bank,
+        String? type,
+        String? last4,
+        String? network}) {
       if (bank == null || bank.trim().isEmpty) return;
       final bankKey = _slugBank(bank);
-      
-      final group = map.putIfAbsent(bankKey, () => _BankGroup(
-        bankName: bank.trim(),
-        cardType: type ?? 'Card',
-        last4: last4 ?? 'XXXX',
-        logoAsset: _bankLogoAsset(bank, network: network),
-      ));
+
+      final group = map.putIfAbsent(
+          bankKey,
+          () => _BankGroup(
+                bankName: bank.trim(),
+                cardType: type ?? 'Card',
+                last4: last4 ?? 'XXXX',
+                logoAsset: _bankLogoAsset(bank, network: network),
+              ));
 
       if (isDebit) {
         group.stats.totalDebit += amount;
@@ -110,7 +122,7 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
   }
 
   String? _bankLogoAsset(String? bank, {String? network}) {
-     // Reuse logic from summary card or simplify
+    // Reuse logic from summary card or simplify
     final candidates = <String>[];
     if (bank != null && bank.trim().isNotEmpty) {
       final slug = _slugBank(bank);
@@ -155,7 +167,8 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text("My Cards", style: Fx.title.copyWith(fontSize: 18)),
+                        Text("My Cards",
+                            style: Fx.title.copyWith(fontSize: 18)),
                         if (widget.onViewAll != null) ...[
                           const SizedBox(width: 6),
                           Icon(
@@ -175,8 +188,9 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
                 label: const Text("Add Card"),
                 style: TextButton.styleFrom(
                   foregroundColor: Fx.mintDark,
-                  backgroundColor: Fx.mint.withOpacity(0.1),
-                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  backgroundColor: Fx.mint.withValues(alpha: 0.1),
+                  textStyle: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 13),
                 ),
               ),
             ],
@@ -200,7 +214,9 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
                     height: 192,
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      border: Border.all(color: Colors.grey.shade300, width: 2), // Dashed border simulated
+                      border: Border.all(
+                          color: Colors.grey.shade300,
+                          width: 2), // Dashed border simulated
                       borderRadius: BorderRadius.circular(24),
                     ),
                     child: Column(
@@ -209,11 +225,17 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
                         Container(
                           width: 48,
                           height: 48,
-                          decoration: BoxDecoration(color: Colors.grey.shade100, shape: BoxShape.circle),
-                          child: Icon(Icons.credit_card, color: Colors.grey.shade400),
+                          decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              shape: BoxShape.circle),
+                          child: Icon(Icons.credit_card,
+                              color: Colors.grey.shade400),
                         ),
                         const SizedBox(height: 12),
-                        Text("Add your first card", style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+                        Text("Add your first card",
+                            style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
@@ -224,20 +246,23 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
               final slug = _slugBank(group.bankName);
               final isSelected = widget.selectedBankSlug == slug;
 
-              // If specific selection is active, maybe dim others? 
+              // If specific selection is active, maybe dim others?
               // For now, we just pass the tap handler.
-              
+
               return Container(
-                foregroundDecoration: (widget.selectedBankSlug != null && !isSelected) 
-                    ? BoxDecoration(
-                        color: Colors.white.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(24),
-                        backgroundBlendMode: BlendMode.saturation,
-                      ) 
-                    : null,
+                foregroundDecoration:
+                    (widget.selectedBankSlug != null && !isSelected)
+                        ? BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(24),
+                            backgroundBlendMode: BlendMode.saturation,
+                          )
+                        : null,
                 child: BankCardItem(
                   bankName: group.bankName,
-                  cardType: group.cardType.contains('Credit') ? 'Credit Card' : 'Debit Card',
+                  cardType: group.cardType.contains('Credit')
+                      ? 'Credit Card'
+                      : 'Debit Card',
                   last4: group.last4,
                   holderName: widget.userName,
                   colorTheme: themes[index % themes.length],
@@ -248,9 +273,9 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
                     txCount: group.stats.totalTxCount,
                   ),
                   onTap: () {
-                     if (widget.onCardSelected != null) {
-                       widget.onCardSelected!(slug);
-                     }
+                    if (widget.onCardSelected != null) {
+                      widget.onCardSelected!(slug);
+                    }
                   },
                 ),
               );

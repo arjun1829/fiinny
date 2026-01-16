@@ -16,7 +16,7 @@ class CrisisModeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    double riskRatio = creditCardBill / (salary != 0 ? salary : 1); // avoid divide-by-zero
+    final double riskRatio = creditCardBill / (salary != 0 ? salary : 1); // avoid divide-by-zero
 
     return Scaffold(
       appBar: AppBar(

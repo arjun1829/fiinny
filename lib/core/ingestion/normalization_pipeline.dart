@@ -78,8 +78,8 @@ class NormalizationPipeline {
 
     // 2. Category & Merchant Normalization
     // TODO: Call Merchant Registry / AI Classifier
-    String merchant = event.merchantName ?? 'Unknown Merchant';
-    String category = 'Uncategorized';
+    final String merchant = event.merchantName ?? 'Unknown Merchant';
+    final String category = 'Uncategorized';
 
     return Transaction(
       id: 'tx_${event.eventId}', // Deterministic ID

@@ -5,24 +5,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 import '../details/services/recurring_service.dart';
 
 import '../models/loan_model.dart';
 import '../services/loan_service.dart';
 
 /// Shared palette (aligned with Add Transaction look)
-const Color kBg     = Color(0xFFF8FAF9);
-const Color kText   = Color(0xFF0F1E1C);
+const Color kBg = Color(0xFFF8FAF9);
+const Color kText = Color(0xFF0F1E1C);
 const Color kSubtle = Color(0xFF9AA5A1);
-const Color kLine   = Color(0x14000000);
+const Color kLine = Color(0x14000000);
 
 enum _InputMode { knowEmi, knowMonths }
-enum _ShareMode { none, equal, custom }
+
+enum _ShareMode { equal, custom }
 
 class AddLoanScreen extends StatefulWidget {
   final String userId;
-  const AddLoanScreen({required this.userId, Key? key}) : super(key: key);
+  const AddLoanScreen({required this.userId, super.key});
 
   @override
   State<AddLoanScreen> createState() => _AddLoanScreenState();
@@ -30,8 +30,6 @@ class AddLoanScreen extends StatefulWidget {
 
 class _AddLoanScreenState extends State<AddLoanScreen>
     with SingleTickerProviderStateMixin, RestorationMixin {
-  final _formKey = GlobalKey<FormState>();
-
   // controllers
   final _titleCtrl = TextEditingController();
   final _outstandingCtrl = TextEditingController();
@@ -50,11 +48,11 @@ class _AddLoanScreenState extends State<AddLoanScreen>
       return TextEditingController(text: value.toStringAsFixed(1));
     });
   }
+
   void _removePctCtrl(String key) {
     final c = _pctCtrls.remove(key);
     c?.dispose();
   }
-
 
   // lifted selections (persist across rebuilds/scroll)
   String? _titleSelected; // from title options OR "Other…"
@@ -80,29 +78,49 @@ class _AddLoanScreenState extends State<AddLoanScreen>
 
   // Success overlay controls
   bool _showSuccess = false;
-  late final AnimationController _successCtl =
-  AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
+  late final AnimationController _successCtl = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 500));
   late final Animation<double> _successScale =
-  CurvedAnimation(parent: _successCtl, curve: Curves.easeOutBack);
+      CurvedAnimation(parent: _successCtl, curve: Curves.easeOutBack);
 
   // Auto-close overlay? Keep false (manual close)
-  bool _successAutoClose = false;
-  Duration _successHold = const Duration(milliseconds: 2200);
+  final bool _successAutoClose = false;
+  final Duration _successHold = const Duration(milliseconds: 2200);
 
   // formatting
-  final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+  final _inr =
+      NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
   Color get _brand => const Color(0xFF09857a);
 
   // options
   static const List<String> _titleOptions = [
-    'Home Loan','Education Loan','Personal Loan','Car Loan','Two-Wheeler Loan',
-    'Credit Card Dues','BNPL','Gold Loan','Consumer Durable Loan',
+    'Home Loan',
+    'Education Loan',
+    'Personal Loan',
+    'Car Loan',
+    'Two-Wheeler Loan',
+    'Credit Card Dues',
+    'BNPL',
+    'Gold Loan',
+    'Consumer Durable Loan',
   ];
   static const List<String> _banks = [
-    'HDFC Bank','ICICI Bank','SBI','Axis Bank','Kotak','IDFC First','Yes Bank','IndusInd Bank'
+    'HDFC Bank',
+    'ICICI Bank',
+    'SBI',
+    'Axis Bank',
+    'Kotak',
+    'IDFC First',
+    'Yes Bank',
+    'IndusInd Bank'
   ];
   static const List<String> _nbfcs = [
-    'Bajaj Finance','Tata Capital','HDB Financial','Hero Fincorp','Home Credit','Mahindra Finance'
+    'Bajaj Finance',
+    'Tata Capital',
+    'HDB Financial',
+    'Hero Fincorp',
+    'Home Credit',
+    'Mahindra Finance'
   ];
   static const String _other = 'Other…';
 
@@ -147,7 +165,8 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     final s = _digitsOnly(c.text).trim();
     return double.tryParse(s) ?? 0.0;
   }
-  double get _P => _asAmount(_outstandingCtrl);
+
+  double get _principal => _asAmount(_outstandingCtrl);
 
   double? get _annualRate {
     final s = _rateCtrl.text.trim();
@@ -155,7 +174,7 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     return double.tryParse(s);
   }
 
-  double? get _E {
+  double? get _emiAmount {
     final s = _digitsOnly(_emiCtrl.text).trim();
     if (s.isEmpty) return null;
     return double.tryParse(s);
@@ -168,9 +187,6 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     return (v == null || v < 1) ? null : v;
   }
 
-  bool get _titleIsOther => _titleSelected == _other;
-  bool get _lenderNameIsOther => _lenderNameSelected == _other;
-
   // --- DOM helpers with short-month clamping ---
   int get _safeDay {
     final raw = _paymentDOM ?? DateTime.now().day;
@@ -182,7 +198,8 @@ class _AddLoanScreenState extends State<AddLoanScreen>
   int _lastDayOfMonth(int year, int month) {
     final nextMonth = month == 12 ? 1 : month + 1;
     final nextYear = month == 12 ? year + 1 : year;
-    return DateTime(nextYear, nextMonth, 0).day; // day 0 => last day of prev month
+    return DateTime(nextYear, nextMonth, 0)
+        .day; // day 0 => last day of prev month
   }
 
   DateTime _dateWithDOM(int year, int month, int dom) {
@@ -208,12 +225,14 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     final pow = math.pow(1 + r, n) as double;
     return p * r * pow / (pow - 1);
   }
+
   double _emiFlat(double p, double annual, int n) {
     if (p <= 0 || annual <= 0 || n <= 0) return 0;
     final years = n / 12.0;
     final totalInterest = p * (annual / 100.0) * years;
     return (p + totalInterest) / n;
   }
+
   int? _solveMonthsReducing(double p, double annual, double emi) {
     final r = annual / 12 / 100;
     if (p <= 0 || annual <= 0 || emi <= 0) return null;
@@ -224,13 +243,14 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     if (n.isNaN || n.isInfinite) return null;
     return n.ceil();
   }
+
   int? _solveMonthsFlat(double p, double emi) {
     if (p <= 0 || emi <= 0) return null;
     return (p / emi).ceil();
   }
 
   _Plan _computePlan() {
-    final p = _P;
+    final p = _principal;
     final R = _annualRate;
     final interest = _interestMethod;
 
@@ -239,7 +259,7 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     }
 
     int? n = _nUser;
-    double? e = _E;
+    double? e = _emiAmount;
 
     if (_mode == _InputMode.knowEmi && e != null) {
       n = (interest == LoanInterestMethod.reducing)
@@ -283,15 +303,30 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     final R = _annualRate ?? 0;
     if (R == 0) out.add("Enter interest rate to compute EMI and tenure.");
     if (R >= 30) out.add("Very high rate (≥30%). Consider refinance.");
-    if (_mode == _InputMode.knowEmi && _E != null && _P > 0 && R > 0) {
+    if (_mode == _InputMode.knowEmi &&
+        _emiAmount != null &&
+        _principal > 0 &&
+        R > 0) {
       final r = R / 12 / 100;
-      if ((_E ?? 0) <= _P * r) out.add("EMI seems too low; increase EMI or confirm rate.");
+      if ((_emiAmount ?? 0) <= _principal * r) {
+        out.add("EMI seems too low; increase EMI or confirm rate.");
+      }
     }
-    if (_paymentDOM == null) out.add("Pick a monthly due date (1–31) for reminders.");
-    if (_reminderEnabled && _daysBefore < 2) out.add("Set reminders ≥2 days before due date.");
-    if (plan.isValid && plan.months > 60) out.add("Long payoff (>60 mo) → try prepayments.");
-    if (_shareEnabled && _members.isEmpty) out.add("Add at least one person to share with.");
-    if (_shareEnabled && _shareMode == _ShareMode.custom && !_customValid) out.add("Custom split must total 100%.");
+    if (_paymentDOM == null) {
+      out.add("Pick a monthly due date (1–31) for reminders.");
+    }
+    if (_reminderEnabled && _daysBefore < 2) {
+      out.add("Set reminders ≥2 days before due date.");
+    }
+    if (plan.isValid && plan.months > 60) {
+      out.add("Long payoff (>60 mo) → try prepayments.");
+    }
+    if (_shareEnabled && _members.isEmpty) {
+      out.add("Add at least one person to share with.");
+    }
+    if (_shareEnabled && _shareMode == _ShareMode.custom && !_customValid) {
+      out.add("Custom split must total 100%.");
+    }
     return out;
   }
 
@@ -303,7 +338,9 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     }
     return (total - 100.0).abs() <= 0.6; // slightly more lenient
   }
-  Future<void> _shareCreateRecurringForMembers(String loanId, LoanModel savedLoan) async {
+
+  Future<void> _shareCreateRecurringForMembers(
+      String loanId, LoanModel savedLoan) async {
     // We need the loan id inside the link payload
     final loanForLink = savedLoan.copyWith(id: loanId);
 
@@ -314,31 +351,33 @@ class _AddLoanScreenState extends State<AddLoanScreen>
           : ((m.phone?.isNotEmpty == true) ? m.phone! : '');
 
       if (friendId.isEmpty) {
-        debugPrint('⚠️ Skipping member without friendId/phone: ${m.nameOrPhone}');
+        debugPrint(
+            '⚠️ Skipping member without friendId/phone: ${m.nameOrPhone}');
         continue;
       }
 
       try {
         await _recurringSvc.attachLoanToFriend(
-          userPhone: widget.userId,   // <-- Make sure this is the SAME key you use in users/{userPhone}
-          friendId: friendId,         // <-- friend doc id or phone (matches your Firestore path)
+          userPhone: widget
+              .userId, // <-- Make sure this is the SAME key you use in users/{userPhone}
+          friendId:
+              friendId, // <-- friend doc id or phone (matches your Firestore path)
           loan: loanForLink,
           mirrorToFriend: true,
         );
-
       } catch (e) {
         debugPrint('attachLoanToFriend failed for $friendId: $e');
         // (Optional) show a soft warning but don't block the whole save
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Couldn’t link to ${m.nameOrPhone}. You can try again later.')),
+            SnackBar(
+                content: Text(
+                    'Couldn’t link to ${m.nameOrPhone}. You can try again later.')),
           );
         }
       }
     }
   }
-
-
 
   // -------------------------- save / success --------------------------
   Future<void> _showSuccessOverlay() async {
@@ -364,12 +403,14 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     }
 
     if ((_titleCtrl.text.trim().isEmpty) ||
-        (_P <= 0) ||
+        (_principal <= 0) ||
         (_annualRate == null || _annualRate! <= 0) ||
         (_paymentDOM == null)) {
       if (showSnackOnSkip) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Need title, outstanding, rate% and monthly due day.")),
+          const SnackBar(
+              content:
+                  Text("Need title, outstanding, rate% and monthly due day.")),
         );
       }
       return false;
@@ -379,7 +420,8 @@ class _AddLoanScreenState extends State<AddLoanScreen>
       if (_members.isEmpty) {
         if (showSnackOnSkip) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Add at least one person to share with.")),
+            const SnackBar(
+                content: Text("Add at least one person to share with.")),
           );
         }
         return false;
@@ -398,7 +440,8 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     if (!plan.isValid) {
       if (showSnackOnSkip) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Enter EMI or Months (with a valid rate).")),
+          const SnackBar(
+              content: Text("Enter EMI or Months (with a valid rate).")),
         );
       }
       return false;
@@ -421,18 +464,21 @@ class _AddLoanScreenState extends State<AddLoanScreen>
         ].join("\n");
         finalNote = app;
       } else {
-        finalNote = _noteCtrl.text.trim().isNotEmpty ? _noteCtrl.text.trim() : null;
+        finalNote =
+            _noteCtrl.text.trim().isNotEmpty ? _noteCtrl.text.trim() : null;
       }
 
       final loan = LoanModel(
         userId: widget.userId,
         title: _titleCtrl.text.trim(),
-        amount: _P,
+        amount: _principal,
         originalAmount: _origCtrl.text.trim().isEmpty
             ? null
             : (double.tryParse(_digitsOnly(_origCtrl.text)) ?? null),
         lenderType: _lenderType,
-        lenderName: _lenderNameCtrl.text.trim().isEmpty ? null : _lenderNameCtrl.text.trim(),
+        lenderName: _lenderNameCtrl.text.trim().isEmpty
+            ? null
+            : _lenderNameCtrl.text.trim(),
         interestRate: _annualRate!, // validated above
         interestMethod: _interestMethod,
         emi: double.parse(plan.emi.toStringAsFixed(2)),
@@ -443,14 +489,14 @@ class _AddLoanScreenState extends State<AddLoanScreen>
         dueDate: plan.maturity,
         reminderEnabled: _reminderEnabled,
         reminderDaysBefore: _daysBefore,
-        reminderTime: "${_reminderTime.hour.toString().padLeft(2, '0')}:${_reminderTime.minute.toString().padLeft(2, '0')}",
+        reminderTime:
+            "${_reminderTime.hour.toString().padLeft(2, '0')}:${_reminderTime.minute.toString().padLeft(2, '0')}",
         note: finalNote,
         isClosed: false,
         createdAt: DateTime.now(),
       );
 
       final id = await LoanService().addLoan(loan);
-
 
       // Optional: tag for shared metadata (keeps model backward-compatible)
       if (_shareEnabled && _members.isNotEmpty) {
@@ -459,14 +505,17 @@ class _AddLoanScreenState extends State<AddLoanScreen>
           'share:${_shareMode == _ShareMode.equal ? 'equal' : 'custom'}',
           ..._members.map((m) => 'with:${m.phone ?? m.name}'),
         ];
-        try { await LoanService().addTags(id, tags); } catch (_) {}
+        try {
+          await LoanService().addTags(id, tags);
+        } catch (_) {}
       }
 
       await LoanService().setReminderPrefs(
         id,
         enabled: _reminderEnabled,
         daysBefore: _daysBefore,
-        timeHHmm: "${_reminderTime.hour.toString().padLeft(2, '0')}:${_reminderTime.minute.toString().padLeft(2, '0')}",
+        timeHHmm:
+            "${_reminderTime.hour.toString().padLeft(2, '0')}:${_reminderTime.minute.toString().padLeft(2, '0')}",
       );
       if (_shareEnabled && _members.isNotEmpty) {
         await _shareCreateRecurringForMembers(id, loan);
@@ -484,7 +533,8 @@ class _AddLoanScreenState extends State<AddLoanScreen>
       if (mounted) await _showSuccessOverlay();
       return true;
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Save failed: $e")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Save failed: $e")));
       return false;
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -519,22 +569,28 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     FocusScope.of(context).unfocus();
     if (!_validateStep(_step)) return;
     if (_step < 4) setState(() => _step++);
-    _pg.animateToPage(_step, duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic);
+    _pg.animateToPage(_step,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic);
   }
+
   void _back() {
     FocusScope.of(context).unfocus();
-    if (_step > 0) setState(() => _step--);
-    else {
+    if (_step > 0) {
+      setState(() => _step--);
+    } else {
       _autoSaveIfPossible();
       Navigator.pop(context);
       return;
     }
-    _pg.animateToPage(_step, duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic);
+    _pg.animateToPage(_step,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic);
   }
 
   bool _validateStep(int s) {
     if (s == 0) {
-      return _titleCtrl.text.trim().isNotEmpty && _P > 0;
+      return _titleCtrl.text.trim().isNotEmpty && _principal > 0;
     }
     if (s == 1) {
       final plan = _computePlan();
@@ -553,15 +609,22 @@ class _AddLoanScreenState extends State<AddLoanScreen>
   @override
   Widget build(BuildContext context) {
     final plan = _computePlan();
-    final ally = _ally(plan);
-    final steps = ['Basics','Schedule','Share','Reminders','Review'];
+
+    final steps = ['Basics', 'Schedule', 'Share', 'Reminders', 'Review'];
 
     // promoted locals for safe formatting in Review
-    final eInput = _E;
+    final eInput = _emiAmount;
     final nInput = _nUser;
 
-    return WillPopScope(
-      onWillPop: _autoSaveIfPossible,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldClose = await _autoSaveIfPossible();
+        if (shouldClose && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
       child: Scaffold(
         backgroundColor: kBg,
         appBar: AppBar(
@@ -572,7 +635,8 @@ class _AddLoanScreenState extends State<AddLoanScreen>
             onPressed: _back,
           ),
           centerTitle: true,
-          title: const Text('Add Loan', style: TextStyle(color: kText, fontWeight: FontWeight.w800)),
+          title: const Text('Add Loan',
+              style: TextStyle(color: kText, fontWeight: FontWeight.w800)),
           actions: [
             IconButton(
               tooltip: 'Save now',
@@ -588,7 +652,11 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                 children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
-                    child: _StepperBar(current: _step, total: steps.length, labels: steps, brand: _brand),
+                    child: _StepperBar(
+                        current: _step,
+                        total: steps.length,
+                        labels: steps,
+                        brand: _brand),
                   ),
                   Expanded(
                     child: PageView(
@@ -601,7 +669,8 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _heroTip("Add Loan", "Select title & lender, set rate, EMI or months. We’ll compute and remind you."),
+                              _heroTip("Add Loan",
+                                  "Select title & lender, set rate, EMI or months. We’ll compute and remind you."),
                               const SizedBox(height: 18),
                               _H2('Basics', brand: _brand),
                               const SizedBox(height: 8),
@@ -611,37 +680,50 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                 selected: _titleSelected,
                                 controller: _titleCtrl,
                                 brand: _brand,
-                                onChangedSelected: (v) => setState(() => _titleSelected = v),
+                                onChangedSelected: (v) =>
+                                    setState(() => _titleSelected = v),
                               ),
                               const SizedBox(height: 12),
                               Row(
                                 children: [
                                   Expanded(
                                     child: DropdownButtonFormField<String>(
-                                      value: _lenderType,
+                                      initialValue: _lenderType,
                                       isExpanded: true,
-                                      items: const ['Bank','NBFC','Friend','Other']
-                                          .map((t) => DropdownMenuItem(value: t, child: Text(t, overflow: TextOverflow.ellipsis)))
+                                      items: const [
+                                        'Bank',
+                                        'NBFC',
+                                        'Friend',
+                                        'Other'
+                                      ]
+                                          .map((t) => DropdownMenuItem(
+                                              value: t,
+                                              child: Text(t,
+                                                  overflow:
+                                                      TextOverflow.ellipsis)))
                                           .toList(),
                                       onChanged: (v) => setState(() {
                                         _lenderType = (v ?? 'Bank');
                                         _lenderNameSelected = null;
                                         _lenderNameCtrl.clear();
                                       }),
-                                      decoration: _dec("Lender Type", icon: Icons.account_balance_rounded),
+                                      decoration: _dec("Lender Type",
+                                          icon: Icons.account_balance_rounded),
                                     ),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: _LenderNameField(
-                                      key: const PageStorageKey('lender-name-field'),
+                                      key: const PageStorageKey(
+                                          'lender-name-field'),
                                       lenderType: _lenderType,
                                       banks: _banks,
                                       nbfcs: _nbfcs,
                                       selected: _lenderNameSelected,
                                       controller: _lenderNameCtrl,
                                       brand: _brand,
-                                      onChangedSelected: (v) => setState(() => _lenderNameSelected = v),
+                                      onChangedSelected: (v) => setState(
+                                          () => _lenderNameSelected = v),
                                     ),
                                   ),
                                 ],
@@ -649,20 +731,37 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                               const SizedBox(height: 12),
                               TextFormField(
                                 controller: _outstandingCtrl,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-                                decoration: _dec("Outstanding today (₹)", icon: Icons.currency_rupee_rounded, hint: "What’s left to pay"),
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                      RegExp(r'[0-9.,]'))
+                                ],
+                                decoration: _dec("Outstanding today (₹)",
+                                    icon: Icons.currency_rupee_rounded,
+                                    hint: "What’s left to pay"),
                                 onChanged: (_) => setState(() {}),
                               ),
                               const SizedBox(height: 10),
                               TextFormField(
                                 controller: _origCtrl,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-                                decoration: _dec("Original sanctioned (₹) — optional", icon: Icons.flag_rounded),
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                      RegExp(r'[0-9.,]'))
+                                ],
+                                decoration: _dec(
+                                    "Original sanctioned (₹) — optional",
+                                    icon: Icons.flag_rounded),
                               ),
                               const SizedBox(height: 24),
-                              _PrimaryButton(text: 'Next', onPressed: _next, brand: _brand),
+                              _PrimaryButton(
+                                  text: 'Next',
+                                  onPressed: _next,
+                                  brand: _brand),
                             ],
                           ),
                         ),
@@ -676,67 +775,103 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                               _H2('Rate & Schedule', brand: _brand),
                               const SizedBox(height: 10),
                               DropdownButtonFormField<LoanInterestMethod>(
-                                value: _interestMethod,
+                                initialValue: _interestMethod,
                                 isExpanded: true,
                                 items: const [
-                                  DropdownMenuItem(value: LoanInterestMethod.reducing, child: Text("Reducing (EMI) — recommended")),
-                                  DropdownMenuItem(value: LoanInterestMethod.flat, child: Text("Flat rate")),
+                                  DropdownMenuItem(
+                                      value: LoanInterestMethod.reducing,
+                                      child:
+                                          Text("Reducing (EMI) — recommended")),
+                                  DropdownMenuItem(
+                                      value: LoanInterestMethod.flat,
+                                      child: Text("Flat rate")),
                                 ],
-                                onChanged: (v) => setState(() => _interestMethod = v ?? LoanInterestMethod.reducing),
-                                decoration: _dec("Interest Method", icon: Icons.functions_rounded),
+                                onChanged: (v) => setState(() =>
+                                    _interestMethod =
+                                        v ?? LoanInterestMethod.reducing),
+                                decoration: _dec("Interest Method",
+                                    icon: Icons.functions_rounded),
                               ),
                               const SizedBox(height: 12),
                               _RateSliderField(
                                 label: "Annual Rate %",
                                 icon: Icons.percent_rounded,
                                 controller: _rateCtrl,
-                                min: 0, max: 48, divisions: 48,
+                                min: 0,
+                                max: 48,
+                                divisions: 48,
                                 onChanged: () => setState(() {}),
                                 brand: _brand,
                               ),
                               const SizedBox(height: 12),
                               DropdownButtonFormField<int>(
-                                value: _paymentDOM,
+                                initialValue: _paymentDOM,
                                 isExpanded: true,
                                 items: List.generate(31, (i) => i + 1)
-                                    .map((d) => DropdownMenuItem(value: d, child: Text("Pay on $d")))
+                                    .map((d) => DropdownMenuItem(
+                                        value: d, child: Text("Pay on $d")))
                                     .toList(),
                                 onChanged: (v) {
                                   setState(() => _paymentDOM = v);
                                   _restPaymentDOM.value = v;
                                 },
-                                decoration: _dec("Monthly due day", icon: Icons.event_available_rounded),
+                                decoration: _dec("Monthly due day",
+                                    icon: Icons.event_available_rounded),
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 "Short months auto-adjust to last day (e.g., Feb).",
-                                style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600),
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                    fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(height: 12),
                               Center(
                                 child: AnimatedToggleButtons(
-                                  isSelected: [_mode == _InputMode.knowEmi, _mode == _InputMode.knowMonths],
-                                  onPressed: (i) => setState(() => _mode = (i == 0) ? _InputMode.knowEmi : _InputMode.knowMonths),
+                                  isSelected: [
+                                    _mode == _InputMode.knowEmi,
+                                    _mode == _InputMode.knowMonths
+                                  ],
+                                  onPressed: (i) => setState(() => _mode =
+                                      (i == 0)
+                                          ? _InputMode.knowEmi
+                                          : _InputMode.knowMonths),
                                   brand: _brand,
-                                  labels: const ["I know my EMI", "I know months left"],
+                                  labels: const [
+                                    "I know my EMI",
+                                    "I know months left"
+                                  ],
                                 ),
                               ),
                               const SizedBox(height: 10),
                               AnimatedCrossFade(
-                                crossFadeState: _mode == _InputMode.knowEmi ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+                                crossFadeState: _mode == _InputMode.knowEmi
+                                    ? CrossFadeState.showFirst
+                                    : CrossFadeState.showSecond,
                                 duration: const Duration(milliseconds: 250),
                                 firstChild: TextFormField(
                                   controller: _emiCtrl,
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-                                  decoration: _dec("EMI (₹)", icon: Icons.savings_rounded),
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                          decimal: true),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                        RegExp(r'[0-9.,]'))
+                                  ],
+                                  decoration: _dec("EMI (₹)",
+                                      icon: Icons.savings_rounded),
                                   onChanged: (_) => setState(() {}),
                                 ),
                                 secondChild: TextFormField(
                                   controller: _monthsLeftCtrl,
                                   keyboardType: TextInputType.number,
-                                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                                  decoration: _dec("Months remaining", icon: Icons.timelapse_rounded, hint: "e.g. 24"),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly
+                                  ],
+                                  decoration: _dec("Months remaining",
+                                      icon: Icons.timelapse_rounded,
+                                      hint: "e.g. 24"),
                                   onChanged: (_) => setState(() {}),
                                 ),
                               ),
@@ -745,7 +880,8 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                 duration: const Duration(milliseconds: 250),
                                 switchInCurve: Curves.easeOut,
                                 child: _SummaryCard(
-                                  key: ValueKey("${plan.emi}-${plan.months}-${plan.totalPayable}"),
+                                  key: ValueKey(
+                                      "${plan.emi}-${plan.months}-${plan.totalPayable}"),
                                   brand: _brand,
                                   plan: plan,
                                   currency: _inr,
@@ -753,15 +889,22 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                               ),
                               if (_ally(plan).isNotEmpty) ...[
                                 const SizedBox(height: 10),
-                                Text("Suggestions", style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey[900])),
+                                Text("Suggestions",
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.grey[900])),
                                 const SizedBox(height: 6),
                                 Wrap(
-                                  spacing: 6, runSpacing: 6,
-                                  children: _ally(plan).map((s) => Chip(
-                                    label: Text(s),
-                                    backgroundColor: Colors.blue[50],
-                                    visualDensity: VisualDensity.compact,
-                                  )).toList(),
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: _ally(plan)
+                                      .map((s) => Chip(
+                                            label: Text(s),
+                                            backgroundColor: Colors.blue[50],
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                          ))
+                                      .toList(),
                                 ),
                               ],
                               const SizedBox(height: 24),
@@ -769,7 +912,11 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                 children: [
                                   _GhostButton(text: 'Back', onPressed: _back),
                                   const SizedBox(width: 12),
-                                  Expanded(child: _PrimaryButton(text: 'Next', onPressed: _next, brand: _brand)),
+                                  Expanded(
+                                      child: _PrimaryButton(
+                                          text: 'Next',
+                                          onPressed: _next,
+                                          brand: _brand)),
                                 ],
                               ),
                             ],
@@ -791,7 +938,8 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                     _shareEnabled = v;
                                     if (!v) {
                                       // if user turns it off, clear state & controllers
-                                      for (final m in _members) _removePctCtrl(m.key);
+                                      for (final m in _members)
+                                        _removePctCtrl(m.key);
                                       _members.clear();
                                       _customPct.clear();
                                     } else {
@@ -799,82 +947,107 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                       if (_members.isNotEmpty) {
                                         final eq = 100.0 / _members.length;
                                         for (final m in _members) {
-                                          _ensurePctCtrl(m.key, _shareMode == _ShareMode.custom
-                                              ? (_customPct[m.key] ?? eq)
-                                              : eq);
+                                          _ensurePctCtrl(
+                                              m.key,
+                                              _shareMode == _ShareMode.custom
+                                                  ? (_customPct[m.key] ?? eq)
+                                                  : eq);
                                         }
                                       }
                                     }
                                   });
                                 },
                                 title: const Text("Split/share this loan"),
-                                subtitle: const Text("Add friends or groups to share EMI burden"),
-                                activeColor: _brand,
+                                subtitle: const Text(
+                                    "Add friends or groups to share EMI burden"),
+                                activeTrackColor: _brand,
                                 contentPadding: EdgeInsets.zero,
                               ),
                               AnimatedCrossFade(
-                                crossFadeState: _shareEnabled ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+                                crossFadeState: _shareEnabled
+                                    ? CrossFadeState.showFirst
+                                    : CrossFadeState.showSecond,
                                 duration: const Duration(milliseconds: 200),
                                 firstChild: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Wrap(
-                                      spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
                                       children: [
                                         ChoiceChip(
                                           label: const Text("Equal"),
-                                          selected: _shareMode == _ShareMode.equal,
+                                          selected:
+                                              _shareMode == _ShareMode.equal,
                                           onSelected: (_) => setState(() {
                                             _shareMode = _ShareMode.equal;
                                             if (_members.isNotEmpty) {
-                                              final eq = 100.0 / _members.length;
+                                              final eq =
+                                                  100.0 / _members.length;
                                               for (final m in _members) {
                                                 _customPct[m.key] = eq;
                                                 _ensurePctCtrl(m.key, eq);
-                                                _pctCtrls[m.key]!.text = eq.toStringAsFixed(1);
+                                                _pctCtrls[m.key]!.text =
+                                                    eq.toStringAsFixed(1);
                                               }
                                             }
                                           }),
-                                          selectedColor: _brand.withOpacity(.15),
+                                          selectedColor:
+                                              _brand.withValues(alpha: .15),
                                           labelStyle: TextStyle(
                                             fontWeight: FontWeight.w800,
-                                            color: _shareMode == _ShareMode.equal ? _brand : Colors.black87,
+                                            color:
+                                                _shareMode == _ShareMode.equal
+                                                    ? _brand
+                                                    : Colors.black87,
                                           ),
                                         ),
                                         ChoiceChip(
                                           label: const Text("Custom %"),
-                                          selected: _shareMode == _ShareMode.custom,
+                                          selected:
+                                              _shareMode == _ShareMode.custom,
                                           onSelected: (_) => setState(() {
                                             _shareMode = _ShareMode.custom;
                                             if (_members.isNotEmpty) {
                                               // seed equal if nothing yet
-                                              final eq = 100.0 / _members.length;
+                                              final eq =
+                                                  100.0 / _members.length;
                                               for (final m in _members) {
-                                                final v = _customPct[m.key] ?? eq;
+                                                final v =
+                                                    _customPct[m.key] ?? eq;
                                                 _customPct[m.key] = v;
                                                 _ensurePctCtrl(m.key, v);
-                                                _pctCtrls[m.key]!.text = v.toStringAsFixed(1);
+                                                _pctCtrls[m.key]!.text =
+                                                    v.toStringAsFixed(1);
                                               }
                                             }
                                           }),
-                                          selectedColor: _brand.withOpacity(.15),
+                                          selectedColor:
+                                              _brand.withValues(alpha: .15),
                                           labelStyle: TextStyle(
                                             fontWeight: FontWeight.w800,
-                                            color: _shareMode == _ShareMode.custom ? _brand : Colors.black87,
+                                            color:
+                                                _shareMode == _ShareMode.custom
+                                                    ? _brand
+                                                    : Colors.black87,
                                           ),
                                         ),
                                         TextButton.icon(
                                           onPressed: _openMemberPicker,
-                                          icon: const Icon(Icons.group_add_rounded),
+                                          icon: const Icon(
+                                              Icons.group_add_rounded),
                                           label: const Text("Select people"),
                                         ),
                                       ],
                                     ),
                                     const SizedBox(height: 10),
-
                                     if (_members.isEmpty)
-                                      Text("No people added yet.", style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600)),
-
+                                      Text("No people added yet.",
+                                          style: TextStyle(
+                                              color: Colors.grey[700],
+                                              fontWeight: FontWeight.w600)),
                                     if (_members.isNotEmpty)
                                       _MembersList(
                                         members: _members,
@@ -888,15 +1061,22 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                         }),
                                         onChangePct: (m, v) => setState(() {
                                           // clamp 0..100, keep 1 decimal
-                                          final clamped = v.clamp(0, 100).toDouble();
-                                          _customPct[m.key] = double.parse(clamped.toStringAsFixed(1));
-                                          _pctCtrls[m.key]?.text = _customPct[m.key]!.toStringAsFixed(1);
+                                          final clamped =
+                                              v.clamp(0, 100).toDouble();
+                                          _customPct[m.key] = double.parse(
+                                              clamped.toStringAsFixed(1));
+                                          _pctCtrls[m.key]?.text =
+                                              _customPct[m.key]!
+                                                  .toStringAsFixed(1);
                                         }),
                                       ),
-
-                                    if (_shareMode == _ShareMode.custom && _members.isNotEmpty) ...[
+                                    if (_shareMode == _ShareMode.custom &&
+                                        _members.isNotEmpty) ...[
                                       const SizedBox(height: 8),
-                                      _CustomTotalHint(customPct: _customPct, members: _members, brand: _brand),
+                                      _CustomTotalHint(
+                                          customPct: _customPct,
+                                          members: _members,
+                                          brand: _brand),
                                     ],
                                   ],
                                 ),
@@ -907,13 +1087,16 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                 children: [
                                   _GhostButton(text: 'Back', onPressed: _back),
                                   const SizedBox(width: 12),
-                                  Expanded(child: _PrimaryButton(text: 'Next', onPressed: _next, brand: _brand)),
+                                  Expanded(
+                                      child: _PrimaryButton(
+                                          text: 'Next',
+                                          onPressed: _next,
+                                          brand: _brand)),
                                 ],
                               ),
                             ],
                           ),
                         ),
-
 
                         // STEP 3 — Reminders
                         SingleChildScrollView(
@@ -930,34 +1113,45 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                   _restReminderEnabled.value = v;
                                 },
                                 title: const Text("Remind me about EMI"),
-                                subtitle: const Text("We’ll notify you before each due date"),
-                                activeColor: _brand,
+                                subtitle: const Text(
+                                    "We’ll notify you before each due date"),
+                                activeTrackColor: _brand,
                                 contentPadding: EdgeInsets.zero,
                               ),
                               AnimatedCrossFade(
-                                crossFadeState: _reminderEnabled ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+                                crossFadeState: _reminderEnabled
+                                    ? CrossFadeState.showFirst
+                                    : CrossFadeState.showSecond,
                                 duration: const Duration(milliseconds: 200),
                                 firstChild: Row(
                                   children: [
                                     Expanded(
                                       child: Slider(
                                         value: _daysBefore.toDouble(),
-                                        min: 0, max: 7, divisions: 7,
+                                        min: 0,
+                                        max: 7,
+                                        divisions: 7,
                                         label: "$_daysBefore day(s) before",
                                         onChanged: (v) {
-                                          setState(() => _daysBefore = v.toInt());
+                                          setState(
+                                              () => _daysBefore = v.toInt());
                                           _restDaysBefore.value = _daysBefore;
                                         },
                                       ),
                                     ),
                                     const SizedBox(width: 12),
                                     OutlinedButton.icon(
-                                      icon: const Icon(Icons.access_time_rounded),
+                                      icon:
+                                          const Icon(Icons.access_time_rounded),
                                       onPressed: () async {
-                                        final t = await showTimePicker(context: context, initialTime: _reminderTime);
-                                        if (t != null) setState(() => _reminderTime = t);
+                                        final t = await showTimePicker(
+                                            context: context,
+                                            initialTime: _reminderTime);
+                                        if (t != null)
+                                          setState(() => _reminderTime = t);
                                       },
-                                      label: Text("${_reminderTime.hour.toString().padLeft(2, '0')}:${_reminderTime.minute.toString().padLeft(2, '0')}"),
+                                      label: Text(
+                                          "${_reminderTime.hour.toString().padLeft(2, '0')}:${_reminderTime.minute.toString().padLeft(2, '0')}"),
                                     ),
                                   ],
                                 ),
@@ -967,22 +1161,28 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                 value: _autopay,
                                 onChanged: (v) => setState(() => _autopay = v),
                                 title: const Text("Autopay enabled"),
-                                subtitle: const Text("Mark if your bank auto-debits EMI"),
-                                activeColor: _brand,
+                                subtitle: const Text(
+                                    "Mark if your bank auto-debits EMI"),
+                                activeTrackColor: _brand,
                                 contentPadding: EdgeInsets.zero,
                               ),
                               const SizedBox(height: 8),
                               TextField(
                                 controller: _noteCtrl,
                                 maxLines: 3,
-                                decoration: _dec("Notes (optional)", icon: Icons.notes_rounded),
+                                decoration: _dec("Notes (optional)",
+                                    icon: Icons.notes_rounded),
                               ),
                               const SizedBox(height: 24),
                               Row(
                                 children: [
                                   _GhostButton(text: 'Back', onPressed: _back),
                                   const SizedBox(width: 12),
-                                  Expanded(child: _PrimaryButton(text: 'Next', onPressed: _next, brand: _brand)),
+                                  Expanded(
+                                      child: _PrimaryButton(
+                                          text: 'Next',
+                                          onPressed: _next,
+                                          brand: _brand)),
                                 ],
                               ),
                             ],
@@ -998,26 +1198,67 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                               _H2('Review & Save', brand: _brand),
                               const SizedBox(height: 10),
                               _ReviewList(rows: [
-                                _KV('Title', _titleCtrl.text.trim().isEmpty ? '--' : _titleCtrl.text.trim()),
+                                _KV(
+                                    'Title',
+                                    _titleCtrl.text.trim().isEmpty
+                                        ? '--'
+                                        : _titleCtrl.text.trim()),
                                 _KV('Lender Type', _lenderType),
-                                _KV('Lender Name', _lenderNameCtrl.text.trim().isEmpty ? '--' : _lenderNameCtrl.text.trim()),
-                                _KV('Outstanding', _inr.format(_P)),
+                                _KV(
+                                    'Lender Name',
+                                    _lenderNameCtrl.text.trim().isEmpty
+                                        ? '--'
+                                        : _lenderNameCtrl.text.trim()),
+                                _KV('Outstanding', _inr.format(_principal)),
                                 if (_origCtrl.text.trim().isNotEmpty)
-                                  _KV('Original Sanctioned', _inr.format(double.tryParse(_digitsOnly(_origCtrl.text)) ?? 0)),
-                                _KV('Interest Method', _interestMethod == LoanInterestMethod.reducing ? 'Reducing (EMI)' : 'Flat'),
-                                _KV('Annual Rate', _annualRate == null ? '--' : "${_annualRate!.toStringAsFixed(1)}%"),
-                                if (_mode == _InputMode.knowEmi && eInput != null) _KV('EMI (input)', _inr.format(eInput)),
-                                if (_mode == _InputMode.knowMonths && nInput != null) _KV('Months (input)', "$nInput"),
-                                _KV('Monthly Due Day', _paymentDOM?.toString() ?? '--'),
-                                if (_shareEnabled) _KV('Sharing', _shareMode == _ShareMode.equal ? 'Equal' : 'Custom %'),
-                                if (_shareEnabled && _members.isNotEmpty) _KV('Members', _members.map((m) => m.nameOrPhone).join(', ')),
-                                if (_noteCtrl.text.trim().isNotEmpty) _KV('Notes', _noteCtrl.text.trim()),
-                                _KV('Reminders', _reminderEnabled ? 'On' : 'Off'),
-                                if (_reminderEnabled) _KV('Notify', "$_daysBefore day(s) before at ${_reminderTime.hour.toString().padLeft(2,'0')}:${_reminderTime.minute.toString().padLeft(2,'0')}"),
+                                  _KV(
+                                      'Original Sanctioned',
+                                      _inr.format(double.tryParse(
+                                              _digitsOnly(_origCtrl.text)) ??
+                                          0)),
+                                _KV(
+                                    'Interest Method',
+                                    _interestMethod ==
+                                            LoanInterestMethod.reducing
+                                        ? 'Reducing (EMI)'
+                                        : 'Flat'),
+                                _KV(
+                                    'Annual Rate',
+                                    _annualRate == null
+                                        ? '--'
+                                        : "${_annualRate!.toStringAsFixed(1)}%"),
+                                if (_mode == _InputMode.knowEmi &&
+                                    eInput != null)
+                                  _KV('EMI (input)', _inr.format(eInput)),
+                                if (_mode == _InputMode.knowMonths &&
+                                    nInput != null)
+                                  _KV('Months (input)', "$nInput"),
+                                _KV('Monthly Due Day',
+                                    _paymentDOM?.toString() ?? '--'),
+                                if (_shareEnabled)
+                                  _KV(
+                                      'Sharing',
+                                      _shareMode == _ShareMode.equal
+                                          ? 'Equal'
+                                          : 'Custom %'),
+                                if (_shareEnabled && _members.isNotEmpty)
+                                  _KV(
+                                      'Members',
+                                      _members
+                                          .map((m) => m.nameOrPhone)
+                                          .join(', ')),
+                                if (_noteCtrl.text.trim().isNotEmpty)
+                                  _KV('Notes', _noteCtrl.text.trim()),
+                                _KV('Reminders',
+                                    _reminderEnabled ? 'On' : 'Off'),
+                                if (_reminderEnabled)
+                                  _KV('Notify',
+                                      "$_daysBefore day(s) before at ${_reminderTime.hour.toString().padLeft(2, '0')}:${_reminderTime.minute.toString().padLeft(2, '0')}"),
                                 _KV('Autopay', _autopay ? 'Yes' : 'No'),
                               ]),
                               const SizedBox(height: 12),
-                              _SummaryCard(brand: _brand, plan: plan, currency: _inr),
+                              _SummaryCard(
+                                  brand: _brand, plan: plan, currency: _inr),
                               const SizedBox(height: 24),
                               Row(
                                 children: [
@@ -1026,12 +1267,15 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                   Expanded(
                                     child: _PrimaryButton(
                                       text: 'Add Loan',
-                                      onPressed: _saving ? null : () async {
-                                        final ok = await _trySave(showSnackOnSkip: true);
-                                        if (ok && _successAutoClose) {
-                                          // overlay handles pop
-                                        }
-                                      },
+                                      onPressed: _saving
+                                          ? null
+                                          : () async {
+                                              final ok = await _trySave(
+                                                  showSnackOnSkip: true);
+                                              if (ok && _successAutoClose) {
+                                                // overlay handles pop
+                                              }
+                                            },
                                       brand: _brand,
                                       loading: _saving,
                                     ),
@@ -1041,8 +1285,13 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                               const SizedBox(height: 8),
                               Center(
                                 child: Text(
-                                  _didPersist ? "Saved • You can close this page." : "Tip: swipe back — we’ll try saving first.",
-                                  style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600),
+                                  _didPersist
+                                      ? "Saved • You can close this page."
+                                      : "Tip: swipe back — we’ll try saving first.",
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                      fontWeight: FontWeight.w600),
                                 ),
                               ),
                             ],
@@ -1061,7 +1310,7 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                   opacity: _showSuccess ? 1 : 0,
                   duration: const Duration(milliseconds: 220),
                   child: Container(
-                    color: Colors.black.withOpacity(0.25),
+                    color: Colors.black.withValues(alpha: 0.25),
                     alignment: Alignment.center,
                     child: ScaleTransition(
                       scale: _successScale,
@@ -1092,7 +1341,7 @@ class _AddLoanScreenState extends State<AddLoanScreen>
       isDense: true,
       prefixIcon: icon != null ? Icon(icon) : null,
       filled: true,
-      fillColor: _brand.withOpacity(.055),
+      fillColor: _brand.withValues(alpha: .055),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
@@ -1116,26 +1365,41 @@ class _AddLoanScreenState extends State<AddLoanScreen>
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         gradient: LinearGradient(
-          begin: Alignment.topLeft, end: Alignment.bottomRight,
-          colors: [ _brand.withOpacity(.12), Colors.white ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_brand.withValues(alpha: .12), Colors.white],
         ),
-        border: Border.all(color: _brand.withOpacity(.18)),
-        boxShadow: const [BoxShadow(color: Color(0x11000000), blurRadius: 12, offset: Offset(0, 6))],
+        border: Border.all(color: _brand.withValues(alpha: .18)),
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x11000000), blurRadius: 12, offset: Offset(0, 6))
+        ],
       ),
       child: Row(
         children: [
           Container(
-            height: 40, width: 40,
+            height: 40,
+            width: 40,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: LinearGradient(colors: [ _brand.withOpacity(.9), _brand.withOpacity(.6) ]),
+              gradient: LinearGradient(colors: [
+                _brand.withValues(alpha: .9),
+                _brand.withValues(alpha: .6)
+              ]),
             ),
-            child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 22),
+            child:
+                const Icon(Icons.bolt_rounded, color: Colors.white, size: 22),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title, style: TextStyle(color: _brand, fontWeight: FontWeight.w900, fontSize: 20, letterSpacing: -.2)),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  style: TextStyle(
+                      color: _brand,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 20,
+                      letterSpacing: -.2)),
               const SizedBox(height: 4),
               Text(text, style: const TextStyle(fontWeight: FontWeight.w600)),
             ]),
@@ -1183,8 +1447,6 @@ class _AddLoanScreenState extends State<AddLoanScreen>
       });
     }
   }
-
-
 }
 
 // -----------------------------------------------------------------------------
@@ -1199,13 +1461,13 @@ class _TitleDropdown extends StatelessWidget {
   static const String other = 'Other…';
 
   const _TitleDropdown({
-    Key? key,
+    super.key,
     required this.options,
     required this.selected,
     required this.controller,
     required this.brand,
     required this.onChangedSelected,
-  }) : super(key: key);
+  });
 
   bool get _isOther => selected == other;
 
@@ -1214,7 +1476,7 @@ class _TitleDropdown extends StatelessWidget {
     return Column(
       children: [
         DropdownButtonFormField<String>(
-          value: selected,
+          initialValue: selected,
           isExpanded: true,
           items: [
             ...options.map((o) => DropdownMenuItem(value: o, child: Text(o))),
@@ -1233,8 +1495,9 @@ class _TitleDropdown extends StatelessWidget {
             isDense: true,
             prefixIcon: const Icon(Icons.edit_rounded),
             filled: true,
-            fillColor: brand.withOpacity(.055),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            fillColor: brand.withValues(alpha: .055),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
               borderSide: BorderSide(color: Colors.grey.shade300),
@@ -1246,21 +1509,22 @@ class _TitleDropdown extends StatelessWidget {
           curve: Curves.easeOut,
           child: _isOther
               ? Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: TextField(
-              controller: controller,
-              decoration: InputDecoration(
-                labelText: "Enter loan title",
-                isDense: true,
-                prefixIcon: const Icon(Icons.edit_rounded),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-              ),
-            ),
-          )
+                  padding: const EdgeInsets.only(top: 8),
+                  child: TextField(
+                    controller: controller,
+                    decoration: InputDecoration(
+                      labelText: "Enter loan title",
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.edit_rounded),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 14),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                    ),
+                  ),
+                )
               : const SizedBox.shrink(),
         ),
       ],
@@ -1283,7 +1547,7 @@ class _LenderNameField extends StatelessWidget {
   static const String other = 'Other…';
 
   const _LenderNameField({
-    Key? key,
+    super.key,
     required this.lenderType,
     required this.banks,
     required this.nbfcs,
@@ -1291,7 +1555,7 @@ class _LenderNameField extends StatelessWidget {
     required this.controller,
     required this.brand,
     required this.onChangedSelected,
-  }) : super(key: key);
+  });
 
   List<String> get _options {
     switch (lenderType) {
@@ -1313,9 +1577,12 @@ class _LenderNameField extends StatelessWidget {
       children: [
         if (_showDropdown)
           DropdownButtonFormField<String>(
-            value: selected,
+            initialValue: selected,
             isExpanded: true,
-            items: _options.map((o) => DropdownMenuItem(value: o, child: Text(o, overflow: TextOverflow.ellipsis))).toList(),
+            items: _options
+                .map((o) => DropdownMenuItem(
+                    value: o, child: Text(o, overflow: TextOverflow.ellipsis)))
+                .toList(),
             onChanged: (v) {
               onChangedSelected(v);
               if (v != other && v != null) {
@@ -1329,8 +1596,9 @@ class _LenderNameField extends StatelessWidget {
               isDense: true,
               prefixIcon: const Icon(Icons.badge_outlined),
               filled: true,
-              fillColor: brand.withOpacity(.055),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              fillColor: brand.withValues(alpha: .055),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
                 borderSide: BorderSide(color: Colors.grey.shade300),
@@ -1342,22 +1610,25 @@ class _LenderNameField extends StatelessWidget {
           curve: Curves.easeOut,
           child: (!_showDropdown || _isOther)
               ? Padding(
-            padding: EdgeInsets.only(top: _showDropdown ? 8 : 0),
-            child: TextField(
-              controller: controller,
-              decoration: InputDecoration(
-                labelText: "Lender Name",
-                hintText: lenderType == 'Friend' ? "Friend's name" : "Type lender name",
-                isDense: true,
-                prefixIcon: const Icon(Icons.badge_outlined),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-              ),
-            ),
-          )
+                  padding: EdgeInsets.only(top: _showDropdown ? 8 : 0),
+                  child: TextField(
+                    controller: controller,
+                    decoration: InputDecoration(
+                      labelText: "Lender Name",
+                      hintText: lenderType == 'Friend'
+                          ? "Friend's name"
+                          : "Type lender name",
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.badge_outlined),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 14),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                    ),
+                  ),
+                )
               : const SizedBox.shrink(),
         ),
       ],
@@ -1433,7 +1704,8 @@ class _RateSliderFieldState extends State<_RateSliderField> {
               duration: const Duration(milliseconds: 180),
               builder: (_, val, __) => Text(
                 "${val.toStringAsFixed(1)}%",
-                style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.black87),
+                style: const TextStyle(
+                    fontWeight: FontWeight.w900, color: Colors.black87),
               ),
             ),
           ],
@@ -1460,12 +1732,16 @@ class _RateSliderFieldState extends State<_RateSliderField> {
               width: 84,
               child: TextField(
                 controller: widget.controller,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+                ],
                 textAlign: TextAlign.center,
                 decoration: InputDecoration(
                   isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(color: Colors.grey.shade300),
@@ -1501,10 +1777,20 @@ class _SummaryCard extends StatelessWidget {
     final rows = <_Kpi>[
       _Kpi("EMI", plan.isValid ? currency.format(plan.emi) : "--"),
       _Kpi("Payments", plan.isValid ? "${plan.months}" : "--"),
-      _Kpi("Total Interest", plan.isValid ? currency.format(plan.totalInterest) : "--"),
-      _Kpi("Total Payable", plan.isValid ? currency.format(plan.totalPayable) : "--"),
-      _Kpi("First Due", plan.firstDue != null ? DateFormat('d MMM, yyyy').format(plan.firstDue!) : "--"),
-      _Kpi("Maturity", plan.maturity != null ? DateFormat('d MMM, yyyy').format(plan.maturity!) : "--"),
+      _Kpi("Total Interest",
+          plan.isValid ? currency.format(plan.totalInterest) : "--"),
+      _Kpi("Total Payable",
+          plan.isValid ? currency.format(plan.totalPayable) : "--"),
+      _Kpi(
+          "First Due",
+          plan.firstDue != null
+              ? DateFormat('d MMM, yyyy').format(plan.firstDue!)
+              : "--"),
+      _Kpi(
+          "Maturity",
+          plan.maturity != null
+              ? DateFormat('d MMM, yyyy').format(plan.maturity!)
+              : "--"),
     ];
 
     return Container(
@@ -1513,16 +1799,25 @@ class _SummaryCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Colors.grey.shade200),
-        boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 14, offset: Offset(0, 6))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x14000000), blurRadius: 14, offset: Offset(0, 6))
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Summary", style: TextStyle(fontWeight: FontWeight.w900, color: Colors.grey[900], fontSize: 18)),
+          Text("Summary",
+              style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: Colors.grey[900],
+                  fontSize: 18)),
           const SizedBox(height: 10),
           Wrap(
-            spacing: 12, runSpacing: 10,
-            children: rows.map((k) => _kpiChip(brand, k.label, k.value)).toList(),
+            spacing: 12,
+            runSpacing: 10,
+            children:
+                rows.map((k) => _kpiChip(brand, k.label, k.value)).toList(),
           ),
           if (!plan.isValid)
             Padding(
@@ -1539,15 +1834,21 @@ class _SummaryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: brand.withOpacity(.06),
+        color: brand.withValues(alpha: .06),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: brand.withOpacity(.16)),
+        border: Border.all(color: brand.withValues(alpha: .16)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text("$label: ", style: TextStyle(fontSize: 12, color: Colors.grey[800], fontWeight: FontWeight.w700)),
-          Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+          Text("$label: ",
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[800],
+                  fontWeight: FontWeight.w700)),
+          Text(value,
+              style:
+                  const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
         ],
       ),
     );
@@ -1555,7 +1856,8 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _Kpi {
-  final String label; final String value;
+  final String label;
+  final String value;
   _Kpi(this.label, this.value);
 }
 
@@ -1566,7 +1868,12 @@ class _SuccessCard extends StatelessWidget {
   final Color brand;
   final VoidCallback onDone;
   final bool showDone;
-  const _SuccessCard({Key? key, required this.brand, required this.onDone, this.showDone = true}) : super(key: key);
+  const _SuccessCard(
+      {Key? key,
+      required this.brand,
+      required this.onDone,
+      this.showDone = true})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -1576,26 +1883,33 @@ class _SuccessCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: brand.withOpacity(.2)),
-        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 18, offset: Offset(0, 8))],
+        border: Border.all(color: brand.withValues(alpha: .2)),
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x33000000), blurRadius: 18, offset: Offset(0, 8))
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            height: 64, width: 64,
+            height: 64,
+            width: 64,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: brand.withOpacity(.10),
-              border: Border.all(color: brand.withOpacity(.25)),
+              color: brand.withValues(alpha: .10),
+              border: Border.all(color: brand.withValues(alpha: .25)),
             ),
             child: Icon(Icons.check_rounded, color: brand, size: 38),
           ),
           const SizedBox(height: 12),
-          const Text("Saved!", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+          const Text("Saved!",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
           const SizedBox(height: 6),
-          Text("Your loan has been added.", textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600)),
+          Text("Your loan has been added.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: Colors.grey[700], fontWeight: FontWeight.w600)),
           if (showDone) ...[
             const SizedBox(height: 12),
             ElevatedButton(
@@ -1603,7 +1917,8 @@ class _SuccessCard extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: brand,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 elevation: 0,
               ),
               child: const Text("Done"),
@@ -1640,7 +1955,8 @@ class AnimatedToggleButtons extends StatelessWidget {
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(begin: 1, end: selected ? 1.03 : 1),
           duration: const Duration(milliseconds: 180),
-          builder: (_, scale, child) => Transform.scale(scale: scale, child: child),
+          builder: (_, scale, child) =>
+              Transform.scale(scale: scale, child: child),
           child: ChoiceChip(
             label: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -1648,7 +1964,7 @@ class AnimatedToggleButtons extends StatelessWidget {
             ),
             selected: selected,
             onSelected: (_) => onPressed(i),
-            selectedColor: brand.withOpacity(.15),
+            selectedColor: brand.withValues(alpha: .15),
             labelStyle: TextStyle(
               fontWeight: FontWeight.w800,
               color: selected ? brand : Colors.black87,
@@ -1699,7 +2015,11 @@ class _StepperBar extends StatelessWidget {
   final int total;
   final List<String> labels;
   final Color brand;
-  const _StepperBar({required this.current, required this.total, required this.labels, required this.brand});
+  const _StepperBar(
+      {required this.current,
+      required this.total,
+      required this.labels,
+      required this.brand});
 
   @override
   Widget build(BuildContext context) {
@@ -1752,7 +2072,11 @@ class _H2 extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       t,
-      style: TextStyle(color: brand, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: -.2),
+      style: TextStyle(
+          color: brand,
+          fontWeight: FontWeight.w900,
+          fontSize: 16,
+          letterSpacing: -.2),
     );
   }
 }
@@ -1762,7 +2086,11 @@ class _PrimaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool loading;
   final Color brand;
-  const _PrimaryButton({required this.text, required this.onPressed, this.loading=false, required this.brand});
+  const _PrimaryButton(
+      {required this.text,
+      required this.onPressed,
+      this.loading = false,
+      required this.brand});
   @override
   Widget build(BuildContext context) {
     return ElevatedButton(
@@ -1776,12 +2104,16 @@ class _PrimaryButton extends StatelessWidget {
       ),
       child: loading
           ? const SizedBox(
-        width: 22, height: 22,
-        child: CircularProgressIndicator(
-          strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-        ),
-      )
-          : Text(text, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800)),
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+          : Text(text,
+              style:
+                  const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800)),
     );
   }
 }
@@ -1806,7 +2138,8 @@ class _GhostButton extends StatelessWidget {
 }
 
 class _KV {
-  final String k; final String v;
+  final String k;
+  final String v;
   const _KV(this.k, this.v);
 }
 
@@ -1820,24 +2153,30 @@ class _ReviewList extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
-          children: rows.map((kv) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(kv.k,
-                    style: const TextStyle(color: kSubtle, fontWeight: FontWeight.w700),
-                  ),
-                ),
-                Expanded(
-                  child: Text(kv.v,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(color: kText, fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ],
-            ),
-          )).toList(),
+          children: rows
+              .map((kv) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            kv.k,
+                            style: const TextStyle(
+                                color: kSubtle, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            kv.v,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                                color: kText, fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ))
+              .toList(),
         ),
       ),
     );
@@ -1851,9 +2190,13 @@ class _GlassCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white, borderRadius: BorderRadius.circular(18),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: kLine, width: 1),
-        boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0,8))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 8))
+        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
@@ -1871,7 +2214,8 @@ class _Member {
   final String? name;
   _Member({this.id, this.phone, this.name});
 
-  String get key => (id?.isNotEmpty == true ? 'id:$id' : 'ph:${phone ?? name ?? ''}');
+  String get key =>
+      (id?.isNotEmpty == true ? 'id:$id' : 'ph:${phone ?? name ?? ''}');
   String get nameOrPhone => (name?.isNotEmpty == true)
       ? name!
       : (phone?.isNotEmpty == true ? phone! : 'Unknown');
@@ -1907,12 +2251,11 @@ class _MembersList extends StatelessWidget {
     return Column(
       children: members.map((m) {
         final k = m.key;
-        final pct = shareMode == _ShareMode.equal
-            ? eq
-            : (customPct[k] ?? eq);
+        final pct = shareMode == _ShareMode.equal ? eq : (customPct[k] ?? eq);
 
         // ensure a controller even in equal mode (stable UI)
-        final ctrl = controllers[k] ?? TextEditingController(text: pct.toStringAsFixed(1));
+        final ctrl = controllers[k] ??
+            TextEditingController(text: pct.toStringAsFixed(1));
         controllers[k] = ctrl;
 
         return Container(
@@ -1940,8 +2283,11 @@ class _MembersList extends StatelessWidget {
                   child: TextField(
                     key: ValueKey('pct-${m.key}'),
                     controller: ctrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+                    ],
                     decoration: const InputDecoration(
                       isDense: true,
                       suffixText: '%',
@@ -1969,16 +2315,21 @@ class _MembersList extends StatelessWidget {
   }
 }
 
-
 class _CustomTotalHint extends StatelessWidget {
   final Map<String, double> customPct;
   final List<_Member> members;
   final Color brand;
-  const _CustomTotalHint({Key? key, required this.customPct, required this.members, required this.brand}) : super(key: key);
+  const _CustomTotalHint(
+      {Key? key,
+      required this.customPct,
+      required this.members,
+      required this.brand})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final total = members.fold<double>(0, (s, m) => s + (customPct[m.key] ?? 0.0));
+    final total =
+        members.fold<double>(0, (s, m) => s + (customPct[m.key] ?? 0.0));
     final ok = (total - 100.0).abs() <= 0.5;
     return Row(
       children: [
@@ -1994,7 +2345,8 @@ class _CustomTotalHint extends StatelessWidget {
         ),
         const Spacer(),
         if (!ok)
-          const Text("Make it 100%", style: TextStyle(fontWeight: FontWeight.w700)),
+          const Text("Make it 100%",
+              style: TextStyle(fontWeight: FontWeight.w700)),
       ],
     );
   }
@@ -2005,7 +2357,9 @@ class _CustomTotalHint extends StatelessWidget {
 class _SharePickerSheet extends StatefulWidget {
   final List<_Member> initial;
   final String userId; // <-- pass widget.userId from AddLoanScreen
-  const _SharePickerSheet({Key? key, required this.initial, required this.userId}) : super(key: key);
+  const _SharePickerSheet(
+      {Key? key, required this.initial, required this.userId})
+      : super(key: key);
 
   @override
   State<_SharePickerSheet> createState() => _SharePickerSheetState();
@@ -2040,8 +2394,8 @@ class _SharePickerSheetState extends State<_SharePickerSheet> {
 
   bool _matchesQuery(_Member m, String q) =>
       q.isEmpty ||
-          (m.nameOrPhone.toLowerCase().contains(q)) ||
-          ((m.phone ?? '').toLowerCase().contains(q));
+      (m.nameOrPhone.toLowerCase().contains(q)) ||
+      ((m.phone ?? '').toLowerCase().contains(q));
 
   _Member _mapFriendDoc(QueryDocumentSnapshot<Map<String, dynamic>> d) {
     final data = d.data();
@@ -2089,8 +2443,12 @@ class _SharePickerSheetState extends State<_SharePickerSheet> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            height: 4, width: 42, margin: const EdgeInsets.only(bottom: 10),
-            decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(99)),
+            height: 4,
+            width: 42,
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(99)),
           ),
           Row(
             children: [
@@ -2098,7 +2456,8 @@ class _SharePickerSheetState extends State<_SharePickerSheet> {
               const SizedBox(width: 8),
               const Expanded(
                 child: Text('Add people to share',
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                    style:
+                        TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
               ),
               TextButton.icon(
                 onPressed: () => Navigator.pop(context, _selected),
@@ -2128,7 +2487,8 @@ class _SharePickerSheetState extends State<_SharePickerSheet> {
                   stream: groupsCol.snapshots(),
                   builder: (ctx, groupsSnap) {
                     final friends = <_Member>[];
-                    final groups = <({String id, String name, List<_Member> members})>[];
+                    final groups =
+                        <({String id, String name, List<_Member> members})>[];
 
                     if (friendsSnap.hasData) {
                       for (final d in friendsSnap.data!.docs) {
@@ -2139,25 +2499,33 @@ class _SharePickerSheetState extends State<_SharePickerSheet> {
                       for (final d in groupsSnap.data!.docs) {
                         final name = (d.data()['name'] ?? '').toString();
                         groups.add((
-                        id: d.id,
-                        name: name,
-                        members: _mapGroupMembers(d),
+                          id: d.id,
+                          name: name,
+                          members: _mapGroupMembers(d),
                         ));
                       }
                     }
 
                     // Filter by query
-                    final filteredFriends = friends.where((m) => _matchesQuery(m, q)).toList();
-                    final filteredGroups = groups.map((g) {
-                      final mems = g.members.where((m) => _matchesQuery(m, q)).toList();
-                      return (id: g.id, name: g.name, members: mems);
-                    }).where((g) => g.members.isNotEmpty || q.isEmpty).toList();
+                    final filteredFriends =
+                        friends.where((m) => _matchesQuery(m, q)).toList();
+                    final filteredGroups = groups
+                        .map((g) {
+                          final mems = g.members
+                              .where((m) => _matchesQuery(m, q))
+                              .toList();
+                          return (id: g.id, name: g.name, members: mems);
+                        })
+                        .where((g) => g.members.isNotEmpty || q.isEmpty)
+                        .toList();
 
-                    final isLoading = (friendsSnap.connectionState == ConnectionState.waiting) ||
+                    final isLoading = (friendsSnap.connectionState ==
+                            ConnectionState.waiting) ||
                         (groupsSnap.connectionState == ConnectionState.waiting);
 
                     if (isLoading) {
-                      return const Center(child: Padding(
+                      return const Center(
+                          child: Padding(
                         padding: EdgeInsets.all(20),
                         child: CircularProgressIndicator(),
                       ));
@@ -2171,8 +2539,12 @@ class _SharePickerSheetState extends State<_SharePickerSheet> {
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Text(
-                            q.isEmpty ? 'No friends or groups yet.' : 'No matches for “$q”.',
-                            style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600),
+                            q.isEmpty
+                                ? 'No friends or groups yet.'
+                                : 'No matches for “$q”.',
+                            style: TextStyle(
+                                color: Colors.grey[700],
+                                fontWeight: FontWeight.w600),
                           ),
                         ),
                       );
@@ -2188,7 +2560,8 @@ class _SharePickerSheetState extends State<_SharePickerSheet> {
                         ],
                         if (filteredGroups.isNotEmpty) ...[
                           _sectionHeader('Groups'),
-                          ...filteredGroups.map((g) => _groupTile(g.id, g.name, g.members)),
+                          ...filteredGroups
+                              .map((g) => _groupTile(g.id, g.name, g.members)),
                         ],
                         const SizedBox(height: 8),
                       ],
@@ -2204,15 +2577,15 @@ class _SharePickerSheetState extends State<_SharePickerSheet> {
   }
 
   Widget _sectionHeader(String text) => Padding(
-    padding: const EdgeInsets.only(left: 4, bottom: 6, top: 6),
-    child: Text(text,
-        style: TextStyle(
-          color: Colors.grey[800],
-          fontWeight: FontWeight.w900,
-          fontSize: 12,
-          letterSpacing: .2,
-        )),
-  );
+        padding: const EdgeInsets.only(left: 4, bottom: 6, top: 6),
+        child: Text(text,
+            style: TextStyle(
+              color: Colors.grey[800],
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+              letterSpacing: .2,
+            )),
+      );
 
   Widget _memberTile(_Member m) {
     final sel = _selected.contains(m);
@@ -2221,8 +2594,10 @@ class _SharePickerSheetState extends State<_SharePickerSheet> {
         side: BorderSide(color: sel ? Colors.teal : Colors.grey.shade300),
         borderRadius: BorderRadius.circular(12),
       ),
-      leading: CircleAvatar(child: Text(m.nameOrPhone.characters.first.toUpperCase())),
-      title: Text(m.nameOrPhone, style: const TextStyle(fontWeight: FontWeight.w800)),
+      leading: CircleAvatar(
+          child: Text(m.nameOrPhone.characters.first.toUpperCase())),
+      title: Text(m.nameOrPhone,
+          style: const TextStyle(fontWeight: FontWeight.w800)),
       subtitle: (m.phone?.isNotEmpty ?? false) ? Text(m.phone!) : null,
       trailing: sel
           ? const Icon(Icons.check_circle, color: Colors.teal)
@@ -2244,8 +2619,10 @@ class _SharePickerSheetState extends State<_SharePickerSheet> {
         children: [
           ListTile(
             leading: const Icon(Icons.groups_rounded),
-            title: Text(name, style: const TextStyle(fontWeight: FontWeight.w900)),
-            subtitle: Text("${members.length} member${members.length == 1 ? '' : 's'}"),
+            title:
+                Text(name, style: const TextStyle(fontWeight: FontWeight.w900)),
+            subtitle: Text(
+                "${members.length} member${members.length == 1 ? '' : 's'}"),
             trailing: Icon(expanded ? Icons.expand_less : Icons.expand_more),
             onTap: () {
               setState(() {

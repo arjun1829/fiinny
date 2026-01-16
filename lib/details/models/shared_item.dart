@@ -8,23 +8,23 @@ import '../models/recurring_rule.dart';
 @immutable
 class SharedItem {
   // ----- identity & core type -----
-  final String id;                 // Firestore doc id (not stored inside the doc)
-  final String? type;              // "subscription" | "emi" | "recurring" | "reminder" | ...
-  final String? kind;              // optional subtype badge like 'emi'
+  final String id; // Firestore doc id (not stored inside the doc)
+  final String? type; // "subscription" | "emi" | "recurring" | "reminder" | ...
+  final String? kind; // optional subtype badge like 'emi'
   final RecurringRule rule;
 
   // ----- timing -----
-  final DateTime? lastPostedAt;    // nullable (last ledger post)
-  final DateTime? nextDueAt;       // nullable (computed or cached)
+  final DateTime? lastPostedAt; // nullable (last ledger post)
+  final DateTime? nextDueAt; // nullable (computed or cached)
   final int failures;
 
   // ----- display -----
-  final String? title;             // e.g., "Netflix Premium"
-  final String? provider;          // e.g., "Netflix", "HDFC"
+  final String? title; // e.g., "Netflix Premium"
+  final String? provider; // e.g., "Netflix", "HDFC"
   final String? note;
 
   // ----- optional extras -----
-  final double? amount;            // convenience if present at top-level
+  final double? amount; // convenience if present at top-level
   final Map<String, dynamic>? link;
   final Map<String, dynamic>? meta;
 
@@ -140,7 +140,9 @@ class SharedItem {
       return DateTime.fromMillisecondsSinceEpoch(ms);
     }
     if (v is String) {
-      try { return DateTime.parse(v); } catch (_) {}
+      try {
+        return DateTime.parse(v);
+      } catch (_) {}
     }
     return null;
   }
@@ -152,7 +154,8 @@ class SharedItem {
     return null;
   }
 
-  static Timestamp? _toTs(DateTime? d) => d == null ? null : Timestamp.fromDate(d);
+  static Timestamp? _toTs(DateTime? d) =>
+      d == null ? null : Timestamp.fromDate(d);
 
   static Map<String, dynamic>? _asStringMap(dynamic v) {
     if (v is Map) return v.cast<String, dynamic>();
@@ -218,7 +221,7 @@ class SharedItem {
 
     final participantsMap = _asStringMap(j['participants']);
     final List<String>? userIds =
-    (participantsMap?['userIds'] as List?)?.whereType<String>().toList();
+        (participantsMap?['userIds'] as List?)?.whereType<String>().toList();
 
     // deeplink may be top-level or inside meta
     final metaMap = _asStringMap(j['meta']);
@@ -274,10 +277,13 @@ class SharedItem {
 
   bool get isShared => (sharing ?? '').toLowerCase() == 'shared';
   bool get isGroupShared => (sharing ?? '').toLowerCase() == 'group';
-  bool get isPrivate => (sharing ?? '').isEmpty || (sharing ?? '').toLowerCase() == 'private';
+  bool get isPrivate =>
+      (sharing ?? '').isEmpty || (sharing ?? '').toLowerCase() == 'private';
 
   String get safeTitle => (title == null || title!.trim().isEmpty)
-      ? (type?.isNotEmpty == true ? type!.substring(0, 1).toUpperCase() + type!.substring(1) : 'Item')
+      ? (type?.isNotEmpty == true
+          ? type!.substring(0, 1).toUpperCase() + type!.substring(1)
+          : 'Item')
       : title!.trim();
 
   /// Compute a user's share of `rule.amount` based on split info.
@@ -286,8 +292,8 @@ class SharedItem {
   /// - fixed: exact amount from split map
   /// Returns null if not computable.
   double? amountShareForUser(String userId) {
-    final base = (rule.amount ?? amount)?.toDouble();
-    if (base == null || base <= 0) return null;
+    final base = rule.amount;
+    if (base <= 0) return null;
 
     final method = (splitMethod ?? 'equal').toLowerCase();
     final people = (participantUserIds ?? const <String>[]);
@@ -305,7 +311,7 @@ class SharedItem {
         final v = (m[userId] ?? 0).toDouble();
         return v <= 0 ? 0 : v;
       default:
-      // fall back to equal
+        // fall back to equal
         final n = people.isEmpty ? 1 : people.length;
         return n <= 0 ? null : base / n;
     }
@@ -314,52 +320,52 @@ class SharedItem {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is SharedItem &&
-              runtimeType == other.runtimeType &&
-              id == other.id &&
-              type == other.type &&
-              kind == other.kind &&
-              rule == other.rule &&
-              lastPostedAt == other.lastPostedAt &&
-              nextDueAt == other.nextDueAt &&
-              failures == other.failures &&
-              title == other.title &&
-              provider == other.provider &&
-              note == other.note &&
-              amount == other.amount &&
-              mapEquals(link, other.link) &&
-              mapEquals(meta, other.meta) &&
-              listEquals(participantUserIds, other.participantUserIds) &&
-              ownerUserId == other.ownerUserId &&
-              groupId == other.groupId &&
-              sharing == other.sharing &&
-              splitMethod == other.splitMethod &&
-              mapEquals(split, other.split) &&
-              mapEquals(notify, other.notify) &&
-              deeplink == other.deeplink;
+      other is SharedItem &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          type == other.type &&
+          kind == other.kind &&
+          rule == other.rule &&
+          lastPostedAt == other.lastPostedAt &&
+          nextDueAt == other.nextDueAt &&
+          failures == other.failures &&
+          title == other.title &&
+          provider == other.provider &&
+          note == other.note &&
+          amount == other.amount &&
+          mapEquals(link, other.link) &&
+          mapEquals(meta, other.meta) &&
+          listEquals(participantUserIds, other.participantUserIds) &&
+          ownerUserId == other.ownerUserId &&
+          groupId == other.groupId &&
+          sharing == other.sharing &&
+          splitMethod == other.splitMethod &&
+          mapEquals(split, other.split) &&
+          mapEquals(notify, other.notify) &&
+          deeplink == other.deeplink;
 
   @override
   int get hashCode => Object.hashAll([
-    id,
-    type,
-    kind,
-    rule,
-    lastPostedAt,
-    nextDueAt,
-    failures,
-    title,
-    provider,
-    note,
-    amount,
-    link == null ? 0 : Object.hashAll(link!.entries),
-    meta == null ? 0 : Object.hashAll(meta!.entries),
-    participantUserIds == null ? 0 : Object.hashAll(participantUserIds!),
-    ownerUserId,
-    groupId,
-    sharing,
-    splitMethod,
-    split == null ? 0 : Object.hashAll(split!.entries),
-    notify == null ? 0 : Object.hashAll(notify!.entries),
-    deeplink,
-  ]);
+        id,
+        type,
+        kind,
+        rule,
+        lastPostedAt,
+        nextDueAt,
+        failures,
+        title,
+        provider,
+        note,
+        amount,
+        link == null ? 0 : Object.hashAll(link!.entries),
+        meta == null ? 0 : Object.hashAll(meta!.entries),
+        participantUserIds == null ? 0 : Object.hashAll(participantUserIds!),
+        ownerUserId,
+        groupId,
+        sharing,
+        splitMethod,
+        split == null ? 0 : Object.hashAll(split!.entries),
+        notify == null ? 0 : Object.hashAll(notify!.entries),
+        deeplink,
+      ]);
 }

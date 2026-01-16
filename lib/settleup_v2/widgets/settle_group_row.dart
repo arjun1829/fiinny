@@ -1,4 +1,3 @@
-import 'package:characters/characters.dart';
 import 'package:flutter/material.dart';
 import 'package:lifemap/ui/tokens.dart' show AppColors, AppSpacing;
 
@@ -28,13 +27,13 @@ class SettleGroupRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final isPositive = amount >= 0;
     final textTheme = Theme.of(context).textTheme;
-    final neutral = textTheme.bodyMedium?.color?.withOpacity(.72) ?? AppColors.ink500;
+    final neutral = textTheme.bodyMedium?.color?.withValues(alpha: .72) ?? AppColors.ink500;
     final badgeColor = isPositive ? AppColors.mint : neutral;
     final badgeLabel = isPositive ? 'You get back' : 'You owe';
     final amountText = '₹${amount.abs().toStringAsFixed(2)}';
     final backgroundColor = selected
-        ? AppColors.mint.withOpacity(.12)
-        : Theme.of(context).colorScheme.surfaceVariant.withOpacity(.32);
+        ? AppColors.mint.withValues(alpha: .12)
+        : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: .32);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
@@ -51,8 +50,8 @@ class SettleGroupRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: selected
-                    ? AppColors.mint.withOpacity(.7)
-                    : Theme.of(context).dividerColor.withOpacity(enabled ? .18 : .08),
+                    ? AppColors.mint.withValues(alpha: .7)
+                    : Theme.of(context).dividerColor.withValues(alpha: enabled ? .18 : .08),
               ),
             ),
             child: Row(
@@ -65,9 +64,9 @@ class SettleGroupRow extends StatelessWidget {
                     value: selected,
                     onChanged: enabled ? (_) => onToggle() : null,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                    side: BorderSide(color: Theme.of(context).dividerColor.withOpacity(.4)),
-                    fillColor: MaterialStateProperty.resolveWith((states) {
-                      if (states.contains(MaterialState.selected)) {
+                    side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: .4)),
+                    fillColor: WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.selected)) {
                         return AppColors.mint;
                       }
                       return Theme.of(context).colorScheme.surface;
@@ -112,7 +111,7 @@ class SettleGroupRow extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: badgeColor.withOpacity(.14),
+                    color: badgeColor.withValues(alpha: .14),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(

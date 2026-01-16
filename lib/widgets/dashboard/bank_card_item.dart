@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
-import 'package:google_fonts/google_fonts.dart'; // Ensure google_fonts is available or use standard
-import '../../themes/tokens.dart';
+// Ensure google_fonts is available or use standard
 import '../../core/formatters/inr.dart';
-import 'dart:math' as math;
 
 class BankStats {
   final double totalDebit;
@@ -104,7 +102,7 @@ class _BankCardItemState extends State<BankCardItem> {
 
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.15),
+              color: Colors.black.withValues(alpha: 0.15),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -117,7 +115,7 @@ class _BankCardItemState extends State<BankCardItem> {
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1),
                 gradient: LinearGradient(
                    begin: Alignment.topLeft,
                    end: Alignment.bottomRight,
@@ -125,13 +123,13 @@ class _BankCardItemState extends State<BankCardItem> {
                      // If background is dark/solid, these will tint it.
                      // But for true glass on a light background, we need semi-transparent whites/greys.
                      // Since individual banks have colors, we can mix their color in.
-                     _getGradient().colors.first.withOpacity(0.85),
-                     _getGradient().colors.first.withOpacity(0.65),
+                     _getGradient().colors.first.withValues(alpha: 0.85),
+                     _getGradient().colors.first.withValues(alpha: 0.65),
                    ],
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: _getGradient().colors.first.withOpacity(0.3),
+                    color: _getGradient().colors.first.withValues(alpha: 0.3),
                     blurRadius: 16,
                     offset: const Offset(0, 8),
                   ),
@@ -148,7 +146,7 @@ class _BankCardItemState extends State<BankCardItem> {
                 height: 192,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.05),
+                  color: Colors.white.withValues(alpha: 0.05),
                 ),
               ),
             ),
@@ -160,7 +158,7 @@ class _BankCardItemState extends State<BankCardItem> {
                 height: 160,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.05),
+                  color: Colors.white.withValues(alpha: 0.05),
                 ),
               ),
             ),
@@ -173,7 +171,7 @@ class _BankCardItemState extends State<BankCardItem> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.white.withOpacity(0.08),
+                    Colors.white.withValues(alpha: 0.08),
                     Colors.transparent,
                   ],
                 ),
@@ -201,7 +199,7 @@ class _BankCardItemState extends State<BankCardItem> {
     return Container(
       key: const ValueKey('stats'),
       padding: const EdgeInsets.all(24),
-      color: Colors.black.withOpacity(0.6),
+      color: Colors.black.withValues(alpha: 0.6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -223,7 +221,7 @@ class _BankCardItemState extends State<BankCardItem> {
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
+                    color: Colors.white.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.visibility_off, color: Colors.white, size: 18),
@@ -304,7 +302,7 @@ class _BankCardItemState extends State<BankCardItem> {
                       height: 40,
                       margin: const EdgeInsets.only(right: 12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
+                        color: Colors.white.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       padding: const EdgeInsets.all(4),
@@ -375,7 +373,7 @@ class _BankCardItemState extends State<BankCardItem> {
                   border: Border.all(color: Colors.yellow[800]!),
                 ),
                 child: Center(
-                  child: Container(height: 1, color: Colors.yellow[900]!.withOpacity(0.3), width: 30),
+                  child: Container(height: 1, color: Colors.yellow[900]!.withValues(alpha: 0.3), width: 30),
                 ),
               ),
               Row(
@@ -383,7 +381,7 @@ class _BankCardItemState extends State<BankCardItem> {
                   Text(
                     '•••• •••• •••• ',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.8),
+                      color: Colors.white.withValues(alpha: 0.8),
                       fontSize: 18,
                       letterSpacing: 2.0,
                       fontFamily: 'monospace',

@@ -43,7 +43,7 @@ class PieChartGlossy extends StatelessWidget {
     if (!total.isFinite || total <= 0 || slices.isEmpty) {
       final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
             fontWeight: FontWeight.w600,
-            color: Fx.text.withOpacity(.8),
+            color: Fx.text.withValues(alpha: .8),
           );
       return SizedBox(
         width: size,
@@ -117,7 +117,7 @@ class PieChartGlossy extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
-                    color: Colors.white.withOpacity(.72),
+                    color: Colors.white.withValues(alpha: .72),
                     boxShadow: const [
                       BoxShadow(
                         blurRadius: 12,
@@ -133,7 +133,7 @@ class PieChartGlossy extends StatelessWidget {
                       Text(
                         'total',
                         style:
-                            Fx.label.copyWith(fontSize: 11, color: Fx.text.withOpacity(.70)),
+                            Fx.label.copyWith(fontSize: 11, color: Fx.text.withValues(alpha: .70)),
                       ),
                     ],
                   ),
@@ -213,7 +213,7 @@ class _PiePainter extends CustomPainter {
         ..isAntiAlias = true
         ..style = PaintingStyle.stroke
         ..strokeWidth = isSelected ? 2.2 : 1.0
-        ..color = Colors.white.withOpacity(isSelected ? .55 : .35);
+        ..color = Colors.white.withValues(alpha: isSelected ? .55 : .35);
       canvas.drawArc(rect, arc.start, arc.sweep, true, border);
     }
 
@@ -227,8 +227,8 @@ class _PiePainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          Colors.white.withOpacity(.12),
-          Colors.white.withOpacity(.04),
+          Colors.white.withValues(alpha: .12),
+          Colors.white.withValues(alpha: .04),
           Colors.transparent,
         ],
         stops: const [0.0, 0.45, 1.0],
@@ -245,8 +245,8 @@ class _PiePainter extends CustomPainter {
         center: const Alignment(0, -0.65),
         radius: 0.6,
         colors: [
-          Colors.white.withOpacity(.08),
-          Colors.white.withOpacity(.03),
+          Colors.white.withValues(alpha: .08),
+          Colors.white.withValues(alpha: .03),
           Colors.transparent,
         ],
       ).createShader(rect);

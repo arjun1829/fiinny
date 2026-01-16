@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 
 class FxService {
   // Singleton
@@ -51,10 +52,10 @@ class FxService {
         // Ensure Base USD is present
         _rates['USD'] = 1.0;
         _lastFetch = DateTime.parse(dateStr);
-        print('FxService: Loaded cached rates from $_lastFetch');
+        debugPrint('FxService: Loaded cached rates from $_lastFetch');
       }
     } catch (e) {
-      print('FxService: Error loading cache: $e');
+      debugPrint('FxService: Error loading cache: $e');
     }
   }
 
@@ -67,7 +68,7 @@ class FxService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final fetchedRates = data['rates'] as Map<String, dynamic>;
-        
+
         // Update memory
         _rates = fetchedRates.map((k, v) => MapEntry(k, (v as num).toDouble()));
         _rates['USD'] = 1.0; // Base
@@ -77,13 +78,14 @@ class FxService {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_prefsKeyRates, jsonEncode(_rates));
         await prefs.setString(_prefsKeyDate, _lastFetch!.toIso8601String());
-        
-        print('FxService: Updated rates successfully. USD/INR: ${_rates['INR']}');
+
+        debugPrint(
+            'FxService: Updated rates successfully. USD/INR: ${_rates['INR']}');
       } else {
-        print('FxService: API Error ${response.statusCode}');
+        debugPrint('FxService: API Error ${response.statusCode}');
       }
     } catch (e) {
-      print('FxService: Fetch Error: $e');
+      debugPrint('FxService: Fetch Error: $e');
       // Keep using cache or hardcoded
     }
   }
@@ -91,27 +93,27 @@ class FxService {
   /// Returns rate to convert 1 Unit of [from] -> [to]
   double getRate(String from, String to) {
     if (from == to) return 1.0;
-    
+
     // Everything is stored relative to USD (Base 1.0)
     // if from=EUR, rate is ~0.92 (meaning 1 USD = 0.92 EUR) => NO, wait.
     // Frankfurter 'latest?from=USD' returns: 'rates': {'EUR': 0.92, ...}
     // This means 1 USD = 0.92 EUR.
     // So Value(USD) * Rate = Value(EUR).
-    
+
     // To convert FROM -> TO:
     // 1. Convert FROM users amount to USD. (Amount / RateFrom)
     //    e.g. 10 EUR. Rate is 0.92. USD Amount = 10 / 0.92 = 10.86 USD.
     // 2. Convert USD to TO. (USD Amount * RateTo)
     //    e.g. to INR (rate 84). 10.86 * 84 = 912 INR.
-    
+
     final fromRate = _rates[from.toUpperCase()] ?? 0.0;
     final toRate = _rates[to.toUpperCase()] ?? 0.0;
 
     if (fromRate == 0 || toRate == 0) {
       // Fallback
-      print('FxService Warning: Missing rate for $from or $to');
-      if (from == 'USD') return 1.0; 
-      return 1.0; 
+      debugPrint('FxService Warning: Missing rate for $from or $to');
+      if (from == 'USD') return 1.0;
+      return 1.0;
     }
 
     return (1.0 / fromRate) * toRate;

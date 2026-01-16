@@ -10,18 +10,17 @@ import 'package:lifemap/details/recurring/add_subscription_screen.dart';
 import 'package:lifemap/details/services/recurring_service.dart';
 import 'package:lifemap/services/group_service.dart';
 
-
 class GroupRecurringScreen extends StatefulWidget {
   final String groupId;
   final String? groupName;
   final String currentUserPhone;
 
   const GroupRecurringScreen({
-    Key? key,
+    super.key,
     required this.groupId,
     required this.currentUserPhone,
     this.groupName,
-  }) : super(key: key);
+  });
 
   @override
   State<GroupRecurringScreen> createState() => _GroupRecurringScreenState();
@@ -71,8 +70,9 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
   }
 
   // ---------- Helpers ----------
-  String _fmtDate(DateTime? d) =>
-      d == null ? '—' : '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}';
+  String _fmtDate(DateTime? d) => d == null
+      ? '—'
+      : '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}';
 
   double _monthProgress() {
     final now = DateTime.now();
@@ -85,7 +85,8 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
 
   String _monthMeta() {
     final now = DateTime.now();
-    final end = DateTime(now.year, now.month + 1, 1).subtract(const Duration(days: 1));
+    final end =
+        DateTime(now.year, now.month + 1, 1).subtract(const Duration(days: 1));
     return '${now.day}/${end.day} days';
   }
 
@@ -124,7 +125,8 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
         if (participants.isEmpty) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Add group members before linking a loan.')),
+              const SnackBar(
+                  content: Text('Add group members before linking a loan.')),
             );
           }
           return;
@@ -249,8 +251,12 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
           decoration: const InputDecoration(labelText: 'Title'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Save')),
         ],
       ),
     );
@@ -280,10 +286,10 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
       await _svc.markPaidScope(_scope, it.id, amount: it.rule.amount);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to mark paid: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to mark paid: $e')));
     }
   }
-
 
   Future<void> _togglePause(SharedItem it) async {
     try {
@@ -294,7 +300,8 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update status: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to update status: $e')));
     }
   }
 
@@ -303,7 +310,8 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
       await _svc.endScope(_scope, it.id);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to close: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to close: $e')));
     }
   }
 
@@ -314,8 +322,12 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
         title: const Text('Delete item?'),
         content: const Text('This will remove it for the whole group.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete')),
         ],
       ),
     );
@@ -323,13 +335,15 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
       try {
         await _svc.deleteScope(_scope, it.id);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Deleted')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Deleted')));
         setState(() {});
       } catch (e) {
         try {
           await _svc.endScope(_scope, it.id);
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Closed')));
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('Closed')));
           setState(() {});
         } catch (e2) {
           if (!mounted) return;
@@ -350,28 +364,37 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
         itemId: 'grp_${it.id}',
         title: _notifTitle(it),
         body: _notifBody(it, next),
-        fireAt: fireAt.isAfter(now) ? fireAt : now.add(const Duration(minutes: 1)),
+        fireAt:
+            fireAt.isAfter(now) ? fireAt : now.add(const Duration(minutes: 1)),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reminder set for ${_fmtDate(fireAt)}')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Reminder set for ${_fmtDate(fireAt)}')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to schedule: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to schedule: $e')));
     }
   }
 
   String _notifTitle(SharedItem it) {
     switch (it.type) {
-      case 'subscription': return 'Subscription due: ${it.title ?? 'Subscription'}';
-      case 'emi':          return 'EMI due: ${it.title ?? 'Loan'}';
-      case 'reminder':     return 'Reminder: ${it.title ?? 'Reminder'}';
-      default:             return 'Reminder: ${it.title ?? 'Recurring'}';
+      case 'subscription':
+        return 'Subscription due: ${it.title ?? 'Subscription'}';
+      case 'emi':
+        return 'EMI due: ${it.title ?? 'Loan'}';
+      case 'reminder':
+        return 'Reminder: ${it.title ?? 'Reminder'}';
+      default:
+        return 'Reminder: ${it.title ?? 'Recurring'}';
     }
   }
+
   String _notifBody(SharedItem it, DateTime due) {
     final when = _fmtDate(due);
-    final f = (it.rule.frequency ?? '').isNotEmpty ? ' • ${it.rule.frequency}' : '';
-    final amt = (it.rule.amount ?? 0) > 0 ? ' • ₹${it.rule.amount!.toStringAsFixed(0)}' : '';
+    final f = (it.rule.frequency).isNotEmpty ? ' • ${it.rule.frequency}' : '';
+    final amt =
+        (it.rule.amount) > 0 ? ' • ₹${it.rule.amount.toStringAsFixed(0)}' : '';
     return '${it.title ?? 'Item'} is due on $when$f$amt';
   }
 
@@ -400,10 +423,12 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
                   fireAt: DateTime.now().add(const Duration(seconds: 5)),
                 );
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Test in ~5s')));
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('Test in ~5s')));
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(SnackBar(content: Text('Failed: $e')));
               }
             },
           ),
@@ -414,7 +439,6 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
         label: const Text('Add'),
         onPressed: _openQuickAdd,
       ),
-
       body: StreamBuilder<List<SharedItem>>(
         stream: _svc.streamByScope(_scope),
         builder: (context, snap) {
@@ -423,16 +447,19 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
           final items = snap.data ?? const <SharedItem>[];
 
           // KPIs
-          final int active = items.where((e) => e.rule.status == 'active').length;
-          final int paused = items.where((e) => e.rule.status == 'paused').length;
-          final int closed = items.where((e) => e.rule.status == 'ended').length;
+          final int active =
+              items.where((e) => e.rule.status == 'active').length;
+          final int paused =
+              items.where((e) => e.rule.status == 'paused').length;
+          final int closed =
+              items.where((e) => e.rule.status == 'ended').length;
           final DateTime? nextDue = _minDue(items);
           final double monthTotal = items.fold<double>(0, (s, it) {
             final due = it.nextDueAt;
             if (due == null) return s;
             final n = DateTime.now();
             if (due.year == n.year && due.month == n.month) {
-              return s + (it.rule.amount ?? 0).toDouble();
+              return s + (it.rule.amount).toDouble();
             }
             return s;
           });
@@ -447,9 +474,9 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
 
           // Buckets by type
           final subs = items.where((e) => e.type == 'subscription').toList();
-          final emis  = items.where((e) => e.type == 'emi').toList();
-          final rec   = items.where((e) => e.type == 'recurring').toList();
-          final rem   = items.where((e) => e.type == 'reminder').toList();
+          final emis = items.where((e) => e.type == 'emi').toList();
+          final rec = items.where((e) => e.type == 'recurring').toList();
+          final rem = items.where((e) => e.type == 'reminder').toList();
 
           return RefreshIndicator(
             onRefresh: () async => setState(() {}),
@@ -469,19 +496,28 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
                           Row(children: [
                             const Icon(Icons.receipt_long, size: 22),
                             const SizedBox(width: 8),
-                            const Text('Overview', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                            const Text('Overview',
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.w900)),
                             const Spacer(),
-                            _pillBadge('Overdue: $overdue', overdue > 0 ? Colors.red : Colors.green),
+                            _pillBadge('Overdue: $overdue',
+                                overdue > 0 ? Colors.red : Colors.green),
                           ]),
                           const SizedBox(height: 12),
                           Wrap(
-                            spacing: 8, runSpacing: 8,
+                            spacing: 8,
+                            runSpacing: 8,
                             children: [
                               _chip('Active', '$active'),
                               _chip('Paused', '$paused'),
                               _chip('Closed', '$closed'),
-                              _chip('This month', monthTotal > 0 ? '₹${monthTotal.toStringAsFixed(0)}' : '--'),
-                              _chip('Next due', nextDue == null ? '--' : _fmtDate(nextDue)),
+                              _chip(
+                                  'This month',
+                                  monthTotal > 0
+                                      ? '₹${monthTotal.toStringAsFixed(0)}'
+                                      : '--'),
+                              _chip('Next due',
+                                  nextDue == null ? '--' : _fmtDate(nextDue)),
                             ],
                           ),
                           const SizedBox(height: 14),
@@ -500,16 +536,23 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
                   // ------- Four small cards (by type) -------
                   _FourCards(
                     items: const [
-                      _SmallCardData('recurring', Icons.repeat_rounded, 'Recurring'),
-                      _SmallCardData('subscription', Icons.subscriptions_rounded, 'Subscriptions'),
-                      _SmallCardData('emi', Icons.account_balance_rounded, 'EMIs / Loans'),
-                      _SmallCardData('reminder', Icons.alarm_rounded, 'Reminders'),
+                      _SmallCardData(
+                          'recurring', Icons.repeat_rounded, 'Recurring'),
+                      _SmallCardData('subscription',
+                          Icons.subscriptions_rounded, 'Subscriptions'),
+                      _SmallCardData(
+                          'emi', Icons.account_balance_rounded, 'EMIs / Loans'),
+                      _SmallCardData(
+                          'reminder', Icons.alarm_rounded, 'Reminders'),
                     ],
                     counts: {
-                      'recurring': rec.where((e) => e.rule.status != 'ended').length,
-                      'subscription': subs.where((e) => e.rule.status != 'ended').length,
+                      'recurring':
+                          rec.where((e) => e.rule.status != 'ended').length,
+                      'subscription':
+                          subs.where((e) => e.rule.status != 'ended').length,
                       'emi': emis.where((e) => e.rule.status != 'ended').length,
-                      'reminder': rem.where((e) => e.rule.status != 'ended').length,
+                      'reminder':
+                          rem.where((e) => e.rule.status != 'ended').length,
                     },
                     nextDue: {
                       'recurring': _minDue(rec),
@@ -526,7 +569,8 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
                     _cardSurface(
                       child: const Padding(
                         padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                        child: Center(
+                            child: CircularProgressIndicator(strokeWidth: 2)),
                       ),
                     ),
                   ],
@@ -543,10 +587,17 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
   Future<void> _openTypeSheet(String type) async {
     String title;
     switch (type) {
-      case 'subscription': title = 'Subscriptions'; break;
-      case 'emi':          title = 'EMIs / Loans';  break;
-      case 'reminder':     title = 'Reminders';     break;
-      default:             title = 'Recurring';
+      case 'subscription':
+        title = 'Subscriptions';
+        break;
+      case 'emi':
+        title = 'EMIs / Loans';
+        break;
+      case 'reminder':
+        title = 'Reminders';
+        break;
+      default:
+        title = 'Recurring';
     }
 
     await showModalBottomSheet<void>(
@@ -583,18 +634,28 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 14, offset: const Offset(0, 8))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 14,
+              offset: const Offset(0, 8))
+        ],
         border: Border.all(color: Colors.grey.shade200),
       ),
-      child: Padding(padding: const EdgeInsets.fromLTRB(16, 14, 16, 12), child: child),
+      child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12), child: child),
     );
   }
 
   Widget _pillBadge(String text, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(color: color.withOpacity(.12), borderRadius: BorderRadius.circular(999)),
-    child: Text(text, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w700)),
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+            color: color.withValues(alpha: .12),
+            borderRadius: BorderRadius.circular(999)),
+        child: Text(text,
+            style: TextStyle(
+                fontSize: 12, color: color, fontWeight: FontWeight.w700)),
+      );
 
   Widget _chip(String label, String value) {
     return Container(
@@ -603,14 +664,25 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 3))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 3))
+        ],
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Text('$label: ',
-            style: TextStyle(fontSize: 12, color: Colors.grey[800], fontWeight: FontWeight.w700)),
+            style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[800],
+                fontWeight: FontWeight.w700)),
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 250),
-          child: Text(value, key: ValueKey(value), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+          child: Text(value,
+              key: ValueKey(value),
+              style:
+                  const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
         ),
       ]),
     );
@@ -630,7 +702,9 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
           Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
           if (meta != null) ...[
             const SizedBox(width: 6),
-            Text(meta, style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600)),
+            Text(meta,
+                style: TextStyle(
+                    color: Colors.grey[700], fontWeight: FontWeight.w600)),
           ],
         ]),
         const SizedBox(height: 6),
@@ -684,7 +758,10 @@ class _FourCards extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       itemCount: items.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.6,
+        crossAxisCount: 2,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 1.6,
       ),
       itemBuilder: (_, i) {
         final data = items[i];
@@ -705,7 +782,12 @@ class _FourCards extends StatelessWidget {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Colors.grey.shade200),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(.06), blurRadius: 10, offset: const Offset(0, 6))],
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withValues(alpha: .06),
+                      blurRadius: 10,
+                      offset: const Offset(0, 6))
+                ],
               ),
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -722,7 +804,8 @@ class _FourCards extends StatelessWidget {
                     ),
                   ]),
                   const Spacer(),
-                  Text(data.label, style: const TextStyle(fontWeight: FontWeight.w900)),
+                  Text(data.label,
+                      style: const TextStyle(fontWeight: FontWeight.w900)),
                   const SizedBox(height: 6),
                   Row(children: [
                     _miniPill('$count active'),
@@ -739,15 +822,21 @@ class _FourCards extends StatelessWidget {
   }
 
   Widget _miniPill(String t) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(999),
-      border: Border.all(color: Colors.grey.shade200),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 3))],
-    ),
-    child: Text(t, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.grey.shade200),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 6,
+                offset: const Offset(0, 3))
+          ],
+        ),
+        child: Text(t,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+      );
 }
 
 // ================= Bottom sheet list for a type (Group scope) =================
@@ -809,8 +898,12 @@ class _TypeListSheetGroupState extends State<_TypeListSheetGroup> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 8),
-            Container(width: 46, height: 5,
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(999))),
+            Container(
+                width: 46,
+                height: 5,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(999))),
             const SizedBox(height: 12),
 
             // Header
@@ -818,7 +911,9 @@ class _TypeListSheetGroupState extends State<_TypeListSheetGroup> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                  Text(widget.title,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.w900)),
                   const Spacer(),
                   IconButton(
                     tooltip: 'Add',
@@ -847,8 +942,11 @@ class _TypeListSheetGroupState extends State<_TypeListSheetGroup> {
                       PopupMenuItem(
                         value: 'toggle_closed',
                         child: ListTile(
-                          leading: Icon(_includeClosed ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                          title: Text(_includeClosed ? 'Hide closed' : 'Show closed'),
+                          leading: Icon(_includeClosed
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined),
+                          title: Text(
+                              _includeClosed ? 'Hide closed' : 'Show closed'),
                           dense: true,
                           contentPadding: EdgeInsets.zero,
                         ),
@@ -880,23 +978,32 @@ class _TypeListSheetGroupState extends State<_TypeListSheetGroup> {
                       .where((e) => e.type == widget.type)
                       .toList();
 
-                  final active = items.where((e) => e.rule.status != 'ended').toList()
+                  final active = items
+                      .where((e) => e.rule.status != 'ended')
+                      .toList()
                     ..sort((a, b) {
-                      final da = a.nextDueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-                      final db = b.nextDueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+                      final da =
+                          a.nextDueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+                      final db =
+                          b.nextDueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
                       return da.compareTo(db);
                     });
 
-                  final closed = items.where((e) => e.rule.status == 'ended').toList()
+                  final closed = items
+                      .where((e) => e.rule.status == 'ended')
+                      .toList()
                     ..sort((a, b) {
-                      final da = a.nextDueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-                      final db = b.nextDueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+                      final da =
+                          a.nextDueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+                      final db =
+                          b.nextDueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
                       return da.compareTo(db);
                     });
 
                   final show = _includeClosed ? [...active, ...closed] : active;
 
-                  if (snap.connectionState == ConnectionState.waiting && items.isEmpty) {
+                  if (snap.connectionState == ConnectionState.waiting &&
+                      items.isEmpty) {
                     return const Center(
                       child: Padding(
                         padding: EdgeInsets.all(24.0),
@@ -947,8 +1054,12 @@ class _TypeListSheetGroupState extends State<_TypeListSheetGroup> {
         title: const Text('Are you sure?'),
         content: const Text('This will affect all matching active items.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Yes')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Yes')),
         ],
       ),
     );
@@ -983,11 +1094,11 @@ class _ItemTileGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPaused = item.rule.status == 'paused';
-    final isEnded  = item.rule.status == 'ended';
+    final isEnded = item.rule.status == 'ended';
     final DateTime? due = item.nextDueAt;
     final dueStr = fmtDate(due);
     final isReminder = item.type == 'reminder';
-    final amt = (item.rule.amount ?? 0).toDouble();
+    final amt = (item.rule.amount).toDouble();
 
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: .96, end: 1),
@@ -997,46 +1108,69 @@ class _ItemTileGroup extends StatelessWidget {
       child: Card(
         margin: const EdgeInsets.symmetric(vertical: 6),
         elevation: 0,
-        color: isEnded ? Colors.grey.shade100 : (isPaused ? Colors.amber.withOpacity(.06) : Colors.white),
+        color: isEnded
+            ? Colors.grey.shade100
+            : (isPaused ? Colors.amber.withValues(alpha: .06) : Colors.white),
         shape: RoundedRectangleBorder(
           side: BorderSide(color: Colors.grey.shade300),
           borderRadius: BorderRadius.circular(12),
         ),
         child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
           title: Text(
             item.title ?? 'Untitled',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontWeight: FontWeight.w700, color: isEnded ? Colors.grey : null),
+            style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: isEnded ? Colors.grey : null),
           ),
           subtitle: Text(
             '₹ ${_fmtAmt(amt)}  •  Next: $dueStr  •  ${(item.rule.frequency).isEmpty ? "monthly" : item.rule.frequency}'
-                '${item.type == "subscription" ? " (billing)" : ""}',
+            '${item.type == "subscription" ? " (billing)" : ""}',
             maxLines: 2,
-            style: TextStyle(color: isEnded ? Colors.grey : Colors.grey.shade700),
+            style:
+                TextStyle(color: isEnded ? Colors.grey : Colors.grey.shade700),
           ),
           trailing: PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             onSelected: (v) async {
               switch (v) {
-                case 'paid':          await onMarkPaid(item); break;
-                case 'pause':         await onTogglePause(item); break;
-                case 'end':           await onEnd(item); break;
-                case 'delete':        await onDelete(item); break;
-                case 'schedule_next': await onScheduleNext(item); break;
-                case 'reminder':      await onAddReminder(); break;
-                case 'edit':          await onEditTitle(item); break;
+                case 'paid':
+                  await onMarkPaid(item);
+                  break;
+                case 'pause':
+                  await onTogglePause(item);
+                  break;
+                case 'end':
+                  await onEnd(item);
+                  break;
+                case 'delete':
+                  await onDelete(item);
+                  break;
+                case 'schedule_next':
+                  await onScheduleNext(item);
+                  break;
+                case 'reminder':
+                  await onAddReminder();
+                  break;
+                case 'edit':
+                  await onEditTitle(item);
+                  break;
               }
             },
             itemBuilder: (ctx) => [
               if (!isEnded && !isReminder)
                 _mi('paid', Icons.check_circle_outline, 'Mark paid'),
               if (!isEnded)
-                _mi('pause', isPaused ? Icons.play_arrow_rounded : Icons.pause_circle_outline,
+                _mi(
+                    'pause',
+                    isPaused
+                        ? Icons.play_arrow_rounded
+                        : Icons.pause_circle_outline,
                     isPaused ? 'Resume' : 'Pause'),
-              if (!isEnded)
-                _mi('end', Icons.cancel_outlined, 'End (close)'),
+              if (!isEnded) _mi('end', Icons.cancel_outlined, 'End (close)'),
               const PopupMenuDivider(),
               const PopupMenuItem(
                 value: 'edit',
@@ -1059,14 +1193,17 @@ class _ItemTileGroup extends StatelessWidget {
                 ),
               const PopupMenuDivider(),
               if (!isEnded)
-                _mi('schedule_next', Icons.schedule, 'Schedule next reminder (device)'),
+                _mi('schedule_next', Icons.schedule,
+                    'Schedule next reminder (device)'),
               const PopupMenuDivider(),
               const PopupMenuItem(
                 value: 'delete',
                 child: ListTile(
                   leading: Icon(Icons.delete_outline, color: Colors.redAccent),
-                  title: Text('Delete', style: TextStyle(color: Colors.redAccent)),
-                  dense: true, contentPadding: EdgeInsets.zero,
+                  title:
+                      Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
                 ),
               ),
             ],
@@ -1076,15 +1213,20 @@ class _ItemTileGroup extends StatelessWidget {
     );
   }
 
-  static PopupMenuItem<String> _mi(String v, IconData i, String t) => PopupMenuItem(
-    value: v,
-    child: ListTile(leading: Icon(i), title: Text(t), dense: true, contentPadding: EdgeInsets.zero),
-  );
+  static PopupMenuItem<String> _mi(String v, IconData i, String t) =>
+      PopupMenuItem(
+        value: v,
+        child: ListTile(
+            leading: Icon(i),
+            title: Text(t),
+            dense: true,
+            contentPadding: EdgeInsets.zero),
+      );
 
   static String _fmtAmt(double v) {
     if (v >= 10000000) return '${(v / 10000000).toStringAsFixed(1)}Cr';
-    if (v >= 100000)   return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000)     return '${(v / 1000).toStringAsFixed(1)}k';
+    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}k';
     return v.toStringAsFixed(0);
   }
 }

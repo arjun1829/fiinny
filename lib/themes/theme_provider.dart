@@ -1,7 +1,6 @@
 // lib/themes/theme_provider.dart
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -14,10 +13,10 @@ import '../ui/tokens.dart';
 
 enum FiinnyTheme {
   teal,
+  mint,
   black,
   white,
 }
-
 
 class ThemeProvider extends ChangeNotifier {
   FiinnyTheme _theme = FiinnyTheme.teal;
@@ -43,6 +42,17 @@ class ThemeProvider extends ChangeNotifier {
           ),
           scaffoldBackgroundColor: AppColors.mintSoft,
         );
+      case FiinnyTheme.mint:
+        return buildAppTheme(
+          const ColorScheme.light(
+            primary: tiffanyBlue,
+            secondary: mintGreen,
+            surface: Colors.white,
+            onSurface: deepTeal,
+            onPrimary: deepTeal,
+          ),
+          scaffoldBackgroundColor: Colors.white,
+        );
 
       case FiinnyTheme.black:
         return buildAppTheme(
@@ -56,7 +66,6 @@ class ThemeProvider extends ChangeNotifier {
           scaffoldBackgroundColor: Colors.black,
         );
       case FiinnyTheme.white:
-      default:
         return buildAppTheme(
           const ColorScheme.light(
             primary: Colors.black,
@@ -66,7 +75,6 @@ class ThemeProvider extends ChangeNotifier {
           ),
           scaffoldBackgroundColor: Colors.white,
         );
-
     }
   }
 

@@ -15,7 +15,7 @@ class SubscriptionsScreen extends StatefulWidget {
 
 class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   final SubscriptionService _service = SubscriptionService();
-  
+
   // View mode: 0 = All, 1 = Subscriptions, 2 = Bills, 3 = Trials
   int _selectedFilterIndex = 0;
 
@@ -34,10 +34,12 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () {
-               Navigator.push(
-                 context,
-                 MaterialPageRoute(builder: (_) => AddSubscriptionScreen(userId: widget.userId)),
-               );
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) =>
+                        AddSubscriptionScreen(userId: widget.userId)),
+              );
             },
           ),
         ],
@@ -48,7 +50,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          
+
           final items = snapshot.data ?? [];
           final filteredItems = _filterItems(items);
           final totalMonthly = _calculateMonthlyTotal(items);
@@ -57,15 +59,15 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
             children: [
               // 1. Header Card
               _buildSummaryCard(totalMonthly, items.length),
-              
+
               // 2. Timeline Strip (Upcoming)
               _buildTimelineStrip(items),
-              
+
               const SizedBox(height: 16),
-              
+
               // 3. Filters
               _buildFilterTabs(),
-              
+
               const SizedBox(height: 16),
 
               // 4. List
@@ -103,16 +105,16 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   double _calculateMonthlyTotal(List<SubscriptionItem> items) {
     double total = 0;
     for (var item in items) {
-       // Normalize to monthly. 
-       // If yearly, divide by 12. If weekly, multiply by 4.33.
-       if (item.isPaused) continue;
-       
-       double monthlyAmount = item.amount;
-       if (item.frequency == 'yearly') monthlyAmount = item.amount / 12;
-       if (item.frequency == 'weekly') monthlyAmount = item.amount * 4.33;
-       if (item.frequency == 'daily') monthlyAmount = item.amount * 30; // approx
-       
-       total += monthlyAmount;
+      // Normalize to monthly.
+      // If yearly, divide by 12. If weekly, multiply by 4.33.
+      if (item.isPaused) continue;
+
+      double monthlyAmount = item.amount;
+      if (item.frequency == 'yearly') monthlyAmount = item.amount / 12;
+      if (item.frequency == 'weekly') monthlyAmount = item.amount * 4.33;
+      if (item.frequency == 'daily') monthlyAmount = item.amount * 30; // approx
+
+      total += monthlyAmount;
     }
     return total;
   }
@@ -122,21 +124,20 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.blueGrey.shade900, Colors.black87],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white10),
-        boxShadow: [
-           BoxShadow(
-             color: Colors.black.withOpacity(0.5),
-             blurRadius: 10,
-             offset: const Offset(0, 4),
-           )
-        ]
-      ),
+          gradient: LinearGradient(
+            colors: [Colors.blueGrey.shade900, Colors.black87],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white10),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            )
+          ]),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -152,7 +153,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                NumberFormat.currency(symbol: '\$', decimalDigits: 0).format(total), // Localization needed later
+                NumberFormat.currency(symbol: '₹', decimalDigits: 0)
+                    .format(total),
                 style: GoogleFonts.outfit(
                   color: Colors.white,
                   fontSize: 32,
@@ -174,9 +176,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
             height: 50,
             width: 50,
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withOpacity(0.1)
-            ),
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.1)),
             child: const Icon(Icons.analytics, color: Colors.white70),
           )
         ],
@@ -187,8 +188,9 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
   Widget _buildTimelineStrip(List<SubscriptionItem> items) {
     // Sort by next due
     final sorted = List<SubscriptionItem>.from(items)
-      ..sort((a, b) => (a.nextDueAt ?? DateTime(2100)).compareTo(b.nextDueAt ?? DateTime(2100)));
-    
+      ..sort((a, b) => (a.nextDueAt ?? DateTime(2100))
+          .compareTo(b.nextDueAt ?? DateTime(2100)));
+
     // Take next 5
     final upcoming = sorted.take(5).toList();
 
@@ -229,8 +231,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
     final nextDue = item.nextDueAt;
     if (nextDue == null) return const SizedBox.shrink();
 
-    final isToday = nextDue.day == DateTime.now().day && 
-                    nextDue.month == DateTime.now().month;
+    final isToday = nextDue.day == DateTime.now().day &&
+        nextDue.month == DateTime.now().month;
     final daysLeft = nextDue.difference(DateTime.now()).inDays;
 
     return Container(
@@ -261,14 +263,14 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
             ),
           ),
           const SizedBox(height: 4),
-           Container(
-             width: 6, 
-             height: 6,
-             decoration: BoxDecoration(
-               shape: BoxShape.circle,
-               color: _getTypeColor(item.type),
-             ),
-           )
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _getTypeColor(item.type),
+            ),
+          )
         ],
       ),
     );
@@ -311,10 +313,11 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
     return GestureDetector(
       onTap: () {
         Navigator.push(
-           context,
-           MaterialPageRoute(
-             builder: (_) => AddSubscriptionScreen(userId: widget.userId, existingItem: item),
-           ),
+          context,
+          MaterialPageRoute(
+            builder: (_) => AddSubscriptionScreen(
+                userId: widget.userId, existingItem: item),
+          ),
         );
       },
       child: Container(
@@ -331,17 +334,16 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: _getTypeColor(item.type).withOpacity(0.2),
+                color: _getTypeColor(item.type).withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Center(
                 child: Text(
                   item.title.substring(0, 1).toUpperCase(),
                   style: GoogleFonts.outfit(
-                    color: _getTypeColor(item.type),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20
-                  ),
+                      color: _getTypeColor(item.type),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20),
                 ),
               ),
             ),
@@ -374,7 +376,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  '${item.amount}', // TODO: Currency
+                  NumberFormat.currency(symbol: '₹', decimalDigits: 0)
+                      .format(item.amount),
                   style: GoogleFonts.outfit(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -416,9 +419,12 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
 
   Color _getTypeColor(String type) {
     switch (type.toLowerCase()) {
-      case 'bill': return Colors.blueAccent;
-      case 'trial': return Colors.orangeAccent;
-      default: return Colors.purpleAccent;
+      case 'bill':
+        return Colors.blueAccent;
+      case 'trial':
+        return Colors.orangeAccent;
+      default:
+        return Colors.purpleAccent;
     }
   }
 }

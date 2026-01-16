@@ -76,8 +76,8 @@ class ActivityTab extends StatelessWidget {
                   Container(
                     decoration: BoxDecoration(
                       color: isSettlement
-                          ? Colors.orange.withOpacity(0.12)
-                          : Colors.teal.withOpacity(0.09),
+                          ? Colors.orange.withValues(alpha: 0.12)
+                          : Colors.teal.withValues(alpha: 0.09),
                       borderRadius: BorderRadius.circular(7),
                     ),
                     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),

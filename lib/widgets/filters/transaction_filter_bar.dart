@@ -938,7 +938,7 @@ class _FilterControlsState extends State<_FilterControls> {
       const SizedBox(height: 16),
       _SectionTitle(title: 'Category'),
       DropdownButtonFormField<String?>(
-        value: filter.category,
+        initialValue: filter.category,
         isExpanded: true,
         decoration: const InputDecoration(labelText: 'Category'),
         items: [
@@ -956,7 +956,7 @@ class _FilterControlsState extends State<_FilterControls> {
         )
       else if (widget.subcategories.isNotEmpty)
         DropdownButtonFormField<String?>(
-          value: filter.subcategory,
+          initialValue: filter.subcategory,
           isExpanded: true,
           decoration: const InputDecoration(labelText: 'Subcategory'),
           items: [
@@ -978,7 +978,7 @@ class _FilterControlsState extends State<_FilterControls> {
       const SizedBox(height: 16),
       _SectionTitle(title: 'Instrument'),
       DropdownButtonFormField<String?>(
-        value: filter.instrument,
+        initialValue: filter.instrument,
         isExpanded: true,
         decoration: const InputDecoration(labelText: 'Instrument'),
         items: [
@@ -996,7 +996,7 @@ class _FilterControlsState extends State<_FilterControls> {
       ),
       if (_showCardDetails) ...[
         DropdownButtonFormField<String?>(
-          value: filter.network,
+          initialValue: filter.network,
           isExpanded: true,
           decoration: const InputDecoration(labelText: 'Network'),
           items: [
@@ -1007,7 +1007,7 @@ class _FilterControlsState extends State<_FilterControls> {
           onChanged: (value) => widget.onChanged(filter.copyWith(network: value)),
         ),
         DropdownButtonFormField<String?>(
-          value: filter.issuerBank,
+          initialValue: filter.issuerBank,
           isExpanded: true,
           decoration: const InputDecoration(labelText: 'Issuer bank'),
           items: [
@@ -1018,7 +1018,7 @@ class _FilterControlsState extends State<_FilterControls> {
           onChanged: (value) => widget.onChanged(filter.copyWith(issuerBank: value)),
         ),
         DropdownButtonFormField<String?>(
-          value: filter.last4,
+          initialValue: filter.last4,
           isExpanded: true,
           decoration: const InputDecoration(labelText: 'Card last 4'),
           items: [
@@ -1088,7 +1088,7 @@ class _FilterControlsState extends State<_FilterControls> {
           ],
         ),
       DropdownButtonFormField<String?>(
-        value: filter.groupId,
+        initialValue: filter.groupId,
         isExpanded: true,
         decoration: const InputDecoration(labelText: 'Group'),
         items: [
@@ -1151,7 +1151,7 @@ class _FilterControlsState extends State<_FilterControls> {
       const SizedBox(height: 16),
       _SectionTitle(title: 'Sort & group'),
       DropdownButtonFormField<SortField>(
-        value: filter.sort.field,
+        initialValue: filter.sort.field,
         decoration: const InputDecoration(labelText: 'Sort field'),
         items: const [
           DropdownMenuItem(value: SortField.date, child: Text('Date')),
@@ -1166,7 +1166,7 @@ class _FilterControlsState extends State<_FilterControls> {
         },
       ),
       DropdownButtonFormField<SortDir>(
-        value: filter.sort.dir,
+        initialValue: filter.sort.dir,
         decoration: const InputDecoration(labelText: 'Sort direction'),
         items: const [
           DropdownMenuItem(value: SortDir.asc, child: Text('Ascending')),
@@ -1179,7 +1179,7 @@ class _FilterControlsState extends State<_FilterControls> {
         },
       ),
       DropdownButtonFormField<GroupBy>(
-        value: filter.groupBy,
+        initialValue: filter.groupBy,
         decoration: const InputDecoration(labelText: 'Group by'),
         items: const [
           DropdownMenuItem(value: GroupBy.none, child: Text('None')),

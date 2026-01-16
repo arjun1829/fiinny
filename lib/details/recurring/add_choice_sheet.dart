@@ -85,7 +85,7 @@ class AddChoiceSheet extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 22,
-                backgroundColor: accent.withOpacity(.10),
+                backgroundColor: accent.withValues(alpha: .10),
                 child: Icon(c.icon, color: accent),
               ),
               const SizedBox(width: 12),

@@ -105,7 +105,7 @@ class AssetCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: _baseColor.withOpacity(0.1),
+                        color: _baseColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Icon(_icon, color: _baseColor, size: 22),
@@ -179,7 +179,7 @@ class AssetCard extends StatelessWidget {
                            Container(
                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                              decoration: BoxDecoration(
-                               color: (gain >= 0 ? Fx.good : Fx.bad).withOpacity(0.1),
+                               color: (gain >= 0 ? Fx.good : Fx.bad).withValues(alpha: 0.1),
                                borderRadius: BorderRadius.circular(8),
                              ),
                              child: Row(

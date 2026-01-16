@@ -10,7 +10,6 @@ import '../fiinny_brain/search_models.dart';
 import '../fiinny_brain/split_query_engine.dart';
 import '../fiinny_brain/enhanced_split_engine.dart';
 import '../fiinny_brain/enhanced_split_models.dart';
-import '../services/contact_name_service.dart';
 
 /// Processes natural language queries and returns answers using Fiinny Brain engines
 class FiinnyBrainQueryService {

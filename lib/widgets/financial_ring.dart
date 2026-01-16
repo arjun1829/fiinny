@@ -32,9 +32,9 @@ class FinancialRingWidget extends StatelessWidget {
 
     final ringGradients = gradientColors ??
         [
-          color.withOpacity(0.98),
-          color.withOpacity(0.60),
-          color.withOpacity(0.22),
+          color.withValues(alpha: 0.98),
+          color.withValues(alpha: 0.60),
+          color.withValues(alpha: 0.22),
         ];
 
     return GestureDetector(
@@ -56,8 +56,8 @@ class FinancialRingWidget extends StatelessWidget {
         isDiamondCut: true,
         borderRadius: 22,
         glassGradient: Theme.of(context).brightness == Brightness.dark
-            ? [Colors.white.withOpacity(0.28), Colors.white.withOpacity(0.06)]
-            : [Colors.black.withOpacity(0.05), Colors.black.withOpacity(0.01)],
+            ? [Colors.white.withValues(alpha: 0.28), Colors.white.withValues(alpha: 0.06)]
+            : [Colors.black.withValues(alpha: 0.05), Colors.black.withValues(alpha: 0.01)],
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 9),
         child: SizedBox(
           width: ringSize + 14,
@@ -92,7 +92,7 @@ class FinancialRingWidget extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  color: color.withOpacity(0.88),
+                  color: color.withValues(alpha: 0.88),
                   letterSpacing: 0.18,
                 ),
               ),
@@ -115,7 +115,7 @@ class FinancialRingWidget extends StatelessWidget {
                     "${(percent * 100).toStringAsFixed(0)}%",
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: color.withOpacity(0.87),
+                      color: color.withValues(alpha: 0.87),
                       fontSize: 13.8,
                     ),
                   ),
@@ -152,7 +152,7 @@ class _RingPopup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: Colors.white.withOpacity(0.82),
+      backgroundColor: Colors.white.withValues(alpha: 0.82),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(32),
       ),
@@ -183,7 +183,7 @@ class _RingPopup extends StatelessWidget {
               style: TextStyle(
                 fontSize: 21,
                 fontWeight: FontWeight.w700,
-                color: color.withOpacity(0.91),
+                color: color.withValues(alpha: 0.91),
               ),
             ),
             Text(
@@ -202,14 +202,14 @@ class _RingPopup extends StatelessWidget {
               style: TextStyle(
                 fontSize: 15.5,
                 fontWeight: FontWeight.w500,
-                color: color.withOpacity(0.7),
+                color: color.withValues(alpha: 0.7),
               ),
             ),
             const SizedBox(height: 13),
             ElevatedButton(
               onPressed: () => Navigator.pop(context),
               style: ElevatedButton.styleFrom(
-                backgroundColor: color.withOpacity(0.81),
+                backgroundColor: color.withValues(alpha: 0.81),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(13),
                 ),
@@ -244,15 +244,15 @@ class _RingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
 
-    Paint bg = Paint()
-      ..color = color.withOpacity(0.14)
+    final Paint bg = Paint()
+      ..color = color.withValues(alpha: 0.14)
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
 
-    Paint fg = Paint()
+    final Paint fg = Paint()
       ..shader = SweepGradient(
-        colors: gradientColors ?? [color, color.withOpacity(0.48), color.withOpacity(0.14)],
+        colors: gradientColors ?? [color, color.withValues(alpha: 0.48), color.withValues(alpha: 0.14)],
         startAngle: -pi / 2,
         endAngle: pi * 2,
       ).createShader(rect)

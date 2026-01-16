@@ -18,21 +18,23 @@ class SplitFromTransactionScreen extends StatefulWidget {
   final String userId;
 
   const SplitFromTransactionScreen({
-    Key? key,
+    super.key,
     required this.expenses,
     required this.friends,
     required this.groups,
     required this.userId,
-  }) : super(key: key);
+  });
 
   @override
-  State<SplitFromTransactionScreen> createState() => _SplitFromTransactionScreenState();
+  State<SplitFromTransactionScreen> createState() =>
+      _SplitFromTransactionScreenState();
 }
 
-class _SplitFromTransactionScreenState extends State<SplitFromTransactionScreen> {
-  Set<String> _selectedExpenseIds = {};
-  Set<String> _selectedFriendIds = {};
-  Set<String> _selectedGroupIds = {};
+class _SplitFromTransactionScreenState
+    extends State<SplitFromTransactionScreen> {
+  final Set<String> _selectedExpenseIds = {};
+  final Set<String> _selectedFriendIds = {};
+  final Set<String> _selectedGroupIds = {};
 
   @override
   Widget build(BuildContext context) {
@@ -47,15 +49,16 @@ class _SplitFromTransactionScreenState extends State<SplitFromTransactionScreen>
         preferredSize: const Size.fromHeight(85),
         child: ClipRRect(
           borderRadius: const BorderRadius.only(
-            bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20),
+            bottomLeft: Radius.circular(20),
+            bottomRight: Radius.circular(20),
           ),
           child: Container(
             height: 85,
             decoration: BoxDecoration(
-              color: tiffanyBlue.withOpacity(0.96),
+              color: tiffanyBlue.withValues(alpha: 0.96),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black12.withOpacity(0.14),
+                  color: Colors.black12.withValues(alpha: 0.14),
                   blurRadius: 13,
                   offset: const Offset(0, 4),
                 ),
@@ -64,7 +67,8 @@ class _SplitFromTransactionScreenState extends State<SplitFromTransactionScreen>
             child: SafeArea(
               child: Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
                   child: Row(
                     children: [
                       Text(
@@ -87,7 +91,7 @@ class _SplitFromTransactionScreenState extends State<SplitFromTransactionScreen>
       ),
       body: Stack(
         children: [
-          _AnimatedMintBackground(),
+          const _AnimatedMintBackground(),
           Column(
             children: [
               const SizedBox(height: 95),
@@ -136,7 +140,8 @@ class _SplitFromTransactionScreenState extends State<SplitFromTransactionScreen>
                           ),
                         ),
                         controlAffinity: ListTileControlAffinity.leading,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 0),
                       ),
                     );
                   },
@@ -144,7 +149,8 @@ class _SplitFromTransactionScreenState extends State<SplitFromTransactionScreen>
               ),
               Divider(height: 2, color: mintGreen, thickness: 1),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Text(
                   "Select Friends or Groups to Split With",
                   style: TextStyle(
@@ -163,14 +169,18 @@ class _SplitFromTransactionScreenState extends State<SplitFromTransactionScreen>
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: FilterChip(
-                        label: Text("${f.avatar} ${f.name}", style: TextStyle(color: deepTeal)),
+                        label: Text("${f.avatar} ${f.name}",
+                            style: TextStyle(color: deepTeal)),
                         selected: _selectedFriendIds.contains(f.phone),
-                        selectedColor: tiffanyBlue.withOpacity(0.22),
-                        backgroundColor: Colors.white.withOpacity(0.17),
+                        selectedColor: tiffanyBlue.withValues(alpha: 0.22),
+                        backgroundColor: Colors.white.withValues(alpha: 0.17),
                         onSelected: (sel) {
                           setState(() {
-                            if (sel) _selectedFriendIds.add(f.phone);
-                            else _selectedFriendIds.remove(f.phone);
+                            if (sel) {
+                              _selectedFriendIds.add(f.phone);
+                            } else {
+                              _selectedFriendIds.remove(f.phone);
+                            }
                           });
                         },
                       ),
@@ -188,14 +198,18 @@ class _SplitFromTransactionScreenState extends State<SplitFromTransactionScreen>
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: FilterChip(
-                        label: Text("👥 ${g.name}", style: TextStyle(color: deepTeal)),
+                        label: Text("👥 ${g.name}",
+                            style: TextStyle(color: deepTeal)),
                         selected: _selectedGroupIds.contains(g.id),
-                        selectedColor: mintGreen.withOpacity(0.22),
-                        backgroundColor: Colors.white.withOpacity(0.15),
+                        selectedColor: mintGreen.withValues(alpha: 0.22),
+                        backgroundColor: Colors.white.withValues(alpha: 0.15),
                         onSelected: (sel) {
                           setState(() {
-                            if (sel) _selectedGroupIds.add(g.id);
-                            else _selectedGroupIds.remove(g.id);
+                            if (sel) {
+                              _selectedGroupIds.add(g.id);
+                            } else {
+                              _selectedGroupIds.remove(g.id);
+                            }
                           });
                         },
                       ),
@@ -205,42 +219,47 @@ class _SplitFromTransactionScreenState extends State<SplitFromTransactionScreen>
               ),
               const SizedBox(height: 10),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
                 child: ElevatedButton.icon(
                   icon: const Icon(Icons.arrow_forward, color: Colors.white),
-                  label: const Text("Proceed to Split", style: TextStyle(color: Colors.white)),
+                  label: const Text("Proceed to Split",
+                      style: TextStyle(color: Colors.white)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: deepTeal,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     textStyle: const TextStyle(fontSize: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                     elevation: 8,
                   ),
                   onPressed: (_selectedExpenseIds.isNotEmpty &&
-                      (_selectedFriendIds.isNotEmpty || _selectedGroupIds.isNotEmpty))
+                          (_selectedFriendIds.isNotEmpty ||
+                              _selectedGroupIds.isNotEmpty))
                       ? () {
-                    final selectedExpenses = widget.expenses
-                        .where((e) => _selectedExpenseIds.contains(e.id))
-                        .toList();
-                    final selectedFriends = widget.friends
-                        .where((f) => _selectedFriendIds.contains(f.phone))
-                        .toList();
-                    final selectedGroups = widget.groups
-                        .where((g) => _selectedGroupIds.contains(g.id))
-                        .toList();
+                          final selectedExpenses = widget.expenses
+                              .where((e) => _selectedExpenseIds.contains(e.id))
+                              .toList();
+                          final selectedFriends = widget.friends
+                              .where(
+                                  (f) => _selectedFriendIds.contains(f.phone))
+                              .toList();
+                          final selectedGroups = widget.groups
+                              .where((g) => _selectedGroupIds.contains(g.id))
+                              .toList();
 
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CustomSplitScreen(
-                          selectedExpenses: selectedExpenses,
-                          selectedFriends: selectedFriends,
-                          selectedGroups: selectedGroups,
-                          userPhone: widget.userId,
-                        ),
-                      ),
-                    );
-                  }
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CustomSplitScreen(
+                                selectedExpenses: selectedExpenses,
+                                selectedFriends: selectedFriends,
+                                selectedGroups: selectedGroups,
+                                userPhone: widget.userId,
+                              ),
+                            ),
+                          );
+                        }
                       : null,
                 ),
               ),
@@ -255,7 +274,7 @@ class _SplitFromTransactionScreenState extends State<SplitFromTransactionScreen>
 
 // Animated Minty BG
 class _AnimatedMintBackground extends StatelessWidget {
-  const _AnimatedMintBackground({super.key});
+  const _AnimatedMintBackground();
   @override
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
@@ -267,7 +286,7 @@ class _AnimatedMintBackground extends StatelessWidget {
             colors: [
               tiffanyBlue,
               mintGreen,
-              Colors.white.withOpacity(0.85),
+              Colors.white.withValues(alpha: 0.85),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -287,21 +306,24 @@ class _AnimatedMintBackground extends StatelessWidget {
 class _GlassCheckCard extends StatelessWidget {
   final bool checked;
   final Widget child;
-  const _GlassCheckCard({required this.child, required this.checked, super.key});
+  const _GlassCheckCard({required this.child, required this.checked});
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 7),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(15),
-        color: checked ? tiffanyBlue.withOpacity(0.21) : Colors.white.withOpacity(0.13),
+        color: checked
+            ? tiffanyBlue.withValues(alpha: 0.21)
+            : Colors.white.withValues(alpha: 0.13),
         border: Border.all(
-          color: checked ? deepTeal.withOpacity(0.19) : Colors.transparent,
+          color:
+              checked ? deepTeal.withValues(alpha: 0.19) : Colors.transparent,
           width: 1.1,
         ),
         boxShadow: [
           BoxShadow(
-            color: mintGreen.withOpacity(0.13),
+            color: mintGreen.withValues(alpha: 0.13),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),

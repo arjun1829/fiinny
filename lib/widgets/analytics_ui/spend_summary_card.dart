@@ -19,7 +19,8 @@ class SpendSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final currencyFormat = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+    final currencyFormat =
+        NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -29,7 +30,7 @@ class SpendSummaryCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 20,
             offset: const Offset(0, 4),
           ),
@@ -90,15 +91,15 @@ class _DailyBarChart extends StatelessWidget {
 
     // Group expenses by day index (0 to days-1)
     final Map<int, double> dailyTotals = {};
-    
+
     final days = endDate.difference(startDate).inDays + 1;
-    
+
     for (int i = 0; i < days; i++) {
       dailyTotals[i] = 0; // Initialize
     }
 
     for (var e in expenses) {
-      if (e.date.isAfter(startDate.subtract(const Duration(seconds: 1))) && 
+      if (e.date.isAfter(startDate.subtract(const Duration(seconds: 1))) &&
           e.date.isBefore(endDate.add(const Duration(seconds: 1)))) {
         final index = e.date.difference(startDate).inDays;
         if (index >= 0 && index < days) {
@@ -113,7 +114,7 @@ class _DailyBarChart extends StatelessWidget {
     for (int i = 0; i < days; i++) {
       final amount = dailyTotals[i] ?? 0;
       if (amount > maxY) maxY = amount;
-      
+
       barGroups.add(
         BarChartGroupData(
           x: i,
@@ -133,7 +134,7 @@ class _DailyBarChart extends StatelessWidget {
         ),
       );
     }
-    
+
     if (maxY == 0) maxY = 100;
 
     return BarChart(
@@ -143,12 +144,13 @@ class _DailyBarChart extends StatelessWidget {
         barGroups: barGroups,
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
-            tooltipBgColor: Colors.black87,
+            getTooltipColor: (_) => Colors.black87,
             getTooltipItem: (group, groupIndex, rod, rodIndex) {
               final day = startDate.add(Duration(days: group.x.toInt()));
               return BarTooltipItem(
                 '${DateFormat('MMM d').format(day)}\n₹${rod.toY.round()}',
-                const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold),
               );
             },
           ),
@@ -161,9 +163,9 @@ class _DailyBarChart extends StatelessWidget {
               getTitlesWidget: (value, meta) {
                 final index = value.toInt();
                 if (index < 0 || index >= days) return const SizedBox.shrink();
-                
+
                 final day = startDate.add(Duration(days: index));
-                
+
                 // Show label every 5 days or if total days is small
                 bool showLabel = false;
                 if (days <= 7) {
@@ -190,9 +192,12 @@ class _DailyBarChart extends StatelessWidget {
               },
             ),
           ),
-          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         gridData: const FlGridData(show: false),
         borderData: FlBorderData(show: false),

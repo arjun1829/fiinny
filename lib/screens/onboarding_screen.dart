@@ -1,8 +1,7 @@
 // import 'dart:io'; // Removed for Web compatibility
 import 'dart:typed_data'; // For Uint8List
 import 'dart:ui' show ImageFilter;
-import 'package:flutter/foundation.dart'
-    show kIsWeb; // Explicit import if needed, or use existing
+// Explicit import if needed, or use existing
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -354,7 +353,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         const SizedBox(height: 12),
 
                         DropdownButtonFormField<String>(
-                          value: _country,
+                          initialValue: _country,
                           items: ["India", "USA", "UK", "Other"]
                               .map((e) =>
                                   DropdownMenuItem(value: e, child: Text(e)))
@@ -369,7 +368,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         const SizedBox(height: 12),
 
                         DropdownButtonFormField<String>(
-                          value: _currency,
+                          initialValue: _currency,
                           items: ["INR", "USD", "GBP", "Other"]
                               .map((e) =>
                                   DropdownMenuItem(value: e, child: Text(e)))
@@ -384,7 +383,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         const SizedBox(height: 12),
 
                         DropdownButtonFormField<String>(
-                          value: _language,
+                          initialValue: _language,
                           items: const [
                             DropdownMenuItem(
                                 value: "en", child: Text("English")),
@@ -579,7 +578,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: const Color(0xFF10B981).withOpacity(opacity),
+        color: const Color(0xFF10B981).withValues(alpha: opacity),
       ),
     );
   }
@@ -591,7 +590,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Material(
-          color: Colors.white.withOpacity(0.6),
+          color: Colors.white.withValues(alpha: 0.6),
           child: InkWell(
             onTap: onTap,
             child: Padding(
@@ -614,7 +613,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       labelText: label,
       prefixIcon: Icon(icon),
       filled: true,
-      fillColor: Colors.white.withOpacity(0.7),
+      fillColor: Colors.white.withValues(alpha: 0.7),
       border: filledBorder,
       enabledBorder: filledBorder,
       focusedBorder: filledBorder.copyWith(
@@ -646,7 +645,7 @@ class _Glass extends StatelessWidget {
         child: Container(
           padding: padding,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.65),
+            color: Colors.white.withValues(alpha: 0.65),
             borderRadius: BorderRadius.circular(radius),
             border: Border.all(color: const Color(0xFFE7F6EF)),
             boxShadow: const [

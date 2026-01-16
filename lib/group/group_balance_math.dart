@@ -41,7 +41,7 @@ Map<String, MemberTotals> computeMemberTotals(List<ExpenseItem> expenses) {
   for (final e in expenses) {
     if ((e.payerId).isEmpty) continue;
 
-    if (_isSettlement(e)) {
+    if (looksLikeSettlement(e)) {
       // Treat settlement as cash transfer from payer -> others.
       final payer = e.payerId;
       final others = e.friendIds.toSet().where((id) => id.isNotEmpty).toList();
@@ -77,10 +77,10 @@ Map<String, MemberTotals> computeMemberTotals(List<ExpenseItem> expenses) {
 // ---------- Pairwise net for a specific user (used across screens) ----------
 // Positive => they owe YOU; Negative => YOU owe them.
 Map<String, double> pairwiseNetForUser(
-    List<ExpenseItem> expenses,
-    String currentUser, {
-      String? onlyGroupId,
-    }) {
+  List<ExpenseItem> expenses,
+  String currentUser, {
+  String? onlyGroupId,
+}) {
   final res = <String, double>{};
 
   double round2(num v) => (v * 100).roundToDouble() / 100.0;
@@ -93,7 +93,7 @@ Map<String, double> pairwiseNetForUser(
   for (final e in tx) {
     if (e.payerId.isEmpty) continue;
 
-    if (_isSettlement(e)) {
+    if (looksLikeSettlement(e)) {
       // Settlement = direct transfer between payer and friendIds
       final others = e.friendIds.where((id) => id.isNotEmpty).toList();
       if (others.isEmpty) continue;
@@ -144,7 +144,7 @@ Map<String, double> pairwiseNetForUser(
 }
 
 // --------- Helpers ---------
-bool _isSettlement(ExpenseItem e) {
+bool looksLikeSettlement(ExpenseItem e) {
   final t = (e.type).toLowerCase();
   final lbl = (e.label ?? '').toLowerCase();
   if (t.contains('settle') || lbl.contains('settle')) return true;

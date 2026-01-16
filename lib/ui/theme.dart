@@ -6,8 +6,8 @@ ThemeData buildAppTheme(ColorScheme colorScheme, {Color? scaffoldBackgroundColor
   final isDark = colorScheme.brightness == Brightness.dark;
   final bgColor = scaffoldBackgroundColor ?? colorScheme.surface;
   final surfaceColor = isDark ? colorScheme.surface : Colors.white;
-  final cardColor = isDark ? colorScheme.surface.withOpacity(0.8) : Colors.white;
-  final inputFillColor = isDark ? colorScheme.surface.withOpacity(0.5) : Colors.white;
+  final cardColor = isDark ? colorScheme.surface.withValues(alpha: 0.8) : Colors.white;
+  final inputFillColor = isDark ? colorScheme.surface.withValues(alpha: 0.5) : Colors.white;
   final textColor = isDark ? Colors.white : AppColors.ink900;
   final iconColor = isDark ? Colors.white : colorScheme.primary;
 
@@ -55,7 +55,7 @@ ThemeData buildAppTheme(ColorScheme colorScheme, {Color? scaffoldBackgroundColor
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         shape: const StadiumBorder(),
-        side: BorderSide(color: isDark ? Colors.white24 : AppColors.ink300.withOpacity(.6)),
+        side: BorderSide(color: isDark ? Colors.white24 : AppColors.ink300.withValues(alpha: .6)),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         textStyle: const TextStyle(fontWeight: FontWeight.w800),
         foregroundColor: colorScheme.primary,
@@ -75,14 +75,14 @@ ThemeData buildAppTheme(ColorScheme colorScheme, {Color? scaffoldBackgroundColor
       filled: true,
       fillColor: inputFillColor,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      hintStyle: TextStyle(color: isDark ? Colors.white54 : Colors.black.withOpacity(.45)),
+      hintStyle: TextStyle(color: isDark ? Colors.white54 : Colors.black.withValues(alpha: .45)),
       border: OutlineInputBorder(
         borderRadius: const BorderRadius.all(rSm),
-        borderSide: BorderSide(color: isDark ? Colors.white12 : Colors.black12.withOpacity(.25)),
+        borderSide: BorderSide(color: isDark ? Colors.white12 : Colors.black12.withValues(alpha: .25)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: const BorderRadius.all(rSm),
-        borderSide: BorderSide(color: isDark ? Colors.white10 : Colors.black12.withOpacity(.2)),
+        borderSide: BorderSide(color: isDark ? Colors.white10 : Colors.black12.withValues(alpha: .2)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: const BorderRadius.all(rSm),
@@ -95,10 +95,10 @@ ThemeData buildAppTheme(ColorScheme colorScheme, {Color? scaffoldBackgroundColor
       labelStyle: const TextStyle(fontWeight: FontWeight.w700),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       shape: const StadiumBorder(),
-      side: BorderSide(color: isDark ? Colors.white12 : Colors.black12.withOpacity(.2)),
-      secondarySelectedColor: colorScheme.primary.withOpacity(.16),
-      selectedColor: colorScheme.primary.withOpacity(.16),
-      backgroundColor: isDark ? Colors.white10 : Colors.white.withOpacity(.75),
+      side: BorderSide(color: isDark ? Colors.white12 : Colors.black12.withValues(alpha: .2)),
+      secondarySelectedColor: colorScheme.primary.withValues(alpha: .16),
+      selectedColor: colorScheme.primary.withValues(alpha: .16),
+      backgroundColor: isDark ? Colors.white10 : Colors.white.withValues(alpha: .75),
       labelPadding: EdgeInsets.zero,
     ),
 
@@ -120,7 +120,7 @@ ThemeData buildAppTheme(ColorScheme colorScheme, {Color? scaffoldBackgroundColor
     dividerTheme: base.dividerTheme.copyWith(
       space: 0,
       thickness: 1,
-      color: isDark ? Colors.white10 : Colors.black.withOpacity(.08),
+      color: isDark ? Colors.white10 : Colors.black.withValues(alpha: .08),
     ),
 
     // ListTiles spacing/look
@@ -135,7 +135,7 @@ ThemeData buildAppTheme(ColorScheme colorScheme, {Color? scaffoldBackgroundColor
       ),
       subtitleTextStyle: TextStyle(
         fontWeight: FontWeight.w600,
-        color: isDark ? Colors.white60 : Colors.black.withOpacity(.55),
+        color: isDark ? Colors.white60 : Colors.black.withValues(alpha: .55),
       ),
     ),
 

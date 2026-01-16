@@ -8,9 +8,7 @@ import '../services/ai/ai_chat_service.dart';
 
 import '../services/expense_service.dart';
 import '../services/income_service.dart';
-import '../services/contact_name_service.dart';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -334,7 +332,7 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
                   _controller.text = suggestion;
                   _sendMessage();
                 },
-                backgroundColor: Fx.mint.withOpacity(0.1),
+                backgroundColor: Fx.mint.withValues(alpha: 0.1),
               ),
             );
           }).toList(),
@@ -354,7 +352,7 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: Fx.mint.withOpacity(0.1),
+                color: Fx.mint.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Icon(Icons.psychology_rounded, size: 40, color: Fx.mintDark),
@@ -441,7 +439,7 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, -2),
           ),

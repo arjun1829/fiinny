@@ -1,6 +1,5 @@
 // lib/widgets/split_summary_widget.dart
 import 'package:flutter/material.dart';
-import 'package:characters/characters.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/expense_item.dart';
@@ -75,11 +74,11 @@ class SplitSummaryWidget extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.7),
+        color: Colors.white.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 18,
             offset: const Offset(0, 6),
           ),

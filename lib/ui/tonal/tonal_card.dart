@@ -58,19 +58,20 @@ class TonalCard extends StatelessWidget {
     this.borderColor,
     this.tint,
     @Deprecated('Use tint instead') this.accent,
-    this.elevation = 0,                 // ⬅️ NEW
-    this.shadowColor,                   // ⬅️ NEW
-    this.borderWidth = 1,               // ⬅️ NEW
+    this.elevation = 0, // ⬅️ NEW
+    this.shadowColor, // ⬅️ NEW
+    this.borderWidth = 1, // ⬅️ NEW
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    // ignore: deprecated_member_use_from_same_package
     final effectiveTint = tint ?? accent;
-    final effectiveSurface = surface ?? Colors.white.withOpacity(.92);
+    final effectiveSurface = surface ?? Colors.white.withValues(alpha: .92);
     final effectiveBorder =
-        borderColor ?? (effectiveTint ?? AppColors.mint).withOpacity(.10);
-    final effectiveShadow = shadowColor ?? Colors.black.withOpacity(0.06);
-    final dark = Colors.black.withOpacity(.92);
+        borderColor ?? (effectiveTint ?? AppColors.mint).withValues(alpha: .10);
+    final effectiveShadow = shadowColor ?? Colors.black.withValues(alpha: 0.06);
+    final dark = Colors.black.withValues(alpha: .92);
 
     final core = Padding(
       padding: padding,
@@ -92,9 +93,8 @@ class TonalCard extends StatelessWidget {
     );
 
     // Wrap in margin if provided.
-    final withMargin = (margin == null)
-        ? core
-        : Padding(padding: margin!, child: core);
+    final withMargin =
+        (margin == null) ? core : Padding(padding: margin!, child: core);
 
     // Use Material to support elevation + InkWell ripple cleanly.
     final material = Material(
@@ -114,8 +114,8 @@ class TonalCard extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: borderRadius,
-      splashColor: (effectiveTint ?? dark).withOpacity(.08),
-      highlightColor: (effectiveTint ?? dark).withOpacity(.04),
+      splashColor: (effectiveTint ?? dark).withValues(alpha: .08),
+      highlightColor: (effectiveTint ?? dark).withValues(alpha: .04),
       child: material,
     );
   }

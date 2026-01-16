@@ -44,7 +44,7 @@ class _MainScreenState extends State<MainScreen> {
             currentIndex: _selectedIndex,
             type: BottomNavigationBarType.fixed,
             selectedItemColor: theme.colorScheme.primary,
-            unselectedItemColor: theme.colorScheme.onSurface.withOpacity(0.7),
+            unselectedItemColor: theme.colorScheme.onSurface.withValues(alpha: 0.7),
             showUnselectedLabels: true,
             backgroundColor: Colors.transparent,
             items: const [

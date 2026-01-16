@@ -7,7 +7,6 @@ import '../core/ads/ads_shell.dart';
 import '../models/asset_model.dart';
 import '../services/asset_service.dart';
 import '../widgets/asset_card.dart'; // New Card Import
-import '../themes/tokens.dart';
 
 class AssetsScreen extends StatefulWidget {
   final String userId;
@@ -52,7 +51,7 @@ class _AssetsScreenState extends State<AssetsScreen> {
       m[key] = (m[key] ?? 0) + a.value;
     }
      // Sort by value descending
-    var sortedEntries = m.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final sortedEntries = m.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     return Map.fromEntries(sortedEntries);
   }
 

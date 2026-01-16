@@ -144,25 +144,25 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
     final List<String> helperPoints = switch (_currentPage) {
       0 => [
-        "Connect bank/email later — you can start manually.",
-        "Dashboard shows today’s spend, income, and a quick nudge.",
-        "Everything is editable — nothing is locked in."
-      ],
+          "Connect bank/email later — you can start manually.",
+          "Dashboard shows today’s spend, income, and a quick nudge.",
+          "Everything is editable — nothing is locked in."
+        ],
       1 => [
-        "Invite partner from Sharing → Add Partner.",
-        "Choose what you share (totals, categories, goals).",
-        "You can revoke access anytime."
-      ],
+          "Invite partner from Sharing → Add Partner.",
+          "Choose what you share (totals, categories, goals).",
+          "You can revoke access anytime."
+        ],
       2 => [
-        "Create a group, add friends by name/phone.",
-        "Import Splitwise screenshot to auto-create members.",
-        "Review splits before saving."
-      ],
+          "Create a group, add friends by name/phone.",
+          "Import Splitwise screenshot to auto-create members.",
+          "Review splits before saving."
+        ],
       _ => [
-        "Multi-currency friendly; set your default in Profile.",
-        "Offline-first — data syncs when you’re back online.",
-        "Privacy-first: you control what is shared."
-      ],
+          "Multi-currency friendly; set your default in Profile.",
+          "Offline-first — data syncs when you’re back online.",
+          "Privacy-first: you control what is shared."
+        ],
     };
 
     await showModalBottomSheet(
@@ -178,7 +178,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
               child: Material(
-                color: theme.colorScheme.surface.withOpacity(0.92),
+                color: theme.colorScheme.surface.withValues(alpha: 0.92),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
                   child: Column(
@@ -198,43 +198,45 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                           )),
                       const SizedBox(height: 14),
                       ...helperPoints.map((p) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.check_circle_outline, size: 18),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                p,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  height: 1.35,
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.check_circle_outline,
+                                    size: 18),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    p,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      height: 1.35,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
-                          ],
-                        ),
-                      )),
+                          )),
                       const SizedBox(height: 16),
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
                           onPressed: () => Navigator.pop(ctx),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).colorScheme.surface,
+                            backgroundColor:
+                                Theme.of(context).colorScheme.surface,
                             foregroundColor: Colors.black,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                               side: BorderSide(
-                                color: Colors.black.withOpacity(0.10),
+                                color: Colors.black.withValues(alpha: 0.10),
                                 width: 1,
                               ),
                             ),
                           ).copyWith(
-                            overlayColor: MaterialStatePropertyAll(
-                              Colors.black.withOpacity(0.06),
+                            overlayColor: WidgetStatePropertyAll(
+                              Colors.black.withValues(alpha: 0.06),
                             ),
                           ),
                           child: const Text(
@@ -273,7 +275,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       shadowColor: Colors.transparent,
       textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
     ).copyWith(
-      overlayColor: MaterialStatePropertyAll(Colors.white.withOpacity(0.08)),
+      overlayColor:
+          WidgetStatePropertyAll(Colors.white.withValues(alpha: 0.08)),
     );
 
     return Scaffold(
@@ -308,8 +311,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                       TextButton(
                         onPressed: _skipToEnd,
                         style: TextButton.styleFrom(
-                          foregroundColor:
-                          theme.colorScheme.onSurface.withOpacity(0.9),
+                          foregroundColor: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.9),
                           textStyle: const TextStyle(
                             fontWeight: FontWeight.w700,
                           ),
@@ -337,13 +340,16 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
-                                Container(color: theme.textTheme.bodyMedium?.color?.withOpacity(0.08)),
+                                Container(
+                                    color: theme.textTheme.bodyMedium?.color
+                                        ?.withValues(alpha: 0.08)),
                                 if (i < _currentPage)
                                   FractionallySizedBox(
                                     widthFactor: 1,
                                     alignment: Alignment.centerLeft,
                                     child: Container(
-                                      color: theme.textTheme.bodyMedium?.color?.withOpacity(0.85),
+                                      color: theme.textTheme.bodyMedium?.color
+                                          ?.withValues(alpha: 0.85),
                                     ),
                                   ),
                                 if (isActive)
@@ -353,7 +359,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                       widthFactor: _progressCtl.value,
                                       alignment: Alignment.centerLeft,
                                       child: Container(
-                                        color: theme.textTheme.bodyMedium?.color?.withOpacity(0.85),
+                                        color: theme.textTheme.bodyMedium?.color
+                                            ?.withValues(alpha: 0.85),
                                       ),
                                     ),
                                   ),
@@ -427,7 +434,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                 children: [
                                   Icon(Icons.swipe,
                                       size: 18,
-                                      color: theme.textTheme.bodySmall?.color?.withOpacity(0.55)),
+                                      color: theme.textTheme.bodySmall?.color
+                                          ?.withValues(alpha: 0.55)),
                                   const SizedBox(width: 6),
                                   Text(
                                     "Swipe to continue",
@@ -435,10 +443,11 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                         .textTheme
                                         .bodySmall
                                         ?.copyWith(
-                                      color:
-                                      theme.textTheme.bodySmall?.color?.withOpacity(0.55),
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                          color: theme
+                                              .textTheme.bodySmall?.color
+                                              ?.withValues(alpha: 0.55),
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                   ),
                                 ],
                               ),
@@ -452,28 +461,28 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
               // CTA (only on last page) with pulse + glossy sheen + gradient + shadow
               Padding(
-                padding:
-                EdgeInsets.fromLTRB(20, 0, 20, isLast ? (10 + bottomPad) : 0),
+                padding: EdgeInsets.fromLTRB(
+                    20, 0, 20, isLast ? (10 + bottomPad) : 0),
                 child: isLast
                     ? TweenAnimationBuilder<double>(
-                  tween: Tween(
-                      begin: _pulseUp ? 1.0 : 1.03,
-                      end: _pulseUp ? 1.03 : 1.0),
-                  duration: const Duration(milliseconds: 1200),
-                  curve: Curves.easeInOut,
-                  builder: (context, scale, child) =>
-                      Transform.scale(scale: scale, child: child),
-                  child: _GlossyCtaButton(
-                    label: "Get Started",
-                    onPressed: _openAuth,
-                    buttonStyle: primaryBtnStyle,
-                    height: _kCtaHeight,
-                    gradientColors: [
-                      theme.colorScheme.primary,
-                      theme.colorScheme.secondary,
-                    ],
-                  ),
-                )
+                        tween: Tween(
+                            begin: _pulseUp ? 1.0 : 1.03,
+                            end: _pulseUp ? 1.03 : 1.0),
+                        duration: const Duration(milliseconds: 1200),
+                        curve: Curves.easeInOut,
+                        builder: (context, scale, child) =>
+                            Transform.scale(scale: scale, child: child),
+                        child: _GlossyCtaButton(
+                          label: "Get Started",
+                          onPressed: _openAuth,
+                          buttonStyle: primaryBtnStyle,
+                          height: _kCtaHeight,
+                          gradientColors: [
+                            theme.colorScheme.primary,
+                            theme.colorScheme.secondary,
+                          ],
+                        ),
+                      )
                     : const SizedBox.shrink(),
               ),
 
@@ -589,7 +598,8 @@ class _OnboardCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final media = MediaQuery.of(context);
-    final textScale = media.textScaleFactor.clamp(1.0, 1.3);
+    final textScale =
+        media.textScaler.clamp(minScaleFactor: 1.0, maxScaleFactor: 1.3);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
@@ -601,12 +611,12 @@ class _OnboardCard extends StatelessWidget {
             color: theme.cardColor,
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
-              color: theme.dividerColor.withOpacity(0.08),
+              color: theme.dividerColor.withValues(alpha: 0.08),
               width: 1.0,
             ),
             boxShadow: [
               BoxShadow(
-                color: theme.shadowColor.withOpacity(0.08),
+                color: theme.shadowColor.withValues(alpha: 0.08),
                 blurRadius: 22,
                 offset: const Offset(0, 12),
               ),
@@ -626,12 +636,12 @@ class _OnboardCard extends StatelessWidget {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: Colors.white.withOpacity(0.04), // hairline
+                      color: Colors.white.withValues(alpha: 0.04), // hairline
                       width: 1,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.white.withOpacity(0.06),
+                        color: Colors.white.withValues(alpha: 0.06),
                         blurRadius: 18,
                         offset: const Offset(0, 10),
                       ),
@@ -649,7 +659,7 @@ class _OnboardCard extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                textScaleFactor: textScale,
+                textScaler: textScale,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.1,
@@ -661,10 +671,10 @@ class _OnboardCard extends StatelessWidget {
               Text(
                 desc,
                 textAlign: TextAlign.center,
-                textScaleFactor: textScale,
+                textScaler: textScale,
                 style: theme.textTheme.bodyLarge?.copyWith(
                   height: 1.35,
-                  color: theme.colorScheme.onSurface.withOpacity(0.80),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.80),
                 ),
               ),
             ],
@@ -683,7 +693,6 @@ class _GlossyCtaButton extends StatefulWidget {
   final List<Color> gradientColors;
 
   const _GlossyCtaButton({
-    super.key,
     required this.label,
     required this.onPressed,
     required this.buttonStyle,
@@ -720,12 +729,13 @@ class _GlossyCtaButtonState extends State<_GlossyCtaButton>
 
     return SizedBox(
       width: double.infinity, // full width
-      height: widget.height,  // big height
+      height: widget.height, // big height
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: radius,
           boxShadow: const [
-            BoxShadow( // deeper, softer shadow
+            BoxShadow(
+              // deeper, softer shadow
               color: Color(0x33000000), // ~20% black
               blurRadius: 28,
               offset: Offset(0, 12),
@@ -786,7 +796,7 @@ class _SheenPainter extends CustomPainter {
     canvas.rotate(0.35);
 
     final rect =
-    Rect.fromLTWH(-bandW / 2, -size.height * 0.3, bandW, size.height * 1.6);
+        Rect.fromLTWH(-bandW / 2, -size.height * 0.3, bandW, size.height * 1.6);
     final gradient = const LinearGradient(
       begin: Alignment.centerLeft,
       end: Alignment.centerRight,
@@ -825,7 +835,7 @@ class _FooterLink extends StatelessWidget {
           text,
           style: theme.textTheme.bodySmall?.copyWith(
             decoration: TextDecoration.underline,
-            color: theme.colorScheme.onSurface.withOpacity(0.7),
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
             fontWeight: FontWeight.w600,
           ),
         ),

@@ -108,7 +108,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final prov = _friendImage(f);
     return CircleAvatar(
       radius: 18,
-      backgroundColor: Theme.of(context).primaryColor.withOpacity(.10),
+      backgroundColor: Theme.of(context).primaryColor.withValues(alpha: .10),
       foregroundImage: prov,
       child: prov == null
           ? Text(
@@ -124,7 +124,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final prov = _groupImage(g);
     return CircleAvatar(
       radius: 18,
-      backgroundColor: Theme.of(context).primaryColor.withOpacity(.10),
+      backgroundColor: Theme.of(context).primaryColor.withValues(alpha: .10),
       foregroundImage: prov,
       child: prov == null ? const Text('👥') : null,
     );
@@ -362,7 +362,7 @@ class _QuickChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 4,
               offset: const Offset(0, 2))
         ],
@@ -430,7 +430,7 @@ class _PickerTile extends StatelessWidget {
         border: Border.all(color: Colors.grey.shade100),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.02),
+              color: Colors.black.withValues(alpha: 0.02),
               blurRadius: 8,
               offset: const Offset(0, 2))
         ],

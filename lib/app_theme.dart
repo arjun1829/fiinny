@@ -13,9 +13,9 @@ final darkTheme = ThemeData.dark().copyWith(
 );
 
 final glassTheme = appTheme.copyWith(
-  scaffoldBackgroundColor: Colors.white.withOpacity(0.7),
-  cardColor: Colors.white.withOpacity(0.7),
-  dialogTheme: DialogThemeData(backgroundColor: Colors.white.withOpacity(0.8)),
+  scaffoldBackgroundColor: Colors.white.withValues(alpha: 0.7),
+  cardColor: Colors.white.withValues(alpha: 0.7),
+  dialogTheme: DialogThemeData(backgroundColor: Colors.white.withValues(alpha: 0.8)),
   // You can enhance glass effect here as needed.
 );
 
@@ -48,7 +48,7 @@ final ThemeData freshTheme = ThemeData(
     foregroundColor: deepTeal,
     elevation: 6,
   ),
-  cardColor: Colors.white.withOpacity(0.85),
+  cardColor: Colors.white.withValues(alpha: 0.85),
   textTheme: TextTheme(
     titleLarge: TextStyle(color: deepTeal, fontWeight: FontWeight.bold),
     bodyMedium: TextStyle(color: deepTeal),
@@ -68,7 +68,7 @@ final ThemeData freshTheme = ThemeData(
   ),
   inputDecorationTheme: InputDecorationTheme(
     filled: true,
-    fillColor: Colors.white.withOpacity(0.92),
+    fillColor: Colors.white.withValues(alpha: 0.92),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(14),
       borderSide: BorderSide(color: tiffanyBlue, width: 1.2),
@@ -79,5 +79,5 @@ final ThemeData freshTheme = ThemeData(
     ),
     labelStyle: TextStyle(color: deepTeal),
   ),
-  dialogTheme: DialogThemeData(backgroundColor: mintGreen.withOpacity(0.92)),
+  dialogTheme: DialogThemeData(backgroundColor: mintGreen.withValues(alpha: 0.92)),
 );

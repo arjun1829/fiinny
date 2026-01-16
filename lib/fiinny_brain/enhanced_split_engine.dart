@@ -240,8 +240,8 @@ class EnhancedSplitEngine {
     List<ExpenseItem> allExpenses,
   ) {
     int userPaidCount = 0;
-    int totalSplitExpenses = splitExpenses.length;
-    double totalSettlementDelay = 0;
+    final int totalSplitExpenses = splitExpenses.length;
+    final double totalSettlementDelay = 0;
     int settledCount = 0;
 
     for (final expense in splitExpenses) {

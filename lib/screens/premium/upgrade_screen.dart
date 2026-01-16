@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:lifemap/services/subscription_service.dart';
-import 'package:lifemap/models/subscription_model.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:convert';
 // import 'dart:js_interop';
 // import 'dart:js_interop_unsafe';
 
@@ -93,7 +91,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
       final orderData = await service.createOrder(_selectedPlan, _selectedCycle);
       
       // 2. Open Razorpay Checkout
-      var options = {
+      final options = {
         'key': orderData['key_id'],
         'amount': orderData['amount'],
         'name': 'Fiinny',

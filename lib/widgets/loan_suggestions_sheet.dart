@@ -38,7 +38,7 @@ class _LoanSuggestionsSheetState extends State<LoanSuggestionsSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    List<Map<String, dynamic>> xs = List.of(_items);
+    final List<Map<String, dynamic>> xs = List.of(_items);
     xs.sort((a, b) {
       switch (_sort) {
         case 'emi_desc':
@@ -235,7 +235,7 @@ class _LoanSuggestionsSheetState extends State<LoanSuggestionsSheet> {
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: Colors.blue.withOpacity(0.1),
+                                        color: Colors.blue.withValues(alpha: 0.1),
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Text(
@@ -337,7 +337,7 @@ class _LoanSuggestionsSheetState extends State<LoanSuggestionsSheet> {
   Widget _chip(String t, String v) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.pink.withOpacity(0.08),
+          color: Colors.pink.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(999),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [

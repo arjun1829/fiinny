@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:lifemap/services/gmail_service.dart'
+import '../../services/gmail_service.dart';
 
 Future<void> main(List<String> args) async {
   if (args.isEmpty) {
@@ -13,8 +13,8 @@ Future<void> main(List<String> args) async {
   final gmailService = GmailService();
 
   try {
-    final txns = await gmailService.fetchAndStoreTransactionsFromGmail(userId);
-    print("✅ Gmail sync completed for $userId: ${txns.length} transactions added.");
+    await gmailService.fetchAndStoreTransactionsFromGmail(userId);
+    print("✅ Gmail sync completed for $userId.");
   } catch (e, st) {
     print("❌ Error during sync for $userId: $e");
     print(st);

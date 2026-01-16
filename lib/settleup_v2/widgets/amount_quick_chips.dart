@@ -39,16 +39,16 @@ class AmountQuickChips extends StatelessWidget {
             label: Text(option.label),
             selected: isSelected,
             onSelected: (_) => onSelected(option.amount),
-            selectedColor: AppColors.mint.withOpacity(.18),
-            backgroundColor: theme.colorScheme.surfaceVariant.withOpacity(.35),
+            selectedColor: AppColors.mint.withValues(alpha: .18),
+            backgroundColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: .35),
             labelStyle: TextStyle(
               color: isSelected ? AppColors.mint : theme.textTheme.bodyMedium?.color,
               fontWeight: FontWeight.w600,
             ),
             side: BorderSide(
               color: isSelected
-                  ? AppColors.mint.withOpacity(.8)
-                  : theme.dividerColor.withOpacity(.25),
+                  ? AppColors.mint.withValues(alpha: .8)
+                  : theme.dividerColor.withValues(alpha: .25),
             ),
           );
         }),
@@ -59,9 +59,9 @@ class AmountQuickChips extends StatelessWidget {
         label: Text(clearLabel ?? 'Clear'),
         onPressed: onClear,
         backgroundColor: Colors.transparent,
-        side: BorderSide(color: theme.dividerColor.withOpacity(.25)),
+        side: BorderSide(color: theme.dividerColor.withValues(alpha: .25)),
         labelStyle: TextStyle(
-          color: theme.textTheme.bodyMedium?.color?.withOpacity(.72),
+          color: theme.textTheme.bodyMedium?.color?.withValues(alpha: .72),
           fontWeight: FontWeight.w600,
         ),
       ));

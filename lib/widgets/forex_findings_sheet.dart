@@ -110,7 +110,7 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
           .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
           .orderBy('date', descending: true)
           .limit(page);
-      if (cursor != null) q = (q as Query).startAfterDocument(cursor);
+      if (cursor != null) q = (q).startAfterDocument(cursor);
 
       final snap = await q.get();
       if (snap.docs.isEmpty) break;
@@ -160,7 +160,7 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
     final q = _q.text.trim().toLowerCase();
 
     // filter + sort
-    List<ExpenseItem> intl = _intl.where((e) {
+    final List<ExpenseItem> intl = _intl.where((e) {
       if (q.isEmpty) return true;
       return ('${e.note} ${e.label ?? ''} ${e.category ?? ''}').toLowerCase().contains(q);
     }).toList();
@@ -168,7 +168,7 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
         ? b.amount.compareTo(a.amount)
         : b.date.compareTo(a.date));
 
-    List<ExpenseItem> fees = _fees.where((e) {
+    final List<ExpenseItem> fees = _fees.where((e) {
       if (q.isEmpty) return true;
       return ('${e.note} ${e.label ?? ''} ${e.category ?? ''}').toLowerCase().contains(q);
     }).toList();
@@ -338,7 +338,7 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
   Widget _chip(String t, String v) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
     decoration: BoxDecoration(
-      color: Colors.teal.withOpacity(0.08),
+      color: Colors.teal.withValues(alpha: 0.08),
       borderRadius: BorderRadius.circular(999),
     ),
     child: Row(mainAxisSize: MainAxisSize.min, children: [

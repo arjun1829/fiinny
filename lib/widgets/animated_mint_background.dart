@@ -18,9 +18,9 @@ class AnimatedMintBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     final shouldAnimate = (animate ?? !AppPerf.lowGpuMode);
 
-    final c0 = Colors.tealAccent.withOpacity(0.18 * intensity);
-    final c1 = AppColors.mint.withOpacity(0.10 * intensity);
-    final c2 = Colors.white.withOpacity(0.65);
+    final c0 = Colors.tealAccent.withValues(alpha: 0.18 * intensity);
+    final c1 = AppColors.mint.withValues(alpha: 0.10 * intensity);
+    final c2 = Colors.white.withValues(alpha: 0.65);
 
     const coverageStop = 0.60; // mint wash should span ~60% of the viewport
     const entryOvershoot = 0.03; // subtle breathing room during the intro tween

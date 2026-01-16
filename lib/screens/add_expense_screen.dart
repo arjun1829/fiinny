@@ -40,7 +40,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   String? _selectedSubcategory;
   List<String> _subcategories = [];
 
-
   // --- New: Local label list for this user session ---
   List<String> _labels = [
     "Goa Trip",
@@ -64,8 +63,9 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       _friends = widget.groupMembers!;
       _selectedFriendIds = _friends.map((f) => f.phone).toSet();
     } else {
-      _friends = await FriendService().fetchFriends(widget.userId);
-      if (widget.preselectedFriendIds != null && widget.preselectedFriendIds!.isNotEmpty) {
+      _friends = await FriendService().getAllFriendsForUser(widget.userId);
+      if (widget.preselectedFriendIds != null &&
+          widget.preselectedFriendIds!.isNotEmpty) {
         _selectedFriendIds = widget.preselectedFriendIds!.toSet();
       }
     }
@@ -84,7 +84,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   Future<void> _addExpense() async {
     if (_amountController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter an amount!'), backgroundColor: Colors.red),
+        const SnackBar(
+            content: Text('Enter an amount!'), backgroundColor: Colors.red),
       );
       return;
     }
@@ -109,9 +110,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           .map((f) => f.phone)
           .toList();
     } else {
-      friendIds = _selectedFriendIds
-          .where((id) => id != widget.userId)
-          .toList();
+      friendIds =
+          _selectedFriendIds.where((id) => id != widget.userId).toList();
     }
 
     final expense = ExpenseItem(
@@ -142,13 +142,17 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Expense added & synced!'), backgroundColor: Colors.green),
+          const SnackBar(
+              content: Text('Expense added & synced!'),
+              backgroundColor: Colors.green),
         );
         Navigator.of(context).pop(true);
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to add expense.'), backgroundColor: Colors.red),
+        const SnackBar(
+            content: Text('Failed to add expense.'),
+            backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -167,165 +171,177 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(16, 16, 16, bottomPadding),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: _amountController,
-              decoration: const InputDecoration(
-                labelText: "Amount (₹)",
-                prefixIcon: Icon(Icons.currency_rupee),
-              ),
-              keyboardType: TextInputType.numberWithOptions(decimal: true),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _selectedType,
-              items: _categories
-                  .map((cat) => DropdownMenuItem(
-                value: cat,
-                child: Text(cat),
-              ))
-                  .toList(),
-              onChanged: (val) {
-                if (val != null) {
-                  setState(() {
-                    _selectedType = val;
-                    final subs = kExpenseSubcategories[val] ?? [];
-                    _subcategories = subs;
-                    _selectedSubcategory = subs.isNotEmpty ? subs.first : null;
-                  });
-                }
-              },
-              decoration: const InputDecoration(
-                labelText: "Category",
-                prefixIcon: Icon(Icons.category),
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (_subcategories.isNotEmpty) ...[
-              DropdownButtonFormField<String>(
-                value: _selectedSubcategory,
-                items: _subcategories
-                    .map((sub) => DropdownMenuItem(
-                          value: sub,
-                          child: Text(sub),
-                        ))
-                    .toList(),
-                onChanged: (val) {
-                  if (val != null) setState(() => _selectedSubcategory = val);
-                },
-                decoration: const InputDecoration(
-                  labelText: "Subcategory",
-                  prefixIcon: Icon(Icons.subdirectory_arrow_right),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            const SizedBox(height: 12),
-
-            // -------- LABEL DROPDOWN + ADD --------
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: _selectedLabel,
-                    items: [
-                      const DropdownMenuItem(
-                        value: null,
-                        child: Text("No label"),
-                      ),
-                      ..._labels.map((label) => DropdownMenuItem(
-                        value: label,
-                        child: Text(label),
-                      )),
-                    ],
-                    onChanged: (val) {
-                      setState(() {
-                        _selectedLabel = val;
-                        _labelController.text = '';
-                      });
-                    },
-                    decoration: InputDecoration(
-                      labelText: "Select Label",
-                      prefixIcon: Icon(Icons.label_important, color: Colors.amber[700]),
+              padding: EdgeInsets.fromLTRB(16, 16, 16, bottomPadding),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: _amountController,
+                    decoration: const InputDecoration(
+                      labelText: "Amount (₹)",
+                      prefixIcon: Icon(Icons.currency_rupee),
                     ),
+                    keyboardType:
+                        TextInputType.numberWithOptions(decimal: true),
                   ),
-                ),
-                const SizedBox(width: 8),
-                // Manual label entry
-                Expanded(
-                  child: TextField(
-                    controller: _labelController,
-                    decoration: InputDecoration(
-                      labelText: "Or type new label",
-                      prefixIcon: Icon(Icons.create, color: Colors.amber[800]),
-                      hintText: "Eg: Goa Trip",
-                    ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedType,
+                    items: _categories
+                        .map((cat) => DropdownMenuItem(
+                              value: cat,
+                              child: Text(cat),
+                            ))
+                        .toList(),
                     onChanged: (val) {
-                      if (val.isNotEmpty) {
+                      if (val != null) {
                         setState(() {
-                          _selectedLabel = null;
+                          _selectedType = val;
+                          final subs = kExpenseSubcategories[val] ?? [];
+                          _subcategories = subs;
+                          _selectedSubcategory =
+                              subs.isNotEmpty ? subs.first : null;
                         });
                       }
                     },
+                    decoration: const InputDecoration(
+                      labelText: "Category",
+                      prefixIcon: Icon(Icons.category),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
+                  const SizedBox(height: 12),
+                  if (_subcategories.isNotEmpty) ...[
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedSubcategory,
+                      items: _subcategories
+                          .map((sub) => DropdownMenuItem(
+                                value: sub,
+                                child: Text(sub),
+                              ))
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null)
+                          setState(() => _selectedSubcategory = val);
+                      },
+                      decoration: const InputDecoration(
+                        labelText: "Subcategory",
+                        prefixIcon: Icon(Icons.subdirectory_arrow_right),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  const SizedBox(height: 12),
 
-            TextField(
-              controller: _descController,
-              decoration: const InputDecoration(
-                labelText: "Description (e.g. Dinner, Uber)",
-                prefixIcon: Icon(Icons.edit),
+                  // -------- LABEL DROPDOWN + ADD --------
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          initialValue: _selectedLabel,
+                          items: [
+                            const DropdownMenuItem(
+                              value: null,
+                              child: Text("No label"),
+                            ),
+                            ..._labels.map((label) => DropdownMenuItem(
+                                  value: label,
+                                  child: Text(label),
+                                )),
+                          ],
+                          onChanged: (val) {
+                            setState(() {
+                              _selectedLabel = val;
+                              _labelController.text = '';
+                            });
+                          },
+                          decoration: InputDecoration(
+                            labelText: "Select Label",
+                            prefixIcon: Icon(Icons.label_important,
+                                color: Colors.amber[700]),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Manual label entry
+                      Expanded(
+                        child: TextField(
+                          controller: _labelController,
+                          decoration: InputDecoration(
+                            labelText: "Or type new label",
+                            prefixIcon:
+                                Icon(Icons.create, color: Colors.amber[800]),
+                            hintText: "Eg: Goa Trip",
+                          ),
+                          onChanged: (val) {
+                            if (val.isNotEmpty) {
+                              setState(() {
+                                _selectedLabel = null;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  TextField(
+                    controller: _descController,
+                    decoration: const InputDecoration(
+                      labelText: "Description (e.g. Dinner, Uber)",
+                      prefixIcon: Icon(Icons.edit),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  const Text("Split With Friends:",
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  ..._friends.map((friend) {
+                    return CheckboxListTile(
+                      title: Text(friend.name),
+                      subtitle:
+                          (friend.email != null && friend.email!.isNotEmpty)
+                              ? Text(friend.email!)
+                              : null,
+                      value: _selectedFriendIds.contains(friend.phone),
+                      onChanged: isGroupMode
+                          ? null
+                          : (v) {
+                              setState(() {
+                                if (v == true) {
+                                  _selectedFriendIds.add(friend.phone);
+                                } else {
+                                  _selectedFriendIds.remove(friend.phone);
+                                }
+                              });
+                            },
+                      secondary: Text(friend.avatar,
+                          style: const TextStyle(fontSize: 24)),
+                      controlAffinity: ListTileControlAffinity.leading,
+                    );
+                  }),
+                  const SizedBox(height: 20),
+                  Center(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.deepPurple,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 36, vertical: 14),
+                      ),
+                      icon: const Icon(Icons.add),
+                      label: _submitting
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white))
+                          : const Text("Add Expense"),
+                      onPressed: _submitting ? null : _addExpense,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 18),
-            const Text("Split With Friends:", style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 6),
-            ..._friends.map((friend) {
-              return CheckboxListTile(
-                title: Text(friend.name),
-                subtitle: (friend.email != null && friend.email!.isNotEmpty) ? Text(friend.email!) : null,
-                value: _selectedFriendIds.contains(friend.phone),
-                onChanged: isGroupMode
-                    ? null
-                    : (v) {
-                  setState(() {
-                    if (v == true) {
-                      _selectedFriendIds.add(friend.phone);
-                    } else {
-                      _selectedFriendIds.remove(friend.phone);
-                    }
-                  });
-                },
-                secondary: Text(friend.avatar, style: const TextStyle(fontSize: 24)),
-                controlAffinity: ListTileControlAffinity.leading,
-              );
-            }),
-            const SizedBox(height: 20),
-            Center(
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple,
-                  padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 14),
-                ),
-                icon: const Icon(Icons.add),
-                label: _submitting
-                    ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text("Add Expense"),
-                onPressed: _submitting ? null : _addExpense,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -73,7 +73,7 @@ class TxnMirrorService {
 
         final updatedAt = _asTimestamp(data['updatedAt']);
         if (updatedAt != null &&
-            (newestSeenUpdatedAt == null || updatedAt.compareTo(newestSeenUpdatedAt!) > 0)) {
+            (newestSeenUpdatedAt == null || updatedAt.compareTo(newestSeenUpdatedAt) > 0)) {
           newestSeenUpdatedAt = updatedAt;
         }
 

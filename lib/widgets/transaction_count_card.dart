@@ -110,7 +110,7 @@ class TransactionCountCard extends StatelessWidget {
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: colorScheme.primary.withOpacity(0.13),
+                        color: colorScheme.primary.withValues(alpha: 0.13),
                       ),
                       child: Icon(Icons.filter_list_rounded, color: colorScheme.primary, size: 19),
                     ),
@@ -159,7 +159,7 @@ class TransactionCountCard extends StatelessWidget {
                         child: Container(
                           height: barHeight < 2 && val > 0 ? 2 : barHeight, // Min height for visibility
                           decoration: BoxDecoration(
-                            color: barHeight > 0 ? colorScheme.primary : colorScheme.primary.withOpacity(0.15),
+                            color: barHeight > 0 ? colorScheme.primary : colorScheme.primary.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(2), // slightly rounder
                           ),
                         ),

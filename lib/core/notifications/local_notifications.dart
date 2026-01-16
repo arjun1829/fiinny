@@ -2,7 +2,6 @@
 import 'dart:async';
 // import 'dart:io' show Platform; // Removed for web compatibility
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
@@ -38,7 +37,9 @@ class LocalNotifs {
   /// Initialize once. Safe to call repeatedly.
   /// NOTE: Do NOT open any permission/settings UI here.
   static Future<void> init() async {
-    if (_inited) return;
+    if (_inited) {
+      return;
+    }
 
     // Timezone DB for zoned scheduling (required for Android exact alarms).
     tzdata.initializeTimeZones();
@@ -58,15 +59,15 @@ class LocalNotifs {
       onDidReceiveNotificationResponse: (resp) {
         final deeplink = resp.payload ?? '';
         debugPrint('[LocalNotifs] tap payload="$deeplink"');
-        if (deeplink.isEmpty) return;
+        if (deeplink.isEmpty) {
+          return;
+        }
         _handleDeeplink(deeplink);
       },
     );
 
-    final androidSpecific = _plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
+    final androidSpecific = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
 
     // Ensure channel exists (no-op on iOS).
     await androidSpecific?.createNotificationChannel(_channel);
@@ -87,11 +88,11 @@ class LocalNotifs {
 
   /// Helper (user-initiated only): may open OEM Alarms & reminders screen.
   static Future<void> requestExactAlarmPermissionIfUserInitiated() async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
-    final androidSpecific = _plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+    final androidSpecific = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
     try {
       await androidSpecific?.requestExactAlarmsPermission();
     } catch (e) {
@@ -101,11 +102,11 @@ class LocalNotifs {
 
   /// Optional helper to check notifications enabled (no UI).
   static Future<bool?> areNotificationsEnabled() async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return true;
-    final androidSpecific = _plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return true;
+    }
+    final androidSpecific = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
     try {
       return await androidSpecific?.areNotificationsEnabled();
     } catch (e) {
@@ -116,14 +117,18 @@ class LocalNotifs {
 
   static void _handleDeeplink(String deeplink) {
     final nav = rootNavigatorKey.currentState;
-    if (nav == null) return;
+    if (nav == null) {
+      return;
+    }
 
     final uri = Uri.tryParse(deeplink);
-    if (uri == null) return;
+    if (uri == null) {
+      return;
+    }
 
     final host = uri.host.toLowerCase();
-    final first = (uri.pathSegments.isNotEmpty ? uri.pathSegments.first : '')
-        .trim();
+    final first =
+        (uri.pathSegments.isNotEmpty ? uri.pathSegments.first : '').trim();
     final second = (uri.pathSegments.length > 1 ? uri.pathSegments[1] : '')
         .trim()
         .toLowerCase();
@@ -287,7 +292,7 @@ class ReminderLocalScheduler {
   Set<String> _lastIds = <String>{};
 
   ReminderLocalScheduler({required this.userPhone, required this.friendId})
-    : _svc = RecurringService();
+      : _svc = RecurringService();
 
   Future<void> bind() async {
     await LocalNotifs.init();
@@ -424,10 +429,10 @@ class SystemRecurringLocalScheduler {
         .where('active', isEqualTo: true)
         .snapshots()
         .listen((snap) async {
-          for (final d in snap.docs) {
-            await _scheduleSubscription(d);
-          }
-        });
+      for (final d in snap.docs) {
+        await _scheduleSubscription(d);
+      }
+    });
 
     // SIPs
     _sipsSub = base
@@ -435,10 +440,10 @@ class SystemRecurringLocalScheduler {
         .where('active', isEqualTo: true)
         .snapshots()
         .listen((snap) async {
-          for (final d in snap.docs) {
-            await _scheduleSip(d);
-          }
-        });
+      for (final d in snap.docs) {
+        await _scheduleSip(d);
+      }
+    });
 
     // Loans/EMIs
     _loansSub = base
@@ -446,10 +451,10 @@ class SystemRecurringLocalScheduler {
         .where('active', isEqualTo: true)
         .snapshots()
         .listen((snap) async {
-          for (final d in snap.docs) {
-            await _scheduleLoan(d);
-          }
-        });
+      for (final d in snap.docs) {
+        await _scheduleLoan(d);
+      }
+    });
 
     // Credit Cards (card bills)
     _cardsSub = base.collection('cards').snapshots().listen((snap) async {
@@ -496,10 +501,18 @@ class SystemRecurringLocalScheduler {
 
   // Build safe DateTime from Firestore field
   DateTime? _asDate(dynamic v) {
-    if (v is Timestamp) return v.toDate();
-    if (v is DateTime) return v;
-    if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
-    if (v is String) return DateTime.tryParse(v);
+    if (v is Timestamp) {
+      return v.toDate();
+    }
+    if (v is DateTime) {
+      return v;
+    }
+    if (v is int) {
+      return DateTime.fromMillisecondsSinceEpoch(v);
+    }
+    if (v is String) {
+      return DateTime.tryParse(v);
+    }
     return null;
   }
 

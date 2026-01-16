@@ -1,5 +1,4 @@
 import 'dart:io' show File;
-import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -10,7 +9,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'package:lifemap/core/ads/ads_banner_card.dart';
 
 class GroupChatTab extends StatefulWidget {
   final String groupId;
@@ -545,7 +543,7 @@ class GroupChatTabState extends State<GroupChatTab> {
             },
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.teal.withOpacity(0.08),
+                color: Colors.teal.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(16),
               ),
               alignment: Alignment.center,
@@ -720,7 +718,7 @@ class GroupChatTabState extends State<GroupChatTab> {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                      color: Colors.black.withOpacity(0.05), blurRadius: 4)
+                      color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)
                 ],
               ),
               child: Row(
@@ -761,7 +759,7 @@ class GroupChatTabState extends State<GroupChatTab> {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, -2),
                 ),
@@ -945,7 +943,7 @@ class ChatBubble extends StatelessWidget {
                 // Soft shadow for received messages (white bubbles)
                 if (!isMe)
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 5,
                     offset: const Offset(0, 2),
                   ),
@@ -996,7 +994,7 @@ class ChatBubble extends StatelessWidget {
                   style: TextStyle(
                     // Lighter text for timestamp
                     color:
-                        isMe ? Colors.white.withOpacity(0.7) : Colors.grey[500],
+                        isMe ? Colors.white.withValues(alpha: 0.7) : Colors.grey[500],
                     fontSize: 10,
                   ),
                 ),

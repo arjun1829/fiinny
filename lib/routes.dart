@@ -22,7 +22,6 @@ import 'screens/transaction_count_screen.dart';
 import 'screens/transaction_amount_screen.dart';
 import 'screens/analytics_screen.dart'; // ✅ we’ll instantiate this in onGenerate
 import 'screens/gmail_link_screen.dart';
-import 'screens/premium_paywall.dart';
 import 'screens/transactions_screen.dart';
 import 'screens/subscriptions/subscriptions_screen.dart'; // ✅ NEW Subscription Screen
 import 'screens/cards_management_screen.dart'; // ✅ NEW Cards Management Screen
@@ -41,7 +40,6 @@ import 'ui_devtools/parse_debug_screen.dart';
 
 // ---------- Settings screens ----------
 import 'screens/notification_prefs_screen.dart'; // ✅ correct import
-import 'details/shared/partner_capabilities.dart';
 
 // ---------- Friend recurring (NEW route target) ----------
 import 'details/recurring/friend_recurring_screen.dart';

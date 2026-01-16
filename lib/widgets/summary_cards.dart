@@ -82,7 +82,7 @@ class _SummaryCard extends StatelessWidget {
       child: Card(
         elevation: 2,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        color: color.withOpacity(0.11),
+        color: color.withValues(alpha: 0.11),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
           child: Column(

@@ -28,7 +28,7 @@ class ShinyCard extends StatelessWidget {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                   colors: gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
-              border: Border.all(color: Colors.white.withOpacity(.10)),
+              border: Border.all(color: Colors.white.withValues(alpha: .10)),
             ),
           ),
           // subtle glass sheen
@@ -38,7 +38,7 @@ class ShinyCard extends StatelessWidget {
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [Colors.white.withOpacity(.12), Colors.white.withOpacity(0)],
+                    colors: [Colors.white.withValues(alpha: .12), Colors.white.withValues(alpha: 0)],
                     begin: Alignment.topCenter, end: Alignment.center,
                   ),
                 ),
@@ -54,7 +54,7 @@ class ShinyCard extends StatelessWidget {
                 width: 220, height: 90,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                      colors: [Colors.white.withOpacity(.18), Colors.transparent]),
+                      colors: [Colors.white.withValues(alpha: .18), Colors.transparent]),
                   borderRadius: BorderRadius.circular(28),
                 ),
               ),
@@ -79,7 +79,7 @@ class ShinyCard extends StatelessWidget {
                             maxLines: 1, overflow: TextOverflow.ellipsis,
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16)),
                         Text('•••• $last4',
-                            style: TextStyle(color: Colors.white.withOpacity(.85), fontWeight: FontWeight.w700)),
+                            style: TextStyle(color: Colors.white.withValues(alpha: .85), fontWeight: FontWeight.w700)),
                       ],
                     ),
                   ),

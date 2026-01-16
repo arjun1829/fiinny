@@ -598,20 +598,20 @@ class _ReviewInboxScreenState extends State<ReviewInboxScreen> {
     return ChoiceChip(
       selected: active,
       label: Text(label),
-      selectedColor: c.withOpacity(0.12),
+      selectedColor: c.withValues(alpha: 0.12),
       labelStyle: TextStyle(
         color: active ? c : Theme.of(context).colorScheme.onSurface,
         fontWeight: active ? FontWeight.w700 : FontWeight.w500,
       ),
-      side: BorderSide(color: c.withOpacity(active ? 0.30 : 0.18)),
+      side: BorderSide(color: c.withValues(alpha: active ? 0.30 : 0.18)),
       onSelected: (_) => onTap(),
     );
   }
 
   Widget _pill(BuildContext context, String text, {Color? color}) {
     final bg = color != null
-        ? color.withOpacity(0.85)
-        : Theme.of(context).colorScheme.primary.withOpacity(0.10);
+        ? color.withValues(alpha: 0.85)
+        : Theme.of(context).colorScheme.primary.withValues(alpha: 0.10);
     final fg =
     color != null ? Colors.white : Theme.of(context).colorScheme.primary;
     return Container(
@@ -622,7 +622,7 @@ class _ReviewInboxScreenState extends State<ReviewInboxScreen> {
         border: color == null
             ? Border.all(
             color:
-            Theme.of(context).colorScheme.primary.withOpacity(0.12))
+            Theme.of(context).colorScheme.primary.withValues(alpha: 0.12))
             : null,
       ),
       child: Text(
@@ -643,7 +643,7 @@ class _ReviewInboxScreenState extends State<ReviewInboxScreen> {
     EdgeInsets? padding,
     required Widget child,
   }) {
-    final border = Colors.white.withOpacity(0.25);
+    final border = Colors.white.withValues(alpha: 0.25);
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: BackdropFilter(
@@ -657,13 +657,13 @@ class _ReviewInboxScreenState extends State<ReviewInboxScreen> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Colors.white.withOpacity(0.55),
-                Colors.white.withOpacity(0.22),
+                Colors.white.withValues(alpha: 0.55),
+                Colors.white.withValues(alpha: 0.22),
               ],
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 16,
                 offset: const Offset(0, 8),
               ),
@@ -687,9 +687,9 @@ class _BackgroundGradient extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            cs.primaryContainer.withOpacity(0.45),
-            cs.secondaryContainer.withOpacity(0.25),
-            cs.surfaceVariant.withOpacity(0.30),
+            cs.primaryContainer.withValues(alpha: 0.45),
+            cs.secondaryContainer.withValues(alpha: 0.25),
+            cs.surfaceContainerHighest.withValues(alpha: 0.30),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -712,7 +712,7 @@ class _TopGlowOverlay extends StatelessWidget {
             gradient: RadialGradient(
               radius: 0.75,
               colors: [
-                Colors.white.withOpacity(0.30),
+                Colors.white.withValues(alpha: 0.30),
                 Colors.transparent,
               ],
             ),
@@ -730,7 +730,7 @@ class _ApproveBg extends StatelessWidget {
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
-        color: Colors.green.withOpacity(0.20),
+        color: Colors.green.withValues(alpha: 0.20),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
@@ -772,12 +772,12 @@ class _BottomBulkBar extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.55),
-              border: Border.all(color: Colors.white.withOpacity(0.25)),
+              color: Colors.white.withValues(alpha: 0.55),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
+                  color: Colors.black.withValues(alpha: 0.06),
                   blurRadius: 12,
                   offset: const Offset(0, -4),
                 ),
@@ -837,8 +837,8 @@ class _EmptyState extends StatelessWidget {
                 padding:
                 const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.55),
-                  border: Border.all(color: Colors.white.withOpacity(0.25)),
+                  color: Colors.white.withValues(alpha: 0.55),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: Column(

@@ -2,7 +2,6 @@ import 'package:sqflite/sqflite.dart'
     if (dart.library.html) '../stubs/sqflite_stub.dart';
 import 'package:path/path.dart';
 import '../models/transaction_item.dart';
-import '../models/goal_model.dart';
 
 class SQLiteService {
   static final SQLiteService _instance = SQLiteService._internal();

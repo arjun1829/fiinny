@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../services/recurring_service.dart';
 import '../models/shared_item.dart';
-import '../models/recurring_rule.dart';
 import '../models/recurring_scope.dart';
 
 import 'add_choice_sheet.dart';
@@ -48,11 +47,11 @@ class FriendRecurringScreen extends StatefulWidget {
   final String? friendName;
 
   const FriendRecurringScreen({
-    Key? key,
+    super.key,
     required this.userPhone,
     required this.friendId,
     this.friendName,
-  }) : super(key: key);
+  });
 
   @override
   State<FriendRecurringScreen> createState() => _FriendRecurringScreenState();
@@ -66,8 +65,8 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
   String _fmtDate(DateTime? d) => d == null
       ? '—'
       : '${d.day.toString().padLeft(2, '0')}-'
-      '${d.month.toString().padLeft(2, '0')}-'
-      '${d.year}';
+          '${d.month.toString().padLeft(2, '0')}-'
+          '${d.year}';
 
   @override
   void initState() {
@@ -306,7 +305,8 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
         itemId: it.id,
         title: title,
         body: body,
-        fireAt: fireAt.isAfter(now) ? fireAt : now.add(const Duration(minutes: 1)),
+        fireAt:
+            fireAt.isAfter(now) ? fireAt : now.add(const Duration(minutes: 1)),
       );
 
       if (!mounted) return;
@@ -330,8 +330,8 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
             : (it.title ?? 'Reminder'),
         dueOn: it.nextDueAt,
         frequency: it.rule.frequency,
-        amount: (it.rule.amount != null && it.rule.amount! > 0)
-            ? '₹${it.rule.amount!.toStringAsFixed(0)}'
+        amount: (it.rule.amount > 0)
+            ? '₹${it.rule.amount.toStringAsFixed(0)}'
             : null,
       );
     } catch (e) {
@@ -358,10 +358,9 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
   String _buildNotifBody(SharedItem it, DateTime due) {
     final when = _fmtDate(due);
     final freq =
-    (it.rule.frequency.isNotEmpty) ? ' • ${it.rule.frequency}' : '';
-    final amt = (it.rule.amount != null && it.rule.amount! > 0)
-        ? ' • ₹${it.rule.amount!.toStringAsFixed(0)}'
-        : '';
+        (it.rule.frequency.isNotEmpty) ? ' • ${it.rule.frequency}' : '';
+    final amt =
+        (it.rule.amount > 0) ? ' • ₹${it.rule.amount.toStringAsFixed(0)}' : '';
     final name = it.title ?? 'Item';
     return '$name is due on $when$freq$amt';
   }
@@ -390,7 +389,7 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
       if (due != null) {
         if (nextDue == null || due.isBefore(nextDue)) nextDue = due;
         if (due.year == start.year && due.month == start.month) {
-          final amt = it.rule.amount ?? 0;
+          final amt = it.rule.amount;
           if (amt > 0) monthTotal += amt;
         }
         final today = DateTime(now.year, now.month, now.day);
@@ -518,30 +517,42 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
                   // Four small cards
                   _FourCards(
                     items: const [
-                      _SmallCardData('recurring', Icons.repeat_rounded, 'Recurring'),
-                      _SmallCardData('subscription', Icons.subscriptions_rounded, 'Subscriptions'),
-                      _SmallCardData('emi', Icons.account_balance_rounded, 'EMIs / Loans'),
-                      _SmallCardData('reminder', Icons.alarm_rounded, 'Reminders'),
+                      _SmallCardData(
+                          'recurring', Icons.repeat_rounded, 'Recurring'),
+                      _SmallCardData('subscription',
+                          Icons.subscriptions_rounded, 'Subscriptions'),
+                      _SmallCardData(
+                          'emi', Icons.account_balance_rounded, 'EMIs / Loans'),
+                      _SmallCardData(
+                          'reminder', Icons.alarm_rounded, 'Reminders'),
                     ],
                     counts: {
                       'recurring': items
-                          .where((e) => e.type == 'recurring' && e.rule.status != 'ended')
+                          .where((e) =>
+                              e.type == 'recurring' && e.rule.status != 'ended')
                           .length,
                       'subscription': items
-                          .where((e) => e.type == 'subscription' && e.rule.status != 'ended')
+                          .where((e) =>
+                              e.type == 'subscription' &&
+                              e.rule.status != 'ended')
                           .length,
                       'emi': items
-                          .where((e) => e.type == 'emi' && e.rule.status != 'ended')
+                          .where((e) =>
+                              e.type == 'emi' && e.rule.status != 'ended')
                           .length,
                       'reminder': items
-                          .where((e) => e.type == 'reminder' && e.rule.status != 'ended')
+                          .where((e) =>
+                              e.type == 'reminder' && e.rule.status != 'ended')
                           .length,
                     },
                     nextDue: {
-                      'recurring': _minDue(items.where((e) => e.type == 'recurring')),
-                      'subscription': _minDue(items.where((e) => e.type == 'subscription')),
+                      'recurring':
+                          _minDue(items.where((e) => e.type == 'recurring')),
+                      'subscription':
+                          _minDue(items.where((e) => e.type == 'subscription')),
                       'emi': _minDue(items.where((e) => e.type == 'emi')),
-                      'reminder': _minDue(items.where((e) => e.type == 'reminder')),
+                      'reminder':
+                          _minDue(items.where((e) => e.type == 'reminder')),
                     },
                     onTap: (k) => _openTypeSheet(k),
                     onAdd: (k) async {
@@ -679,16 +690,19 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
       }
     }
   }
+
   // ---------- Bulk helpers (restore) ----------
   Future<void> _closeAllActiveOfType(String type) async {
     try {
-      final snap = await _svc.streamByFriend(widget.userPhone, widget.friendId).first;
+      final snap =
+          await _svc.streamByFriend(widget.userPhone, widget.friendId).first;
       final toEnd = snap.where((x) =>
-      x.type == type &&
+          x.type == type &&
           (x.rule.status == 'active' || x.rule.status == 'paused'));
 
       await Future.wait(
-        toEnd.map((item) => _svc.end(widget.userPhone, widget.friendId, item.id)),
+        toEnd.map(
+            (item) => _svc.end(widget.userPhone, widget.friendId, item.id)),
       );
 
       if (mounted) {
@@ -704,7 +718,6 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
       }
     }
   }
-
 
   Future<void> _deleteItem(SharedItem it) async {
     final sure = await showDialog<bool>(
@@ -756,30 +769,6 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
     }
   }
 
-  Future<void> _confirm(Future<void> Function() action) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Are you sure?'),
-        content: const Text('This will affect all matching active items.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Yes'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) {
-      await action();
-      if (mounted) setState(() {});
-    }
-  }
-
   // ---------------- small helpers ----------------
   Widget _cardSurface({required Widget child}) {
     return Container(
@@ -788,7 +777,7 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 14,
             offset: const Offset(0, 8),
           )
@@ -803,20 +792,20 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
   }
 
   Widget _pillBadge(String text, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: color.withOpacity(.12),
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Text(
-      text,
-      style: TextStyle(
-        fontSize: 12,
-        color: color,
-        fontWeight: FontWeight.w700,
-      ),
-    ),
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 12,
+            color: color,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
 
   Widget _chip(String label, String value) {
     return Container(
@@ -827,7 +816,7 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 8,
             offset: const Offset(0, 3),
           )
@@ -863,7 +852,7 @@ class _FriendRecurringScreenState extends State<FriendRecurringScreen> {
   String _monthMeta() {
     final now = DateTime.now();
     final end =
-    DateTime(now.year, now.month + 1, 1).subtract(const Duration(days: 1));
+        DateTime(now.year, now.month + 1, 1).subtract(const Duration(days: 1));
     return '${now.day}/${end.day} days';
   }
 
@@ -956,7 +945,7 @@ class _FourCards extends StatelessWidget {
                 border: Border.all(color: Colors.grey.shade200),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(.06),
+                    color: Colors.black.withValues(alpha: .06),
                     blurRadius: 10,
                     offset: const Offset(0, 6),
                   )
@@ -997,22 +986,22 @@ class _FourCards extends StatelessWidget {
   }
 
   Widget _miniPill(String t) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(999),
-      border: Border.all(color: Colors.grey.shade200),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.04),
-          blurRadius: 6,
-          offset: const Offset(0, 3),
-        )
-      ],
-    ),
-    child: Text(t,
-        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.grey.shade200),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 3),
+            )
+          ],
+        ),
+        child: Text(t,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+      );
 }
 
 // ================= Bottom sheet list for a type =================
@@ -1136,8 +1125,8 @@ class _TypeListSheetState extends State<_TypeListSheet> {
                             useSafeArea: true,
                             isScrollControlled: true,
                             shape: const RoundedRectangleBorder(
-                              borderRadius:
-                              BorderRadius.vertical(top: Radius.circular(16)),
+                              borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(16)),
                             ),
                             builder: (_) => AddEmiLinkSheet(
                               scope: RecurringScope.friend(
@@ -1180,7 +1169,8 @@ class _TypeListSheetState extends State<_TypeListSheet> {
                                 ? Icons.visibility_off_outlined
                                 : Icons.visibility_outlined,
                           ),
-                          title: Text(_includeClosed ? 'Hide closed' : 'Show closed'),
+                          title: Text(
+                              _includeClosed ? 'Hide closed' : 'Show closed'),
                           dense: true,
                           contentPadding: EdgeInsets.zero,
                         ),
@@ -1206,28 +1196,32 @@ class _TypeListSheetState extends State<_TypeListSheet> {
             // list
             Expanded(
               child: StreamBuilder<List<SharedItem>>(
-                stream:
-                widget.svc.streamByFriend(widget.userPhone, widget.friendId),
+                stream: widget.svc
+                    .streamByFriend(widget.userPhone, widget.friendId),
                 builder: (context, snap) {
                   final items = (snap.data ?? const <SharedItem>[])
                       .where((e) => e.type == widget.type)
                       .toList();
 
-                  final active = items.where((e) => e.rule.status != 'ended').toList()
+                  final active = items
+                      .where((e) => e.rule.status != 'ended')
+                      .toList()
                     ..sort((a, b) {
-                      final da = a.nextDueAt ??
-                          DateTime.fromMillisecondsSinceEpoch(0);
-                      final db = b.nextDueAt ??
-                          DateTime.fromMillisecondsSinceEpoch(0);
+                      final da =
+                          a.nextDueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+                      final db =
+                          b.nextDueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
                       return da.compareTo(db);
                     });
 
-                  final closed = items.where((e) => e.rule.status == 'ended').toList()
+                  final closed = items
+                      .where((e) => e.rule.status == 'ended')
+                      .toList()
                     ..sort((a, b) {
-                      final da = a.nextDueAt ??
-                          DateTime.fromMillisecondsSinceEpoch(0);
-                      final db = b.nextDueAt ??
-                          DateTime.fromMillisecondsSinceEpoch(0);
+                      final da =
+                          a.nextDueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+                      final db =
+                          b.nextDueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
                       return da.compareTo(db);
                     });
 
@@ -1281,15 +1275,20 @@ class _TypeListSheetState extends State<_TypeListSheet> {
     );
   }
 
-  Future<void> _confirm(BuildContext context, Future<void> Function() action) async {
+  Future<void> _confirm(
+      BuildContext context, Future<void> Function() action) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Are you sure?'),
         content: const Text('This will affect all matching active items.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Yes')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Yes')),
         ],
       ),
     );
@@ -1342,13 +1341,14 @@ class _ItemTile extends StatelessWidget {
         elevation: 0,
         color: isEnded
             ? Colors.grey.shade100
-            : (isPaused ? Colors.amber.withOpacity(.06) : Colors.white),
+            : (isPaused ? Colors.amber.withValues(alpha: .06) : Colors.white),
         shape: RoundedRectangleBorder(
           side: BorderSide(color: Colors.grey.shade300),
           borderRadius: BorderRadius.circular(12),
         ),
         child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
           title: Text(
             item.title ?? 'Untitled',
             maxLines: 1,
@@ -1360,7 +1360,7 @@ class _ItemTile extends StatelessWidget {
           ),
           subtitle: Text(
             'Next: $dueStr  •  ${item.rule.frequency}'
-                '${item.type == "subscription" ? " (billing)" : ""}',
+            '${item.type == "subscription" ? " (billing)" : ""}',
             maxLines: 2,
             style: TextStyle(
               color: isEnded ? Colors.grey : Colors.grey.shade700,
@@ -1416,7 +1416,8 @@ class _ItemTile extends StatelessWidget {
                           ? Icons.play_arrow_rounded
                           : Icons.pause_circle_outline,
                     ),
-                    title: Text(item.rule.status == 'paused' ? 'Resume' : 'Pause'),
+                    title:
+                        Text(item.rule.status == 'paused' ? 'Resume' : 'Pause'),
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                   ),

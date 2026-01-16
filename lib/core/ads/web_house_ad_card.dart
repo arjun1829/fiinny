@@ -47,7 +47,7 @@ class _WebHouseAdCardState extends State<WebHouseAdCard>
             end: Alignment.bottomRight,
             colors: [Color(0xF0FFFFFF), Color(0xF0F4FFFB)],
           ),
-          border: Border.all(color: Colors.white.withOpacity(0.7)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.7)),
           boxShadow: const [
             BoxShadow(
               color: Color(0x14000000),

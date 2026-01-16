@@ -16,10 +16,12 @@ const Color kBg = Color(0xFFF8FAF9);
 const Color kPrimary = Color(0xFF09857a);
 const Color kText = Color(0xFF0F1E1C);
 const Color kLine = Color(0x14000000);
+
 class _HeroHeader extends StatelessWidget {
   final String quoteText;
   final int quoteIndex;
-  const _HeroHeader({Key? key, required this.quoteText, required this.quoteIndex}) : super(key: key);
+  const _HeroHeader(
+      {super.key, required this.quoteText, required this.quoteIndex});
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +53,7 @@ class _HeroHeader extends StatelessWidget {
                       "Loans",
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: Colors.white.withOpacity(.98),
+                        color: Colors.white.withValues(alpha: .98),
                         fontSize: 36,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -.3,
@@ -71,7 +73,7 @@ class _HeroHeader extends StatelessWidget {
 class _LoansQuote extends StatelessWidget {
   final String text;
   final int index;
-  const _LoansQuote({Key? key, required this.text, required this.index}) : super(key: key);
+  const _LoansQuote({super.key, required this.text, required this.index});
 
   @override
   Widget build(BuildContext context) {
@@ -92,10 +94,9 @@ class _LoansQuote extends StatelessWidget {
   }
 }
 
-
 class LoansScreen extends StatefulWidget {
   final String userId;
-  const LoansScreen({required this.userId, Key? key}) : super(key: key);
+  const LoansScreen({required this.userId, super.key});
 
   @override
   State<LoansScreen> createState() => _LoansScreenState();
@@ -107,7 +108,8 @@ class _LoansScreenState extends State<LoansScreen> {
 
   String _segment = 'active'; // 'active' | 'closed'
 
-  final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+  final _inr =
+      NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
   // brand (aligned to app palette)
   final Color _accent = kPrimary;
@@ -193,7 +195,9 @@ class _LoansScreenState extends State<LoansScreen> {
   }
 
   List<LoanModel> _view(List<LoanModel> all) {
-    final list = all.where((l) => _segment == 'active' ? _isActive(l) : l.isClosed).toList();
+    final list = all
+        .where((l) => _segment == 'active' ? _isActive(l) : l.isClosed)
+        .toList();
     list.sort((a, b) {
       final ad = _nextPaymentDate(a);
       final bd = _nextPaymentDate(b);
@@ -220,8 +224,10 @@ class _LoansScreenState extends State<LoansScreen> {
     final totalOutstanding = active.fold<double>(0.0, (s, l) => s + l.amount);
     final totalEmi = active.fold<double>(0.0, (s, l) => s + (l.emi ?? 0));
     final withRate = active.where((l) => (l.interestRate ?? 0) > 0).toList();
-    final avgRate =
-    withRate.isEmpty ? 0.0 : withRate.fold<double>(0.0, (s, l) => s + (l.interestRate ?? 0)) / withRate.length;
+    final avgRate = withRate.isEmpty
+        ? 0.0
+        : withRate.fold<double>(0.0, (s, l) => s + (l.interestRate ?? 0)) /
+            withRate.length;
 
     DateTime? nextDue;
     for (final l in active) {
@@ -236,11 +242,15 @@ class _LoansScreenState extends State<LoansScreen> {
       return nd != null && _onlyYMD(nd).isBefore(today);
     }).length;
 
-    final withOriginal = active.where((l) => (l.originalAmount ?? 0) > 0).toList();
-    final sumOriginal = withOriginal.fold<double>(0, (s, l) => s + (l.originalAmount ?? 0));
-    final sumOutstandingOnOriginals = withOriginal.fold<double>(0, (s, l) => s + l.amount);
+    final withOriginal =
+        active.where((l) => (l.originalAmount ?? 0) > 0).toList();
+    final sumOriginal =
+        withOriginal.fold<double>(0, (s, l) => s + (l.originalAmount ?? 0));
+    final sumOutstandingOnOriginals =
+        withOriginal.fold<double>(0, (s, l) => s + l.amount);
     final paid = math.max(0.0, sumOriginal - sumOutstandingOnOriginals);
-    final paidPct = sumOriginal <= 0 ? null : (paid / sumOriginal).clamp(0.0, 1.0);
+    final paidPct =
+        sumOriginal <= 0 ? null : (paid / sumOriginal).clamp(0.0, 1.0);
 
     final monthsLeft = active.fold<int>(0, (s, l) => s + _monthsLeftFor(l));
     final yearsLeft = monthsLeft / 12.0;
@@ -307,9 +317,12 @@ class _LoansScreenState extends State<LoansScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Loan?'),
-        content: Text('Are you sure you want to delete "${loan.title}"? This cannot be undone.'),
+        content: Text(
+            'Are you sure you want to delete "${loan.title}"? This cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
@@ -321,7 +334,9 @@ class _LoansScreenState extends State<LoansScreen> {
       await LoanService().deleteLoan(loan.id!);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Loan "${loan.title}" deleted!'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text('Loan "${loan.title}" deleted!'),
+              backgroundColor: Colors.red),
         );
         setState(_fetchLoans);
       }
@@ -339,11 +354,15 @@ class _LoansScreenState extends State<LoansScreen> {
   }
 
   Future<void> _toggleReminder(LoanModel loan) async {
-    final updated = loan.copyWith(reminderEnabled: !(loan.reminderEnabled ?? false));
+    final updated =
+        loan.copyWith(reminderEnabled: !(loan.reminderEnabled ?? false));
     await LoanService().saveLoan(updated);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(updated.reminderEnabled == true ? 'Reminders ON' : 'Reminders OFF')),
+      SnackBar(
+          content: Text(updated.reminderEnabled == true
+              ? 'Reminders ON'
+              : 'Reminders OFF')),
     );
     setState(_fetchLoans);
   }
@@ -362,8 +381,7 @@ class _LoansScreenState extends State<LoansScreen> {
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    final safeTop = media.padding.top;
-    final heroHeight = 170.0 + safeTop;
+    // final safeTop = media.padding.top; // unused
     final bottomInset = context.adsBottomPadding(extra: 24);
 
     return GestureDetector(
@@ -375,7 +393,9 @@ class _LoansScreenState extends State<LoansScreen> {
           heroTag: 'loans-fab',
           backgroundColor: kPrimary,
           onPressed: () async {
-            final res = await Navigator.pushNamed(context, '/addLoan', arguments: widget.userId);
+            final res = await Navigator.pushNamed(context, '/addLoan',
+                arguments: widget.userId);
+            if (!context.mounted) return;
             // accept both new & old contract: String loanId OR bool true
             if (res == true || res is String) {
               if (res is String) {
@@ -386,8 +406,8 @@ class _LoansScreenState extends State<LoansScreen> {
               setState(_fetchLoans);
             }
           },
-          child: const Icon(Icons.add, color: Colors.white),
           tooltip: "Add Loan",
+          child: const Icon(Icons.add, color: Colors.white),
         ),
         body: FutureBuilder<List<LoanModel>>(
           future: _loansFuture,
@@ -405,17 +425,18 @@ class _LoansScreenState extends State<LoansScreen> {
 
             // Be defensive if your _summary map sometimes misses keys
             final sum = _summary(_latest);
-            final totalOutstanding = (sum['totalOutstanding'] as double?) ?? 0.0;
-            final totalEmi         = (sum['totalEmi'] as double?) ?? 0.0;
-            final avgRate          = (sum['avgRate'] as double?) ?? 0.0;
-            final nextDue          = (sum['nextDue'] as DateTime?);
-            final overdueCount     = (sum['overdueCount'] as int?) ?? 0;
-            final paidPct          = (sum['paidPct'] as double?);
-            final yearsLeft        = (sum['yearsLeft'] as double?) ?? 0.0;
-            final yearsProgress    = (sum['yearsProgress'] as double?) ?? 0.0;
-            final loansCount       = (sum['loansCount'] as int?) ?? view.length;
-            final loansProgress    = (sum['loansProgress'] as double?) ?? 0.0;
-            final sharedCount      = (sum['sharedCount'] as int?) ?? 0;
+            final totalOutstanding =
+                (sum['totalOutstanding'] as double?) ?? 0.0;
+            final totalEmi = (sum['totalEmi'] as double?) ?? 0.0;
+            final avgRate = (sum['avgRate'] as double?) ?? 0.0;
+            final nextDue = (sum['nextDue'] as DateTime?);
+            final overdueCount = (sum['overdueCount'] as int?) ?? 0;
+            final paidPct = (sum['paidPct'] as double?);
+            final yearsLeft = (sum['yearsLeft'] as double?) ?? 0.0;
+            final yearsProgress = (sum['yearsProgress'] as double?) ?? 0.0;
+            final loansCount = (sum['loansCount'] as int?) ?? view.length;
+            final loansProgress = (sum['loansProgress'] as double?) ?? 0.0;
+            final sharedCount = (sum['sharedCount'] as int?) ?? 0;
 
             return RefreshIndicator(
               onRefresh: () async {
@@ -425,10 +446,13 @@ class _LoansScreenState extends State<LoansScreen> {
               child: Stack(
                 children: [
                   // background
-                  Positioned.fill(child: _BackgroundDecor(top: _heroTop, bottom: _heroBottom)),
+                  Positioned.fill(
+                      child:
+                          _BackgroundDecor(top: _heroTop, bottom: _heroBottom)),
 
                   CustomScrollView(
-                    physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                    physics: const BouncingScrollPhysics(
+                        parent: AlwaysScrollableScrollPhysics()),
                     slivers: [
                       // HERO — quote + Loans title
                       SliverToBoxAdapter(
@@ -437,17 +461,15 @@ class _LoansScreenState extends State<LoansScreen> {
                           quoteIndex: _quoteIndex,
                         ),
                       ),
-                      
-                      SliverToBoxAdapter(
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: CriticalAlertBanner(userId: widget.userId),
-                          ),
-                        )
-                      ),
 
+                      SliverToBoxAdapter(
+                          child: SizedBox(
+                        width: double.infinity,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: CriticalAlertBanner(userId: widget.userId),
+                        ),
+                      )),
 
                       // SUMMARY — glassy card
                       SliverToBoxAdapter(
@@ -459,7 +481,7 @@ class _LoansScreenState extends State<LoansScreen> {
                             borderOpacity: .45,
                             radius: 18,
                             child: _SummaryCard(
-                              bg: Colors.white.withOpacity(.78),
+                              bg: Colors.white.withValues(alpha: .78),
                               accent: Colors.black87,
                               segment: _segment,
                               totalOutstanding: totalOutstanding,
@@ -502,7 +524,10 @@ class _LoansScreenState extends State<LoansScreen> {
                             children: const [
                               Text(
                                 "Our Loans",
-                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white),
+                                style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white),
                               ),
                             ],
                           ),
@@ -515,22 +540,34 @@ class _LoansScreenState extends State<LoansScreen> {
                           hasScrollBody: false,
                           child: Center(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 24),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 24),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.account_balance_wallet_rounded, size: 72, color: Colors.white),
+                                  const Icon(
+                                      Icons.account_balance_wallet_rounded,
+                                      size: 72,
+                                      color: Colors.white),
                                   const SizedBox(height: 12),
                                   Text(
-                                    _segment == 'active' ? "No active loans yet." : "No closed loans yet.",
-                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
+                                    _segment == 'active'
+                                        ? "No active loans yet."
+                                        : "No closed loans yet.",
+                                    style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white),
                                   ),
                                   const SizedBox(height: 8),
                                   if (_segment == 'active')
                                     ElevatedButton.icon(
                                       onPressed: () async {
-                                        final res = await Navigator.pushNamed(context, '/addLoan', arguments: widget.userId);
-                                        if (res == true || res is String) setState(_fetchLoans);
+                                        final res = await Navigator.pushNamed(
+                                            context, '/addLoan',
+                                            arguments: widget.userId);
+                                        if (res == true || res is String)
+                                          setState(_fetchLoans);
                                       },
                                       icon: const Icon(Icons.add),
                                       label: const Text("Add Loan"),
@@ -545,12 +582,12 @@ class _LoansScreenState extends State<LoansScreen> {
                           ),
                         )
                       else
-                      // Use SliverList with a builder that inserts separators.
+                        // Use SliverList with a builder that inserts separators.
                         SliverPadding(
                           padding: EdgeInsets.fromLTRB(16, 2, 16, bottomInset),
                           sliver: SliverList(
                             delegate: SliverChildBuilderDelegate(
-                                  (ctx, i) {
+                              (ctx, i) {
                                 // For N items, we build 2*N-1 children: tile, spacer, tile, spacer, ...
                                 final isSeparator = i.isOdd;
                                 if (isSeparator) {
@@ -574,7 +611,8 @@ class _LoansScreenState extends State<LoansScreen> {
                                 );
                               },
                               // childCount must be non-null and consistent.
-                              childCount: view.isEmpty ? 0 : (view.length * 2 - 1),
+                              childCount:
+                                  view.isEmpty ? 0 : (view.length * 2 - 1),
                             ),
                           ),
                         ),
@@ -588,7 +626,6 @@ class _LoansScreenState extends State<LoansScreen> {
       ),
     );
   }
-
 
   // Bottom sheet (actions live here)
   void _showDetails(LoanModel l) {
@@ -604,17 +641,26 @@ class _LoansScreenState extends State<LoansScreen> {
       builder: (ctx) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(ctx).viewInsets.bottom + 14,
-          left: 16, right: 16, top: 8,
+          left: 16,
+          right: 16,
+          top: 8,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(children: [
-              _BankLogoCircle(size: 52, lenderName: l.lenderName, lenderType: l.lenderType, accent: _accent, isClosed: l.isClosed),
+              _BankLogoCircle(
+                  size: 52,
+                  lenderName: l.lenderName,
+                  lenderType: l.lenderType,
+                  accent: _accent,
+                  isClosed: l.isClosed),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(l.title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+                child: Text(l.title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 18)),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -629,7 +675,9 @@ class _LoansScreenState extends State<LoansScreen> {
                     fontWeight: FontWeight.w800,
                     color: l.isClosed
                         ? Colors.green[800]
-                        : (dueBadge == "Overdue" ? Colors.red[800] : Colors.blue[800]),
+                        : (dueBadge == "Overdue"
+                            ? Colors.red[800]
+                            : Colors.blue[800]),
                   ),
                 ),
               ),
@@ -640,16 +688,26 @@ class _LoansScreenState extends State<LoansScreen> {
               runSpacing: 8,
               children: [
                 _kpi("Outstanding", _inr.format(l.amount)),
-                if (l.originalAmount != null) _kpi("Original", _inr.format(l.originalAmount)),
-                if (l.emi != null && l.emi! > 0) _kpi("EMI", _inr.format(l.emi)),
+                if (l.originalAmount != null)
+                  _kpi("Original", _inr.format(l.originalAmount)),
+                if (l.emi != null && l.emi! > 0)
+                  _kpi("EMI", _inr.format(l.emi)),
                 if (l.interestRate != null) _kpi("Rate", "${l.interestRate}%"),
-                _kpi("Lender", "${l.lenderType}${l.lenderName != null ? " • ${l.lenderName}" : ""}"),
-                if (nd != null) _kpi("Next", "${DateFormat("d MMM").format(nd)} • $dueBadge"),
-                if (l.dueDate != null) _kpi("Final Due", DateFormat("d MMM, yyyy").format(l.dueDate!)),
-                if (l.tenureMonths != null) _kpi("Tenure", "${l.tenureMonths} mo"),
-                if (l.paymentDayOfMonth != null) _kpi("Pay on", "Day ${l.paymentDayOfMonth}"),
+                _kpi("Lender",
+                    "${l.lenderType}${l.lenderName != null ? " • ${l.lenderName}" : ""}"),
+                if (nd != null)
+                  _kpi("Next", "${DateFormat("d MMM").format(nd)} • $dueBadge"),
+                if (l.dueDate != null)
+                  _kpi("Final Due",
+                      DateFormat("d MMM, yyyy").format(l.dueDate!)),
+                if (l.tenureMonths != null)
+                  _kpi("Tenure", "${l.tenureMonths} mo"),
+                if (l.paymentDayOfMonth != null)
+                  _kpi("Pay on", "Day ${l.paymentDayOfMonth}"),
                 _kpi("Reminder", (l.reminderEnabled ?? false) ? "On" : "Off"),
-                if (share.isShared) _kpi("Sharing", share.mode == _ShareMode.equal ? "Equal" : "Custom %"),
+                if (share.isShared)
+                  _kpi("Sharing",
+                      share.mode == _ShareMode.equal ? "Equal" : "Custom %"),
               ],
             ),
             if (share.isShared) ...[
@@ -674,19 +732,26 @@ class _LoansScreenState extends State<LoansScreen> {
                 ),
                 TextButton.icon(
                   onPressed: () => _toggleClosed(l),
-                  icon: Icon(l.isClosed ? Icons.lock_open_rounded : Icons.verified_rounded),
+                  icon: Icon(l.isClosed
+                      ? Icons.lock_open_rounded
+                      : Icons.verified_rounded),
                   label: Text(l.isClosed ? "Reopen" : "Mark closed"),
                 ),
                 TextButton.icon(
                   onPressed: () => _toggleReminder(l),
-                  icon: Icon((l.reminderEnabled ?? false) ? Icons.notifications_active : Icons.notifications_off),
-                  label: Text((l.reminderEnabled ?? false) ? "Reminders off" : "Reminders on"),
+                  icon: Icon((l.reminderEnabled ?? false)
+                      ? Icons.notifications_active
+                      : Icons.notifications_off),
+                  label: Text((l.reminderEnabled ?? false)
+                      ? "Reminders off"
+                      : "Reminders on"),
                 ),
                 const SizedBox(width: 12),
                 TextButton.icon(
                   onPressed: () => _confirmDelete(l),
                   icon: const Icon(Icons.delete_outline, color: Colors.red),
-                  label: const Text("Delete", style: TextStyle(color: Colors.red)),
+                  label:
+                      const Text("Delete", style: TextStyle(color: Colors.red)),
                 ),
               ],
             ),
@@ -707,8 +772,13 @@ class _LoansScreenState extends State<LoansScreen> {
         border: Border.all(color: Colors.grey.shade300),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text("$label: ", style: TextStyle(fontSize: 12, color: Colors.grey[800], fontWeight: FontWeight.w700)),
-        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+        Text("$label: ",
+            style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[800],
+                fontWeight: FontWeight.w700)),
+        Text(value,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
       ]),
     );
   }
@@ -719,7 +789,7 @@ class _LoansScreenState extends State<LoansScreen> {
 class _BackgroundDecor extends StatelessWidget {
   final Color top;
   final Color bottom;
-  const _BackgroundDecor({Key? key, required this.top, required this.bottom}) : super(key: key);
+  const _BackgroundDecor({super.key, required this.top, required this.bottom});
 
   @override
   Widget build(BuildContext context) {
@@ -736,9 +806,21 @@ class _BackgroundDecor extends StatelessWidget {
             ),
           ),
         ),
-        Positioned(top: -60, left: -40, child: _blob(color: Colors.white.withOpacity(.12), size: 180)),
-        Positioned(top: 60, right: -40, child: _blob(color: Colors.white.withOpacity(.10), size: 140)),
-        Positioned(bottom: 120, left: -30, child: _blob(color: Colors.white.withOpacity(.08), size: 160)),
+        Positioned(
+            top: -60,
+            left: -40,
+            child:
+                _blob(color: Colors.white.withValues(alpha: .12), size: 180)),
+        Positioned(
+            top: 60,
+            right: -40,
+            child:
+                _blob(color: Colors.white.withValues(alpha: .10), size: 140)),
+        Positioned(
+            bottom: 120,
+            left: -30,
+            child:
+                _blob(color: Colors.white.withValues(alpha: .08), size: 160)),
       ],
     );
   }
@@ -757,7 +839,7 @@ class _BackgroundDecor extends StatelessWidget {
 }
 
 class _SheenOverlay extends StatelessWidget {
-  const _SheenOverlay({Key? key}) : super(key: key);
+  const _SheenOverlay({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -768,9 +850,9 @@ class _SheenOverlay extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Colors.white.withOpacity(.10),
-              Colors.white.withOpacity(.02),
-              Colors.white.withOpacity(.08),
+              Colors.white.withValues(alpha: .10),
+              Colors.white.withValues(alpha: .02),
+              Colors.white.withValues(alpha: .08),
               Colors.transparent,
             ],
             stops: const [0.0, 0.35, 0.55, 1.0],
@@ -789,13 +871,13 @@ class _Glass extends StatelessWidget {
   final double radius;
 
   const _Glass({
-    Key? key,
+    super.key,
     required this.child,
     this.blur = 14,
     this.opacity = .25,
     this.borderOpacity = .35,
     this.radius = 16,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -805,19 +887,31 @@ class _Glass extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(opacity),
+            color: Colors.white.withValues(alpha: opacity),
             borderRadius: BorderRadius.circular(radius),
-            border: Border.all(color: Colors.white.withOpacity(borderOpacity)),
-            boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 18, offset: Offset(0, 8))],
+            border: Border.all(
+                color: Colors.white.withValues(alpha: borderOpacity)),
+            boxShadow: const [
+              BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 8))
+            ],
           ),
           child: Stack(
             children: [
               Positioned(
-                top: 0, left: 0, right: 0, height: 10,
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 10,
                 child: Container(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [Colors.white.withOpacity(.30), Colors.white.withOpacity(0)],
+                      colors: [
+                        Colors.white.withValues(alpha: .30),
+                        Colors.white.withValues(alpha: 0)
+                      ],
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                     ),
@@ -835,7 +929,7 @@ class _Glass extends StatelessWidget {
 
 class _GlassChip extends StatelessWidget {
   final Widget child;
-  const _GlassChip({Key? key, required this.child}) : super(key: key);
+  const _GlassChip({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -862,29 +956,39 @@ class _Segments extends StatelessWidget {
   final void Function(String) onChanged;
   final Map<String, int> counts;
   final Color accent;
-  const _Segments({Key? key, required this.segment, required this.onChanged, required this.counts, required this.accent})
-      : super(key: key);
+  const _Segments(
+      {super.key,
+      required this.segment,
+      required this.onChanged,
+      required this.counts,
+      required this.accent});
 
   @override
   Widget build(BuildContext context) {
     final keys = ['active', 'closed'];
     final labels = {'active': 'Active', 'closed': 'Closed'};
-    final icons = {'active': Icons.play_circle_fill_rounded, 'closed': Icons.verified_rounded};
+    final icons = {
+      'active': Icons.play_circle_fill_rounded,
+      'closed': Icons.verified_rounded
+    };
 
     return Wrap(
-      spacing: 8, runSpacing: 8,
+      spacing: 8,
+      runSpacing: 8,
       children: keys.map((k) {
         final sel = k == segment;
         return ChoiceChip(
           selected: sel,
           onSelected: (_) => onChanged(k),
           label: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icons[k], size: 18, color: sel ? Colors.white : kText.withOpacity(.8)),
+            Icon(icons[k],
+                size: 18,
+                color: sel ? Colors.white : kText.withValues(alpha: .8)),
             const SizedBox(width: 6),
             Text("${labels[k]} (${counts[k] ?? 0})"),
           ]),
           labelStyle: TextStyle(
-            color: sel ? Colors.white : kText.withOpacity(.9),
+            color: sel ? Colors.white : kText.withValues(alpha: .9),
             fontWeight: FontWeight.w800,
           ),
           selectedColor: kPrimary,
@@ -921,7 +1025,7 @@ class _SummaryCard extends StatelessWidget {
   final NumberFormat currency;
 
   const _SummaryCard({
-    Key? key,
+    super.key,
     required this.bg,
     required this.accent,
     required this.segment,
@@ -937,11 +1041,12 @@ class _SummaryCard extends StatelessWidget {
     required this.loansProgress,
     required this.currency,
     required this.sharedCount,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
-    final nextDueText = nextDue == null ? "--" : DateFormat("d MMM, yyyy").format(nextDue!);
+    final nextDueText =
+        nextDue == null ? "--" : DateFormat("d MMM, yyyy").format(nextDue!);
 
     Widget line(String label, double value, {String? meta, Color? color}) {
       return Column(
@@ -951,7 +1056,9 @@ class _SummaryCard extends StatelessWidget {
             Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
             if (meta != null) ...[
               const SizedBox(width: 6),
-              Text(meta, style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600)),
+              Text(meta,
+                  style: TextStyle(
+                      color: Colors.grey[700], fontWeight: FontWeight.w600)),
             ],
           ]),
           const SizedBox(height: 6),
@@ -973,29 +1080,44 @@ class _SummaryCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(.45)),
-        boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 8))],
+        border: Border.all(color: Colors.white.withValues(alpha: .45)),
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 8))
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Wrap(
-            spacing: 8, runSpacing: 8,
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              _chip("Outstanding", segment == 'active' ? currency.format(totalOutstanding) : "--"),
-              _chip("EMI / mo", segment == 'active' ? currency.format(totalEmi) : "--"),
-              _chip("Avg rate", avgRate > 0 ? "${avgRate.toStringAsFixed(1)}%" : "--"),
+              _chip(
+                  "Outstanding",
+                  segment == 'active'
+                      ? currency.format(totalOutstanding)
+                      : "--"),
+              _chip("EMI / mo",
+                  segment == 'active' ? currency.format(totalEmi) : "--"),
+              _chip("Avg rate",
+                  avgRate > 0 ? "${avgRate.toStringAsFixed(1)}%" : "--"),
               _chip("Next due", segment == 'active' ? nextDueText : "--"),
               _chip("Overdue", segment == 'active' ? "$overdueCount" : "0"),
               _chip("Shared", "$sharedCount"),
             ],
           ),
           const SizedBox(height: 14),
-          if (paidPct != null) line("Paid overall", paidPct!, meta: "${(paidPct! * 100).toStringAsFixed(0)}%"),
+          if (paidPct != null)
+            line("Paid overall", paidPct!,
+                meta: "${(paidPct! * 100).toStringAsFixed(0)}%"),
           if (paidPct != null) const SizedBox(height: 10),
-          line("Years left", yearsProgress, meta: yearsLeft <= 0 ? "done" : "${yearsLeft.toStringAsFixed(1)}y"),
+          line("Years left", yearsProgress,
+              meta:
+                  yearsLeft <= 0 ? "done" : "${yearsLeft.toStringAsFixed(1)}y"),
           const SizedBox(height: 10),
-          line("Loans", loansProgress, meta: "$loansCount", color: Colors.black87),
+          line("Loans", loansProgress,
+              meta: "$loansCount", color: Colors.black87),
         ],
       ),
     );
@@ -1005,13 +1127,18 @@ class _SummaryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.92),
+        color: Colors.white.withValues(alpha: .92),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.white),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text("$label: ", style: TextStyle(fontSize: 12, color: Colors.grey[800], fontWeight: FontWeight.w700)),
-        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+        Text("$label: ",
+            style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[800],
+                fontWeight: FontWeight.w700)),
+        Text(value,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
       ]),
     );
   }
@@ -1031,7 +1158,7 @@ class _LoanTile extends StatelessWidget {
   final _ShareMeta shareMeta;
 
   const _LoanTile({
-    Key? key,
+    super.key,
     required this.loan,
     required this.accent,
     required this.currency,
@@ -1043,7 +1170,7 @@ class _LoanTile extends StatelessWidget {
     required this.onEdit,
     this.showInlineActions = false,
     required this.shareMeta,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1059,7 +1186,10 @@ class _LoanTile extends StatelessWidget {
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: kLine, width: 1),
-          boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 8))],
+          boxShadow: const [
+            BoxShadow(
+                color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 8))
+          ],
         ),
         child: InkWell(
           onTap: onTap,
@@ -1078,152 +1208,177 @@ class _LoanTile extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    // Title row + badge + menu
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Left side: title + shared badge (already expands)
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  loan.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 16.8,
-                                    color: kText,
+                        // Title row + badge + menu
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Left side: title + shared badge (already expands)
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      loan.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 16.8,
+                                        color: kText,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                              if (shareMeta.isShared) ...[
-                                const SizedBox(width: 6),
-                                const _SharedBadge(),
-                              ],
-                            ],
-                          ),
-                        ),
-
-                        const SizedBox(width: 8),
-
-                        // Right side: status badge + menu — allow them to scale down
-                        Flexible(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: _StatusBadge(
-                                    text: loan.isClosed ? 'Closed' : dueBadge,
-                                    isClosed: loan.isClosed,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              // Keep the popup menu but ensure it doesn't demand extra width
-                              FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: PopupMenuButton<String>(
-                                  padding: EdgeInsets.zero,
-                                  position: PopupMenuPosition.under,
-                                  offset: const Offset(-20, 0),
-                                  constraints: const BoxConstraints(minWidth: 160),
-                                  tooltip: 'Actions',
-                                  icon: const Icon(Icons.more_vert),
-                                  onSelected: (v) {
-                                    switch (v) {
-                                      case 'edit': onEdit(); break;
-                                      case 'toggleClosed': onToggleClosed(); break;
-                                      case 'toggleReminder': onToggleReminder(); break;
-                                      case 'delete': onDelete(); break;
-                                    }
-                                  },
-                                  itemBuilder: (ctx) => const [
-                                    PopupMenuItem(
-                                      value: 'edit',
-                                      child: ListTile(
-                                        leading: Icon(Icons.edit_rounded),
-                                        title: Text('Edit'),
-                                        dense: true,
-                                        visualDensity: VisualDensity(horizontal: -2, vertical: -2),
-                                      ),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'toggleClosed',
-                                      child: ListTile(
-                                        leading: Icon(Icons.verified_rounded),
-                                        title: Text('Toggle closed'),
-                                        dense: true,
-                                        visualDensity: VisualDensity(horizontal: -2, vertical: -2),
-                                      ),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'toggleReminder',
-                                      child: ListTile(
-                                        leading: Icon(Icons.notifications_rounded),
-                                        title: Text('Toggle reminder'),
-                                        dense: true,
-                                        visualDensity: VisualDensity(horizontal: -2, vertical: -2),
-                                      ),
-                                    ),
-                                    PopupMenuDivider(),
-                                    PopupMenuItem(
-                                      value: 'delete',
-                                      child: ListTile(
-                                        leading: Icon(Icons.delete_forever_rounded, color: Colors.red),
-                                        title: Text('Delete'),
-                                        dense: true,
-                                        visualDensity: VisualDensity(horizontal: -2, vertical: -2),
-                                      ),
-                                    ),
+                                  if (shareMeta.isShared) ...[
+                                    const SizedBox(width: 6),
+                                    const _SharedBadge(),
                                   ],
-                                ),
+                                ],
                               ),
+                            ),
+
+                            const SizedBox(width: 8),
+
+                            // Right side: status badge + menu — allow them to scale down
+                            Flexible(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Flexible(
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: _StatusBadge(
+                                        text:
+                                            loan.isClosed ? 'Closed' : dueBadge,
+                                        isClosed: loan.isClosed,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  // Keep the popup menu but ensure it doesn't demand extra width
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: PopupMenuButton<String>(
+                                      padding: EdgeInsets.zero,
+                                      position: PopupMenuPosition.under,
+                                      offset: const Offset(-20, 0),
+                                      constraints:
+                                          const BoxConstraints(minWidth: 160),
+                                      tooltip: 'Actions',
+                                      icon: const Icon(Icons.more_vert),
+                                      onSelected: (v) {
+                                        switch (v) {
+                                          case 'edit':
+                                            onEdit();
+                                            break;
+                                          case 'toggleClosed':
+                                            onToggleClosed();
+                                            break;
+                                          case 'toggleReminder':
+                                            onToggleReminder();
+                                            break;
+                                          case 'delete':
+                                            onDelete();
+                                            break;
+                                        }
+                                      },
+                                      itemBuilder: (ctx) => const [
+                                        PopupMenuItem(
+                                          value: 'edit',
+                                          child: ListTile(
+                                            leading: Icon(Icons.edit_rounded),
+                                            title: Text('Edit'),
+                                            dense: true,
+                                            visualDensity: VisualDensity(
+                                                horizontal: -2, vertical: -2),
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'toggleClosed',
+                                          child: ListTile(
+                                            leading:
+                                                Icon(Icons.verified_rounded),
+                                            title: Text('Toggle closed'),
+                                            dense: true,
+                                            visualDensity: VisualDensity(
+                                                horizontal: -2, vertical: -2),
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'toggleReminder',
+                                          child: ListTile(
+                                            leading: Icon(
+                                                Icons.notifications_rounded),
+                                            title: Text('Toggle reminder'),
+                                            dense: true,
+                                            visualDensity: VisualDensity(
+                                                horizontal: -2, vertical: -2),
+                                          ),
+                                        ),
+                                        PopupMenuDivider(),
+                                        PopupMenuItem(
+                                          value: 'delete',
+                                          child: ListTile(
+                                            leading: Icon(
+                                                Icons.delete_forever_rounded,
+                                                color: Colors.red),
+                                            title: Text('Delete'),
+                                            dense: true,
+                                            visualDensity: VisualDensity(
+                                                horizontal: -2, vertical: -2),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              "₹ ${currency.format(loan.amount)}",
+                              style: const TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.w900),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if ((loan.interestRate ?? 0) > 0)
+                              _pill(Icons.percent_rounded,
+                                  "${loan.interestRate}%"),
+                            if ((loan.emi ?? 0) > 0)
+                              _pill(Icons.savings_rounded,
+                                  "EMI ${currency.format(loan.emi)}"),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                "${loan.lenderType}${loan.lenderName != null ? " • ${loan.lenderName}" : ""}",
+                                style: TextStyle(
+                                    color: Colors.grey[800],
+                                    fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (shareMeta.isShared) ...[
+                              const SizedBox(width: 8),
+                              _AvatarStack(members: shareMeta.members),
                             ],
-                          ),
+                          ],
                         ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 6,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          "₹ ${currency.format(loan.amount)}",
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if ((loan.interestRate ?? 0) > 0)
-                          _pill(Icons.percent_rounded, "${loan.interestRate}%"),
-                        if ((loan.emi ?? 0) > 0)
-                          _pill(Icons.savings_rounded, "EMI ${currency.format(loan.emi)}"),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            "${loan.lenderType}${loan.lenderName != null ? " • ${loan.lenderName}" : ""}",
-                            style: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w600),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (shareMeta.isShared) ...[
-                          const SizedBox(width: 8),
-                          _AvatarStack(members: shareMeta.members),
-                        ],
-                      ],
-                    ),
-                  ]),
+                      ]),
                 ),
               ],
             ),
@@ -1236,11 +1391,13 @@ class _LoanTile extends StatelessWidget {
   Widget _pill(IconData icon, String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(
+          color: Colors.grey[100], borderRadius: BorderRadius.circular(8)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, size: 14, color: Colors.black87),
         const SizedBox(width: 6),
-        Text(text, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+        Text(text,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
       ]),
     );
   }
@@ -1273,9 +1430,11 @@ class _StatusBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: bg.withOpacity(.9)),
+        border: Border.all(color: bg.withValues(alpha: .9)),
       ),
-      child: Text(text, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: fg)),
+      child: Text(text,
+          style: TextStyle(
+              fontSize: 11.5, fontWeight: FontWeight.w800, color: fg)),
     );
   }
 }
@@ -1290,13 +1449,13 @@ class _BankLogoCircle extends StatelessWidget {
   final double size;
 
   const _BankLogoCircle({
-    Key? key,
+    super.key,
     required this.lenderName,
     required this.lenderType,
     required this.accent,
     this.isClosed = false,
     this.size = 48,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1311,8 +1470,14 @@ class _BankLogoCircle extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: Colors.white,
-              border: Border.all(color: Colors.black.withOpacity(.06), width: 1),
-              boxShadow: const [BoxShadow(color: Color(0x16000000), blurRadius: 8, offset: Offset(0, 4))],
+              border: Border.all(
+                  color: Colors.black.withValues(alpha: .06), width: 1),
+              boxShadow: const [
+                BoxShadow(
+                    color: Color(0x16000000),
+                    blurRadius: 8,
+                    offset: Offset(0, 4))
+              ],
             ),
             clipBehavior: Clip.antiAlias,
             child: Padding(
@@ -1326,9 +1491,12 @@ class _BankLogoCircle extends StatelessWidget {
           width: size,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: accent.withOpacity(.10),
-            border: Border.all(color: accent.withOpacity(.22), width: 1),
-            boxShadow: const [BoxShadow(color: Color(0x16000000), blurRadius: 8, offset: Offset(0, 4))],
+            color: accent.withValues(alpha: .10),
+            border: Border.all(color: accent.withValues(alpha: .22), width: 1),
+            boxShadow: const [
+              BoxShadow(
+                  color: Color(0x16000000), blurRadius: 8, offset: Offset(0, 4))
+            ],
           ),
           child: Icon(
             isClosed ? Icons.verified_rounded : Icons.account_balance_rounded,
@@ -1348,15 +1516,18 @@ class _AssetIndex {
   static Future<void> _load(BuildContext context) async {
     if (_assets != null) return;
     try {
-      final manifestStr = await DefaultAssetBundle.of(context).loadString('AssetManifest.json');
-      final Map<String, dynamic> manifest = json.decode(manifestStr) as Map<String, dynamic>;
+      final manifestStr =
+          await DefaultAssetBundle.of(context).loadString('AssetManifest.json');
+      final Map<String, dynamic> manifest =
+          json.decode(manifestStr) as Map<String, dynamic>;
       _assets = manifest.keys.toSet();
     } catch (_) {
       _assets = <String>{};
     }
   }
 
-  static Future<String?> findBankLogo(BuildContext context, String? lenderName, String lenderType) async {
+  static Future<String?> findBankLogo(
+      BuildContext context, String? lenderName, String lenderType) async {
     await _load(context);
     final assets = _assets ?? const <String>{};
     if (assets.isEmpty) return null;
@@ -1379,7 +1550,15 @@ class _AssetIndex {
     var s = raw.trim().toLowerCase();
     s = s.replaceAll('&', 'and');
 
-    final dropWords = ['bank', 'ltd', 'limited', 'financial', 'finance', 'co', 'company'];
+    final dropWords = [
+      'bank',
+      'ltd',
+      'limited',
+      'financial',
+      'finance',
+      'co',
+      'company'
+    ];
     final tokens = s
         .replaceAll(RegExp(r'[^a-z0-9\s_-]'), ' ')
         .split(RegExp(r'\s+'))
@@ -1415,7 +1594,7 @@ class _AssetIndex {
 // ==================== Sharing UI bits ====================
 
 class _SharedBadge extends StatelessWidget {
-  const _SharedBadge({Key? key}) : super(key: key);
+  const _SharedBadge({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -1429,20 +1608,24 @@ class _SharedBadge extends StatelessWidget {
       child: Row(mainAxisSize: MainAxisSize.min, children: const [
         Icon(Icons.people_alt_rounded, size: 14, color: Color(0xFF0B67A3)),
         SizedBox(width: 4),
-        Text("Shared", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0B67A3))),
+        Text("Shared",
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0B67A3))),
       ]),
     );
   }
 }
 
-
 class _AvatarStack extends StatelessWidget {
   final List<_ShareEntry> members;
-  const _AvatarStack({Key? key, required this.members}) : super(key: key);
+  const _AvatarStack({super.key, required this.members});
 
   @override
   Widget build(BuildContext context) {
-    final count = members.isEmpty ? 0 : (members.length > 3 ? 3 : members.length);
+    final count =
+        members.isEmpty ? 0 : (members.length > 3 ? 3 : members.length);
     if (count == 0) return const SizedBox.shrink();
 
     // Each avatar is 22 wide; we overlap by 8 (22 - 14) so add 14 per extra.
@@ -1461,7 +1644,10 @@ class _AvatarStack extends StatelessWidget {
               backgroundColor: Colors.grey[200],
               child: Text(
                 _initials(m.name),
-                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.black87),
+                style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.black87),
               ),
             ),
           );
@@ -1474,26 +1660,29 @@ class _AvatarStack extends StatelessWidget {
     final parts = name.trim().split(RegExp(r'\s+'));
     if (parts.isEmpty) return '?';
     if (parts.length == 1) return parts.first.characters.first.toUpperCase();
-    return (parts.first.characters.first + parts.last.characters.first).toUpperCase();
+    return (parts.first.characters.first + parts.last.characters.first)
+        .toUpperCase();
   }
 }
 
-
 class _ShareMembersBlock extends StatelessWidget {
   final _ShareMeta share;
-  const _ShareMembersBlock({Key? key, required this.share}) : super(key: key);
+  const _ShareMembersBlock({super.key, required this.share});
 
   @override
   Widget build(BuildContext context) {
     final rows = share.members
         .map((m) => Row(
-      children: [
-        const Icon(Icons.person_rounded, size: 18),
-        const SizedBox(width: 8),
-        Expanded(child: Text(m.name, style: const TextStyle(fontWeight: FontWeight.w800))),
-        Text("${m.percent.toStringAsFixed(1)}%", style: const TextStyle(fontWeight: FontWeight.w900)),
-      ],
-    ))
+              children: [
+                const Icon(Icons.person_rounded, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text(m.name,
+                        style: const TextStyle(fontWeight: FontWeight.w800))),
+                Text("${m.percent.toStringAsFixed(1)}%",
+                    style: const TextStyle(fontWeight: FontWeight.w900)),
+              ],
+            ))
         .toList();
 
     return Container(
@@ -1506,7 +1695,10 @@ class _ShareMembersBlock extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(share.mode == _ShareMode.equal ? "Sharing (equal)" : "Sharing (custom %)",
+          Text(
+              share.mode == _ShareMode.equal
+                  ? "Sharing (equal)"
+                  : "Sharing (custom %)",
               style: const TextStyle(fontWeight: FontWeight.w900)),
           const SizedBox(height: 8),
           ...rows,
@@ -1529,7 +1721,8 @@ class _ShareMeta {
   final bool isShared;
   final _ShareMode mode;
   final List<_ShareEntry> members;
-  const _ShareMeta({required this.isShared, required this.mode, required this.members});
+  const _ShareMeta(
+      {required this.isShared, required this.mode, required this.members});
   const _ShareMeta.empty()
       : isShared = false,
         mode = _ShareMode.equal,

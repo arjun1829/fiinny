@@ -19,7 +19,7 @@ class GlassCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: (overrideColor ?? Fx.card).withOpacity(0.96),
+        color: (overrideColor ?? Fx.card).withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(radius),
         boxShadow: Fx.soft,
       ),

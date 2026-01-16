@@ -188,7 +188,7 @@ class _SalaryPredictorCardState extends State<SalaryPredictorCard> {
             .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
             .orderBy('date')
             .limit(pageSize);
-        if (cursor != null) q = (q as Query).startAfterDocument(cursor);
+        if (cursor != null) q = (q).startAfterDocument(cursor);
 
         final snap = await q.get();
         if (snap.docs.isEmpty) break;
@@ -441,7 +441,7 @@ class _SalaryPredictorCardState extends State<SalaryPredictorCard> {
   Widget _chip(BuildContext ctx, String t) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
     decoration: BoxDecoration(
-      color: Theme.of(ctx).colorScheme.primary.withOpacity(0.08),
+      color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.08),
       borderRadius: BorderRadius.circular(999),
     ),
     child: Text(t, style: Theme.of(ctx).textTheme.labelSmall),
@@ -459,7 +459,7 @@ class _SalaryPredictorCardState extends State<SalaryPredictorCard> {
   Widget _pill(BuildContext ctx, IconData i, String t, String v) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(
-      color: Theme.of(ctx).colorScheme.surfaceVariant.withOpacity(0.5),
+      color: Theme.of(ctx).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
       borderRadius: BorderRadius.circular(999),
     ),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -476,7 +476,7 @@ class _SalaryPredictorCardState extends State<SalaryPredictorCard> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.green.withOpacity(0.08),
+        color: Colors.green.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(children: [

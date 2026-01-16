@@ -58,7 +58,7 @@ class GroupsTab extends StatelessWidget {
     return Chip(
       label: Text(label,
           style: TextStyle(color: color, fontWeight: FontWeight.w600)),
-      backgroundColor: color.withOpacity(0.14),
+      backgroundColor: color.withValues(alpha: 0.14),
       shape: const StadiumBorder(),
     );
   }

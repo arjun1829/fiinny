@@ -123,7 +123,7 @@ class _GroupSwitcherState extends State<GroupSwitcher> {
   // ---------------------------------------------------------------------------
 
   Widget _header(BuildContext context) {
-    final on = Colors.black.withOpacity(.92);
+    final on = Colors.black.withValues(alpha: .92);
     final sub = Colors.black54;
     final currentLabel = _currentLabel();
 
@@ -181,7 +181,7 @@ class _GroupSwitcherState extends State<GroupSwitcher> {
             if (widget.onManageGroups != null)
               const PopupMenuItem(value: 'manage_groups', child: _MenuRow(Icons.settings_rounded, 'Manage groups')),
           ],
-          icon: Icon(Icons.more_vert_rounded, color: Colors.black.withOpacity(.70)),
+          icon: Icon(Icons.more_vert_rounded, color: Colors.black.withValues(alpha: .70)),
         ),
       ],
     );
@@ -202,8 +202,8 @@ class _GroupSwitcherState extends State<GroupSwitcher> {
 
   Widget _segChip(String label, IconData icon, _ScopeTab t) {
     final selected = _tab == t;
-    final bg = selected ? AppColors.mint.withOpacity(.14) : const Color(0x0F000000);
-    final side = selected ? AppColors.mint.withOpacity(.35) : const Color(0x1F000000);
+    final bg = selected ? AppColors.mint.withValues(alpha: .14) : const Color(0x0F000000);
+    final side = selected ? AppColors.mint.withValues(alpha: .35) : const Color(0x1F000000);
     final fg = selected ? AppColors.mint : Colors.black87;
 
     return Material(
@@ -385,8 +385,8 @@ class _GroupSwitcherState extends State<GroupSwitcher> {
     required bool selected,
     required VoidCallback onTap,
   }) {
-    final bg = selected ? AppColors.mint.withOpacity(.14) : Colors.white;
-    final side = selected ? AppColors.mint.withOpacity(.35) : Colors.black.withOpacity(.14);
+    final bg = selected ? AppColors.mint.withValues(alpha: .14) : Colors.white;
+    final side = selected ? AppColors.mint.withValues(alpha: .35) : Colors.black.withValues(alpha: .14);
     final fg = selected ? AppColors.mint : Colors.black87;
     final sub = Colors.black54;
 
@@ -457,7 +457,7 @@ class _GroupSwitcherState extends State<GroupSwitcher> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black.withOpacity(.12)),
+        border: Border.all(color: Colors.black.withValues(alpha: .12)),
       ),
       child: Row(
         children: [
@@ -486,7 +486,7 @@ class _GroupSwitcherState extends State<GroupSwitcher> {
     final text = _initials(char ?? '');
     return CircleAvatar(
       radius: 12,
-      backgroundColor: AppColors.mint.withOpacity(.12),
+      backgroundColor: AppColors.mint.withValues(alpha: .12),
       foregroundColor: AppColors.mint,
       child: Text(text, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
     );
@@ -543,8 +543,8 @@ class _ScopeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final side = selected ? AppColors.mint.withOpacity(.35) : Colors.black.withOpacity(.12);
-    final bg = selected ? AppColors.mint.withOpacity(.12) : Colors.white;
+    final side = selected ? AppColors.mint.withValues(alpha: .35) : Colors.black.withValues(alpha: .12);
+    final bg = selected ? AppColors.mint.withValues(alpha: .12) : Colors.white;
     final fg = selected ? AppColors.mint : Colors.black87;
     final sub = Colors.black54;
 

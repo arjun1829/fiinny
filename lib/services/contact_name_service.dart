@@ -171,8 +171,8 @@ class ContactNameService extends ChangeNotifier {
         if (display.isEmpty) continue;
 
         for (final Phone phone in contact.phones) {
-          final raw = phone.normalizedNumber?.isNotEmpty == true
-              ? phone.normalizedNumber!
+          final raw = phone.normalizedNumber.isNotEmpty == true
+              ? phone.normalizedNumber
               : phone.number;
           final normalized = _normalize(raw);
           if (normalized == null) continue;

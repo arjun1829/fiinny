@@ -3,7 +3,6 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
-import 'package:characters/characters.dart';
 import 'package:lifemap/utils/firebase_error_mapper.dart';
 import 'package:lifemap/utils/permissions_helper.dart';
 
@@ -217,7 +216,7 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
       ),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.08),
+          color: Colors.black.withValues(alpha: 0.08),
           blurRadius: 24,
           spreadRadius: 1,
           offset: const Offset(0, 12),
@@ -284,7 +283,7 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
                                 width: 40,
                                 height: 40,
                                 decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: const Icon(Icons.favorite_outline, size: 22),
@@ -317,7 +316,7 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
                               style: OutlinedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                side: BorderSide(color: Theme.of(context).colorScheme.primary.withOpacity(0.35)),
+                                side: BorderSide(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35)),
                                 foregroundColor: Theme.of(context).colorScheme.primary,
                               ),
                               onPressed: _loading || _loadingContacts ? null : _pickFromContacts,
@@ -357,7 +356,7 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
 
                           // Relation
                           DropdownButtonFormField<String>(
-                            value: _relation,
+                            initialValue: _relation,
                             decoration: _fieldDecoration(context, label: "Relation (optional)"),
                             items: _relations
                                 .map((rel) => DropdownMenuItem(
@@ -435,8 +434,8 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Colors.white.withOpacity(0.6),
-                      Colors.white.withOpacity(0.0),
+                      Colors.white.withValues(alpha: 0.6),
+                      Colors.white.withValues(alpha: 0.0),
                     ],
                   ),
                 ),
@@ -548,13 +547,13 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    Colors.white.withOpacity(0.95),
-                    Colors.white.withOpacity(0.88),
+                    Colors.white.withValues(alpha: 0.95),
+                    Colors.white.withValues(alpha: 0.88),
                   ],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                 ),
-                border: Border.all(color: Colors.white.withOpacity(0.6)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
                 boxShadow: const [
                   BoxShadow(
                     color: Color(0x1F000000),
@@ -597,7 +596,7 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: accent.withOpacity(0.06),
+                        color: accent.withValues(alpha: 0.06),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.grey.shade200),
                       ),
@@ -635,7 +634,7 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
                               return ListTile(
                                 leading: CircleAvatar(
                                   radius: 20,
-                                  backgroundColor: accent.withOpacity(0.10),
+                                  backgroundColor: accent.withValues(alpha: 0.10),
                                   child: Text(
                                     initial,
                                     style: const TextStyle(fontWeight: FontWeight.w700),
@@ -669,8 +668,8 @@ class _GlossPainter extends CustomPainter {
         begin: Alignment.topLeft,
         end: Alignment.centerRight,
         colors: [
-          Colors.white.withOpacity(0.22),
-          Colors.white.withOpacity(0.0),
+          Colors.white.withValues(alpha: 0.22),
+          Colors.white.withValues(alpha: 0.0),
         ],
       ).createShader(Rect.fromLTWH(0, 0, size.width, size.height / 3));
 

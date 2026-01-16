@@ -70,7 +70,7 @@ class _ManageSubscriptionScreenState extends State<ManageSubscriptionScreen> {
     final isPremium = subService.isPremium;
     final isPro = subService.isPro;
     final planName = isPro ? "Pro Plan" : (isPremium ? "Premium Plan" : "Free Plan");
-    final status = sub.status?.toUpperCase() ?? "INACTIVE";
+    final status = sub.status.toUpperCase() ?? "INACTIVE";
     final expiry = subService.formattedExpiry;
     final isCanceled = status == 'CANCELED_PENDING_EXPIRY' || sub.autoRenew == false;
 

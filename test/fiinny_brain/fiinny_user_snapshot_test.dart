@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lifemap/fiinny_brain/fiinny_user_snapshot.dart';
-import 'package:lifemap/fiinny_brain/snapshot_models.dart';
 import 'package:lifemap/fiinny_brain/phase_one_progress.dart';
 import 'package:lifemap/fiinny_brain/behavior_engine.dart';
 import 'package:lifemap/models/transaction_model.dart';

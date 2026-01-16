@@ -17,12 +17,12 @@ class CustomSplitScreen extends StatefulWidget {
   final String userPhone; // <-- Use phone, not userId
 
   const CustomSplitScreen({
-    Key? key,
+    super.key,
     required this.selectedExpenses,
     required this.selectedFriends,
     required this.selectedGroups,
     required this.userPhone,
-  }) : super(key: key);
+  });
 
   @override
   State<CustomSplitScreen> createState() => _CustomSplitScreenState();
@@ -40,14 +40,16 @@ class _CustomSplitScreenState extends State<CustomSplitScreen> {
     _totalAmount = widget.selectedExpenses.fold(0, (a, b) => a + b.amount);
 
     // Aggregate all unique participant phones (friends + group members + YOU)
-    _allParticipantPhones = [
+    _allParticipantPhones = {
       widget.userPhone, // Always include YOU first
-      ...{...widget.selectedFriends.map((f) => f.phone)},
+      ...widget.selectedFriends.map((f) => f.phone),
       ...widget.selectedGroups.expand((g) => g.memberPhones),
-    ].toSet().toList();
+    }.toList();
 
     // Setup controllers for custom split (including YOU)
-    final perHead = _allParticipantPhones.isEmpty ? 0 : _totalAmount / _allParticipantPhones.length;
+    final perHead = _allParticipantPhones.isEmpty
+        ? 0
+        : _totalAmount / _allParticipantPhones.length;
     _splitControllers = {
       for (final phone in _allParticipantPhones)
         phone: TextEditingController(text: perHead.toStringAsFixed(2))
@@ -56,22 +58,27 @@ class _CustomSplitScreenState extends State<CustomSplitScreen> {
 
   @override
   void dispose() {
-    _splitControllers.values.forEach((c) => c.dispose());
+    for (final c in _splitControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   void _submit() async {
-    Map<String, double> splits = {};
+    final Map<String, double> splits = {};
     if (_useCustomSplit) {
       double sum = 0;
       for (final phone in _allParticipantPhones) {
-        double value = double.tryParse(_splitControllers[phone]?.text ?? "0") ?? 0;
+        final double value =
+            double.tryParse(_splitControllers[phone]?.text ?? "0") ?? 0;
         splits[phone] = value;
         sum += value;
       }
       if ((_totalAmount - sum).abs() > 0.5) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Split amounts must add up to ₹${_totalAmount.toStringAsFixed(2)}")),
+          SnackBar(
+              content: Text(
+                  "Split amounts must add up to ₹${_totalAmount.toStringAsFixed(2)}")),
         );
         return;
       }
@@ -84,14 +91,21 @@ class _CustomSplitScreenState extends State<CustomSplitScreen> {
       note: 'Split from ${widget.selectedExpenses.length} transactions',
       date: DateTime.now(),
       payerId: widget.userPhone,
-      friendIds: _allParticipantPhones.where((phone) => phone != widget.userPhone).toList(),
-      groupId: widget.selectedGroups.isNotEmpty ? widget.selectedGroups.first.id : null,
+      friendIds: _allParticipantPhones
+          .where((phone) => phone != widget.userPhone)
+          .toList(),
+      groupId: widget.selectedGroups.isNotEmpty
+          ? widget.selectedGroups.first.id
+          : null,
       customSplits: _useCustomSplit ? splits : null,
     );
     await ExpenseService().addExpense(widget.userPhone, expense);
 
+    if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Expense split & saved!"), backgroundColor: mintGreen),
+      SnackBar(
+          content: Text("Expense split & saved!"), backgroundColor: mintGreen),
     );
     Navigator.pop(context, true);
   }
@@ -108,7 +122,7 @@ class _CustomSplitScreenState extends State<CustomSplitScreen> {
       );
     }
     final friend = widget.selectedFriends.firstWhere(
-          (f) => f.phone == phone,
+      (f) => f.phone == phone,
       orElse: () {
         for (final g in widget.selectedGroups) {
           for (final memPhone in g.memberPhones) {
@@ -132,22 +146,25 @@ class _CustomSplitScreenState extends State<CustomSplitScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final perHead = _allParticipantPhones.isEmpty ? 0 : _totalAmount / _allParticipantPhones.length;
+    final perHead = _allParticipantPhones.isEmpty
+        ? 0
+        : _totalAmount / _allParticipantPhones.length;
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(78),
         child: ClipRRect(
           borderRadius: const BorderRadius.only(
-            bottomLeft: Radius.circular(17), bottomRight: Radius.circular(17),
+            bottomLeft: Radius.circular(17),
+            bottomRight: Radius.circular(17),
           ),
           child: Container(
             height: 78,
             decoration: BoxDecoration(
-              color: tiffanyBlue.withOpacity(0.94),
+              color: tiffanyBlue.withValues(alpha: 0.94),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black12.withOpacity(0.11),
+                  color: Colors.black12.withValues(alpha: 0.11),
                   blurRadius: 10,
                   offset: const Offset(0, 3),
                 ),
@@ -156,10 +173,12 @@ class _CustomSplitScreenState extends State<CustomSplitScreen> {
             child: SafeArea(
               child: Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   child: Row(
                     children: [
-                      const Icon(Icons.groups_2_rounded, color: deepTeal, size: 32),
+                      const Icon(Icons.groups_2_rounded,
+                          color: deepTeal, size: 32),
                       const SizedBox(width: 12),
                       const Text(
                         "Custom Split",
@@ -182,37 +201,44 @@ class _CustomSplitScreenState extends State<CustomSplitScreen> {
         children: [
           const _AnimatedMintBackground(),
           ListView(
-            padding: const EdgeInsets.only(top: 98, left: 18, right: 18, bottom: 12),
+            padding:
+                const EdgeInsets.only(top: 98, left: 18, right: 18, bottom: 12),
             children: [
-              const Text("Selected Transactions", style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text("Selected Transactions",
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               ...widget.selectedExpenses.map((e) => _GlassSplitCard(
-                child: ListTile(
-                  leading: const Icon(Icons.receipt, color: deepTeal),
-                  title: Text("₹${e.amount.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(e.note ?? ''),
-                  trailing: Text(
-                    "${e.date.day}/${e.date.month}/${e.date.year}",
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                ),
-              )),
+                    child: ListTile(
+                      leading: const Icon(Icons.receipt, color: deepTeal),
+                      title: Text("₹${e.amount.toStringAsFixed(2)}",
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text(e.note),
+                      trailing: Text(
+                        "${e.date.day}/${e.date.month}/${e.date.year}",
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  )),
               const SizedBox(height: 20),
               Text(
                 "Total Amount: ₹${_totalAmount.toStringAsFixed(2)}",
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: deepTeal),
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.bold, color: deepTeal),
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
                   Checkbox(
                     value: _useCustomSplit,
-                    onChanged: (v) => setState(() => _useCustomSplit = v ?? false),
+                    onChanged: (v) =>
+                        setState(() => _useCustomSplit = v ?? false),
                     activeColor: deepTeal,
                   ),
-                  const Text("Custom Split", style: TextStyle(fontWeight: FontWeight.w500)),
+                  const Text("Custom Split",
+                      style: TextStyle(fontWeight: FontWeight.w500)),
                   const Spacer(),
                   if (!_useCustomSplit)
-                    const Text("Split equally", style: TextStyle(color: Colors.grey)),
+                    const Text("Split equally",
+                        style: TextStyle(color: Colors.grey)),
                 ],
               ),
               const SizedBox(height: 8),
@@ -225,20 +251,22 @@ class _CustomSplitScreenState extends State<CustomSplitScreen> {
                     width: 90,
                     child: _useCustomSplit
                         ? TextField(
-                      controller: _splitControllers[phone],
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        suffixText: "₹",
-                        isDense: true,
-                      ),
-                    )
+                            controller: _splitControllers[phone],
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration: const InputDecoration(
+                              suffixText: "₹",
+                              isDense: true,
+                            ),
+                          )
                         : Text(
-                      "₹${perHead.toStringAsFixed(2)}",
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                    ),
+                            "₹${perHead.toStringAsFixed(2)}",
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w500),
+                          ),
                   ),
                 );
-              }).toList(),
+              }),
               const SizedBox(height: 24),
               ElevatedButton.icon(
                 onPressed: _submit,
@@ -247,8 +275,10 @@ class _CustomSplitScreenState extends State<CustomSplitScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: deepTeal,
                   padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  textStyle: const TextStyle(
+                      fontSize: 17, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
@@ -262,18 +292,19 @@ class _CustomSplitScreenState extends State<CustomSplitScreen> {
 // Glass Card for each split line
 class _GlassSplitCard extends StatelessWidget {
   final Widget child;
-  const _GlassSplitCard({required this.child, super.key});
+  const _GlassSplitCard({required this.child});
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(13),
-        color: Colors.white.withOpacity(0.16),
-        border: Border.all(color: tiffanyBlue.withOpacity(0.16), width: 1),
+        color: Colors.white.withValues(alpha: 0.16),
+        border:
+            Border.all(color: tiffanyBlue.withValues(alpha: 0.16), width: 1),
         boxShadow: [
           BoxShadow(
-            color: mintGreen.withOpacity(0.08),
+            color: mintGreen.withValues(alpha: 0.08),
             blurRadius: 6,
             offset: const Offset(0, 3),
           ),
@@ -292,7 +323,7 @@ class _GlassSplitCard extends StatelessWidget {
 
 // --------- Animated Mint BG ---------
 class _AnimatedMintBackground extends StatelessWidget {
-  const _AnimatedMintBackground({super.key});
+  const _AnimatedMintBackground();
   @override
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
@@ -304,7 +335,7 @@ class _AnimatedMintBackground extends StatelessWidget {
             colors: [
               tiffanyBlue,
               mintGreen,
-              Colors.white.withOpacity(0.91),
+              Colors.white.withValues(alpha: 0.91),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,

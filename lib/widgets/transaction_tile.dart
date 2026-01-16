@@ -22,8 +22,8 @@ class TransactionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    bool isIncome = transaction is IncomeItem;
-    bool isExpense = transaction is ExpenseItem;
+    final bool isIncome = transaction is IncomeItem;
+    final bool isExpense = transaction is ExpenseItem;
 
     String mainText;
     String subtitleText = '';

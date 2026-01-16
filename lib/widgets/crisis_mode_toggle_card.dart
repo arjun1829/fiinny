@@ -92,7 +92,7 @@ class _CrisisModeToggleCardState extends State<CrisisModeToggleCard> {
     return Card(
       elevation: 4,
       margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-      color: _isEnabled ? Colors.teal.withOpacity(0.07) : Colors.white,
+      color: _isEnabled ? Colors.teal.withValues(alpha: 0.07) : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: ListTile(
         leading: Icon(

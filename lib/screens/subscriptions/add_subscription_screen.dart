@@ -175,7 +175,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _type,
+                initialValue: _type,
                 dropdownColor: Colors.grey[900],
                 style: const TextStyle(color: Colors.white),
                 items: const [
@@ -192,7 +192,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _frequency,
+                initialValue: _frequency,
                 dropdownColor: Colors.grey[900],
                 style: const TextStyle(color: Colors.white),
                 items: const [

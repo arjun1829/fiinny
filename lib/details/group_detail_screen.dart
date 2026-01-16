@@ -2,9 +2,7 @@
 import '../chat/io_file_ops.dart'
     if (dart.library.html) '../chat/io_file_ops_stub.dart';
 
-import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'package:characters/characters.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
@@ -48,7 +46,6 @@ import '../details/recurring/group_recurring_screen.dart';
 import '../widgets/ads/sleek_ad_card.dart';
 import '../ui/comp/glass_card.dart' as detail;
 import '../ui/fx/motion.dart';
-import '../ui/typography/amount_text.dart';
 import '../widgets/charts/category_legend_row.dart';
 import '../widgets/charts/pie_touch_chart.dart';
 import '../widgets/unified_transaction_list.dart';
@@ -92,10 +89,13 @@ class GroupDetailScreen extends StatefulWidget {
   final GroupModel group;
 
   const GroupDetailScreen({
-    Key? key,
+    super.key,
     required this.userId,
     required this.group,
-  }) : super(key: key);
+    this.friendsById,
+  });
+
+  final Map<String, FriendModel>? friendsById;
 
   @override
   State<GroupDetailScreen> createState() => _GroupDetailScreenState();
@@ -107,7 +107,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   late GroupModel _group;
 
   List<FriendModel> _members = [];
-  FriendModel? _creator;
   bool _loadingMembers = true;
   bool _balancesExpanded = true; // or false if you want it collapsed by default
   Map<String, String> _memberDisplayNames = {};
@@ -136,6 +135,20 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     return 'Member ($last4)'; // e.g., Member (4821)
   }
 
+  // Helper: your net impact for a single expense (+ you’re owed, – you owe)
+  double _yourImpact(ExpenseItem e) {
+    final splits = gbm.computeSplits(e);
+    if (widget.userId == e.payerId) {
+      double others = 0;
+      for (final entry in splits.entries) {
+        if (entry.key != e.payerId) others += entry.value;
+      }
+      return others; // others owe you
+    }
+    final yourShare = splits[widget.userId] ?? 0;
+    return -yourShare; // you owe
+  }
+
   bool _looksLikeImageName(String? s) {
     final n = (s ?? '').toLowerCase();
     return n.endsWith('.jpg') ||
@@ -152,8 +165,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     if (expense.label != null && expense.label!.trim().isNotEmpty) {
       return expense.label!.trim();
     }
-    if (expense.type != null && expense.type!.trim().isNotEmpty) {
-      return expense.type!.trim();
+    if (expense.type.trim().isNotEmpty) {
+      return expense.type.trim();
     }
     return 'General';
   }
@@ -259,7 +272,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           : 'Attachment';
     }
 
-    String _fmtBytesLocal(int b) {
+    String fmtBytesLocal(int b) {
       if (b <= 0) return '';
       const units = ['B', 'KB', 'MB', 'GB', 'TB'];
       double v = b.toDouble();
@@ -271,7 +284,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       return '${v < 10 ? v.toStringAsFixed(1) : v.toStringAsFixed(0)} ${units[i]}';
     }
 
-    final sizeText = sizeBytes == null ? '' : _fmtBytesLocal(sizeBytes);
+    final sizeText = sizeBytes == null ? '' : fmtBytesLocal(sizeBytes);
 
     return InkWell(
       onTap: () async {
@@ -288,7 +301,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: cs.surfaceVariant.withOpacity(0.6),
+          color: cs.surfaceContainerHighest.withValues(alpha: 0.6),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
@@ -353,7 +366,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     final displayNames =
         Map<String, String>.from(activeGroup.memberDisplayNames ?? {});
     final friends = <FriendModel>[];
-    FriendModel? creator;
+    // FriendModel? creator;
 
     // Helper for fuzzy lookup
     String? findNameFuzzy(String phone) {
@@ -370,8 +383,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         // Usually suffix match is safest for phones (last 10 digits)
         if (keyNorm == norm) return entry.value;
         if (keyNorm.length >= 10 && norm.length >= 10) {
-          if (keyNorm.endsWith(norm) || norm.endsWith(keyNorm))
+          if (keyNorm.endsWith(norm) || norm.endsWith(keyNorm)) {
             return entry.value;
+          }
         }
       }
       return null;
@@ -382,7 +396,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           await FriendService().getFriendByPhone(widget.userId, phone);
       if (fetched != null) {
         friends.add(fetched);
-        if (phone == activeGroup.createdBy) creator = fetched;
+        // if (phone == activeGroup.createdBy) creator = fetched;
         continue;
       }
 
@@ -410,7 +424,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 
       if (globalProfile != null) {
         friends.add(globalProfile);
-        if (phone == activeGroup.createdBy) creator = globalProfile;
+        // if (phone == activeGroup.createdBy) creator = globalProfile;
         continue;
       }
 
@@ -425,7 +439,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         avatar: "👤",
       );
       friends.add(placeholder);
-      if (phone == activeGroup.createdBy) creator = placeholder;
+      // if (phone == activeGroup.createdBy) creator = placeholder;
     }
 
     if (!mounted) return;
@@ -433,7 +447,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       _group = activeGroup;
       _memberDisplayNames = displayNames;
       _members = friends;
-      _creator = creator;
+      // _creator = creator;
       _loadingMembers = false;
     });
   }
@@ -662,7 +676,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     final splits = gbm.computeSplits(e);
     final cs = Theme.of(context).colorScheme;
 
-    String title = e.label?.isNotEmpty == true
+    final String title = e.label?.isNotEmpty == true
         ? e.label!
         : (e.category?.isNotEmpty == true ? e.category! : "Expense");
 
@@ -974,7 +988,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         border: Border.all(color: Colors.grey.shade100),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.02),
+              color: Colors.black.withValues(alpha: 0.02),
               blurRadius: 8,
               offset: const Offset(0, 2))
         ],
@@ -1256,8 +1270,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                               ))
                           .toList()
                         ..sort((a, b) => b.value.compareTo(a.value));
-                      final totalSpending = slices.fold<double>(
-                          0, (sum, slice) => sum + slice.value);
+                      final totalExpense = slices.fold<double>(
+                          0, (acc, slice) => acc + slice.value);
                       final filteredExpenses = _selectedCategorySlice == null
                           ? expenses
                           : expenses
@@ -1318,7 +1332,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                                       const SizedBox(height: 16),
                                       CategoryLegendRow(
                                         slices: slices,
-                                        total: totalSpending,
+                                        total: totalExpense,
                                         selected: _selectedCategorySlice,
                                         onSelect: _onSliceSelected,
                                       ),
@@ -1342,7 +1356,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                                         Border.all(color: Colors.grey.shade100),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black.withOpacity(0.04),
+                                        color: Colors.black
+                                            .withValues(alpha: 0.04),
                                         blurRadius: 16,
                                         offset: const Offset(0, 8),
                                       ),
@@ -1440,8 +1455,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     required double owed,
     required int txCount,
   }) {
-    final createdByYou = _group.createdBy == widget.userId;
-    final creatorLabel = createdByYou ? 'You' : _nameFor(_group.createdBy);
     final theme = Theme.of(context);
     final net = double.parse((owed - owe).toStringAsFixed(2));
     final settled = owe.abs() < 0.01 && owed.abs() < 0.01;
@@ -1463,7 +1476,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.06),
+            color: Colors.grey.withValues(alpha: 0.06),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -1654,7 +1667,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   height: 36,
                   width: 36,
                   decoration: BoxDecoration(
-                    color: Colors.blueGrey.withOpacity(.08),
+                    color: Colors.blueGrey.withValues(alpha: .08),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(Icons.repeat_rounded,
@@ -1750,7 +1763,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         border: Border.all(color: Colors.grey.shade100),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 10,
               offset: const Offset(0, 4))
         ],
@@ -1777,7 +1790,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(.10),
+                  color: Colors.grey.withValues(alpha: .10),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -1848,7 +1861,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                             (isPositive ? "owes you" : "you owe").toUpperCase(),
                             style: TextStyle(
                                 fontSize: 10,
-                                color: color.withOpacity(0.8),
+                                color: color.withValues(alpha: 0.8),
                                 fontWeight: FontWeight.w600),
                           ),
                         ],
@@ -1877,36 +1890,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     return '${_fmtShort(dt)}${showYear ? ' ${dt.year}' : ''}';
   }
 
-// Helper: tiny category icon
-  IconData _categoryIcon(String? cat) {
-    final c = (cat ?? '').toLowerCase();
-    if (c.contains('food') || c.contains('lunch') || c.contains('dinner'))
-      return Icons.restaurant_rounded;
-    if (c.contains('travel') || c.contains('trip') || c.contains('flight'))
-      return Icons.flight_takeoff_rounded;
-    if (c.contains('stay') || c.contains('hotel')) return Icons.hotel_rounded;
-    if (c.contains('cab') || c.contains('ride') || c.contains('uber'))
-      return Icons.local_taxi_rounded;
-    if (c.contains('grocer')) return Icons.local_grocery_store_rounded;
-    if (c.contains('movie') || c.contains('fun') || c.contains('entertain'))
-      return Icons.local_activity_rounded;
-    return Icons.category_outlined;
-  }
-
-// Helper: your net impact for a single expense (+ you’re owed, – you owe)
-  double _yourImpact(ExpenseItem e) {
-    final splits = gbm.computeSplits(e);
-    if (widget.userId == e.payerId) {
-      double others = 0;
-      for (final entry in splits.entries) {
-        if (entry.key != e.payerId) others += entry.value;
-      }
-      return others; // others owe you
-    }
-    final yourShare = splits[widget.userId] ?? 0;
-    return -yourShare; // you owe
-  }
-
   Widget _recentActivity(List<ExpenseItem> expenses) {
     if (expenses.isEmpty) {
       return _glassCard(
@@ -1933,7 +1916,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       const SizedBox(height: 8),
     ];
 
-    int inserted = 0;
+    // int inserted = 0;
     for (final e in sorted) {
       final section = _friendlyDateLabel(e.date);
       if (section != lastSection) {
@@ -1955,7 +1938,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         ));
       }
       children.add(_activityCard(e));
-      inserted++;
+      // inserted++;
     }
 
     return Column(
@@ -1963,198 +1946,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   }
 
 // UPGRADED DETAILS SHEET (clear header + "your impact")
-  void _showExpenseDetails(BuildContext context, ExpenseItem e) {
-    final splits = gbm.computeSplits(e);
-    final payer = _friend(e.payerId);
-    final youDelta = _yourImpact(e);
-
-    showModalBottomSheet(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              height: 4,
-              width: 44,
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(3)),
-            ),
-            // Header
-            Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: Colors.teal.withOpacity(.12),
-                  foregroundColor: Colors.teal.shade900,
-                  child: const Icon(Icons.receipt_long_rounded),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    e.label?.isNotEmpty == true
-                        ? e.label!
-                        : (e.category?.isNotEmpty == true
-                            ? e.category!
-                            : "Expense"),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w800),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text("₹${e.amount.toStringAsFixed(2)}",
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w800)),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // Meta row
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _chip(
-                  bg: (youDelta >= 0 ? Colors.green : Colors.red)
-                      .withOpacity(.10),
-                  fg: youDelta >= 0 ? Colors.green.shade700 : Colors.redAccent,
-                  icon: youDelta >= 0
-                      ? Icons.call_received_rounded
-                      : Icons.call_made_rounded,
-                  text: youDelta >= 0
-                      ? "You’re owed ₹${youDelta.toStringAsFixed(0)}"
-                      : "You owe ₹${(-youDelta).toStringAsFixed(0)}",
-                ),
-                if ((e.category ?? '').isNotEmpty)
-                  _chip(
-                    bg: Colors.indigo.withOpacity(.08),
-                    fg: Colors.indigo.shade900,
-                    icon: _categoryIcon(e.category),
-                    text: e.category!,
-                  ),
-                _chip(
-                  bg: Colors.grey.withOpacity(.10),
-                  fg: Colors.grey.shade900,
-                  icon: Icons.event,
-                  text:
-                      "${_fmtShort(e.date)} ${e.date.year}  ${e.date.hour.toString().padLeft(2, '0')}:${e.date.minute.toString().padLeft(2, '0')}",
-                ),
-                _chip(
-                  bg: Colors.grey.withOpacity(.10),
-                  fg: Colors.grey.shade900,
-                  icon: Icons.person,
-                  text: "Paid by ${_nameFor(e.payerId)}",
-                ),
-              ],
-            ),
-
-            if (e.note.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text("Note: ${e.note}",
-                    style: TextStyle(color: Colors.grey.shade800)),
-              ),
-            ],
-
-            const Divider(height: 22),
-
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                "Split details",
-                style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                    color: Colors.teal.shade900),
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            ...splits.entries.map((s) {
-              final f = _friend(s.key);
-              final isYou = s.key == widget.userId;
-              final owes = s.key != e.payerId; // payer "paid", others "owe"
-              final subtitle = owes
-                  ? (isYou ? "You owe" : "Owes")
-                  : (isYou ? "You paid" : "Paid");
-              return ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: _avatar(s.key),
-                title: Text(_nameFor(s.key),
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: Text("$subtitle ₹${s.value.toStringAsFixed(2)}"),
-                trailing: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: (owes ? Colors.red : Colors.green).withOpacity(.12),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    "₹${s.value.toStringAsFixed(2)}",
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: owes ? Colors.redAccent : Colors.green.shade700,
-                    ),
-                  ),
-                ),
-              );
-            }),
-
-            const SizedBox(height: 10),
-
-            // Actions
-            Row(
-              children: [
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.chat_bubble_outline),
-                  label: const Text('Discuss'),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _goDiscussExpense(e);
-                  },
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.edit),
-                  label: const Text('Edit'),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Future.delayed(
-                      Duration.zero,
-                      () => _openEditExpense(e),
-                    );
-                  },
-                ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  icon:
-                      const Icon(Icons.delete_outline, color: Colors.redAccent),
-                  label: const Text('Delete',
-                      style: TextStyle(color: Colors.redAccent)),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _confirmDelete(e);
-                  },
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   // ---------- Common UI bits ----------
   Widget _glassCard({required Widget child, EdgeInsets? padding}) {
@@ -2165,12 +1956,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         child: Container(
           padding: padding ?? const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(.7),
+            color: Colors.white.withValues(alpha: .7),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(.6)),
+            border: Border.all(color: Colors.white.withValues(alpha: .6)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(.06),
+                color: Colors.black.withValues(alpha: .06),
                 blurRadius: 12,
                 offset: const Offset(0, 6),
               )
@@ -2178,28 +1969,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           ),
           child: child,
         ),
-      ),
-    );
-  }
-
-  // Legacy helper for other chips
-  Widget _chip({
-    required Color bg,
-    required Color fg,
-    required IconData icon,
-    required String text,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration:
-          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: fg),
-          const SizedBox(width: 6),
-          Text(text, style: TextStyle(color: fg, fontWeight: FontWeight.w700)),
-        ],
       ),
     );
   }
@@ -2236,149 +2005,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 }
 
 // Summary helpers for premium header UI
-class _AmountChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-
-  const _AmountChip({
-    required this.icon,
-    required this.label,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final effectiveColor = color;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 160),
-      curve: Curves.easeOut,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: effectiveColor.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: effectiveColor.withOpacity(0.35)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: effectiveColor),
-          const SizedBox(width: 6),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 160),
-            child: Text(
-              label,
-              key: ValueKey(label),
-              style: TextStyle(
-                color: effectiveColor,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SummaryStat extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-
-  const _SummaryStat({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final bg = theme.colorScheme.primary.withOpacity(
-      theme.brightness == Brightness.dark ? 0.18 : 0.12,
-    );
-    final textColor = theme.textTheme.bodyMedium?.color ??
-        (theme.brightness == Brightness.dark ? Colors.white : Colors.black87);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: theme.colorScheme.primary),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: theme.textTheme.bodySmall?.copyWith(
-                      color: textColor.withOpacity(0.7),
-                      fontWeight: FontWeight.w600,
-                    ) ??
-                    TextStyle(
-                      fontSize: 12,
-                      color: textColor.withOpacity(0.7),
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-              Text(
-                value,
-                style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: textColor,
-                    ) ??
-                    TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: textColor,
-                    ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SettledBadge extends StatelessWidget {
-  const _SettledBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = theme.colorScheme.primary;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.24)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.check_circle_rounded, size: 16, color: color),
-          const SizedBox(width: 6),
-          Text(
-            'All settled',
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 /// =======================================================
 /// ==============  GROUP CHAT (embedded)  ===============
@@ -2390,12 +2016,12 @@ class GroupChatTab extends StatefulWidget {
   final String? initialDraft;
 
   const GroupChatTab({
-    Key? key,
+    super.key,
     required this.groupId,
     required this.currentUserId,
     required this.participants,
     this.initialDraft,
-  }) : super(key: key);
+  });
 
   @override
   State<GroupChatTab> createState() => _GroupChatTabState();
@@ -2406,38 +2032,17 @@ class _GroupChatTabState extends State<GroupChatTab> {
   final _scrollController = ScrollController();
   final _imagePicker = ImagePicker();
 
-  List<Map<String, dynamic>> _attachedTxs = [];
+  final List<Map<String, dynamic>> _attachedTxs = [];
 
   bool _pickingEmoji = false;
   bool _pickingSticker = false;
-  bool _uploading = false;
-  String _fmtBytes(int b) {
-    if (b <= 0) return '';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    double v = b.toDouble();
-    int i = 0;
-    while (v >= 1024 && i < units.length - 1) {
-      v /= 1024;
-      i++;
-    }
-    final digits = v < 10 ? 1 : 0;
-    return '${v.toStringAsFixed(digits)} ${units[i]}';
-  }
+  // bool _uploading = false;
 
   DocumentReference<Map<String, dynamic>> get _threadRef =>
       FirebaseFirestore.instance.collection('group_chats').doc(widget.groupId);
 
   CollectionReference<Map<String, dynamic>> get _messagesRef =>
       _threadRef.collection('messages');
-
-  String _nameFor(String phone) {
-    if (phone == widget.currentUserId) return 'You';
-    final digits = phone.replaceAll(RegExp(r'\D'), '');
-    if (digits.isEmpty) return 'Member';
-    final last4 =
-        digits.length >= 4 ? digits.substring(digits.length - 4) : digits;
-    return 'Member ($last4)';
-  }
 
   @override
   void initState() {
@@ -2653,7 +2258,6 @@ class _GroupChatTabState extends State<GroupChatTab> {
     String mime, {
     required String typeHint,
   }) async {
-    setState(() => _uploading = true);
     try {
       final ref = FirebaseStorage.instance
           .ref()
@@ -2677,8 +2281,6 @@ class _GroupChatTabState extends State<GroupChatTab> {
       );
     } catch (_) {
       _toast('Upload failed');
-    } finally {
-      if (mounted) setState(() => _uploading = false);
     }
   }
 
@@ -2688,7 +2290,6 @@ class _GroupChatTabState extends State<GroupChatTab> {
     String mime, {
     required String typeHint,
   }) async {
-    setState(() => _uploading = true);
     try {
       final ref = FirebaseStorage.instance
           .ref()
@@ -2715,8 +2316,6 @@ class _GroupChatTabState extends State<GroupChatTab> {
       );
     } catch (_) {
       _toast('Upload failed');
-    } finally {
-      if (mounted) setState(() => _uploading = false);
     }
   }
 
@@ -2924,7 +2523,7 @@ class _GroupChatTabState extends State<GroupChatTab> {
             },
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.teal.withOpacity(0.08),
+                color: Colors.teal.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(16),
               ),
               alignment: Alignment.center,
@@ -3048,38 +2647,6 @@ class _GroupChatTabState extends State<GroupChatTab> {
     );
   }
 
-  Future<void> _onOpenAttachment(Map<String, dynamic> data) async {
-    final raw = (data['fileUrl'] ?? '').toString();
-    final mime = (data['mime'] ?? '').toString();
-    final name = (data['fileName'] ?? '').toString();
-
-    if (raw.isEmpty) return;
-
-    final resolved = await _safeDownloadUri(raw);
-    if (resolved == null) {
-      _toast('Invalid link');
-      return;
-    }
-
-    if (mime.startsWith('image/')) {
-      // In-app preview for images
-      showDialog(
-        context: context,
-        builder: (_) => Dialog(
-          insetPadding: const EdgeInsets.all(16),
-          child: InteractiveViewer(
-            child: Image.network(resolved.toString(), fit: BoxFit.contain),
-          ),
-        ),
-      );
-      return;
-    }
-
-    // Non-image → open externally (browser / viewer)
-    final ok = await launchUrl(resolved, mode: LaunchMode.externalApplication);
-    if (!ok) _toast('Could not open $name');
-  }
-
   @override
   void dispose() {
     _msgController.dispose();
@@ -3167,7 +2734,8 @@ class _GroupChatTabState extends State<GroupChatTab> {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                      color: Colors.black.withOpacity(0.05), blurRadius: 4)
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 4)
                 ],
               ),
               child: Row(
@@ -3205,7 +2773,7 @@ class _GroupChatTabState extends State<GroupChatTab> {
                   topLeft: Radius.circular(24), topRight: Radius.circular(24)),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, -2))
               ],
@@ -3374,7 +2942,7 @@ class ChatBubble extends StatelessWidget {
                 // Soft shadow for received messages (white bubbles)
                 if (!isMe)
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 5,
                     offset: const Offset(0, 2),
                   ),
@@ -3424,8 +2992,9 @@ class ChatBubble extends StatelessWidget {
                   time,
                   style: TextStyle(
                     // Lighter text for timestamp
-                    color:
-                        isMe ? Colors.white.withOpacity(0.7) : Colors.grey[500],
+                    color: isMe
+                        ? Colors.white.withValues(alpha: 0.7)
+                        : Colors.grey[500],
                     fontSize: 10,
                   ),
                 ),

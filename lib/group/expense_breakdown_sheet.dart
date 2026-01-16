@@ -94,7 +94,7 @@ class ExpenseBreakdownSheet extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.teal.withOpacity(0.10),
+                      color: Colors.teal.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -282,9 +282,9 @@ class ExpenseBreakdownSheet extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(0.10),
+        color: Colors.grey.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.grey.withOpacity(0.22)),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.22)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

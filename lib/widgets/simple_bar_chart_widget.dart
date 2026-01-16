@@ -43,10 +43,8 @@ class _SimpleBarChartWidgetState extends State<SimpleBarChartWidget> {
     final ex = widget.expenses ?? [];
     final set = <String>{};
     for (final e in ex) {
-      final c = (e.category?.trim().isNotEmpty == true
-          ? e.category
-          : e.type)
-          ?.trim();
+      final c =
+          (e.category?.trim().isNotEmpty == true ? e.category : e.type)?.trim();
       if (c != null && c.isNotEmpty) set.add(c);
     }
     final list = set.toList()..sort();
@@ -58,7 +56,8 @@ class _SimpleBarChartWidgetState extends State<SimpleBarChartWidget> {
     if (ex.isEmpty) return ex;
 
     return ex.where((e) {
-      final cat = (e.category?.trim().isNotEmpty == true ? e.category : e.type) ?? '';
+      final cat =
+          (e.category?.trim().isNotEmpty == true ? e.category : e.type) ?? '';
       final catOk = _selectedCategory == 'All' || cat == _selectedCategory;
 
       final d = e.date;
@@ -102,7 +101,7 @@ class _SimpleBarChartWidgetState extends State<SimpleBarChartWidget> {
   void _quickRange(String key) {
     final now = DateTime.now();
     DateTime start;
-    DateTime end = now;
+    final DateTime end = now;
     if (key == '7') {
       start = now.subtract(const Duration(days: 6));
     } else if (key == '30') {
@@ -126,18 +125,19 @@ class _SimpleBarChartWidgetState extends State<SimpleBarChartWidget> {
     final negativeColor = Colors.redAccent;
 
     // decide if we show filters/summary
-    final showFilters = (widget.expenses != null) && (widget.showFilters ?? true);
+    final showFilters =
+        (widget.expenses != null) && (widget.showFilters ?? true);
     final filtered = _filteredExpenses;
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.94),
+        color: Colors.white.withValues(alpha: 0.94),
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.teal.withOpacity(0.10),
+            color: Colors.teal.withValues(alpha: 0.10),
             blurRadius: 8,
             offset: const Offset(0, 3),
           ),
@@ -164,14 +164,15 @@ class _SimpleBarChartWidgetState extends State<SimpleBarChartWidget> {
                             : 'All',
                         items: _categories
                             .map((c) => DropdownMenuItem(
-                          value: c,
-                          child: Text(
-                            c,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ))
+                                  value: c,
+                                  child: Text(
+                                    c,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ))
                             .toList(),
-                        onChanged: (v) => setState(() => _selectedCategory = v ?? 'All'),
+                        onChanged: (v) =>
+                            setState(() => _selectedCategory = v ?? 'All'),
                         borderRadius: BorderRadius.circular(10),
                         isDense: true,
                       ),
@@ -189,9 +190,11 @@ class _SimpleBarChartWidgetState extends State<SimpleBarChartWidget> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
                       minimumSize: const Size(0, 40),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
 
@@ -209,7 +212,8 @@ class _SimpleBarChartWidgetState extends State<SimpleBarChartWidget> {
                       height: 40,
                       padding: const EdgeInsets.symmetric(horizontal: 10),
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.withOpacity(.4)),
+                        border: Border.all(
+                            color: Colors.grey.withValues(alpha: .4)),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Center(child: Text('Range')),
@@ -236,7 +240,9 @@ class _SimpleBarChartWidgetState extends State<SimpleBarChartWidget> {
                   const SizedBox(width: 8),
                   _MiniSummaryBox(
                     title: 'Average',
-                    value: filtered.isEmpty ? '—' : _money(_sumAmount / filtered.length),
+                    value: filtered.isEmpty
+                        ? '—'
+                        : _money(_sumAmount / filtered.length),
                   ),
                 ],
               ),
@@ -247,143 +253,148 @@ class _SimpleBarChartWidgetState extends State<SimpleBarChartWidget> {
           // ---- The existing bar chart (owe vs owed) ----
           hasData
               ? SizedBox(
-            height: 155,
-            width: double.infinity,
-            child: BarChart(
-              BarChartData(
-                barTouchData: BarTouchData(
-                  enabled: true,
-                  touchTooltipData: BarTouchTooltipData(
-                    // No backgroundColor or borderRadius in fl_chart 1.0.0!
-                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                      return BarTooltipItem(
-                        group.x == 0
-                            ? 'You Owe: ${_money(widget.owe)}'
-                            : 'Owed To You: ${_money(widget.owed)}',
-                        TextStyle(
-                          color: group.x == 0 ? Colors.red : Colors.green,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                alignment: BarChartAlignment.spaceEvenly,
-                maxY: [widget.owe, widget.owed]
-                    .reduce((a, b) => a > b ? a : b) *
-                    1.35 +
-                    30, // margin
-                barGroups: [
-                  BarChartGroupData(
-                    x: 0,
-                    barRods: [
-                      BarChartRodData(
-                        toY: widget.owe,
-                        width: 30,
-                        color: negativeColor,
-                        borderRadius: BorderRadius.circular(8),
-                        backDrawRodData: BackgroundBarChartRodData(
-                          show: true,
-                          toY: (widget.owe > widget.owed ? widget.owe : widget.owed) *
-                              1.35 +
-                              20,
-                          color: negativeColor.withOpacity(0.12),
-                        ),
-                      ),
-                    ],
-                    showingTooltipIndicators: const [0],
-                  ),
-                  BarChartGroupData(
-                    x: 1,
-                    barRods: [
-                      BarChartRodData(
-                        toY: widget.owed,
-                        width: 30,
-                        color: positiveColor,
-                        borderRadius: BorderRadius.circular(8),
-                        backDrawRodData: BackgroundBarChartRodData(
-                          show: true,
-                          toY: (widget.owe > widget.owed ? widget.owe : widget.owed) *
-                              1.35 +
-                              20,
-                          color: positiveColor.withOpacity(0.12),
-                        ),
-                      ),
-                    ],
-                    showingTooltipIndicators: const [0],
-                  ),
-                ],
-                titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 38,
-                      getTitlesWidget: (val, meta) {
-                        if (val % 1 != 0) return const SizedBox.shrink();
-                        return Text(
-                          '₹${val.toInt()}',
-                          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                        );
-                      },
-                    ),
-                  ),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      getTitlesWidget: (value, meta) {
-                        switch (value.toInt()) {
-                          case 0:
-                            return const Padding(
-                              padding: EdgeInsets.only(top: 8),
-                              child: Text(
-                                "You Owe",
-                                style: TextStyle(
-                                  color: Colors.redAccent,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
+                  height: 155,
+                  width: double.infinity,
+                  child: BarChart(
+                    BarChartData(
+                      barTouchData: BarTouchData(
+                        enabled: true,
+                        touchTooltipData: BarTouchTooltipData(
+                          // No backgroundColor or borderRadius in fl_chart 1.0.0!
+                          getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                            return BarTooltipItem(
+                              group.x == 0
+                                  ? 'You Owe: ${_money(widget.owe)}'
+                                  : 'Owed To You: ${_money(widget.owed)}',
+                              TextStyle(
+                                color: group.x == 0 ? Colors.red : Colors.green,
+                                fontWeight: FontWeight.w700,
                               ),
                             );
-                          case 1:
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                "Owed to You",
-                                style: TextStyle(
-                                  color: Colors.teal,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
+                          },
+                        ),
+                      ),
+                      alignment: BarChartAlignment.spaceEvenly,
+                      maxY: [widget.owe, widget.owed]
+                                  .reduce((a, b) => a > b ? a : b) *
+                              1.35 +
+                          30, // margin
+                      barGroups: [
+                        BarChartGroupData(
+                          x: 0,
+                          barRods: [
+                            BarChartRodData(
+                              toY: widget.owe,
+                              width: 30,
+                              color: negativeColor,
+                              borderRadius: BorderRadius.circular(8),
+                              backDrawRodData: BackgroundBarChartRodData(
+                                show: true,
+                                toY: (widget.owe > widget.owed
+                                            ? widget.owe
+                                            : widget.owed) *
+                                        1.35 +
+                                    20,
+                                color: negativeColor.withValues(alpha: 0.12),
                               ),
-                            );
-                        }
-                        return const SizedBox.shrink();
-                      },
+                            ),
+                          ],
+                          showingTooltipIndicators: const [0],
+                        ),
+                        BarChartGroupData(
+                          x: 1,
+                          barRods: [
+                            BarChartRodData(
+                              toY: widget.owed,
+                              width: 30,
+                              color: positiveColor,
+                              borderRadius: BorderRadius.circular(8),
+                              backDrawRodData: BackgroundBarChartRodData(
+                                show: true,
+                                toY: (widget.owe > widget.owed
+                                            ? widget.owe
+                                            : widget.owed) *
+                                        1.35 +
+                                    20,
+                                color: positiveColor.withValues(alpha: 0.12),
+                              ),
+                            ),
+                          ],
+                          showingTooltipIndicators: const [0],
+                        ),
+                      ],
+                      titlesData: FlTitlesData(
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 38,
+                            getTitlesWidget: (val, meta) {
+                              if (val % 1 != 0) return const SizedBox.shrink();
+                              return Text(
+                                '₹${val.toInt()}',
+                                style: TextStyle(
+                                    fontSize: 11, color: Colors.grey[600]),
+                              );
+                            },
+                          ),
+                        ),
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            getTitlesWidget: (value, meta) {
+                              switch (value.toInt()) {
+                                case 0:
+                                  return const Padding(
+                                    padding: EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      "You Owe",
+                                      style: TextStyle(
+                                        color: Colors.redAccent,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  );
+                                case 1:
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      "Owed to You",
+                                      style: TextStyle(
+                                        color: Colors.teal,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  );
+                              }
+                              return const SizedBox.shrink();
+                            },
+                          ),
+                        ),
+                        topTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        rightTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                      ),
+                      borderData: FlBorderData(show: false),
+                      gridData: FlGridData(show: false),
                     ),
+                    duration: const Duration(milliseconds: 650),
+                    curve: Curves.easeInOutCubic,
                   ),
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                ),
-                borderData: FlBorderData(show: false),
-                gridData: FlGridData(show: false),
-              ),
-              swapAnimationDuration: const Duration(milliseconds: 650),
-              swapAnimationCurve: Curves.easeInOutCubic,
-            ),
-          )
+                )
               : Padding(
-            padding: const EdgeInsets.all(14.0),
-            child: Center(
-              child: Text(
-                "No transactions yet for chart.",
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            ),
-          ),
+                  padding: const EdgeInsets.all(14.0),
+                  child: Center(
+                    child: Text(
+                      "No transactions yet for chart.",
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                  ),
+                ),
         ],
       ),
     );
@@ -401,9 +412,9 @@ class _MiniSummaryBox extends StatelessWidget {
       child: Container(
         height: 54,
         decoration: BoxDecoration(
-          color: Colors.grey.withOpacity(.09),
+          color: Colors.grey.withValues(alpha: .09),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.grey.withOpacity(.18)),
+          border: Border.all(color: Colors.grey.withValues(alpha: .18)),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Column(
@@ -417,7 +428,7 @@ class _MiniSummaryBox extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style:
-              const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
+                  const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
             ),
           ],
         ),

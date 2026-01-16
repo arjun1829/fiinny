@@ -64,7 +64,7 @@ class SharedGoalsWidget extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.flag_circle_rounded, size: 44, color: Colors.teal.withOpacity(0.7)),
+            Icon(Icons.flag_circle_rounded, size: 44, color: Colors.teal.withValues(alpha: 0.7)),
             const SizedBox(height: 8),
             Text('No shared goals yet!',
                 style: TextStyle(color: Colors.teal[700], fontWeight: FontWeight.w600)),
@@ -119,8 +119,8 @@ class SharedGoalsWidget extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                         color: completed
-                            ? Colors.green.withOpacity(0.12)
-                            : Colors.orange.withOpacity(0.12),
+                            ? Colors.green.withValues(alpha: 0.12)
+                            : Colors.orange.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Row(
@@ -153,7 +153,7 @@ class SharedGoalsWidget extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: progress,
                     minHeight: 8,
-                    backgroundColor: Colors.grey.withOpacity(0.18),
+                    backgroundColor: Colors.grey.withValues(alpha: 0.18),
                     valueColor: AlwaysStoppedAnimation(
                       completed ? Colors.green : Colors.teal,
                     ),

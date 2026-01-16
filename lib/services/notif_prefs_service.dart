@@ -10,31 +10,33 @@ class NotifPrefsService {
           .doc('notifications');
 
   static Map<String, dynamic> defaults() => {
-    'push_enabled': true,
-    'frequency': 'smart', // reserved; not used yet
-    'channels': {
-      'daily_reminder': true,
-      'weekly_digest': true,
-      'monthly_reflection': true,
-      'overspend_alerts': true,
-      'partner_checkins': true,
-      'settleup_nudges': true,
-      'brain_insights': true,
-      'loan_watch': true,
-      'goal_milestones': true,
-      'networth_updates': true,
-    },
-    'quiet_hours': {
-      'start': '22:00',
-      'end': '08:00',
-      'tz': 'Asia/Kolkata',
-    },
-  };
+        'push_enabled': true,
+        'frequency': 'smart', // reserved; not used yet
+        'channels': {
+          'daily_reminder': true,
+          'weekly_digest': true,
+          'monthly_reflection': true,
+          'overspend_alerts': true,
+          'partner_checkins': true,
+          'settleup_nudges': true,
+          'brain_insights': true,
+          'loan_watch': true,
+          'goal_milestones': true,
+          'networth_updates': true,
+        },
+        'quiet_hours': {
+          'start': '22:00',
+          'end': '08:00',
+          'tz': 'Asia/Kolkata',
+        },
+      };
 
   /// Call once post-login to ensure the doc exists.
   static Future<void> ensureDefaultPrefs() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      return;
+    }
     final ref = _doc(uid);
     final snap = await ref.get();
     if (!snap.exists) {
@@ -67,13 +69,14 @@ class NotifPrefsService {
     }
   }
 
-  static Map<String, dynamic> resolveWithDefaults(
-      Map<String, dynamic>? raw) =>
+  static Map<String, dynamic> resolveWithDefaults(Map<String, dynamic>? raw) =>
       _mergeDefaults(raw);
 
   static Future<void> update(Map<String, dynamic> patch) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      return;
+    }
     await _doc(uid).set(patch, SetOptions(merge: true));
   }
 
@@ -83,12 +86,15 @@ class NotifPrefsService {
   static Future<void> setPushEnabled(bool value) =>
       update({'push_enabled': value});
 
-  static Future<void> setQuietHours({required String start, required String end}) =>
+  static Future<void> setQuietHours(
+          {required String start, required String end}) =>
       update({'quiet_hours.start': start, 'quiet_hours.end': end});
 
   static Map<String, dynamic> _mergeDefaults(Map<String, dynamic>? data) {
     final base = defaults();
-    if (data == null) return base;
+    if (data == null) {
+      return base;
+    }
 
     Map<String, dynamic> merge(
         Map<String, dynamic> target, Map<String, dynamic> incoming) {

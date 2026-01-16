@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'package:characters/characters.dart';
 import 'package:lifemap/core/ads/ads_banner_card.dart';
 import 'package:lifemap/core/ads/ads_shell.dart';
 import 'package:lifemap/core/flags/fx_flags.dart';
@@ -73,7 +72,7 @@ class _TinyPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Theme.of(context).primaryColor.withOpacity(.08),
+        color: Theme.of(context).primaryColor.withValues(alpha: .08),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: const Color(0xFFE0ECE9)),
       ),
@@ -142,12 +141,14 @@ class _SettleSmartCTAState extends State<_SettleSmartCTA>
               child: InkWell(
                 borderRadius: BorderRadius.circular(14),
                 onTap: widget.onTap,
-                splashColor: Theme.of(context).primaryColor.withOpacity(0.16),
+                splashColor:
+                    Theme.of(context).primaryColor.withValues(alpha: 0.16),
                 highlightColor:
-                    Theme.of(context).primaryColor.withOpacity(0.08),
+                    Theme.of(context).primaryColor.withValues(alpha: 0.08),
                 child: Ink(
                   decoration: BoxDecoration(
-                    color: Theme.of(context).primaryColor.withOpacity(0.12),
+                    color:
+                        Theme.of(context).primaryColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: const Color(0xFFE0ECE9)),
                   ),
@@ -223,7 +224,8 @@ class _ActionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       leading: CircleAvatar(
-          backgroundColor: Theme.of(context).primaryColor.withOpacity(.10),
+          backgroundColor:
+              Theme.of(context).primaryColor.withValues(alpha: .10),
           child: Icon(icon, color: Theme.of(context).primaryColor)),
       title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
       trailing: const Icon(Icons.chevron_right),
@@ -437,7 +439,7 @@ class _FriendsScreenState extends State<FriendsScreen>
               borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.15),
+                  color: Colors.black.withValues(alpha: 0.15),
                   blurRadius: 28,
                   offset: const Offset(0, 12),
                 ),
@@ -468,7 +470,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                           : Theme.of(context).primaryColor,
                     ),
                     backgroundColor:
-                        Theme.of(context).primaryColor.withOpacity(.08),
+                        Theme.of(context).primaryColor.withValues(alpha: .08),
                     selectedColor: Theme.of(context).primaryColor,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -560,7 +562,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                           title: const Text('Open only',
                               style: TextStyle(fontWeight: FontWeight.w600)),
                           value: tmpOpenOnly,
-                          activeColor: Theme.of(context).primaryColor,
+                          activeTrackColor: Theme.of(context).primaryColor,
                           onChanged: (v) =>
                               setModalState(() => tmpOpenOnly = v),
                         ),
@@ -624,7 +626,7 @@ class _FriendsScreenState extends State<FriendsScreen>
       useRootNavigator: true,
       isScrollControlled: true, // allow tall/full height
       backgroundColor: Colors.transparent, // for rounded top + shadow
-      barrierColor: Colors.black.withOpacity(0.25),
+      barrierColor: Colors.black.withValues(alpha: 0.25),
       builder: (_) {
         return DraggableScrollableSheet(
           initialChildSize: 0.85, // opens tall
@@ -639,7 +641,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                     const BorderRadius.vertical(top: Radius.circular(18)),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.10),
+                    color: Colors.black.withValues(alpha: 0.10),
                     blurRadius: 24,
                     offset: const Offset(0, -6),
                   ),
@@ -687,7 +689,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                             border: Border.all(color: Color(0xFFE6ECEA)),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.06),
+                                color: Colors.black.withValues(alpha: 0.06),
                                 blurRadius: 16,
                                 offset: const Offset(0, 6),
                               ),
@@ -936,7 +938,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                 child: Switch.adaptive(
                   value: _openOnly,
                   onChanged: (v) => setState(() => _openOnly = v),
-                  activeColor: Theme.of(context).primaryColor,
+                  activeTrackColor: Theme.of(context).primaryColor,
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),
@@ -982,7 +984,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                               decoration: BoxDecoration(
                                 color: Theme.of(context)
                                     .primaryColor
-                                    .withOpacity(0.06),
+                                    .withValues(alpha: 0.06),
                                 borderRadius: BorderRadius.circular(14),
                                 border: Border.all(color: Colors.grey.shade200),
                               ),
@@ -2163,8 +2165,6 @@ class _ActivityTabBody extends StatelessWidget {
         : null;
     final payer = _nameFor(e.payerId);
 
-
-
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2189,187 +2189,188 @@ class _ActivityTabBody extends StatelessWidget {
             // (Usually the single friend in 1:1, or first in split)
             final friendPhone = e.friendIds.first;
             final friend = _friendMap[friendPhone] ??
-                FriendModel(
-                    phone: friendPhone, name: friendPhone, avatar: '');
+                FriendModel(phone: friendPhone, name: friendPhone, avatar: '');
             Navigator.push(
               context,
               MaterialPageRoute(
                   builder: (_) => FriendDetailScreen(
-                      userPhone: userPhone,
-                      userName: "You",
-                      friend: friend)),
+                      userPhone: userPhone, userName: "You", friend: friend)),
             );
           }
         },
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            height: 40,
-            width: 40,
-            decoration: BoxDecoration(
-              color: (isSettlement ? Colors.teal : Colors.indigo)
-                  .withOpacity(0.10),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              isSettlement ? Icons.handshake : Icons.receipt_long_rounded,
-              color: isSettlement ? Colors.teal : Colors.indigo,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 15),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                height: 40,
+                width: 40,
+                decoration: BoxDecoration(
+                  color: (isSettlement ? Colors.teal : Colors.indigo)
+                      .withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+                child: Icon(
+                  isSettlement ? Icons.handshake : Icons.receipt_long_rounded,
+                  color: isSettlement ? Colors.teal : Colors.indigo,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.calendar_today_rounded,
-                            size: 12, color: Colors.black54),
-                        const SizedBox(width: 4),
-                        Text(_friendlyDate(e.date),
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.black87)),
-                      ],
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 15),
                     ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        const Icon(Icons.swap_horiz,
-                            size: 12, color: Colors.black54),
-                        const SizedBox(width: 4),
-                        Text('Paid by $payer',
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.black87)),
-                      ],
-                    ),
-                    if (groupName != null && e.groupId != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Material(
-                          color: Colors.blueGrey.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(8),
-                          child: InkWell(
-                            onTap: () {
-                              // Fallback for group model
-                              final groups = _groupMap.values.toList();
-                              final group = groups.firstWhere(
-                                (g) => g.id == e.groupId,
-                                orElse: () => GroupModel(
-                                  id: e.groupId!,
-                                  name: groupName,
-                                  memberPhones: [],
-                                  createdBy: '',
-                                  createdAt: DateTime.now(),
-                                ),
-                              );
-
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => GroupDetailScreen(
-                                    userId: userPhone,
-                                    group: group,
-                                  ),
-                                ),
-                              );
-                            },
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 5),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.groups_rounded,
-                                      size: 14,
-                                      color: Theme.of(context).primaryColor),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    groupName,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: Theme.of(context).primaryColor,
-                                      decoration: TextDecoration.underline,
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.calendar_today_rounded,
+                                size: 12, color: Colors.black54),
+                            const SizedBox(width: 4),
+                            Text(_friendlyDate(e.date),
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.black87)),
+                          ],
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.swap_horiz,
+                                size: 12, color: Colors.black54),
+                            const SizedBox(width: 4),
+                            Text('Paid by $payer',
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.black87)),
+                          ],
+                        ),
+                        if (groupName != null && e.groupId != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Material(
+                              color: Colors.blueGrey.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(8),
+                              child: InkWell(
+                                onTap: () {
+                                  // Fallback for group model
+                                  final groups = _groupMap.values.toList();
+                                  final group = groups.firstWhere(
+                                    (g) => g.id == e.groupId,
+                                    orElse: () => GroupModel(
+                                      id: e.groupId!,
+                                      name: groupName,
+                                      memberPhones: [],
+                                      createdBy: '',
+                                      createdAt: DateTime.now(),
                                     ),
+                                  );
+
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => GroupDetailScreen(
+                                        userId: userPhone,
+                                        group: group,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                borderRadius: BorderRadius.circular(8),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.groups_rounded,
+                                          size: 14,
+                                          color:
+                                              Theme.of(context).primaryColor),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        groupName,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: Theme.of(context).primaryColor,
+                                          decoration: TextDecoration.underline,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
+                      ],
+                    ),
+                    if (participants.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: participants.take(4).map((name) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.teal.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(name,
+                                style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600)),
+                          );
+                        }).toList(),
                       ),
+                    ],
                   ],
                 ),
-                if (participants.isNotEmpty) ...[
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: amountColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(amountText,
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800, color: amountColor)),
+                  ),
                   const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: participants.take(4).map((name) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.teal.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(name,
-                            style: const TextStyle(
-                                fontSize: 11.5, fontWeight: FontWeight.w600)),
-                      );
-                    }).toList(),
+                  Text(
+                    impactLabel,
+                    style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87),
                   ),
                 ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: amountColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(amountText,
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800, color: amountColor)),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                impactLabel,
-                style: const TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87),
               ),
             ],
           ),
-        ],
+        ),
       ),
-    ),),);
+    );
   }
 
   Widget _groupActivityTile(BuildContext context, ExpenseItem e) {
@@ -2377,7 +2378,8 @@ class _ActivityTabBody extends StatelessWidget {
         ? (_groupMap[e.groupId!]?.name ?? 'Group')
         : 'Group';
     final impact = _impactFor(e);
-    final impactBg = (impact >= 0 ? Colors.green : Colors.red).withOpacity(.12);
+    final impactBg =
+        (impact >= 0 ? Colors.green : Colors.red).withValues(alpha: .12);
     final impactFg = impact >= 0 ? Colors.green.shade700 : Colors.redAccent;
     final impactLabel = impact >= 0
         ? 'You’re owed ₹${impact.toStringAsFixed(0)}'
@@ -2417,91 +2419,97 @@ class _ActivityTabBody extends StatelessWidget {
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 6),
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.88),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(.6)),
-        boxShadow: const [
-          BoxShadow(
-              color: Color(0x16000000), blurRadius: 14, offset: Offset(0, 8)),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: .88),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: .6)),
+            boxShadow: const [
+              BoxShadow(
+                  color: Color(0x16000000),
+                  blurRadius: 14,
+                  offset: Offset(0, 8)),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: Colors.teal.withOpacity(.12),
-                child: Text(groupName.characters.first.toUpperCase()),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor: Colors.teal.withValues(alpha: .12),
+                    child: Text(groupName.characters.first.toUpperCase()),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 15)),
+                        const SizedBox(height: 4),
+                        Text(groupName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 12.5, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text('₹${e.amount.toStringAsFixed(0)}',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.teal.shade900)),
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 15)),
-                    const SizedBox(height: 4),
-                    Text(groupName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 12.5, fontWeight: FontWeight.w600)),
-                  ],
+              const SizedBox(height: 10),
+              if (preview.isNotEmpty)
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: preview.map((name) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.blueGrey.withValues(alpha: .10),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(name,
+                          style: const TextStyle(
+                              fontSize: 11.5, fontWeight: FontWeight.w600)),
+                    );
+                  }).toList(),
                 ),
-              ),
+              const SizedBox(height: 10),
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.teal.withOpacity(.12),
+                  color: impactBg,
                   borderRadius: BorderRadius.circular(999),
                 ),
-                child: Text('₹${e.amount.toStringAsFixed(0)}',
+                child: Text(impactLabel,
                     style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: Colors.teal.shade900)),
+                        fontWeight: FontWeight.w700, color: impactFg)),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          if (preview.isNotEmpty)
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: preview.map((name) {
-                return Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.blueGrey.withOpacity(.10),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(name,
-                      style: const TextStyle(
-                          fontSize: 11.5, fontWeight: FontWeight.w600)),
-                );
-              }).toList(),
-            ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: impactBg,
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(impactLabel,
-                style: TextStyle(fontWeight: FontWeight.w700, color: impactFg)),
-          ),
-        ],
+        ),
       ),
-    ),),);
+    );
   }
 
   Widget _buildSharedHistory(BuildContext context) {
@@ -2558,7 +2566,8 @@ class _ActivityTabBody extends StatelessWidget {
           _sectionCard(
               title: 'Shared History', child: _buildSharedHistory(context)),
           _sectionCard(
-              title: 'Recent Group Activity', child: _buildGroupActivity(context)),
+              title: 'Recent Group Activity',
+              child: _buildGroupActivity(context)),
         ],
       ),
     );
@@ -2668,14 +2677,14 @@ class _GlassyChatTile extends StatelessWidget {
     if (direct != null) {
       return CircleAvatar(
         radius: 22,
-        backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
+        backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.10),
         foregroundImage: direct,
       );
     }
     if (item.phone == null) {
       return CircleAvatar(
         radius: 22,
-        backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
+        backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.10),
         child: Text(item.fallbackEmoji, style: const TextStyle(fontSize: 20)),
       );
     }
@@ -2686,13 +2695,15 @@ class _GlassyChatTile extends StatelessWidget {
         if (prov != null) {
           return CircleAvatar(
             radius: 22,
-            backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
+            backgroundColor:
+                Theme.of(context).primaryColor.withValues(alpha: 0.10),
             foregroundImage: prov,
           );
         }
         return CircleAvatar(
           radius: 22,
-          backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
+          backgroundColor:
+              Theme.of(context).primaryColor.withValues(alpha: 0.10),
           child: Text(item.fallbackEmoji, style: const TextStyle(fontSize: 20)),
         );
       },
@@ -2706,7 +2717,8 @@ class _GlassyChatTile extends StatelessWidget {
         final prov = _imgFromPath(snap.data);
         return CircleAvatar(
           radius: 16,
-          backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
+          backgroundColor:
+              Theme.of(context).primaryColor.withValues(alpha: 0.10),
           foregroundImage: prov,
           child: prov == null
               ? const Text('👤', style: TextStyle(fontSize: 14))
@@ -2724,7 +2736,7 @@ class _GlassyChatTile extends StatelessWidget {
     if (groupImg != null) {
       return CircleAvatar(
         radius: 22,
-        backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
+        backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.10),
         foregroundImage: groupImg,
       );
     }
@@ -2748,7 +2760,7 @@ class _GlassyChatTile extends StatelessWidget {
     // 3) Final fallback: emoji/icon
     return CircleAvatar(
       radius: 22,
-      backgroundColor: Theme.of(context).primaryColor.withOpacity(0.10),
+      backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.10),
       child: Text(item.fallbackEmoji, style: const TextStyle(fontSize: 20)),
     );
   }
@@ -2773,7 +2785,7 @@ class _GlassyChatTile extends StatelessWidget {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.08),
+                color: Colors.black.withValues(alpha: 0.08),
                 blurRadius: 16,
                 offset: const Offset(0, 7),
               ),
@@ -2826,7 +2838,7 @@ class _GlassyChatTile extends StatelessWidget {
                                     fontWeight: FontWeight.w600,
                                     color:
                                         (item.trailingColor ?? Colors.black87)
-                                            .withOpacity(.85),
+                                            .withValues(alpha: .85),
                                   ),
                                 ),
                               ],
@@ -2997,7 +3009,8 @@ class _BottomCTAButtonState extends State<_BottomCTAButton>
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Theme.of(context).primaryColor.withOpacity(0.2),
+                      color:
+                          Theme.of(context).primaryColor.withValues(alpha: 0.2),
                       blurRadius: blur,
                       spreadRadius: spread,
                       offset: const Offset(0, 10),
@@ -3018,7 +3031,9 @@ class _BottomCTAButtonState extends State<_BottomCTAButton>
                     color: Theme.of(context).primaryColor,
                     boxShadow: [
                       BoxShadow(
-                        color: Theme.of(context).primaryColor.withOpacity(0.45),
+                        color: Theme.of(context)
+                            .primaryColor
+                            .withValues(alpha: 0.45),
                         blurRadius: 18 + 6 * glowT,
                         offset: const Offset(0, 10),
                       ),

@@ -564,7 +564,7 @@ class RecurringEngine {
         if (entry is Map<String, dynamic>) {
           preview.add(Map<String, dynamic>.from(entry));
         } else if (entry is Map) {
-          preview.add(Map<String, dynamic>.from(entry as Map));
+          preview.add(Map<String, dynamic>.from(entry));
         }
       }
       preview.add(historyEntry);

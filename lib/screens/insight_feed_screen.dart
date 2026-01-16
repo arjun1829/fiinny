@@ -9,8 +9,6 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../services/ai/action_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import 'premium/subscription_screen.dart';
 
 class InsightFeedScreen extends StatefulWidget {
@@ -254,7 +252,7 @@ class _InsightFeedScreenState extends State<InsightFeedScreen> with SingleTicker
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.auto_awesome, size: 48, color: Colors.teal.withOpacity(0.3)),
+          Icon(Icons.auto_awesome, size: 48, color: Colors.teal.withValues(alpha: 0.3)),
           const SizedBox(height: 16),
           Text(
             "Start a conversation with Fiinny",
@@ -392,7 +390,7 @@ class _InsightFeedScreenState extends State<InsightFeedScreen> with SingleTicker
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, -2)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, -2)),
         ],
       ),
       child: SafeArea(

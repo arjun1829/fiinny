@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../models/expense_item.dart';
+import '../models/income_item.dart';
 
 class CalendarExpenseView extends StatefulWidget {
   final List<ExpenseItem> expenses;
+  final List<IncomeItem> incomes;
   final DateTime focusedDay;
   final Function(DateTime selectedDay, DateTime focusedDay) onDaySelected;
 
   const CalendarExpenseView({
     Key? key,
     required this.expenses,
+    this.incomes = const [],
     required this.focusedDay,
     required this.onDaySelected,
   }) : super(key: key);
@@ -20,7 +23,8 @@ class CalendarExpenseView extends StatefulWidget {
 
 class _CalendarExpenseViewState extends State<CalendarExpenseView> {
   late DateTime _selectedDay;
-  Map<DateTime, double> _dailyTotals = {};
+  Map<DateTime, double> _dailyExpenseTotals = {};
+  Map<DateTime, double> _dailyIncomeTotals = {};
 
   @override
   void initState() {
@@ -32,7 +36,8 @@ class _CalendarExpenseViewState extends State<CalendarExpenseView> {
   @override
   void didUpdateWidget(covariant CalendarExpenseView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.expenses != widget.expenses) {
+    if (oldWidget.expenses != widget.expenses ||
+        oldWidget.incomes != widget.incomes) {
       _generateDailyTotals();
     }
     if (oldWidget.focusedDay != widget.focusedDay) {
@@ -43,10 +48,15 @@ class _CalendarExpenseViewState extends State<CalendarExpenseView> {
   DateTime _d(DateTime x) => DateTime(x.year, x.month, x.day);
 
   void _generateDailyTotals() {
-    _dailyTotals.clear();
+    _dailyExpenseTotals.clear();
+    _dailyIncomeTotals.clear();
     for (var e in widget.expenses) {
       final date = _d(e.date);
-      _dailyTotals[date] = (_dailyTotals[date] ?? 0) + e.amount;
+      _dailyExpenseTotals[date] = (_dailyExpenseTotals[date] ?? 0) + e.amount;
+    }
+    for (var i in widget.incomes) {
+      final date = _d(i.date);
+      _dailyIncomeTotals[date] = (_dailyIncomeTotals[date] ?? 0) + i.amount;
     }
   }
 
@@ -100,7 +110,8 @@ class _CalendarExpenseViewState extends State<CalendarExpenseView> {
             calendarBuilders: CalendarBuilders(
               defaultBuilder: (context, date, focusedDay) {
                 final key = _d(date);
-                final total = _dailyTotals[key] ?? 0;
+                final expTotal = _dailyExpenseTotals[key] ?? 0;
+                final incTotal = _dailyIncomeTotals[key] ?? 0;
                 return Center(
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
@@ -114,12 +125,21 @@ class _CalendarExpenseViewState extends State<CalendarExpenseView> {
                             fontSize: 13,
                           ),
                         ),
-                        if (total > 0)
+                        if (expTotal > 0)
                           Text(
-                            '₹${total.toStringAsFixed(0)}',
+                            '-₹${expTotal.toStringAsFixed(0)}',
                             style: TextStyle(
-                              fontSize: 10.5,
+                              fontSize: 9.5,
                               color: Colors.red[400],
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        if (incTotal > 0)
+                          Text(
+                            '+₹${incTotal.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              color: Colors.green,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -130,7 +150,8 @@ class _CalendarExpenseViewState extends State<CalendarExpenseView> {
               },
               todayBuilder: (context, date, focusedDay) {
                 final key = _d(date);
-                final total = _dailyTotals[key] ?? 0;
+                final expTotal = _dailyExpenseTotals[key] ?? 0;
+                final incTotal = _dailyIncomeTotals[key] ?? 0;
                 return Container(
                   decoration: BoxDecoration(
                     color: Colors.teal[100],
@@ -150,12 +171,21 @@ class _CalendarExpenseViewState extends State<CalendarExpenseView> {
                               fontSize: 13,
                             ),
                           ),
-                          if (total > 0)
+                          if (expTotal > 0)
                             Text(
-                              '₹${total.toStringAsFixed(0)}',
+                              '-₹${expTotal.toStringAsFixed(0)}',
                               style: TextStyle(
-                                fontSize: 10.5,
+                                fontSize: 9.5,
                                 color: Colors.red[800],
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          if (incTotal > 0)
+                            Text(
+                              '+₹${incTotal.toStringAsFixed(0)}',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                color: Colors.green[800],
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -167,9 +197,10 @@ class _CalendarExpenseViewState extends State<CalendarExpenseView> {
               },
               selectedBuilder: (context, date, focusedDay) {
                 final key = _d(date);
-                final total = _dailyTotals[key] ?? 0;
+                final expTotal = _dailyExpenseTotals[key] ?? 0;
+                final incTotal = _dailyIncomeTotals[key] ?? 0;
                 return Container(
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     color: Colors.black87,
                     shape: BoxShape.circle,
                   ),
@@ -187,12 +218,21 @@ class _CalendarExpenseViewState extends State<CalendarExpenseView> {
                               fontSize: 13,
                             ),
                           ),
-                          if (total > 0)
+                          if (expTotal > 0)
                             Text(
-                              '₹${total.toStringAsFixed(0)}',
-                              style: TextStyle(
-                                fontSize: 10.5,
+                              '-₹${expTotal.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                fontSize: 9.5,
                                 color: Colors.redAccent,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          if (incTotal > 0)
+                            Text(
+                              '+₹${incTotal.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                color: Colors.greenAccent,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),

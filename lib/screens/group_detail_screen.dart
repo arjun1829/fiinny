@@ -147,7 +147,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               boxShadow: isActive
                   ? [
                       BoxShadow(
-                          color: Colors.black.withOpacity(0.05), blurRadius: 4)
+                          color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)
                     ]
                   : [],
             ),
@@ -189,7 +189,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   color: Colors.white,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
+                      color: Colors.black.withValues(alpha: 0.04),
                       blurRadius: 14,
                       offset: const Offset(0, 6),
                     ),

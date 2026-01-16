@@ -20,7 +20,7 @@ class SummaryTool {
     if (snapshot.docs.isEmpty) return "Your ledger is clean! No spending to summarize yet.";
 
     double total = 0;
-    Map<String, double> categories = {};
+    final Map<String, double> categories = {};
     
     for (var doc in snapshot.docs) {
       final data = doc.data();

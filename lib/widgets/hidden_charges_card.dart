@@ -32,7 +32,7 @@ class HiddenChargesCard extends StatelessWidget {
           caseSensitive: false,
         );
 
-        List<ExpenseItem> items = docs.map((d) => ExpenseItem.fromFirestore(d)).toList();
+        final List<ExpenseItem> items = docs.map((d) => ExpenseItem.fromFirestore(d)).toList();
 
         for (final e in items) {
           final tags = (e.toJson()['tags'] as List?)?.cast<String>() ?? const [];

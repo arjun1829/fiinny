@@ -47,7 +47,7 @@ class PartnerInsightsWidget extends StatelessWidget {
                           if ((partner.relation ?? '').isNotEmpty)
                             _Chip(
                               label: partner.relation!,
-                              color: theme.colorScheme.primary.withOpacity(0.1),
+                              color: theme.colorScheme.primary.withValues(alpha: 0.1),
                               textColor: theme.colorScheme.primary,
                             ),
                           const SizedBox(width: 6),
@@ -157,11 +157,11 @@ class PartnerInsightsWidget extends StatelessWidget {
   static Color _statusBg(String status, ThemeData t) {
     switch (status.toLowerCase()) {
       case 'active':
-        return Colors.green.withOpacity(0.12);
+        return Colors.green.withValues(alpha: 0.12);
       case 'revoked':
-        return Colors.red.withOpacity(0.12);
+        return Colors.red.withValues(alpha: 0.12);
       default:
-        return t.colorScheme.primary.withOpacity(0.10);
+        return t.colorScheme.primary.withValues(alpha: 0.10);
     }
   }
 
@@ -185,7 +185,7 @@ class _PartnerAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final initials = _initials(name);
-    final bg = Colors.teal.withOpacity(0.12);
+    final bg = Colors.teal.withValues(alpha: 0.12);
     final fg = Colors.teal[900];
 
     return CircleAvatar(
@@ -254,7 +254,7 @@ class _RingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final rect = Offset(inset, inset) & Size(size.width - inset * 2, size.height - inset * 2);
     final bg = Paint()
-      ..color = color.withOpacity(0.12)
+      ..color = color.withValues(alpha: 0.12)
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
@@ -342,7 +342,7 @@ class _LabeledValue extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.06),
+        color: color.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -386,7 +386,7 @@ class _MiniStat extends StatelessWidget {
       children: [
         CircleAvatar(
           radius: 16,
-          backgroundColor: c.withOpacity(0.10),
+          backgroundColor: c.withValues(alpha: 0.10),
           child: Icon(icon, size: 18, color: c),
         ),
         const SizedBox(width: 8),
@@ -408,7 +408,7 @@ class _MiniStat extends StatelessWidget {
 class _Divider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Divider(height: 18, thickness: 1, color: Colors.grey.withOpacity(0.2));
+    return Divider(height: 18, thickness: 1, color: Colors.grey.withValues(alpha: 0.2));
   }
 }
 

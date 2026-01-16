@@ -7,7 +7,6 @@ import '../models/insight_model.dart';
 import '../themes/badge.dart';
 import '../themes/glass_card.dart';
 import '../themes/tokens.dart';
-import 'premium/premium_chip.dart';
 
 class InsightFeedCard extends StatelessWidget {
   final List<InsightModel> insights;
@@ -42,8 +41,8 @@ class InsightFeedCard extends StatelessWidget {
     }
     final merged = map.values.toList();
     merged.sort((a, b) {
-      int sa = _severityScore(a.type, a.severity);
-      int sb = _severityScore(b.type, b.severity);
+      final int sa = _severityScore(a.type, a.severity);
+      final int sb = _severityScore(b.type, b.severity);
       if (sb != sa) return sb.compareTo(sa);
       return b.timestamp.compareTo(a.timestamp);
     });
@@ -155,8 +154,8 @@ class InsightFeedCard extends StatelessWidget {
                 final fallback = InsightMicrocopy.fallback();
 
                 // Determine badge style
-                Color badgeBg = color.withOpacity(0.1);
-                Color badgeText = color;
+                final Color badgeBg = color.withValues(alpha: 0.1);
+                final Color badgeText = color;
                 
                 return Padding(
                   key: ValueKey('${insight.title}|${insight.timestamp.toIso8601String()}'),

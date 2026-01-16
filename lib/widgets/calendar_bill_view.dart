@@ -37,7 +37,7 @@ class CalendarBillView extends StatelessWidget {
           shape: BoxShape.circle,
         ),
         todayDecoration: BoxDecoration(
-          color: Colors.teal.withOpacity(0.7),
+          color: Colors.teal.withValues(alpha: 0.7),
           shape: BoxShape.circle,
         ),
         selectedDecoration: BoxDecoration(
@@ -57,7 +57,7 @@ class CalendarBillView extends StatelessWidget {
                 height: 7,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: (events[idx] as BillModel).isOverdue
+                  color: (events[idx]).isOverdue
                       ? Colors.red
                       : Colors.orange,
                 ),

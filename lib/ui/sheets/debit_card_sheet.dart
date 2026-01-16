@@ -50,9 +50,9 @@ class DebitCardSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surface = theme.colorScheme.surface;
-    final onSurface = theme.colorScheme.onSurface.withOpacity(.92);
-    final divider = theme.dividerColor.withOpacity(.24);
-    final pillBorder = theme.colorScheme.onSurface.withOpacity(.14);
+    final onSurface = theme.colorScheme.onSurface.withValues(alpha: .92);
+    final divider = theme.dividerColor.withValues(alpha: .24);
+    final pillBorder = theme.colorScheme.onSurface.withValues(alpha: .14);
 
     return DraggableScrollableSheet(
       expand: false,
@@ -82,7 +82,7 @@ class DebitCardSheet extends StatelessWidget {
                   child: Container(
                     width: 46, height: 5,
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurface.withOpacity(.12),
+                      color: theme.colorScheme.onSurface.withValues(alpha: .12),
                       borderRadius: BorderRadius.circular(999),
                     ),
                   ),
@@ -147,7 +147,7 @@ class DebitCardSheet extends StatelessWidget {
 
   Widget _kv(BuildContext context, String k, String v) {
     final keyStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-      color: Theme.of(context).colorScheme.onSurface.withOpacity(.6),
+      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: .6),
     );
     final valStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
       fontWeight: FontWeight.w700,

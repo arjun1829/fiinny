@@ -7,7 +7,7 @@ class HashUtils {
   }
 
   static String hashParts(List<String?> parts) {
-    final s = parts.where((e) => e != null && e!.isNotEmpty).join('|');
+    final s = parts.where((e) => e != null && e.isNotEmpty).join('|');
     return sha1Of(s);
   }
 }

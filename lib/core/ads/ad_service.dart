@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart'
         SynchronousFuture,
         debugPrint,
         kIsWeb,
-        kReleaseMode,
         defaultTargetPlatform,
         TargetPlatform;
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -143,7 +142,9 @@ class AdService {
   bool _shouldEnableAds() {
     if (kIsWeb) return false;
     if (!(defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS)) return false;
+        defaultTargetPlatform == TargetPlatform.iOS)) {
+      return false;
+    }
 
     // FORCE ENABLE for "original ads" request
     return true;

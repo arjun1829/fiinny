@@ -147,7 +147,7 @@ class _Tile extends StatelessWidget {
               Container(
                 height: 48, width: 48,
                 decoration: BoxDecoration(
-                  color: Colors.teal.withOpacity(.10),
+                  color: Colors.teal.withValues(alpha: .10),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(icon, color: Colors.teal.shade800),

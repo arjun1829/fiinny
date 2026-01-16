@@ -84,7 +84,7 @@ class _FriendAnalyticsTabState extends State<FriendAnalyticsTab> {
                         ),
                       ),
                       elevation: _period == option ? 4 : 0,
-                      shadowColor: Colors.black.withOpacity(0.2),
+                      shadowColor: Colors.black.withValues(alpha: 0.2),
                       pressElevation: 0,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
@@ -137,7 +137,7 @@ class _FriendAnalyticsTabState extends State<FriendAnalyticsTab> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),
@@ -205,7 +205,7 @@ class _FriendAnalyticsTabState extends State<FriendAnalyticsTab> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),

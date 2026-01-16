@@ -1,6 +1,6 @@
 class ProjectionEngine {
   /// Simple linear projection of balance for the next [days] days.
-  /// 
+  ///
   /// [currentBalance]: Today's bank balance
   /// [recurringBills]: Known upcoming fixed costs (Rent, Netflix, EMI)
   /// [avgDailySpend]: Discretionary spend rate (Food, Travel) calculated from 30-day moving average.
@@ -19,7 +19,7 @@ class ProjectionEngine {
 
     for (int i = 1; i <= days; i++) {
       final date = now.add(Duration(days: i));
-      
+
       // 1. Subtract discretionary spend
       runningBalance -= avgDailySpend;
 
@@ -42,10 +42,14 @@ class ProjectionEngine {
   /// Calculates "Safe to Spend" amount.
   /// Min balance in the next 30 days. If negative, you are "Broke" even if you have cash now.
   double safeToSpend(List<ProjectionPoint> points) {
-    if (points.isEmpty) return 0.0;
+    if (points.isEmpty) {
+      return 0.0;
+    }
     double minBal = points.first.balance;
     for (var p in points) {
-      if (p.balance < minBal) minBal = p.balance;
+      if (p.balance < minBal) {
+        minBal = p.balance;
+      }
     }
     // If minBal is negative, you have NO safe money. You need to save -minBal.
     // If minBal is positive, that's your true "free cash".

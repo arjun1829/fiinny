@@ -1,9 +1,6 @@
 // lib/details/recurring/add_subscription_screen.dart
-import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -25,12 +22,12 @@ class AddSubscriptionScreen extends StatefulWidget {
   final List<String> participantUserIds;
   final bool mirrorToFriend;
   const AddSubscriptionScreen({
-    Key? key,
+    super.key,
     required this.userPhone,
     required this.scope,
     this.participantUserIds = const <String>[],
     this.mirrorToFriend = true,
-  }) : super(key: key);
+  });
 
   @override
   State<AddSubscriptionScreen> createState() => _AddSubscriptionScreenState();
@@ -44,56 +41,176 @@ class _SubPreset {
   final int defaultAmount; // in INR (whole ₹)
   final String? logo; // Clearbit logo or asset path
   final List<String> tags; // e.g. ["video","family"]
-  final String frequency; // default "monthly"
+
   const _SubPreset({
     required this.id,
     required this.title,
     required this.defaultAmount,
     this.logo,
     this.tags = const [],
-    this.frequency = 'monthly',
+    // this.frequency = 'monthly', // Unused
   });
 }
 
 // Put commonly shared up top to bias the grid
 const List<_SubPreset> _kAllPresets = [
   // Very commonly shared in India
-  _SubPreset(id: 'netflix', title: 'Netflix', defaultAmount: 649, logo: 'https://logo.clearbit.com/netflix.com', tags: ['video','family']),
-  _SubPreset(id: 'prime', title: 'Amazon Prime Video', defaultAmount: 299, logo: 'https://logo.clearbit.com/primevideo.com', tags: ['video','bundle']),
-  _SubPreset(id: 'ytp', title: 'YouTube Premium', defaultAmount: 169, logo: 'https://logo.clearbit.com/youtube.com', tags: ['music','video']),
-  _SubPreset(id: 'spotify', title: 'Spotify', defaultAmount: 119, logo: 'https://logo.clearbit.com/spotify.com', tags: ['music']),
-  _SubPreset(id: 'jiofiber', title: 'JioFiber', defaultAmount: 699, logo: 'https://logo.clearbit.com/jio.com', tags: ['broadband']),
-  _SubPreset(id: 'airtelx', title: 'Airtel Xstream Fiber', defaultAmount: 799, logo: 'https://logo.clearbit.com/airtel.in', tags: ['broadband']),
+  _SubPreset(
+      id: 'netflix',
+      title: 'Netflix',
+      defaultAmount: 649,
+      logo: 'https://logo.clearbit.com/netflix.com',
+      tags: ['video', 'family']),
+  _SubPreset(
+      id: 'prime',
+      title: 'Amazon Prime Video',
+      defaultAmount: 299,
+      logo: 'https://logo.clearbit.com/primevideo.com',
+      tags: ['video', 'bundle']),
+  _SubPreset(
+      id: 'ytp',
+      title: 'YouTube Premium',
+      defaultAmount: 169,
+      logo: 'https://logo.clearbit.com/youtube.com',
+      tags: ['music', 'video']),
+  _SubPreset(
+      id: 'spotify',
+      title: 'Spotify',
+      defaultAmount: 119,
+      logo: 'https://logo.clearbit.com/spotify.com',
+      tags: ['music']),
+  _SubPreset(
+      id: 'jiofiber',
+      title: 'JioFiber',
+      defaultAmount: 699,
+      logo: 'https://logo.clearbit.com/jio.com',
+      tags: ['broadband']),
+  _SubPreset(
+      id: 'airtelx',
+      title: 'Airtel Xstream Fiber',
+      defaultAmount: 799,
+      logo: 'https://logo.clearbit.com/airtel.in',
+      tags: ['broadband']),
 
   // More presets
-  _SubPreset(id: 'hotstar', title: 'Disney+ Hotstar', defaultAmount: 299, logo: 'https://logo.clearbit.com/hotstar.com', tags: ['video']),
-  _SubPreset(id: 'sonyliv', title: 'Sony LIV', defaultAmount: 299, logo: 'https://logo.clearbit.com/sonyliv.com', tags: ['video']),
-  _SubPreset(id: 'zee5', title: 'Zee5', defaultAmount: 199, logo: 'https://logo.clearbit.com/zee5.com', tags: ['video']),
-  _SubPreset(id: 'jiocinema', title: 'JioCinema Premium', defaultAmount: 59, logo: 'https://logo.clearbit.com/jiocinema.com', tags: ['video']),
+  _SubPreset(
+      id: 'hotstar',
+      title: 'Disney+ Hotstar',
+      defaultAmount: 299,
+      logo: 'https://logo.clearbit.com/hotstar.com',
+      tags: ['video']),
+  _SubPreset(
+      id: 'sonyliv',
+      title: 'Sony LIV',
+      defaultAmount: 299,
+      logo: 'https://logo.clearbit.com/sonyliv.com',
+      tags: ['video']),
+  _SubPreset(
+      id: 'zee5',
+      title: 'Zee5',
+      defaultAmount: 199,
+      logo: 'https://logo.clearbit.com/zee5.com',
+      tags: ['video']),
+  _SubPreset(
+      id: 'jiocinema',
+      title: 'JioCinema Premium',
+      defaultAmount: 59,
+      logo: 'https://logo.clearbit.com/jiocinema.com',
+      tags: ['video']),
 
   // Music
-  _SubPreset(id: 'applemusic', title: 'Apple Music', defaultAmount: 149, logo: 'https://logo.clearbit.com/apple.com', tags: ['music']),
-  _SubPreset(id: 'jiosaavn', title: 'JioSaavn Pro', defaultAmount: 99, logo: 'https://logo.clearbit.com/jiosaavn.com', tags: ['music']),
-  _SubPreset(id: 'gaana', title: 'Gaana Plus', defaultAmount: 99, logo: 'https://logo.clearbit.com/gaana.com', tags: ['music']),
+  _SubPreset(
+      id: 'applemusic',
+      title: 'Apple Music',
+      defaultAmount: 149,
+      logo: 'https://logo.clearbit.com/apple.com',
+      tags: ['music']),
+  _SubPreset(
+      id: 'jiosaavn',
+      title: 'JioSaavn Pro',
+      defaultAmount: 99,
+      logo: 'https://logo.clearbit.com/jiosaavn.com',
+      tags: ['music']),
+  _SubPreset(
+      id: 'gaana',
+      title: 'Gaana Plus',
+      defaultAmount: 99,
+      logo: 'https://logo.clearbit.com/gaana.com',
+      tags: ['music']),
 
   // Storage & productivity
-  _SubPreset(id: 'googleone', title: 'Google One', defaultAmount: 130, logo: 'https://logo.clearbit.com/google.com', tags: ['storage','productivity']),
-  _SubPreset(id: 'icloud', title: 'iCloud+', defaultAmount: 75, logo: 'https://logo.clearbit.com/apple.com', tags: ['storage','productivity']),
-  _SubPreset(id: 'm365', title: 'Microsoft 365', defaultAmount: 489, logo: 'https://logo.clearbit.com/microsoft.com', tags: ['productivity']),
-  _SubPreset(id: 'canva', title: 'Canva Pro', defaultAmount: 499, logo: 'https://logo.clearbit.com/canva.com', tags: ['productivity','creative']),
+  _SubPreset(
+      id: 'googleone',
+      title: 'Google One',
+      defaultAmount: 130,
+      logo: 'https://logo.clearbit.com/google.com',
+      tags: ['storage', 'productivity']),
+  _SubPreset(
+      id: 'icloud',
+      title: 'iCloud+',
+      defaultAmount: 75,
+      logo: 'https://logo.clearbit.com/apple.com',
+      tags: ['storage', 'productivity']),
+  _SubPreset(
+      id: 'm365',
+      title: 'Microsoft 365',
+      defaultAmount: 489,
+      logo: 'https://logo.clearbit.com/microsoft.com',
+      tags: ['productivity']),
+  _SubPreset(
+      id: 'canva',
+      title: 'Canva Pro',
+      defaultAmount: 499,
+      logo: 'https://logo.clearbit.com/canva.com',
+      tags: ['productivity', 'creative']),
 
   // Telecom (28/30 day cycles treated as monthly)
-  _SubPreset(id: 'jio', title: 'Jio (mobile)', defaultAmount: 299, logo: 'https://logo.clearbit.com/jio.com', tags: ['telecom']),
-  _SubPreset(id: 'airtel', title: 'Airtel (mobile)', defaultAmount: 399, logo: 'https://logo.clearbit.com/airtel.in', tags: ['telecom']),
-  _SubPreset(id: 'vi', title: 'Vi (mobile)', defaultAmount: 299, logo: 'https://logo.clearbit.com/myvi.in', tags: ['telecom']),
+  _SubPreset(
+      id: 'jio',
+      title: 'Jio (mobile)',
+      defaultAmount: 299,
+      logo: 'https://logo.clearbit.com/jio.com',
+      tags: ['telecom']),
+  _SubPreset(
+      id: 'airtel',
+      title: 'Airtel (mobile)',
+      defaultAmount: 399,
+      logo: 'https://logo.clearbit.com/airtel.in',
+      tags: ['telecom']),
+  _SubPreset(
+      id: 'vi',
+      title: 'Vi (mobile)',
+      defaultAmount: 299,
+      logo: 'https://logo.clearbit.com/myvi.in',
+      tags: ['telecom']),
 
   // Food memberships
-  _SubPreset(id: 'swiggyone', title: 'Swiggy One', defaultAmount: 199, logo: 'https://logo.clearbit.com/swiggy.com', tags: ['food','membership']),
-  _SubPreset(id: 'zomatogold', title: 'Zomato Gold', defaultAmount: 199, logo: 'https://logo.clearbit.com/zomato.com', tags: ['food','membership']),
+  _SubPreset(
+      id: 'swiggyone',
+      title: 'Swiggy One',
+      defaultAmount: 199,
+      logo: 'https://logo.clearbit.com/swiggy.com',
+      tags: ['food', 'membership']),
+  _SubPreset(
+      id: 'zomatogold',
+      title: 'Zomato Gold',
+      defaultAmount: 199,
+      logo: 'https://logo.clearbit.com/zomato.com',
+      tags: ['food', 'membership']),
 
   // Rentals / household sharing
-  _SubPreset(id: 'rentomojo', title: 'RentoMojo', defaultAmount: 499, logo: 'https://logo.clearbit.com/rentomojo.com', tags: ['rental','household']),
-  _SubPreset(id: 'furlenco', title: 'Furlenco', defaultAmount: 999, logo: 'https://logo.clearbit.com/furlenco.com', tags: ['rental','household']),
+  _SubPreset(
+      id: 'rentomojo',
+      title: 'RentoMojo',
+      defaultAmount: 499,
+      logo: 'https://logo.clearbit.com/rentomojo.com',
+      tags: ['rental', 'household']),
+  _SubPreset(
+      id: 'furlenco',
+      title: 'Furlenco',
+      defaultAmount: 999,
+      logo: 'https://logo.clearbit.com/furlenco.com',
+      tags: ['rental', 'household']),
 ];
 
 class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
@@ -126,7 +243,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   // Attachment
   final _picker = ImagePicker();
   Uint8List? _attachmentBytes; // compressed preview bytes
-  String? _uploadedAttachmentUrl;
+  // String? _uploadedAttachmentUrl; // Unused
 
   bool _saving = false;
 
@@ -200,15 +317,15 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   }) async {
     // planned fire time = (due @ chosen time) - daysBefore
     final now = DateTime.now();
-    final planned = DateTime(due.year, due.month, due.day, _time.hour, _time.minute)
-        .subtract(Duration(days: _daysBefore));
-    final fireAt = planned.isAfter(now) ? planned : now.add(const Duration(minutes: 1));
+    final planned =
+        DateTime(due.year, due.month, due.day, _time.hour, _time.minute)
+            .subtract(Duration(days: _daysBefore));
+    final fireAt =
+        planned.isAfter(now) ? planned : now.add(const Duration(minutes: 1));
     final payload = _isGroup && _groupId != null
-        ? 'app://group/${_groupId}/recurring'
-        : 'app://friend/${_friendId}/recurring';
-    final itemId = _isGroup && _groupId != null
-        ? 'group_${_groupId}_$id'
-        : id;
+        ? 'app://group/$_groupId/recurring'
+        : 'app://friend/$_friendId/recurring';
+    final itemId = _isGroup && _groupId != null ? 'group_${_groupId}_$id' : id;
     try {
       await LocalNotifs.init();
       await LocalNotifs.scheduleOnce(
@@ -220,7 +337,9 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Reminder set for ${_fmtDate(fireAt)} ${_fmtTime(TimeOfDay.fromDateTime(fireAt))}')),
+        SnackBar(
+            content: Text(
+                'Reminder set for ${_fmtDate(fireAt)} ${_fmtTime(TimeOfDay.fromDateTime(fireAt))}')),
       );
     } catch (_) {
       // Best-effort local fallbacks via PushService banner
@@ -263,6 +382,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       }
 
       if (out == null) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not compress image')),
         );
@@ -273,6 +393,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
         _attachmentBytes = out;
       });
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Attachment failed: $e')),
       );
@@ -283,13 +404,15 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     if (_attachmentBytes == null) return null;
     try {
       final base = _isGroup && _groupId != null
-          ? 'groups/${_groupId}/recurring_attachments'
+          ? 'groups/$_groupId/recurring_attachments'
           : 'users/${widget.userPhone}/friends/${_friendId ?? 'unknown'}/recurring_attachments';
       final path = '$base/$newId.jpg';
       final ref = FirebaseStorage.instance.ref(path);
       await ref.putData(
         _attachmentBytes!,
-        SettableMetadata(contentType: 'image/jpeg', cacheControl: 'public, max-age=31536000'),
+        SettableMetadata(
+            contentType: 'image/jpeg',
+            cacheControl: 'public, max-age=31536000'),
       );
       return await ref.getDownloadURL();
     } catch (e) {
@@ -364,7 +487,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
 
         if (_attachmentBytes != null) {
           final url = await _uploadAttachment(newId);
-          _uploadedAttachmentUrl = url;
+          // _uploadedAttachmentUrl = url;
           if (url != null) {
             await _svc.patchInGroup(
               groupId: _groupId!,
@@ -405,7 +528,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
 
         if (_attachmentBytes != null) {
           final url = await _uploadAttachment(newId);
-          _uploadedAttachmentUrl = url;
+          // _uploadedAttachmentUrl = url;
           if (url != null) {
             await _svc.patch(
               widget.userPhone,
@@ -467,20 +590,21 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     });
   }
 
-  String _slugFromTitle(String t) =>
-      t.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_').replaceAll(RegExp(r'^_|_$'), '');
+  String _slugFromTitle(String t) => t
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+      .replaceAll(RegExp(r'^_|_$'), '');
 
   /* ---------------- UI ---------------- */
 
   @override
   Widget build(BuildContext context) {
     final amt = _parseAmount();
-    final uAmt = _isGroup
-        ? 0.0
-        : amt * ((_split == 'equal' ? 50.0 : _userShare) / 100.0);
-    final fAmt = _isGroup
-        ? 0.0
-        : amt * ((_split == 'equal' ? 50.0 : _friendShare) / 100.0);
+    // Calculate shares for Summary
+    final double uShare = _split == 'equal' ? 50.0 : _userShare;
+    final double fShare = _split == 'equal' ? 50.0 : _friendShare;
+    final double uAmt = amt * (uShare / 100);
+    final double fAmt = amt * (fShare / 100);
 
     final filtered = _filteredPresets();
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
@@ -488,7 +612,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Add Subscription', style: TextStyle(color: Colors.black)),
+        title: const Text('Add Subscription',
+            style: TextStyle(color: Colors.black)),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0.6,
@@ -527,9 +652,13 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                                 controller: _title,
                                 decoration: const InputDecoration(
                                   labelText: 'Service name',
-                                  prefixIcon: Icon(Icons.subscriptions_outlined),
+                                  prefixIcon:
+                                      Icon(Icons.subscriptions_outlined),
                                 ),
-                                validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
+                                validator: (v) =>
+                                    (v == null || v.trim().isEmpty)
+                                        ? 'Enter a name'
+                                        : null,
                               ),
                               const SizedBox(height: 10),
                               TextFormField(
@@ -538,9 +667,16 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                                   labelText: 'Amount (₹)',
                                   prefixIcon: Icon(Icons.currency_rupee),
                                 ),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-                                validator: (_) => _parseAmount() <= 0 ? 'Enter a valid amount' : null,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                      RegExp(r'[0-9.,]'))
+                                ],
+                                validator: (_) => _parseAmount() <= 0
+                                    ? 'Enter a valid amount'
+                                    : null,
                                 onChanged: (_) => setState(() {}),
                               ),
                               const SizedBox(height: 10),
@@ -550,7 +686,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                                 maxLines: 4,
                                 decoration: const InputDecoration(
                                   labelText: 'Notes (optional)',
-                                  hintText: 'E.g. 4 screens plan shared with Akash & Riya',
+                                  hintText:
+                                      'E.g. 4 screens plan shared with Akash & Riya',
                                   prefixIcon: Icon(Icons.note_alt_outlined),
                                 ),
                               ),
@@ -564,16 +701,18 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                       _sectionTitle('Billing day'),
                       _glossyCard(
                         child: DropdownButtonFormField<int>(
-                          value: _dueDay,
+                          initialValue: _dueDay,
                           items: List.generate(28, (i) => i + 1)
-                              .map((d) => DropdownMenuItem(value: d, child: Text('Day $d')))
+                              .map((d) => DropdownMenuItem(
+                                  value: d, child: Text('Day $d')))
                               .toList(),
                           onChanged: (v) => setState(() => _dueDay = v),
                           decoration: const InputDecoration(
                             labelText: 'Choose day (1–28)',
                             prefixIcon: Icon(Icons.event_outlined),
                           ),
-                          validator: (v) => v == null ? 'Pick a billing day' : null,
+                          validator: (v) =>
+                              v == null ? 'Pick a billing day' : null,
                         ),
                       ),
                       if (!_isGroup) ...[
@@ -588,12 +727,14 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                                   ChoiceChip(
                                     label: const Text('Equal (50/50)'),
                                     selected: _split == 'equal',
-                                    onSelected: (_) => setState(() => _split = 'equal'),
+                                    onSelected: (_) =>
+                                        setState(() => _split = 'equal'),
                                   ),
                                   ChoiceChip(
                                     label: const Text('Custom'),
                                     selected: _split == 'custom',
-                                    onSelected: (_) => setState(() => _split = 'custom'),
+                                    onSelected: (_) =>
+                                        setState(() => _split = 'custom'),
                                   ),
                                 ],
                               ),
@@ -609,7 +750,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                                       icon: Icons.person_outline,
                                       label: 'Your share',
                                       value: _userShare,
-                                      onChanged: (v) => setState(() => _normalizeSharesFromUser(v)),
+                                      onChanged: (v) => setState(
+                                          () => _normalizeSharesFromUser(v)),
                                     ),
                                     _sliderRow(
                                       icon: Icons.group_outlined,
@@ -635,9 +777,11 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                           children: [
                             SwitchListTile.adaptive(
                               value: _notifyEnabled,
-                              onChanged: (v) => setState(() => _notifyEnabled = v),
+                              onChanged: (v) =>
+                                  setState(() => _notifyEnabled = v),
                               title: const Text('Enable reminder'),
-                              subtitle: const Text('Get a push before the billing day'),
+                              subtitle: const Text(
+                                  'Get a push before the billing day'),
                               contentPadding: EdgeInsets.zero,
                             ),
                             AnimatedCrossFade(
@@ -649,7 +793,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                                 children: [
                                   Row(
                                     children: [
-                                      const Icon(Icons.notifications_active, size: 18),
+                                      const Icon(Icons.notifications_active,
+                                          size: 18),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Slider(
@@ -658,7 +803,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                                           max: 7,
                                           divisions: 7,
                                           label: '$_daysBefore day(s) before',
-                                          onChanged: (v) => setState(() => _daysBefore = v.toInt()),
+                                          onChanged: (v) => setState(
+                                              () => _daysBefore = v.toInt()),
                                         ),
                                       ),
                                       const SizedBox(width: 8),
@@ -673,7 +819,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                                     alignment: Alignment.centerLeft,
                                     child: Text(
                                       'Preview: ${_previewText()}',
-                                      style: const TextStyle(fontWeight: FontWeight.w700),
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w700),
                                     ),
                                   ),
                                 ],
@@ -687,14 +834,18 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                       _sectionTitle('Summary'),
                       _glossyCard(
                         child: _Summary(
-                          title: _title.text.trim().isEmpty ? '—' : _title.text.trim(),
+                          title: _title.text.trim().isEmpty
+                              ? '—'
+                              : _title.text.trim(),
                           amount: amt,
                           showShares: !_isGroup,
                           userSharePct: _split == 'equal' ? 50.0 : _userShare,
-                          friendSharePct: _split == 'equal' ? 50.0 : _friendShare,
+                          friendSharePct:
+                              _split == 'equal' ? 50.0 : _friendShare,
                           userShareAmt: uAmt,
                           friendShareAmt: fAmt,
-                          participantCount: _isGroup ? _groupParticipantIds.length : 2,
+                          participantCount:
+                              _isGroup ? _groupParticipantIds.length : 2,
                           dueDay: _dueDay,
                         ),
                       ),
@@ -705,7 +856,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.check_rounded),
                         label: const Text('Save'),
@@ -733,12 +885,12 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
           suffixIcon: _searchCtrl.text.isEmpty
               ? null
               : IconButton(
-            onPressed: () {
-              _searchCtrl.clear();
-              setState(() {});
-            },
-            icon: const Icon(Icons.clear),
-          ),
+                  onPressed: () {
+                    _searchCtrl.clear();
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.clear),
+                ),
         ),
         onChanged: (_) => setState(() {}),
       ),
@@ -746,7 +898,18 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   }
 
   Widget _filterChips() {
-    const tags = ['All', 'video', 'music', 'storage', 'productivity', 'telecom', 'broadband', 'food', 'rental', 'household'];
+    const tags = [
+      'All',
+      'video',
+      'music',
+      'storage',
+      'productivity',
+      'telecom',
+      'broadband',
+      'food',
+      'rental',
+      'household'
+    ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       physics: const BouncingScrollPhysics(),
@@ -767,12 +930,14 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     );
   }
 
-  String _prettyTag(String t) => t == 'All' ? 'All' : t[0].toUpperCase() + t.substring(1);
+  String _prettyTag(String t) =>
+      t == 'All' ? 'All' : t[0].toUpperCase() + t.substring(1);
 
   List<_SubPreset> _filteredPresets() {
     final q = _searchCtrl.text.trim().toLowerCase();
     final list = _kAllPresets.where((p) {
-      final matchesQ = q.isEmpty || p.title.toLowerCase().contains(q) || p.id.contains(q);
+      final matchesQ =
+          q.isEmpty || p.title.toLowerCase().contains(q) || p.id.contains(q);
       final matchesTag = _activeTag == 'All' || p.tags.contains(_activeTag);
       return matchesQ && matchesTag;
     }).toList();
@@ -817,7 +982,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       tween: Tween(begin: 0.94, end: 1),
       duration: Duration(milliseconds: 200 + (index % 5) * 40),
       curve: Curves.easeOutCubic,
-      builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
+      builder: (context, scale, child) =>
+          Transform.scale(scale: scale, child: child),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -828,7 +994,10 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
               borderRadius: BorderRadius.circular(18),
               color: Colors.white,
               boxShadow: const [
-                BoxShadow(color: Color(0x14000000), blurRadius: 18, offset: Offset(0, 10)),
+                BoxShadow(
+                    color: Color(0x14000000),
+                    blurRadius: 18,
+                    offset: Offset(0, 10)),
               ],
               border: Border.all(color: const Color(0xFFE9ECEF)),
             ),
@@ -839,7 +1008,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 CircleAvatar(
                   radius: 24,
                   backgroundColor: const Color(0xFFF3F4F6),
-                  backgroundImage: p.logo != null ? NetworkImage(p.logo!) : null,
+                  backgroundImage:
+                      p.logo != null ? NetworkImage(p.logo!) : null,
                   child: p.logo == null
                       ? const Icon(Icons.apps, size: 22, color: Colors.black54)
                       : null,
@@ -854,7 +1024,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 ),
                 const SizedBox(height: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: const Color(0x0F111827),
                     borderRadius: BorderRadius.circular(999),
@@ -891,9 +1062,15 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
             height: 46,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(10),
-              boxShadow: const [BoxShadow(color: Color(0x1A000000), blurRadius: 8, offset: Offset(0, 4))],
+              boxShadow: const [
+                BoxShadow(
+                    color: Color(0x1A000000),
+                    blurRadius: 8,
+                    offset: Offset(0, 4))
+              ],
               border: Border.all(color: const Color(0xFFE5E7EB)),
-              image: DecorationImage(image: MemoryImage(_attachmentBytes!), fit: BoxFit.cover),
+              image: DecorationImage(
+                  image: MemoryImage(_attachmentBytes!), fit: BoxFit.cover),
             ),
           ),
         if (_attachmentBytes != null)
@@ -901,7 +1078,6 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
             tooltip: 'Remove',
             onPressed: () => setState(() {
               _attachmentBytes = null;
-              _uploadedAttachmentUrl = null;
             }),
             icon: const Icon(Icons.close_rounded),
           ),
@@ -921,7 +1097,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
           colors: [Color(0xFFFFFFFF), Color(0xFFF9FAFB)],
         ),
         boxShadow: const [
-          BoxShadow(color: Color(0x1F000000), blurRadius: 16, offset: Offset(0, 8)),
+          BoxShadow(
+              color: Color(0x1F000000), blurRadius: 16, offset: Offset(0, 8)),
         ],
         border: Border.all(color: const Color(0xFFE9ECEF)),
       ),
@@ -930,12 +1107,13 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   }
 
   Widget _sectionTitle(String t) => Padding(
-    padding: const EdgeInsets.only(bottom: 8, left: 2),
-    child: Text(
-      t,
-      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Colors.black),
-    ),
-  );
+        padding: const EdgeInsets.only(bottom: 8, left: 2),
+        child: Text(
+          t,
+          style: const TextStyle(
+              fontWeight: FontWeight.w900, fontSize: 16, color: Colors.black),
+        ),
+      );
 
   Widget _sliderRow({
     required IconData icon,
@@ -958,15 +1136,20 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
           ),
         ),
         const SizedBox(width: 8),
-        SizedBox(width: 44, child: Text('${value.toStringAsFixed(0)}%', textAlign: TextAlign.right)),
+        SizedBox(
+            width: 44,
+            child: Text('${value.toStringAsFixed(0)}%',
+                textAlign: TextAlign.right)),
       ],
     );
   }
 
   String _previewText() {
-    final due = DateTime(DateTime.now().year, DateTime.now().month, (_dueDay ?? 1));
-    final planned = DateTime(due.year, due.month, due.day, _time.hour, _time.minute)
-        .subtract(Duration(days: _daysBefore));
+    final due =
+        DateTime(DateTime.now().year, DateTime.now().month, (_dueDay ?? 1));
+    final planned =
+        DateTime(due.year, due.month, due.day, _time.hour, _time.minute)
+            .subtract(Duration(days: _daysBefore));
     return '${_fmtDate(planned)} ${_fmtTime(TimeOfDay.fromDateTime(planned))}';
   }
 }
@@ -983,7 +1166,6 @@ class _Summary extends StatelessWidget {
   final int? dueDay;
 
   const _Summary({
-    Key? key,
     required this.title,
     required this.amount,
     required this.showShares,
@@ -993,7 +1175,7 @@ class _Summary extends StatelessWidget {
     this.friendShareAmt,
     this.participantCount = 0,
     required this.dueDay,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1038,7 +1220,10 @@ class _Summary extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Expanded(child: Text(k, style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.w700))),
+          Expanded(
+              child: Text(k,
+                  style: const TextStyle(
+                      color: Colors.black54, fontWeight: FontWeight.w700))),
           Text(v, style: const TextStyle(fontWeight: FontWeight.w900)),
         ],
       ),

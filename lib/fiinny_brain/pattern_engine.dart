@@ -65,7 +65,7 @@ class PatternEngine {
     
     categoryTotals.forEach((cat, amount) {
       if (totalIncome > 0) {
-        double pct = (amount / totalIncome) * 100;
+        final double pct = (amount / totalIncome) * 100;
         catPct[cat] = pct;
         // Changed from 20% to 30% per hardening requirements
         if (pct > 30) {

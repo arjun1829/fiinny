@@ -44,7 +44,7 @@ class StatTile extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: AppColors.mint.withOpacity(.12),
+              color: AppColors.mint.withValues(alpha: .12),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: AppColors.mint, size: 24),
@@ -74,7 +74,7 @@ class StatTile extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(label,
                     style: TextStyle(
-                      color: Colors.black.withOpacity(.55),
+                      color: Colors.black.withValues(alpha: .55),
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     )),

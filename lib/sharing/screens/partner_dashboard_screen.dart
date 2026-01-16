@@ -108,9 +108,9 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
     }
 
     // weekly aggregates (simple cap for ring fill)
-    List<double> percents = [];
-    List<double> credits = [];
-    List<double> debits = [];
+    final List<double> percents = [];
+    final List<double> credits = [];
+    final List<double> debits = [];
     const double weeklyMax = 1000.0;
 
     for (var day in last8Days) {
@@ -190,7 +190,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
 
     double credit = 0.0, debit = 0.0;
     int count = 0;
-    List<Map<String, dynamic>> txs = [];
+    final List<Map<String, dynamic>> txs = [];
     for (final doc in incomeSnap.docs) {
       final d = doc.data();
       final amt = (d['amount'] as num? ?? 0).toDouble();
@@ -354,20 +354,20 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                         : Icons.arrow_upward_rounded,
                     fg: isIncome ? const Color(0xFF1DB954) : Colors.red[700]!,
                     bg: (isIncome ? const Color(0xFF1DB954) : Colors.red[700]!)
-                        .withOpacity(.10),
+                        .withValues(alpha: .10),
                   ),
                   _chip(
                     text: category,
                     icon: Icons.category_rounded,
                     fg: Colors.indigo.shade900,
-                    bg: Colors.indigo.withOpacity(.08),
+                    bg: Colors.indigo.withValues(alpha: .08),
                   ),
                   if (timeStr.isNotEmpty)
                     _chip(
                       text: timeStr,
                       icon: Icons.schedule_rounded,
                       fg: Colors.grey.shade900,
-                      bg: Colors.grey.withOpacity(.12),
+                      bg: Colors.grey.withValues(alpha: .12),
                     ),
                 ],
               ),
@@ -431,7 +431,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
     final avatar = (partnerAvatar != null && partnerAvatar!.isNotEmpty)
         ? partnerAvatar!
         : "assets/images/profile_default.png";
-    String dateStr = "${selectedDay.day}/${selectedDay.month}/${selectedDay.year}";
+    final String dateStr = "${selectedDay.day}/${selectedDay.month}/${selectedDay.year}";
     final bool isChatTab = _tabController.index == 1;
 
     return Scaffold(
@@ -471,7 +471,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                         backgroundImage: avatar.startsWith('http')
                             ? NetworkImage(avatar)
                             : AssetImage(avatar) as ImageProvider,
-                        backgroundColor: Colors.teal.withOpacity(0.13),
+                        backgroundColor: Colors.teal.withValues(alpha: 0.13),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -555,7 +555,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.08),
+                          color: Colors.orange.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Text(

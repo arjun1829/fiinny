@@ -11,7 +11,6 @@ import '../utils/permissions_helper.dart';
 import '../utils/phone_number_utils.dart';
 import 'ads/sleek_ad_card.dart';
 import 'add_friend_dialog.dart';
-import '../ui/theme/small_typography_overlay.dart';
 
 import '../services/group_service.dart';
 import '../models/friend_model.dart';
@@ -180,12 +179,12 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          Colors.white.withOpacity(0.96),
-                          Colors.white.withOpacity(0.9)
+                          Colors.white.withValues(alpha: 0.96),
+                          Colors.white.withValues(alpha: 0.9)
                         ],
                       ),
                       border:
-                      Border.all(color: Colors.white.withOpacity(0.6)),
+                      Border.all(color: Colors.white.withValues(alpha: 0.6)),
                       boxShadow: const [
                         BoxShadow(
                           color: Color(0x1F000000),
@@ -229,7 +228,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           child: Container(
                             decoration: BoxDecoration(
-                              color: accent.withOpacity(0.06),
+                              color: accent.withValues(alpha: 0.06),
                               borderRadius: BorderRadius.circular(12),
                               border:
                               Border.all(color: Colors.grey.shade200),
@@ -294,7 +293,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                                 leading: CircleAvatar(
                                   radius: 18,
                                   backgroundColor:
-                                      accent.withOpacity(0.10),
+                                      accent.withValues(alpha: 0.10),
                                   child: Text(initial,
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w700)),
@@ -531,13 +530,13 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.white.withOpacity(0.96),
-                  Colors.white.withOpacity(0.90),
+                  Colors.white.withValues(alpha: 0.96),
+                  Colors.white.withValues(alpha: 0.90),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              border: Border.all(color: Colors.white.withOpacity(0.6)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
               boxShadow: const [
                 BoxShadow(
                   color: Color(0x1F000000),
@@ -560,7 +559,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: accent.withOpacity(.10),
+                            color: accent.withValues(alpha: .10),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Icon(Icons.group_add_rounded, color: accent),
@@ -586,7 +585,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                         children: [
                           CircleAvatar(
                             radius: 40,
-                            backgroundColor: accent.withOpacity(0.08),
+                            backgroundColor: accent.withValues(alpha: 0.08),
                             backgroundImage: _groupPhoto != null
                                 ? FileImage(_groupPhoto!) as ImageProvider
                                 : null,
@@ -636,7 +635,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                     const SizedBox(height: 10),
 
                     DropdownButtonFormField<String>(
-                      value: _selectedType,
+                      initialValue: _selectedType,
                       decoration: _pillDecoration(
                         label: "Group Type (optional)",
                         icon: Icons.style_rounded,
@@ -671,7 +670,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                         SizedBox(
                           width: 120,
                           child: DropdownButtonFormField<String>(
-                            value: _countryCode,
+                            initialValue: _countryCode,
                             decoration: _pillDecoration(label: "Country"),
                             isExpanded: true,
                             items: _countryCodes
@@ -701,7 +700,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                                 : "Select From Contacts"),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: accent,
-                              side: BorderSide(color: accent.withOpacity(0.35)),
+                              side: BorderSide(color: accent.withValues(alpha: 0.35)),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12)),
                               padding:
@@ -888,7 +887,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
       labelText: label,
       prefixIcon: icon != null ? Icon(icon) : null,
       filled: true,
-      fillColor: Colors.black87.withOpacity(0.06),
+      fillColor: Colors.black87.withValues(alpha: 0.06),
       contentPadding:
       const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       border: OutlineInputBorder(

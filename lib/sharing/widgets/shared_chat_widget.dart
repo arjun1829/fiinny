@@ -115,8 +115,8 @@ class _SharedChatWidgetState extends State<SharedChatWidget> {
                       constraints: const BoxConstraints(maxWidth: 280),
                       decoration: BoxDecoration(
                         color: isMe
-                            ? Colors.teal.withOpacity(0.15)
-                            : Colors.grey.withOpacity(0.15),
+                            ? Colors.teal.withValues(alpha: 0.15)
+                            : Colors.grey.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.only(
                           topLeft: const Radius.circular(14),
                           topRight: const Radius.circular(14),
@@ -154,7 +154,7 @@ class _SharedChatWidgetState extends State<SharedChatWidget> {
                       hintText: "Type a message…",
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                       filled: true,
-                      fillColor: Colors.grey.withOpacity(0.10),
+                      fillColor: Colors.grey.withValues(alpha: 0.10),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
                         borderSide: BorderSide.none,

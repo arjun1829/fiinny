@@ -152,7 +152,7 @@ class _AddRecurringSheetState extends State<AddRecurringSheet> {
               const SizedBox(height: 8),
 
               DropdownButtonFormField<String>(
-                value: _type,
+                initialValue: _type,
                 decoration: const InputDecoration(labelText: 'Type'),
                 items: const [
                   DropdownMenuItem(value: 'subscription', child: Text('Subscription')),
@@ -164,7 +164,7 @@ class _AddRecurringSheetState extends State<AddRecurringSheet> {
               const SizedBox(height: 8),
 
               DropdownButtonFormField<String>(
-                value: _cycle,
+                initialValue: _cycle,
                 decoration: const InputDecoration(labelText: 'Cycle'),
                 items: const [
                   DropdownMenuItem(value: 'monthly', child: Text('Monthly')),

@@ -1,6 +1,4 @@
-import 'dart:ui';
 
-import 'package:characters/characters.dart';
 import 'package:flutter/material.dart';
 
 import 'package:lifemap/core/flags/fx_flags.dart';
@@ -47,9 +45,9 @@ class SettleSmartSheet extends StatelessWidget {
       builder: (context, controller) {
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.94),
+            color: Colors.white.withValues(alpha: 0.94),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-            border: Border.all(color: const Color(0xFFE4F1EE).withOpacity(0.9)),
+            border: Border.all(color: const Color(0xFFE4F1EE).withValues(alpha: 0.9)),
             boxShadow: const [
               BoxShadow(
                 color: Color(0x1A000000),
@@ -65,7 +63,7 @@ class SettleSmartSheet extends StatelessWidget {
                 width: 52,
                 height: 5,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF09857a).withOpacity(0.25),
+                  color: const Color(0xFF09857a).withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
@@ -233,7 +231,7 @@ class _SettleSmartRow extends StatelessWidget {
             style: Theme.of(context)
                 .textTheme
                 .bodySmall
-                ?.copyWith(color: Colors.teal[700]?.withOpacity(0.75)),
+                ?.copyWith(color: Colors.teal[700]?.withValues(alpha: 0.75)),
           ),
           if (canLaunch) ...[
             const SizedBox(height: 14),
@@ -324,7 +322,7 @@ class _AvatarBubble extends StatelessWidget {
     }
     return CircleAvatar(
       radius: 22,
-      backgroundColor: const Color(0xFF09857a).withOpacity(0.12),
+      backgroundColor: const Color(0xFF09857a).withValues(alpha: 0.12),
       child: Text(
         participant.initials,
         style: const TextStyle(
@@ -400,7 +398,7 @@ class _EmptySettleSmartState extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 42,
-              backgroundColor: const Color(0xFF09857a).withOpacity(0.1),
+              backgroundColor: const Color(0xFF09857a).withValues(alpha: 0.1),
               child: const Icon(Icons.celebration_rounded,
                   size: 38, color: Color(0xFF09857a)),
             ),
@@ -426,7 +424,7 @@ class _EmptySettleSmartState extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF09857a).withOpacity(0.06),
+                  color: const Color(0xFF09857a).withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: const Color(0xFFE0ECE9)),
                 ),

@@ -16,14 +16,15 @@ import 'package:lifemap/ui/tokens.dart';
 ///   // Minimal: only ids (shows "+N" without avatars)
 ///   ShareBadge(participantUserIds: ['+91...', '+1...'])
 class ShareBadge extends StatelessWidget {
-  final List<dynamic>? participants;         // dynamic list of maps/DTOs with id/name/avatar*
-  final List<String>? participantUserIds;    // fallback: only ids
-  final int maxFaces;                        // how many tiny avatars to render
+  final List<dynamic>?
+      participants; // dynamic list of maps/DTOs with id/name/avatar*
+  final List<String>? participantUserIds; // fallback: only ids
+  final int maxFaces; // how many tiny avatars to render
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
-  final bool dense;                          // smaller padding
-  final Color? color;                        // accent color for text/borders
-  final Color? background;                   // pill background
+  final bool dense; // smaller padding
+  final Color? color; // accent color for text/borders
+  final Color? background; // pill background
   final EdgeInsetsGeometry? margin;
 
   const ShareBadge({
@@ -42,15 +43,15 @@ class ShareBadge extends StatelessWidget {
   /// Convenience to build from a SharedItem-like shape
   /// (any object with .participantUserIds)
   factory ShareBadge.fromItem(
-      dynamic item, {
-        List<dynamic>? participants,
-        int maxFaces = 3,
-        VoidCallback? onTap,
-        bool dense = false,
-        Color? color,
-        Color? background,
-        EdgeInsetsGeometry? margin,
-      }) {
+    dynamic item, {
+    List<dynamic>? participants,
+    int maxFaces = 3,
+    VoidCallback? onTap,
+    bool dense = false,
+    Color? color,
+    Color? background,
+    EdgeInsetsGeometry? margin,
+  }) {
     List<String>? ids;
     try {
       final v = (item as dynamic).participantUserIds;
@@ -76,15 +77,16 @@ class ShareBadge extends StatelessWidget {
     if (faces.isEmpty) return const SizedBox.shrink();
 
     final c = color ?? AppColors.mint;
-    final bg = background ?? c.withOpacity(.10);
-    final side = c.withOpacity(.22);
-    final text = c.withOpacity(.95);
+    final bg = background ?? c.withValues(alpha: .10);
+    final side = c.withValues(alpha: .22);
+    final text = c.withValues(alpha: .95);
 
     final visible = faces.take(maxFaces).toList();
     final overflow = faces.length - visible.length;
 
     return Semantics(
-      label: 'Shared with ${faces.length - 1} others', // assume self included upstream
+      label:
+          'Shared with ${faces.length - 1} others', // assume self included upstream
       button: onTap != null || onLongPress != null,
       child: Padding(
         padding: margin ?? EdgeInsets.zero,
@@ -151,7 +153,10 @@ class ShareBadge extends StatelessWidget {
   }
 
   String? _getId(dynamic x) {
-    try { final v = (x as dynamic).id; if (v is String && v.isNotEmpty) return v; } catch (_) {}
+    try {
+      final v = (x as dynamic).id;
+      if (v is String && v.isNotEmpty) return v;
+    } catch (_) {}
     if (x is Map) {
       final v = x['id'];
       if (v is String && v.isNotEmpty) return v;
@@ -160,9 +165,18 @@ class ShareBadge extends StatelessWidget {
   }
 
   String? _getName(dynamic x) {
-    try { final v = (x as dynamic).name; if (v is String && v.isNotEmpty) return v; } catch (_) {}
-    try { final v = (x as dynamic).label; if (v is String && v.isNotEmpty) return v; } catch (_) {}
-    try { final v = (x as dynamic).phone; if (v is String && v.isNotEmpty) return v; } catch (_) {}
+    try {
+      final v = (x as dynamic).name;
+      if (v is String && v.isNotEmpty) return v;
+    } catch (_) {}
+    try {
+      final v = (x as dynamic).label;
+      if (v is String && v.isNotEmpty) return v;
+    } catch (_) {}
+    try {
+      final v = (x as dynamic).phone;
+      if (v is String && v.isNotEmpty) return v;
+    } catch (_) {}
     if (x is Map) {
       final v = x['name'] ?? x['label'] ?? x['phone'];
       if (v is String && v.isNotEmpty) return v;
@@ -171,8 +185,14 @@ class ShareBadge extends StatelessWidget {
   }
 
   String? _getAvatar(dynamic x) {
-    try { final v = (x as dynamic).avatarUrl; if (v is String && v.isNotEmpty) return v; } catch (_) {}
-    try { final v = (x as dynamic).photoUrl; if (v is String && v.isNotEmpty) return v; } catch (_) {}
+    try {
+      final v = (x as dynamic).avatarUrl;
+      if (v is String && v.isNotEmpty) return v;
+    } catch (_) {}
+    try {
+      final v = (x as dynamic).photoUrl;
+      if (v is String && v.isNotEmpty) return v;
+    } catch (_) {}
     if (x is Map) {
       final v = x['avatarUrl'] ?? x['photoUrl'];
       if (v is String && v.isNotEmpty) return v;
@@ -203,7 +223,7 @@ class _Facepile extends StatelessWidget {
   const _Facepile({
     required this.faces,
     required this.color,
-    this.size = 18,
+    this.size = 24.0,
   });
 
   @override
@@ -217,7 +237,8 @@ class _Facepile extends StatelessWidget {
         child: _FaceDot(face: f, size: size, ring: border, accent: color),
       ));
     }
-    final width = faces.isEmpty ? 0.0 : size + (faces.length - 1) * (size * .62);
+    final width =
+        faces.isEmpty ? 0.0 : size + (faces.length - 1) * (size * .62);
     return SizedBox(
       width: width,
       height: size,
@@ -242,21 +263,24 @@ class _FaceDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = size / 2;
-    final bg = accent.withOpacity(.12);
+    final bg = accent.withValues(alpha: .12);
 
     if (face.avatarUrl != null && face.avatarUrl!.isNotEmpty) {
       return Container(
-        width: size, height: size,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(color: ring, width: 2),
-          image: DecorationImage(image: NetworkImage(face.avatarUrl!), fit: BoxFit.cover),
+          image: DecorationImage(
+              image: NetworkImage(face.avatarUrl!), fit: BoxFit.cover),
         ),
       );
     }
 
     return Container(
-      width: size, height: size,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: bg,
         shape: BoxShape.circle,

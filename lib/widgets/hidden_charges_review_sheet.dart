@@ -76,7 +76,7 @@ class _HiddenChargesReviewSheetState extends State<HiddenChargesReviewSheet> {
           .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
           .orderBy('date', descending: true)
           .limit(page);
-      if (cursor != null) q = (q as Query).startAfterDocument(cursor);
+      if (cursor != null) q = (q).startAfterDocument(cursor);
 
       final snap = await q.get();
       if (snap.docs.isEmpty) break;
@@ -97,7 +97,7 @@ class _HiddenChargesReviewSheetState extends State<HiddenChargesReviewSheet> {
 
   void _applyFilters() {
     final q = _q.text.trim().toLowerCase();
-    List<ExpenseItem> xs = _items.where((e) {
+    final List<ExpenseItem> xs = _items.where((e) {
       if (e.amount < _minAmt) return false;
       if (q.isEmpty) return true;
       final text = '${e.note} ${e.label ?? ''} ${e.category ?? ''}'.toLowerCase();
@@ -321,7 +321,7 @@ class _HiddenChargesReviewSheetState extends State<HiddenChargesReviewSheet> {
   Widget _chip(String t, String v) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
     decoration: BoxDecoration(
-      color: Colors.deepOrange.withOpacity(0.08),
+      color: Colors.deepOrange.withValues(alpha: 0.08),
       borderRadius: BorderRadius.circular(999),
     ),
     child: Row(mainAxisSize: MainAxisSize.min, children: [

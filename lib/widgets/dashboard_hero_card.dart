@@ -19,7 +19,7 @@ class DashboardHeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    double maxValue = credit > debit ? credit : debit;
+    final double maxValue = credit > debit ? credit : debit;
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
@@ -32,7 +32,7 @@ class DashboardHeroCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: theme.shadowColor.withOpacity(0.08),
+            color: theme.shadowColor.withValues(alpha: 0.08),
             blurRadius: 28,
             offset: const Offset(0, 9),
           ),
@@ -87,7 +87,7 @@ class DashboardHeroCard extends StatelessWidget {
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
-                    color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7),
+                    color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
                   ),
                 ),
                 const Spacer(),
@@ -97,7 +97,7 @@ class DashboardHeroCard extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurface.withOpacity(0.07),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.07),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
@@ -145,7 +145,7 @@ class _RingStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    double percent = maxValue == 0 ? 0 : (value / maxValue).clamp(0.0, 1.0);
+    final double percent = maxValue == 0 ? 0 : (value / maxValue).clamp(0.0, 1.0);
 
     return Column(
       children: [
@@ -205,17 +205,17 @@ class _RingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    Rect rect = Offset.zero & size;
+    final Rect rect = Offset.zero & size;
 
-    Paint bg = Paint()
-      ..color = color.withOpacity(0.13)
+    final Paint bg = Paint()
+      ..color = color.withValues(alpha: 0.13)
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
 
-    Paint fg = Paint()
+    final Paint fg = Paint()
       ..shader = SweepGradient(
-        colors: [color, color.withOpacity(0.13)],
+        colors: [color, color.withValues(alpha: 0.13)],
         startAngle: -pi / 2,
         endAngle: pi * 2,
       ).createShader(rect)

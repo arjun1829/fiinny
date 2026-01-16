@@ -1,7 +1,6 @@
 // lib/screens/goals_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../core/ads/ads_shell.dart';
 import '../models/goal_model.dart';

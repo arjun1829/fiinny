@@ -82,7 +82,7 @@ class _SharedNotesWidgetState extends State<SharedNotesWidget> {
             child: Column(
               children: [
                 Icon(Icons.sticky_note_2_rounded,
-                    size: 40, color: theme.colorScheme.primary.withOpacity(0.7)),
+                    size: 40, color: theme.colorScheme.primary.withValues(alpha: 0.7)),
                 const SizedBox(height: 8),
                 Text(
                   'No notes yet — add one below!',
@@ -112,7 +112,7 @@ class _SharedNotesWidgetState extends State<SharedNotesWidget> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: theme.colorScheme.primary.withOpacity(0.12),
+                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
                   child: Text(
                     _initialOf(author),
                     style: TextStyle(

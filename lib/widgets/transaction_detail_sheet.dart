@@ -518,7 +518,7 @@ class _FileTile extends StatelessWidget {
           ),
           if (size.isNotEmpty) ...[
             const SizedBox(width: 6),
-            Text(size, style: theme.textTheme.bodySmall?.copyWith(color: theme.textTheme.bodySmall?.color?.withOpacity(0.7))),
+            Text(size, style: theme.textTheme.bodySmall?.copyWith(color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.7))),
           ]
         ],
       ),

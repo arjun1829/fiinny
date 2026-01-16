@@ -27,5 +27,6 @@ class Fx {
   // text styles
   static const title = TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: textStrong);
   static const label = TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: text);
+  static const h6 = TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: textStrong);
   static const number = TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: textStrong);
 }

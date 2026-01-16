@@ -10,7 +10,7 @@ import 'onboarding_screen.dart';
 enum AuthStage { phoneInput, otpInput, loading }
 
 class AuthGate extends StatefulWidget {
-  const AuthGate({Key? key}) : super(key: key);
+  const AuthGate({super.key});
 
   @override
   State<AuthGate> createState() => _AuthGateState();
@@ -26,7 +26,7 @@ class _AuthGateState extends State<AuthGate> {
   bool _loading = false;
 
   // ------- Brand colors (MATCH welcome_screen.dart) -------
-  static const Color kMintBase = Color(0xFF21B9A3); // lighter
+
   static const Color kMintDeep = Color(0xFF159E8A); // darker (primary for Auth)
   Color _tint(double amt) => Color.lerp(kMintDeep, Colors.white, amt)!;
 
@@ -37,7 +37,9 @@ class _AuthGateState extends State<AuthGate> {
     if (h < 760) return .92;
     return 1.0;
   }
-  SizedBox _gap(BuildContext c, double base) => SizedBox(height: base * _scale(c));
+
+  SizedBox _gap(BuildContext c, double base) =>
+      SizedBox(height: base * _scale(c));
 
   // --- PHONE AUTH (unchanged) ---
   Future<void> _sendOTP() async {
@@ -57,7 +59,8 @@ class _AuthGateState extends State<AuthGate> {
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: phone,
         verificationCompleted: (PhoneAuthCredential credential) async {
-          final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+          final userCredential =
+              await FirebaseAuth.instance.signInWithCredential(credential);
           await _saveUserToFirestore(userCredential.user!, phone);
         },
         verificationFailed: (e) {
@@ -95,7 +98,8 @@ class _AuthGateState extends State<AuthGate> {
         verificationId: _verificationId!,
         smsCode: smsCode,
       );
-      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      final userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
       await _saveUserToFirestore(userCredential.user!, _fullPhoneNumber!);
     } catch (e) {
       setState(() {
@@ -154,7 +158,8 @@ class _AuthGateState extends State<AuthGate> {
       future: FirebaseFirestore.instance.collection('users').doc(phone).get(),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
         }
         if (snap.hasError) {
           return Scaffold(body: Center(child: Text('Error: ${snap.error}')));
@@ -172,14 +177,15 @@ class _AuthGateState extends State<AuthGate> {
 
   // ---------- tiny animation widgets ----------
   Widget _fiinnyHero(BuildContext c) => _FiinnyHero(
-    ringColor: kMintDeep,
-    glowColor: _tint(.35),
-    logoAsset: 'assets/icons/ic_goal.png',
-    scale: _scale(c),
-  );
+        ringColor: kMintDeep,
+        glowColor: _tint(.35),
+        logoAsset: 'assets/icons/ic_goal.png',
+        scale: _scale(c),
+      );
 
   // ---------- UI BUILDERS ----------
-  Widget _header(BuildContext context, {required String subtitle, required int step, required int of}) {
+  Widget _header(BuildContext context,
+      {required String subtitle, required int step, required int of}) {
     final s = _scale(context);
     return Column(
       children: [
@@ -208,7 +214,6 @@ class _AuthGateState extends State<AuthGate> {
           ),
         ),
         _gap(context, 8),
-
       ],
     );
   }
@@ -222,12 +227,12 @@ class _AuthGateState extends State<AuthGate> {
           width: double.infinity,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(.82),
+            color: Colors.white.withValues(alpha: .82),
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: Colors.black12.withOpacity(.06)),
+            border: Border.all(color: Colors.black12.withValues(alpha: .06)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(.05),
+                color: Colors.black.withValues(alpha: .05),
                 blurRadius: 18,
                 offset: const Offset(0, 8),
               ),
@@ -239,7 +244,8 @@ class _AuthGateState extends State<AuthGate> {
     );
   }
 
-  InputDecoration _inputDecoration(BuildContext context, String label, {Widget? prefixIcon}) {
+  InputDecoration _inputDecoration(BuildContext context, String label,
+      {Widget? prefixIcon}) {
     return InputDecoration(
       labelText: label,
       filled: true,
@@ -249,7 +255,7 @@ class _AuthGateState extends State<AuthGate> {
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: Colors.black12.withOpacity(.25)),
+        borderSide: BorderSide(color: Colors.black12.withValues(alpha: .25)),
       ),
       focusedBorder: const OutlineInputBorder(
         borderRadius: BorderRadius.all(Radius.circular(14)),
@@ -258,7 +264,8 @@ class _AuthGateState extends State<AuthGate> {
     );
   }
 
-  Widget _primaryButton(BuildContext context, {required String label, required VoidCallback onPressed}) {
+  Widget _primaryButton(BuildContext context,
+      {required String label, required VoidCallback onPressed}) {
     final s = _scale(context);
     double scale = 1;
     return SizedBox(
@@ -276,9 +283,10 @@ class _AuthGateState extends State<AuthGate> {
                 onPressed: onPressed,
                 style: ElevatedButton.styleFrom(
                   minimumSize: Size.fromHeight(52 * s),
-                  backgroundColor: kMintDeep,     // darker mint
+                  backgroundColor: kMintDeep, // darker mint
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
                   elevation: 0,
                   textStyle: TextStyle(
                     fontFamily: 'Montserrat',
@@ -310,7 +318,8 @@ class _AuthGateState extends State<AuthGate> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _header(context, subtitle: "Sign in with your phone number", step: 1, of: 2),
+        _header(context,
+            subtitle: "Sign in with your phone number", step: 1, of: 2),
         _gap(context, 16),
         _glassCard(
           child: Column(
@@ -318,7 +327,8 @@ class _AuthGateState extends State<AuthGate> {
               IntlPhoneField(
                 controller: _phoneController,
                 initialCountryCode: 'IN',
-                decoration: _inputDecoration(context, 'Phone Number', prefixIcon: const Icon(Icons.phone_outlined)),
+                decoration: _inputDecoration(context, 'Phone Number',
+                    prefixIcon: const Icon(Icons.phone_outlined)),
                 onChanged: (phone) => _fullPhoneNumber = phone.completeNumber,
               ),
               _gap(context, 12),
@@ -335,7 +345,8 @@ class _AuthGateState extends State<AuthGate> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _header(context, subtitle: "Enter the OTP sent to your phone", step: 2, of: 2),
+        _header(context,
+            subtitle: "Enter the OTP sent to your phone", step: 2, of: 2),
         _gap(context, 16),
         _glassCard(
           child: Column(
@@ -347,7 +358,10 @@ class _AuthGateState extends State<AuthGate> {
                   controller: _otpController,
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 22 * s, letterSpacing: 3, fontFamily: 'Montserrat'),
+                  style: TextStyle(
+                      fontSize: 22 * s,
+                      letterSpacing: 3,
+                      fontFamily: 'Montserrat'),
                   decoration: _inputDecoration(context, "6-digit OTP"),
                 ),
               ),
@@ -355,17 +369,22 @@ class _AuthGateState extends State<AuthGate> {
               const Text(
                 "We’ll auto-fill if possible on this device.",
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12.5, color: Colors.black54, fontFamily: 'Montserrat'),
+                style: TextStyle(
+                    fontSize: 12.5,
+                    color: Colors.black54,
+                    fontFamily: 'Montserrat'),
               ),
               _gap(context, 14),
-              _primaryButton(context, label: "Verify & Sign In", onPressed: _verifyOTP),
+              _primaryButton(context,
+                  label: "Verify & Sign In", onPressed: _verifyOTP),
               _gap(context, 8),
               Wrap(
                 alignment: WrapAlignment.center,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   TextButton(
-                    onPressed: () => setState(() => _stage = AuthStage.phoneInput),
+                    onPressed: () =>
+                        setState(() => _stage = AuthStage.phoneInput),
                     child: const Text("Change number"),
                   ),
                   const SizedBox(width: 6),
@@ -393,19 +412,20 @@ class _AuthGateState extends State<AuthGate> {
         final user = snapshot.data;
 
         // live overlay loader (glass blur)
-        final overlayLoader = _loading || snapshot.connectionState == ConnectionState.waiting
+        final overlayLoader = _loading ||
+                snapshot.connectionState == ConnectionState.waiting
             ? Positioned.fill(
-          child: ClipRRect(
-            borderRadius: BorderRadius.zero,
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-              child: Container(
-                color: Colors.white.withOpacity(.55),
-                child: const Center(child: CircularProgressIndicator()),
-              ),
-            ),
-          ),
-        )
+                child: ClipRRect(
+                  borderRadius: BorderRadius.zero,
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                    child: Container(
+                      color: Colors.white.withValues(alpha: .55),
+                      child: const Center(child: CircularProgressIndicator()),
+                    ),
+                  ),
+                ),
+              )
             : const SizedBox.shrink();
 
         if (user != null) {
@@ -421,7 +441,8 @@ class _AuthGateState extends State<AuthGate> {
               children: [
                 Center(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 20),
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 560),
                       child: Column(
@@ -442,7 +463,9 @@ class _AuthGateState extends State<AuthGate> {
                           ),
                           if (_error != null) ...[
                             _gap(context, 20),
-                            Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 14)),
+                            Text(_error!,
+                                style: const TextStyle(
+                                    color: Colors.red, fontSize: 14)),
                           ],
                           _gap(context, 14),
                           Text(
@@ -451,7 +474,7 @@ class _AuthGateState extends State<AuthGate> {
                             style: TextStyle(
                               fontFamily: 'Montserrat',
                               fontSize: 12.5 * _scale(context),
-                              color: Colors.black.withOpacity(0.55),
+                              color: Colors.black.withValues(alpha: 0.55),
                             ),
                           ),
                         ],
@@ -486,13 +509,16 @@ class _FiinnyHero extends StatefulWidget {
   State<_FiinnyHero> createState() => _FiinnyHeroState();
 }
 
-class _FiinnyHeroState extends State<_FiinnyHero> with SingleTickerProviderStateMixin {
+class _FiinnyHeroState extends State<_FiinnyHero>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _ctl;
 
   @override
   void initState() {
     super.initState();
-    _ctl = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat();
+    _ctl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 8))
+          ..repeat();
   }
 
   @override
@@ -522,25 +548,37 @@ class _FiinnyHeroState extends State<_FiinnyHero> with SingleTickerProviderState
             height: glowSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              boxShadow: [BoxShadow(color: glow.withOpacity(.45), blurRadius: 70, spreadRadius: 8)],
+              boxShadow: [
+                BoxShadow(
+                    color: glow.withValues(alpha: .45),
+                    blurRadius: 70,
+                    spreadRadius: 8)
+              ],
             ),
           ),
           // rotating sweep ring
           RotationTransition(
             turns: _ctl,
             child: Container(
-              width: ringSize, height: ringSize,
+              width: ringSize,
+              height: ringSize,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: SweepGradient(
-                  colors: [ring, ring.withOpacity(0), ring.withOpacity(0), ring],
+                  colors: [
+                    ring,
+                    ring.withValues(alpha: 0),
+                    ring.withValues(alpha: 0),
+                    ring
+                  ],
                   stops: const [0.0, 0.55, 0.85, 1.0],
                 ),
               ),
               child: Padding(
                 padding: EdgeInsets.all(10 * s),
                 child: Container(
-                  decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                  decoration: const BoxDecoration(
+                      shape: BoxShape.circle, color: Colors.white),
                 ),
               ),
             ),
@@ -569,8 +607,8 @@ class _Shake extends StatefulWidget {
 }
 
 class _ShakeState extends State<_Shake> with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-  AnimationController(vsync: this, duration: const Duration(milliseconds: 350));
+  late final AnimationController _c = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 350));
   late final Animation<double> _a = TweenSequence<double>([
     TweenSequenceItem(tween: Tween(begin: 0, end: -10), weight: 1),
     TweenSequenceItem(tween: Tween(begin: -10, end: 10), weight: 2),
@@ -580,15 +618,17 @@ class _ShakeState extends State<_Shake> with SingleTickerProviderStateMixin {
   @override
   void didUpdateWidget(covariant _Shake oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.triggerKey != widget.triggerKey && widget.triggerKey != null) {
+    if (oldWidget.triggerKey != widget.triggerKey &&
+        widget.triggerKey != null) {
       _c.forward(from: 0);
     }
   }
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: _a,
-    builder: (_, child) => Transform.translate(offset: Offset(_a.value, 0), child: child),
-    child: widget.child,
-  );
+        animation: _a,
+        builder: (_, child) =>
+            Transform.translate(offset: Offset(_a.value, 0), child: child),
+        child: widget.child,
+      );
 }

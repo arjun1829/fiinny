@@ -38,11 +38,11 @@ class CrisisAlertBanner extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
       decoration: BoxDecoration(
-        color: Colors.redAccent.withOpacity(0.90),
+        color: Colors.redAccent.withValues(alpha: 0.90),
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.red.withOpacity(0.22),
+            color: Colors.red.withValues(alpha: 0.22),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),

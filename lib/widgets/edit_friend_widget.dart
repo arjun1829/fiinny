@@ -48,7 +48,8 @@ class _EditFriendWidgetState extends State<EditFriendWidget> {
       email: _emailController.text.trim(),
       avatar: _avatarController.text.trim(),
     );
-    await FriendService().updateFriend(widget.userId, updated);
+    await FriendService()
+        .updateFriend(widget.userId, widget.friend.phone, updated.toJson());
     if (widget.onSave != null) widget.onSave!();
     if (Navigator.canPop(context)) Navigator.of(context).pop(); // For dialog
     setState(() => _isSaving = false);

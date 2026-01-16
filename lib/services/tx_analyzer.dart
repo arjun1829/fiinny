@@ -228,9 +228,9 @@ class TxAnalyzer {
     String? reference;
     final aliases = <String>{};
 
-    bool isUPI = norm.contains(RegExp(r'\bUPI\b'));
-    bool isP2M = norm.contains(RegExp(r'\bUPI\/P2M\b'));
-    bool isDebit = _looksLikeDebit(norm);
+    final bool isUPI = norm.contains(RegExp(r'\bUPI\b'));
+    final bool isP2M = norm.contains(RegExp(r'\bUPI\/P2M\b'));
+    final bool isDebit = _looksLikeDebit(norm);
 
     // A) ML Kit (optional)
     // A) ML Kit (optional)

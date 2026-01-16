@@ -74,7 +74,9 @@ class GroupMemberBalanceChart extends StatelessWidget {
                           '$name\n₹${amt.toStringAsFixed(2)}',
                           TextStyle(
                             fontWeight: FontWeight.w800,
-                            color: amt >= 0 ? Colors.teal.shade800 : Colors.redAccent,
+                            color: amt >= 0
+                                ? Colors.teal.shade800
+                                : Colors.redAccent,
                           ),
                         );
                       },
@@ -84,7 +86,7 @@ class GroupMemberBalanceChart extends StatelessWidget {
                     show: true,
                     drawVerticalLine: false,
                     getDrawingHorizontalLine: (v) => FlLine(
-                      color: Colors.grey.withOpacity(0.18),
+                      color: Colors.grey.withValues(alpha: 0.18),
                       strokeWidth: 1,
                     ),
                   ),
@@ -95,7 +97,8 @@ class GroupMemberBalanceChart extends StatelessWidget {
                         reservedSize: 44,
                         getTitlesWidget: (v, meta) => Text(
                           '₹${v.toInt()}',
-                          style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                          style:
+                              TextStyle(fontSize: 11, color: Colors.grey[700]),
                         ),
                       ),
                     ),
@@ -113,7 +116,8 @@ class GroupMemberBalanceChart extends StatelessWidget {
                           return Padding(
                             padding: const EdgeInsets.only(top: 6),
                             child: Transform.rotate(
-                              angle: 0, // keep horizontal; change to -0.6 for diagonal
+                              angle:
+                                  0, // keep horizontal; change to -0.6 for diagonal
                               child: Text(
                                 label,
                                 overflow: TextOverflow.ellipsis,
@@ -146,15 +150,16 @@ class GroupMemberBalanceChart extends StatelessWidget {
                           backDrawRodData: BackgroundBarChartRodData(
                             show: true,
                             toY: isPos ? maxY : -maxY,
-                            color: (isPos ? Colors.teal : Colors.redAccent).withOpacity(0.10),
+                            color: (isPos ? Colors.teal : Colors.redAccent)
+                                .withValues(alpha: 0.10),
                           ),
                         ),
                       ],
                     );
                   }),
                 ),
-                swapAnimationDuration: const Duration(milliseconds: 500),
-                swapAnimationCurve: Curves.easeInOutCubic,
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeInOutCubic,
               ),
             ),
           ),

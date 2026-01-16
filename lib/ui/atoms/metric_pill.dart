@@ -37,7 +37,7 @@ class MetricPill extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: c.withOpacity(.9),
+                color: c.withValues(alpha: .9),
                 fontWeight: FontWeight.w600,
                 fontSize: 11,
                 letterSpacing: .2,
@@ -61,8 +61,8 @@ class MetricPill extends StatelessWidget {
     final pill = Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: ShapeDecoration(
-        color: c.withOpacity(.08),
-        shape: StadiumBorder(side: BorderSide(color: c.withOpacity(.25))),
+        color: c.withValues(alpha: .08),
+        shape: StadiumBorder(side: BorderSide(color: c.withValues(alpha: .25))),
       ),
       child: content,
     );

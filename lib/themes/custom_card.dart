@@ -37,19 +37,19 @@ class CustomDiamondCard extends StatelessWidget {
         gradient: LinearGradient(
           colors: glassGradient ??
               [
-                Colors.white.withOpacity(0.15),
-                Colors.white.withOpacity(0.06),
+                Colors.white.withValues(alpha: 0.15),
+                Colors.white.withValues(alpha: 0.06),
               ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         border: Border.all(
-          color: Colors.white.withOpacity(0.22),
+          color: Colors.white.withValues(alpha: 0.22),
           width: isDiamondCut ? 2.0 : 1.0,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.14),
+            color: Colors.grey.withValues(alpha: 0.14),
             blurRadius: isDiamondCut ? 18 : 9,
             offset: Offset(0, isDiamondCut ? 7 : 4),
           ),

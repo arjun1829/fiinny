@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../widgets/asset_type_tile.dart';
 
 /// Reusable tile for selecting an asset type (Stocks, Gold, etc.)
 class AssetTypeTile extends StatelessWidget {
@@ -22,10 +21,10 @@ class AssetTypeTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cardColor = disabled
-        ? theme.colorScheme.surfaceVariant
+        ? theme.colorScheme.surfaceContainerHighest
         : theme.colorScheme.surface;
     final fg = disabled
-        ? theme.colorScheme.onSurface.withOpacity(0.45)
+        ? theme.colorScheme.onSurface.withValues(alpha: 0.45)
         : theme.colorScheme.onSurface;
 
     return InkWell(
@@ -38,14 +37,14 @@ class AssetTypeTile extends StatelessWidget {
           border: Border.all(
             color: disabled
                 ? theme.colorScheme.outlineVariant
-                : theme.colorScheme.outline.withOpacity(0.5),
+                : theme.colorScheme.outline.withValues(alpha: 0.5),
           ),
           boxShadow: [
             BoxShadow(
               blurRadius: 10,
               spreadRadius: 1,
               offset: const Offset(0, 4),
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
             ),
           ],
         ),

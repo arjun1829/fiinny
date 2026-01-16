@@ -384,7 +384,7 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: cs.primary.withOpacity(.12),
+                        color: cs.primary.withValues(alpha: .12),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Icon(Icons.alarm_rounded, color: cs.primary),
@@ -484,7 +484,7 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                         subtitle: Text('Choose how often to repeat'),
                       ),
                       DropdownButtonFormField<String>(
-                        value: _freq,
+                        initialValue: _freq,
                         decoration: const InputDecoration(
                           labelText: 'Frequency',
                           prefixIcon: Icon(Icons.autorenew_rounded),
@@ -502,7 +502,7 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
 
                       if (_freq == 'weekly') ...[
                         DropdownButtonFormField<int>(
-                          value: _weekday,
+                          initialValue: _weekday,
                           decoration: const InputDecoration(
                             labelText: 'Weekday',
                             prefixIcon: Icon(Icons.event_available_outlined),
@@ -599,7 +599,7 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: cs.primary.withOpacity(.08),
+                                  color: cs.primary.withValues(alpha: .08),
                                   borderRadius: BorderRadius.circular(999),
                                 ),
                                 child: Text(
@@ -699,7 +699,7 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
         border: Border.all(color: Colors.grey.shade300),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 10,
             offset: const Offset(0, 6),
           ),

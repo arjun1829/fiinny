@@ -138,10 +138,10 @@ class GroupExpenseListWidget extends StatelessWidget {
                         Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
                         Text(e.note),
                       ],
-                      if (e.date != null) ...[
-                        SizedBox(height: 10),
-                        Text("Date: ${e.date.toLocal().toString().substring(0, 10)}"),
-                      ],
+                      ...[
+                      SizedBox(height: 10),
+                      Text("Date: ${e.date.toLocal().toString().substring(0, 10)}"),
+                    ],
                       if (e.category != null && e.category!.isNotEmpty) ...[
                         SizedBox(height: 10),
                         Text("Category: ${e.category}"),

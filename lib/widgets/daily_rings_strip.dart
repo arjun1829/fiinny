@@ -65,12 +65,12 @@ class DailyRingsStrip extends StatelessWidget {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? Colors.teal.withOpacity(0.08)
-                    : Colors.white.withOpacity(0.06),
+                    ? Colors.teal.withValues(alpha: 0.08)
+                    : Colors.white.withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: isSelected
-                      ? Colors.tealAccent.withOpacity(0.6)
+                      ? Colors.tealAccent.withValues(alpha: 0.6)
                       : Colors.white12,
                 ),
               ),

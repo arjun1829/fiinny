@@ -2,7 +2,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:characters/characters.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
@@ -16,21 +15,19 @@ import '../models/group_model.dart';
 import '../services/expense_service.dart';
 import '../services/income_service.dart';
 import '../services/friend_service.dart';
-import '../services/group_service.dart';
+
 import 'edit_expense_screen.dart';
-import '../widgets/date_filter_bar.dart';
 import '../widgets/chart_switcher_widget.dart';
 import '../widgets/unified_transaction_list.dart';
 import '../themes/custom_card.dart';
 import '../themes/tokens.dart';
-import 'bulk_split_screen.dart';
 
-import '../services/user_data.dart'; // Needed for data passing
+// Needed for data passing
 import '../widgets/calendar_expense_view.dart'; // [NEW]
 
 class ExpensesScreen extends StatefulWidget {
   final String userPhone;
-  const ExpensesScreen({required this.userPhone, Key? key}) : super(key: key);
+  const ExpensesScreen({required this.userPhone, super.key});
 
   @override
   State<ExpensesScreen> createState() => _ExpensesScreenState();
@@ -50,20 +47,21 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   double periodTotalExpense = 0;
   double periodTotalIncome = 0;
   Map<String, FriendModel> _friendsById = {};
-  List<FriendModel> _friends = [];
-  Set<String> _friendNameTokens = {};
-  Set<String> _friendPhoneSet = {};
-  List<GroupModel> _groups = [];
+  // List<FriendModel> _friends = []; // Unused
+  final Set<String> _friendNameTokens = {};
+  final Set<String> _friendPhoneSet = {};
+  // List<GroupModel> _groups = []; // Unused
 
   // Calendar state
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
 
   List<ExpenseItem> _expensesForSelectedDay = [];
+  List<IncomeItem> _incomesForSelectedDay = [];
 
   // Multi-select & Bulk Edit/Delete
   bool _multiSelectMode = false;
-  Set<String> _selectedTxIds = {};
+  final Set<String> _selectedTxIds = {};
 
   // Search & Filters
   String _searchQuery = '';
@@ -81,75 +79,15 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   StreamSubscription<List<ExpenseItem>>? _expSub;
   StreamSubscription<List<IncomeItem>>? _incSub;
   StreamSubscription<List<FriendModel>>? _friendSub;
-  StreamSubscription<List<GroupModel>>? _groupSub;
+  // StreamSubscription<List<GroupModel>>? _groupSub; // Unused
   Timer? _debounce;
 
   // Prevent multiple recomputes inside the same frame (avoids re-entrant layout)
   bool _pendingRecompute = false;
 
-  List<PieChartSectionData> _miniExpenseSections() {
-    if (filteredExpenses.isEmpty) return [];
-    final byCategory = _topN(_buildByCategory<ExpenseItem>(
-      filteredExpenses,
-      (e) => e.type,
-      (e) => e.amount,
-    ));
+  // _miniExpenseSections removed
 
-    final colors = [
-      Colors.pinkAccent,
-      Colors.deepPurpleAccent,
-      Colors.lightBlue,
-      Colors.teal,
-      Colors.greenAccent,
-      Colors.orange,
-      Colors.amber,
-      Colors.cyan,
-      Colors.indigo,
-      Colors.redAccent,
-    ];
-
-    int i = 0;
-    return byCategory.entries.map((e) {
-      return PieChartSectionData(
-        value: e.value,
-        color: colors[i++ % colors.length],
-        title: '',
-        radius: 34,
-      );
-    }).toList();
-  }
-
-  List<PieChartSectionData> _miniIncomeSections() {
-    if (filteredIncomes.isEmpty) return [];
-    final byCategory = _topN(_buildByCategory<IncomeItem>(
-      filteredIncomes,
-      (i) => i.type,
-      (i) => i.amount,
-    ));
-
-    final colors = [
-      Colors.green,
-      Colors.lightGreen,
-      Colors.amber,
-      Colors.blue,
-      Colors.purple,
-      Colors.teal,
-      Colors.orange,
-      Colors.yellow,
-      Colors.cyan,
-      Colors.indigo,
-    ];
-
-    int i = 0;
-    return byCategory.entries.map((e) {
-      return PieChartSectionData(
-        value: e.value,
-        color: colors[i++ % colors.length],
-        title: '',
-        radius: 34,
-      );
-    }).toList();
-  }
+  // _miniIncomeSections removed
 
   @override
   void initState() {
@@ -164,7 +102,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     _expSub?.cancel();
     _incSub?.cancel();
     _friendSub?.cancel();
-    _groupSub?.cancel();
+    // _groupSub?.cancel();
     super.dispose();
   }
 
@@ -236,24 +174,27 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         FriendService().streamFriends(widget.userPhone).listen((friends) {
       if (!mounted) return;
       setState(() {
-        _friends = friends;
+        // _friends = friends;
         _friendsById = {for (var f in friends) f.phone: f};
         _friendNameTokens.clear();
         _friendPhoneSet.clear();
         for (final f in friends) {
           if (f.name.isNotEmpty) _friendNameTokens.add(f.name.toLowerCase());
-          if (f.phone.isNotEmpty)
+          if (f.phone.isNotEmpty) {
             _friendPhoneSet.add(f.phone.replaceAll(RegExp(r'[^0-9]'), ''));
+          }
         }
       });
     });
 
+    /*
     _groupSub = GroupService().streamGroups(widget.userPhone).listen((groups) {
       if (!mounted) return;
       setState(() {
         _groups = groups;
       });
     });
+    */
   }
 
   void _recomputeInternal() {
@@ -279,13 +220,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return value.isEmpty ? '' : value.toUpperCase();
   }
 
-  String _encodeBankSelection(String bank, [String? cardLast4]) {
-    final normalized = _normalizeBank(bank);
-    if (normalized.isEmpty) return normalized;
-    final l4 = (cardLast4 ?? '').trim();
-    if (l4.isEmpty) return normalized;
-    return '$normalized|$l4';
-  }
+  // _encodeBankSelection removed
 
   bool _matchesBankFilters(String? bank, String? cardLast4) {
     if (_selectedBanks.isEmpty) return true;
@@ -297,37 +232,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return _selectedBanks.contains('$normalizedBank|$l4');
   }
 
-  String _displayBankName(String normalized) {
-    if (normalized.isEmpty) return 'Unknown Bank';
-    for (final e in allExpenses) {
-      final candidate = _normalizeBank(e.issuerBank);
-      if (candidate == normalized) {
-        return (e.issuerBank ?? '').trim();
-      }
-    }
-    for (final i in allIncomes) {
-      final candidate = _normalizeBank(i.issuerBank);
-      if (candidate == normalized) {
-        return (i.issuerBank ?? '').trim();
-      }
-    }
-    final lower = normalized.toLowerCase();
-    return lower
-        .split(RegExp(r'[_\s]+'))
-        .where((part) => part.isNotEmpty)
-        .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
-        .join(' ');
-  }
+  // _displayBankName removed
 
-  String _displayBankSelectionLabel(String selection) {
-    if (selection.isEmpty) return 'Bank';
-    final parts = selection.split('|');
-    final bankLabel = _displayBankName(parts.first);
-    if (parts.length > 1 && parts[1].isNotEmpty) {
-      return '$bankLabel • ••${parts[1]}';
-    }
-    return bankLabel;
-  }
+  // _displayBankSelectionLabel removed
 
   String _normalizeMerchantKey(String raw) {
     final key = AnalyticsAgg.displayMerchantKey(raw).trim();
@@ -343,16 +250,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return _selectedMerchants.contains(normalized);
   }
 
-  String _displayMerchantSelectionLabel(String selection) {
-    final normalized = selection.toUpperCase();
-    final byMerchant = AnalyticsAgg.byMerchant(allExpenses);
-    for (final key in byMerchant.keys) {
-      if (key.toUpperCase() == normalized) {
-        return _formatMerchantName(key);
-      }
-    }
-    return _formatMerchantName(selection);
-  }
+  // _displayMerchantSelectionLabel removed
 
   String _transactionPanelKey() {
     final parts = [
@@ -424,8 +322,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         final note = (e.note).toLowerCase();
         final label = (e.label ?? '').toLowerCase();
         final type = (e.type).toLowerCase();
-        if (!(note.contains(q) || label.contains(q) || type.contains(q)))
+        if (!(note.contains(q) || label.contains(q) || type.contains(q))) {
           return false;
+        }
       }
       if (_selectedCategories.isNotEmpty) {
         final cat = e.type.trim().isEmpty ? 'Other' : e.type.trim();
@@ -433,8 +332,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       }
       if (_searchFrom != null && _searchTo != null) {
         final d = _d(e.date);
-        if (d.isBefore(_d(_searchFrom!)) || d.isAfter(_d(_searchTo!)))
+        if (d.isBefore(_d(_searchFrom!)) || d.isAfter(_d(_searchTo!))) {
           return false;
+        }
       }
       if (!_matchesBankFilters(e.issuerBank, e.cardLast4)) {
         return false;
@@ -467,8 +367,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         final note = (i.note).toLowerCase();
         final label = (i.label ?? '').toLowerCase();
         final type = (i.type).toLowerCase();
-        if (!(note.contains(q) || label.contains(q) || type.contains(q)))
+        if (!(note.contains(q) || label.contains(q) || type.contains(q))) {
           return false;
+        }
       }
       if (_selectedCategories.isNotEmpty) {
         final cat = i.type.trim().isEmpty ? 'Other' : i.type.trim();
@@ -476,8 +377,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       }
       if (_searchFrom != null && _searchTo != null) {
         final d = _d(i.date);
-        if (d.isBefore(_d(_searchFrom!)) || d.isAfter(_d(_searchTo!)))
+        if (d.isBefore(_d(_searchFrom!)) || d.isAfter(_d(_searchTo!))) {
           return false;
+        }
       }
       if (!_matchesBankFilters(i.issuerBank, null)) {
         return false;
@@ -575,148 +477,13 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return _periodLabelFor(_selectedFilter);
   }
 
-  bool get _hasActiveFilters =>
-      _selectedCategories.isNotEmpty ||
-      _selectedMerchants.isNotEmpty ||
-      _selectedBanks.isNotEmpty ||
-      _friendFilterPhones.isNotEmpty ||
-      _groupFilterIds.isNotEmpty ||
-      _searchFrom != null ||
-      _searchTo != null;
+  // _hasActiveFilters removed
 
-  Widget _buildActiveFiltersWrap() {
-    final chips = _activeFilterChips();
-    if (chips.isEmpty) {
-      return const SizedBox(height: 8);
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, left: 4, right: 4),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 6,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          ...chips,
-          if (_hasActiveFilters)
-            Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: TextButton(
-                onPressed: _clearAllFilters,
-                child: const Text('Clear filters'),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
+  // _buildActiveFiltersWrap removed
 
-  List<Widget> _activeFilterChips() {
-    final chips = <Widget>[];
+  // _activeFilterChips removed
 
-    if (_searchFrom != null && _searchTo != null) {
-      final label = _currentPeriodLabel();
-      chips.add(InputChip(
-        label: Text(label),
-        onDeleted: () {
-          setState(() {
-            _searchFrom = null;
-            _searchTo = null;
-          });
-          _scheduleRecompute();
-        },
-      ));
-    }
-
-    if (_selectedCategories.isNotEmpty) {
-      final sorted = _selectedCategories.toList()..sort();
-      final first = sorted.first;
-      final label =
-          sorted.length == 1 ? first : '$first + ${sorted.length - 1} more';
-      chips.add(InputChip(
-        label: Text(label),
-        onDeleted: () {
-          setState(() => _selectedCategories = {});
-          _scheduleRecompute();
-        },
-      ));
-    }
-
-    if (_selectedMerchants.isNotEmpty) {
-      final sorted = _selectedMerchants.toList()..sort();
-      final firstLabel = _displayMerchantSelectionLabel(sorted.first);
-      final label = sorted.length == 1
-          ? firstLabel
-          : '$firstLabel + ${sorted.length - 1} more';
-      chips.add(InputChip(
-        label: Text(label),
-        onDeleted: () {
-          setState(() => _selectedMerchants = {});
-          _scheduleRecompute();
-        },
-      ));
-    }
-
-    if (_selectedBanks.isNotEmpty) {
-      final sorted = _selectedBanks.toList()..sort();
-      final firstLabel = _displayBankSelectionLabel(sorted.first);
-      final label = sorted.length == 1
-          ? firstLabel
-          : '$firstLabel + ${sorted.length - 1} more';
-      chips.add(InputChip(
-        label: Text(label),
-        onDeleted: () {
-          setState(() => _selectedBanks = {});
-          _scheduleRecompute();
-        },
-      ));
-    }
-
-    final friendPhones = _friendFilterPhones.toList()..sort();
-    for (final phone in friendPhones) {
-      final friendName = _friendsById[phone]?.name.trim();
-      final label =
-          (friendName != null && friendName.isNotEmpty) ? friendName : phone;
-      chips.add(InputChip(
-        label: Text(label),
-        onDeleted: () {
-          setState(() {
-            _friendFilterPhones = {..._friendFilterPhones}..remove(phone);
-          });
-          _scheduleRecompute();
-        },
-      ));
-    }
-
-    final groupIds = _groupFilterIds.toList()..sort();
-    for (final groupId in groupIds) {
-      final label = groupId.isEmpty ? 'Group' : 'Group $groupId';
-      chips.add(InputChip(
-        label: Text(label),
-        onDeleted: () {
-          setState(() {
-            _groupFilterIds = {..._groupFilterIds}..remove(groupId);
-          });
-          _scheduleRecompute();
-        },
-      ));
-    }
-
-    return chips;
-  }
-
-  void _clearAllFilters() {
-    setState(() {
-      _selectedFilter = 'Month';
-      _selectedCategories = {};
-      _selectedMerchants = {};
-      _selectedBanks = {};
-      _friendFilterPhones = {};
-      _groupFilterIds = {};
-      _searchFrom = null;
-      _searchTo = null;
-    });
-    _scheduleRecompute();
-  }
+  // _clearAllFilters removed
 
   Future<void> _showPeriodPickerBottomSheet() async {
     final now = DateTime.now();
@@ -841,123 +608,13 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 
-  Future<void> _openFiltersScreen() async {
-    final config = await Navigator.push<ExpenseFilterConfig>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ExpenseFiltersScreen(
-          initialConfig: ExpenseFilterConfig(
-            periodToken: _selectedFilter,
-            customRange: _searchFrom != null && _searchTo != null
-                ? DateTimeRange(start: _searchFrom!, end: _searchTo!)
-                : null,
-            categories: _selectedCategories,
-            merchants: _selectedMerchants,
-            banks: _selectedBanks,
-            friendPhones: _friendFilterPhones,
-            groupIds: _groupFilterIds,
-          ),
-          expenses: allExpenses,
-          incomes: allIncomes,
-          friendsById: _friendsById,
-          groups: _groups,
-        ),
-      ),
-    );
+  // _openFiltersScreen removed
 
-    if (config != null) {
-      setState(() {
-        _selectedFilter = config.periodToken;
-        if (config.customRange != null) {
-          _searchFrom = config.customRange!.start;
-          _searchTo = config.customRange!.end;
-        } else {
-          _searchFrom = null;
-          _searchTo = null;
-        }
-        _selectedCategories = {...config.categories};
-        _selectedMerchants = config.merchants
-            .map((m) => m.trim().toUpperCase())
-            .where((m) => m.isNotEmpty)
-            .toSet();
-        _selectedBanks = config.banks
-            .map((b) {
-              final trimmed = b.trim();
-              if (trimmed.isEmpty) return '';
-              if (!trimmed.contains('|')) {
-                return _normalizeBank(trimmed);
-              }
-              final parts = trimmed.split('|');
-              final bankPart = _normalizeBank(parts.first);
-              final cardPart = parts.length > 1 ? parts[1].trim() : '';
-              if (cardPart.isEmpty) return bankPart;
-              return '$bankPart|$cardPart';
-            })
-            .where((value) => value.isNotEmpty)
-            .toSet();
-        _friendFilterPhones = {...config.friendPhones};
-        _groupFilterIds = {...config.groupIds};
-      });
-      _scheduleRecompute();
-    }
-  }
+  // _formatMerchantName removed
 
-  String _formatMerchantName(String raw) {
-    final trimmed = raw.trim();
-    if (trimmed.isEmpty) return 'Unknown';
-    return trimmed
-        .split(RegExp(r'\s+'))
-        .where((word) => word.isNotEmpty)
-        .map((word) =>
-            '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}')
-        .join(' ');
-  }
+  // _buildTxTypeChipsRow removed
 
-  Widget _buildTxTypeChipsRow() {
-    const types = ['All', 'Expense', 'Income'];
-    return Wrap(
-      spacing: 8,
-      children: types.map((type) {
-        final selected = _dataType == type;
-        return ChoiceChip(
-          label: Text(
-            type,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: selected ? Colors.white : Colors.black87,
-            ),
-          ),
-          selected: selected,
-          selectedColor: Fx.mintDark,
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(
-              color: selected ? Fx.mintDark : Colors.black12,
-            ),
-          ),
-          onSelected: (_) {
-            setState(() => _dataType = type);
-          },
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildFiltersButton() {
-    return ActionChip(
-      avatar:
-          const Icon(Icons.filter_alt_rounded, size: 16, color: Colors.white),
-      label: const Text('Filters',
-          style: TextStyle(
-              color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-      backgroundColor: Fx.mintDark,
-      side: BorderSide.none,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      onPressed: _openFiltersScreen,
-    );
-  }
+  // _buildFiltersButton removed
 
   // void _generateDailyTotals() {
   //   _dailyTotals.clear();
@@ -971,6 +628,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final d = _d(date);
     _expensesForSelectedDay =
         allExpenses.where((e) => _d(e.date) == d).toList();
+    _incomesForSelectedDay = allIncomes.where((i) => _d(i.date) == d).toList();
   }
 
   // ------- Build -------
@@ -1021,17 +679,21 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               children: [
                 _buildDateNavigator(),
                 const TabBar(
-                  isScrollable: true,
+                  isScrollable: false, // Changed to false to fit all 5
                   labelColor: Colors.teal,
                   unselectedLabelColor: Colors.grey,
                   indicatorColor: Colors.teal,
-                  labelStyle: TextStyle(fontWeight: FontWeight.bold),
+                  labelStyle: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11), // Reduced font size slightly
                   tabs: [
                     Tab(text: "Daily"),
-                    Tab(text: "Calendar"),
+                    Tab(text: "Cal"), // Shortened text
                     Tab(text: "Monthly"),
-                    Tab(text: "Summary"),
-                    Tab(text: "Description"),
+                    Tab(
+                        text:
+                            "Stats"), // Renamed from Summary to avoid confusion
+                    Tab(text: "Desc"), // Shortened text
                   ],
                 ),
               ],
@@ -1049,7 +711,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               _calendarTabView(context),
 
               // Monthly View (List of Month)
-              _summaryView(context),
+              _monthlyListView(context),
 
               // Summary View (Stats Card)
               _onlySummaryCard(context),
@@ -1070,122 +732,139 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     }
     final dateStr = DateFormat('EEEE, d MMM').format(_selectedDay!);
 
-    return Column(
-      children: [
-        Container(
-          color: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.chevron_left, color: Colors.black54),
-                onPressed: () {
-                  setState(() {
-                    _selectedDay =
-                        _selectedDay!.subtract(const Duration(days: 1));
-                    _updateExpensesForSelectedDay(_selectedDay!);
-                  });
-                },
-              ),
-              Text(
-                dateStr,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+    return GestureDetector(
+      onHorizontalDragEnd: (details) {
+        if (details.primaryVelocity! > 0) {
+          // Swipe Right -> Previous Day
+          setState(() {
+            _selectedDay = _selectedDay!.subtract(const Duration(days: 1));
+            _updateExpensesForSelectedDay(_selectedDay!);
+          });
+        } else if (details.primaryVelocity! < 0) {
+          // Swipe Left -> Next Day
+          setState(() {
+            _selectedDay = _selectedDay!.add(const Duration(days: 1));
+            _updateExpensesForSelectedDay(_selectedDay!);
+          });
+        }
+      },
+      child: Column(
+        children: [
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left, color: Colors.black54),
+                  onPressed: () {
+                    setState(() {
+                      _selectedDay =
+                          _selectedDay!.subtract(const Duration(days: 1));
+                      _updateExpensesForSelectedDay(_selectedDay!);
+                    });
+                  },
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.chevron_right, color: Colors.black54),
-                onPressed: () {
-                  setState(() {
-                    _selectedDay = _selectedDay!.add(const Duration(days: 1));
-                    _updateExpensesForSelectedDay(_selectedDay!);
-                  });
-                },
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: UnifiedTransactionList(
-            expenses: _expensesForSelectedDay,
-            userPhone: widget.userPhone,
-            incomes: const [], // TODO: filter incomes for selected day if needed
-            previewCount: 100,
-            filterType: _dataType,
-            friendsById: _friendsById,
-            showBillIcon: true,
-            emptyBuilder: (context) => Center(
-              child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.calendar_today_rounded,
-                        size: 48, color: Colors.grey.shade300),
-                    const SizedBox(height: 16),
-                    Text(
-                      "No transactions",
-                      style: TextStyle(color: Colors.grey.shade400),
-                    ),
-                  ]),
+                Text(
+                  dateStr,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right, color: Colors.black54),
+                  onPressed: () {
+                    setState(() {
+                      _selectedDay = _selectedDay!.add(const Duration(days: 1));
+                      _updateExpensesForSelectedDay(_selectedDay!);
+                    });
+                  },
+                ),
+              ],
             ),
-            multiSelectEnabled: _multiSelectMode,
-            selectedIds: _selectedTxIds,
-            onSelectTx: (txId, selected) {
-              setState(() {
-                if (selected) {
-                  _selectedTxIds.add(txId);
-                } else {
-                  _selectedTxIds.remove(txId);
-                }
-              });
-            },
-            onEdit: (tx) async {
-              if (_multiSelectMode) return;
-              if (tx is ExpenseItem) {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => EditExpenseScreen(
-                      userPhone: widget.userPhone,
-                      expense: tx,
-                    ),
-                  ),
-                );
-                _scheduleRecompute(); // Refresh list to catch edits
-              }
-            },
-            onDelete: (tx) async {
-              if (_multiSelectMode) return;
-              if (tx is ExpenseItem) {
-                await ExpenseService().deleteExpense(
-                  widget.userPhone,
-                  tx.id,
-                );
-                _scheduleRecompute();
-              }
-            },
-            onSplit: (tx) async {
-              if (_multiSelectMode) return;
-              if (tx is ExpenseItem) {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => EditExpenseScreen(
-                      userPhone: widget.userPhone,
-                      expense: tx,
-                      initialStep: 1,
-                    ),
-                  ),
-                );
-                _scheduleRecompute();
-              }
-            },
-            onAddComment: (tx) => _openCommentDialog(tx),
           ),
-        ),
-      ],
+          Expanded(
+            child: UnifiedTransactionList(
+              expenses: _expensesForSelectedDay,
+              incomes: _incomesForSelectedDay,
+              userPhone: widget.userPhone,
+              previewCount: 100,
+              filterType: _dataType,
+              friendsById: _friendsById,
+              showBillIcon: true,
+              emptyBuilder: (context) => Center(
+                child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.calendar_today_rounded,
+                          size: 48, color: Colors.grey.shade300),
+                      const SizedBox(height: 16),
+                      Text(
+                        "No transactions",
+                        style: TextStyle(color: Colors.grey.shade400),
+                      ),
+                    ]),
+              ),
+              multiSelectEnabled: _multiSelectMode,
+              selectedIds: _selectedTxIds,
+              onSelectTx: (txId, selected) {
+                setState(() {
+                  if (selected) {
+                    _selectedTxIds.add(txId);
+                  } else {
+                    _selectedTxIds.remove(txId);
+                  }
+                });
+              },
+              onEdit: (tx) async {
+                if (_multiSelectMode) return;
+                if (tx is ExpenseItem) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditExpenseScreen(
+                        userPhone: widget.userPhone,
+                        expense: tx,
+                      ),
+                    ),
+                  );
+                  _scheduleRecompute(); // Refresh list to catch edits
+                }
+              },
+              onDelete: (tx) async {
+                if (_multiSelectMode) return;
+                if (tx is ExpenseItem) {
+                  await ExpenseService().deleteExpense(
+                    widget.userPhone,
+                    tx.id,
+                  );
+                  _scheduleRecompute();
+                }
+              },
+              onSplit: (tx) async {
+                if (_multiSelectMode) return;
+                if (tx is ExpenseItem) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditExpenseScreen(
+                        userPhone: widget.userPhone,
+                        expense: tx,
+                        initialStep: 1,
+                      ),
+                    ),
+                  );
+                  _scheduleRecompute();
+                }
+              },
+              onAddComment: (tx) => _openCommentDialog(tx),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1274,7 +953,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         Expanded(
           flex: 3,
           child: CalendarExpenseView(
-            expenses: filteredExpenses,
+            expenses: (_dataType == "All" || _dataType == "Expense")
+                ? filteredExpenses
+                : [],
+            incomes: (_dataType == "All" || _dataType == "Income")
+                ? filteredIncomes
+                : [],
             focusedDay: _focusedDay,
             onDaySelected: (selected, focused) {
               setState(() {
@@ -1291,15 +975,15 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             flex: 2,
             child: UnifiedTransactionList(
               expenses: _expensesForSelectedDay,
+              incomes: _incomesForSelectedDay,
               userPhone: widget.userPhone,
-              incomes: const [],
               previewCount: 50,
               friendsById: _friendsById,
-              filterType: 'Expense',
+              filterType: _dataType,
               showBillIcon: true,
               emptyBuilder: (_) => Center(
                   child: Text(
-                      "No expenses on ${DateFormat('MMM d').format(_selectedDay!)}",
+                      "No transactions on ${DateFormat('MMM d').format(_selectedDay!)}",
                       style: const TextStyle(color: Colors.grey))),
             ),
           ),
@@ -1366,7 +1050,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             borderRadius: BorderRadius.circular(100),
             boxShadow: [
               BoxShadow(
-                color: theme.primaryColor.withOpacity(0.45),
+                color: theme.primaryColor.withValues(alpha: 0.45),
                 blurRadius: 12,
                 offset: const Offset(0, 6),
               )
@@ -1404,371 +1088,84 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 
-  Widget _summaryView(BuildContext context) {
-    final bankCardStats = _computeBankCardStats();
-    final periodLabel = _currentPeriodLabel();
-    final txCount = filteredExpenses.length + filteredIncomes.length;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _SummaryRingCard(
-            spent: periodTotalExpense,
-            received: periodTotalIncome,
-            bankCount: bankCardStats.$1,
-            cardCount: bankCardStats.$2,
-            txCount: txCount,
-            periodLabel: periodLabel,
-            onTapPeriod: _showPeriodPickerBottomSheet,
-            onTap: () async {
-              await Navigator.pushNamed(
-                context,
-                '/analytics',
-                arguments: widget.userPhone,
-              );
+  Widget _monthlyListView(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: UnifiedTransactionList(
+            expenses: filteredExpenses,
+            incomes: filteredIncomes,
+            userPhone: widget.userPhone,
+            friendsById: _friendsById,
+            filterType: _dataType,
+            showBillIcon: true,
+            emptyBuilder: (_) => _noTransactionsPlaceholder(_dataType),
+            multiSelectEnabled: _multiSelectMode,
+            selectedIds: _selectedTxIds,
+            onSelectTx: (txId, selected) {
+              setState(() {
+                if (selected) {
+                  _selectedTxIds.add(txId);
+                } else {
+                  _selectedTxIds.remove(txId);
+                }
+              });
             },
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Row(
-              children: [
-                _buildFiltersButton(),
-                const SizedBox(width: 8),
-                Expanded(child: _buildTxTypeChipsRow()),
-              ],
-            ),
-          ),
-          _buildActiveFiltersWrap(),
-          const SizedBox(height: 4),
-          if (_multiSelectMode)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
-              child: Row(
-                children: [
-                  Text(
-                    "${_selectedTxIds.length} selected",
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+            onEdit: (tx) async {
+              if (_multiSelectMode) return;
+              if (tx is ExpenseItem) {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EditExpenseScreen(
+                      userPhone: widget.userPhone,
+                      expense: tx,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  if (!_selectedTxIds.containsAll([
-                    ...filteredExpenses.map((e) => e.id),
-                    ...filteredIncomes.map((i) => i.id)
-                  ]))
-                    TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _selectedTxIds
-                              .addAll(filteredExpenses.map((e) => e.id));
-                          _selectedTxIds
-                              .addAll(filteredIncomes.map((i) => i.id));
-                        });
-                      },
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        minimumSize: const Size(0, 0),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      child: const Text(
-                        "Select All",
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
-                    ),
-                  const Spacer(),
-                  IconButton(
-                    icon:
-                        const Icon(Icons.call_split, color: Colors.cyanAccent),
-                    tooltip: "Bulk Split",
-                    onPressed: _selectedTxIds.isEmpty ? null : _openBulkSplit,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.label, color: Colors.amber),
-                    tooltip: "Edit Label (Bulk)",
-                    onPressed: _selectedTxIds.isEmpty
-                        ? null
-                        : () async {
-                            final newLabel = await _showLabelDialog();
-                            if (newLabel != null &&
-                                newLabel.trim().isNotEmpty) {
-                              for (final tx in filteredExpenses.where(
-                                  (e) => _selectedTxIds.contains(e.id))) {
-                                await ExpenseService().updateExpense(
-                                  widget.userPhone,
-                                  tx.copyWith(label: newLabel),
-                                );
-                              }
-                              for (final inc in filteredIncomes.where(
-                                  (i) => _selectedTxIds.contains(i.id))) {
-                                await IncomeService().updateIncome(
-                                  widget.userPhone,
-                                  inc.copyWith(label: newLabel),
-                                );
-                              }
-
-                              setState(() {
-                                _selectedTxIds.clear();
-                                _multiSelectMode = false;
-                              });
-                            }
-                          },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_forever, color: Colors.red),
-                    tooltip: "Delete Selected",
-                    onPressed: _selectedTxIds.isEmpty
-                        ? null
-                        : () async {
-                            final confirmed =
-                                await _confirmBulkDelete(_selectedTxIds.length);
-                            if (!confirmed) return;
-
-                            for (final tx in filteredExpenses
-                                .where((e) => _selectedTxIds.contains(e.id))) {
-                              await ExpenseService().deleteExpense(
-                                widget.userPhone,
-                                tx.id,
-                              );
-                            }
-                            for (final inc in filteredIncomes
-                                .where((i) => _selectedTxIds.contains(i.id))) {
-                              await IncomeService().deleteIncome(
-                                widget.userPhone,
-                                inc.id,
-                              );
-                            }
-
-                            setState(() {
-                              _selectedTxIds.clear();
-                              _multiSelectMode = false;
-                            });
-                          },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    tooltip: "Exit Multi-Select",
-                    onPressed: () {
-                      setState(() {
-                        _multiSelectMode = false;
-                        _selectedTxIds.clear();
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    cursorColor: Colors.black,
-                    decoration: InputDecoration(
-                      hintText: 'Search by note, label, type...',
-                      hintStyle: const TextStyle(
-                        color: Colors.black54,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      prefixIcon: const Icon(
-                        Icons.search,
-                        color: Colors.black54,
-                      ),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(
-                                Icons.close,
-                                color: Colors.black45,
-                              ),
-                              onPressed: () {
-                                _searchController.clear();
-                                _debounce?.cancel();
-                                setState(() => _searchQuery = '');
-                                _scheduleRecompute();
-                              },
-                            )
-                          : null,
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(
-                        vertical: 0,
-                        horizontal: 6,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(13),
-                        borderSide: const BorderSide(color: Colors.black26),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(13),
-                        borderSide: const BorderSide(color: Colors.black54),
-                      ),
-                    ),
-                    onChanged: (val) {
-                      _debounce?.cancel();
-                      _debounce = Timer(
-                        const Duration(milliseconds: 200),
-                        () {
-                          if (!mounted) return;
-                          setState(() => _searchQuery = val);
-                          _scheduleRecompute();
-                        },
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(width: 7),
-                SizedBox(
-                  width: 36,
-                  child: Center(
-                    child: Checkbox(
-                      value: _multiSelectMode,
-                      onChanged: (val) {
-                        setState(() {
-                          _multiSelectMode = val ?? false;
-                          if (!_multiSelectMode) {
-                            _selectedTxIds.clear();
-                          }
-                        });
-                      },
-                      checkColor: Colors.black,
-                      fillColor: MaterialStateProperty.resolveWith<Color>(
-                        (states) => Colors.white,
-                      ),
-                      side: const BorderSide(color: Color(0xFF7C3AED)),
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 6),
-          KeyedSubtree(
-            key: ValueKey(_transactionPanelKey()),
-            child: UnifiedTransactionList(
-              expenses: _dataType == "Income" ? [] : filteredExpenses,
-              incomes: _dataType == "Expense" ? [] : filteredIncomes,
-              userPhone: widget.userPhone,
-              filterType: _dataType,
-              previewCount: 15,
-              friendsById: _friendsById,
-              showBillIcon: true,
-              emptyBuilder: (context) => _noTransactionsPlaceholder(_dataType),
-              multiSelectEnabled: _multiSelectMode,
-              selectedIds: _selectedTxIds,
-              onSelectTx: (txId, selected) {
-                setState(() {
-                  if (selected) {
-                    _selectedTxIds.add(txId);
-                  } else {
-                    _selectedTxIds.remove(txId);
-                  }
-                });
-              },
-              onEdit: (tx) async {
-                if (_multiSelectMode) return;
-                if (tx is ExpenseItem) {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => EditExpenseScreen(
-                        userPhone: widget.userPhone,
-                        expense: tx,
-                      ),
-                    ),
-                  );
-                  _scheduleRecompute();
-                }
-              },
-              onDelete: (tx) async {
-                if (_multiSelectMode) return;
-                if (tx is ExpenseItem) {
-                  await ExpenseService().deleteExpense(
-                    widget.userPhone,
-                    tx.id,
-                  );
-                } else if (tx is IncomeItem) {
-                  await IncomeService().deleteIncome(
-                    widget.userPhone,
-                    tx.id,
-                  );
-                }
+                );
                 _scheduleRecompute();
-              },
-              onSplit: (tx) async {
-                if (_multiSelectMode) return;
-                if (tx is ExpenseItem) {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => EditExpenseScreen(
-                        userPhone: widget.userPhone,
-                        expense: tx,
-                        initialStep: 1,
-                      ),
+              }
+            },
+            onDelete: (tx) async {
+              if (_multiSelectMode) return;
+              if (tx is ExpenseItem) {
+                await ExpenseService().deleteExpense(
+                  widget.userPhone,
+                  tx.id,
+                );
+              } else if (tx is IncomeItem) {
+                await IncomeService().deleteIncome(
+                  widget.userPhone,
+                  tx.id,
+                );
+              }
+              _scheduleRecompute();
+            },
+            onSplit: (tx) async {
+              if (_multiSelectMode) return;
+              if (tx is ExpenseItem) {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EditExpenseScreen(
+                      userPhone: widget.userPhone,
+                      expense: tx,
+                      initialStep: 1,
                     ),
-                  );
-                  _scheduleRecompute();
-                }
-              },
-              onAddComment: (tx) => _openCommentDialog(tx),
-            ),
+                  ),
+                );
+                _scheduleRecompute();
+              }
+            },
+            onAddComment: (tx) => _openCommentDialog(tx),
           ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _openBulkSplit() async {
-    final result = await Navigator.push<BulkSplitResult>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BulkSplitScreen(
-          userPhone: widget.userPhone,
-          expenses: filteredExpenses
-              .where((e) => _selectedTxIds.contains(e.id))
-              .toList(),
         ),
-      ),
+      ],
     );
-
-    if (result != null) {
-      await ExpenseService().bulkSplit(
-        widget.userPhone,
-        filteredExpenses.where((e) => _selectedTxIds.contains(e.id)).toList(),
-        friendIds: result.friendIds,
-        groupId: result.groupId,
-        payerPhone: result.payerPhone,
-        note: result.note,
-        label: result.label,
-      );
-
-      setState(() {
-        _selectedTxIds.clear();
-        _multiSelectMode = false;
-      });
-      _scheduleRecompute();
-    }
   }
+
+  // _openBulkSplit removed
 
   Widget _chartsView(BuildContext context) {
     return SingleChildScrollView(
@@ -1780,8 +1177,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             borderRadius: 24,
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
             glassGradient: [
-              Colors.white.withOpacity(0.16),
-              Colors.white.withOpacity(0.06),
+              Colors.white.withValues(alpha: 0.16),
+              Colors.white.withValues(alpha: 0.06),
             ],
             child: ChartSwitcherWidget(
               chartType: _chartType,
@@ -1799,8 +1196,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               borderRadius: 26,
               padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
               glassGradient: [
-                Colors.white.withOpacity(0.19),
-                Colors.white.withOpacity(0.08),
+                Colors.white.withValues(alpha: 0.19),
+                Colors.white.withValues(alpha: 0.08),
               ],
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1821,8 +1218,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                           touchCallback: (event, response) {},
                         ),
                       ),
-                      swapAnimationDuration: const Duration(milliseconds: 650),
-                      swapAnimationCurve: Curves.easeOutCubic,
+                      duration: const Duration(milliseconds: 650),
+                      curve: Curves.easeOutCubic,
                     ),
                   ),
                 ],
@@ -1835,8 +1232,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               borderRadius: 26,
               padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
               glassGradient: [
-                Colors.white.withOpacity(0.19),
-                Colors.white.withOpacity(0.08),
+                Colors.white.withValues(alpha: 0.19),
+                Colors.white.withValues(alpha: 0.08),
               ],
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1855,8 +1252,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         centerSpaceRadius: 28,
                         pieTouchData: PieTouchData(),
                       ),
-                      swapAnimationDuration: const Duration(milliseconds: 650),
-                      swapAnimationCurve: Curves.easeOutCubic,
+                      duration: const Duration(milliseconds: 650),
+                      curve: Curves.easeOutCubic,
                     ),
                   ),
                 ],
@@ -1869,8 +1266,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               borderRadius: 26,
               padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
               glassGradient: [
-                Colors.white.withOpacity(0.19),
-                Colors.white.withOpacity(0.08),
+                Colors.white.withValues(alpha: 0.19),
+                Colors.white.withValues(alpha: 0.08),
               ],
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1917,8 +1314,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                               .clamp(1, double.infinity),
                         ),
                       ),
-                      swapAnimationDuration: const Duration(milliseconds: 650),
-                      swapAnimationCurve: Curves.easeOutCubic,
+                      duration: const Duration(milliseconds: 650),
+                      curve: Curves.easeOutCubic,
                     ),
                   ),
                 ],
@@ -1931,8 +1328,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               borderRadius: 26,
               padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
               glassGradient: [
-                Colors.white.withOpacity(0.19),
-                Colors.white.withOpacity(0.08),
+                Colors.white.withValues(alpha: 0.19),
+                Colors.white.withValues(alpha: 0.08),
               ],
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1979,8 +1376,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                               .clamp(1, double.infinity),
                         ),
                       ),
-                      swapAnimationDuration: const Duration(milliseconds: 650),
-                      swapAnimationCurve: Curves.easeOutCubic,
+                      duration: const Duration(milliseconds: 650),
+                      curve: Curves.easeOutCubic,
                     ),
                   ),
                 ],
@@ -2006,8 +1403,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 ),
                 borderRadius: 24,
                 glassGradient: [
-                  Colors.white.withOpacity(0.23),
-                  Colors.white.withOpacity(0.09),
+                  Colors.white.withValues(alpha: 0.23),
+                  Colors.white.withValues(alpha: 0.09),
                 ],
                 padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
                 child: UnifiedTransactionList(
@@ -2239,7 +1636,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             backDrawRodData: BackgroundBarChartRodData(
               show: true,
               toY: maxY,
-              color: colors[i % colors.length].withOpacity(0.12),
+              color: colors[i % colors.length].withValues(alpha: 0.12),
             ),
           ),
         ],
@@ -2309,7 +1706,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             backDrawRodData: BackgroundBarChartRodData(
               show: true,
               toY: maxY,
-              color: colors[i % colors.length].withOpacity(0.12),
+              color: colors[i % colors.length].withValues(alpha: 0.12),
             ),
           ),
         ],
@@ -2339,65 +1736,15 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return byCategory.keys.toList();
   }
 
-  Future<bool> _confirmBulkDelete(int count) async {
-    final theme = Theme.of(context);
-    final plural = count == 1 ? '' : 's';
-    final subject = 'delete $count selected transaction$plural';
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete transactions?'),
-        content:
-            Text('Are you sure you want to $subject? This cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style:
-                TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    return result ?? false;
-  }
+  // _confirmBulkDelete removed
 
-  Future<String?> _showLabelDialog() async {
-    String? result;
-    final controller = TextEditingController();
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Set Label'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'Enter new label…'),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              result = controller.text.trim();
-              Navigator.pop(ctx);
-            },
-            child: const Text('Apply'),
-          ),
-        ],
-      ),
-    );
-    return result;
-  }
+  // _showLabelDialog removed
 
   Future<void> _openCommentDialog(dynamic tx) async {
     if (tx is! ExpenseItem && tx is! IncomeItem) return;
 
     final String currentNote =
-        (tx is ExpenseItem ? tx.note : (tx as IncomeItem).note) ?? '';
+        (tx is ExpenseItem ? tx.note : (tx as IncomeItem).note);
     final controller = TextEditingController(text: currentNote);
 
     final newNote = await showDialog<String>(
@@ -2542,7 +1889,7 @@ class _SummaryRingCard extends StatelessWidget {
                         ),
                         PieChartSectionData(
                           value: chartIncome,
-                          color: Fx.mint.withOpacity(0.24),
+                          color: Fx.mint.withValues(alpha: 0.24),
                           title: '',
                           radius: 38,
                         ),
@@ -2620,110 +1967,7 @@ class _SummaryRingCard extends StatelessWidget {
   }
 }
 
-class _MiniDonutChart extends StatelessWidget {
-  final String title;
-  final double total;
-  final List<PieChartSectionData> sections;
-
-  /// visual tweaks
-  final double height; // overall height of the donut area
-  final double ringThickness; // thin ring, like Analytics
-
-  const _MiniDonutChart({
-    required this.title,
-    required this.total,
-    required this.sections,
-    this.height = 150,
-    this.ringThickness = 9, // slim & sexy 😏
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final inr0 =
-        NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
-
-    if (sections.isEmpty) {
-      return SizedBox(
-        height: height,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(title,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w600, color: Colors.black54)),
-            const SizedBox(height: 6),
-            const Text("No data",
-                style: TextStyle(fontWeight: FontWeight.w600)),
-          ],
-        ),
-      );
-    }
-
-    return SizedBox(
-      height: height,
-      child: LayoutBuilder(
-        builder: (ctx, c) {
-          // compute a clean radius and center gap so the ring is thin
-          final size = math.min(c.maxWidth, height).toDouble();
-
-          final outerRadius = size / 2 - 8; // padding from edges
-          final centerSpace =
-              (outerRadius - ringThickness).clamp(0.0, outerRadius).toDouble();
-
-          // rebuild sections with our desired radius (keeps colors/values)
-          final slimSections = sections.map((s) {
-            return PieChartSectionData(
-              value: s.value,
-              color: s.color,
-              title: '', // keep donut clean (labels in center)
-              radius: outerRadius, // uniform radius for all slices
-            );
-          }).toList();
-
-          return Stack(
-            alignment: Alignment.center,
-            children: [
-              PieChart(
-                PieChartData(
-                  sections: slimSections,
-                  sectionsSpace: 2, // subtle separation
-                  startDegreeOffset: -90, // 12 o'clock start
-                  centerSpaceRadius: centerSpace, // makes it a slim ring
-                  pieTouchData: PieTouchData(enabled: false),
-                  borderData: FlBorderData(show: false),
-                ),
-                swapAnimationDuration: const Duration(milliseconds: 450),
-                swapAnimationCurve: Curves.easeOutCubic,
-              ),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.black54,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    inr0.format(total),
-                    style: const TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
+// _MiniDonutChart removed
 
 class ExpenseFilterConfig {
   final String periodToken;
@@ -3855,6 +3099,8 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     }
     return false;
   }
+
+  // _friendAvatar removed
 
   String _groupNameForId(String id) {
     final group = _groupsById[id];

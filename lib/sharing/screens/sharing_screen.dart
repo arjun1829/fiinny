@@ -435,7 +435,7 @@ class _SharingScreenState extends State<SharingScreen> {
         Scaffold(
           backgroundColor: Colors.transparent,
           appBar: AppBar(
-            backgroundColor: Colors.white.withOpacity(0.93),
+            backgroundColor: Colors.white.withValues(alpha: 0.93),
             elevation: 0,
             title: const Text(
               'Sharing',

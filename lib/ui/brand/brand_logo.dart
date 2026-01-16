@@ -75,8 +75,8 @@ class BrandLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final r = clipRadius ?? BorderRadius.circular(radius);
-    final outline = borderColor ?? cs.outlineVariant.withOpacity(.6);
-    final bg = backgroundColor ?? cs.surfaceVariant.withOpacity(.65);
+    final outline = borderColor ?? cs.outlineVariant.withValues(alpha: .6);
+    final bg = backgroundColor ?? cs.surfaceContainerHighest.withValues(alpha: .65);
 
     // Compute cacheWidth for sharper rendering on high-DPR screens.
     final dpr = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 2.0;
@@ -129,7 +129,7 @@ class BrandLogo extends StatelessWidget {
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: size * .48,
-                    color: cs.onSurface.withOpacity(.55),
+                    color: cs.onSurface.withValues(alpha: .55),
                   ),
                 ),
               );

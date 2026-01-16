@@ -6,7 +6,6 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 import '../core/ads/ads_shell.dart';
 import 'ads/sleek_ad_card.dart';
 import '../services/friend_service.dart';
-import '../ui/theme/small_typography_overlay.dart';
 import '../utils/firebase_error_mapper.dart';
 import '../utils/permissions_helper.dart';
 import '../utils/phone_number_utils.dart';
@@ -122,11 +121,11 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          Colors.white.withOpacity(0.95),
-                          Colors.white.withOpacity(0.88),
+                          Colors.white.withValues(alpha: 0.95),
+                          Colors.white.withValues(alpha: 0.88),
                         ],
                       ),
-                      border: Border.all(color: Colors.white.withOpacity(0.6)),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
                       boxShadow: const [
                         BoxShadow(
                           color: Color(0x1F000000),
@@ -169,7 +168,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           child: Container(
                             decoration: BoxDecoration(
-                              color: accent.withOpacity(0.06),
+                              color: accent.withValues(alpha: 0.06),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(color: Colors.grey.shade200),
                             ),
@@ -215,7 +214,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                               return ListTile(
                                 leading: CircleAvatar(
                                   radius: 20,
-                                  backgroundColor: accent.withOpacity(0.10),
+                                  backgroundColor: accent.withValues(alpha: 0.10),
                                   child: Text(initial, style: const TextStyle(fontWeight: FontWeight.w700)),
                                 ),
                                 title: Text(display, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -304,11 +303,11 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Colors.white.withOpacity(0.96),
-                  Colors.white.withOpacity(0.90),
+                  Colors.white.withValues(alpha: 0.96),
+                  Colors.white.withValues(alpha: 0.90),
                 ],
               ),
-              border: Border.all(color: Colors.white.withOpacity(0.6)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
               boxShadow: const [
                 BoxShadow(
                   color: Color(0x1F000000),
@@ -330,7 +329,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: accent.withOpacity(.10),
+                            color: accent.withValues(alpha: .10),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Icon(Icons.person_add_alt_1_rounded,
@@ -366,7 +365,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                         onPressed: _loading || _loadingContacts ? null : _importFromContacts,
                         style: OutlinedButton.styleFrom(
                           foregroundColor: accent,
-                          side: BorderSide(color: accent.withOpacity(0.35)),
+                          side: BorderSide(color: accent.withValues(alpha: 0.35)),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
@@ -391,7 +390,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                         SizedBox(
                           width: 92,
                           child: DropdownButtonFormField<String>(
-                            value: _countryCode,
+                            initialValue: _countryCode,
                             isExpanded: true,
                             decoration: _pillDecoration(label: "Code"),
                             items: countryCodes
@@ -496,7 +495,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
       labelText: label,
       prefixIcon: icon != null ? Icon(icon) : null,
       filled: true,
-      fillColor: Colors.black87.withOpacity(0.06),
+      fillColor: Colors.black87.withValues(alpha: 0.06),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade300)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade300)),
@@ -527,7 +526,7 @@ class _GlassField extends StatelessWidget {
         labelText: label,
         prefixIcon: Icon(icon),
         filled: true,
-        fillColor: Colors.black87.withOpacity(0.06),
+        fillColor: Colors.black87.withValues(alpha: 0.06),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade300)),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade300)),

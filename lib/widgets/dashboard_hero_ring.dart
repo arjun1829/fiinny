@@ -82,7 +82,7 @@ class DashboardHeroRing extends StatelessWidget {
         borderRadius: BorderRadius.circular(36),
         boxShadow: [
           BoxShadow(
-            color: Colors.teal.withOpacity(0.10),
+            color: Colors.teal.withValues(alpha: 0.10),
             blurRadius: 18,
             offset: const Offset(0, 7),
           ),
@@ -181,7 +181,7 @@ class DashboardHeroRing extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.teal.withOpacity(0.08),
+                        color: Colors.teal.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(13),
                       ),
                       child: Row(
@@ -272,7 +272,7 @@ class _RingPainter extends CustomPainter {
     final radius = size.width / 2;
 
     final Paint bg = Paint()
-      ..color = color.withOpacity(0.11)
+      ..color = color.withValues(alpha: 0.11)
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;

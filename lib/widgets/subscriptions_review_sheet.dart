@@ -1,12 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_firestore/cloud_firestore.dart' show QuerySnapshot;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/expense_item.dart';
 import '../themes/tokens.dart';
 import '../themes/badge.dart';
-import '../themes/glass_card.dart';
 import '../core/ui/safe_set_state.dart';
 
 class SubscriptionsReviewSheet extends StatefulWidget {
@@ -88,7 +86,7 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
       if (snap.docs.isEmpty) return false;
 
       for (final d in snap.docs) {
-        final data = d.data() as Map<String, dynamic>;
+        final data = d.data();
         final merchant = (data['merchant'] ?? 'Merchant').toString();
         final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
         final key =
@@ -130,7 +128,7 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
           .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
           .orderBy('date', descending: true)
           .limit(page);
-      if (cursor != null) q = (q as Query).startAfterDocument(cursor);
+      if (cursor != null) q = (q).startAfterDocument(cursor);
       final snap = await q.get();
       if (snap.docs.isEmpty) break;
       for (final d in snap.docs) {
@@ -172,7 +170,7 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
     }).toList();
 
     final q = _q.text.trim().toLowerCase();
-    var filtered = entries.where((e) => q.isEmpty || e.merchant.toLowerCase().contains(q)).toList();
+    final filtered = entries.where((e) => q.isEmpty || e.merchant.toLowerCase().contains(q)).toList();
     filtered.sort((a, b) {
       switch (_sort) {
         case 'amount_desc':

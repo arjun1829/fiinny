@@ -1,7 +1,6 @@
 // lib/services/notification_service.dart
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -14,7 +13,8 @@ class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
 
-  static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  static final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
 
   NotificationService._internal();
 
@@ -29,12 +29,15 @@ class NotificationService {
           }
         }
       } catch (err, stack) {
-        debugPrint('[NotificationService] Android notification permission check failed: $err\n$stack');
+        debugPrint(
+            '[NotificationService] Android notification permission check failed: $err\n$stack');
       }
       return;
     }
 
-    if (kIsWeb || !Platform.isIOS) return;
+    if (kIsWeb || !Platform.isIOS) {
+      return;
+    }
     try {
       await FirebaseMessaging.instance.requestPermission(
         alert: true,
@@ -46,18 +49,20 @@ class NotificationService {
         provisional: true,
       );
     } catch (err, stack) {
-      debugPrint('[NotificationService] requestPermissionLight failed: $err\n$stack');
+      debugPrint(
+          '[NotificationService] requestPermissionLight failed: $err\n$stack');
     }
   }
 
   static Future<void> initFull() async {
     if (!kIsWeb && kDiagBuild && Platform.isIOS) {
-      debugPrint('[NotificationService] Skipping full init on diagnostic iOS build.');
+      debugPrint(
+          '[NotificationService] Skipping full init on diagnostic iOS build.');
       return;
     }
 
     const AndroidInitializationSettings androidInit =
-    AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('@mipmap/ic_launcher');
 
     const DarwinInitializationSettings iosInit = DarwinInitializationSettings(
       // iOS permission prompts are centralized in PushService.ensurePermissions().
@@ -85,7 +90,8 @@ class NotificationService {
     required String body,
     String? payload, // NEW: deeplink for tap
   }) async {
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
       'default_channel',
       'General Notifications',
       channelDescription: 'Default channel for app notifications',

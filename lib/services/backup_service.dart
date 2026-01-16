@@ -11,7 +11,11 @@ class BackupService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   static DocumentReference<Map<String, dynamic>> _docRef(String userId) {
-    return _firestore.collection('users').doc(userId).collection('backups').doc('latest');
+    return _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('backups')
+        .doc('latest');
   }
 
   static Future<void> backupUserData({
@@ -44,6 +48,7 @@ class BackupService {
     }
 
     final jsonString = jsonEncode(data);
+    // ignore: deprecated_member_use
     await Share.share(
       jsonString,
       subject: "My Fiinny App Data Backup",

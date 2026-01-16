@@ -6,7 +6,6 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -146,7 +145,7 @@ void backgroundDispatcher() {
 }
 
 void main() {
-  final tracer = _StartupTracer();
+  final tracer = StartupTracer();
 
   runZonedGuarded<Future<void>>(() async {
     WidgetsFlutterBinding.ensureInitialized();
@@ -188,7 +187,7 @@ void main() {
           details.exception, details.stack ?? StackTrace.current);
     };
 
-    runApp(_DiagApp(tracer: tracer));
+    runApp(LifemapApp(tracer: tracer));
     await _boot(tracer, attAllowed: AdConfig.authorized);
   }, (error, stack) async {
     tracer.add('Uncaught: $error');
@@ -201,7 +200,7 @@ void main() {
   });
 }
 
-Future<void> _boot(_StartupTracer tracer, {required bool attAllowed}) async {
+Future<void> _boot(StartupTracer tracer, {required bool attAllowed}) async {
   tracer.add('BOOT start');
   if (!kIsWeb && defaultTargetPlatform != TargetPlatform.android) {
     // This block is intentionally left empty as per the instruction's placeholder.
@@ -267,7 +266,7 @@ Future<void> _boot(_StartupTracer tracer, {required bool attAllowed}) async {
   tracer.add(skipWelcome
       ? 'NAV → LauncherScreen (welcome skipped)'
       : 'NAV → LauncherScreen (welcome pending)');
-  _DiagApp.navTo(const LauncherScreen());
+  LifemapApp.navTo(const LauncherScreen());
   tracer.add('BOOT done (UI visible)');
 }
 
@@ -321,9 +320,9 @@ class _AttSettingsDialog extends StatelessWidget {
   }
 }
 
-class _DiagApp extends StatefulWidget {
-  const _DiagApp({required this.tracer});
-  final _StartupTracer tracer;
+class LifemapApp extends StatefulWidget {
+  const LifemapApp({required this.tracer});
+  final StartupTracer tracer;
 
   static GlobalKey<NavigatorState> get navKey => rootNavigatorKey;
   static void navTo(Widget page) {
@@ -334,10 +333,10 @@ class _DiagApp extends StatefulWidget {
   }
 
   @override
-  State<_DiagApp> createState() => _DiagAppState();
+  State<LifemapApp> createState() => _LifemapAppState();
 }
 
-class _DiagAppState extends State<_DiagApp> {
+class _LifemapAppState extends State<LifemapApp> {
   VoidCallback? _tracerListener;
 
   void _afterFirstFrame(VoidCallback fn) {
@@ -397,7 +396,7 @@ class _DiagAppState extends State<_DiagApp> {
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
           return MaterialApp(
-            navigatorKey: _DiagApp.navKey,
+            navigatorKey: LifemapApp.navKey,
             debugShowCheckedModeBanner: false,
             theme: themeProvider.themeData,
             routes: appRoutes,
@@ -433,7 +432,7 @@ class _LogCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withOpacity(0.92),
+      color: Colors.white.withValues(alpha: 0.92),
       elevation: 8,
       borderRadius: BorderRadius.circular(12),
       child: Padding(
@@ -445,7 +444,7 @@ class _LogCard extends StatelessWidget {
   }
 }
 
-class _StartupTracer {
+class StartupTracer {
   final _lines = <String>[];
   VoidCallback? _onChange;
   List<String> get lines => List.unmodifiable(_lines);

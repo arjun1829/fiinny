@@ -6,7 +6,7 @@ class EMIPlanScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    List<int> months = [3, 6, 9, 12];
+    final List<int> months = [3, 6, 9, 12];
 
     return Scaffold(
       appBar: AppBar(title: const Text("🔁 EMI Planner")),
@@ -20,7 +20,7 @@ class EMIPlanScreen extends StatelessWidget {
             const Text("Choose a plan:"),
             const SizedBox(height: 12),
             ...months.map((m) {
-              double monthly = amount / m * 1.02; // +2% approx interest
+              final double monthly = amount / m * 1.02; // +2% approx interest
               return ListTile(
                 title: Text("$m months"),
                 subtitle: Text("₹${monthly.toStringAsFixed(0)} per month"),

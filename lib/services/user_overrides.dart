@@ -10,7 +10,7 @@ class UserOverrides {
         .doc('merchant_categories');
 
     final snap = await ref.get();
-    final data = snap.data() as Map<String, dynamic>?;
+    final data = snap.data();
     if (data == null) return null;
 
     final key = merchantKey.toUpperCase();
@@ -39,7 +39,7 @@ class UserOverrides {
         .doc('merchant_subcategories');
 
     final snap = await ref.get();
-    final data = snap.data() as Map<String, dynamic>?;
+    final data = snap.data();
     if (data == null) return null;
 
     final key = merchantKey.toUpperCase();

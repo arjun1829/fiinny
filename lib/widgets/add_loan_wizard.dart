@@ -410,7 +410,7 @@ class _StepBasics extends StatelessWidget {
               onSelected: (_) => onLenderType(t),
               label: Text(t),
               labelStyle: TextStyle(
-                color: sel ? Colors.white : kText.withOpacity(0.9),
+                color: sel ? Colors.white : kText.withValues(alpha: 0.9),
                 fontWeight: FontWeight.w700,
               ),
               selectedColor: kPrimary,
@@ -636,7 +636,7 @@ class _StepSchedule extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.w800)),
           subtitle: const Text('Get a nudge near your payment day'),
           contentPadding: EdgeInsets.zero,
-          activeColor: kPrimary,
+          activeTrackColor: kPrimary,
         ),
         const SizedBox(height: 28),
         Row(children: [

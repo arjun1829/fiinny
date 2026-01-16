@@ -19,9 +19,9 @@ class ChipFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = selected ? tint.withOpacity(.16) : Colors.white.withOpacity(.75);
-    final fg = selected ? tint.withOpacity(.95) : Colors.black87;
-    final side = selected ? tint.withOpacity(.35) : Colors.black12;
+    final bg = selected ? tint.withValues(alpha: .16) : Colors.white.withValues(alpha: .75);
+    final fg = selected ? tint.withValues(alpha: .95) : Colors.black87;
+    final side = selected ? tint.withValues(alpha: .35) : Colors.black12;
 
     final chip = Container(
       padding: padding,

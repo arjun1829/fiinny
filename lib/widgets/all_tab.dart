@@ -52,9 +52,9 @@ class _AllTabState extends State<AllTab> {
   @override
   Widget build(BuildContext context) {
     // --- Merge friends & groups with sort
-    List<_AllRowItem> rows = [];
+    final List<_AllRowItem> rows = [];
 
-    Map<String, DateTime> lastActivity = {};
+    final Map<String, DateTime> lastActivity = {};
     for (final f in widget.friends) {
       final related = widget.expenses
           .where((e) => e.payerId == f.id || e.friendIds.contains(f.id));

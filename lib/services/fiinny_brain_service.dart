@@ -14,23 +14,26 @@ class FiinnyBrainService {
 
   /// ✅ Step 1: Convert live data to UserData for brain processing
   static Future<UserData> createFromLiveData(
-      String userId, {
-        List<IncomeItem> incomes = const [],
-        List<ExpenseItem> expenses = const [],
-        List<GoalModel> goals = const [],
-        List<LoanModel> loans = const [],
-        List<AssetModel> assets = const [],
-        double? creditCardBill,
-        double? overrideWeeklyLimit,
-      }) async {
+    String userId, {
+    List<IncomeItem> incomes = const [],
+    List<ExpenseItem> expenses = const [],
+    List<GoalModel> goals = const [],
+    List<LoanModel> loans = const [],
+    List<AssetModel> assets = const [],
+    double? creditCardBill,
+    double? overrideWeeklyLimit,
+  }) async {
     double? autoBill = creditCardBill;
     if (autoBill == null) {
       try {
         final billExpenses = expenses.where((e) =>
-        e.type.toLowerCase().contains('credit card') &&
-            (e.type.toLowerCase().contains('bill') || e.type.toLowerCase() == 'credit card'));
+            e.type.toLowerCase().contains('credit card') &&
+            (e.type.toLowerCase().contains('bill') ||
+                e.type.toLowerCase() == 'credit card'));
         if (billExpenses.isNotEmpty) {
-          autoBill = billExpenses.reduce((a, b) => a.date.isAfter(b.date) ? a : b).amount;
+          autoBill = billExpenses
+              .reduce((a, b) => a.date.isAfter(b.date) ? a : b)
+              .amount;
         }
       } catch (_) {}
     }
@@ -57,10 +60,10 @@ class FiinnyBrainService {
   };
 
   static List<InsightModel> generateInsights(
-      UserData userData, {
-        String? userId,
-        String currencySymbol = '₹',
-      }) {
+    UserData userData, {
+    String? userId,
+    String currencySymbol = '₹',
+  }) {
     final insights = <InsightModel>[];
 
     final totalIncome = userData.getTotalIncome();
@@ -85,7 +88,8 @@ class FiinnyBrainService {
     if (spendingRatio > 0.8) {
       insights.add(_createInsight(
         title: '🚨 High spending alert',
-        description: "You've used ${(spendingRatio * 100).toStringAsFixed(0)}% of your income this month.",
+        description:
+            "You've used ${(spendingRatio * 100).toStringAsFixed(0)}% of your income this month.",
         type: InsightType.critical,
         userId: userId,
         category: 'expense',
@@ -136,8 +140,11 @@ class FiinnyBrainService {
       final severe = bill >= 10000 ? _criticalSeverity : 2;
       insights.add(_createInsight(
         title: '💳 Credit card bill alert',
-        description: 'Outstanding card bill of $currencySymbol${bill.toStringAsFixed(0)} detected.',
-        type: severe >= _criticalSeverity ? InsightType.critical : InsightType.warning,
+        description:
+            'Outstanding card bill of $currencySymbol${bill.toStringAsFixed(0)} detected.',
+        type: severe >= _criticalSeverity
+            ? InsightType.critical
+            : InsightType.warning,
         userId: userId,
         category: 'credit_card',
         severity: severe,
@@ -159,7 +166,8 @@ class FiinnyBrainService {
     if (weeklySpent > userData.weeklyLimit * 1.2) {
       insights.add(_createInsight(
         title: '🛑 Crisis mode breach',
-        description: "You're spending 20% more than your crisis limit. Pull back this week.",
+        description:
+            "You're spending 20% more than your crisis limit. Pull back this week.",
         type: InsightType.critical,
         userId: userId,
         category: 'expense',
@@ -167,14 +175,14 @@ class FiinnyBrainService {
       ));
     }
 
-    final subscriptionExpenses = userData.expenses
-        .where(_looksLikeSubscription)
-        .toList();
+    final subscriptionExpenses =
+        userData.expenses.where(_looksLikeSubscription).toList();
     if (subscriptionExpenses.isNotEmpty) {
       final subsTotal = subscriptionExpenses.fold<double>(
           0.0, (sum, item) => sum + item.amount);
       final shareOfIncome = totalIncome == 0 ? 0.0 : subsTotal / totalIncome;
-      final severity = shareOfIncome > 0.25 || subscriptionExpenses.length >= 5 ? 2 : 1;
+      final severity =
+          shareOfIncome > 0.25 || subscriptionExpenses.length >= 5 ? 2 : 1;
       insights.add(_createInsight(
         title: '📺 Subscriptions check-in',
         description:
@@ -205,7 +213,8 @@ class FiinnyBrainService {
     if (savings > 0) {
       insights.add(_createInsight(
         title: '💚 You are saving',
-        description: 'Saved $currencySymbol${savings.toStringAsFixed(0)} this month. Keep it rolling!',
+        description:
+            'Saved $currencySymbol${savings.toStringAsFixed(0)} this month. Keep it rolling!',
         type: InsightType.positive,
         userId: userId,
         category: 'expense',
@@ -214,7 +223,8 @@ class FiinnyBrainService {
     } else if (savings < 0) {
       insights.add(_createInsight(
         title: '📉 Spending more than you earn',
-        description: 'You are short by $currencySymbol${savings.abs().toStringAsFixed(0)} this month. Plan a catch-up.',
+        description:
+            'You are short by $currencySymbol${savings.abs().toStringAsFixed(0)} this month. Plan a catch-up.',
         type: InsightType.warning,
         userId: userId,
         category: 'expense',
@@ -222,7 +232,8 @@ class FiinnyBrainService {
       ));
     }
 
-    final openLoans = userData.loans.where((l) => !(l.isClosed ?? false)).toList();
+    final openLoans =
+        userData.loans.where((l) => !(l.isClosed ?? false)).toList();
     if (openLoans.isNotEmpty) {
       final now = DateTime.now();
       for (final loan in openLoans) {
@@ -250,12 +261,13 @@ class FiinnyBrainService {
             category: 'loan',
             severity: 2,
             relatedLoanId: loan.id,
-            ));
+          ));
         }
         if ((loan.reminderEnabled ?? true) == false) {
           insights.add(_createInsight(
             title: '🔔 Enable reminders?',
-            description: "Add a reminder for '${loan.title}' so EMIs aren't missed.",
+            description:
+                "Add a reminder for '${loan.title}' so EMIs aren't missed.",
             type: InsightType.info,
             userId: userId,
             category: 'loan',
@@ -268,7 +280,8 @@ class FiinnyBrainService {
       if (openLoans.length > 2) {
         insights.add(_createInsight(
           title: '⚠️ Multiple open loans',
-          description: 'You have ${openLoans.length} active loans. Prioritise repayments to reduce stress.',
+          description:
+              'You have ${openLoans.length} active loans. Prioritise repayments to reduce stress.',
           type: InsightType.info,
           userId: userId,
           category: 'loan',
@@ -287,11 +300,13 @@ class FiinnyBrainService {
     }
 
     if (userData.assets.isNotEmpty) {
-      final totalAssetValue = userData.assets.fold<double>(0.0, (sum, a) => sum + a.value);
+      final totalAssetValue =
+          userData.assets.fold<double>(0.0, (sum, a) => sum + a.value);
       if (totalAssetValue > 0) {
         insights.add(_createInsight(
           title: '🏦 Wealth update',
-          description: 'Assets tracked at $currencySymbol${totalAssetValue.toStringAsFixed(0)}.',
+          description:
+              'Assets tracked at $currencySymbol${totalAssetValue.toStringAsFixed(0)}.',
           type: InsightType.info,
           userId: userId,
           category: 'asset',
@@ -310,7 +325,9 @@ class FiinnyBrainService {
     }
 
     for (final goal in userData.goals) {
-      if (goal.status == GoalStatus.archived) continue;
+      if (goal.status == GoalStatus.archived) {
+        continue;
+      }
       final progressPct = (goal.progress * 100).clamp(0, 100);
       if (goal.isAchieved) {
         insights.add(_createInsight(
@@ -339,7 +356,8 @@ class FiinnyBrainService {
       } else if (progressPct >= 50) {
         insights.add(_createInsight(
           title: '💪 Halfway there: ${goal.title}',
-          description: "${progressPct.toStringAsFixed(1)}% saved. Keep the momentum!",
+          description:
+              "${progressPct.toStringAsFixed(1)}% saved. Keep the momentum!",
           type: InsightType.info,
           userId: userId,
           category: 'goal',
@@ -349,12 +367,14 @@ class FiinnyBrainService {
       }
     }
 
-    final totalAssets = userData.assets.fold<double>(0.0, (sum, a) => sum + a.value);
+    final totalAssets =
+        userData.assets.fold<double>(0.0, (sum, a) => sum + a.value);
     final totalLoan = openLoans.fold<double>(0.0, (sum, l) => sum + l.amount);
     final netWorth = totalAssets - totalLoan;
     insights.add(_createInsight(
       title: '💡 Net worth update',
-      description: 'Your net worth is $currencySymbol${netWorth.toStringAsFixed(0)}.',
+      description:
+          'Your net worth is $currencySymbol${netWorth.toStringAsFixed(0)}.',
       type: netWorth >= 0 ? InsightType.positive : InsightType.warning,
       userId: userId,
       category: 'netWorth',
@@ -372,29 +392,43 @@ class FiinnyBrainService {
     bool sendNotifications = true,
     String currencySymbol = '₹',
   }) async {
-    final insights = generateInsights(userData, userId: userId, currencySymbol: currencySymbol);
-    if (!sendNotifications) return insights;
+    final insights = generateInsights(userData,
+        userId: userId, currencySymbol: currencySymbol);
+    if (!sendNotifications) {
+      return insights;
+    }
 
     final prefs = notificationPrefs != null
         ? NotifPrefsService.resolveWithDefaults(notificationPrefs)
         : await NotifPrefsService.fetchForUser(userId);
 
     final pushEnabled = (prefs['push_enabled'] as bool?) ?? true;
-    if (!pushEnabled) return insights;
+    if (!pushEnabled) {
+      return insights;
+    }
 
     final channels = Map<String, dynamic>.from(prefs['channels'] ?? {});
     final quiet = Map<String, dynamic>.from(prefs['quiet_hours'] ?? {});
-    final inQuiet = respectQuietHours && _isWithinQuietHours(DateTime.now(), quiet);
+    final inQuiet =
+        respectQuietHours && _isWithinQuietHours(DateTime.now(), quiet);
 
     for (final insight in insights) {
       final channelKey = _channelForInsight(insight);
-      if (channelKey == null) continue;
-      if (!(channels[channelKey] as bool? ?? false)) continue;
+      if (channelKey == null) {
+        continue;
+      }
+      if (!(channels[channelKey] as bool? ?? false)) {
+        continue;
+      }
 
       final severity = insight.severity ?? 0;
       final threshold = _channelThresholds[channelKey] ?? 0;
-      if (severity < threshold) continue;
-      if (inQuiet && severity < _criticalSeverity) continue;
+      if (severity < threshold) {
+        continue;
+      }
+      if (inQuiet && severity < _criticalSeverity) {
+        continue;
+      }
 
       final payload = _payloadForInsight(insight);
       await NotificationService().showNotification(
@@ -499,22 +533,27 @@ class FiinnyBrainService {
   }
 
   static MapEntry<String, double>? _topCategory(List<ExpenseItem> expenses) {
-    if (expenses.isEmpty) return null;
+    if (expenses.isEmpty) {
+      return null;
+    }
     final totals = <String, double>{};
     for (final e in expenses) {
-      final raw = e.category?.trim().isNotEmpty == true ? e.category!.trim() : e.type.trim();
+      final raw = e.category?.trim().isNotEmpty == true
+          ? e.category!.trim()
+          : e.type.trim();
       totals[raw] = (totals[raw] ?? 0) + e.amount;
     }
-    if (totals.isEmpty) return null;
+    if (totals.isEmpty) {
+      return null;
+    }
     final sorted = totals.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     return sorted.first;
   }
 
   static bool _looksLikeSubscription(ExpenseItem expense) {
-    final tags = (expense.tags ?? const <String>[])
-        .map((t) => t.toLowerCase())
-        .toList();
+    final tags =
+        (expense.tags ?? const <String>[]).map((t) => t.toLowerCase()).toList();
     final type = expense.type.toLowerCase();
     final note = expense.note.toLowerCase();
     if (tags.contains('subscription') ||
@@ -523,7 +562,8 @@ class FiinnyBrainService {
         tags.contains('recurring')) {
       return true;
     }
-    if (expense.brainMeta != null && expense.brainMeta!['recurringKey'] != null) {
+    if (expense.brainMeta != null &&
+        expense.brainMeta!['recurringKey'] != null) {
       return true;
     }
     return type.contains('subscription') ||

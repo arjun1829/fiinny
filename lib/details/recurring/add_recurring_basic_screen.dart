@@ -34,7 +34,7 @@ class AddRecurringBasicScreen extends StatefulWidget {
   final int? initialIntervalDays; // for custom
 
   AddRecurringBasicScreen({
-    Key? key,
+    super.key,
     required this.userPhone,
     required this.scope,
     this.participantUserIds = const <String>[],
@@ -47,7 +47,7 @@ class AddRecurringBasicScreen extends StatefulWidget {
     this.initialIntervalDays,
   })  : assert(scope.userPhone != null || scope.isGroup,
             'Recurring scope must include user phone for friend or be group'),
-        super(key: key);
+        super();
 
   @override
   State<AddRecurringBasicScreen> createState() =>
@@ -310,7 +310,7 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
         _dueDay = null;
         _intervalDays = null;
       } else if (_frequency == 'custom') {
-        _intervalDays = (p.intervalDays ?? 7).clamp(1, 365);
+        _intervalDays = 7;
         _weekday = null;
         _dueDay = null;
       } else {
@@ -334,11 +334,11 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
       builder: (c, child) => Theme(
         data: Theme.of(context).copyWith(
           colorScheme: Theme.of(context).colorScheme.copyWith(
-            primary: Colors.black,
-            onPrimary: Colors.white,
-            surface: Colors.white,
-            onSurface: Colors.black87,
-          ),
+                primary: Colors.black,
+                onPrimary: Colors.white,
+                surface: Colors.white,
+                onSurface: Colors.black87,
+              ),
         ),
         child: child!,
       ),
@@ -369,8 +369,9 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
   }
 
   String _reminderPreviewText(DateTime due) {
-    final planned = DateTime(due.year, due.month, due.day, _time.hour, _time.minute)
-        .subtract(Duration(days: _daysBefore));
+    final planned =
+        DateTime(due.year, due.month, due.day, _time.hour, _time.minute)
+            .subtract(Duration(days: _daysBefore));
     return '${_fmtDate(planned)} ${_fmtTime(TimeOfDay.fromDateTime(planned))}';
   }
 
@@ -380,15 +381,15 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
     required DateTime due,
   }) async {
     final now = DateTime.now();
-    final planned = DateTime(due.year, due.month, due.day, _time.hour, _time.minute)
-        .subtract(Duration(days: _daysBefore));
-    final fireAt = planned.isAfter(now) ? planned : now.add(const Duration(minutes: 1));
+    final planned =
+        DateTime(due.year, due.month, due.day, _time.hour, _time.minute)
+            .subtract(Duration(days: _daysBefore));
+    final fireAt =
+        planned.isAfter(now) ? planned : now.add(const Duration(minutes: 1));
     final payload = _isGroup && _groupId != null
-        ? 'app://group/${_groupId}/recurring'
-        : 'app://friend/${_friendId}/recurring';
-    final itemId = _isGroup && _groupId != null
-        ? 'group_${_groupId}_$id'
-        : id;
+        ? 'app://group/$_groupId/recurring'
+        : 'app://friend/$_friendId/recurring';
+    final itemId = _isGroup && _groupId != null ? 'group_${_groupId}_$id' : id;
     try {
       await LocalNotifs.init();
       await LocalNotifs.scheduleOnce(
@@ -587,17 +588,14 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
   @override
   Widget build(BuildContext context) {
     final amt = _parseAmount();
-    final uAmt = _isGroup
-        ? 0.0
-        : amt * ((_split == 'equal' ? 50.0 : _userShare) / 100.0);
-    final fAmt = _isGroup
-        ? 0.0
-        : amt * ((_split == 'equal' ? 50.0 : _friendShare) / 100.0);
 
-    final sortedPresets = [..._presets]..sort((a, b) => a.priority.compareTo(b.priority));
+    final sortedPresets = [..._presets]
+      ..sort((a, b) => a.priority.compareTo(b.priority));
 
     final previewParticipants = _isGroup
-        ? _groupParticipantIds.map((id) => ParticipantShare(userId: id)).toList()
+        ? _groupParticipantIds
+            .map((id) => ParticipantShare(userId: id))
+            .toList()
         : [
             ParticipantShare(
                 userId: widget.userPhone,
@@ -613,8 +611,9 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
       status: 'active',
       amount: amt <= 0 ? 1 : amt,
       participants: previewParticipants,
-      dueDay:
-      (_frequency == 'weekly' || _frequency == 'custom') ? null : (_dueDay ?? 1).clamp(1, 28),
+      dueDay: (_frequency == 'weekly' || _frequency == 'custom')
+          ? null
+          : (_dueDay ?? 1).clamp(1, 28),
       weekday: _frequency == 'weekly' ? (_weekday ?? 0) : null,
       intervalDays: _frequency == 'custom' ? (_intervalDays ?? 7) : null,
     );
@@ -624,7 +623,8 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Add Recurring', style: TextStyle(color: Colors.black)),
+        title:
+            const Text('Add Recurring', style: TextStyle(color: Colors.black)),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0.6,
@@ -642,187 +642,307 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
               children: [
                 _sectionTitle('Quick pick'),
                 _presetGrid(sortedPresets),
-
                 const SizedBox(height: 14),
                 _sectionTitle('Details', key: _detailsKey),
                 _glossyCard(
-                child: Column(
-                  children: [
-                    TextFormField(
-                      controller: _title,
-                      decoration: const InputDecoration(
-                        labelText: 'Title',
-                        hintText: 'e.g. Rent, Maid, Tuition',
-                        prefixIcon: Icon(Icons.edit_rounded),
-                      ),
-                      validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Enter a title' : null,
-                    ),
-                    const SizedBox(height: 10),
-                    TextFormField(
-                      controller: _amount,
-                      decoration: const InputDecoration(
-                        labelText: 'Amount (₹)',
-                        prefixIcon: Icon(Icons.currency_rupee),
-                      ),
-                      keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))
-                      ],
-                      validator: (_) =>
-                      _parseAmount() <= 0 ? 'Enter a valid amount' : null,
-                      onChanged: (_) => setState(() {}),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-              _sectionTitle('Repeat'),
-              _glossyCard(
-                child: Column(
-                  children: [
-                    DropdownButtonFormField<String>(
-                      value: _frequency,
-                      items: const [
-                        DropdownMenuItem(value: 'weekly', child: Text('Weekly')),
-                        DropdownMenuItem(value: 'monthly', child: Text('Monthly')),
-                        DropdownMenuItem(value: 'yearly', child: Text('Yearly')),
-                        DropdownMenuItem(value: 'custom', child: Text('Custom (every N days)')),
-                      ],
-                      onChanged: (v) => setState(() {
-                        _frequency = v ?? 'monthly';
-                        if (_frequency == 'weekly') {
-                          _weekday ??= DateTime.now().weekday % 7;
-                          _dueDay = null;
-                          _intervalDays = null;
-                        } else if (_frequency == 'custom') {
-                          _intervalDays ??= 7;
-                          _weekday = null;
-                          _dueDay = null;
-                        } else {
-                          _dueDay ??= DateTime.now().day.clamp(1, 28);
-                          _weekday = null;
-                          _intervalDays = null;
-                        }
-                      }),
-                      decoration: const InputDecoration(
-                        labelText: 'Frequency',
-                        prefixIcon: Icon(Icons.repeat_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOut,
-                      child: _frequency == 'weekly'
-                          ? DropdownButtonFormField<int>(
-                        value: _weekday,
-                        items: const [
-                          DropdownMenuItem(value: 0, child: Text('Sunday')),
-                          DropdownMenuItem(value: 1, child: Text('Monday')),
-                          DropdownMenuItem(value: 2, child: Text('Tuesday')),
-                          DropdownMenuItem(value: 3, child: Text('Wednesday')),
-                          DropdownMenuItem(value: 4, child: Text('Thursday')),
-                          DropdownMenuItem(value: 5, child: Text('Friday')),
-                          DropdownMenuItem(value: 6, child: Text('Saturday')),
-                        ],
-                        onChanged: (v) => setState(() => _weekday = v),
+                  child: Column(
+                    children: [
+                      TextFormField(
+                        controller: _title,
                         decoration: const InputDecoration(
-                          labelText: 'Weekday',
-                          prefixIcon: Icon(Icons.event_repeat),
+                          labelText: 'Title',
+                          hintText: 'e.g. Rent, Maid, Tuition',
+                          prefixIcon: Icon(Icons.edit_rounded),
                         ),
-                        validator: (v) => v == null ? 'Pick a weekday' : null,
-                      )
-                          : _frequency == 'custom'
-                          ? TextFormField(
-                        initialValue: (_intervalDays ?? 7).toString(),
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? 'Enter a title'
+                            : null,
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: _amount,
                         decoration: const InputDecoration(
-                          labelText: 'Interval days',
-                          hintText: 'e.g. every 10 days',
-                          prefixIcon: Icon(Icons.timelapse_outlined),
+                          labelText: 'Amount (₹)',
+                          prefixIcon: Icon(Icons.currency_rupee),
                         ),
-                        keyboardType: TextInputType.number,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
                         inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly
+                          FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))
                         ],
-                        onChanged: (v) => setState(() {
-                          final n = int.tryParse(v) ?? 7;
-                          _intervalDays = n.clamp(1, 365);
-                        }),
-                        validator: (v) {
-                          final n = int.tryParse(v ?? '');
-                          if (n == null || n < 1) {
-                            return 'Enter a number ≥ 1';
-                          }
-                          return null;
-                        },
-                      )
-                          : DropdownButtonFormField<int>(
-                        value: _dueDay,
-                        items: List.generate(28, (i) => i + 1)
-                            .map((d) =>
-                            DropdownMenuItem(value: d, child: Text('Day $d')))
-                            .toList(),
-                        onChanged: (v) => setState(() => _dueDay = v),
-                        decoration: const InputDecoration(
-                          labelText: 'Due day (1–28)',
-                          prefixIcon: Icon(Icons.event_outlined),
-                        ),
-                        validator: (v) => v == null ? 'Pick a due day' : null,
+                        validator: (_) =>
+                            _parseAmount() <= 0 ? 'Enter a valid amount' : null,
+                        onChanged: (_) => setState(() {}),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    _calendarHelperRow(),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-
-              const SizedBox(height: 12),
-              if (!_isGroup) ...[
-                _sectionTitle('Split'),
+                const SizedBox(height: 12),
+                _sectionTitle('Repeat'),
                 _glossyCard(
                   child: Column(
                     children: [
-                      Wrap(
-                        spacing: 10,
-                        children: [
-                          ChoiceChip(
-                            label: const Text('Equal (50/50)'),
-                            selected: _split == 'equal',
-                            onSelected: (_) => setState(() => _split = 'equal'),
+                      DropdownButtonFormField<String>(
+                        initialValue: _frequency,
+                        items: const [
+                          DropdownMenuItem(
+                              value: 'weekly', child: Text('Weekly')),
+                          DropdownMenuItem(
+                              value: 'monthly', child: Text('Monthly')),
+                          DropdownMenuItem(
+                              value: 'yearly', child: Text('Yearly')),
+                          DropdownMenuItem(
+                              value: 'custom',
+                              child: Text('Custom (every N days)')),
+                        ],
+                        onChanged: (v) => setState(() {
+                          _frequency = v ?? 'monthly';
+                          if (_frequency == 'weekly') {
+                            _weekday ??= DateTime.now().weekday % 7;
+                            _dueDay = null;
+                            _intervalDays = null;
+                          } else if (_frequency == 'custom') {
+                            _intervalDays ??= 7;
+                            _weekday = null;
+                            _dueDay = null;
+                          } else {
+                            _dueDay ??= DateTime.now().day.clamp(1, 28);
+                            _weekday = null;
+                            _intervalDays = null;
+                          }
+                        }),
+                        decoration: const InputDecoration(
+                          labelText: 'Frequency',
+                          prefixIcon: Icon(Icons.repeat_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOut,
+                        child: _frequency == 'weekly'
+                            ? DropdownButtonFormField<int>(
+                                initialValue: _weekday,
+                                items: const [
+                                  DropdownMenuItem(
+                                      value: 0, child: Text('Sunday')),
+                                  DropdownMenuItem(
+                                      value: 1, child: Text('Monday')),
+                                  DropdownMenuItem(
+                                      value: 2, child: Text('Tuesday')),
+                                  DropdownMenuItem(
+                                      value: 3, child: Text('Wednesday')),
+                                  DropdownMenuItem(
+                                      value: 4, child: Text('Thursday')),
+                                  DropdownMenuItem(
+                                      value: 5, child: Text('Friday')),
+                                  DropdownMenuItem(
+                                      value: 6, child: Text('Saturday')),
+                                ],
+                                onChanged: (v) => setState(() => _weekday = v),
+                                decoration: const InputDecoration(
+                                  labelText: 'Weekday',
+                                  prefixIcon: Icon(Icons.event_repeat),
+                                ),
+                                validator: (v) =>
+                                    v == null ? 'Pick a weekday' : null,
+                              )
+                            : _frequency == 'custom'
+                                ? TextFormField(
+                                    initialValue:
+                                        (_intervalDays ?? 7).toString(),
+                                    decoration: const InputDecoration(
+                                      labelText: 'Interval days',
+                                      hintText: 'e.g. every 10 days',
+                                      prefixIcon:
+                                          Icon(Icons.timelapse_outlined),
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly
+                                    ],
+                                    onChanged: (v) => setState(() {
+                                      final n = int.tryParse(v) ?? 7;
+                                      _intervalDays = n.clamp(1, 365);
+                                    }),
+                                    validator: (v) {
+                                      final n = int.tryParse(v ?? '');
+                                      if (n == null || n < 1) {
+                                        return 'Enter a number ≥ 1';
+                                      }
+                                      return null;
+                                    },
+                                  )
+                                : DropdownButtonFormField<int>(
+                                    initialValue: _dueDay,
+                                    items: List.generate(28, (i) => i + 1)
+                                        .map((d) => DropdownMenuItem(
+                                            value: d, child: Text('Day $d')))
+                                        .toList(),
+                                    onChanged: (v) =>
+                                        setState(() => _dueDay = v),
+                                    decoration: const InputDecoration(
+                                      labelText: 'Due day (1–28)',
+                                      prefixIcon: Icon(Icons.event_outlined),
+                                    ),
+                                    validator: (v) =>
+                                        v == null ? 'Pick a due day' : null,
+                                  ),
+                      ),
+                      const SizedBox(height: 10),
+                      _calendarHelperRow(),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (!_isGroup) ...[
+                  _sectionTitle('Split'),
+                  _glossyCard(
+                    child: Column(
+                      children: [
+                        Wrap(
+                          spacing: 10,
+                          children: [
+                            ChoiceChip(
+                              label: const Text('Equal (50/50)'),
+                              selected: _split == 'equal',
+                              onSelected: (_) =>
+                                  setState(() => _split = 'equal'),
+                            ),
+                            ChoiceChip(
+                              label: const Text('Custom'),
+                              selected: _split == 'custom',
+                              onSelected: (_) =>
+                                  setState(() => _split = 'custom'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        AnimatedCrossFade(
+                          duration: const Duration(milliseconds: 200),
+                          crossFadeState: _split == 'custom'
+                              ? CrossFadeState.showFirst
+                              : CrossFadeState.showSecond,
+                          firstChild: Column(
+                            children: [
+                              _sliderRow(
+                                icon: Icons.person_outline,
+                                label: 'Your share',
+                                value: _userShare,
+                                onChanged: (v) =>
+                                    setState(() => _normalizeFromUser(v)),
+                              ),
+                              _sliderRow(
+                                icon: Icons.group_outlined,
+                                label: 'Friend share',
+                                value: _friendShare,
+                                onChanged: (v) => setState(() {
+                                  _friendShare = v.clamp(0, 100);
+                                  _userShare = 100 - _friendShare;
+                                }),
+                              ),
+                            ],
                           ),
-                          ChoiceChip(
-                            label: const Text('Custom'),
-                            selected: _split == 'custom',
-                            onSelected: (_) => setState(() => _split = 'custom'),
+                          secondChild: const SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                _sectionTitle('Notes & attachment'),
+                _glossyCard(
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: _notes,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Notes (optional)',
+                          hintText: 'Any notes for this recurring item',
+                          alignLabelWithHint: true,
+                          prefixIcon: Icon(Icons.notes_outlined),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          const Icon(Icons.attachment_outlined, size: 18),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Attachment (optional)',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.w800)),
+                                Text(
+                                  _attachmentDownloadUrl == null
+                                      ? 'Add a compressed photo (bill/screenshot)'
+                                      : 'Attached',
+                                  style: const TextStyle(color: Colors.black54),
+                                ),
+                              ],
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            icon: Icon(
+                              _attachedImage == null
+                                  ? Icons.add_photo_alternate
+                                  : Icons.change_circle_outlined,
+                            ),
+                            onPressed: _pickCompressUploadAttachment,
+                            label: Text(_attachedImage == null
+                                ? 'Add photo'
+                                : 'Change'),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      if (_attachedImage != null) ...[
+                        const SizedBox(height: 10),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.file(
+                            _attachedImage!,
+                            height: 120,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _sectionTitle('Remind me', key: _reminderKey),
+                _glossyCard(
+                  child: Column(
+                    children: [
+                      SwitchListTile.adaptive(
+                        value: _notifyEnabled,
+                        onChanged: (v) => setState(() => _notifyEnabled = v),
+                        title: const Text('Enable reminder'),
+                        subtitle: const Text('Get a push before the due day'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
                       AnimatedCrossFade(
-                        duration: const Duration(milliseconds: 200),
-                        crossFadeState: _split == 'custom'
+                        duration: const Duration(milliseconds: 180),
+                        crossFadeState: _notifyEnabled
                             ? CrossFadeState.showFirst
                             : CrossFadeState.showSecond,
                         firstChild: Column(
                           children: [
-                            _sliderRow(
-                              icon: Icons.person_outline,
-                              label: 'Your share',
-                              value: _userShare,
-                              onChanged: (v) =>
-                                  setState(() => _normalizeFromUser(v)),
-                            ),
-                            _sliderRow(
-                              icon: Icons.group_outlined,
-                              label: 'Friend share',
-                              value: _friendShare,
-                              onChanged: (v) => setState(() {
-                                _friendShare = v.clamp(0, 100);
-                                _userShare = 100 - _friendShare;
-                              }),
+                            _reminderDayCard(),
+                            const SizedBox(height: 8),
+                            _reminderTimeCard(),
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'First reminder: ${_reminderPreviewText(nextDuePreview)}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12.5),
+                              ),
                             ),
                           ],
                         ),
@@ -831,149 +951,48 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
                     ],
                   ),
                 ),
-
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
+                _sectionTitle('Summary'),
+                _glossyCard(
+                  child: _SummaryCard(
+                    title:
+                        _title.text.trim().isEmpty ? '—' : _title.text.trim(),
+                    frequency: _frequency,
+                    amount: _parseAmount(),
+                    dayOrWeekLabel: _frequency == 'weekly'
+                        ? _weekdayName(_weekday ?? 0)
+                        : _frequency == 'custom'
+                            ? 'Every ${(_intervalDays ?? 7)} day(s)'
+                            : (_dueDay == null ? '—' : 'Day $_dueDay'),
+                    showShares: !_isGroup,
+                    userSharePct: _split == 'equal' ? 50.0 : _userShare,
+                    friendSharePct: _split == 'equal' ? 50.0 : _friendShare,
+                    userAmt: _parseAmount() *
+                        ((_split == 'equal' ? 50.0 : _userShare) / 100.0),
+                    friendAmt: _parseAmount() *
+                        ((_split == 'equal' ? 50.0 : _friendShare) / 100.0),
+                    participantCount:
+                        _isGroup ? _groupParticipantIds.length : 2,
+                    nextDueAt: nextDuePreview,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: _saving ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.check_rounded),
+                  label: const Text('Save'),
+                ),
               ],
-              _sectionTitle('Notes & attachment'),
-              _glossyCard(
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: _notes,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Notes (optional)',
-                        hintText: 'Any notes for this recurring item',
-                        alignLabelWithHint: true,
-                        prefixIcon: Icon(Icons.notes_outlined),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        const Icon(Icons.attachment_outlined, size: 18),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Attachment (optional)',
-                                  style: TextStyle(fontWeight: FontWeight.w800)),
-                              Text(
-                                _attachmentDownloadUrl == null
-                                    ? 'Add a compressed photo (bill/screenshot)'
-                                    : 'Attached',
-                                style: const TextStyle(color: Colors.black54),
-                              ),
-                            ],
-                          ),
-                        ),
-                        OutlinedButton.icon(
-                          icon: Icon(
-                            _attachedImage == null
-                                ? Icons.add_photo_alternate
-                                : Icons.change_circle_outlined,
-                          ),
-                          onPressed: _pickCompressUploadAttachment,
-                          label: Text(_attachedImage == null ? 'Add photo' : 'Change'),
-                        ),
-                      ],
-                    ),
-                    if (_attachedImage != null) ...[
-                      const SizedBox(height: 10),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.file(
-                          _attachedImage!,
-                          height: 120,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-              _sectionTitle('Remind me', key: _reminderKey),
-              _glossyCard(
-                child: Column(
-                  children: [
-                    SwitchListTile.adaptive(
-                      value: _notifyEnabled,
-                      onChanged: (v) => setState(() => _notifyEnabled = v),
-                      title: const Text('Enable reminder'),
-                      subtitle: const Text('Get a push before the due day'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    AnimatedCrossFade(
-                      duration: const Duration(milliseconds: 180),
-                      crossFadeState: _notifyEnabled
-                          ? CrossFadeState.showFirst
-                          : CrossFadeState.showSecond,
-                      firstChild: Column(
-                        children: [
-                          _reminderDayCard(),
-                          const SizedBox(height: 8),
-                          _reminderTimeCard(),
-                          const SizedBox(height: 6),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'First reminder: ${_reminderPreviewText(nextDuePreview)}',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w700, fontSize: 12.5),
-                            ),
-                          ),
-                        ],
-                      ),
-                      secondChild: const SizedBox.shrink(),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 14),
-              _sectionTitle('Summary'),
-              _glossyCard(
-                child: _SummaryCard(
-                  title: _title.text.trim().isEmpty ? '—' : _title.text.trim(),
-                  frequency: _frequency,
-                  amount: _parseAmount(),
-                  dayOrWeekLabel: _frequency == 'weekly'
-                      ? _weekdayName(_weekday ?? 0)
-                      : _frequency == 'custom'
-                      ? 'Every ${(_intervalDays ?? 7)} day(s)'
-                      : (_dueDay == null ? '—' : 'Day $_dueDay'),
-                  showShares: !_isGroup,
-                  userSharePct: _split == 'equal' ? 50.0 : _userShare,
-                  friendSharePct: _split == 'equal' ? 50.0 : _friendShare,
-                  userAmt: _parseAmount() *
-                      ((_split == 'equal' ? 50.0 : _userShare) / 100.0),
-                  friendAmt: _parseAmount() *
-                      ((_split == 'equal' ? 50.0 : _friendShare) / 100.0),
-                  participantCount: _isGroup ? _groupParticipantIds.length : 2,
-                  nextDueAt: nextDuePreview,
-                ),
-              ),
-
-              const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed: _saving ? null : _save,
-                icon: _saving
-                    ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.check_rounded),
-                label: const Text('Save'),
-              ),
-            ],
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   // ------ UI atoms ------
@@ -1035,7 +1054,8 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
               ),
               const SizedBox(height: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0x0F111827),
                   borderRadius: BorderRadius.circular(999),
@@ -1101,7 +1121,8 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
           ],
         ),
         boxShadow: const [
-          BoxShadow(color: Color(0x19000000), blurRadius: 10, offset: Offset(0, 6)),
+          BoxShadow(
+              color: Color(0x19000000), blurRadius: 10, offset: Offset(0, 6)),
         ],
       ),
       child: Center(
@@ -1110,8 +1131,11 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
     );
   }
 
-  Color _tint(Color c, double opacity) =>
-      Color.fromARGB((opacity * 255).round(), c.red, c.green, c.blue);
+  Color _tint(Color c, double opacity) => Color.fromARGB(
+      (opacity * 255).round(),
+      (c.r * 255).round(),
+      (c.g * 255).round(),
+      (c.b * 255).round());
 
   Widget _calendarHelperRow() {
     return Container(
@@ -1128,7 +1152,7 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
               children: [
                 const Text('Pick from calendar (optional)',
                     style:
-                    TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+                        TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
                 Text(
                   _pickedCalendarDate == null
                       ? 'Use a date to auto-fill day/weekday'
@@ -1168,8 +1192,7 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
                   max: 7,
                   divisions: 7,
                   label: '$_daysBefore day(s) before',
-                  onChanged: (v) =>
-                      setState(() => _daysBefore = v.toInt()),
+                  onChanged: (v) => setState(() => _daysBefore = v.toInt()),
                 ),
               ),
               const SizedBox(width: 8),
@@ -1239,21 +1262,22 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
         colors: [Color(0xFFFFFFFF), Color(0xFFF9FAFB)],
       ),
       boxShadow: const [
-        BoxShadow(color: Color(0x1F000000), blurRadius: 16, offset: Offset(0, 8)),
+        BoxShadow(
+            color: Color(0x1F000000), blurRadius: 16, offset: Offset(0, 8)),
       ],
       border: Border.all(color: const Color(0xFFE9ECEF)),
     );
   }
 
   Widget _sectionTitle(String t, {Key? key}) => Padding(
-    key: key,
-    padding: const EdgeInsets.only(bottom: 8, left: 2),
-    child: Text(
-      t,
-      style: const TextStyle(
-          fontWeight: FontWeight.w900, fontSize: 16, color: Colors.black),
-    ),
-  );
+        key: key,
+        padding: const EdgeInsets.only(bottom: 8, left: 2),
+        child: Text(
+          t,
+          style: const TextStyle(
+              fontWeight: FontWeight.w900, fontSize: 16, color: Colors.black),
+        ),
+      );
 
   Widget _sliderRow({
     required IconData icon,
@@ -1341,21 +1365,24 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    String amtFmt(double v) =>
-        v <= 0 ? '—' : '₹ ${v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 2)}';
+    String amtFmt(double v) => v <= 0
+        ? '—'
+        : '₹ ${v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 2)}';
 
     final rows = <Widget>[
       _row('Title', title),
       _row('Amount', amtFmt(amount)),
-      _row('Frequency', frequency.isEmpty
-          ? '—'
-          : frequency[0].toUpperCase() + frequency.substring(1)),
+      _row(
+          'Frequency',
+          frequency.isEmpty
+              ? '—'
+              : frequency[0].toUpperCase() + frequency.substring(1)),
       _row(
         frequency == 'weekly'
             ? 'Weekday'
             : frequency == 'custom'
-            ? 'Interval'
-            : 'Due day',
+                ? 'Interval'
+                : 'Due day',
         dayOrWeekLabel,
       ),
       _row('Next due', nextDueAt.toIso8601String().substring(0, 10)),
@@ -1410,25 +1437,24 @@ class _Preset {
   final String frequency; // weekly/monthly/yearly/custom
   final int? dueDay; // for monthly/yearly
   final int? weekday; // 0..6 for weekly
-  final int? intervalDays; // for custom
+
   final double suggestedAmount;
 
   // Visuals
-  final String? asset;   // local asset image path (if provided, used)
-  final IconData? icon;  // fallback colorful icon
-  final Color? color;    // tint for glossy icon
-  final int priority;    // sort order (lower = earlier)
+  final String? asset; // local asset image path (if provided, used)
+  final IconData? icon; // fallback colorful icon
+  final Color? color; // tint for glossy icon
+  final int priority; // sort order (lower = earlier)
 
   const _Preset(
-      this.title, {
-        required this.frequency,
-        this.dueDay,
-        this.weekday,
-        this.intervalDays,
-        this.suggestedAmount = 0,
-        this.asset,
-        this.icon,
-        this.color,
-        this.priority = 100,
-      });
+    this.title, {
+    required this.frequency,
+    this.dueDay,
+    this.weekday,
+    this.suggestedAmount = 0,
+    this.asset,
+    this.icon,
+    this.color,
+    this.priority = 100,
+  });
 }

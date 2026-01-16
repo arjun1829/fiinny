@@ -3,7 +3,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/expense_item.dart';
 import '../models/income_item.dart';
-import '../models/group_model.dart';
 import 'package:rxdart/rxdart.dart'; // Needed for Rx.combineLatest2
 
 
@@ -52,8 +51,8 @@ class BalanceService {
       String userId, List<ExpenseItem> expenses, List<IncomeItem> incomes) {
     double totalOwe = 0.0;
     double totalOwedTo = 0.0;
-    Map<String, double> perFriendNet = {};
-    Map<String, double> perGroupNet = {};
+    final Map<String, double> perFriendNet = {};
+    final Map<String, double> perGroupNet = {};
 
     for (final e in expenses) {
       final participants = e.friendIds + [e.payerId];

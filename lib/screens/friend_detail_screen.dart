@@ -15,10 +15,10 @@ class FriendDetailScreen extends StatefulWidget {
   final FriendModel friend;
 
   const FriendDetailScreen({
-    Key? key,
+    super.key,
     required this.userId,
     required this.friend,
-  }) : super(key: key);
+  });
 
   @override
   State<FriendDetailScreen> createState() => _FriendDetailScreenState();
@@ -66,7 +66,11 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
         bottom: TabBar(
           controller: _tabs,
           labelColor: Theme.of(context).colorScheme.primary,
-          unselectedLabelColor: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
+          unselectedLabelColor: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.color
+              ?.withValues(alpha: 0.7),
           indicatorColor: Theme.of(context).colorScheme.primary,
           tabs: const [
             Tab(text: 'Activity'),
@@ -74,7 +78,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
           ],
         ),
       ),
-
       body: Column(
         children: [
           // --- Net balance card (subtle, glossy-ish) ---
@@ -96,15 +99,21 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                     color: Theme.of(context).cardColor,
                     boxShadow: [
                       BoxShadow(
-                        color: Theme.of(context).shadowColor.withOpacity(0.06),
+                        color: Theme.of(context)
+                            .shadowColor
+                            .withValues(alpha: 0.06),
                         blurRadius: 14,
                         offset: const Offset(0, 8),
                       ),
                     ],
-                    border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.5)),
+                    border: Border.all(
+                        color: Theme.of(context)
+                            .dividerColor
+                            .withValues(alpha: 0.5)),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 18, horizontal: 16),
                     child: Column(
                       children: [
                         Text(
@@ -145,8 +154,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                   builder: (context, snapshot) {
                     final txs = (snapshot.data ?? [])
                         .where((e) =>
-                    e.friendIds.contains(friend.phone) ||
-                        e.payerId == friend.phone)
+                            e.friendIds.contains(friend.phone) ||
+                            e.payerId == friend.phone)
                         .toList();
 
                     final activities = txs.map((e) {
@@ -154,7 +163,9 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                           (e.label ?? '').toLowerCase().contains('settle');
                       return ActivityItem(
                         id: e.id,
-                        type: isSettle ? ActivityType.settleup : ActivityType.expense,
+                        type: isSettle
+                            ? ActivityType.settleup
+                            : ActivityType.expense,
                         amount: e.amount,
                         label: e.label ?? e.type,
                         note: e.note,
@@ -173,8 +184,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
 
                 // CHAT TAB — reuses the same chat thread as partner screen
                 PartnerChatTab(
-                  partnerUserId: friend.phone,   // friend is the peer
-                  currentUserId: widget.userId,  // me
+                  partnerUserId: friend.phone, // friend is the peer
+                  currentUserId: widget.userId, // me
                 ),
               ],
             ),

@@ -4,7 +4,6 @@ import 'package:http/http.dart' as http;
 
 import '../connector.dart';
 import '../raw_transaction_event.dart';
-import '../../config/region_profile.dart';
 import '../../config/bank_profiles.dart';
 
 class GmailConnector extends SourceConnector {

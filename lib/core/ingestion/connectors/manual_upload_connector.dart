@@ -1,7 +1,6 @@
 import 'dart:io';
 import '../connector.dart';
 import '../raw_transaction_event.dart';
-import '../../config/region_profile.dart';
 
 class ManualUploadConnector extends SourceConnector {
   ManualUploadConnector({required super.region, required super.userId});

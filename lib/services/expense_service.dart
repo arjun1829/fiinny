@@ -10,10 +10,12 @@ import '../models/expense_item.dart';
 /// NOTE: Firestore may require composite indexes for some combinations.
 class ExpenseQuery {
   final List<String>? categories;
-  final List<String>? labels; // matches `labels[]`; legacy `label` matched via text
+  final List<String>?
+      labels; // matches `labels[]`; legacy `label` matched via text
   final DateTime? from;
   final DateTime? to;
-  final String? text;   // searched in title, comments, note, category, labels, label
+  final String?
+      text; // searched in title, comments, note, category, labels, label
   final double? minAmount;
   final double? maxAmount;
   final int limit;
@@ -38,7 +40,8 @@ class ExpenseService {
 
   // ── USER SCOPED COLLECTION (what Dashboard reads & Mirror writes) ─────────────
   // users/<userPhone>/expenses/*
-  CollectionReference<Map<String, dynamic>> getExpensesCollection(String userPhone) {
+  CollectionReference<Map<String, dynamic>> getExpensesCollection(
+      String userPhone) {
     return _firestore.collection('users').doc(userPhone).collection('expenses');
   }
 
@@ -49,7 +52,9 @@ class ExpenseService {
 
   Future<void> _mirrorToGroupCollections(ExpenseItem expense) async {
     final groupId = expense.groupId;
-    if (!FxFlags.groupCanonicalWrites || groupId == null || groupId.trim().isEmpty) {
+    if (!FxFlags.groupCanonicalWrites ||
+        groupId == null ||
+        groupId.trim().isEmpty) {
       return;
     }
     try {
@@ -71,11 +76,14 @@ class ExpenseService {
     final snapshot = await getExpensesCollection(userPhone)
         .orderBy('date', descending: true)
         .get();
-    return snapshot.docs.map((doc) => ExpenseItem.fromJson(doc.data())).toList();
+    return snapshot.docs
+        .map((doc) => ExpenseItem.fromJson(doc.data()))
+        .toList();
   }
 
   /// Add an expense (handles custom splits & mirrors to friends)
-  Future<String> addExpenseWithDialog(ExpenseItem expense, String userPhone) async {
+  Future<String> addExpenseWithDialog(
+      ExpenseItem expense, String userPhone) async {
     final col = getExpensesCollection(userPhone);
     final docRef = col.doc(); // id generated here; used to mirror to friends
     final expenseWithId = expense.copyWith(id: docRef.id);
@@ -86,20 +94,24 @@ class ExpenseService {
       for (final entry in expense.customSplits!.entries) {
         final friendPhone = entry.key;
         if (friendPhone != userPhone) {
-          final mirrorDoc = getExpensesCollection(friendPhone).doc(expenseWithId.id);
-          await mirrorDoc.set(expenseWithId.copyWith(
-            payerId: expense.payerId,
-            amount: entry.value,
-            friendIds: [userPhone],
-            groupId: expense.groupId,
-          ).toJson());
+          final mirrorDoc =
+              getExpensesCollection(friendPhone).doc(expenseWithId.id);
+          await mirrorDoc.set(expenseWithId
+              .copyWith(
+                payerId: expense.payerId,
+                amount: entry.value,
+                friendIds: [userPhone],
+                groupId: expense.groupId,
+              )
+              .toJson());
         }
       }
     } else {
       // Fallback: classic friends mirroring
       for (String friendPhone in expense.friendIds) {
         if (friendPhone != userPhone) {
-          final mirrorDoc = getExpensesCollection(friendPhone).doc(expenseWithId.id);
+          final mirrorDoc =
+              getExpensesCollection(friendPhone).doc(expenseWithId.id);
           await mirrorDoc.set(expenseWithId.toJson());
         }
       }
@@ -114,11 +126,12 @@ class ExpenseService {
     _notify();
     return docRef.id;
   }
-  
+
   void _notify() => globalUpdate.value++;
 
   /// Add with sync (same as dialog variant, kept for compatibility)
-  Future<String> addExpenseWithSync(String userPhone, ExpenseItem expense) async {
+  Future<String> addExpenseWithSync(
+      String userPhone, ExpenseItem expense) async {
     final col = getExpensesCollection(userPhone);
     final docRef = col.doc();
     final expenseWithId = expense.copyWith(id: docRef.id);
@@ -128,19 +141,23 @@ class ExpenseService {
       for (final entry in expense.customSplits!.entries) {
         final friendPhone = entry.key;
         if (friendPhone != userPhone) {
-          final mirrorDoc = getExpensesCollection(friendPhone).doc(expenseWithId.id);
-          await mirrorDoc.set(expenseWithId.copyWith(
-            payerId: expense.payerId,
-            amount: entry.value,
-            friendIds: [userPhone],
-            groupId: expense.groupId,
-          ).toJson());
+          final mirrorDoc =
+              getExpensesCollection(friendPhone).doc(expenseWithId.id);
+          await mirrorDoc.set(expenseWithId
+              .copyWith(
+                payerId: expense.payerId,
+                amount: entry.value,
+                friendIds: [userPhone],
+                groupId: expense.groupId,
+              )
+              .toJson());
         }
       }
     } else {
       for (String friendPhone in expense.friendIds) {
         if (friendPhone != userPhone) {
-          final mirrorDoc = getExpensesCollection(friendPhone).doc(expenseWithId.id);
+          final mirrorDoc =
+              getExpensesCollection(friendPhone).doc(expenseWithId.id);
           await mirrorDoc.set(expenseWithId.toJson());
         }
       }
@@ -169,8 +186,11 @@ class ExpenseService {
       // Mirror to individual friends (Social Notification Trigger)
       final batch = _firestore.batch();
       for (final friendPhone in expense.friendIds) {
-        if (friendPhone == userPhone || friendPhone.isEmpty) continue;
-        final mirrorDoc = getExpensesCollection(friendPhone).doc(expenseWithId.id);
+        if (friendPhone == userPhone || friendPhone.isEmpty) {
+          continue;
+        }
+        final mirrorDoc =
+            getExpensesCollection(friendPhone).doc(expenseWithId.id);
         // Add 'mirroredFrom' so the Cloud Function knows to notify
         final mirrorData = expenseWithId.toJson();
         mirrorData['mirroredFrom'] = userPhone;
@@ -194,13 +214,14 @@ class ExpenseService {
       if (data != null) {
         final rawFriends = data['friendIds'];
         if (rawFriends is Iterable) {
-          previousParticipants
-              .addAll(rawFriends.map((e) => e.toString()).where((e) => e.isNotEmpty));
+          previousParticipants.addAll(
+              rawFriends.map((e) => e.toString()).where((e) => e.isNotEmpty));
         }
         final rawSplits = data['customSplits'];
         if (rawSplits is Map) {
-          previousParticipants
-              .addAll(rawSplits.keys.map((e) => e.toString()).where((e) => e.isNotEmpty));
+          previousParticipants.addAll(rawSplits.keys
+              .map((e) => e.toString())
+              .where((e) => e.isNotEmpty));
         }
         final rawGroup = data['groupId'];
         if (rawGroup is String && rawGroup.isNotEmpty) {
@@ -213,7 +234,7 @@ class ExpenseService {
 
     final currentParticipants = <String>{}
       ..addAll(expense.friendIds.where((phone) => phone.isNotEmpty))
-      ..addAll((expense.customSplits?.keys ?? const <String>[]) 
+      ..addAll((expense.customSplits?.keys ?? const <String>[])
           .map((e) => e.toString())
           .where((phone) => phone.isNotEmpty));
     currentParticipants.remove(userPhone);
@@ -223,7 +244,9 @@ class ExpenseService {
 
     if (expense.customSplits != null && expense.customSplits!.isNotEmpty) {
       expense.customSplits!.forEach((phone, amount) {
-        if (phone == userPhone || phone.trim().isEmpty) return;
+        if (phone == userPhone || phone.trim().isEmpty) {
+          return;
+        }
         final mirrorDoc = getExpensesCollection(phone).doc(expense.id);
         final mirror = expense.copyWith(
           amount: amount,
@@ -233,14 +256,18 @@ class ExpenseService {
       });
     } else {
       for (final phone in currentParticipants) {
-        if (phone == userPhone) continue;
+        if (phone == userPhone) {
+          continue;
+        }
         final mirrorDoc = getExpensesCollection(phone).doc(expense.id);
         batch.set(mirrorDoc, expense.toJson());
       }
     }
 
     for (final phone in previousParticipants.difference(currentParticipants)) {
-      if (phone.isEmpty) continue;
+      if (phone.isEmpty) {
+        continue;
+      }
       batch.delete(getExpensesCollection(phone).doc(expense.id));
     }
 
@@ -256,7 +283,8 @@ class ExpenseService {
 
     if (groupId != null && groupId.isNotEmpty) {
       await _mirrorToGroupCollections(expense);
-    } else if (previousGroupId != null && previousGroupId.isNotEmpty &&
+    } else if (previousGroupId != null &&
+        previousGroupId.isNotEmpty &&
         FxFlags.groupCanonicalWrites) {
       try {
         await _firestore
@@ -267,7 +295,8 @@ class ExpenseService {
             .delete();
       } catch (err) {
         if (kDebugMode) {
-          debugPrint('[ExpenseService] failed to delete mirrored group expense: $err');
+          debugPrint(
+              '[ExpenseService] failed to delete mirrored group expense: $err');
         }
       }
     }
@@ -275,7 +304,8 @@ class ExpenseService {
   }
 
   /// Delete expense everywhere
-  Future<void> deleteExpense(String userPhone, String expenseId, {List<String>? friendPhones}) async {
+  Future<void> deleteExpense(String userPhone, String expenseId,
+      {List<String>? friendPhones}) async {
     await getExpensesCollection(userPhone).doc(expenseId).delete();
     if (friendPhones != null) {
       for (String friendPhone in friendPhones) {
@@ -304,7 +334,8 @@ class ExpenseService {
               .delete();
         } catch (err) {
           if (kDebugMode) {
-            debugPrint('[ExpenseService] failed to delete mirrored group expense globally: $err');
+            debugPrint(
+                '[ExpenseService] failed to delete mirrored group expense globally: $err');
           }
         }
       }
@@ -313,7 +344,8 @@ class ExpenseService {
   }
 
   /// Settle an expense (two-way)
-  Future<void> settleUpExpense(String userPhone, String expenseId, String friendPhone) async {
+  Future<void> settleUpExpense(
+      String userPhone, String expenseId, String friendPhone) async {
     await getExpensesCollection(userPhone).doc(expenseId).update({
       'settledFriendIds': FieldValue.arrayUnion([friendPhone])
     });
@@ -323,8 +355,11 @@ class ExpenseService {
   }
 
   /// Update custom split (global record)
-  Future<void> updateExpenseCustomSplit(String expenseId, Map<String, double> splits) async {
-    await _groupExpenses.doc(expenseId).set({'customSplits': splits}, SetOptions(merge: true));
+  Future<void> updateExpenseCustomSplit(
+      String expenseId, Map<String, double> splits) async {
+    await _groupExpenses
+        .doc(expenseId)
+        .set({'customSplits': splits}, SetOptions(merge: true));
   }
 
   /// Streams
@@ -332,10 +367,13 @@ class ExpenseService {
     return getExpensesCollection(userPhone)
         .orderBy('date', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => ExpenseItem.fromJson(doc.data())).toList());
+        .map((snapshot) => snapshot.docs
+            .map((doc) => ExpenseItem.fromJson(doc.data()))
+            .toList());
   }
 
-  Stream<List<ExpenseItem>> getGroupExpensesStream(String userPhone, String groupId) {
+  Stream<List<ExpenseItem>> getGroupExpensesStream(
+      String userPhone, String groupId) {
     final userQuery = getExpensesCollection(userPhone)
         .where('groupId', isEqualTo: groupId)
         .orderBy('date', descending: true)
@@ -343,13 +381,19 @@ class ExpenseService {
 
     if (!FxFlags.groupCanonicalWrites) {
       if (kDebugMode) {
-        debugPrint('[ExpenseService] listen group stream (user scoped) user=$userPhone group=$groupId');
+        debugPrint(
+            '[ExpenseService] listen group stream (user scoped) user=$userPhone group=$groupId');
       }
       return userQuery.map((snap) {
-        final expenses = snap.docs.map((d) => ExpenseItem.fromJson(d.data())).toList();
+        final expenses =
+            snap.docs.map((d) => ExpenseItem.fromJson(d.data())).toList();
         if (kDebugMode) {
-          final preview = expenses.take(3).map((e) => '${e.id}:${e.groupId ?? ''}').join(', ');
-          debugPrint('[ExpenseService] group stream update user=$userPhone group=$groupId count=${expenses.length} recent=[$preview]');
+          final preview = expenses
+              .take(3)
+              .map((e) => '${e.id}:${e.groupId ?? ''}')
+              .join(', ');
+          debugPrint(
+              '[ExpenseService] group stream update user=$userPhone group=$groupId count=${expenses.length} recent=[$preview]');
         }
         return expenses;
       });
@@ -363,10 +407,12 @@ class ExpenseService {
         .snapshots();
 
     if (kDebugMode) {
-      debugPrint('[ExpenseService] listen group stream (combined) user=$userPhone group=$groupId');
+      debugPrint(
+          '[ExpenseService] listen group stream (combined) user=$userPhone group=$groupId');
     }
 
-    return Rx.combineLatest2<QuerySnapshot<Map<String, dynamic>>, QuerySnapshot<Map<String, dynamic>>, List<ExpenseItem>>(
+    return Rx.combineLatest2<QuerySnapshot<Map<String, dynamic>>,
+        QuerySnapshot<Map<String, dynamic>>, List<ExpenseItem>>(
       userQuery,
       mirrorQuery,
       (userSnap, mirrorSnap) {
@@ -382,15 +428,18 @@ class ExpenseService {
         final list = combined.values.toList()
           ..sort((a, b) => b.date.compareTo(a.date));
         if (kDebugMode) {
-          final preview = list.take(3).map((e) => '${e.id}:${e.groupId ?? ''}').join(', ');
-          debugPrint('[ExpenseService] group stream update (combined) user=$userPhone group=$groupId count=${list.length} recent=[$preview]');
+          final preview =
+              list.take(3).map((e) => '${e.id}:${e.groupId ?? ''}').join(', ');
+          debugPrint(
+              '[ExpenseService] group stream update (combined) user=$userPhone group=$groupId count=${list.length} recent=[$preview]');
         }
         return list;
       },
     );
   }
 
-  Future<List<ExpenseItem>> getExpensesByGroup(String userPhone, String groupId) async {
+  Future<List<ExpenseItem>> getExpensesByGroup(
+      String userPhone, String groupId) async {
     final snap = await getExpensesCollection(userPhone)
         .where('groupId', isEqualTo: groupId)
         .orderBy('date', descending: true)
@@ -399,11 +448,11 @@ class ExpenseService {
   }
 
   Future<void> addSettlement(
-      String userPhone,
-      String friendPhone,
-      double amount, {
-        String? groupId,
-      }) async {
+    String userPhone,
+    String friendPhone,
+    double amount, {
+    String? groupId,
+  }) async {
     final tx = ExpenseItem(
       id: '',
       amount: amount.abs(),
@@ -428,18 +477,19 @@ class ExpenseService {
   }
 
   Future<void> addGroupSettlement(
-      String userPhone,
-      String groupId,
-      String friendPhone,
-      double amount, {
-        String note = "Settlement",
-      }) async {
+    String userPhone,
+    String groupId,
+    String friendPhone,
+    double amount, {
+    String note = "Settlement",
+  }) async {
     await addSettlement(userPhone, friendPhone, amount, groupId: groupId);
   }
 
   // Global queries for group analytics
   Future<List<ExpenseItem>> getExpensesForGroup(String groupId) async {
-    final query = await _groupExpenses.where('groupId', isEqualTo: groupId).get();
+    final query =
+        await _groupExpenses.where('groupId', isEqualTo: groupId).get();
     return query.docs.map((doc) => ExpenseItem.fromJson(doc.data())).toList();
   }
 
@@ -447,7 +497,9 @@ class ExpenseService {
     final snapshot = await getExpensesCollection(userPhone)
         .where('type', isEqualTo: 'Credit Card Bill')
         .get();
-    return snapshot.docs.map((doc) => ExpenseItem.fromJson(doc.data())).toList();
+    return snapshot.docs
+        .map((doc) => ExpenseItem.fromJson(doc.data()))
+        .toList();
   }
 
   Future<List<ExpenseItem>> getCreditCardSpends(String userPhone) async {
@@ -455,16 +507,20 @@ class ExpenseService {
         .where('cardType', isEqualTo: 'Credit Card')
         .where('isBill', isEqualTo: false)
         .get();
-    return snapshot.docs.map((doc) => ExpenseItem.fromJson(doc.data())).toList();
+    return snapshot.docs
+        .map((doc) => ExpenseItem.fromJson(doc.data()))
+        .toList();
   }
 
   // ======= Summary helpers (safe for non-nullable settledFriendIds) =======
-  Future<double> getOpenAmountWithFriend(String userPhone, String friendPhone) async {
+  Future<double> getOpenAmountWithFriend(
+      String userPhone, String friendPhone) async {
     final expenses = await getExpenses(userPhone);
     double net = 0;
     for (var e in expenses) {
       final settled = e.settledFriendIds;
-      final isOpenWithFriend = settled.isEmpty || !settled.contains(friendPhone);
+      final isOpenWithFriend =
+          settled.isEmpty || !settled.contains(friendPhone);
       if (e.friendIds.contains(friendPhone) && isOpenWithFriend) {
         if (e.payerId == userPhone) {
           net += e.amount;
@@ -476,18 +532,21 @@ class ExpenseService {
     return net;
   }
 
-  Future<List<ExpenseItem>> getOpenExpensesWithFriend(String userPhone, String friendPhone) async {
+  Future<List<ExpenseItem>> getOpenExpensesWithFriend(
+      String userPhone, String friendPhone) async {
     final expenses = await getExpenses(userPhone);
     return expenses.where((e) {
       final settled = e.settledFriendIds;
-      final isOpenWithFriend = settled.isEmpty || !settled.contains(friendPhone);
+      final isOpenWithFriend =
+          settled.isEmpty || !settled.contains(friendPhone);
       return e.friendIds.contains(friendPhone) && isOpenWithFriend;
     }).toList();
   }
 
   // ===================== 🔎 Facets =====================
   /// Returns unique labels (from `labels[]`) for this user (auto-fill chips)
-  Future<List<String>> distinctLabels(String userPhone, {int scanLimit = 1000}) async {
+  Future<List<String>> distinctLabels(String userPhone,
+      {int scanLimit = 1000}) async {
     final snap = await getExpensesCollection(userPhone).limit(scanLimit).get();
     final out = <String>{};
     for (final d in snap.docs) {
@@ -495,24 +554,31 @@ class ExpenseService {
       final raw = data['labels'];
       if (raw is List) {
         for (final v in raw) {
-          if (v is String && v.trim().isNotEmpty) out.add(v.trim());
+          if (v is String && v.trim().isNotEmpty) {
+            out.add(v.trim());
+          }
         }
       }
       // include legacy single 'label' as well
       final legacy = data['label'];
-      if (legacy is String && legacy.trim().isNotEmpty) out.add(legacy.trim());
+      if (legacy is String && legacy.trim().isNotEmpty) {
+        out.add(legacy.trim());
+      }
     }
     final list = out.toList()..sort();
     return list;
   }
 
   /// Returns unique categories for this user
-  Future<List<String>> distinctCategories(String userPhone, {int scanLimit = 1000}) async {
+  Future<List<String>> distinctCategories(String userPhone,
+      {int scanLimit = 1000}) async {
     final snap = await getExpensesCollection(userPhone).limit(scanLimit).get();
     final out = <String>{};
     for (final d in snap.docs) {
       final cat = d.data()['category'];
-      if (cat is String && cat.trim().isNotEmpty) out.add(cat.trim());
+      if (cat is String && cat.trim().isNotEmpty) {
+        out.add(cat.trim());
+      }
     }
     final list = out.toList()..sort();
     return list;
@@ -520,9 +586,9 @@ class ExpenseService {
 
   // ===================== 🔎 Advanced Search =====================
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _rawQueryDocs(
-      String userPhone,
-      ExpenseQuery q,
-      ) async {
+    String userPhone,
+    ExpenseQuery q,
+  ) async {
     Query<Map<String, dynamic>> ref = getExpensesCollection(userPhone);
 
     if (q.from != null) {
@@ -548,7 +614,8 @@ class ExpenseService {
   }
 
   /// Hybrid filter: server-side coarse filters + client-side text/amount refine
-  Future<List<ExpenseItem>> queryHybrid(String userPhone, ExpenseQuery q) async {
+  Future<List<ExpenseItem>> queryHybrid(
+      String userPhone, ExpenseQuery q) async {
     final docs = await _rawQueryDocs(userPhone, q);
     final items = docs.map((d) => ExpenseItem.fromJson(d.data())).toList();
 
@@ -558,15 +625,21 @@ class ExpenseService {
         final hay = [
           e.title ?? '',
           e.comments ?? '',
-          e.note,              // parsed/system note
+          e.note, // parsed/system note
           e.category ?? '',
           e.label ?? '',
           ...e.labels,
         ].join(' ').toLowerCase();
-        if (!hay.contains(t)) return false;
+        if (!hay.contains(t)) {
+          return false;
+        }
       }
-      if (q.minAmount != null && e.amount < q.minAmount!) return false;
-      if (q.maxAmount != null && e.amount > q.maxAmount!) return false;
+      if (q.minAmount != null && e.amount < q.minAmount!) {
+        return false;
+      }
+      if (q.maxAmount != null && e.amount > q.maxAmount!) {
+        return false;
+      }
       return true;
     }).toList();
   }
@@ -575,16 +648,18 @@ class ExpenseService {
   /// - Set title/comments/category/date for many expenses
   /// - Add/Remove labels (computed once; mirrors to friends + group)
   Future<void> bulkEdit(
-      String userPhone,
-      List<String> expenseIds, {
-        String? title,
-        String? comments,
-        String? category,
-        DateTime? date,
-        List<String>? addLabels,
-        List<String>? removeLabels,
-      }) async {
-    if (expenseIds.isEmpty) return;
+    String userPhone,
+    List<String> expenseIds, {
+    String? title,
+    String? comments,
+    String? category,
+    DateTime? date,
+    List<String>? addLabels,
+    List<String>? removeLabels,
+  }) async {
+    if (expenseIds.isEmpty) {
+      return;
+    }
 
     // sanitize label inputs
     final add = (addLabels ?? const [])
@@ -598,7 +673,9 @@ class ExpenseService {
 
     for (final id in expenseIds) {
       final snap = await getExpensesCollection(userPhone).doc(id).get();
-      if (!snap.exists) continue;
+      if (!snap.exists) {
+        continue;
+      }
 
       final data = snap.data()!;
       final base = ExpenseItem.fromJson(data);
@@ -607,19 +684,29 @@ class ExpenseService {
       final currentLabels = <String>[...base.labels];
       final seen = <String>{};
 
-      currentLabels.addAll(add);                       // additions
-      final filtered = currentLabels.where((l) => !rem.contains(l)).toList(); // removals
-      final finalLabels = filtered.where((l) => seen.add(l)).toList();        // de-dup
+      currentLabels.addAll(add); // additions
+      final filtered =
+          currentLabels.where((l) => !rem.contains(l)).toList(); // removals
+      final finalLabels = filtered.where((l) => seen.add(l)).toList(); // de-dup
 
       // Build update map
       final update = <String, dynamic>{};
-      if (title != null) update['title'] = title;
-      if (comments != null) update['comments'] = comments;
-      if (category != null) update['category'] = category;
-      if (date != null) update['date'] = Timestamp.fromDate(date);
+      if (title != null) {
+        update['title'] = title;
+      }
+      if (comments != null) {
+        update['comments'] = comments;
+      }
+      if (category != null) {
+        update['category'] = category;
+      }
+      if (date != null) {
+        update['date'] = Timestamp.fromDate(date);
+      }
       update['labels'] = finalLabels; // always set computed labels
 
-      await _applyUpdateEverywhere(userPhone: userPhone, base: base, updateMap: update);
+      await _applyUpdateEverywhere(
+          userPhone: userPhone, base: base, updateMap: update);
     }
   }
 
@@ -637,7 +724,9 @@ class ExpenseService {
 
     // Friend mirrors
     for (final friend in base.friendIds) {
-      if (friend == userPhone) continue;
+      if (friend == userPhone) {
+        continue;
+      }
       final friendDoc = getExpensesCollection(friend).doc(base.id);
       batch.update(friendDoc, updateMap);
     }
@@ -650,18 +739,19 @@ class ExpenseService {
 
     await batch.commit();
   }
+
   // ===================== ✂️ Bulk Split =====================
   /// Updates participants (friends/group) for multiple expenses.
   /// Note: this overrides existing splits.
   Future<void> bulkSplit(
-      String userPhone,
-      List<ExpenseItem> expenses, {
-        required List<String> friendIds,
-        required String? groupId,
-        String? payerPhone,
-        String? label,
-        String? note,
-      }) async {
+    String userPhone,
+    List<ExpenseItem> expenses, {
+    required List<String> friendIds,
+    required String? groupId,
+    String? payerPhone,
+    String? label,
+    String? note,
+  }) async {
     // Sanitize friendIds (exclude user)
     final normalizedFriends = friendIds
         .where((p) => p.trim().isNotEmpty && p != userPhone)
@@ -669,7 +759,9 @@ class ExpenseService {
         .toList();
 
     // Check logic: if group, friendIds empty
-    final effectiveFriendIds = (groupId != null && groupId.isNotEmpty) ? <String>[] : normalizedFriends;
+    final effectiveFriendIds = (groupId != null && groupId.isNotEmpty)
+        ? <String>[]
+        : normalizedFriends;
 
     for (final base in expenses) {
       // Prepare updates
@@ -688,12 +780,12 @@ class ExpenseService {
         updatedAt: DateTime.now(),
         updatedBy: 'bulk',
       );
-      
+
       // Force clear custom splits (workaround if copyWith ignores null)
       // Actually, safest is to instantiate. But that's tedious.
       // I'll check ExpenseItem later. For now, I'll pass empty map if null not possible?
-      // updated = updated.copyWith(customSplits: {}); 
-      
+      // updated = updated.copyWith(customSplits: {});
+
       if (payerPhone != null) {
         updated = updated.copyWith(payerId: payerPhone);
       }

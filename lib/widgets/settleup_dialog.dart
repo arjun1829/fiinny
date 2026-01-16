@@ -1,7 +1,6 @@
 // lib/widgets/settleup_dialog.dart
 
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:io' show File;
 
 import 'package:file_picker/file_picker.dart';
@@ -377,7 +376,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
       borderRadius: BorderRadius.circular(16),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.08),
+          color: Colors.black.withValues(alpha: 0.08),
           blurRadius: 14,
           offset: const Offset(0, 6),
         ),
@@ -414,7 +413,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
       child: ActionChip(
         label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
         onPressed: _submitting ? null : onTap,
-        backgroundColor: Colors.teal.withOpacity(0.10),
+        backgroundColor: Colors.teal.withValues(alpha: 0.10),
         side: BorderSide(color: Colors.teal.shade300),
       ),
     );
@@ -447,7 +446,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   @override
   Widget build(BuildContext context) {
     final primary = Colors.teal.shade700;
-    final faint   = Colors.teal.withOpacity(0.10);
+    final faint   = Colors.teal.withValues(alpha: 0.10);
 
     // Use filtered friend list (exclude me)
     final friendChoices = _friendChoices;
@@ -494,7 +493,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.08),
+                      color: Colors.red.withValues(alpha: 0.08),
                       border: Border.all(color: Colors.red.shade200),
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -521,7 +520,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                       // Group (optional)
                       if (!singleGroup && widget.groups.isNotEmpty) ...[
                         DropdownButtonFormField<GroupModel?>(
-                          value: _selectedGroup,
+                          initialValue: _selectedGroup,
                           items: <DropdownMenuItem<GroupModel?>>[
                             const DropdownMenuItem<GroupModel?>(value: null, child: Text("-- No Group --")),
                             ...widget.groups.map((g) => DropdownMenuItem<GroupModel?>(value: g, child: Text(g.name))),
@@ -541,7 +540,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                           width: double.infinity,
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Colors.amber.withOpacity(.12),
+                            color: Colors.amber.withValues(alpha: .12),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: Colors.amber.shade300),
                           ),
@@ -552,7 +551,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                         )
                       else if (!singleFriend) ...[
                         DropdownButtonFormField<FriendModel?>(
-                          value: _selectedFriend != null && !_isMeFriend(_selectedFriend!)
+                          initialValue: _selectedFriend != null && !_isMeFriend(_selectedFriend!)
                               ? _selectedFriend
                               : null,
                           items: <DropdownMenuItem<FriendModel?>>[
@@ -574,9 +573,9 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: _directionColor().withOpacity(0.12),
+                          color: _directionColor().withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: _directionColor().withOpacity(0.5)),
+                          border: Border.all(color: _directionColor().withValues(alpha: 0.5)),
                         ),
                         child: Row(
                           children: [
@@ -603,7 +602,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
 
                       // Who paid toggle
                       DropdownButtonFormField<String>(
-                        value: _payerIsMe ? 'me' : 'they',
+                        initialValue: _payerIsMe ? 'me' : 'they',
                         items: const [
                           DropdownMenuItem(value: 'they', child: Text('They paid me')),
                           DropdownMenuItem(value: 'me',   child: Text('I paid them')),
@@ -723,7 +722,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
-                            color: Colors.teal.withOpacity(0.08),
+                            color: Colors.teal.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(color: Colors.teal.shade200),
                           ),

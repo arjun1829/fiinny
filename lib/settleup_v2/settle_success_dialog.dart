@@ -43,7 +43,7 @@ class _SettleSuccessDialogState extends State<SettleSuccessDialog> {
         Positioned.fill(
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: Container(color: Colors.black.withOpacity(.35)),
+            child: Container(color: Colors.black.withValues(alpha: .35)),
           ),
         ),
         Center(
@@ -57,11 +57,11 @@ class _SettleSuccessDialogState extends State<SettleSuccessDialog> {
               child: Container(
                 padding: const EdgeInsets.all(AppSpacing.xl),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface.withOpacity(.92),
+                  color: Theme.of(context).colorScheme.surface.withValues(alpha: .92),
                   borderRadius: BorderRadius.circular(28),
                   boxShadow: [
                     BoxShadow(
-                      color: Theme.of(context).shadowColor.withOpacity(.16),
+                      color: Theme.of(context).shadowColor.withValues(alpha: .16),
                       blurRadius: 24,
                       offset: const Offset(0, 12),
                     ),
@@ -90,7 +90,7 @@ class _SettleSuccessDialogState extends State<SettleSuccessDialog> {
                     Text(
                       'Marked as settled.',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(.72),
+                            color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: .72),
                           ),
                     ),
                   ],

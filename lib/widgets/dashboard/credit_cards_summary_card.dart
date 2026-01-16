@@ -204,9 +204,9 @@ class _CreditCardsSummaryCardState extends State<CreditCardsSummaryCard> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: chipColor.withOpacity(.1),
+        color: chipColor.withValues(alpha: .1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: chipColor.withOpacity(.3)),
+        border: Border.all(color: chipColor.withValues(alpha: .3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

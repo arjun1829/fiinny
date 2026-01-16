@@ -162,7 +162,7 @@ class _PiePainter extends CustomPainter {
         ..style = PaintingStyle.fill
         ..color = isSelected
             ? slice.color
-            : slice.color.withOpacity(0.9);
+            : slice.color.withValues(alpha: 0.9);
 
       final outerRadius = isSelected ? radius + 6 : radius;
       final arcRect = Rect.fromCircle(center: center, radius: outerRadius);
@@ -172,7 +172,7 @@ class _PiePainter extends CustomPainter {
 
     final holePaint = Paint()
       ..style = PaintingStyle.fill
-      ..color = Colors.white.withOpacity(0.9);
+      ..color = Colors.white.withValues(alpha: 0.9);
     canvas.drawCircle(center, radius * holeFraction, holePaint);
   }
 

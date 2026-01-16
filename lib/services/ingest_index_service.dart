@@ -11,14 +11,39 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class IngestIndexService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  Future<bool> exists(String userPhone, String key) async {
+    final doc = await _db
+        .collection('ingest_index')
+        .doc(userPhone)
+        .collection('keys')
+        .doc(key)
+        .get();
+    return doc.exists;
+  }
+
+  Future<void> record(String userPhone, String key,
+      {required String type, required String docId}) async {
+    await _db
+        .collection('ingest_index')
+        .doc(userPhone)
+        .collection('keys')
+        .doc(key)
+        .set({
+      'source': 'gmail',
+      'type': type,
+      'docId': docId,
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
   /// Try to claim a transaction key for this user.
   /// Returns true if we created the key (i.e., first writer wins),
   /// false if the key already existed (duplicate from SMS/Gmail/backfill).
   Future<bool> claim(
-      String userPhone,
-      String key, {
-        required String source, // e.g. "sms" | "gmail"
-      }) async {
+    String userPhone,
+    String key, {
+    required String source, // e.g. "sms" | "gmail"
+  }) async {
     final ref = _db
         .collection('ingest_index')
         .doc(userPhone)

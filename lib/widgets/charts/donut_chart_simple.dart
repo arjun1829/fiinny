@@ -125,7 +125,7 @@ class DonutChartSimple extends StatelessWidget {
                 Text(
                   centerLabel ?? 'Total',
                   style: textTheme.labelMedium?.copyWith(
-                    color: Fx.text.withOpacity(.6),
+                    color: Fx.text.withValues(alpha: .6),
                     fontWeight: FontWeight.w600,
                   ),
                 ),

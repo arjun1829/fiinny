@@ -64,7 +64,7 @@ class TransactionEngine {
     final normalizedType = type.trim().toLowerCase();
 
     // 1. Detect Transfer (must happen FIRST to exclude from income/expense)
-    bool isTransfer = _detectTransfer(normalizedNote, normalizedType);
+    final bool isTransfer = _detectTransfer(normalizedNote, normalizedType);
     
     // 2. Detect Income vs Expense (skip if transfer)
     bool isIncome = false;

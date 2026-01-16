@@ -56,8 +56,8 @@ class SharingHeroCard extends StatelessWidget {
     final double fontSize = 18 * cardScale;
 
     final bgColor = isMe
-        ? Colors.white.withOpacity(0.92)
-        : Colors.white.withOpacity(0.82);
+        ? Colors.white.withValues(alpha: 0.92)
+        : Colors.white.withValues(alpha: 0.82);
 
     final nameColor = isMe ? const Color(0xFF09857a) : const Color(0xFF1B2C36);
 
@@ -78,13 +78,13 @@ class SharingHeroCard extends StatelessWidget {
                 color: bgColor,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.teal.withOpacity(0.18),
+                    color: Colors.teal.withValues(alpha: 0.18),
                     blurRadius: 28 * cardScale,
                     spreadRadius: 2,
                     offset: const Offset(0, 10),
                   ),
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.035),
+                    color: Colors.black.withValues(alpha: 0.035),
                     blurRadius: 12,
                     spreadRadius: 1,
                     offset: const Offset(0, 2),
@@ -100,7 +100,7 @@ class SharingHeroCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(32 * cardScale),
                         child: BackdropFilter(
                           filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                          child: Container(color: Colors.white.withOpacity(0.10)),
+                          child: Container(color: Colors.white.withValues(alpha: 0.10)),
                         ),
                       ),
                     ),
@@ -118,8 +118,8 @@ class SharingHeroCard extends StatelessWidget {
                             ),
                             gradient: LinearGradient(
                               colors: [
-                                Colors.white.withOpacity(0.20),
-                                Colors.white.withOpacity(0.04),
+                                Colors.white.withValues(alpha: 0.20),
+                                Colors.white.withValues(alpha: 0.04),
                               ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
@@ -139,7 +139,7 @@ class SharingHeroCard extends StatelessWidget {
                       _isEmojiAvatar
                           ? CircleAvatar(
                               radius: avatarRadius,
-                              backgroundColor: Colors.teal.withOpacity(0.12),
+                              backgroundColor: Colors.teal.withValues(alpha: 0.12),
                               child: Text(
                                 avatar!,
                                 style: TextStyle(fontSize: avatarRadius), // big emoji
@@ -147,7 +147,7 @@ class SharingHeroCard extends StatelessWidget {
                             )
                           : CircleAvatar(
                               radius: avatarRadius,
-                              backgroundColor: Colors.teal.withOpacity(0.13),
+                              backgroundColor: Colors.teal.withValues(alpha: 0.13),
                               backgroundImage: _imageForAvatar(),
                             ),
 
@@ -181,7 +181,7 @@ class SharingHeroCard extends StatelessWidget {
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFF09857a).withOpacity(0.10),
+                                        color: const Color(0xFF09857a).withValues(alpha: 0.10),
                                         borderRadius: BorderRadius.circular(999),
                                       ),
                                       child: const Text(

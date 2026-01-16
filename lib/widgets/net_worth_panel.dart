@@ -67,9 +67,9 @@ class NetWorthPanel extends StatelessWidget {
   Widget _pill(String t, String v, Color c, IconData i) => Container(
         padding: const EdgeInsets.symmetric(horizontal: Fx.s10, vertical: Fx.s4),
         decoration: BoxDecoration(
-          color: c.withOpacity(.10),
+          color: c.withValues(alpha: .10),
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: c.withOpacity(.25)),
+          border: Border.all(color: c.withValues(alpha: .25)),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(i, size: 14, color: c),

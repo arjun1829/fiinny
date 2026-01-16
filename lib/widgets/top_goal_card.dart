@@ -10,14 +10,14 @@ class TopGoalCard extends StatelessWidget {
   Widget build(BuildContext context) {
     double percent = goal.savedAmount / (goal.targetAmount == 0 ? 1 : goal.targetAmount);
     percent = percent.clamp(0.0, 1.0);
-    int daysLeft = goal.targetDate.difference(DateTime.now()).inDays;
-    String progressPhrase = percent >= 1
+    final int daysLeft = goal.targetDate.difference(DateTime.now()).inDays;
+    final String progressPhrase = percent >= 1
         ? "Goal completed! 🏆"
         : "You’re ${((percent) * 100).toStringAsFixed(0)}% there. ${daysLeft > 0 ? "$daysLeft days left!" : "Target date reached!"}";
 
     return Card(
       elevation: 5,
-      color: Colors.white.withOpacity(0.97),
+      color: Colors.white.withValues(alpha: 0.97),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 18.0, horizontal: 22.0),

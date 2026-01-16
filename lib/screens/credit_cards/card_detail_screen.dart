@@ -78,7 +78,7 @@ class _CardDetailScreenState extends State<CardDetailScreen>
         _latest?.paidAmount ?? (widget.card.isPaid ? widget.card.totalDue : 0.0);
     final double progress = total <= 0
         ? 1.0
-        : ((paid / total).clamp(0.0, 1.0) as double);
+        : (paid / total).clamp(0.0, 1.0);
     final overdue = widget.card.isOverdue;
     final chipText = overdue
         ? 'Overdue by ${DateTime.now().difference(widget.card.dueDate).inDays}d'

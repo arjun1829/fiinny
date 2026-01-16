@@ -30,13 +30,11 @@ class DashboardActivityTab extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: Colors.teal.withOpacity(0.09),
+              backgroundColor: Colors.teal.withValues(alpha: 0.09),
               child: Icon(e.icon, color: Colors.teal[700]),
             ),
             title: Text(e.title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-            subtitle: e.subtitle != null
-                ? Text(e.subtitle!, style: TextStyle(color: Colors.grey[700]))
-                : null,
+            subtitle: Text(e.subtitle, style: TextStyle(color: Colors.grey[700])),
             trailing: Text(
               DateFormat('dd MMM, hh:mm a').format(e.date),
               style: TextStyle(fontSize: 12, color: Colors.teal[900]),
@@ -70,11 +68,10 @@ class _ActivityDetailSheet extends StatelessWidget {
           Icon(event.icon, size: 48, color: Colors.teal),
           const SizedBox(height: 12),
           Text(event.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          if (event.subtitle != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(event.subtitle!, style: TextStyle(fontSize: 15, color: Colors.grey[700])),
-            ),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(event.subtitle, style: TextStyle(fontSize: 15, color: Colors.grey[700])),
+          ),
           Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Text(

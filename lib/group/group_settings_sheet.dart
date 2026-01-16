@@ -505,7 +505,7 @@ class _FintechHeaderCard extends StatelessWidget {
                 border: Border.all(color: Colors.white, width: 4),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -617,7 +617,7 @@ class _FintechActionButton extends StatelessWidget {
         border: Border.all(color: borderColor),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -723,9 +723,8 @@ class _AddMembersReviewSheetState extends State<_AddMembersReviewSheet> {
                           title: Text(m.name),
                           subtitle: Row(
                             children: [
-                              if ((m.phone ?? '').isNotEmpty) Text(m.phone!),
-                              if ((m.phone ?? '').isEmpty &&
-                                  (m.email ?? '').isNotEmpty)
+                              if (m.phone.isNotEmpty) Text(m.phone),
+                              if (m.phone.isEmpty && (m.email ?? '').isNotEmpty)
                                 Text(m.email!),
                             ],
                           ),
@@ -872,7 +871,7 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
                   hintText: 'Search name or phone',
                   prefixIcon: const Icon(Icons.search),
                   filled: true,
-                  fillColor: Theme.of(context).cardColor.withOpacity(0.6),
+                  fillColor: Theme.of(context).cardColor.withValues(alpha: 0.6),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide:

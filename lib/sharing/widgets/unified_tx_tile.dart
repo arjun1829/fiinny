@@ -37,16 +37,16 @@ class UnifiedTxTile extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.teal.withOpacity(0.08) : Colors.white,
+          color: isSelected ? Colors.teal.withValues(alpha: 0.08) : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? Colors.teal : Colors.grey.withOpacity(0.12),
+            color: isSelected ? Colors.teal : Colors.grey.withValues(alpha: 0.12),
             width: isSelected ? 1.5 : 1,
           ),
           boxShadow: [
             if (!isSelected)
               BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -61,7 +61,7 @@ class UnifiedTxTile extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
+                  color: color.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: selectionMode

@@ -15,21 +15,16 @@ import '../credit_card_service.dart'; // added
 
 import '../enrich/counterparty_extractor.dart';
 
-import '../../config/app_config.dart';
-import '../ai/tx_extractor.dart';
 import '../ingest/enrichment_service.dart';
 import '../../logic/loan_detection_parser.dart';
 import '../../brain/loan_detection_service.dart';
 
-import 'sms_permission_helper.dart';
 import '../ingest_index_service.dart';
 import '../ingest_filters.dart'; // guessBankFromSms (permissive) + helpers
 import '../tx_key.dart';
 import '../ingest_state_service.dart';
 import '../ingest_job_queue.dart';
 
-import '../categorization/category_rules.dart';
-import '../user_overrides.dart';
 import '../recurring/recurring_engine.dart';
 
 // Fuzzy cross-source reconciliation (SMS ↔ Gmail, etc.)
@@ -71,22 +66,20 @@ class SmsIngestor {
   static final SmsIngestor instance = SmsIngestor._();
 
   // ── Behavior toggles ────────────────────────────────────────────────────────
-  static const bool USE_SERVICE_WRITES =
-      false; // write via Firestore by default
-  static const bool AUTO_POST_TXNS =
-      true; // create expenses/incomes immediately
-  static const bool WRITE_BILL_AS_EXPENSE =
+  static const bool useServiceWrites = false; // write via Firestore by default
+  static const bool autoPostTxns = true; // create expenses/incomes immediately
+  static const bool writeBillAsExpense =
       false; // keep false to avoid double-counting
-  static const int INITIAL_HISTORY_DAYS = 120;
-  static const ReconcilePolicy RECONCILE_POLICY = ReconcilePolicy.mergeEnrich;
+  static const int initialHistoryDays = 120;
+  static const ReconcilePolicy reconcilePolicy = ReconcilePolicy.mergeEnrich;
   // Backfill behaviour:
   // - On first SMS ingest, or if user comes back after a long gap,
   //   we aggressively backfill up to this many days.
-  static const int MAX_BACKFILL_DAYS = 1000;
+  static const int maxBackfillDays = 1000;
 
   // "Long gap" threshold: if last SMS sync was more than this many
   // days ago, treat it like a fresh/backfill sync.
-  static const int LONG_GAP_DAYS = 60;
+  static const int longGapDays = 60;
   String _billDocId({
     required String? bank,
     required String? last4,
@@ -122,7 +115,7 @@ class SmsIngestor {
   }
 
   String _cap(String s, [int max = 4000]) =>
-      s.length <= max ? s : s.substring(0, max) + '…';
+      s.length <= max ? s : '${s.substring(0, max)}…';
 
   bool _hasCurrencyAmount(String s) => RegExp(
         r'(?:₹|inr|rs\.?)\s*[0-9][\d,]*(?:\s*\.\s*\d{1,2})?',
@@ -283,7 +276,7 @@ class SmsIngestor {
 
   // ── Bank detection & tiering (major vs other) ──────────────────────────────
 
-  static const List<_BankProfile> _MAJOR_BANKS = [
+  static const List<_BankProfile> _majorBanks = [
     // Public sector
     _BankProfile(
       code: 'SBI',
@@ -399,7 +392,7 @@ class SmsIngestor {
     final guess = guessBankFromSms(address: address, body: body);
     if (guess != null && guess.trim().isNotEmpty) {
       final upper = guess.toUpperCase();
-      for (final b in _MAJOR_BANKS) {
+      for (final b in _majorBanks) {
         if (b.code == upper) {
           return _DetectedBank(
               code: b.code, display: b.display, tier: _BankTier.major);
@@ -409,8 +402,8 @@ class SmsIngestor {
     }
 
     // 2) Fallback: look for hints in sender/body
-    final combined = ((address ?? '') + ' ' + body).toLowerCase();
-    for (final b in _MAJOR_BANKS) {
+    final combined = '${address ?? ''} $body'.toLowerCase();
+    for (final b in _majorBanks) {
       for (final h in b.headerHints) {
         if (combined.contains(h.toLowerCase())) {
           return _DetectedBank(
@@ -423,9 +416,9 @@ class SmsIngestor {
   }
 
   // Testing: pull a chunk of inbox regardless of cutoff
-  static const bool TEST_MODE = true;
-  static const int TEST_BACKFILL_DAYS = 100;
-  static const int TEST_MAX_MSGBATCH = 4000;
+  static const bool testMode = true;
+  static const int testBackfillDays = 100;
+  static const int testMaxMsgbatch = 4000;
   // Add this inside class SmsIngestor { ... }
 
   bool _hasTxnEvidence(String text) {
@@ -433,7 +426,9 @@ class SmsIngestor {
 
     // Strong phrases like: "has been credited/debited"
     if (RegExp(r'has\s*been\s*(credited|debited)', caseSensitive: false)
-        .hasMatch(t)) return true;
+        .hasMatch(t)) {
+      return true;
+    }
 
     // Txn artifacts + payment verbs
     final hasArtifact = RegExp(
@@ -451,7 +446,9 @@ class SmsIngestor {
     // Account + CR/DR
     if (RegExp(r'\ba/?c|\baccount|\bacct', caseSensitive: false).hasMatch(t) &&
         RegExp(r'\b(cr|dr|credited|debited)\b', caseSensitive: false)
-            .hasMatch(t)) return true;
+            .hasMatch(t)) {
+      return true;
+    }
 
     return false;
   }
@@ -525,7 +522,7 @@ class SmsIngestor {
     MerchantAlias.warmFromRemoteOnce();
   }
 
-  bool _seenRecently(String k) {
+  bool seenRecently(String k) {
     if (_recent.contains(k)) return true;
     _recent.addLast(k);
     if (_recent.length > _recentCap) _recent.removeFirst();
@@ -537,7 +534,7 @@ class SmsIngestor {
   /// Permissive 100-day backfill for testing.
   Future<void> backfillLastNDaysForTesting({
     required String userPhone,
-    int days = TEST_BACKFILL_DAYS,
+    int days = testBackfillDays,
   }) async {
     _log('SMS backfill DISABLED (telephony removed for iOS build fixes)');
     return;
@@ -612,7 +609,7 @@ class SmsIngestor {
     required DocumentReference txRef,
     required Map<String, dynamic> sourceMeta,
   }) async {
-    String? bankLocal = bank;
+    final String? bankLocal = bank;
     String? last4Local = last4;
 
     if (bankLocal == null && last4Local == null) {
@@ -663,7 +660,7 @@ class SmsIngestor {
 
   Future<void> initialBackfill({
     required String userPhone,
-    int newerThanDays = INITIAL_HISTORY_DAYS,
+    int newerThanDays = initialHistoryDays,
   }) async {
     _log('SMS initial backfill DISABLED');
     return;
@@ -898,7 +895,7 @@ class SmsIngestor {
 
   // ─────────────────────── Core handler ───────────────────────────────────────
 
-  Future<void> _handleOne({
+  Future<void> handleOne({
     required String userPhone,
     required String body,
     required DateTime ts,
@@ -966,7 +963,8 @@ class SmsIngestor {
 
     // NEW: Check for Loan Offers (before dropping as promo)
     if (_loanOffer(body)) {
-      await _processAndRecordLoanOffer(userPhone, body, detectedBank.code ?? _guessIssuerBank(address: address, body: body));
+      await _processAndRecordLoanOffer(userPhone, body,
+          detectedBank.code ?? _guessIssuerBank(address: address, body: body));
     }
 
     if (_looksLikePromoOrInfo(body) && !looksTxn) {
@@ -1031,7 +1029,7 @@ class SmsIngestor {
       await _creditCardService.updateCardMetadataByMatch(
         userPhone,
         bankName: bank, // might be null
-        last4: last4,   // might be null
+        last4: last4, // might be null
         availableLimit: avlLimit,
       );
     }
@@ -1085,7 +1083,7 @@ class SmsIngestor {
         }, SetOptions(merge: true));
 
         // Optional: legacy expense write (hidden from analytics) for backward-compat UI
-        if (WRITE_BILL_AS_EXPENSE) {
+        if (writeBillAsExpense) {
           final key = buildTxKey(
             bank: bank,
             amount: total,
@@ -1189,7 +1187,7 @@ class SmsIngestor {
     final st = ingestState ?? await IngestStateService.instance.get(userPhone);
     final cutoff = _extractCutoff(st);
     final isAfterCutoff =
-        TEST_MODE ? true : (cutoff == null ? true : ts.isAfter(cutoff));
+        testMode ? true : (cutoff == null ? true : ts.isAfter(cutoff));
     if (!isAfterCutoff) {
       _log('before cutoff — skip');
       return;
@@ -1199,9 +1197,9 @@ class SmsIngestor {
     final hintParts = <String>[
       'HINTS: dir=$direction',
       if (isEmiAutopay) 'cues=emi,autopay',
-      if (instrument != null && instrument!.isNotEmpty)
-        'instrument=${instrument!.toLowerCase().replaceAll(' ', '_')}',
-      if (upiVpa != null && upiVpa.trim().isNotEmpty) 'upi=${upiVpa!.trim()}',
+      if (instrument != null && instrument.isNotEmpty)
+        'instrument=${instrument.toLowerCase().replaceAll(' ', '_')}',
+      if (upiVpa != null && upiVpa.trim().isNotEmpty) 'upi=${upiVpa.trim()}',
       // NEW: Pass the extracted merchant guess as a strong hint
       if (merchantClean != null) 'merchantRegex=${merchantClean.trim()}',
     ];
@@ -1261,7 +1259,7 @@ class SmsIngestor {
 
     // Cross-source reconcile (avoid duplicate if Gmail created it)
     String? existingDocId;
-    if (RECONCILE_POLICY != ReconcilePolicy.off) {
+    if (reconcilePolicy != ReconcilePolicy.off) {
       existingDocId = await CrossSourceReconcile.maybeMerge(
         userId: userPhone,
         direction: direction,
@@ -1279,7 +1277,7 @@ class SmsIngestor {
       );
     }
     if (existingDocId != null) {
-      if (RECONCILE_POLICY == ReconcilePolicy.mergeEnrich) {
+      if (reconcilePolicy == ReconcilePolicy.mergeEnrich) {
         final col = direction == 'debit' ? 'expenses' : 'incomes';
         final ref = FirebaseFirestore.instance
             .collection('users')
@@ -1303,7 +1301,7 @@ class SmsIngestor {
         }, SetOptions(merge: true));
       }
 
-      _log('merge($direction) -> $existingDocId [policy: $RECONCILE_POLICY]');
+      _log('merge($direction) -> $existingDocId [policy: $reconcilePolicy]');
       return;
     }
 
@@ -1311,7 +1309,7 @@ class SmsIngestor {
     var note = _cleanNoteSimple(body);
     if (emiLocked && direction == 'debit') {
       final prefix =
-          'Paid towards your EMI' + (last4 != null ? ' ****$last4' : '');
+          'Paid towards your EMI${last4 != null ? ' ****$last4' : ''}';
       note = prefix + (note.isNotEmpty ? '\n$note' : '');
     }
     final currency = (fx?['currency'] as String?) ?? 'INR';
@@ -1372,10 +1370,10 @@ class SmsIngestor {
         updatedBy: 'parser:sms',
       );
 
-      if (USE_SERVICE_WRITES) {
+      if (useServiceWrites) {
         await _expense.addExpense(userPhone, e);
       } else {
-        var jsonToWrite = e.toJson();
+        final jsonToWrite = e.toJson();
 
         // LOCK LOGIC
         if (isUserEdited) {
@@ -1506,10 +1504,10 @@ class SmsIngestor {
         updatedBy: 'parser:sms',
       );
 
-      if (USE_SERVICE_WRITES) {
+      if (useServiceWrites) {
         await _income.addIncome(userPhone, i);
       } else {
-        var jsonToWrite = i.toJson();
+        final jsonToWrite = i.toJson();
         if (isUserEdited) {
           _log('Skipping update for locked fields on ${incRef.id} (SMS)');
           jsonToWrite.remove('category');
@@ -1585,7 +1583,7 @@ class SmsIngestor {
       hash = ((hash << 5) + hash) + code;
     }
     final hex = (hash & 0x7fffffff).toRadixString(16);
-    return 'ing_${hex}';
+    return 'ing_$hex';
   }
 
   // Collapse to one line for logs
@@ -1651,7 +1649,7 @@ class SmsIngestor {
       cueMatches = combined;
     }
 
-    bool _hasBalanceCueNear(int absoluteIndex) {
+    bool hasBalanceCueNear(int absoluteIndex) {
       final lookStart = absoluteIndex - 25;
       final start = lookStart < 0 ? 0 : lookStart;
       if (absoluteIndex <= start) return false;
@@ -1659,7 +1657,7 @@ class SmsIngestor {
       return balanceCue.hasMatch(snippet);
     }
 
-    double? _parseAmount(RegExpMatch match) {
+    double? parseAmount(RegExpMatch match) {
       var number = match.group(1) ?? '';
       if (number.isEmpty) {
         number = match.group(0) ?? '';
@@ -1672,29 +1670,29 @@ class SmsIngestor {
       return value;
     }
 
-    double? _firstAmountAfter(int start, int window) {
+    double? firstAmountAfter(int start, int window) {
       if (start >= body.length) return null;
       final end = start + window;
       final endClamped = end > body.length ? body.length : end;
       final slice = body.substring(start, endClamped);
       for (final match in amountPattern.allMatches(slice)) {
         final absolute = start + match.start;
-        if (_hasBalanceCueNear(absolute)) continue;
-        final value = _parseAmount(match);
+        if (hasBalanceCueNear(absolute)) continue;
+        final value = parseAmount(match);
         if (value != null) return value;
       }
       return null;
     }
 
     for (final cue in cueMatches) {
-      final value = _firstAmountAfter(cue.end, 80);
+      final value = firstAmountAfter(cue.end, 80);
       if (value != null) return value;
     }
 
     for (final match in amountPattern.allMatches(body)) {
       final absolute = match.start;
-      if (_hasBalanceCueNear(absolute)) continue;
-      final value = _parseAmount(match);
+      if (hasBalanceCueNear(absolute)) continue;
+      final value = parseAmount(match);
       if (value != null) return value;
     }
 
@@ -1982,25 +1980,42 @@ class SmsIngestor {
     if (RegExp(r'\bRTGS\b').hasMatch(t)) return 'RTGS';
     if (RegExp(r'\bATM\b').hasMatch(t)) return 'ATM';
     if (RegExp(r'\bPOS\b').hasMatch(t)) return 'POS';
-    if (RegExp(r'\bDEBIT CARD\b').hasMatch(t) || RegExp(r'\bDC\b').hasMatch(t))
+    if (RegExp(r'\bDEBIT CARD\b').hasMatch(t) ||
+        RegExp(r'\bDC\b').hasMatch(t)) {
       return 'Debit Card';
-    if (RegExp(r'\bCREDIT CARD\b').hasMatch(t) || RegExp(r'\bCC\b').hasMatch(t))
+    }
+    if (RegExp(r'\bCREDIT CARD\b').hasMatch(t) ||
+        RegExp(r'\bCC\b').hasMatch(t)) {
       return 'Credit Card';
+    }
     if (RegExp(r'WALLET|PAYTM WALLET|AMAZON PAY', caseSensitive: false)
-        .hasMatch(text)) return 'Wallet';
-    if (RegExp(r'NETBANKING|NET BANKING', caseSensitive: false).hasMatch(text))
+        .hasMatch(text)) {
+      return 'Wallet';
+    }
+    if (RegExp(r'NETBANKING|NET BANKING', caseSensitive: false)
+        .hasMatch(text)) {
       return 'NetBanking';
+    }
     return null;
   }
 
   String? _inferCardNetwork(String text) {
     final t = text.toUpperCase();
-    if (t.contains('VISA')) return 'VISA';
-    if (t.contains('MASTERCARD') || t.contains('MASTER CARD'))
+    if (t.contains('VISA')) {
+      return 'VISA';
+    }
+    if (t.contains('MASTERCARD') || t.contains('MASTER CARD')) {
       return 'MASTERCARD';
-    if (t.contains('RUPAY') || t.contains('RU-PAY')) return 'RUPAY';
-    if (t.contains('AMEX') || t.contains('AMERICAN EXPRESS')) return 'AMEX';
-    if (t.contains('DINERS')) return 'DINERS';
+    }
+    if (t.contains('RUPAY') || t.contains('RU-PAY')) {
+      return 'RUPAY';
+    }
+    if (t.contains('AMEX') || t.contains('AMERICAN EXPRESS')) {
+      return 'AMEX';
+    }
+    if (t.contains('DINERS')) {
+      return 'DINERS';
+    }
     return null;
   }
 
@@ -2012,7 +2027,7 @@ class SmsIngestor {
 
   Map<String, double> _extractFees(String text) {
     final Map<String, double> out = {};
-    double? _firstAmountAfter(RegExp pat) {
+    double? firstAmountAfter(RegExp pat) {
       final t = text;
       final m = pat.firstMatch(t);
       if (m == null) return null;
@@ -2046,7 +2061,7 @@ class SmsIngestor {
     };
 
     pairs.forEach((k, rx) {
-      final v = _firstAmountAfter(rx);
+      final v = firstAmountAfter(rx);
       if (v != null && v > 0) out[k] = v;
     });
     return out;
@@ -2064,7 +2079,7 @@ class SmsIngestor {
         .hasMatch(text);
     if (!hasCue) return null;
 
-    double? _amtAfter(List<RegExp> rxs) {
+    double? amtAfter(List<RegExp> rxs) {
       for (final rx in rxs) {
         final a = RegExp(
           rx.pattern +
@@ -2079,7 +2094,7 @@ class SmsIngestor {
       return null;
     }
 
-    DateTime? _dateAfter(List<RegExp> rxs) {
+    DateTime? dateAfter(List<RegExp> rxs) {
       final rxDate = RegExp(
           r'(\b\d{1,2}[-/ ]\d{1,2}[-/ ]\d{2,4}\b)|(\b\d{1,2}\s*[A-Za-z]{3}\s*\d{2,4}\b)',
           caseSensitive: false);
@@ -2098,13 +2113,13 @@ class SmsIngestor {
       return null;
     }
 
-    final total = _amtAfter(
+    final total = amtAfter(
         [RegExp(r'\b(TOTAL\s*(AMT|AMOUNT)?\s*DUE)\b', caseSensitive: false)]);
-    final minDue = _amtAfter([
+    final minDue = amtAfter([
       RegExp(r'\b(MIN(IM)?UM\s*(AMT|AMOUNT)?\s*DUE)\b', caseSensitive: false)
     ]);
 
-    final dueDate = _dateAfter([
+    final dueDate = dateAfter([
       RegExp(r'\b(DUE\s*DATE)\b', caseSensitive: false),
       RegExp(r'\b(BILL\s*DUE)\b', caseSensitive: false),
     ]);
@@ -2211,7 +2226,7 @@ class SmsIngestor {
     return '$prefix …$normalized';
   }
 
-  String _deriveCounterparty({
+  String deriveCounterparty({
     required String merchantNorm,
     required String? upiVpa,
     required String? last4,
@@ -2310,13 +2325,15 @@ class SmsIngestor {
     if (extracted != null) {
       final type = extracted.type.toLowerCase();
       if (type == 'merchant') return 'MERCHANT';
-      if (type == 'person')
+      if (type == 'person') {
         return direction == 'credit' ? 'SENDER' : 'RECIPIENT';
+      }
       if (type == 'bank') return 'BANK';
     }
     if (merchantNorm.isNotEmpty) return 'MERCHANT';
-    if (instrument != null && instrument.toUpperCase().contains('CARD'))
+    if (instrument != null && instrument.toUpperCase().contains('CARD')) {
       return 'MERCHANT';
+    }
     return direction == 'credit' ? 'SENDER' : 'RECIPIENT';
   }
 
@@ -2352,13 +2369,21 @@ class SmsIngestor {
     final t = text.toLowerCase();
     final out = <String>[];
     if (RegExp(r'\bauto[- ]?debit|autopay|nach|mandate|e\s*mandate\b')
-        .hasMatch(t)) out.add('autopay');
-    if (RegExp(r'\bemi\b').hasMatch(t)) out.add('loan_emi');
-    if (RegExp(r'\bsubscription|renew(al)?|membership\b').hasMatch(t))
+        .hasMatch(t)) {
+      out.add('autopay');
+    }
+    if (RegExp(r'\bemi\b').hasMatch(t)) {
+      out.add('loan_emi');
+    }
+    if (RegExp(r'\bsubscription|renew(al)?|membership\b').hasMatch(t)) {
       out.add('subscription');
-    if (RegExp(r'\bcharge|surcharge|penalty|late fee\b').hasMatch(t))
+    }
+    if (RegExp(r'\bcharge|surcharge|penalty|late fee\b').hasMatch(t)) {
       out.add('charges');
-    if (RegExp(r'\brecharge|prepaid|dth\b').hasMatch(t)) out.add('recharge');
+    }
+    if (RegExp(r'\brecharge|prepaid|dth\b').hasMatch(t)) {
+      out.add('recharge');
+    }
     if (RegExp(r'\b(petrol|diesel|fuel|filling\s*station|gas\s*station)\b')
             .hasMatch(t) ||
         t.contains('hpcl') ||
@@ -2379,8 +2404,8 @@ class SmsIngestor {
   double? _extractAvailableLimit(String text) {
     // "Avl Lmt: Rs 12000", "Available Credit Limit: 50,000", "Limit Available: 10000"
     final avlRx = RegExp(
-       r'(?:Avl|Available)\s*(?:Cr|Credit)?\s*(?:Lmt|Limit|Bal|Balance)[\s:-]*(?:Rs\.?|INR)?\s*([0-9,]+(?:\.\d{1,2})?)',
-       caseSensitive: false,
+      r'(?:Avl|Available)\s*(?:Cr|Credit)?\s*(?:Lmt|Limit|Bal|Balance)[\s:-]*(?:Rs\.?|INR)?\s*([0-9,]+(?:\.\d{1,2})?)',
+      caseSensitive: false,
     );
     final m = avlRx.firstMatch(text);
     if (m != null) {
@@ -2390,7 +2415,8 @@ class SmsIngestor {
     return null;
   }
 
-  Future<void> _processAndRecordLoanOffer(String userId, String body, String? bank) async {
+  Future<void> _processAndRecordLoanOffer(
+      String userId, String body, String? bank) async {
     // Extract loan amount
     final amtRx = RegExp(
       r'(?:Loan|limit|offer)\s*(?:of|upto|up\s*to)?\s*(?:Rs\.?|INR)?\s*([0-9,]+(?:\.\d{1,2})?)',
@@ -2399,28 +2425,28 @@ class SmsIngestor {
     final amtMatch = amtRx.firstMatch(body);
     double? amount;
     if (amtMatch != null) {
-       final s = amtMatch.group(1)!.replaceAll(',', '');
-       amount = double.tryParse(s);
+      final s = amtMatch.group(1)!.replaceAll(',', '');
+      amount = double.tryParse(s);
     }
 
     if (amount == null) return; // not interesting if no amount
 
-    await _creditCardService.recordLoanOffer(userId, 'global_offers', { // using dummy ID if unknown, or matching logic inside service
-       'raw': body,
-       'amount': amount,
-       'bank': bank,
-       'type': 'pre_approved_loan',
+    await _creditCardService.recordLoanOffer(userId, 'global_offers', {
+      // using dummy ID if unknown, or matching logic inside service
+      'raw': body,
+      'amount': amount,
+      'bank': bank,
+      'type': 'pre_approved_loan',
     });
-    
+
     if (bank != null) {
-       await _creditCardService.updateCardMetadataByMatch(
-         userId,
-         bankName: bank,
-         last4: null,
-       );
+      await _creditCardService.updateCardMetadataByMatch(
+        userId,
+        bankName: bank,
+        last4: null,
+      );
     }
   }
-
 }
 
 // ── Small value class for card bill meta ──────────────────────────────────────

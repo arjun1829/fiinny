@@ -11,7 +11,6 @@ import 'package:lifemap/fiinny_brain/services/gpt_service.dart'; // We'll need t
 // Standard way: Add `http.Client? client` parameter to method or use a setter.
 
 import 'package:lifemap/fiinny_brain/insight_models.dart';
-import 'package:lifemap/fiinny_brain/insight_attributes.dart';
 
 // REFACTOR GptService to accept client? 
 // Or I can use runWithClient from http package if on new version? 

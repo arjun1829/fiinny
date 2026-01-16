@@ -243,10 +243,10 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [accent.withOpacity(.12), accent.withOpacity(.04)],
+                    colors: [accent.withValues(alpha: .12), accent.withValues(alpha: .04)],
                   ),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: accent.withOpacity(.15)),
+                  border: Border.all(color: accent.withValues(alpha: .15)),
                 ),
                 child: Row(
                   children: [
@@ -265,7 +265,7 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: accent.withOpacity(.12),
+                        color: accent.withValues(alpha: .12),
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
@@ -403,9 +403,9 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                         border: Border.all(color: Colors.black12),
                         gradient: LinearGradient(
                           colors: [
-                            const Color(0xFF3B82F6).withOpacity(.06),
-                            const Color(0xFF10B981).withOpacity(.06),
-                            const Color(0xFFF59E0B).withOpacity(.06),
+                            const Color(0xFF3B82F6).withValues(alpha: .06),
+                            const Color(0xFF10B981).withValues(alpha: .06),
+                            const Color(0xFFF59E0B).withValues(alpha: .06),
                           ],
                         ),
                       ),
@@ -463,7 +463,7 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                               width: 46,
                               height: 46,
                               child: Material(
-                                color: isSelected ? Colors.black.withOpacity(.04) : Colors.transparent,
+                                color: isSelected ? Colors.black.withValues(alpha: .04) : Colors.transparent,
                                 borderRadius: BorderRadius.circular(999),
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(999),
@@ -522,7 +522,7 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.04),
+                            color: Colors.black.withValues(alpha: 0.04),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: (_dailyLimit == null)
@@ -569,8 +569,8 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                   child: CustomDiamondCard(
                     borderRadius: 22,
                     glassGradient: [
-                      Colors.white.withOpacity(0.23),
-                      Colors.white.withOpacity(0.09)
+                      Colors.white.withValues(alpha: 0.23),
+                      Colors.white.withValues(alpha: 0.09)
                     ],
                     padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
                     child: UnifiedTransactionList(

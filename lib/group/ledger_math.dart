@@ -1,7 +1,7 @@
 import '../models/expense_item.dart';
 
 bool _looksLikeSettlement(ExpenseItem e) {
-  final type = (e.type ?? '').toLowerCase();
+  final type = e.type.toLowerCase();
   final label = (e.label ?? '').toLowerCase();
   if (type.contains('settle') || label.contains('settle')) {
     return true;
@@ -19,7 +19,8 @@ Set<String> _participantsFor(ExpenseItem e) {
   }
   participants.addAll(e.friendIds.where((id) => id.trim().isNotEmpty));
   if (e.customSplits != null) {
-    participants.addAll(e.customSplits!.keys.where((id) => id.trim().isNotEmpty));
+    participants
+        .addAll(e.customSplits!.keys.where((id) => id.trim().isNotEmpty));
   }
   return participants;
 }
@@ -38,7 +39,8 @@ Map<String, double> _settlementSplit(ExpenseItem e, Set<String> participants) {
     return _equalSplit(e.amount, participants);
   }
   final payer = e.payerId;
-  final other = participants.firstWhere((id) => id != payer, orElse: () => payer);
+  final other =
+      participants.firstWhere((id) => id != payer, orElse: () => payer);
   return {
     payer: 0.0,
     other: double.parse(e.amount.toStringAsFixed(2)),

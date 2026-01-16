@@ -19,7 +19,7 @@ class CrisisOptionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cardColor = isActive
-        ? Colors.teal.withOpacity(0.11)
+        ? Colors.teal.withValues(alpha: 0.11)
         : Theme.of(context).cardColor;
 
     return Material(

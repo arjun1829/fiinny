@@ -16,9 +16,9 @@ class PremiumChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: Fx.s12, vertical: Fx.s6),
         decoration: BoxDecoration(
-          color: Fx.mintDark.withOpacity(.10),
+          color: Fx.mintDark.withValues(alpha: .10),
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Fx.mintDark.withOpacity(.25)),
+          border: Border.all(color: Fx.mintDark.withValues(alpha: .25)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

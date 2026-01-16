@@ -22,8 +22,8 @@ class PillChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final foreground = fg ?? theme.colorScheme.onSurface.withOpacity(0.84);
-    final background = bg ?? theme.colorScheme.surface.withOpacity(0.18);
+    final foreground = fg ?? theme.colorScheme.onSurface.withValues(alpha: 0.84);
+    final background = bg ?? theme.colorScheme.surface.withValues(alpha: 0.18);
 
     final style = (textStyle ?? theme.textTheme.labelMedium)?.copyWith(
       fontWeight: FontWeight.w700,
@@ -35,7 +35,7 @@ class PillChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: foreground.withOpacity(0.22)),
+        border: Border.all(color: foreground.withValues(alpha: 0.22)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

@@ -50,7 +50,7 @@ class ActivityFeedWidget extends StatelessWidget {
 
         return ListTile(
           leading: CircleAvatar(
-            backgroundColor: color.withOpacity(0.13),
+            backgroundColor: color.withValues(alpha: 0.13),
             child: Icon(icon, color: color),
           ),
           title: Text(

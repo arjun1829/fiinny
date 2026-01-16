@@ -3,7 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
 class PartnerTransactionList extends StatefulWidget {
-  final String partnerUserId; // phone-based docId (kept name to avoid breaking callers)
+  final String
+      partnerUserId; // phone-based docId (kept name to avoid breaking callers)
   final int lookbackDays;
   final int maxItems;
 
@@ -52,7 +53,7 @@ class _PartnerTransactionListState extends State<PartnerTransactionList> {
         .get();
 
     // Normalize + merge
-    List<Map<String, dynamic>> items = [
+    final List<Map<String, dynamic>> items = [
       ...expSnap.docs.map((d) {
         final data = d.data();
         return <String, dynamic>{
@@ -77,10 +78,14 @@ class _PartnerTransactionListState extends State<PartnerTransactionList> {
     items.sort((a, b) {
       final da = (a['date'] is Timestamp)
           ? (a['date'] as Timestamp).toDate()
-          : (a['date'] is DateTime ? a['date'] as DateTime : DateTime.fromMillisecondsSinceEpoch(0));
+          : (a['date'] is DateTime
+              ? a['date'] as DateTime
+              : DateTime.fromMillisecondsSinceEpoch(0));
       final db = (b['date'] is Timestamp)
           ? (b['date'] as Timestamp).toDate()
-          : (b['date'] is DateTime ? b['date'] as DateTime : DateTime.fromMillisecondsSinceEpoch(0));
+          : (b['date'] is DateTime
+              ? b['date'] as DateTime
+              : DateTime.fromMillisecondsSinceEpoch(0));
       return db.compareTo(da);
     });
 
@@ -102,8 +107,13 @@ class _PartnerTransactionListState extends State<PartnerTransactionList> {
         future: _loader,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const ListView( // so RefreshIndicator works while loading
-              children: [SizedBox(height: 280, child: Center(child: CircularProgressIndicator()))],
+            return ListView(
+              // so RefreshIndicator works while loading
+              children: [
+                SizedBox(
+                    height: 280,
+                    child: Center(child: CircularProgressIndicator()))
+              ],
             );
           }
           if (snapshot.hasError) {
@@ -113,7 +123,8 @@ class _PartnerTransactionListState extends State<PartnerTransactionList> {
                 Center(
                   child: Text(
                     "Failed to load partner transactions.",
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error),
                   ),
                 ),
               ],
@@ -157,8 +168,11 @@ class _PartnerTransactionListState extends State<PartnerTransactionList> {
 
             final kind = (data['kind'] as String?) ?? 'debit';
             final isDebit = kind == 'debit';
-            final amountNum = (data['amount'] is num) ? (data['amount'] as num).toDouble() : 0.0;
-            final type = (data['type'] as String?) ?? (isDebit ? 'Expense' : 'Income');
+            final amountNum = (data['amount'] is num)
+                ? (data['amount'] as num).toDouble()
+                : 0.0;
+            final type =
+                (data['type'] as String?) ?? (isDebit ? 'Expense' : 'Income');
             final note = (data['note'] as String?)?.trim() ?? '';
             final timeLabel = dt != null ? DateFormat('HH:mm').format(dt) : '';
 
@@ -189,7 +203,8 @@ class _PartnerTransactionListState extends State<PartnerTransactionList> {
     final justDate = DateTime(date.year, date.month, date.day);
     final todayDate = DateTime(today.year, today.month, today.day);
     if (justDate == todayDate) return 'Today';
-    if (justDate == todayDate.subtract(const Duration(days: 1))) return 'Yesterday';
+    if (justDate == todayDate.subtract(const Duration(days: 1)))
+      return 'Yesterday';
     return DateFormat('d MMM, yyyy').format(date);
   }
 }
@@ -209,16 +224,20 @@ class _SharingUnifiedTile extends StatelessWidget {
     required this.time,
   });
 
-  Color get _side => isIncome ? const Color(0xFF1DB954) : const Color(0xFFE53935);
-  Color get _iconBg => isIncome ? const Color(0x221DB954) : const Color(0x22E53935);
-  IconData get _icon => isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
+  Color get _side =>
+      isIncome ? const Color(0xFF1DB954) : const Color(0xFFE53935);
+  Color get _iconBg =>
+      isIncome ? const Color(0x221DB954) : const Color(0x22E53935);
+  IconData get _icon =>
+      isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
 
   String _money(double v) => '₹${v.toStringAsFixed(0)}';
 
   @override
   Widget build(BuildContext context) {
-    final textPrimary = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87;
-    final textMuted = Colors.black.withOpacity(.55);
+    final textPrimary =
+        Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87;
+    final textMuted = Colors.black.withValues(alpha: .55);
 
     return Material(
       color: Colors.transparent,
@@ -228,15 +247,15 @@ class _SharingUnifiedTile extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.white, Colors.white.withOpacity(.96)],
+              colors: [Colors.white, Colors.white.withValues(alpha: .96)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.black.withOpacity(.05)),
+            border: Border.all(color: Colors.black.withValues(alpha: .05)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(.05),
+                color: Colors.black.withValues(alpha: .05),
                 blurRadius: 16,
                 offset: const Offset(0, 8),
               ),
@@ -249,7 +268,7 @@ class _SharingUnifiedTile extends StatelessWidget {
                 height: 68,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [_side.withOpacity(.95), _side.withOpacity(.7)],
+                    colors: [_side.withValues(alpha: .95), _side.withValues(alpha: .7)],
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                   ),
@@ -287,7 +306,8 @@ class _SharingUnifiedTile extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 17.5,
                                 fontWeight: FontWeight.w900,
-                                color: isIncome ? _side : const Color(0xFFB71C1C),
+                                color:
+                                    isIncome ? _side : const Color(0xFFB71C1C),
                                 letterSpacing: .2,
                               ),
                             ),
@@ -295,12 +315,15 @@ class _SharingUnifiedTile extends StatelessWidget {
                           const SizedBox(width: 8),
                           if (time.isNotEmpty)
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: Colors.grey.withOpacity(.14),
+                                color: Colors.grey.withValues(alpha: .14),
                                 borderRadius: BorderRadius.circular(999),
                               ),
-                              child: Text(time, style: TextStyle(fontSize: 11.5, color: textMuted)),
+                              child: Text(time,
+                                  style: TextStyle(
+                                      fontSize: 11.5, color: textMuted)),
                             ),
                           const SizedBox(width: 8),
                         ],

@@ -31,7 +31,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
   }
 
   void _loadFriends() {
-    FriendService().getFriendsStream(widget.userId).listen((friends) {
+    FriendService().streamFriends(widget.userId).listen((friends) {
       setState(() {
         _friendsById = {for (var f in friends) f.id: f};
         _loadingFriends = false;
@@ -53,10 +53,10 @@ class _GroupsScreenState extends State<GroupsScreen> {
           child: Container(
             height: 85,
             decoration: BoxDecoration(
-              color: tiffanyBlue.withOpacity(0.93),
+              color: tiffanyBlue.withValues(alpha: 0.93),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black12.withOpacity(0.13),
+                  color: Colors.black12.withValues(alpha: 0.13),
                   blurRadius: 14,
                   offset: const Offset(0, 3),
                 ),
@@ -106,7 +106,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
           _loadingFriends
               ? const Center(child: CircularProgressIndicator())
               : StreamBuilder<List<GroupModel>>(
-                  stream: GroupService().getUserGroupsStream(widget.userId),
+                  stream: GroupService().streamGroups(widget.userId),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());
@@ -191,7 +191,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
 
 // Animated Mint Glassy BG
 class _AnimatedMintBackground extends StatelessWidget {
-  const _AnimatedMintBackground({super.key});
+  const _AnimatedMintBackground();
   @override
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
@@ -203,7 +203,7 @@ class _AnimatedMintBackground extends StatelessWidget {
             colors: [
               tiffanyBlue,
               mintGreen,
-              Colors.white.withOpacity(0.85),
+              Colors.white.withValues(alpha: 0.85),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -222,18 +222,18 @@ class _AnimatedMintBackground extends StatelessWidget {
 // Glass Diamond Card for Group List
 class _GlassDiamondCard extends StatelessWidget {
   final Widget child;
-  const _GlassDiamondCard({required this.child, super.key});
+  const _GlassDiamondCard({required this.child});
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(19),
-        border: Border.all(color: tiffanyBlue.withOpacity(0.13), width: 1.5),
-        color: Colors.white.withOpacity(0.19),
+        border: Border.all(color: tiffanyBlue.withValues(alpha: 0.13), width: 1.5),
+        color: Colors.white.withValues(alpha: 0.19),
         boxShadow: [
           BoxShadow(
-            color: mintGreen.withOpacity(0.13),
+            color: mintGreen.withValues(alpha: 0.13),
             blurRadius: 11,
             offset: const Offset(0, 6),
           ),

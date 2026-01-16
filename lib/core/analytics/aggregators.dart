@@ -112,7 +112,9 @@ class AnalyticsAgg {
 
   static double sumAmount<T>(List<T> items, double Function(T) getAmount) {
     var s = 0.0;
-    for (final x in items) s += getAmount(x);
+    for (final x in items) {
+      s += getAmount(x);
+    }
     return s;
   }
 
@@ -129,20 +131,28 @@ class AnalyticsAgg {
 
   static String _clean(String? raw) {
     final s = (raw ?? '').trim();
-    if (s.isEmpty) return 'Other';
-    if (_noise.contains(s.toLowerCase())) return 'Other';
+    if (s.isEmpty) {
+      return 'Other';
+    }
+    if (_noise.contains(s.toLowerCase())) {
+      return 'Other';
+    }
     return s;
   }
 
   static String resolveExpenseCategory(ExpenseItem e) {
     final t0 = _clean(e.type);
-    if (t0 != 'Other') return t0;
+    if (t0 != 'Other') {
+      return t0;
+    }
 
-    final base = "${e.label ?? ''} ${e.note ?? ''}".toLowerCase();
+    final base = "${e.label ?? ''} ${e.note}".toLowerCase();
     bool has(Iterable<String> keys) => keys.any((k) => base.contains(k));
 
-    if (has(['zomato', 'swiggy', 'restaurant', 'food', 'meal', 'eat', 'dine']))
+    if (has(
+        ['zomato', 'swiggy', 'restaurant', 'food', 'meal', 'eat', 'dine'])) {
       return 'Food & Dining';
+    }
     if (has([
       'grocery',
       'mart',
@@ -155,11 +165,16 @@ class AnalyticsAgg {
       'zepto',
       'ratnadeep',
       'more',
-    ]))
+    ])) {
       return 'Groceries';
-    if (has(['ola', 'uber', 'rapido', 'metro', 'bus', 'auto', 'cab', 'train']))
+    }
+    if (has(
+        ['ola', 'uber', 'rapido', 'metro', 'bus', 'auto', 'cab', 'train'])) {
       return 'Transport';
-    if (has(['fuel', 'petrol', 'diesel', 'hpcl', 'bpcl', 'ioc'])) return 'Fuel';
+    }
+    if (has(['fuel', 'petrol', 'diesel', 'hpcl', 'bpcl', 'ioc'])) {
+      return 'Fuel';
+    }
     if (has([
       'amazon',
       'flipkart',
@@ -168,8 +183,9 @@ class AnalyticsAgg {
       'nykaa',
       'tata cliq',
       'meesho',
-    ]))
+    ])) {
       return 'Shopping';
+    }
     if (has([
       'electric',
       'electricity',
@@ -181,10 +197,15 @@ class AnalyticsAgg {
       'mobile bill',
       'recharge',
       'gas',
-    ]))
+    ])) {
       return 'Bills & Utilities';
-    if (has(['rent', 'landlord'])) return 'Rent';
-    if (has(['emi', 'loan', 'nbfc', 'interest debit'])) return 'EMI & Loans';
+    }
+    if (has(['rent', 'landlord'])) {
+      return 'Rent';
+    }
+    if (has(['emi', 'loan', 'nbfc', 'interest debit'])) {
+      return 'EMI & Loans';
+    }
     if (has([
       'netflix',
       'prime',
@@ -194,8 +215,9 @@ class AnalyticsAgg {
       'zee5',
       'sonyliv',
       'youtube',
-    ]))
+    ])) {
       return 'Subscriptions';
+    }
     if (has([
       'hospital',
       'clinic',
@@ -204,9 +226,12 @@ class AnalyticsAgg {
       '1mg',
       'pharmacy',
       'diagnostic',
-    ]))
+    ])) {
       return 'Health';
-    if (has(['fee', 'college', 'tuition', 'coaching'])) return 'Education';
+    }
+    if (has(['fee', 'college', 'tuition', 'coaching'])) {
+      return 'Education';
+    }
     if (has([
       'flight',
       'vistara',
@@ -216,11 +241,15 @@ class AnalyticsAgg {
       'makemytrip',
       'booking.com',
       'oyo',
-    ]))
+    ])) {
       return 'Travel';
-    if (has(['movie', 'pvr', 'inox', 'bookmyshow', 'concert', 'event']))
+    }
+    if (has(['movie', 'pvr', 'inox', 'bookmyshow', 'concert', 'event'])) {
       return 'Entertainment';
-    if (has(['charge', 'fee', 'penalty'])) return 'Fees & Charges';
+    }
+    if (has(['charge', 'fee', 'penalty'])) {
+      return 'Fees & Charges';
+    }
     if (has([
       'sip',
       'mutual fund',
@@ -230,26 +259,31 @@ class AnalyticsAgg {
       'groww',
       'angel',
       'upstox',
-    ]))
+    ])) {
       return 'Investments';
-    if (t0 == 'Transfer')
+    }
+    if (t0 == 'Transfer') {
       return 'Transfers (Self)'; // Map CommonRegex 'Transfer' to this bucket
-    if (has(['upi', 'imps', 'neft', 'rtgs']) && (e.payerId.isNotEmpty))
+    }
+    if (has(['upi', 'imps', 'neft', 'rtgs']) && (e.payerId.isNotEmpty)) {
       return 'Transfers (Self)';
+    }
 
     return 'Other';
   }
 
   static String resolveIncomeCategory(IncomeItem i) {
-    final raw = _clean(i.type ?? i.category);
-    if (raw != 'Other') return raw;
+    final raw = _clean(i.type);
+    if (raw != 'Other') {
+      return raw;
+    }
 
-    final t = "${i.label ?? ''} ${i.note ?? ''} ${i.source ?? ''}"
-        .toLowerCase();
+    final t = "${i.label ?? ''} ${i.note} ${i.source}".toLowerCase();
     bool has(Iterable<String> keys) => keys.any((k) => t.contains(k));
 
-    if (has(['salary', 'payroll', 'wage', 'stipend', 'payout', 'ctc']))
+    if (has(['salary', 'payroll', 'wage', 'stipend', 'payout', 'ctc'])) {
       return 'Salary';
+    }
     if (has([
       'freelance',
       'consult',
@@ -257,8 +291,9 @@ class AnalyticsAgg {
       'side hustle',
       'upwork',
       'fiverr',
-    ]))
+    ])) {
       return 'Freelance';
+    }
     if (has([
       'interest',
       's/b interest',
@@ -267,23 +302,36 @@ class AnalyticsAgg {
       'int.',
       'fd',
       'rd',
-    ]))
+    ])) {
       return 'Interest';
-    if (has(['dividend', 'div.', 'payout dividend'])) return 'Dividend';
-    if (has(['cashback', 'cash back', 'reward', 'promo', 'offer']))
+    }
+    if (has(['dividend', 'div.', 'payout dividend'])) {
+      return 'Dividend';
+    }
+    if (has(['cashback', 'cash back', 'reward', 'promo', 'offer'])) {
       return 'Cashback/Rewards';
-    if (has(['refund', 'reversal', 'chargeback', 'reimb']))
+    }
+    if (has(['refund', 'reversal', 'chargeback', 'reimb'])) {
       return 'Refund/Reimbursement';
-    if (has(['rent'])) return 'Rent Received';
-    if (has(['gift', 'gifting'])) return 'Gift';
-    if (has(['self transfer', 'from self', 'own account', 'sweep in']))
+    }
+    if (has(['rent'])) {
+      return 'Rent Received';
+    }
+    if (has(['gift', 'gifting'])) {
+      return 'Gift';
+    }
+    if (has(['self transfer', 'from self', 'own account', 'sweep in'])) {
       return 'Transfer In (Self)';
-    if (has(['sold', 'sale', 'proceeds', 'liquidation']))
+    }
+    if (has(['sold', 'sale', 'proceeds', 'liquidation'])) {
       return 'Sale Proceeds';
-    if (has(['loan disbursal', 'loan credit', 'emi refund', 'nbfc']))
+    }
+    if (has(['loan disbursal', 'loan credit', 'emi refund', 'nbfc'])) {
       return 'Loan Received';
-    if (has(['upi', 'imps', 'neft', 'rtgs', 'gpay', 'phonepe', 'paytm']))
+    }
+    if (has(['upi', 'imps', 'neft', 'rtgs', 'gpay', 'phonepe', 'paytm'])) {
       return 'Transfer In (Self)';
+    }
 
     return 'Other';
   }
@@ -353,7 +401,7 @@ class AnalyticsAgg {
   static List<SeriesPoint> amountSeries(
     Period p,
     List<ExpenseItem> exp,
-    List<IncomeItem> _inc,
+    List<IncomeItem> incomes,
     DateTime now, {
     CustomRange? custom,
   }) {
@@ -363,16 +411,22 @@ class AnalyticsAgg {
     switch (p) {
       case Period.day:
         final v = List<double>.filled(24, 0);
-        for (final e in exp) v[e.date.hour] += e.amount;
+        for (final e in exp) {
+          v[e.date.hour] += e.amount;
+        }
         return mk(v, (i) => '${i}h');
       case Period.week:
         final v = List<double>.filled(7, 0);
-        for (final e in exp) v[e.date.weekday - 1] += e.amount;
+        for (final e in exp) {
+          v[e.date.weekday - 1] += e.amount;
+        }
         return mk(v, (i) => 'D${i + 1}');
       case Period.month:
         final days = DateTime(now.year, now.month + 1, 0).day;
         final v = List<double>.filled(days, 0);
-        for (final e in exp) v[e.date.day - 1] += e.amount;
+        for (final e in exp) {
+          v[e.date.day - 1] += e.amount;
+        }
         return mk(v, (i) => '${i + 1}');
       case Period.lastMonth:
         final prevStart = DateTime(now.year, now.month - 1, 1);
@@ -390,12 +444,16 @@ class AnalyticsAgg {
         final v = List<double>.filled(3, 0);
         for (final e in exp) {
           final idx = e.date.month - qStartMonth;
-          if (idx >= 0 && idx < v.length) v[idx] += e.amount;
+          if (idx >= 0 && idx < v.length) {
+            v[idx] += e.amount;
+          }
         }
         return mk(v, (i) => 'M${i + 1}');
       case Period.year:
         final v = List<double>.filled(12, 0);
-        for (final e in exp) v[e.date.month - 1] += e.amount;
+        for (final e in exp) {
+          v[e.date.month - 1] += e.amount;
+        }
         return mk(v, (i) => DateFormat('MMM').format(DateTime(2000, i + 1, 1)));
       case Period.last2:
         final y = DateTime(
@@ -432,10 +490,14 @@ class AnalyticsAgg {
         return mk(v, (i) => 'D${i + 1}');
       case Period.all:
         final v = List<double>.filled(12, 0);
-        for (final e in exp) v[e.date.month - 1] += e.amount;
+        for (final e in exp) {
+          v[e.date.month - 1] += e.amount;
+        }
         return mk(v, (i) => DateFormat('MMM').format(DateTime(2000, i + 1, 1)));
       case Period.custom:
-        if (custom == null) return const [];
+        if (custom == null) {
+          return const [];
+        }
         final start = DateTime(
           custom.start.year,
           custom.start.month,
@@ -444,12 +506,14 @@ class AnalyticsAgg {
         final end = DateTime(custom.end.year, custom.end.month, custom.end.day);
         final n = end.difference(start).inDays + 1;
         final lenRaw = n.clamp(1, 31);
-        final len = lenRaw is int ? lenRaw : lenRaw.toInt();
+        final len = lenRaw;
         final v = List<double>.filled(len, 0);
         for (final e in exp) {
           final d = DateTime(e.date.year, e.date.month, e.date.day);
           final idx = d.difference(start).inDays;
-          if (idx >= 0 && idx < len) v[idx] += e.amount;
+          if (idx >= 0 && idx < len) {
+            v[idx] += e.amount;
+          }
         }
         return mk(v, (i) => '${i + 1}');
     }
@@ -459,21 +523,26 @@ class AnalyticsAgg {
   static List<ExpenseItem> expensesByCategory(
     List<ExpenseItem> xs,
     String category,
-  ) => xs
-      .where(
-        (e) =>
-            resolveExpenseCategory(e).toLowerCase() == category.toLowerCase(),
-      )
-      .toList();
+  ) =>
+      xs
+          .where(
+            (e) =>
+                resolveExpenseCategory(e).toLowerCase() ==
+                category.toLowerCase(),
+          )
+          .toList();
 
   static List<IncomeItem> incomesByCategory(
     List<IncomeItem> xs,
     String category,
-  ) => xs
-      .where(
-        (i) => resolveIncomeCategory(i).toLowerCase() == category.toLowerCase(),
-      )
-      .toList();
+  ) =>
+      xs
+          .where(
+            (i) =>
+                resolveIncomeCategory(i).toLowerCase() ==
+                category.toLowerCase(),
+          )
+          .toList();
 
   static List<ExpenseItem> expensesByMerchant(
     List<ExpenseItem> xs,

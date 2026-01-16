@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 
 /// A single cash movement suggestion from [from] -> [to].
 class Transfer {

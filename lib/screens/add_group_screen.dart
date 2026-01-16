@@ -1,10 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../services/group_service.dart';
-import '../models/group_model.dart';
 import '../models/friend_model.dart';
 import '../services/friend_service.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Mint palette
 const Color tiffanyBlue = Color(0xFF81e6d9);
@@ -44,7 +42,12 @@ class _AddGroupScreenState extends State<AddGroupScreen> {
     final allMemberIds = {..._selectedMemberIds, widget.userId}.toList();
 
     // Use the updated createGroup method that can handle just a name:
-    await GroupService().createGroup(widget.userId, groupName, allMemberIds);
+    await GroupService().addGroup(
+      userPhone: widget.userId,
+      name: groupName,
+      memberPhones: allMemberIds,
+      createdBy: widget.userId,
+    );
 
     if (mounted) Navigator.of(context).pop();
   }
@@ -57,15 +60,16 @@ class _AddGroupScreenState extends State<AddGroupScreen> {
         preferredSize: const Size.fromHeight(76),
         child: ClipRRect(
           borderRadius: const BorderRadius.only(
-            bottomLeft: Radius.circular(18), bottomRight: Radius.circular(18),
+            bottomLeft: Radius.circular(18),
+            bottomRight: Radius.circular(18),
           ),
           child: Container(
             height: 76,
             decoration: BoxDecoration(
-              color: tiffanyBlue.withOpacity(0.94),
+              color: tiffanyBlue.withValues(alpha: 0.94),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black12.withOpacity(0.13),
+                  color: Colors.black12.withValues(alpha: 0.13),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -74,10 +78,12 @@ class _AddGroupScreenState extends State<AddGroupScreen> {
             child: SafeArea(
               child: Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   child: Row(
                     children: [
-                      const Icon(Icons.group_add_rounded, color: deepTeal, size: 28),
+                      const Icon(Icons.group_add_rounded,
+                          color: deepTeal, size: 28),
                       const SizedBox(width: 12),
                       const Text(
                         "Create Group",
@@ -104,11 +110,14 @@ class _AddGroupScreenState extends State<AddGroupScreen> {
             children: [
               _GlassCard(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text("Group Name", style: TextStyle(fontWeight: FontWeight.bold, color: deepTeal)),
+                      const Text("Group Name",
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, color: deepTeal)),
                       const SizedBox(height: 8),
                       TextField(
                         controller: _groupNameController,
@@ -118,12 +127,16 @@ class _AddGroupScreenState extends State<AddGroupScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      const Text('Select Members (optional):', style: TextStyle(fontWeight: FontWeight.bold, color: deepTeal)),
+                      const Text('Select Members (optional):',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, color: deepTeal)),
                       const SizedBox(height: 6),
                       StreamBuilder<List<FriendModel>>(
-                        stream: FriendService().getFriendsStream(widget.userId),
+                        stream: FriendService().streamFriends(widget.userId),
                         builder: (context, snapshot) {
-                          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                          if (!snapshot.hasData)
+                            return const Center(
+                                child: CircularProgressIndicator());
                           final friends = snapshot.data!;
                           return FriendPicker(
                             friends: friends,
@@ -138,16 +151,19 @@ class _AddGroupScreenState extends State<AddGroupScreen> {
                       _loading
                           ? const Center(child: CircularProgressIndicator())
                           : ElevatedButton.icon(
-                        onPressed: _addGroup,
-                        icon: const Icon(Icons.done),
-                        label: const Text('Create Group'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: deepTeal,
-                          padding: const EdgeInsets.symmetric(vertical: 13),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                      ),
+                              onPressed: _addGroup,
+                              icon: const Icon(Icons.done),
+                              label: const Text('Create Group'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: deepTeal,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 13),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                                textStyle: const TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                            ),
                     ],
                   ),
                 ),
@@ -170,11 +186,11 @@ class _GlassCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(17),
-        color: Colors.white.withOpacity(0.18),
-        border: Border.all(color: tiffanyBlue.withOpacity(0.18), width: 1.1),
+        color: Colors.white.withValues(alpha: 0.18),
+        border: Border.all(color: tiffanyBlue.withValues(alpha: 0.18), width: 1.1),
         boxShadow: [
           BoxShadow(
-            color: mintGreen.withOpacity(0.10),
+            color: mintGreen.withValues(alpha: 0.10),
             blurRadius: 7,
             offset: const Offset(0, 3),
           ),
@@ -214,7 +230,7 @@ class FriendPicker extends StatelessWidget {
           label: Text('${f.avatar} ${f.name}'),
           selected: isSelected,
           backgroundColor: isSelected ? mintGreen : Colors.grey[100],
-          selectedColor: tiffanyBlue.withOpacity(0.45),
+          selectedColor: tiffanyBlue.withValues(alpha: 0.45),
           checkmarkColor: deepTeal,
           onSelected: (selected) {
             final updated = List<String>.from(selectedIds);
@@ -233,7 +249,7 @@ class FriendPicker extends StatelessWidget {
 
 // --------- Animated Mint BG ---------
 class _AnimatedMintBackground extends StatelessWidget {
-  const _AnimatedMintBackground({super.key});
+  const _AnimatedMintBackground();
   @override
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
@@ -245,7 +261,7 @@ class _AnimatedMintBackground extends StatelessWidget {
             colors: [
               tiffanyBlue,
               mintGreen,
-              Colors.white.withOpacity(0.93),
+              Colors.white.withValues(alpha: 0.93),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,

@@ -22,7 +22,7 @@ class ExpenseTool {
 
       // Date Parsing Logic
       DateTime date = DateTime.now();
-      String lowerInput = input.toLowerCase();
+      final String lowerInput = input.toLowerCase();
       
       if (lowerInput.contains('yesterday')) {
         date = date.subtract(const Duration(days: 1));
@@ -31,7 +31,7 @@ class ExpenseTool {
         final dayRegex = RegExp(r'on (?:the )?(\d{1,2})(?:st|nd|rd|th)?');
         final dayMatch = dayRegex.firstMatch(lowerInput);
         if (dayMatch != null) {
-          int day = int.parse(dayMatch.group(1)!);
+          final int day = int.parse(dayMatch.group(1)!);
           // Assume current month/year unless user specifies otherwise (Phase 9 requirement)
           if (day > 0 && day <= 31) {
             // "Obvious that I am asking for this year data"

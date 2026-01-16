@@ -1,6 +1,5 @@
 import '../connector.dart';
 import '../raw_transaction_event.dart';
-import '../../config/region_profile.dart';
 
 class OpenBankingConnector extends SourceConnector {
   OpenBankingConnector({required super.region, required super.userId});

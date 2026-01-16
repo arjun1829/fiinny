@@ -45,8 +45,8 @@ class LoanDetectionParser {
       final amountMatch = _amountRegex.firstMatch(cleanText);
       if (amountMatch == null) return null;
 
-      String amountString = amountMatch.group(1)!.replaceAll(',', '');
-      double amount = double.tryParse(amountString) ?? 0.0;
+      final String amountString = amountMatch.group(1)!.replaceAll(',', '');
+      final double amount = double.tryParse(amountString) ?? 0.0;
       if (amount == 0) return null;
 
       LoanType? detectedType;

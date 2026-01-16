@@ -91,7 +91,7 @@ class SharingHeroRing extends StatelessWidget {
                   width: size * 0.06,
                   height: size * 0.06,
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.08),
+                    color: Colors.black.withValues(alpha: 0.08),
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -157,7 +157,7 @@ class _RingPainter extends CustomPainter {
 
     // Background track
     final Paint bg = Paint()
-      ..color = color.withOpacity(0.13)
+      ..color = color.withValues(alpha: 0.13)
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
@@ -181,7 +181,7 @@ class _RingPainter extends CustomPainter {
     // Subtle ring shadow/glow for depth (very light)
     if (percent > 0) {
       final glow = Paint()
-        ..color = color.withOpacity(0.08)
+        ..color = color.withValues(alpha: 0.08)
         ..style = PaintingStyle.stroke
         ..strokeWidth = max(1, strokeWidth - 2)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);

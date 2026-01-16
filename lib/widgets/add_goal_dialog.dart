@@ -74,7 +74,7 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
       hintText: hint,
       prefixIcon: icon != null ? Icon(icon) : null,
       filled: true,
-      fillColor: _brand.withOpacity(.06),
+      fillColor: _brand.withValues(alpha: .06),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -187,13 +187,13 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.white.withOpacity(0.96),
-                  Colors.white.withOpacity(0.90),
+                  Colors.white.withValues(alpha: 0.96),
+                  Colors.white.withValues(alpha: 0.90),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              border: Border.all(color: Colors.white.withOpacity(0.6)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
               boxShadow: const [
                 BoxShadow(
                   color: Color(0x1F000000),
@@ -214,7 +214,7 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: _brand.withOpacity(.10),
+                          color: _brand.withValues(alpha: .10),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(Icons.flag_rounded, color: _brand),
@@ -250,7 +250,7 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: _brand.withOpacity(0.08),
+                      color: _brand.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
@@ -307,7 +307,7 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                                   duration: const Duration(milliseconds: 180),
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                   decoration: BoxDecoration(
-                                    color: selected ? _brand.withOpacity(0.12) : Colors.grey[100],
+                                    color: selected ? _brand.withValues(alpha: 0.12) : Colors.grey[100],
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
                                       color: selected ? _brand : Colors.transparent,
@@ -375,7 +375,7 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                         label: Text(cat),
                         selected: selected,
                         onSelected: (_) => setState(() => _category = selected ? null : cat),
-                        selectedColor: _brand.withOpacity(0.12),
+                        selectedColor: _brand.withValues(alpha: 0.12),
                       );
                     }).toList(),
                   ),
@@ -552,9 +552,9 @@ class _PreviewRow extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: brand.withOpacity(0.06),
+        color: brand.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: brand.withOpacity(0.14)),
+        border: Border.all(color: brand.withValues(alpha: 0.14)),
       ),
       child: Row(
         children: [
@@ -612,9 +612,9 @@ class _SuggestionCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: brand.withOpacity(0.08),
+        color: brand.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: brand.withOpacity(0.14)),
+        border: Border.all(color: brand.withValues(alpha: 0.14)),
       ),
       child: Row(
         children: [

@@ -1,6 +1,5 @@
 // lib/widgets/friend_list_widget.dart
 
-import 'package:characters/characters.dart';
 import 'package:flutter/material.dart';
 
 import '../models/friend_model.dart';
@@ -97,7 +96,7 @@ class _FriendListWidgetState extends State<FriendListWidget> {
           onLongPress: widget.onLongPress != null ? () => widget.onLongPress!(friend) : null,
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: Theme.of(context).colorScheme.secondary.withOpacity(0.16),
+              backgroundColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.16),
               child: Text(
                 leadingLabel,
                 style: const TextStyle(fontSize: 20),

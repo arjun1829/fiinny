@@ -199,7 +199,7 @@ class _SleekAdCardState extends State<SleekAdCard> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Colors.teal.withOpacity(0.04),
+              Colors.teal.withValues(alpha: 0.04),
               Colors.white,
             ],
           ),

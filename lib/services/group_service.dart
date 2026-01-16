@@ -5,7 +5,8 @@ class GroupService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // User's personal group subcollection (legacy/notifications only)
-  CollectionReference<Map<String, dynamic>> getGroupsCollection(String userPhone) {
+  CollectionReference<Map<String, dynamic>> getGroupsCollection(
+      String userPhone) {
     return _firestore.collection('users').doc(userPhone).collection('groups');
   }
 
@@ -24,8 +25,9 @@ class GroupService {
 
   /// One-time fetch: all groups where user is a member (GLOBAL only, phone based)
   Future<List<GroupModel>> fetchUserGroups(String userPhone) async {
-    final snap =
-        await globalGroups.where('memberPhones', arrayContains: userPhone).get();
+    final snap = await globalGroups
+        .where('memberPhones', arrayContains: userPhone)
+        .get();
     return snap.docs.map((doc) => GroupModel.fromFirestore(doc)).toList();
   }
 
@@ -100,7 +102,9 @@ class GroupService {
   /// Get group by ID (from global collection)
   Future<GroupModel?> getGroupById(String groupId) async {
     final doc = await globalGroups.doc(groupId).get();
-    if (!doc.exists) return null;
+    if (!doc.exists) {
+      return null;
+    }
     return GroupModel.fromFirestore(doc);
   }
 
@@ -110,7 +114,9 @@ class GroupService {
     List<String> newMemberPhones, {
     Map<String, String>? displayNames,
   }) async {
-    if (newMemberPhones.isEmpty) return;
+    if (newMemberPhones.isEmpty) {
+      return;
+    }
 
     final uniqueMembers = newMemberPhones.toSet().toList();
 
@@ -123,7 +129,9 @@ class GroupService {
       for (final entry in displayNames.entries) {
         final phone = entry.key.trim();
         final name = entry.value.trim();
-        if (phone.isEmpty || name.isEmpty) continue;
+        if (phone.isEmpty || name.isEmpty) {
+          continue;
+        }
         updates['memberDisplayNames.$phone'] = name;
       }
     }
@@ -143,7 +151,8 @@ class GroupService {
   }
 
   /// Remove members from group (updates all relevant places)
-  Future<void> removeMembers(String groupId, List<String> removeMemberPhones) async {
+  Future<void> removeMembers(
+      String groupId, List<String> removeMemberPhones) async {
     // Remove from global
     await globalGroups.doc(groupId).update({
       'memberPhones': FieldValue.arrayRemove(removeMemberPhones),

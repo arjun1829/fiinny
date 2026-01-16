@@ -62,10 +62,10 @@ class _FriendExpenseHistoryScreenState extends State<FriendExpenseHistoryScreen>
           child: Container(
             height: 74,
             decoration: BoxDecoration(
-              color: tiffanyBlue.withOpacity(0.92),
+              color: tiffanyBlue.withValues(alpha: 0.92),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black12.withOpacity(0.10),
+                  color: Colors.black12.withValues(alpha: 0.10),
                   blurRadius: 10,
                   offset: const Offset(0, 3),
                 ),
@@ -134,7 +134,7 @@ class _FriendExpenseHistoryScreenState extends State<FriendExpenseHistoryScreen>
                   return _GlassExpenseCard(
                     child: ListTile(
                       leading: CircleAvatar(
-                        backgroundColor: tiffanyBlue.withOpacity(0.75),
+                        backgroundColor: tiffanyBlue.withValues(alpha: 0.75),
                         child: Text(
                           expense.type.isNotEmpty ? expense.type[0] : 'E',
                           style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
@@ -153,7 +153,7 @@ class _FriendExpenseHistoryScreenState extends State<FriendExpenseHistoryScreen>
                       trailing: isSettled
                           ? Chip(
                         label: const Text('Settled', style: TextStyle(fontWeight: FontWeight.w500)),
-                        backgroundColor: mintGreen.withOpacity(0.63),
+                        backgroundColor: mintGreen.withValues(alpha: 0.63),
                       )
                           : ElevatedButton(
                         style: ElevatedButton.styleFrom(
@@ -178,18 +178,18 @@ class _FriendExpenseHistoryScreenState extends State<FriendExpenseHistoryScreen>
 // ------ Glass Card -------
 class _GlassExpenseCard extends StatelessWidget {
   final Widget child;
-  const _GlassExpenseCard({required this.child, super.key});
+  const _GlassExpenseCard({required this.child});
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 17),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(15),
-        color: Colors.white.withOpacity(0.16),
-        border: Border.all(color: tiffanyBlue.withOpacity(0.18), width: 1),
+        color: Colors.white.withValues(alpha: 0.16),
+        border: Border.all(color: tiffanyBlue.withValues(alpha: 0.18), width: 1),
         boxShadow: [
           BoxShadow(
-            color: mintGreen.withOpacity(0.10),
+            color: mintGreen.withValues(alpha: 0.10),
             blurRadius: 8,
             offset: const Offset(0, 4),
           ),
@@ -208,7 +208,7 @@ class _GlassExpenseCard extends StatelessWidget {
 
 // --------- Animated Mint BG ---------
 class _AnimatedMintBackground extends StatelessWidget {
-  const _AnimatedMintBackground({super.key});
+  const _AnimatedMintBackground();
   @override
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
@@ -220,7 +220,7 @@ class _AnimatedMintBackground extends StatelessWidget {
             colors: [
               tiffanyBlue,
               mintGreen,
-              Colors.white.withOpacity(0.89),
+              Colors.white.withValues(alpha: 0.89),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,

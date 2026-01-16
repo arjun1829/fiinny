@@ -382,12 +382,12 @@ class _GlassExpenseCard extends StatelessWidget {
           margin: const EdgeInsets.symmetric(vertical: 6),
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(.65),
+            color: Colors.white.withValues(alpha: .65),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(.6)),
+            border: Border.all(color: Colors.white.withValues(alpha: .6)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(.06),
+                color: Colors.black.withValues(alpha: .06),
                 blurRadius: 12,
                 offset: const Offset(0, 6),
               )
@@ -416,7 +416,7 @@ class _GlassExpenseCard extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.teal.withOpacity(.12),
+                      color: Colors.teal.withValues(alpha: .12),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -474,12 +474,12 @@ class _GlassExpenseCard extends StatelessWidget {
                         icon: Icons.category_outlined,
                         text: cat,
                         fg: Colors.indigo.shade900,
-                        bg: Colors.indigo.withOpacity(.08)),
+                        bg: Colors.indigo.withValues(alpha: .08)),
                   _chip(
                       icon: Icons.event,
                       text: _dateStr(expense.date),
                       fg: Colors.grey.shade900,
-                      bg: Colors.grey.withOpacity(.10)),
+                      bg: Colors.grey.withValues(alpha: .10)),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -492,7 +492,7 @@ class _GlassExpenseCard extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.teal.withOpacity(.12),
+                            color: Colors.teal.withValues(alpha: .12),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text("+$more",

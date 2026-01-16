@@ -1,5 +1,4 @@
 // lib/services/image_cache.dart
-import 'dart:ui';
 import 'package:flutter/material.dart';
 
 /// Tiny helper to keep image allocations predictable and warm up

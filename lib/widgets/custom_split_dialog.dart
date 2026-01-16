@@ -45,7 +45,7 @@ Future<Map<String, double>?> showCustomSplitDialog(
         ),
         ElevatedButton(
           onPressed: () {
-            Map<String, double> splits = {};
+            final Map<String, double> splits = {};
             double total = 0.0;
             for (var m in members) {
               final key = m.phone ?? m.name;

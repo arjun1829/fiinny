@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:characters/characters.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_storage/firebase_storage.dart' as fb_storage;
 import 'package:intl/intl.dart';
@@ -61,12 +60,12 @@ class FriendDetailScreen extends StatefulWidget {
   final FriendModel friend;
 
   const FriendDetailScreen({
-    Key? key,
+    super.key,
     required this.userPhone,
     required this.userName,
     this.userAvatar,
     required this.friend,
-  }) : super(key: key);
+  });
 
   @override
   State<FriendDetailScreen> createState() => _FriendDetailScreenState();
@@ -75,10 +74,8 @@ class FriendDetailScreen extends StatefulWidget {
 class _FriendDetailScreenState extends State<FriendDetailScreen>
     with SingleTickerProviderStateMixin {
   // Keep tab indices centralized so adding/removing tabs doesn’t break deep-links
-  static const int _TAB_HISTORY = 0;
-  static const int _TAB_CHART = 1;
-  static const int _TAB_ANALYTICS = 2;
-  static const int _TAB_CHAT = 3;
+
+  static const int _tabChat = 3;
 
   Map<String, double>? _lastCustomSplit;
   late TabController _tabController;
@@ -119,15 +116,13 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
   }
 
   String _formatShareSummary(SharedItem item) {
-    final total = (item.rule.amount ?? item.amount)?.toDouble();
+    final total = item.rule.amount;
     final share = item.amountShareForUser(widget.userPhone);
     if (share == null) {
       return 'Your share · -- · —';
     }
     final safeShare = share <= 0 ? 0 : share;
-    final pct = total == null || total <= 0
-        ? '--'
-        : _formatPercent((safeShare / total) * 100);
+    final pct = total <= 0 ? '--' : _formatPercent((safeShare / total) * 100);
     final amtLabel = safeShare <= 0 ? '₹0' : _compactInr.format(safeShare);
     return 'Your share · $pct · $amtLabel';
   }
@@ -173,8 +168,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     if (expense.label != null && expense.label!.trim().isNotEmpty) {
       return expense.label!.trim();
     }
-    if (expense.type != null && expense.type!.trim().isNotEmpty) {
-      return expense.type!.trim();
+    if (expense.type.trim().isNotEmpty) {
+      return expense.type.trim();
     }
     return 'General';
   }
@@ -226,10 +221,14 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
 
     void addList(dynamic list) {
       if (list is List) {
-        for (final x in list) addOne(x);
+        for (final x in list) {
+          addOne(x);
+        }
       } else if (list is Map) {
         // Map<String, String> ya Map<id, url>
-        for (final v in list.values) addOne(v);
+        for (final v in list.values) {
+          addOne(v);
+        }
       } else {
         addOne(list);
       }
@@ -340,7 +339,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
         : ((e.category?.isNotEmpty == true) ? e.category! : 'Expense');
     final msg =
         "Discussing: $title • ₹${e.amount.toStringAsFixed(0)} • ${_fmtShort(e.date)}";
-    _tabController.animateTo(_TAB_CHAT); // Chat tab
+    _tabController.animateTo(_tabChat); // Chat tab
     Clipboard.setData(ClipboardData(text: msg));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Context copied — paste in chat')),
@@ -497,7 +496,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                       height: 40,
                       width: 40,
                       decoration: BoxDecoration(
-                        color: AppColors.mint.withOpacity(.12),
+                        color: AppColors.mint.withValues(alpha: .12),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(Icons.repeat_rounded,
@@ -555,7 +554,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(.08),
+                  color: Colors.grey.withValues(alpha: .08),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -575,7 +574,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                       child: Text(
                         'No shared recurring items yet. Start one to split bills effortlessly.',
                         style: TextStyle(
-                          color: Colors.black.withOpacity(0.65),
+                          color: Colors.black.withValues(alpha: 0.65),
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -591,7 +590,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                   Divider(
                     height: 1,
                     thickness: 1,
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                   ),
                 );
               }
@@ -605,7 +604,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                   '+$remaining more shared item${remaining == 1 ? '' : 's'}',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.black.withOpacity(0.6),
+                    color: Colors.black.withValues(alpha: 0.6),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -699,7 +698,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.black.withOpacity(0.65),
+                      color: Colors.black.withValues(alpha: 0.65),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -712,18 +711,18 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 if (shareChip != null) ...[
-                  shareChip!,
+                  shareChip,
                   const SizedBox(height: 6),
                 ],
                 if (statusChip != null) ...[
-                  statusChip!,
+                  statusChip,
                   const SizedBox(height: 6),
                 ],
                 Text(
                   _formatDue(due),
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.black.withOpacity(0.55),
+                    color: Colors.black.withValues(alpha: 0.55),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -829,28 +828,28 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                       _chip(
                         text: "Paid by ${_nameFor(e.payerId)}",
                         fg: Colors.teal.shade900,
-                        bg: Colors.teal.withOpacity(.10),
+                        bg: Colors.teal.withValues(alpha: .10),
                         icon: Icons.person,
                       ),
                       _chip(
                         text:
                             "${_fmtShort(e.date)} ${e.date.year} ${e.date.hour.toString().padLeft(2, '0')}:${e.date.minute.toString().padLeft(2, '0')}",
                         fg: Colors.grey.shade900,
-                        bg: Colors.grey.withOpacity(.12),
+                        bg: Colors.grey.withValues(alpha: .12),
                         icon: Icons.calendar_month_rounded,
                       ),
                       if ((e.category ?? '').isNotEmpty)
                         _chip(
                           text: e.category!,
                           fg: Colors.indigo.shade900,
-                          bg: Colors.indigo.withOpacity(.08),
+                          bg: Colors.indigo.withValues(alpha: .08),
                           icon: Icons.category_rounded,
                         ),
                       if ((e.groupId ?? '').isNotEmpty)
                         _chip(
                           text: "Group expense",
                           fg: Colors.blueGrey.shade900,
-                          bg: Colors.blueGrey.withOpacity(.10),
+                          bg: Colors.blueGrey.withValues(alpha: .10),
                           icon: Icons.groups_rounded,
                         ),
                       _chip(
@@ -861,8 +860,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                             ? Colors.green.shade800
                             : Colors.redAccent,
                         bg: youDelta >= 0
-                            ? Colors.green.withOpacity(.10)
-                            : Colors.red.withOpacity(.08),
+                            ? Colors.green.withValues(alpha: .10)
+                            : Colors.red.withValues(alpha: .08),
                         icon: youDelta >= 0
                             ? Icons.trending_up_rounded
                             : Icons.trending_down_rounded,
@@ -916,7 +915,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                               horizontal: 8, vertical: 6),
                                           decoration: BoxDecoration(
                                             color: Colors.blueGrey
-                                                .withOpacity(0.10),
+                                                .withValues(alpha: 0.10),
                                             borderRadius:
                                                 BorderRadius.circular(8),
                                           ),
@@ -1136,6 +1135,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
       },
     );
 
+    if (!mounted) return;
     switch (action) {
       case 'edit':
         final controller = TextEditingController(text: _displayName);
@@ -1156,6 +1156,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
           ),
         );
         if (name != null && name.isNotEmpty) {
+          if (!mounted) return;
           setState(() => _friendDisplayName = name);
         }
         break;
@@ -1177,142 +1178,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
   }
 
   // ======================= UI HELPERS =======================
-  Widget _buildSharedGroupsSection(
-    BuildContext context,
-    List<GroupModel> allGroups,
-    List<ExpenseItem> pairwise,
-  ) {
-    // Filter groups where this friend is a member OR where we have a transaction
-    // Normalize phone numbers for comparison (remove spaces/dashes)
-    String normalize(String p) => p.replaceAll(RegExp(r'\s+|-'), '');
-    final friendPhone = normalize(widget.friend.phone);
-    final groupIdsInTx =
-        pairwise.map((e) => e.groupId).whereType<String>().toSet();
-
-    final shared = allGroups.where((g) {
-      if (g.id == '__none__') return false;
-
-      // 1. Check membership
-      final hasMember = g.memberPhones.any((m) => normalize(m) == friendPhone);
-      if (hasMember) return true;
-
-      // 2. Check if we have transactions in this group
-      if (groupIdsInTx.contains(g.id)) return true;
-
-      return false;
-    }).toList();
-
-    if (shared.isEmpty) return const SizedBox.shrink();
-
-    return _card(
-      context,
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.groups_rounded, color: Colors.teal.shade800, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                "Shared Groups",
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                  color: Colors.teal.shade900,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.teal.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  "${shared.length}",
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                      color: Colors.teal.shade800),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: shared.length,
-            separatorBuilder: (_, __) =>
-                Divider(height: 1, color: Colors.grey.shade100),
-            itemBuilder: (context, idx) {
-              final g = shared[idx];
-              return InkWell(
-                onTap: () {
-                  Navigator.pushNamed(
-                    context,
-                    '/group-detail',
-                    arguments: {'groupId': g.id, 'groupName': g.name},
-                  );
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: [
-                      // Group Avatar
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(12),
-                          image:
-                              (g.avatarUrl != null && g.avatarUrl!.isNotEmpty)
-                                  ? DecorationImage(
-                                      image: NetworkImage(g.avatarUrl!),
-                                      fit: BoxFit.cover)
-                                  : null,
-                        ),
-                        child: (g.avatarUrl == null || g.avatarUrl!.isEmpty)
-                            ? Center(
-                                child: Text(
-                                    g.name.characters.first.toUpperCase(),
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold)))
-                            : null,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              g.name,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w700, fontSize: 15),
-                            ),
-                            Text(
-                              "${g.memberCount} members",
-                              style: TextStyle(
-                                  color: Colors.grey.shade600, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(Icons.chevron_right_rounded,
-                          size: 20, color: Colors.grey.shade400),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
 
   BoxDecoration _cardDeco(BuildContext context) {
     return BoxDecoration(
@@ -1320,7 +1185,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
       borderRadius: BorderRadius.circular(18),
       boxShadow: [
         BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 16,
             offset: const Offset(0, 8))
       ],
@@ -1344,7 +1209,6 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
     required int bucketCount,
     required int sharedGroupCount,
   }) {
-    final theme = Theme.of(context);
     final net = double.parse((owed - owe).toStringAsFixed(2));
     final settled = owe.abs() < 0.01 && owed.abs() < 0.01;
 
@@ -1364,12 +1228,12 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 24,
             offset: const Offset(0, 10),
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -1700,7 +1564,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
   }
 
   void _remind() async {
-    _tabController.animateTo(_TAB_CHAT);
+    _tabController.animateTo(_tabChat);
     final msg =
         "Hi ${_displayName.split(' ').first}, quick nudge — current balance says we should settle soon. Can we do ₹… today? 😊";
     await Clipboard.setData(ClipboardData(text: msg));
@@ -1806,7 +1670,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: Colors.black.withValues(alpha: 0.04),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -2032,7 +1896,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 10, vertical: 6),
                                           decoration: BoxDecoration(
-                                            color: netColor.withOpacity(0.12),
+                                            color: netColor.withValues(
+                                                alpha: 0.12),
                                             borderRadius:
                                                 BorderRadius.circular(999),
                                           ),
@@ -2072,8 +1937,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                           children: [
                                             CircleAvatar(
                                               radius: 14,
-                                              backgroundColor:
-                                                  Colors.teal.withOpacity(.10),
+                                              backgroundColor: Colors.teal
+                                                  .withValues(alpha: .10),
                                               child: const Icon(
                                                   Icons.folder_copy_rounded,
                                                   size: 16,
@@ -2111,8 +1976,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                                         horizontal: 10,
                                                         vertical: 6),
                                                 decoration: BoxDecoration(
-                                                  color: netColor
-                                                      .withOpacity(0.12),
+                                                  color: netColor.withValues(
+                                                      alpha: 0.12),
                                                   borderRadius:
                                                       BorderRadius.circular(
                                                           999),
@@ -2210,7 +2075,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                         Border.all(color: Colors.grey.shade200),
                                     boxShadow: [
                                       BoxShadow(
-                                          color: Colors.black.withOpacity(0.02),
+                                          color: Colors.black
+                                              .withValues(alpha: 0.02),
                                           blurRadius: 8,
                                           offset: const Offset(0, 2))
                                     ],
@@ -2353,8 +2219,9 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                                               BoxDecoration(
                                                             color: Colors
                                                                 .blueGrey
-                                                                .withOpacity(
-                                                                    0.08),
+                                                                .withValues(
+                                                                    alpha:
+                                                                        0.08),
                                                             borderRadius:
                                                                 BorderRadius
                                                                     .circular(
@@ -2362,8 +2229,9 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                                             border: Border.all(
                                                                 color: Colors
                                                                     .blueGrey
-                                                                    .withOpacity(
-                                                                        0.2)),
+                                                                    .withValues(
+                                                                        alpha:
+                                                                            0.2)),
                                                           ),
                                                           child: Text(
                                                             groupName,
@@ -2484,7 +2352,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                         .toList()
                       ..sort((a, b) => b.value.compareTo(a.value));
                     final totalSpending = slices.fold<double>(
-                        0, (sum, slice) => sum + slice.value);
+                        0, (total, slice) => total + slice.value);
                     final filteredExpenses = _selectedCategorySlice == null
                         ? pairwise
                         : pairwise
@@ -2568,7 +2436,8 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                                       Border.all(color: Colors.grey.shade100),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.04),
+                                      color:
+                                          Colors.black.withValues(alpha: 0.04),
                                       blurRadius: 16,
                                       offset: const Offset(0, 8),
                                     ),
@@ -2635,7 +2504,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
+                            color: Colors.black.withValues(alpha: 0.04),
                             blurRadius: 16,
                             offset: const Offset(0, 4),
                           ),
@@ -2667,7 +2536,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
                           const BorderRadius.vertical(top: Radius.circular(24)),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.06),
+                          color: Colors.black.withValues(alpha: 0.06),
                           blurRadius: 20,
                           offset: const Offset(0, -6),
                         ),
@@ -2745,7 +2614,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen>
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 10,
               offset: const Offset(0, 4))
         ],
@@ -2792,16 +2661,16 @@ class _StatusChip extends StatelessWidget {
   final String text;
   final Color base;
 
-  const _StatusChip(this.text, this.base, {super.key});
+  const _StatusChip(this.text, this.base);
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: base.withOpacity(.12),
+        color: base.withValues(alpha: .12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: base.withOpacity(.22)),
+        border: Border.all(color: base.withValues(alpha: .22)),
       ),
       child: Text(
         text,
@@ -2815,150 +2684,6 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-class _AmountChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-
-  const _AmountChip({
-    required this.icon,
-    required this.label,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final effectiveColor = color;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 160),
-      curve: Curves.easeOut,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: effectiveColor.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: effectiveColor.withOpacity(0.35)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: effectiveColor),
-          const SizedBox(width: 6),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 160),
-            child: Text(
-              label,
-              key: ValueKey(label),
-              style: TextStyle(
-                color: effectiveColor,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SummaryStat extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-
-  const _SummaryStat({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final bg = theme.colorScheme.primary.withOpacity(
-      theme.brightness == Brightness.dark ? 0.18 : 0.12,
-    );
-    final textColor = theme.textTheme.bodyMedium?.color ??
-        (theme.brightness == Brightness.dark ? Colors.white : Colors.black87);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: theme.colorScheme.primary),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: theme.textTheme.bodySmall?.copyWith(
-                      color: textColor.withOpacity(0.7),
-                      fontWeight: FontWeight.w600,
-                    ) ??
-                    TextStyle(
-                      fontSize: 12,
-                      color: textColor.withOpacity(0.7),
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-              Text(
-                value,
-                style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: textColor,
-                    ) ??
-                    TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: textColor,
-                    ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SettledBadge extends StatelessWidget {
-  const _SettledBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = theme.colorScheme.primary;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.24)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.check_circle_rounded, size: 16, color: color),
-          const SizedBox(width: 6),
-          Text(
-            'All settled',
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _Pill extends StatelessWidget {
   final String text;
   final Color base;
@@ -2967,8 +2692,7 @@ class _Pill extends StatelessWidget {
   const _Pill(
     this.text, {
     this.base = AppColors.mint,
-    this.padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    super.key,
+    this.padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
   });
 
   @override
@@ -2976,9 +2700,9 @@ class _Pill extends StatelessWidget {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: base.withOpacity(.12),
+        color: base.withValues(alpha: .12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: base.withOpacity(.22)),
+        border: Border.all(color: base.withValues(alpha: .22)),
       ),
       child: Text(
         text,

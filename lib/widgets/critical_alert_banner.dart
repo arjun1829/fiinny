@@ -70,7 +70,7 @@ class _CriticalAlertBannerState extends State<CriticalAlertBanner> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: (isResolving ? Colors.green : Colors.red).withOpacity(0.3),
+                color: (isResolving ? Colors.green : Colors.red).withValues(alpha: 0.3),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -158,7 +158,7 @@ class _CriticalAlertBannerState extends State<CriticalAlertBanner> {
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.2),
+                                      color: Colors.white.withValues(alpha: 0.2),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: const Text(

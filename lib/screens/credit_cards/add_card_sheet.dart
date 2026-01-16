@@ -77,7 +77,7 @@ class _AddCardSheetState extends State<AddCardSheet> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: banks.first,
+                  initialValue: banks.first,
                   items: banks
                       .map((b) => DropdownMenuItem(value: b, child: Text(b)))
                       .toList(),
@@ -97,7 +97,7 @@ class _AddCardSheetState extends State<AddCardSheet> {
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
-                  value: _cardType,
+                  initialValue: _cardType,
                   items: const [
                     DropdownMenuItem(value: 'Visa', child: Text('Visa')),
                     DropdownMenuItem(
@@ -129,7 +129,7 @@ class _AddCardSheetState extends State<AddCardSheet> {
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<PdfPassFormat>(
-                  value: _passFmt,
+                  initialValue: _passFmt,
                   items: const [
                     DropdownMenuItem(
                       value: PdfPassFormat.none,

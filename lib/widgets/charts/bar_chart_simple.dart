@@ -82,7 +82,7 @@ class BarChartSimple extends StatelessWidget {
       return SizedBox(
         height: height,
         child: Center(
-          child: Text('No data', style: Fx.label.copyWith(color: Fx.text.withOpacity(.8))),
+          child: Text('No data', style: Fx.label.copyWith(color: Fx.text.withValues(alpha: .8))),
         ),
       );
     }
@@ -135,7 +135,7 @@ class BarChartSimple extends StatelessWidget {
                     child: CustomPaint(
                       painter: _GridPainter(
                         bands: effectiveYTicks,
-                        color: Fx.mintDark.withOpacity(.10),
+                        color: Fx.mintDark.withValues(alpha: .10),
                         strokeWidth: 1,
                       ),
                     ),
@@ -159,7 +159,7 @@ class BarChartSimple extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: Fx.label.copyWith(
                             fontSize: 10,
-                            color: Fx.text.withOpacity(.75),
+                            color: Fx.text.withValues(alpha: .75),
                           ),
                         ),
                       ),
@@ -185,8 +185,8 @@ class BarChartSimple extends StatelessWidget {
 
                       // Visuals
                       final Color base = barColor ?? Fx.mintDark;
-                      final Color fill = isSel ? base.withOpacity(.32) : base.withOpacity(.18);
-                      final Color stroke = isSel ? base.withOpacity(.58) : base.withOpacity(.28);
+                      final Color fill = isSel ? base.withValues(alpha: .32) : base.withValues(alpha: .18);
+                      final Color stroke = isSel ? base.withValues(alpha: .58) : base.withValues(alpha: .28);
 
                       final bar = TweenAnimationBuilder<double>(
                         key: ValueKey('${p.x}_${i}_$h'),
@@ -208,7 +208,7 @@ class BarChartSimple extends StatelessWidget {
                                       end: Alignment.bottomCenter,
                                       colors: [
                                         fill,
-                                        base.withOpacity(isSel ? .24 : .14),
+                                        base.withValues(alpha: isSel ? .24 : .14),
                                       ],
                                     ),
                                     borderRadius: BorderRadius.circular(8),
@@ -223,7 +223,7 @@ class BarChartSimple extends StatelessWidget {
                                             style: Fx.label.copyWith(
                                               fontSize: 9.5,
                                               fontWeight: FontWeight.w800,
-                                              color: Fx.text.withOpacity(.85),
+                                              color: Fx.text.withValues(alpha: .85),
                                             ),
                                           ),
                                         )

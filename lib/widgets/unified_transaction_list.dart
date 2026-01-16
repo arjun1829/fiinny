@@ -1,6 +1,5 @@
 // lib/widgets/unified_transaction_list.dart
 import 'dart:math' as math;
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -16,7 +15,6 @@ import '../models/group_model.dart';
 import '../services/expense_service.dart';
 import '../services/income_service.dart';
 import '../services/user_overrides.dart';
-import '../themes/custom_card.dart';
 
 enum _TxAction { edit, delete }
 
@@ -129,7 +127,7 @@ class UnifiedTransactionList extends StatefulWidget {
   final bool enableScrolling;
 
   const UnifiedTransactionList({
-    Key? key,
+    super.key,
     required this.expenses,
     required this.incomes,
     required this.friendsById,
@@ -260,7 +258,7 @@ class UnifiedTransactionList extends StatefulWidget {
     this.enableInlineAds = true,
     this.groups,
     this.enableScrolling = false,
-  }) : super(key: key);
+  });
 
   @override
   State<UnifiedTransactionList> createState() => _UnifiedTransactionListState();
@@ -619,10 +617,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
   void _combine() {
     try {
-      debugPrint(
-        'UTL _combine: unified=${widget.unifiedDocs?.length}, exp=${widget.expenses.length}, inc=${widget.incomes.length}, filterType=${widget.filterType}, preview=${widget.previewCount}',
-      );
-
       final hasUnified =
           widget.unifiedDocs != null && widget.unifiedDocs!.isNotEmpty;
       final combined = hasUnified
@@ -648,10 +642,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       }
       _activeFilter = f;
       allTx = applyFilterAndSort(base, f);
-
-      debugPrint('UTL _combine final allTx len=${allTx.length}');
-    } catch (e, st) {
-      debugPrint('UTL _combine ERROR: $e\n$st');
+    } catch (e) {
       allTx = [];
       rethrow;
     }
@@ -695,8 +686,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       }
 
       final targetCurrency = widget.currencyCode ?? 'INR';
-      final double rawAmount =
-          (e.amount is num) ? (e.amount as num).toDouble() : 0.0;
+      final double rawAmount = e.amount;
 
       // Perform conversion
       // NOTE: This runs synchronously, so it relies on FxService cached rates.
@@ -774,8 +764,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       }
 
       final targetCurrency = widget.currencyCode ?? 'INR';
-      final double rawAmount =
-          (i.amount is num) ? (i.amount as num).toDouble() : 0.0;
+      final double rawAmount = i.amount;
 
       double amount = rawAmount;
       if (itemCurrency != targetCurrency) {
@@ -882,10 +871,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final bool isDebit = (doc['isDebit'] == true);
       final String type = isDebit ? 'expense' : 'income';
 
-      String? _pick(String? s) =>
+      String? pick(String? s) =>
           (s == null || s.trim().isEmpty) ? null : s.trim();
-      final categoryRaw = _pick(doc['category']?.toString());
-      final subcategoryRaw = _pick(doc['subcategory']?.toString());
+      final categoryRaw = pick(doc['category']?.toString());
+      final subcategoryRaw = pick(doc['subcategory']?.toString());
       final resolvedCat = categoryRaw ?? (isDebit ? 'General' : 'Income');
 
       final labelsArr = <String>[];
@@ -898,13 +887,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final seen = <String>{};
       final labels = labelsArr.where((l) => seen.add(l.toLowerCase())).toList();
 
-      final title = _pick(doc['title']?.toString());
+      final title = pick(doc['title']?.toString());
       final double categoryConfidence = _asDouble(doc['categoryConfidence']);
       final String categorySource = (doc['categorySource'] ?? '').toString();
       final String merchantKey = (() {
-        final mk = _pick(doc['merchantKey']?.toString());
+        final mk = pick(doc['merchantKey']?.toString());
         if (mk != null && mk.isNotEmpty) return mk.toUpperCase();
-        final merch = _pick(doc['merchant']?.toString());
+        final merch = pick(doc['merchant']?.toString());
         if (merch != null && merch.isNotEmpty) return merch.toUpperCase();
         return '';
       })();
@@ -928,10 +917,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'brandLogo': brandLogo,
         'cardLast4': _readString(doc, ['meta', 'cardLast4']),
         'channel': channel,
-        'instrument': _pick(doc['instrument']?.toString()) ?? channel,
-        'network': _pick(doc['instrumentNetwork']?.toString()),
-        'issuerBank': _pick(doc['issuerBank']?.toString()),
-        'counterparty': _pick(doc['counterparty']?.toString()),
+        'instrument': pick(doc['instrument']?.toString()) ?? channel,
+        'network': pick(doc['instrumentNetwork']?.toString()),
+        'issuerBank': pick(doc['issuerBank']?.toString()),
+        'counterparty': pick(doc['counterparty']?.toString()),
         'isInternational': _readBool(doc, 'isInternational'),
         'hasFees': _mapHasFees(doc),
         'tags': (() {
@@ -982,28 +971,35 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       if (t.contains("salary")) return Icons.account_balance_wallet_rounded;
       if (t.contains("refund")) return Icons.replay_rounded;
       if (t.contains("interest")) return Icons.savings_rounded;
-      if (t.contains("reward") || t.contains("cashback"))
+      if (t.contains("reward") || t.contains("cashback")) {
         return Icons.card_giftcard_rounded;
-      if (t.contains("cash") || t.contains("credit"))
+      }
+      if (t.contains("cash") || t.contains("credit")) {
         return Icons.attach_money_rounded;
+      }
       if (t.contains("bonus")) return Icons.emoji_events_rounded;
       if (t.contains("investment")) return Icons.trending_up_rounded;
       if (t.contains("business")) return Icons.business_center_rounded;
       return Icons.add_circle_outline_rounded;
     } else {
-      if (t.contains("food") || t.contains("restaurant"))
+      if (t.contains("food") || t.contains("restaurant")) {
         return Icons.restaurant_rounded;
+      }
       if (t.contains("grocery")) return Icons.shopping_cart_rounded;
       if (t.contains("rent")) return Icons.home_rounded;
-      if (t.contains("fuel") || t.contains("petrol"))
+      if (t.contains("fuel") || t.contains("petrol")) {
         return Icons.local_gas_station_rounded;
+      }
       if (t.contains("shopping")) return Icons.shopping_bag_rounded;
-      if (t.contains("health") || t.contains("medicine"))
+      if (t.contains("health") || t.contains("medicine")) {
         return Icons.local_hospital_rounded;
-      if (t.contains("travel") || t.contains("flight") || t.contains("train"))
+      }
+      if (t.contains("travel") || t.contains("flight") || t.contains("train")) {
         return Icons.flight_takeoff_rounded;
-      if (t.contains("entertainment") || t.contains("movie"))
+      }
+      if (t.contains("entertainment") || t.contains("movie")) {
         return Icons.movie_rounded;
+      }
       if (t.contains("education")) return Icons.school_rounded;
       if (t.contains("loan")) return Icons.account_balance_rounded;
       if (t.contains("credit card")) return Icons.credit_card_rounded;
@@ -1280,6 +1276,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                 triggerAnchoredCallbacks: false,
                               );
                               if (!confirmed) return;
+                              if (!context.mounted) return;
                               Navigator.pop(context);
                               widget.onDelete?.call(doc);
                             },
@@ -1420,8 +1417,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                       Text("Bank: $issuer"),
                     if ((network ?? '').toString().trim().isNotEmpty)
                       Text("Network: $network"),
-                    if ((last4 ?? '').toString().trim().isNotEmpty)
-                      Text("Card: ****$last4"),
+                    if (last4.isNotEmpty) Text("Card: ****$last4"),
                     if (isIntl) const Text("International: Yes"),
                     if (hasFees) const Text("Fees Detected: Yes"),
                     const SizedBox(height: 12),
@@ -1504,6 +1500,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                 triggerAnchoredCallbacks: false,
                               );
                               if (!confirmed) return;
+                              if (!context.mounted) return;
                               Navigator.pop(context);
                               widget.onDelete?.call(item);
                             },
@@ -1648,21 +1645,6 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     return order.where(out.contains).toList();
   }
 
-  /// Turn raw "tags" string into extra chips, avoiding duplicates with existing chips
-  List<Widget> _meaningfulTagChips({
-    required String rawTags,
-    required bool isInternational,
-    required bool hasFees,
-    required String? instrument,
-  }) {
-    return _meaningfulTagLabels(
-      rawTags: rawTags,
-      isInternational: isInternational,
-      hasFees: hasFees,
-      instrument: instrument,
-    ).map(_chip).toList();
-  }
-
   List<String> _methodChipLabels({
     String? instrument,
     String? channel,
@@ -1676,7 +1658,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final primary = ((instrument ?? '').trim().isNotEmpty)
         ? instrument!.trim()
         : ((channel ?? '').trim());
-    if (primary != null && primary.isNotEmpty) {
+    if (primary.isNotEmpty) {
       chips.add(primary);
     }
     if ((cardLast4 ?? '').trim().isNotEmpty) {
@@ -1762,14 +1744,14 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             } else {
               try {
                 if (payload is ExpenseItem) {
-                  final e = payload as ExpenseItem;
+                  final e = payload;
                   final updated = e.copyWith(type: newVal, category: newVal);
                   await ExpenseService()
                       .updateExpense(widget.userPhone, updated);
                   await _saveOverrideIfPossible(newVal, normalized);
                   return;
                 } else if (payload is IncomeItem) {
-                  final i = payload as IncomeItem;
+                  final i = payload;
                   final updated = i.copyWith(type: newVal, category: newVal);
                   await IncomeService().updateIncome(widget.userPhone, updated);
                   await _saveOverrideIfPossible(newVal, normalized);
@@ -1832,7 +1814,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                   .textTheme
                   .bodyMedium
                   ?.color
-                  ?.withOpacity(0.7),
+                  ?.withValues(alpha: 0.7),
             ),
           ),
         );
@@ -1841,7 +1823,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     }
 
     // Dropdown logic
-    String value = raw;
+    final String value = raw;
 
     // Ensure uniqueness and include the current value
     final Set<String> uniqueOptions = <String>{};
@@ -1852,7 +1834,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final List<String> options = uniqueOptions.toList();
 
     // Ensure we have a valid selection if value is invalid, or use a hint
-    String? dropdownValue = value.isNotEmpty ? value : null;
+    final String? dropdownValue = value.isNotEmpty ? value : null;
 
     return SizedBox(
       width: double.infinity,
@@ -1868,7 +1850,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                   .textTheme
                   .bodyMedium
                   ?.color
-                  ?.withOpacity(0.5),
+                  ?.withValues(alpha: 0.5),
             ),
           ),
           items: options
@@ -1884,7 +1866,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                             .textTheme
                             .bodyMedium
                             ?.color
-                            ?.withOpacity(0.7),
+                            ?.withValues(alpha: 0.7),
                       ),
                     ),
                   ))
@@ -1913,7 +1895,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
               // Fallback default saver
               try {
                 if (payload is ExpenseItem) {
-                  final e = payload as ExpenseItem;
+                  final e = payload;
                   final updated = e.copyWith(subcategory: newVal);
                   await ExpenseService()
                       .updateExpense(widget.userPhone, updated);
@@ -1921,7 +1903,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                       subcategory: newVal);
                   return;
                 } else if (payload is IncomeItem) {
-                  final i = payload as IncomeItem;
+                  final i = payload;
                   final updated = i.copyWith(subcategory: newVal);
                   await IncomeService().updateIncome(widget.userPhone, updated);
                   await _saveOverrideIfPossible(currentCategory, normalized,
@@ -1944,8 +1926,11 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           style: TextStyle(
             fontWeight: FontWeight.w500,
             fontSize: 13.0,
-            color:
-                Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
+            color: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.color
+                ?.withValues(alpha: 0.7),
           ),
           menuMaxHeight: 300,
         ),
@@ -1970,7 +1955,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         final isDark = theme.brightness == Brightness.dark;
 
         return AlertDialog(
-          backgroundColor: theme.dialogBackgroundColor,
+          backgroundColor: theme.dialogTheme.backgroundColor ?? theme.cardColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
@@ -1996,8 +1981,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 decoration: InputDecoration(
                   labelText: isIncome ? 'Got from' : 'Paid to',
                   labelStyle: TextStyle(
-                      color:
-                          theme.textTheme.bodyMedium?.color?.withOpacity(0.7)),
+                      color: theme.textTheme.bodyMedium?.color
+                          ?.withValues(alpha: 0.7)),
                   filled: true,
                   fillColor: isDark ? Colors.white10 : Colors.grey.shade100,
                   enabledBorder: OutlineInputBorder(
@@ -2019,7 +2004,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
               child: Text(
                 'Cancel',
                 style: TextStyle(
-                    color: theme.textTheme.bodyMedium?.color?.withOpacity(0.6)),
+                    color: theme.textTheme.bodyMedium?.color
+                        ?.withValues(alpha: 0.6)),
               ),
             ),
             TextButton(
@@ -2070,11 +2056,11 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     // Default persistence for legacy models
     try {
       if (payload is ExpenseItem) {
-        final e = payload as ExpenseItem;
+        final e = payload;
         final updated = e.copyWith(counterparty: newName);
         await ExpenseService().updateExpense(widget.userPhone, updated);
       } else if (payload is IncomeItem) {
-        final i = payload as IncomeItem;
+        final i = payload;
         final updated = i.copyWith(counterparty: newName);
         await IncomeService().updateIncome(widget.userPhone, updated);
       }
@@ -2095,7 +2081,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: (isIncome ? Colors.green[50] : Colors.red[50])
-                    ?.withOpacity(0.9),
+                    ?.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Text(
@@ -2146,7 +2132,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     );
   }
 
-  List<_ListItem> _flattenItems(Map<String, List<Map<String, dynamic>>> groupedMap) {
+  List<_ListItem> _flattenItems(
+      Map<String, List<Map<String, dynamic>>> groupedMap) {
     final items = <_ListItem>[];
     final groupedEntries = groupedMap.entries.toList();
 
@@ -2215,7 +2202,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final String? channel = tx['channel'] as String?;
     final String? instrument = (tx['instrument'] as String?) ?? channel;
     final String? network = tx['network'] as String?;
-    final String? issuerBank = tx['issuerBank'] as String?;
+
     final String? counterparty = tx['counterparty'] as String?;
     final bool isInternational = (tx['isInternational'] == true);
     final bool hasFees = (tx['hasFees'] == true);
@@ -2241,10 +2228,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       friendsStr = null;
     }
 
-    final String displayName = (counterparty ?? '')
-            .toString()
-            .trim()
-            .isNotEmpty
+    final String displayName = (counterparty ?? '').toString().trim().isNotEmpty
         ? counterparty!.trim()
         : (merchant != null && merchant.isNotEmpty ? merchant : 'Unknown');
 
@@ -2341,7 +2325,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
               alignment: Alignment.centerLeft,
               icon: Icons.edit,
               label: 'Edit',
-              color: Colors.blue.withOpacity(0.15),
+              color: Colors.blue.withValues(alpha: 0.15),
             )
           : const SizedBox(),
       secondaryBackground:
@@ -2350,7 +2334,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                   alignment: Alignment.centerRight,
                   icon: Icons.delete,
                   label: 'Delete',
-                  color: Colors.red.withOpacity(0.15),
+                  color: Colors.red.withValues(alpha: 0.15),
                 )
               : const SizedBox(),
       confirmDismiss: (direction) async {
@@ -2409,12 +2393,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             color: isSelected
-                ? Colors.deepPurple.withOpacity(0.09)
-                : Colors.white.withOpacity(0.93),
+                ? Colors.deepPurple.withValues(alpha: 0.09)
+                : Colors.white.withValues(alpha: 0.93),
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.grey.withOpacity(0.028),
+                color: Colors.grey.withValues(alpha: 0.028),
                 blurRadius: 4,
                 offset: const Offset(0, 2),
               ),
@@ -2431,8 +2415,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                   padding: const EdgeInsets.only(right: 6),
                   child: Checkbox(
                     value: isSelected,
-                    onChanged: (val) =>
-                        widget.onSelectTx!(id, val ?? false),
+                    onChanged: (val) => widget.onSelectTx!(id, val ?? false),
                     activeColor: Colors.deepPurple,
                     visualDensity: VisualDensity.compact,
                     shape: RoundedRectangleBorder(
@@ -2541,8 +2524,8 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                   decoration: BoxDecoration(
                                     color: Colors.teal.shade50,
                                     borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                        color: Colors.teal.shade100),
+                                    border:
+                                        Border.all(color: Colors.teal.shade100),
                                   ),
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
@@ -2595,15 +2578,15 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                             );
                           },
                           child: Container(
-                            margin:
-                                const EdgeInsets.only(top: 4, bottom: 2),
+                            margin: const EdgeInsets.only(top: 4, bottom: 2),
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: Colors.blueGrey.withOpacity(0.10),
+                              color: Colors.blueGrey.withValues(alpha: 0.10),
                               borderRadius: BorderRadius.circular(999),
                               border: Border.all(
-                                  color: Colors.blueGrey.withOpacity(0.2)),
+                                  color:
+                                      Colors.blueGrey.withValues(alpha: 0.2)),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -2658,7 +2641,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                         Container(
                           width: 1,
                           height: 14,
-                          color: Colors.grey.withOpacity(0.3),
+                          color: Colors.grey.withValues(alpha: 0.3),
                           margin: const EdgeInsets.symmetric(horizontal: 8),
                         ),
                         Expanded(
@@ -2683,7 +2666,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 12.5,
-                            color: Colors.black.withOpacity(0.75),
+                            color: Colors.black.withValues(alpha: 0.75),
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -2719,9 +2702,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                               ),
                             ],
                             if (tx['type'] == 'income' &&
-                                (raw.source ?? '')
-                                    .toString()
-                                    .isNotEmpty) ...[
+                                (raw.source ?? '').toString().isNotEmpty) ...[
                               const SizedBox(width: 8),
                               Icon(Icons.input_rounded,
                                   size: 15, color: Colors.teal[600]),
@@ -2751,86 +2732,85 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                 children: [
                   _amountPill(amount, isIncome),
                   const SizedBox(height: 10),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (widget.showBillIcon && billUrl.isNotEmpty)
-                        IconButton(
-                          icon: const Icon(Icons.receipt_long_rounded,
-                              size: 18, color: Colors.brown),
-                          tooltip: 'View bill',
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => _showBillImage(context, billUrl),
-                        ),
-                      // if (widget.onAddComment != null)
-                      //    IconButton(
-                      //      icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: Colors.blueGrey),
-                      //      tooltip: 'Add Comment/Note',
-                      //      visualDensity: VisualDensity.compact,
-                      //      onPressed: () => widget.onAddComment?.call(payload),
-                      //    ),
-                      if (tx['mode'] == 'legacy' &&
-                          !isIncome &&
-                          widget.onSplit != null)
-                        IconButton(
-                          icon: const Icon(Icons.group,
-                              size: 18, color: Colors.deepPurple),
-                          tooltip: 'Split',
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => widget.onSplit?.call(payload),
-                        ),
-                      if (widget.onEdit != null || widget.onDelete != null)
-                        PopupMenuButton<_TxAction>(
-                          icon: const Icon(Icons.more_horiz_rounded,
-                              color: Colors.blueGrey, size: 20),
-                          tooltip: 'More actions',
-                          onSelected: (action) async {
-                            switch (action) {
-                              case _TxAction.edit:
-                                widget.onEdit?.call(payload);
-                                break;
-                              case _TxAction.delete:
-                                if (widget.onDelete == null) break;
-                                final confirmed =
-                                    await _confirmDeleteTransaction(
-                                        context, payload);
-                                if (confirmed) widget.onDelete!(payload);
-                                break;
-                            }
-                          },
-                          itemBuilder: (ctx) {
-                            return [
-                              if (widget.onEdit != null)
-                                PopupMenuItem<_TxAction>(
-                                  value: _TxAction.edit,
-                                  child: Row(
-                                    children: const [
-                                      Icon(Icons.edit,
-                                          size: 18, color: Colors.blueGrey),
-                                      SizedBox(width: 8),
-                                      Text('Edit'),
-                                    ],
+                  SizedBox(
+                    width: 140, // constrain width to force wrap if needed
+                    child: Wrap(
+                      spacing: 0,
+                      runSpacing:
+                          -8, // negative spacing to reduce vertical gap if wrapped
+                      alignment: WrapAlignment.end,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (widget.showBillIcon && billUrl.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.receipt_long_rounded,
+                                size: 18, color: Colors.brown),
+                            tooltip: 'View bill',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => _showBillImage(context, billUrl),
+                          ),
+                        if (tx['mode'] == 'legacy' &&
+                            !isIncome &&
+                            widget.onSplit != null)
+                          IconButton(
+                            icon: const Icon(Icons.group,
+                                size: 18, color: Colors.deepPurple),
+                            tooltip: 'Split',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => widget.onSplit?.call(payload),
+                          ),
+                        if (widget.onEdit != null || widget.onDelete != null)
+                          PopupMenuButton<_TxAction>(
+                            icon: const Icon(Icons.more_horiz_rounded,
+                                color: Colors.blueGrey, size: 20),
+                            tooltip: 'More actions',
+                            onSelected: (action) async {
+                              switch (action) {
+                                case _TxAction.edit:
+                                  widget.onEdit?.call(payload);
+                                  break;
+                                case _TxAction.delete:
+                                  if (widget.onDelete == null) break;
+                                  final confirmed =
+                                      await _confirmDeleteTransaction(
+                                          context, payload);
+                                  if (confirmed) widget.onDelete!(payload);
+                                  break;
+                              }
+                            },
+                            itemBuilder: (ctx) {
+                              return [
+                                if (widget.onEdit != null)
+                                  PopupMenuItem<_TxAction>(
+                                    value: _TxAction.edit,
+                                    child: Row(
+                                      children: const [
+                                        Icon(Icons.edit,
+                                            size: 18, color: Colors.blueGrey),
+                                        SizedBox(width: 8),
+                                        Text('Edit'),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              if (widget.onDelete != null)
-                                PopupMenuItem<_TxAction>(
-                                  value: _TxAction.delete,
-                                  child: Row(
-                                    children: const [
-                                      Icon(Icons.delete_outline,
-                                          size: 18,
-                                          color: Colors.redAccent),
-                                      SizedBox(width: 8),
-                                      Text('Delete',
-                                          style: TextStyle(
-                                              color: Colors.redAccent)),
-                                    ],
+                                if (widget.onDelete != null)
+                                  PopupMenuItem<_TxAction>(
+                                    value: _TxAction.delete,
+                                    child: Row(
+                                      children: const [
+                                        Icon(Icons.delete_outline,
+                                            size: 18, color: Colors.redAccent),
+                                        SizedBox(width: 8),
+                                        Text('Delete',
+                                            style: TextStyle(
+                                                color: Colors.redAccent)),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                            ];
-                          },
-                        ),
-                    ],
+                              ];
+                            },
+                          ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -2847,7 +2827,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           Divider(
             height: 1,
             thickness: 1,
-            color: Colors.grey.withOpacity(0.15),
+            color: Colors.grey.withValues(alpha: 0.15),
             indent: 20,
             endIndent: 20,
           ),
@@ -2876,7 +2856,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
     final groupedMap =
         groupTx(allTx.take(shownCount).toList(), _activeFilter.groupBy);
-    
+
     // Flatten items for lazy rendering
     final items = _flattenItems(groupedMap);
 
@@ -2934,20 +2914,20 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         }
 
         if (item is _ShowMoreItem) {
-           return Center(
-              child: TextButton(
-                child: const Text("Show More"),
-                onPressed: () {
-                  setState(() {
-                    shownCount += widget.showMoreStep;
-                  });
-                },
-              ),
-            );
+          return Center(
+            child: TextButton(
+              child: const Text("Show More"),
+              onPressed: () {
+                setState(() {
+                  shownCount += widget.showMoreStep;
+                });
+              },
+            ),
+          );
         }
 
         if (item is _BottomBannerItem) {
-           return Padding(
+          return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: _adBanner('txn_list_bottom'),
           );
@@ -2968,7 +2948,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           color: Colors.black87,
         ),
       ),
-      backgroundColor: Colors.blueGrey.withOpacity(0.10),
+      backgroundColor: Colors.blueGrey.withValues(alpha: 0.10),
       visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
@@ -3207,9 +3187,10 @@ class _DateHeaderItem extends _ListItem {
 
 class _TransactionItem extends _ListItem {
   final Map<String, dynamic> tx;
-  final int indexInGroup; 
+  final int indexInGroup;
   final bool showSeparator;
-  _TransactionItem(this.tx, {this.indexInGroup = 0, this.showSeparator = false});
+  _TransactionItem(this.tx,
+      {this.indexInGroup = 0, this.showSeparator = false});
 }
 
 class _InlineAdItem extends _ListItem {

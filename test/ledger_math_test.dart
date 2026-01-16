@@ -1,4 +1,4 @@
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lifemap/group/ledger_math.dart';
 import 'package:lifemap/models/expense_item.dart';
@@ -33,7 +33,8 @@ ExpenseItem expense({
 void main() {
   group('netBetween', () {
     test('equal split between two friends', () {
-      final e1 = expense(id: 'e1', payer: 'alice', amount: 100, friends: ['bob']);
+      final e1 =
+          expense(id: 'e1', payer: 'alice', amount: 100, friends: ['bob']);
       expect(netBetween('alice', 'bob', [e1]), 50);
     });
 
@@ -102,7 +103,8 @@ void main() {
   });
 
   test('summarizeForHeader aggregates correctly', () {
-    final summary = summarizeForHeader({'bob': 10.009, 'carol': 20.0, 'dave': -5});
+    final summary =
+        summarizeForHeader({'bob': 10.009, 'carol': 20.0, 'dave': -5});
     expect(summary.youOwe, 5);
     expect(summary.owedToYou, 30);
     expect(summary.net, 25);

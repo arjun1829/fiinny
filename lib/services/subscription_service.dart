@@ -3,7 +3,6 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:lifemap/models/subscription_model.dart';
 import 'package:lifemap/models/subscription_item.dart';
-import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class SubscriptionService extends ChangeNotifier {
   final FirebaseFirestore _db = FirebaseFirestore.instance;

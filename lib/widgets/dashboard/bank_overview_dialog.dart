@@ -3,7 +3,6 @@ import '../../models/expense_item.dart';
 import '../../models/income_item.dart';
 import '../../themes/tokens.dart';
 import '../dashboard/bank_card_item.dart';
-import '../dashboard/bank_cards_carousel.dart';
 import '../unified_transaction_list.dart';
 import '../dashboard/transaction_modal.dart';
 import '../../services/expense_service.dart';
@@ -140,7 +139,7 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.2),
+                color: Colors.black.withValues(alpha: 0.2),
                 blurRadius: 40,
                 offset: const Offset(0, 20),
               )
@@ -219,7 +218,7 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
                                       ? Border.all(color: Fx.mint, width: 3)
                                       : Border.all(color: Colors.transparent, width: 3),
                                     boxShadow: isSelected 
-                                      ? [BoxShadow(color: Fx.mint.withOpacity(0.3), blurRadius: 12)] 
+                                      ? [BoxShadow(color: Fx.mint.withValues(alpha: 0.3), blurRadius: 12)] 
                                       : [],
                                   ),
                                   child: BankCardItem(

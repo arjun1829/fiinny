@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class FriendModel {
@@ -20,20 +19,20 @@ class FriendModel {
   }) : avatar = avatar ?? "👤";
 
   Map<String, dynamic> toJson() => {
-    'phone': phone,
-    'name': name,
-    if (email != null) 'email': email,
-    'avatar': avatar,
-    if (docId != null) 'docId': docId, // For easy debugging/migration
-  };
+        'phone': phone,
+        'name': name,
+        if (email != null) 'email': email,
+        'avatar': avatar,
+        if (docId != null) 'docId': docId, // For easy debugging/migration
+      };
 
   factory FriendModel.fromJson(Map<String, dynamic> json) => FriendModel(
-    phone: json['phone'] ?? '',
-    name: json['name'] ?? '',
-    email: json['email'],
-    avatar: json['avatar'] ?? "👤",
-    docId: json['docId'],
-  );
+        phone: json['phone'] ?? '',
+        name: json['name'] ?? '',
+        email: json['email'],
+        avatar: json['avatar'] ?? "👤",
+        docId: json['docId'],
+      );
 
   /// Firestore factory: expects phone as document key or field
   factory FriendModel.fromFirestore(DocumentSnapshot doc) {
@@ -46,6 +45,11 @@ class FriendModel {
       docId: doc.id,
     );
   }
+
+  // Compatibility aliases
+  String get id => phone;
+  factory FriendModel.fromMap(Map<String, dynamic> map) =>
+      FriendModel.fromJson(map);
 }
 
 // ---- EXTENSION for COPYWITH (immutable update) ----

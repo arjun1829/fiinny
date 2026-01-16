@@ -51,7 +51,7 @@ class AppPerf {
 class AppShadows {
   static List<BoxShadow> soft = [
     BoxShadow(
-      color: Colors.black.withOpacity(.06),
+      color: Colors.black.withValues(alpha: .06),
       blurRadius: 18,
       offset: const Offset(0, 8),
     ),

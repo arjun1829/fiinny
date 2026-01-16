@@ -71,13 +71,13 @@ class GlassCard extends StatelessWidget {
 
   // tiny cache for default gradient (avoids list alloc every build)
   static final List<Color> _defaultLightGradient = [
-    const Color(0xFFFFFFFF).withOpacity(.16),
-    const Color(0xFFFFFFFF).withOpacity(.06),
+    const Color(0xFFFFFFFF).withValues(alpha: .16),
+    const Color(0xFFFFFFFF).withValues(alpha: .06),
   ];
 
   static final List<Color> _defaultDarkGradient = [
-    const Color(0xFF1C1C1E).withOpacity(.28),
-    const Color(0xFF1C1C1E).withOpacity(.12),
+    const Color(0xFF1C1C1E).withValues(alpha: .28),
+    const Color(0xFF1C1C1E).withValues(alpha: .12),
   ];
 
   @override
@@ -94,9 +94,9 @@ class GlassCard extends StatelessWidget {
         (isDark ? _defaultDarkGradient : _defaultLightGradient);
 
     final borderColor = borderColorOverride ??
-        cs.onSurface.withOpacity(borderOpacityOverride ?? (isDark ? .18 : .20));
+        cs.onSurface.withValues(alpha: borderOpacityOverride ?? (isDark ? .18 : .20));
 
-    final shadowColor = Colors.black.withOpacity(isDark ? .30 : .06);
+    final shadowColor = Colors.black.withValues(alpha: isDark ? .30 : .06);
 
     // Core painted card
     Widget content = Container(
@@ -122,8 +122,8 @@ class GlassCard extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topCenter, end: Alignment.bottomCenter,
           colors: [
-            Colors.white.withOpacity(isDark ? glossOpacity * .6 : glossOpacity),
-            Colors.white.withOpacity(0),
+            Colors.white.withValues(alpha: isDark ? glossOpacity * .6 : glossOpacity),
+            Colors.white.withValues(alpha: 0),
           ],
           stops: [0.0, glossHeightFraction.clamp(0.0, 1.0)],
         ),

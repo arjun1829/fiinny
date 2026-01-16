@@ -59,8 +59,8 @@ class CategoryLegendRow extends StatelessWidget {
             ),
             selected: selected?.key == slice.key,
             onSelected: (_) => onSelect(selected?.key == slice.key ? null : slice),
-            backgroundColor: slice.color.withOpacity(0.12),
-            selectedColor: slice.color.withOpacity(0.22),
+            backgroundColor: slice.color.withValues(alpha: 0.12),
+            selectedColor: slice.color.withValues(alpha: 0.22),
             labelStyle: Theme.of(context).textTheme.labelMedium,
           ),
         if (selected != null)

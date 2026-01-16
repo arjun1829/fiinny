@@ -81,7 +81,7 @@ class GroupTotalsTab extends StatelessWidget {
           runSpacing: 8,
           children: [
             _chip(
-              owedToYou > 0 ? Colors.green.withOpacity(.12) : Colors.grey.withOpacity(.12),
+              owedToYou > 0 ? Colors.green.withValues(alpha: .12) : Colors.grey.withValues(alpha: .12),
               owedToYou > 0 ? Colors.green.shade700 : Colors.grey.shade700,
               Icons.call_received_rounded,
               owedToYou > 0
@@ -89,19 +89,19 @@ class GroupTotalsTab extends StatelessWidget {
                   : "No one owes you",
             ),
             _chip(
-              youOwe > 0 ? Colors.red.withOpacity(.12) : Colors.grey.withOpacity(.12),
+              youOwe > 0 ? Colors.red.withValues(alpha: .12) : Colors.grey.withValues(alpha: .12),
               youOwe > 0 ? Colors.redAccent : Colors.grey.shade700,
               Icons.call_made_rounded,
               youOwe > 0 ? "You owe ₹${youOwe.toStringAsFixed(0)}" : "You owe none",
             ),
             _chip(
-              net >= 0 ? Colors.teal.withOpacity(.12) : Colors.orange.withOpacity(.12),
+              net >= 0 ? Colors.teal.withValues(alpha: .12) : Colors.orange.withValues(alpha: .12),
               net >= 0 ? Colors.teal.shade800 : Colors.orange.shade800,
               Icons.balance_rounded,
               net >= 0 ? "Net +₹${net.toStringAsFixed(0)}" : "Net -₹${(-net).toStringAsFixed(0)}",
             ),
             _chip(
-              Colors.indigo.withOpacity(.08),
+              Colors.indigo.withValues(alpha: .08),
               Colors.indigo.shade900,
               Icons.receipt_long,
               "Transactions $txCount",
@@ -140,7 +140,7 @@ class GroupTotalsTab extends StatelessWidget {
             IconButton.filled(
               onPressed: onRemind,
               style: ButtonStyle(
-                backgroundColor: MaterialStatePropertyAll(Colors.orange.shade600),
+                backgroundColor: WidgetStatePropertyAll(Colors.orange.shade600),
               ),
               icon: const Icon(Icons.notifications_active_rounded, color: Colors.white),
               tooltip: 'Send reminder',
@@ -187,7 +187,7 @@ class GroupTotalsTab extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(.05),
+                    color: Colors.black.withValues(alpha: .05),
                     blurRadius: 8,
                     offset: const Offset(0, 3),
                   )

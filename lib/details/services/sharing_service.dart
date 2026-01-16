@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/shared_item.dart';
-import '../models/recurring_rule.dart';
 import '../models/recurring_scope.dart';
 import '../models/group.dart';
 
@@ -85,9 +84,9 @@ class SharingService {
           friendId: targetFriendId,
           itemTitle: src.title ?? 'Shared item',
           dueOn: src.nextDueAt,
-          frequency: src.rule.frequency ?? '',
+          frequency: src.rule.frequency,
           amount: (() {
-            final a = (src.rule.amount ?? 0).toDouble();
+            final a = (src.rule.amount).toDouble();
             return a > 0 ? '₹${a.toStringAsFixed(0)}' : null;
           })(),
         );
@@ -131,7 +130,10 @@ class SharingService {
 
       // 3) Prepare clone JSON for group scope
       final participants = memberIds.isEmpty
-          ? ((data['participants']?['userIds'] as List?)?.whereType<String>().toList() ?? const [])
+          ? ((data['participants']?['userIds'] as List?)
+                  ?.whereType<String>()
+                  .toList() ??
+              const [])
           : memberIds;
 
       final clonedJson = _cloneForShare(
@@ -209,9 +211,12 @@ class SharingService {
     if (j['type'] != 'recurring-share') return null;
     if ((j['status'] ?? 'active') != 'active') return null;
 
-    final expiresAt = (j['expiresAt'] is Timestamp) ? (j['expiresAt'] as Timestamp).toDate() : null;
+    final expiresAt = (j['expiresAt'] is Timestamp)
+        ? (j['expiresAt'] as Timestamp).toDate()
+        : null;
     if (expiresAt != null && DateTime.now().isAfter(expiresAt)) {
-      await ref.update({'status': 'expired', 'updatedAt': FieldValue.serverTimestamp()});
+      await ref.update(
+          {'status': 'expired', 'updatedAt': FieldValue.serverTimestamp()});
       return null;
     }
 
@@ -239,7 +244,8 @@ class SharingService {
     );
 
     final newItem = SharedItem.fromJson('temp', clonedJson);
-    final newId = await _recurring.add(inviter, acceptorUserPhone, newItem, mirrorToFriend: true);
+    final newId = await _recurring.add(inviter, acceptorUserPhone, newItem,
+        mirrorToFriend: true);
 
     // mark consumed
     await ref.update({
@@ -257,7 +263,11 @@ class SharingService {
   /// Returns a path-aware docRef for friend/group scope.
   DocumentReference<Map<String, dynamic>> _docFor(RecurringScope s, String id) {
     if (s.isGroup) {
-      return _db.collection('groups').doc(s.groupId!).collection('recurring').doc(id);
+      return _db
+          .collection('groups')
+          .doc(s.groupId!)
+          .collection('recurring')
+          .doc(id);
     }
     return _db
         .collection('users')
@@ -276,13 +286,14 @@ class SharingService {
     required String sharedFromId,
     String? ownerUser,
     required String sharedToKind, // 'friend' | 'group'
-    required String sharedToId,   // friendId or groupId
+    required String sharedToId, // friendId or groupId
   }) {
     // Deep copy
     final j = Map<String, dynamic>.from(original);
 
     // Ensure rule presence & normalize anchorDate to Timestamp if needed
-    final rule = (j['rule'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+    final rule =
+        (j['rule'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
     if (rule['status'] == null) rule['status'] = 'active';
 
     final ad = rule['anchorDate'];
@@ -308,7 +319,8 @@ class SharingService {
       if (ownerUser != null) 'ownerUser': ownerUser,
       'sharedAt': FieldValue.serverTimestamp(),
     };
-    final meta = (j['meta'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+    final meta =
+        (j['meta'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
     meta['shared'] = sharedBlock;
     j['meta'] = meta;
 
@@ -329,8 +341,10 @@ class SharingService {
   }
 
   String _randomToken(int len) {
-    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const chars =
+        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     final r = Random.secure();
-    return String.fromCharCodes(List.generate(len, (_) => chars.codeUnitAt(r.nextInt(chars.length))));
+    return String.fromCharCodes(
+        List.generate(len, (_) => chars.codeUnitAt(r.nextInt(chars.length))));
   }
 }

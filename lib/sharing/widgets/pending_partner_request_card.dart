@@ -16,16 +16,18 @@ class _PendingPartnerRequestCard extends StatefulWidget {
   const _PendingPartnerRequestCard({
     required this.request,
     required this.onApprove,
-    required this.onReject,
-    this.viewerPhone, // optional, non-breaking
+    required this.onReject, // optional, non-breaking
+    this.viewerPhone,
     Key? key,
   }) : super(key: key);
 
   @override
-  State<_PendingPartnerRequestCard> createState() => _PendingPartnerRequestCardState();
+  State<_PendingPartnerRequestCard> createState() =>
+      _PendingPartnerRequestCardState();
 }
 
-class _PendingPartnerRequestCardState extends State<_PendingPartnerRequestCard> {
+class _PendingPartnerRequestCardState
+    extends State<_PendingPartnerRequestCard> {
   late final Map<String, dynamic> _data;
   late final String _requesterId;
   late final Future<DocumentSnapshot<Map<String, dynamic>>> _userFuture;
@@ -35,7 +37,8 @@ class _PendingPartnerRequestCardState extends State<_PendingPartnerRequestCard> 
     super.initState();
     _data = (widget.request.data() as Map<String, dynamic>? ?? {});
     _requesterId = _bestRequesterId(_data);
-    _userFuture = FirebaseFirestore.instance.collection('users').doc(_requesterId).get();
+    _userFuture =
+        FirebaseFirestore.instance.collection('users').doc(_requesterId).get();
   }
 
   String _bestRequesterId(Map<String, dynamic> data) {
@@ -79,7 +82,7 @@ class _PendingPartnerRequestCardState extends State<_PendingPartnerRequestCard> 
       ),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.05),
+          color: Colors.black.withValues(alpha: 0.05),
           blurRadius: 16,
           offset: const Offset(0, 8),
         ),
@@ -104,8 +107,10 @@ class _PendingPartnerRequestCardState extends State<_PendingPartnerRequestCard> 
     final toPhone = (_data['toUserPhone'] ?? '').toString().trim();
     final fromPhone = (_data['fromUserPhone'] ?? '').toString().trim();
     final viewer = widget.viewerPhone?.trim();
-    final isIncomingForViewer = viewer != null && viewer == toPhone && toPhone.isNotEmpty;
-    final isOutgoingFromViewer = viewer != null && viewer == fromPhone && fromPhone.isNotEmpty;
+    final isIncomingForViewer =
+        viewer != null && viewer == toPhone && toPhone.isNotEmpty;
+    final isOutgoingFromViewer =
+        viewer != null && viewer == fromPhone && fromPhone.isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -124,7 +129,10 @@ class _PendingPartnerRequestCardState extends State<_PendingPartnerRequestCard> 
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(100),
                   gradient: LinearGradient(
-                    colors: [Colors.white.withOpacity(0.55), Colors.white.withOpacity(0.0)],
+                    colors: [
+                      Colors.white.withValues(alpha: 0.55),
+                      Colors.white.withValues(alpha: 0.0)
+                    ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -138,7 +146,9 @@ class _PendingPartnerRequestCardState extends State<_PendingPartnerRequestCard> 
                 builder: (context, snap) {
                   String displayName = _requesterId;
                   String? avatar;
-                  if (snap.connectionState == ConnectionState.done && snap.hasData && snap.data!.exists) {
+                  if (snap.connectionState == ConnectionState.done &&
+                      snap.hasData &&
+                      snap.data!.exists) {
                     final u = snap.data!.data();
                     if (u != null) {
                       final n = (u['name'] ?? '').toString().trim();
@@ -150,10 +160,12 @@ class _PendingPartnerRequestCardState extends State<_PendingPartnerRequestCard> 
 
                   final leading = CircleAvatar(
                     radius: 24,
-                    backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.08),
+                    backgroundColor:
+                        Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
                     foregroundImage: _avatarProvider(avatar),
                     child: _avatarProvider(avatar) == null
-                        ? Icon(Icons.person, color: Theme.of(context).colorScheme.primary)
+                        ? Icon(Icons.person,
+                            color: Theme.of(context).colorScheme.primary)
                         : null,
                   );
 
@@ -164,15 +176,20 @@ class _PendingPartnerRequestCardState extends State<_PendingPartnerRequestCard> 
                           displayName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 16),
                         ),
                       ),
                       if ((relation ?? '').isNotEmpty) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
@@ -193,9 +210,14 @@ class _PendingPartnerRequestCardState extends State<_PendingPartnerRequestCard> 
                       Padding(
                         padding: const EdgeInsets.only(right: 6, bottom: 6),
                         child: Chip(
-                          label: Text(SharingPermissions.label(k), style: const TextStyle(fontSize: 11)),
-                          backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.08),
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          label: Text(SharingPermissions.label(k),
+                              style: const TextStyle(fontSize: 11)),
+                          backgroundColor: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.08),
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
                           visualDensity: VisualDensity.compact,
                           padding: const EdgeInsets.symmetric(horizontal: 6),
                         ),
@@ -211,12 +233,14 @@ class _PendingPartnerRequestCardState extends State<_PendingPartnerRequestCard> 
                           ScaffoldMessenger.of(context).hideCurrentSnackBar();
                           Clipboard.setData(ClipboardData(text: _requesterId));
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Requester ID copied')),
+                            const SnackBar(
+                                content: Text('Requester ID copied')),
                           );
                         },
                         child: Text(
                           _maskId(_requesterId),
-                          style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                          style:
+                              TextStyle(color: Colors.grey[600], fontSize: 12),
                         ),
                       ),
                       if ((note ?? '').isNotEmpty)
@@ -248,11 +272,20 @@ class _PendingPartnerRequestCardState extends State<_PendingPartnerRequestCard> 
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Container(height: 12, width: 140, decoration: _shimmerBox()),
+                              Container(
+                                  height: 12,
+                                  width: 140,
+                                  decoration: _shimmerBox()),
                               const SizedBox(height: 8),
-                              Container(height: 10, width: 100, decoration: _shimmerBox()),
+                              Container(
+                                  height: 10,
+                                  width: 100,
+                                  decoration: _shimmerBox()),
                               const SizedBox(height: 8),
-                              Container(height: 22, width: 180, decoration: _shimmerBox()),
+                              Container(
+                                  height: 22,
+                                  width: 180,
+                                  decoration: _shimmerBox()),
                             ],
                           ),
                         ),
@@ -301,9 +334,9 @@ class _PendingPartnerRequestCardState extends State<_PendingPartnerRequestCard> 
   }
 
   BoxDecoration _shimmerBox() => BoxDecoration(
-    color: Colors.grey.shade200,
-    borderRadius: BorderRadius.circular(6),
-  );
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(6),
+      );
 }
 
 class _TrailingArea extends StatelessWidget {
@@ -330,7 +363,7 @@ class _TrailingArea extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(0.12),
+        color: Colors.grey.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -371,15 +404,20 @@ class _ActionsState extends State<_Actions> {
         SizedBox(
           height: 36,
           child: ElevatedButton.icon(
-            onPressed: _busy ? null : () => _safeRun(() async => widget.onApprove()),
+            onPressed:
+                _busy ? null : () => _safeRun(() async => widget.onApprove()),
             icon: _busy
-                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.check_circle, size: 18),
             label: const Text('Approve'),
             style: ElevatedButton.styleFrom(
               minimumSize: const Size(92, 36),
               padding: const EdgeInsets.symmetric(horizontal: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
           ),
         ),
@@ -387,14 +425,16 @@ class _ActionsState extends State<_Actions> {
         SizedBox(
           height: 36,
           child: OutlinedButton.icon(
-            onPressed: _busy ? null : () => _safeRun(() async => widget.onReject()),
+            onPressed:
+                _busy ? null : () => _safeRun(() async => widget.onReject()),
             icon: const Icon(Icons.cancel, size: 18, color: Colors.red),
             label: const Text('Reject'),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(92, 36),
               padding: const EdgeInsets.symmetric(horizontal: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              side: BorderSide(color: Colors.red.withOpacity(0.6)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              side: BorderSide(color: Colors.red.withValues(alpha: 0.6)),
               foregroundColor: Colors.red,
             ),
           ),

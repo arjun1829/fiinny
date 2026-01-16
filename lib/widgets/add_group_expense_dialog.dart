@@ -1,6 +1,5 @@
 // lib/widget/add_group_expense_dialog.dart
 import 'dart:io' show File;
-import 'dart:typed_data';
 
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
@@ -499,7 +498,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
     if (url.startsWith('assets/')) prov = AssetImage(url);
     return CircleAvatar(
       radius: r,
-      backgroundColor: _kTeal.withOpacity(.12),
+      backgroundColor: _kTeal.withValues(alpha: .12),
       foregroundImage: prov,
       child: prov == null
           ? Text((f.name.isNotEmpty ? f.name[0] : '👤').toUpperCase(), style: const TextStyle(fontSize: 12))
@@ -513,7 +512,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
     if (url.startsWith('http')) prov = NetworkImage(url);
     return CircleAvatar(
       radius: r,
-      backgroundColor: _kIndigo.withOpacity(.12),
+      backgroundColor: _kIndigo.withValues(alpha: .12),
       foregroundImage: prov,
       child: prov == null ? Text(widget.userName.characters.first.toUpperCase()) : null,
     );
@@ -533,7 +532,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white.withOpacity(.6)),
+              border: Border.all(color: Colors.white.withValues(alpha: .6)),
             ),
             child: Stack(children: [
               AnimatedContainer(
@@ -648,7 +647,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
         _SlideFade(
           delayMs: 60,
           child: DropdownButtonFormField<String>(
-            value: _category.isEmpty ? null : _category,
+            initialValue: _category.isEmpty ? null : _category,
             items: _categories
                 .map((c) => DropdownMenuItem(
               value: c.label,
@@ -692,7 +691,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
         _SlideFade(
           delayMs: 0,
           child: DropdownButtonFormField<String>(
-            value: _selectedPayerPhone,
+            initialValue: _selectedPayerPhone,
             decoration: _pillDec(label: "Paid by", icon: Icons.wallet),
             items: groupMembers.map((m) {
               return DropdownMenuItem(
@@ -731,7 +730,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
           },
           title: const Text("Custom split", style: TextStyle(fontWeight: FontWeight.w700)),
           subtitle: const Text("Turn off for equal split"),
-          activeColor: _kIndigo,
+          activeTrackColor: _kIndigo,
         ),
         if (_customSplit) ...[
           Wrap(
@@ -920,11 +919,11 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                         child: Container(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
-                              colors: [Colors.white.withOpacity(.98), Colors.white.withOpacity(.94)],
+                              colors: [Colors.white.withValues(alpha: .98), Colors.white.withValues(alpha: .94)],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
-                            border: Border.all(color: Colors.white.withOpacity(.65)),
+                            border: Border.all(color: Colors.white.withValues(alpha: .65)),
                             boxShadow: const [BoxShadow(color: Color(0x1F000000), blurRadius: 22, offset: Offset(0, 10))],
                             borderRadius: BorderRadius.circular(20),
                           ),
@@ -966,7 +965,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                               icon: const Icon(Icons.chevron_left_rounded),
                               label: const Text("Back"),
                               style: OutlinedButton.styleFrom(
-                                side: BorderSide(color: _kIndigo.withOpacity(.35)),
+                                side: BorderSide(color: _kIndigo.withValues(alpha: .35)),
                                 foregroundColor: _kIndigo,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

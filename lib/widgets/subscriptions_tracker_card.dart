@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_firestore/cloud_firestore.dart' show WriteBatch;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -148,7 +147,7 @@ class _SubscriptionsTrackerCardState extends State<SubscriptionsTrackerCard> {
           .get();
       DateTime? prevFrom;
       if (metaSnap.exists) {
-        final m = metaSnap.data() as Map<String, dynamic>?;
+        final m = metaSnap.data();
         final ts = m?['scannedFrom'];
         if (ts is Timestamp) prevFrom = ts.toDate();
       }
@@ -168,7 +167,7 @@ class _SubscriptionsTrackerCardState extends State<SubscriptionsTrackerCard> {
             .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
             .orderBy('date')
             .limit(pageSize);
-        if (cursor != null) q = (q as Query).startAfterDocument(cursor);
+        if (cursor != null) q = (q).startAfterDocument(cursor);
 
         final snap = await q.get();
         if (snap.docs.isEmpty) break;
@@ -205,10 +204,8 @@ class _SubscriptionsTrackerCardState extends State<SubscriptionsTrackerCard> {
           'status': 'pending',
           'updatedAt': FieldValue.serverTimestamp(),
         };
-        if (r.occurrences != null) {
-          data['count'] = r.occurrences;
-        }
-        batch.set(doc, data, SetOptions(merge: true));
+        data['count'] = r.occurrences;
+              batch.set(doc, data, SetOptions(merge: true));
       }
 
       final meta = db
@@ -256,7 +253,7 @@ class _SubscriptionsTrackerCardState extends State<SubscriptionsTrackerCard> {
       return Container(
         padding: const EdgeInsets.all(Fx.s12),
         decoration: BoxDecoration(
-          color: Colors.green.withOpacity(0.08),
+          color: Colors.green.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(Fx.r12),
         ),
         child: const Row(children: [
@@ -271,7 +268,7 @@ class _SubscriptionsTrackerCardState extends State<SubscriptionsTrackerCard> {
     return Container(
       padding: const EdgeInsets.all(Fx.s12),
       decoration: BoxDecoration(
-        color: Colors.green.withOpacity(0.08),
+        color: Colors.green.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(Fx.r12),
       ),
       child: Row(children: [

@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:characters/characters.dart';
 import 'package:flutter/material.dart';
 
 import 'package:lifemap/ui/theme/small_typography_overlay.dart';
@@ -144,13 +143,13 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
                     const BorderRadius.vertical(top: Radius.circular(24)),
                 gradient: LinearGradient(
                   colors: [
-                    Colors.white.withOpacity(0.96),
-                    Colors.white.withOpacity(0.90),
+                    Colors.white.withValues(alpha: 0.96),
+                    Colors.white.withValues(alpha: 0.90),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
-                border: Border.all(color: Colors.white.withOpacity(0.55)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
                 boxShadow: const [
                   BoxShadow(
                     color: Color(0x23000000),
@@ -358,7 +357,7 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
           return _QuickListTile(
             leading: CircleAvatar(
               radius: 20,
-              backgroundColor: const Color(0xFF09857a).withOpacity(0.08),
+              backgroundColor: const Color(0xFF09857a).withValues(alpha: 0.08),
               child: Text(initials,
                   style: const TextStyle(fontWeight: FontWeight.w700)),
             ),
@@ -375,7 +374,7 @@ class _QuickCreatePickSheetState extends State<_QuickCreatePickSheet> {
           return _QuickListTile(
             leading: CircleAvatar(
               radius: 20,
-              backgroundColor: const Color(0xFF09857a).withOpacity(0.08),
+              backgroundColor: const Color(0xFF09857a).withValues(alpha: 0.08),
               child: Text(initials,
                   style: const TextStyle(fontWeight: FontWeight.w700)),
             ),
@@ -434,7 +433,7 @@ class _QuickActionChip extends StatelessWidget {
       onPressed: onTap,
       elevation: 1,
       pressElevation: 0,
-      backgroundColor: const Color(0xFF09857a).withOpacity(0.10),
+      backgroundColor: const Color(0xFF09857a).withValues(alpha: 0.10),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
         side: const BorderSide(color: Color(0xFF09857a)),
@@ -529,7 +528,7 @@ class _NewEntryCard extends StatelessWidget {
             children: [
               Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF09857a).withOpacity(0.12),
+                  color: const Color(0xFF09857a).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 padding: const EdgeInsets.all(12),

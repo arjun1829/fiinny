@@ -33,14 +33,22 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
   Map<String, double>? _customSplits;
 
   // -- New: label support --
-  List<String> _labels = ["Goa Trip", "Birthday", "Office", "Emergency", "Rent"];
+  List<String> _labels = [
+    "Goa Trip",
+    "Birthday",
+    "Office",
+    "Emergency",
+    "Rent"
+  ];
   String? _selectedLabel;
 
   @override
   void initState() {
     super.initState();
-    _membersFuture = FriendService().getFriendsByPhones(widget.userPhone, widget.group.memberPhones);
-    _selectedMemberPhones = List.from(widget.group.memberPhones)..remove(widget.userPhone);
+    _membersFuture = FriendService()
+        .getFriendsByIds(widget.userPhone, widget.group.memberPhones);
+    _selectedMemberPhones = List.from(widget.group.memberPhones)
+      ..remove(widget.userPhone);
     _selectedPayerPhone = widget.userPhone;
   }
 
@@ -57,7 +65,8 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
     }
 
     // Never include payer in splitWith list!
-    List<String> splitWith = List.from(_selectedMemberPhones)..remove(_selectedPayerPhone);
+    final List<String> splitWith = List.from(_selectedMemberPhones)
+      ..remove(_selectedPayerPhone);
 
     final totalAmount = double.parse(_amountController.text);
 
@@ -65,13 +74,16 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
     if (_customSplits != null) {
       splitsToSave = {
         for (final entry in _customSplits!.entries)
-          if (_selectedMemberPhones.contains(entry.key) || entry.key == _selectedPayerPhone)
+          if (_selectedMemberPhones.contains(entry.key) ||
+              entry.key == _selectedPayerPhone)
             entry.key: entry.value
       };
       final splitSum = splitsToSave.values.fold(0.0, (a, b) => a + b);
       if ((splitSum - totalAmount).abs() > 0.5) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Custom split total must equal the expense amount!')),
+          SnackBar(
+              content:
+                  Text('Custom split total must equal the expense amount!')),
         );
         return;
       }
@@ -102,17 +114,19 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
   }
 
   void _showCustomSplitDialog(List<FriendModel> members) async {
-    List<FriendModel> selected = [
+    final List<FriendModel> selected = [
       ...members.where((m) => _selectedMemberPhones.contains(m.phone)),
       if (!members.any((m) => m.phone == _selectedPayerPhone))
-        FriendModel(phone: _selectedPayerPhone!, name: "You", email: "", avatar: "👤"),
+        FriendModel(
+            phone: _selectedPayerPhone!, name: "You", email: "", avatar: "👤"),
     ];
 
     // Always include payer for custom split
     if (!selected.any((m) => m.phone == _selectedPayerPhone)) {
       final payerModel = members.firstWhere(
-            (m) => m.phone == _selectedPayerPhone,
-        orElse: () => FriendModel(phone: _selectedPayerPhone!, name: "You", email: "", avatar: "👤"),
+        (m) => m.phone == _selectedPayerPhone,
+        orElse: () => FriendModel(
+            phone: _selectedPayerPhone!, name: "You", email: "", avatar: "👤"),
       );
       selected.add(payerModel);
     }
@@ -121,7 +135,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
     final n = selected.length;
     final perHead = n > 0 ? (totalAmount / n) : 0;
 
-    Map<String, TextEditingController> controllers = {
+    final Map<String, TextEditingController> controllers = {
       for (final m in selected)
         m.phone: TextEditingController(
           text: (_customSplits != null && _customSplits![m.phone] != null)
@@ -144,25 +158,28 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                     Text("Total: ₹${totalAmount.toStringAsFixed(2)}"),
                     const SizedBox(height: 10),
                     ...selected.map((m) => Row(
-                      children: [
-                        Text("${m.avatar} ${m.name}: "),
-                        SizedBox(
-                          width: 70,
-                          child: TextField(
-                            controller: controllers[m.phone],
-                            keyboardType: TextInputType.numberWithOptions(decimal: true),
-                            decoration: const InputDecoration(suffixText: "₹"),
-                          ),
-                        ),
-                      ],
-                    )),
+                          children: [
+                            Text("${m.avatar} ${m.name}: "),
+                            SizedBox(
+                              width: 70,
+                              child: TextField(
+                                controller: controllers[m.phone],
+                                keyboardType: TextInputType.numberWithOptions(
+                                    decimal: true),
+                                decoration:
+                                    const InputDecoration(suffixText: "₹"),
+                              ),
+                            ),
+                          ],
+                        )),
                     const SizedBox(height: 10),
                     ElevatedButton.icon(
                       icon: const Icon(Icons.equalizer),
                       label: const Text("Split Equally"),
                       onPressed: () {
                         for (final m in selected) {
-                          controllers[m.phone]!.text = perHead.toStringAsFixed(2);
+                          controllers[m.phone]!.text =
+                              perHead.toStringAsFixed(2);
                         }
                         setState(() {});
                       },
@@ -180,13 +197,16 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                     final splits = <String, double>{};
                     double sum = 0.0;
                     for (final m in selected) {
-                      final val = double.tryParse(controllers[m.phone]!.text) ?? 0;
+                      final val =
+                          double.tryParse(controllers[m.phone]!.text) ?? 0;
                       splits[m.phone] = val;
                       sum += val;
                     }
                     if ((sum - totalAmount).abs() > 0.5) {
                       ScaffoldMessenger.of(ctx).showSnackBar(
-                        SnackBar(content: Text("Sum must be ₹${totalAmount.toStringAsFixed(2)}")),
+                        SnackBar(
+                            content: Text(
+                                "Sum must be ₹${totalAmount.toStringAsFixed(2)}")),
                       );
                       return;
                     }
@@ -224,13 +244,18 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
       body: FutureBuilder<List<FriendModel>>(
         future: _membersFuture,
         builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData)
+            return const Center(child: CircularProgressIndicator());
           var members = snapshot.data!;
 
           // Defensive: Ensure current user always present (for payer)
           if (!members.any((m) => m.phone == widget.userPhone)) {
             members = [
-              FriendModel(phone: widget.userPhone, name: 'You', email: '', avatar: '👤'),
+              FriendModel(
+                  phone: widget.userPhone,
+                  name: 'You',
+                  email: '',
+                  avatar: '👤'),
               ...members
             ];
           }
@@ -260,16 +285,16 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value: _selectedLabel,
+                      initialValue: _selectedLabel,
                       items: [
                         const DropdownMenuItem(
                           value: null,
                           child: Text("No label"),
                         ),
                         ..._labels.map((label) => DropdownMenuItem(
-                          value: label,
-                          child: Text(label),
-                        )),
+                              value: label,
+                              child: Text(label),
+                            )),
                       ],
                       onChanged: (val) {
                         setState(() {
@@ -279,7 +304,8 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                       },
                       decoration: InputDecoration(
                         labelText: "Select Label",
-                        prefixIcon: Icon(Icons.label_important, color: Colors.amber[700]),
+                        prefixIcon: Icon(Icons.label_important,
+                            color: Colors.amber[700]),
                       ),
                     ),
                   ),
@@ -289,7 +315,8 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                       controller: _labelController,
                       decoration: InputDecoration(
                         labelText: "Or type new label",
-                        prefixIcon: Icon(Icons.create, color: Colors.amber[800]),
+                        prefixIcon:
+                            Icon(Icons.create, color: Colors.amber[800]),
                         hintText: "Eg: Goa Trip",
                       ),
                       onChanged: (val) {
@@ -306,40 +333,49 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Text("Date: ${_selectedDate.toLocal().toString().split(' ')[0]}"),
+                  Text(
+                      "Date: ${_selectedDate.toLocal().toString().split(' ')[0]}"),
                   IconButton(
                     icon: const Icon(Icons.calendar_today),
                     onPressed: () async {
-                      DateTime? picked = await showDatePicker(
+                      final DateTime? picked = await showDatePicker(
                         context: context,
                         initialDate: _selectedDate,
                         firstDate: DateTime(2000),
                         lastDate: DateTime(2100),
                       );
-                      if (picked != null) setState(() => _selectedDate = picked);
+                      if (picked != null)
+                        setState(() => _selectedDate = picked);
                     },
                   ),
                 ],
               ),
               const Divider(height: 28),
-              const Text("Who paid?", style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text("Who paid?",
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               Wrap(
                 spacing: 10,
-                children: members.map((m) => ChoiceChip(
-                  label: Text('${m.avatar} ${m.name}'),
-                  selected: _selectedPayerPhone == m.phone,
-                  onSelected: (_) {
-                    setState(() {
-                      _selectedPayerPhone = m.phone;
-                      // By default, split with everyone except payer
-                      _selectedMemberPhones = members.where((f) => f.phone != m.phone).map((f) => f.phone).toList();
-                      _customSplits = null;
-                    });
-                  },
-                )).toList(),
+                children: members
+                    .map((m) => ChoiceChip(
+                          label: Text('${m.avatar} ${m.name}'),
+                          selected: _selectedPayerPhone == m.phone,
+                          onSelected: (_) {
+                            setState(() {
+                              _selectedPayerPhone = m.phone;
+                              // By default, split with everyone except payer
+                              _selectedMemberPhones = members
+                                  .where((f) => f.phone != m.phone)
+                                  .map((f) => f.phone)
+                                  .toList();
+                              _customSplits = null;
+                            });
+                          },
+                        ))
+                    .toList(),
               ),
               const SizedBox(height: 18),
-              const Text("Split with:", style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text("Split with:",
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               Wrap(
                 spacing: 8,
                 children: members
@@ -363,7 +399,9 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                 }).toList(),
               ),
               const SizedBox(height: 18),
-              if (_selectedMemberPhones.length > 1 && (_amountController.text.isNotEmpty && double.tryParse(_amountController.text) != null))
+              if (_selectedMemberPhones.length > 1 &&
+                  (_amountController.text.isNotEmpty &&
+                      double.tryParse(_amountController.text) != null))
                 OutlinedButton.icon(
                   icon: const Icon(Icons.tune),
                   label: const Text("Edit Split"),
@@ -379,10 +417,18 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text("Custom Split:", style: TextStyle(fontWeight: FontWeight.bold)),
+                      const Text("Custom Split:",
+                          style: TextStyle(fontWeight: FontWeight.bold)),
                       ..._customSplits!.entries.map((e) {
-                        final friend = members.firstWhere((m) => m.phone == e.key, orElse: () => FriendModel(phone: e.key, name: e.key, email: "", avatar: "👤"));
-                        return Text("${friend.avatar} ${friend.name}: ₹${e.value.toStringAsFixed(2)}");
+                        final friend = members.firstWhere(
+                            (m) => m.phone == e.key,
+                            orElse: () => FriendModel(
+                                phone: e.key,
+                                name: e.key,
+                                email: "",
+                                avatar: "👤"));
+                        return Text(
+                            "${friend.avatar} ${friend.name}: ₹${e.value.toStringAsFixed(2)}");
                       }).toList(),
                     ],
                   ),
@@ -395,7 +441,8 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.deepPurple,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ],

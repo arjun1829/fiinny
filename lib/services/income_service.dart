@@ -5,10 +5,12 @@ import '../models/income_item.dart';
 /// Top-level query spec for hybrid search (server coarse + client refine).
 class IncomeQuery {
   final List<String>? categories; // filters "category"
-  final List<String>? labels;     // filters "labels[]" (legacy "label" covered by text)
+  final List<String>?
+      labels; // filters "labels[]" (legacy "label" covered by text)
   final DateTime? from;
   final DateTime? to;
-  final String? text;             // searched in title, comments, note, category, labels, label, source
+  final String?
+      text; // searched in title, comments, note, category, labels, label, source
   final double? minAmount;
   final double? maxAmount;
   final int limit;
@@ -31,7 +33,8 @@ class IncomeService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // incomes/<userId>/incomes/*
-  CollectionReference<Map<String, dynamic>> getIncomesCollection(String userId) {
+  CollectionReference<Map<String, dynamic>> getIncomesCollection(
+      String userId) {
     return _firestore.collection('users').doc(userId).collection('incomes');
   }
 
@@ -63,14 +66,15 @@ class IncomeService {
     return getIncomesCollection(userId)
         .orderBy('date', descending: true)
         .snapshots()
-        .map((snap) => snap.docs.map((d) => IncomeItem.fromJson(d.data())).toList());
+        .map((snap) =>
+            snap.docs.map((d) => IncomeItem.fromJson(d.data())).toList());
   }
 
   Future<List<IncomeItem>> getIncomesInDateRange(
-      String userId, {
-        required DateTime start,
-        required DateTime end,
-      }) async {
+    String userId, {
+    required DateTime start,
+    required DateTime end,
+  }) async {
     final snap = await getIncomesCollection(userId)
         .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
         .where('date', isLessThan: Timestamp.fromDate(end))
@@ -82,7 +86,8 @@ class IncomeService {
   // ===================== 🔎 Facets =====================
 
   /// Unique labels for this user (from `labels[]` + legacy `label`)
-  Future<List<String>> distinctLabels(String userId, {int scanLimit = 1000}) async {
+  Future<List<String>> distinctLabels(String userId,
+      {int scanLimit = 1000}) async {
     final snap = await getIncomesCollection(userId).limit(scanLimit).get();
     final out = <String>{};
     for (final d in snap.docs) {
@@ -90,23 +95,30 @@ class IncomeService {
       final raw = data['labels'];
       if (raw is List) {
         for (final v in raw) {
-          if (v is String && v.trim().isNotEmpty) out.add(v.trim());
+          if (v is String && v.trim().isNotEmpty) {
+            out.add(v.trim());
+          }
         }
       }
       final legacy = data['label'];
-      if (legacy is String && legacy.trim().isNotEmpty) out.add(legacy.trim());
+      if (legacy is String && legacy.trim().isNotEmpty) {
+        out.add(legacy.trim());
+      }
     }
     final list = out.toList()..sort();
     return list;
   }
 
   /// Unique categories for this user
-  Future<List<String>> distinctCategories(String userId, {int scanLimit = 1000}) async {
+  Future<List<String>> distinctCategories(String userId,
+      {int scanLimit = 1000}) async {
     final snap = await getIncomesCollection(userId).limit(scanLimit).get();
     final out = <String>{};
     for (final d in snap.docs) {
       final cat = d.data()['category'];
-      if (cat is String && cat.trim().isNotEmpty) out.add(cat.trim());
+      if (cat is String && cat.trim().isNotEmpty) {
+        out.add(cat.trim());
+      }
     }
     final list = out.toList()..sort();
     return list;
@@ -115,9 +127,9 @@ class IncomeService {
   // ===================== 🔎 Advanced Search =====================
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _rawQueryDocs(
-      String userId,
-      IncomeQuery q,
-      ) async {
+    String userId,
+    IncomeQuery q,
+  ) async {
     Query<Map<String, dynamic>> ref = getIncomesCollection(userId);
 
     if (q.from != null) {
@@ -153,16 +165,22 @@ class IncomeService {
         final hay = [
           e.title ?? '',
           e.comments ?? '',
-          e.note,              // parsed/system note
+          e.note, // parsed/system note
           e.category ?? '',
           e.label ?? '',
           e.source,
           ...e.labels,
         ].join(' ').toLowerCase();
-        if (!hay.contains(t)) return false;
+        if (!hay.contains(t)) {
+          return false;
+        }
       }
-      if (q.minAmount != null && e.amount < q.minAmount!) return false;
-      if (q.maxAmount != null && e.amount > q.maxAmount!) return false;
+      if (q.minAmount != null && e.amount < q.minAmount!) {
+        return false;
+      }
+      if (q.maxAmount != null && e.amount > q.maxAmount!) {
+        return false;
+      }
       return true;
     }).toList();
   }
@@ -173,16 +191,18 @@ class IncomeService {
   /// - Set title/comments/category/date
   /// - Add/Remove labels (computed and de-duplicated)
   Future<void> bulkEdit(
-      String userId,
-      List<String> incomeIds, {
-        String? title,
-        String? comments,
-        String? category,
-        DateTime? date,
-        List<String>? addLabels,
-        List<String>? removeLabels,
-      }) async {
-    if (incomeIds.isEmpty) return;
+    String userId,
+    List<String> incomeIds, {
+    String? title,
+    String? comments,
+    String? category,
+    DateTime? date,
+    List<String>? addLabels,
+    List<String>? removeLabels,
+  }) async {
+    if (incomeIds.isEmpty) {
+      return;
+    }
 
     // sanitize label inputs
     final add = (addLabels ?? const [])
@@ -197,7 +217,9 @@ class IncomeService {
     // We’ll issue a small batch per item to keep it simple and safe.
     for (final id in incomeIds) {
       final snap = await getIncomesCollection(userId).doc(id).get();
-      if (!snap.exists) continue;
+      if (!snap.exists) {
+        continue;
+      }
 
       final data = snap.data()!;
       final base = IncomeItem.fromJson(data);
@@ -206,15 +228,24 @@ class IncomeService {
       final currentLabels = <String>[...base.labels];
       final seen = <String>{};
 
-      currentLabels.addAll(add);                                      // additions
-      final filtered = currentLabels.where((l) => !rem.contains(l)).toList(); // removals
-      final finalLabels = filtered.where((l) => seen.add(l)).toList();        // de-dup
+      currentLabels.addAll(add); // additions
+      final filtered =
+          currentLabels.where((l) => !rem.contains(l)).toList(); // removals
+      final finalLabels = filtered.where((l) => seen.add(l)).toList(); // de-dup
 
       final update = <String, dynamic>{};
-      if (title != null) update['title'] = title;
-      if (comments != null) update['comments'] = comments;
-      if (category != null) update['category'] = category;
-      if (date != null) update['date'] = Timestamp.fromDate(date);
+      if (title != null) {
+        update['title'] = title;
+      }
+      if (comments != null) {
+        update['comments'] = comments;
+      }
+      if (category != null) {
+        update['category'] = category;
+      }
+      if (date != null) {
+        update['date'] = Timestamp.fromDate(date);
+      }
       update['labels'] = finalLabels;
 
       // Apply

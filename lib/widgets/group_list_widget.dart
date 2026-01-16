@@ -33,7 +33,7 @@ class GroupListWidget extends StatelessWidget {
         final memberAvatars = group.memberAvatarList;
 
         // Up to 5 avatars (emoji/url/initial/fallback)
-        List<Widget> avatarWidgets = [];
+        final List<Widget> avatarWidgets = [];
         for (int i = 0; i < memberAvatars.length && i < 5; i++) {
           final avatar = memberAvatars[i];
           if (avatar.isNotEmpty && avatar.startsWith("http")) {
@@ -85,7 +85,7 @@ class GroupListWidget extends StatelessWidget {
             )
                 : CircleAvatar(
               radius: 22,
-              backgroundColor: Theme.of(context).colorScheme.secondary.withOpacity(0.13),
+              backgroundColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.13),
               child: Icon(Icons.groups_rounded, color: Theme.of(context).colorScheme.secondary),
             ),
             title: Text(group.name),

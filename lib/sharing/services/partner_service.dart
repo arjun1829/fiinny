@@ -322,7 +322,7 @@ class PartnerService {
 
     // Batch fetch partner profiles (chunk by 10)
     final usersCol = _db.collection('users');
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> userDocs = [];
+    final List<QueryDocumentSnapshot<Map<String, dynamic>>> userDocs = [];
     const chunkSize = 10;
     for (var i = 0; i < partnerIds.length; i += chunkSize) {
       final end = (i + chunkSize < partnerIds.length) ? i + chunkSize : partnerIds.length;

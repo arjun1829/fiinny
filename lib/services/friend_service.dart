@@ -7,15 +7,16 @@ class FriendService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // ==== Collections ====
-  CollectionReference<Map<String, dynamic>> getFriendsCollection(String userPhone) {
+  CollectionReference<Map<String, dynamic>> getFriendsCollection(
+      String userPhone) {
     return _firestore.collection('users').doc(userPhone).collection('friends');
   }
 
   CollectionReference<Map<String, dynamic>> get _links =>
       _firestore.collection('friend_links'); // pending links by phone
 
-  CollectionReference<Map<String, dynamic>> get _pairs =>
-      _firestore.collection('friends_pairs'); // global friend edges (bidirectional pair)
+  CollectionReference<Map<String, dynamic>> get _pairs => _firestore
+      .collection('friends_pairs'); // global friend edges (bidirectional pair)
 
   // ==== Helpers ====
   String _pairId(String a, String b) {
@@ -41,16 +42,18 @@ class FriendService {
 
   // ==== Streams / Reads (UNCHANGED) ====
   Stream<List<FriendModel>> streamFriends(String userPhone) {
-    return getFriendsCollection(userPhone)
-        .orderBy('name')
-        .snapshots()
-        .map((snapshot) =>
-        snapshot.docs.map((doc) => FriendModel.fromFirestore(doc)).toList());
+    return getFriendsCollection(userPhone).orderBy('name').snapshots().map(
+        (snapshot) => snapshot.docs
+            .map((doc) => FriendModel.fromFirestore(doc))
+            .toList());
   }
 
-  Future<FriendModel?> getFriendByPhone(String userPhone, String friendPhone) async {
+  Future<FriendModel?> getFriendByPhone(
+      String userPhone, String friendPhone) async {
     final doc = await getFriendsCollection(userPhone).doc(friendPhone).get();
-    if (!doc.exists) return null;
+    if (!doc.exists) {
+      return null;
+    }
     return FriendModel.fromFirestore(doc);
   }
 
@@ -59,14 +62,27 @@ class FriendService {
     return snapshot.docs.map((doc) => FriendModel.fromFirestore(doc)).toList();
   }
 
+  Future<List<FriendModel>> getFriendsByIds(
+      String userPhone, List<String> phones) async {
+    final List<FriendModel> results = [];
+    for (final p in phones) {
+      final f = await getFriendByPhone(userPhone, p);
+      if (f != null) {
+        results.add(f);
+      }
+    }
+    return results;
+  }
+
   /// (Heavy) Searches everyone’s friend subcollections for a phone.
   /// Kept for backward-compat; prefer pairs/links for new features.
   Future<List<FriendModel>> findFriendsByPhoneGlobal(String phone) async {
     final usersCollection = _firestore.collection('users');
     final userDocs = await usersCollection.get();
-    List<FriendModel> foundFriends = [];
+    final List<FriendModel> foundFriends = [];
     for (var userDoc in userDocs.docs) {
-      final friendsCollection = usersCollection.doc(userDoc.id).collection('friends');
+      final friendsCollection =
+          usersCollection.doc(userDoc.id).collection('friends');
       final friendDoc = await friendsCollection.doc(phone).get();
       if (friendDoc.exists) {
         foundFriends.add(FriendModel.fromFirestore(friendDoc));
@@ -83,10 +99,10 @@ class FriendService {
   /// your name auto-appears in their Friends tab. If the friend already exists,
   /// we immediately create a reciprocal mirror and a global pair.
   Future<void> addFriendByPhone({
-    required String userPhone,    // E.164 of current user
-    required String friendName,   // user-entered label
-    required String friendPhone,  // E.164
-    String? avatar,               // emoji/url
+    required String userPhone, // E.164 of current user
+    required String friendName, // user-entered label
+    required String friendPhone, // E.164
+    String? avatar, // emoji/url
     String? email,
   }) async {
     // 1) Prevent duplicate in current user's list
@@ -140,10 +156,10 @@ class FriendService {
 
   /// Update friend details for the current user (by phone)
   Future<void> updateFriend(
-      String userPhone,
-      String friendPhone,
-      Map<String, dynamic> updates,
-      ) async {
+    String userPhone,
+    String friendPhone,
+    Map<String, dynamic> updates,
+  ) async {
     await getFriendsCollection(userPhone).doc(friendPhone).update(updates);
   }
 
@@ -202,7 +218,9 @@ class FriendService {
         .where('friendPhone', isEqualTo: myPhone)
         .where('status', isEqualTo: 'pending')
         .get();
-    if (q.docs.isEmpty) return;
+    if (q.docs.isEmpty) {
+      return;
+    }
 
     final batch = _firestore.batch();
 
@@ -213,29 +231,38 @@ class FriendService {
 
       // Global pair
       final pairId = _pairId(inviterPhone, myPhone);
-      batch.set(_pairs.doc(pairId), {
-        'a': inviterPhone,
-        'b': myPhone,
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      batch.set(
+          _pairs.doc(pairId),
+          {
+            'a': inviterPhone,
+            'b': myPhone,
+            'createdAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true));
 
       // Mirrors: inviter sees me
-      batch.set(getFriendsCollection(inviterPhone).doc(myPhone), {
-        'phone': myPhone,
-        'name': myName,
-        'avatar': '👤',
-        'source': 'claimed',
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      batch.set(
+          getFriendsCollection(inviterPhone).doc(myPhone),
+          {
+            'phone': myPhone,
+            'name': myName,
+            'avatar': '👤',
+            'source': 'claimed',
+            'createdAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true));
 
       // Mirrors: I see inviter
-      batch.set(getFriendsCollection(myPhone).doc(inviterPhone), {
-        'phone': inviterPhone,
-        'name': inviterProfileName,
-        'avatar': '👤',
-        'source': 'claimed',
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      batch.set(
+          getFriendsCollection(myPhone).doc(inviterPhone),
+          {
+            'phone': inviterPhone,
+            'name': inviterProfileName,
+            'avatar': '👤',
+            'source': 'claimed',
+            'createdAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true));
 
       // Mark link active
       batch.update(d.reference, {
@@ -245,10 +272,13 @@ class FriendService {
 
       // Also mark reverse direction active if it exists
       final reverse = _links.doc('${myPhone}_$inviterPhone');
-      batch.set(reverse, {
-        'status': 'active',
-        'claimedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      batch.set(
+          reverse,
+          {
+            'status': 'active',
+            'claimedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true));
     }
 
     await batch.commit();
@@ -256,11 +286,11 @@ class FriendService {
 
   /// Create reciprocal mirrors + global pair (idempotent).
   Future<void> _createGlobalPairAndMirrors(
-      String phoneA,
-      String phoneB, {
-        String? nameA, // how B shows in A's list
-        String? nameB, // how A shows in B's list
-      }) async {
+    String phoneA,
+    String phoneB, {
+    String? nameA, // how B shows in A's list
+    String? nameB, // how A shows in B's list
+  }) async {
     final batch = _firestore.batch();
     final pairId = _pairId(phoneA, phoneB);
 
@@ -268,28 +298,37 @@ class FriendService {
     final displayForB = nameB ?? await _userProfileName(phoneA);
 
     // Global pair
-    batch.set(_pairs.doc(pairId), {
-      'a': phoneA,
-      'b': phoneB,
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    batch.set(
+        _pairs.doc(pairId),
+        {
+          'a': phoneA,
+          'b': phoneB,
+          'createdAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true));
 
     // Mirrors
-    batch.set(getFriendsCollection(phoneA).doc(phoneB), {
-      'phone': phoneB,
-      'name': displayForA,
-      'avatar': '👤',
-      'source': 'pair',
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    batch.set(
+        getFriendsCollection(phoneA).doc(phoneB),
+        {
+          'phone': phoneB,
+          'name': displayForA,
+          'avatar': '👤',
+          'source': 'pair',
+          'createdAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true));
 
-    batch.set(getFriendsCollection(phoneB).doc(phoneA), {
-      'phone': phoneA,
-      'name': displayForB,
-      'avatar': '👤',
-      'source': 'pair',
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    batch.set(
+        getFriendsCollection(phoneB).doc(phoneA),
+        {
+          'phone': phoneA,
+          'name': displayForB,
+          'avatar': '👤',
+          'source': 'pair',
+          'createdAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true));
 
     await batch.commit();
   }

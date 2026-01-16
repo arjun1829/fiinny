@@ -58,7 +58,7 @@ class _QuickButton extends StatelessWidget {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: AppColors.mint.withOpacity(.14),
+                color: AppColors.mint.withValues(alpha: .14),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, color: AppColors.mint, size: 22),

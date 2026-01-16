@@ -30,8 +30,8 @@ class EditExpenseScreen extends StatefulWidget {
     required this.userPhone,
     required this.expense,
     this.initialStep = 0,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<EditExpenseScreen> createState() => _EditExpenseScreenState();
@@ -72,7 +72,13 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
   List<String> _subcategories = [];
 
   // Labels
-  List<String> _labels = ["Goa Trip", "Birthday", "Office", "Emergency", "Rent"];
+  final List<String> _labels = [
+    "Goa Trip",
+    "Birthday",
+    "Office",
+    "Emergency",
+    "Rent"
+  ];
   String? _selectedLabel;
 
   @override
@@ -87,7 +93,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       _step = requestedStep;
     }
     _pg = PageController(initialPage: _step);
-    _amountCtrl = TextEditingController(text: widget.expense.amount.toStringAsFixed(2));
+    _amountCtrl =
+        TextEditingController(text: widget.expense.amount.toStringAsFixed(2));
     final originalNote = widget.expense.note;
     final existingComments = widget.expense.comments ?? '';
     final looksStructured = _looksLikeBankReference(originalNote);
@@ -97,17 +104,18 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         ? existingComments
         : (looksStructured ? '' : originalNote);
     _noteCtrl = TextEditingController(text: initialPersonalNote);
-    _counterpartyCtrl = TextEditingController(text: widget.expense.counterparty ?? '');
+    _counterpartyCtrl =
+        TextEditingController(text: widget.expense.counterparty ?? '');
     _labelCtrl = TextEditingController(text: widget.expense.label ?? "");
     _customCategoryCtrl = TextEditingController(text: _customCategory);
     _date = widget.expense.date;
     _category = widget.expense.type;
     if (!_categories.contains(_category) && _category.trim().isNotEmpty) {
       if (_category == 'Other' && _categories.contains('Others')) {
-         _category = 'Others';
+        _category = 'Others';
       } else {
-         _customCategory = _category;
-         _category = 'Others'; 
+        _customCategory = _category;
+        _category = 'Others';
       }
     }
     if (!_categories.contains(_category)) {
@@ -121,7 +129,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
     }
     _selectedPayerPhone = widget.expense.payerId;
     _selectedGroupId = widget.expense.groupId;
-    
+
     // Logic Fix: Ensure we don't lose the friend if we swap payer to "You"
     // The previous logic only loaded `friendIds`. If the friend paid, they are the payer,
     // and might NOT be in `friendIds` (depending on how backend stores it).
@@ -131,7 +139,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       allParticipants.add(widget.expense.payerId);
     }
     _selectedFriendPhones = allParticipants.toList();
-    
+
     _cachedFriendSelection = List<String>.from(_selectedFriendPhones);
 
     // Init labels: bring existing label to dropdown list if not present
@@ -168,13 +176,13 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         final next = friends.map((f) => f.phone).toSet();
         final newlyAdded = next.difference(previous);
         if (newlyAdded.isNotEmpty) {
-          final phone = newlyAdded.firstWhere((p) => p.isNotEmpty,
-              orElse: () => '');
+          final phone =
+              newlyAdded.firstWhere((p) => p.isNotEmpty, orElse: () => '');
           if (phone.isNotEmpty) {
             if ((_selectedGroupId ?? '').isNotEmpty) {
               if (!_cachedFriendSelection.contains(phone)) {
-                _cachedFriendSelection = List<String>.from(_cachedFriendSelection)
-                  ..add(phone);
+                _cachedFriendSelection =
+                    List<String>.from(_cachedFriendSelection)..add(phone);
               }
             } else {
               if (!_selectedFriendPhones.contains(phone)) {
@@ -204,8 +212,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       final nextIds = groups.map((g) => g.id).toSet();
       final diff = nextIds.difference(previousIds);
       if (diff.isNotEmpty) {
-        final candidate = diff.firstWhere((id) => id.isNotEmpty,
-            orElse: () => '');
+        final candidate =
+            diff.firstWhere((id) => id.isNotEmpty, orElse: () => '');
         if (candidate.isNotEmpty) {
           newSelection = candidate;
         }
@@ -236,25 +244,27 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         secondary: kText,
         surface: Colors.white,
       ),
-      textButtonTheme:
-          TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: kText)),
+      textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(foregroundColor: kText)),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: kText,
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
       checkboxTheme: const CheckboxThemeData(
-        fillColor: MaterialStatePropertyAll(kText),
-        checkColor: MaterialStatePropertyAll(Colors.white),
+        fillColor: WidgetStatePropertyAll(kText),
+        checkColor: WidgetStatePropertyAll(Colors.white),
       ),
       radioTheme: const RadioThemeData(
-        fillColor: MaterialStatePropertyAll(kText),
+        fillColor: WidgetStatePropertyAll(kText),
       ),
       switchTheme: SwitchThemeData(
-        thumbColor: MaterialStateProperty.resolveWith((_) => kText),
-        trackColor: MaterialStateProperty.resolveWith((_) => kText.withOpacity(0.25)),
+        thumbColor: WidgetStateProperty.resolveWith((_) => kText),
+        trackColor: WidgetStateProperty.resolveWith(
+            (_) => kText.withValues(alpha: 0.25)),
       ),
     );
 
@@ -280,25 +290,27 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         secondary: kText,
         surface: Colors.white,
       ),
-      textButtonTheme:
-          TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: kText)),
+      textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(foregroundColor: kText)),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: kText,
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
       checkboxTheme: const CheckboxThemeData(
-        fillColor: MaterialStatePropertyAll(kText),
-        checkColor: MaterialStatePropertyAll(Colors.white),
+        fillColor: WidgetStatePropertyAll(kText),
+        checkColor: WidgetStatePropertyAll(Colors.white),
       ),
       radioTheme: const RadioThemeData(
-        fillColor: MaterialStatePropertyAll(kText),
+        fillColor: WidgetStatePropertyAll(kText),
       ),
       switchTheme: SwitchThemeData(
-        thumbColor: MaterialStateProperty.resolveWith((_) => kText),
-        trackColor: MaterialStateProperty.resolveWith((_) => kText.withOpacity(0.25)),
+        thumbColor: WidgetStateProperty.resolveWith((_) => kText),
+        trackColor: WidgetStateProperty.resolveWith(
+            (_) => kText.withValues(alpha: 0.25)),
       ),
     );
 
@@ -327,7 +339,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       if (nowGroup) {
         _cachedFriendSelection = List<String>.from(_selectedFriendPhones);
         _selectedFriendPhones.clear();
-      } else if (wasGroup && _selectedFriendPhones.isEmpty &&
+      } else if (wasGroup &&
+          _selectedFriendPhones.isEmpty &&
           _cachedFriendSelection.isNotEmpty) {
         _selectedFriendPhones = List<String>.from(_cachedFriendSelection);
         _cachedFriendSelection = List<String>.from(_selectedFriendPhones);
@@ -395,10 +408,12 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
     setState(() => _saving = true);
     try {
       final normalizedFriends = _selectedFriendPhones
-          .where((phone) => phone.trim().isNotEmpty && phone != widget.userPhone)
+          .where(
+              (phone) => phone.trim().isNotEmpty && phone != widget.userPhone)
           .toSet()
           .toList();
-      final groupId = (_selectedGroupId ?? '').isNotEmpty ? _selectedGroupId : null;
+      final groupId =
+          (_selectedGroupId ?? '').isNotEmpty ? _selectedGroupId : null;
       final friendIds = groupId != null ? <String>[] : normalizedFriends;
       final settledFriends = groupId != null
           ? widget.expense.settledFriendIds
@@ -406,9 +421,10 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
               .where((id) => normalizedFriends.contains(id))
               .toList();
 
-      final effectiveCategory = (_category == 'Other' && _customCategory.trim().isNotEmpty)
-          ? _customCategory.trim()
-          : _category;
+      final effectiveCategory =
+          (_category == 'Other' && _customCategory.trim().isNotEmpty)
+              ? _customCategory.trim()
+              : _category;
       final personalNote = _noteCtrl.text.trim();
       final bankNote = _bankRefText.trim();
       final combinedNote = [
@@ -426,7 +442,9 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         friendIds: friendIds,
         payerId: _selectedPayerPhone!,
         groupId: groupId,
-        counterparty: _counterpartyCtrl.text.trim().isNotEmpty ? _counterpartyCtrl.text.trim() : null,
+        counterparty: _counterpartyCtrl.text.trim().isNotEmpty
+            ? _counterpartyCtrl.text.trim()
+            : null,
         settledFriendIds: settledFriends,
         customSplits: widget.expense.customSplits,
         label: label,
@@ -513,118 +531,132 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
-              child: _StepperBar(current: _step, total: steps.length, labels: steps),
-            ),
-            Expanded(
-              child: PageView(
-                controller: _pg,
-                physics: const NeverScrollableScrollPhysics(),
+              child: Column(
                 children: [
-                  _StepBasics(
-                    amountCtrl: _amountCtrl,
-                    category: _category,
-                    categories: _categories,
-                    subcategory: _subcategory,
-                    subcategories: _subcategories,
-                    onSubcategory: (v) => setState(() => _subcategory = v),
-                    onCategory: (v) => setState(() {
-                      _category = v;
-                      _subcategories = kExpenseSubcategories[v] ?? [];
-                      _subcategory = _subcategories.isNotEmpty ? _subcategories.first : null;
-                      if (v != 'Other') {
-                        _customCategory = '';
-                        _customCategoryCtrl.clear();
-                      }
-                    }),
-                    date: _date,
-                    onPickDate: () async {
-                      final d = await showDatePicker(
-                        context: context,
-                        initialDate: _date,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (d != null) setState(() => _date = d);
-                    },
-                    noteCtrl: _noteCtrl,
-                    counterpartyCtrl: _counterpartyCtrl,
-                    onNext: _next,
-                    saving: _saving,
-                    bankRefText: _bankRefText,
-                    showBankReference: _showBankReference,
-                    customCategoryCtrl: _customCategoryCtrl,
-                    onCustomCategoryChanged: (v) => setState(() => _customCategory = v),
-                    isActive: _step == 0,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+                    child: _StepperBar(
+                        current: _step, total: steps.length, labels: steps),
                   ),
-                  PeopleSelectorStep(
-                    userPhone: widget.userPhone,
-                    payerPhone: _selectedPayerPhone,
-                    onPayer: (v) => setState(() => _selectedPayerPhone = v),
-                    friends: _friends,
-                    selectedFriends: _selectedFriendPhones,
-                    onToggleFriend: (phone, isSel) {
-                      setState(() {
-                        if (isSel) {
-                          if (!_selectedFriendPhones.contains(phone)) {
-                            _selectedFriendPhones.add(phone);
-                          }
-                        } else {
-                          _selectedFriendPhones.remove(phone);
-                        }
-                        if ((_selectedGroupId ?? '').isEmpty) {
-                          _cachedFriendSelection =
-                              List<String>.from(_selectedFriendPhones);
-                        }
-                      });
-                    },
-                    groups: _groups,
-                    selectedGroupId: _selectedGroupId,
-                    onGroup: (value) => _onGroupChanged(value),
-                    onAddFriend: _openAddFriend,
-                    onCreateGroup: _openCreateGroup,
-                    noteCtrl: _noteCtrl,
-                    isActive: _step == 1,
-                    labels: _labels,
-                    selectedLabel: _selectedLabel,
-                    onLabelSelect: (v) => setState(() {
-                      _selectedLabel = v;
-                      if (v != null) {
-                        _labelCtrl.clear();
-                      }
-                    }),
-                    labelCtrl: _labelCtrl,
-                    onNext: _next,
-                    onBack: _back,
-                    saving: _saving,
-                  ),
-                  _StepReview(
-                    amount: _amountCtrl.text.trim(),
-                    category: (_category == 'Other' && _customCategory.trim().isNotEmpty)
-                        ? _customCategory.trim()
-                        : _category,
-                    date: _date,
-                    personalNote: _noteCtrl.text.trim(),
-                    bankRef: _showBankReference ? _bankRefText.trim() : '',
-                    payerName: _selectedPayerPhone != null ? _nameForPhone(_selectedPayerPhone!) : '',
-                    splitNames: (_selectedGroupId ?? '').isNotEmpty
-                        ? const []
-                        : _selectedFriendPhones.map(_nameForPhone).toList(),
-                    label: _labelCtrl.text.trim().isNotEmpty ? _labelCtrl.text.trim() : (_selectedLabel ?? ''),
-                    groupName: _groupNameForId(_selectedGroupId),
-                    onBack: _back,
-                    onSave: _save,
-                    saving: _saving,
+                  Expanded(
+                    child: PageView(
+                      controller: _pg,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        _StepBasics(
+                          amountCtrl: _amountCtrl,
+                          category: _category,
+                          categories: _categories,
+                          subcategory: _subcategory,
+                          subcategories: _subcategories,
+                          onSubcategory: (v) =>
+                              setState(() => _subcategory = v),
+                          onCategory: (v) => setState(() {
+                            _category = v;
+                            _subcategories = kExpenseSubcategories[v] ?? [];
+                            _subcategory = _subcategories.isNotEmpty
+                                ? _subcategories.first
+                                : null;
+                            if (v != 'Other') {
+                              _customCategory = '';
+                              _customCategoryCtrl.clear();
+                            }
+                          }),
+                          date: _date,
+                          onPickDate: () async {
+                            final d = await showDatePicker(
+                              context: context,
+                              initialDate: _date,
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime(2100),
+                            );
+                            if (d != null) setState(() => _date = d);
+                          },
+                          noteCtrl: _noteCtrl,
+                          counterpartyCtrl: _counterpartyCtrl,
+                          onNext: _next,
+                          saving: _saving,
+                          bankRefText: _bankRefText,
+                          showBankReference: _showBankReference,
+                          customCategoryCtrl: _customCategoryCtrl,
+                          onCustomCategoryChanged: (v) =>
+                              setState(() => _customCategory = v),
+                          isActive: _step == 0,
+                        ),
+                        PeopleSelectorStep(
+                          userPhone: widget.userPhone,
+                          payerPhone: _selectedPayerPhone,
+                          onPayer: (v) =>
+                              setState(() => _selectedPayerPhone = v),
+                          friends: _friends,
+                          selectedFriends: _selectedFriendPhones,
+                          onToggleFriend: (phone, isSel) {
+                            setState(() {
+                              if (isSel) {
+                                if (!_selectedFriendPhones.contains(phone)) {
+                                  _selectedFriendPhones.add(phone);
+                                }
+                              } else {
+                                _selectedFriendPhones.remove(phone);
+                              }
+                              if ((_selectedGroupId ?? '').isEmpty) {
+                                _cachedFriendSelection =
+                                    List<String>.from(_selectedFriendPhones);
+                              }
+                            });
+                          },
+                          groups: _groups,
+                          selectedGroupId: _selectedGroupId,
+                          onGroup: (value) => _onGroupChanged(value),
+                          onAddFriend: _openAddFriend,
+                          onCreateGroup: _openCreateGroup,
+                          noteCtrl: _noteCtrl,
+                          isActive: _step == 1,
+                          labels: _labels,
+                          selectedLabel: _selectedLabel,
+                          onLabelSelect: (v) => setState(() {
+                            _selectedLabel = v;
+                            if (v != null) {
+                              _labelCtrl.clear();
+                            }
+                          }),
+                          labelCtrl: _labelCtrl,
+                          onNext: _next,
+                          onBack: _back,
+                          saving: _saving,
+                        ),
+                        _StepReview(
+                          amount: _amountCtrl.text.trim(),
+                          category: (_category == 'Other' &&
+                                  _customCategory.trim().isNotEmpty)
+                              ? _customCategory.trim()
+                              : _category,
+                          date: _date,
+                          personalNote: _noteCtrl.text.trim(),
+                          bankRef:
+                              _showBankReference ? _bankRefText.trim() : '',
+                          payerName: _selectedPayerPhone != null
+                              ? _nameForPhone(_selectedPayerPhone!)
+                              : '',
+                          splitNames: (_selectedGroupId ?? '').isNotEmpty
+                              ? const []
+                              : _selectedFriendPhones
+                                  .map(_nameForPhone)
+                                  .toList(),
+                          label: _labelCtrl.text.trim().isNotEmpty
+                              ? _labelCtrl.text.trim()
+                              : (_selectedLabel ?? ''),
+                          groupName: _groupNameForId(_selectedGroupId),
+                          onBack: _back,
+                          onSave: _save,
+                          saving: _saving,
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -690,7 +722,6 @@ class _StepBasics extends StatelessWidget {
     required this.bankRefText,
     required this.showBankReference,
     required this.customCategoryCtrl,
-
     required this.onCustomCategoryChanged,
     required this.isActive,
     required this.subcategory,
@@ -713,11 +744,16 @@ class _StepBasics extends StatelessWidget {
           const SizedBox(height: 8),
           _Box(
             child: DropdownButtonFormField<String>(
-              value: categories.contains(category) ? category : (categories.contains('Others') ? 'Others' : categories.firstOrNull),
+              initialValue: categories.contains(category)
+                  ? category
+                  : (categories.contains('Others')
+                      ? 'Others'
+                      : categories.firstOrNull),
               isExpanded: true,
               decoration: _inputDec(),
               items: categories.map((c) {
-                final meta = _kCatMeta[c] ?? _kCatMeta['Other'] ?? _kCatMeta['Others']!;
+                final meta =
+                    _kCatMeta[c] ?? _kCatMeta['Other'] ?? _kCatMeta['Others']!;
                 return DropdownMenuItem<String>(
                   value: c,
                   child: Row(
@@ -728,7 +764,8 @@ class _StepBasics extends StatelessWidget {
                         child: Icon(meta.icon, size: 14, color: Colors.white),
                       ),
                       const SizedBox(width: 8),
-                      Text(c, style: const TextStyle(fontWeight: FontWeight.w700)),
+                      Text(c,
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
                     ],
                   ),
                 );
@@ -741,13 +778,12 @@ class _StepBasics extends StatelessWidget {
                       }
                     },
             ),
-              ),
-
+          ),
           if (subcategories.isNotEmpty) ...[
             const SizedBox(height: 12),
             _Box(
               child: DropdownButtonFormField<String>(
-                value: subcategory,
+                initialValue: subcategory,
                 isExpanded: true,
                 decoration: _inputDec().copyWith(labelText: 'Subcategory'),
                 items: () {
@@ -759,17 +795,18 @@ class _StepBasics extends StatelessWidget {
                   return unique.map((s) {
                     return DropdownMenuItem<String>(
                       value: s,
-                      child: Text(s, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      child: Text(s,
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
                     );
                   }).toList();
                 }(),
                 onChanged: saving
                     ? null
                     : (value) {
-                  if (value != null) {
-                    onSubcategory(value);
-                  }
-                },
+                        if (value != null) {
+                          onSubcategory(value);
+                        }
+                      },
               ),
             ),
           ],
@@ -792,8 +829,10 @@ class _StepBasics extends StatelessWidget {
           const SizedBox(height: 8),
           _Box(
             child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              leading: const Icon(Icons.calendar_today_rounded, color: kPrimary),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              leading:
+                  const Icon(Icons.calendar_today_rounded, color: kPrimary),
               title: Text(
                 "${date.toLocal()}".split(' ')[0],
                 style: const TextStyle(fontWeight: FontWeight.w800),
@@ -814,7 +853,8 @@ class _StepBasics extends StatelessWidget {
               decoration: _inputDec().copyWith(
                 labelText: 'Paid to (opt)',
                 hintText: 'Merchant/Person name…',
-                prefixIcon: const Icon(Icons.storefront_rounded, color: kPrimary),
+                prefixIcon:
+                    const Icon(Icons.storefront_rounded, color: kPrimary),
               ),
             ),
           ),
@@ -839,7 +879,8 @@ class _StepBasics extends StatelessWidget {
                   noteCtrl.text.isNotEmpty ? noteCtrl.text : '—',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: noteCtrl.text.isNotEmpty ? kText : kSubtle),
+                  style: TextStyle(
+                      color: noteCtrl.text.isNotEmpty ? kText : kSubtle),
                 ),
               ),
             ),
@@ -849,12 +890,14 @@ class _StepBasics extends StatelessWidget {
             const SizedBox(height: 6),
             _Box(
               child: Theme(
-                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                data: Theme.of(context)
+                    .copyWith(dividerColor: Colors.transparent),
                 child: ExpansionTile(
                   tilePadding: const EdgeInsets.symmetric(horizontal: 12),
                   title: const Text(
                     'Show bank reference',
-                    style: TextStyle(fontWeight: FontWeight.w700, color: kSubtle),
+                    style:
+                        TextStyle(fontWeight: FontWeight.w700, color: kSubtle),
                   ),
                   children: [
                     Padding(
@@ -871,431 +914,6 @@ class _StepBasics extends StatelessWidget {
           ],
           const SizedBox(height: 28),
           _PrimaryButton(text: 'Next', onPressed: saving ? null : onNext),
-        ],
-      ),
-    );
-  }
-}
-
-/// --------------------- STEP 1: People & Label ---------------------
-class _StepPeople extends StatelessWidget {
-  final String userPhone;
-  final String? payerPhone;
-  final ValueChanged<String?> onPayer;
-
-  final List<FriendModel> friends;
-  final List<String> selectedFriends;
-  final void Function(String phone, bool selected) onToggleFriend;
-  final List<GroupModel> groups;
-  final String? selectedGroupId;
-  final ValueChanged<String?> onGroup;
-  final VoidCallback onAddFriend;
-  final VoidCallback onCreateGroup;
-
-  final TextEditingController noteCtrl;
-  final bool isActive;
-
-  final List<String> labels;
-  final String? selectedLabel;
-  final ValueChanged<String?> onLabelSelect;
-  final TextEditingController labelCtrl;
-
-  final VoidCallback onNext;
-  final VoidCallback onBack;
-  final bool saving;
-
-  const _StepPeople({
-    required this.userPhone,
-    required this.payerPhone,
-    required this.onPayer,
-    required this.friends,
-    required this.selectedFriends,
-    required this.onToggleFriend,
-    required this.groups,
-    required this.selectedGroupId,
-    required this.onGroup,
-    required this.onAddFriend,
-    required this.onCreateGroup,
-    required this.noteCtrl,
-    required this.isActive,
-    required this.labels,
-    required this.selectedLabel,
-    required this.onLabelSelect,
-    required this.labelCtrl,
-    required this.onNext,
-    required this.onBack,
-    required this.saving,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final payers = <Map<String, String>>[
-      {'phone': userPhone, 'name': 'You', 'avatar': '🧑'},
-      ...friends.map((f) => {'phone': f.phone, 'name': f.name, 'avatar': f.avatar}),
-    ];
-
-    // Ensure current payer is present even if no longer in friends (edge case)
-    if (payerPhone != null &&
-        !payers.any((p) => p['phone'] == payerPhone)) {
-      payers.add({'phone': payerPhone!, 'name': payerPhone!, 'avatar': '👤'});
-    }
-
-    final hasGroup = selectedGroupId != null && selectedGroupId!.isNotEmpty;
-    final dropdownValue = hasGroup &&
-            groups.any((g) => g.id == selectedGroupId)
-        ? selectedGroupId
-        : null;
-    final groupSelected = dropdownValue != null;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _H2('Who paid?'),
-          const SizedBox(height: 8),
-          _Box(
-            child: DropdownButtonFormField<String>(
-              value: payerPhone,
-              isExpanded: true,
-              decoration: _inputDec(),
-              items: payers.map((p) {
-                return DropdownMenuItem(
-                  value: p['phone'],
-                  child: Row(
-                    children: [
-                      Text(p['avatar'] ?? '👤', style: const TextStyle(fontSize: 18)),
-                      const SizedBox(width: 8),
-                      Text(p['name'] ?? ''),
-                    ],
-                  ),
-                );
-              }).toList(),
-              onChanged: saving ? null : onPayer,
-            ),
-          ),
-          const SizedBox(height: 18),
-
-          const _H2('Group (optional)'),
-          const SizedBox(height: 8),
-          _Box(
-            child: DropdownButtonFormField<String?>(
-              value: dropdownValue,
-              isExpanded: true,
-              decoration: _inputDec(),
-              items: <DropdownMenuItem<String?>>[
-                const DropdownMenuItem<String?>(value: null, child: Text('No group')),
-                ...groups.map(
-                  (g) => DropdownMenuItem<String?>(value: g.id, child: Text(g.name)),
-                ),
-              ],
-              onChanged: saving ? null : onGroup,
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: saving ? null : onAddFriend,
-                icon: const Icon(Icons.person_add_alt_1_rounded, color: kPrimary),
-                label: const Text('Add Friend'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: kPrimary,
-                  side: const BorderSide(color: kPrimary),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: saving ? null : onCreateGroup,
-                icon: const Icon(Icons.group_add_rounded, color: kPrimary),
-                label: const Text('Create Group'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: kPrimary,
-                  side: const BorderSide(color: kPrimary),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 18),
-
-          const _H2('Split With'),
-          const SizedBox(height: 8),
-          if (groupSelected) ...[
-            _GlassCard(
-              child: ListTile(
-                leading: const Icon(Icons.groups_2_rounded, color: kPrimary),
-                title: const Text(
-                  "This expense is linked to a group",
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-                subtitle: const Text("Pick 'No group' above to manage friends manually."),
-              ),
-            ),
-          ] else if (friends.isEmpty) ...[
-            _GlassCard(
-              child: ListTile(
-                leading: const Icon(Icons.info_outline, color: kPrimary),
-                title: const Text('No friends found'),
-                subtitle: const Text('Add friends or pick a group to split this expense.'),
-              ),
-            ),
-          ] else ...[
-            _Box(
-              child: DropdownButtonFormField<String?>(
-                value: null,
-                isExpanded: true,
-                decoration: _inputDec().copyWith(
-                  hintText: 'Add person…',
-                  prefixIcon: const Icon(Icons.person_add_alt_1_rounded, color: kPrimary),
-                ),
-                items: [
-                  ...friends.take(5).map(
-                    (f) => DropdownMenuItem<String?>(
-                      value: f.phone,
-                      child: Row(
-                        children: [
-                          CircleAvatar(radius: 10, child: Text(f.avatar, style: const TextStyle(fontSize: 12))),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              f.name,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const DropdownMenuItem<String?>(value: '__MORE__', child: Text('See all…')),
-                ],
-                onChanged: saving
-                    ? null
-                    : (v) async {
-                        if (v == null) return;
-                        if (v == '__MORE__') {
-                          FocusScope.of(context).unfocus();
-                          final picked = await showModalBottomSheet<List<String>>(
-                            context: context,
-                            isScrollControlled: true,
-                            builder: (ctx) {
-                              final temp = Set<String>.from(selectedFriends);
-                              return StatefulBuilder(
-                                builder: (ctx, setModalState) {
-                                  return DraggableScrollableSheet(
-                                    initialChildSize: 0.85,
-                                    maxChildSize: 0.95,
-                                    minChildSize: 0.5,
-                                    builder: (ctx, sc) {
-                                      return Material(
-                                        color: Colors.white,
-                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                                        child: Column(
-                                          children: [
-                                            const SizedBox(height: 8),
-                                            Container(
-                                              width: 44,
-                                              height: 4,
-                                              decoration: BoxDecoration(
-                                                color: Colors.grey.shade300,
-                                                borderRadius: BorderRadius.circular(2),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            const Text('Select people',
-                                                style: TextStyle(fontWeight: FontWeight.w800)),
-                                            Expanded(
-                                              child: ListView.builder(
-                                                controller: sc,
-                                                itemCount: friends.length,
-                                                itemBuilder: (_, i) {
-                                                  final f = friends[i];
-                                                  final checked = temp.contains(f.phone);
-                                                  return CheckboxListTile(
-                                                    value: checked,
-                                                    onChanged: (on) {
-                                                      setModalState(() {
-                                                        if (on == true) {
-                                                          temp.add(f.phone);
-                                                        } else {
-                                                          temp.remove(f.phone);
-                                                        }
-                                                      });
-                                                    },
-                                                    activeColor: kPrimary,
-                                                    title: Text(f.name, overflow: TextOverflow.ellipsis),
-                                                    subtitle: Text(f.phone),
-                                                    secondary: CircleAvatar(
-                                                      radius: 12,
-                                                      child: Text(f.avatar, style: const TextStyle(fontSize: 12)),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            ),
-                                            Padding(
-                                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                                              child: Row(
-                                                children: [
-                                                  TextButton(
-                                                    onPressed: () => Navigator.pop(ctx),
-                                                    child: const Text('Cancel'),
-                                                  ),
-                                                  const Spacer(),
-                                                  ElevatedButton(
-                                                    onPressed: () => Navigator.pop(ctx, temp.toList()),
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor: kPrimary,
-                                                      foregroundColor: Colors.white,
-                                                      shape: RoundedRectangleBorder(
-                                                        borderRadius: BorderRadius.circular(12),
-                                                      ),
-                                                    ),
-                                                    child: const Text('Add Selected'),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                  );
-                                },
-                              );
-                            },
-                          );
-                          if (picked != null) {
-                            final newSet = picked.toSet();
-                            final previous = List<String>.from(selectedFriends);
-                            for (final phone in previous) {
-                              if (!newSet.contains(phone)) {
-                                onToggleFriend(phone, false);
-                              }
-                            }
-                            for (final phone in newSet) {
-                              if (!previous.contains(phone)) {
-                                onToggleFriend(phone, true);
-                              }
-                            }
-                          }
-                        } else {
-                          onToggleFriend(v, true);
-                        }
-                      },
-              ),
-            ),
-            const SizedBox(height: 10),
-            if (selectedFriends.isNotEmpty)
-              Wrap(
-                spacing: 8,
-                runSpacing: -4,
-                children: selectedFriends.map((phone) {
-                  FriendModel friend;
-                  try {
-                    friend = friends.firstWhere((f) => f.phone == phone);
-                  } catch (_) {
-                    friend = FriendModel(phone: phone, name: phone);
-                  }
-                  return InputChip(
-                    avatar: Text(friend.avatar, style: const TextStyle(fontSize: 16)),
-                    label: Text(friend.name, overflow: TextOverflow.ellipsis),
-                    onDeleted: saving ? null : () => onToggleFriend(friend.phone, false),
-                  );
-                }).toList(),
-              )
-            else
-              const Text('No friends selected yet.',
-                  style: TextStyle(color: kSubtle, fontWeight: FontWeight.w600)),
-          ],
-
-          const SizedBox(height: 18),
-          const _H2('Note for you (optional)'),
-          const SizedBox(height: 8),
-          if (isActive)
-            _Box(
-              child: TextField(
-                controller: noteCtrl,
-                maxLines: 2,
-                enabled: !saving,
-                decoration: _inputDec().copyWith(
-                  hintText: 'Add a note about people/splits…',
-                  prefixIcon: const Icon(Icons.sticky_note_2_outlined, color: kPrimary),
-                ),
-              ),
-            )
-          else
-            _Box(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  noteCtrl.text.isNotEmpty ? noteCtrl.text : '—',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: noteCtrl.text.isNotEmpty ? kText : kSubtle),
-                ),
-              ),
-            ),
-
-          const SizedBox(height: 18),
-          const _H2('Label'),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: _Box(
-                  child: DropdownButtonFormField<String?>(
-                    value: selectedLabel,
-                    isExpanded: true,
-                    decoration: _inputDec().copyWith(
-                      labelText: "Select Label",
-                      prefixIcon: const Icon(Icons.label_important, color: kPrimary),
-                    ),
-                    items: [
-                      const DropdownMenuItem<String?>(value: null, child: Text('No label')),
-                      ...labels.map(
-                        (l) => DropdownMenuItem<String?>(value: l, child: Text(l)),
-                      ),
-                    ],
-                    onChanged: saving ? null : (v) {
-                      onLabelSelect(v);
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _Box(
-                  child: TextField(
-                    controller: labelCtrl,
-                    decoration: _inputDec().copyWith(
-                      labelText: "Or type new label",
-                      hintText: "Eg: Goa Trip",
-                      prefixIcon: const Icon(Icons.create, color: kPrimary),
-                    ),
-                    onChanged: saving
-                        ? null
-                        : (v) {
-                      if (v.isNotEmpty) onLabelSelect(null);
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 28),
-          Row(
-            children: [
-              _GhostButton(text: 'Back', onPressed: saving ? null : onBack),
-              const SizedBox(width: 12),
-              Expanded(child: _PrimaryButton(text: 'Next', onPressed: saving ? null : onNext)),
-            ],
-          ),
         ],
       ),
     );
@@ -1360,7 +978,8 @@ class _StepReview extends StatelessWidget {
             const SizedBox(height: 12),
             _GlassCard(
               child: Theme(
-                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                data: Theme.of(context)
+                    .copyWith(dividerColor: Colors.transparent),
                 child: ExpansionTile(
                   title: const Text('Bank reference',
                       style: TextStyle(fontWeight: FontWeight.w700)),
@@ -1399,7 +1018,8 @@ class _StepperBar extends StatelessWidget {
   final int current;
   final int total;
   final List<String> labels;
-  const _StepperBar({required this.current, required this.total, required this.labels});
+  const _StepperBar(
+      {required this.current, required this.total, required this.labels});
 
   @override
   Widget build(BuildContext context) {
@@ -1457,17 +1077,22 @@ class _AmountField extends StatelessWidget {
         enabled: enabled,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         style: const TextStyle(
-          fontSize: 24, fontWeight: FontWeight.w800, color: kText, letterSpacing: 0.3,
+          fontSize: 24,
+          fontWeight: FontWeight.w800,
+          color: kText,
+          letterSpacing: 0.3,
         ),
         decoration: InputDecoration(
           prefixText: '₹ ',
           prefixStyle: const TextStyle(
               fontSize: 24, fontWeight: FontWeight.w800, color: kText),
           hintText: '0.00',
-          hintStyle: const TextStyle(fontSize: 24, color: kSubtle, fontWeight: FontWeight.w700),
+          hintStyle: const TextStyle(
+              fontSize: 24, color: kSubtle, fontWeight: FontWeight.w700),
           filled: true,
           fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
             borderSide: const BorderSide(color: kLine),
@@ -1489,35 +1114,29 @@ class _H2 extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       t,
-      style: const TextStyle(color: kText, fontWeight: FontWeight.w800, fontSize: 16),
+      style: const TextStyle(
+          color: kText, fontWeight: FontWeight.w800, fontSize: 16),
     );
   }
 }
 
 class _Box extends StatelessWidget {
   final Widget child;
-  final String? label;
-  const _Box({required this.child, this.label});
+  const _Box({required this.child});
 
   @override
   Widget build(BuildContext context) {
-    final box = Container(
+    return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: kLine),
-        boxShadow: const [BoxShadow(color: Color(0x0F000000), blurRadius: 10, offset: Offset(0,4))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x0F000000), blurRadius: 10, offset: Offset(0, 4))
+        ],
       ),
       child: child,
-    );
-    if (label == null) return box;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label!, style: const TextStyle(color: kText, fontWeight: FontWeight.w700, fontSize: 13.5)),
-        const SizedBox(height: 6),
-        box,
-      ],
     );
   }
 }
@@ -1526,7 +1145,8 @@ class _PrimaryButton extends StatelessWidget {
   final String text;
   final VoidCallback? onPressed;
   final bool loading;
-  const _PrimaryButton({required this.text, required this.onPressed, this.loading=false});
+  const _PrimaryButton(
+      {required this.text, required this.onPressed, this.loading = false});
   @override
   Widget build(BuildContext context) {
     return ElevatedButton(
@@ -1540,12 +1160,16 @@ class _PrimaryButton extends StatelessWidget {
       ),
       child: loading
           ? const SizedBox(
-        width: 22, height: 22,
-        child: CircularProgressIndicator(
-          strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-        ),
-      )
-          : Text(text, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800)),
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+          : Text(text,
+              style:
+                  const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800)),
     );
   }
 }
@@ -1576,13 +1200,18 @@ class _GlassCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white, borderRadius: BorderRadius.circular(18),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: kLine, width: 1),
-        boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0,8))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 8))
+        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
-        child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3), child: child),
+        child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3), child: child),
       ),
     );
   }
@@ -1598,31 +1227,41 @@ class _ReviewCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
-          children: rows.map((kv) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(kv.k,
-                    style: const TextStyle(color: kSubtle, fontWeight: FontWeight.w700),
-                  ),
-                ),
-                Expanded(
-                  child: Text(kv.v,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(color: kText, fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ],
-            ),
-          )).toList(),
+          children: rows
+              .map((kv) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            kv.k,
+                            style: const TextStyle(
+                                color: kSubtle, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            kv.v,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                                color: kText, fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ))
+              .toList(),
         ),
       ),
     );
   }
 }
 
-class _KV { final String k; final String v; const _KV(this.k, this.v); }
+class _KV {
+  final String k;
+  final String v;
+  const _KV(this.k, this.v);
+}
 
 InputDecoration _inputDec() {
   final base = OutlineInputBorder(
@@ -1630,10 +1269,12 @@ InputDecoration _inputDec() {
     borderSide: const BorderSide(color: kLine, width: 1),
   );
   return InputDecoration(
-    filled: true, fillColor: Colors.white,
+    filled: true,
+    fillColor: Colors.white,
     hintStyle: const TextStyle(color: kSubtle),
     contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
     enabledBorder: base,
-    focusedBorder: base.copyWith(borderSide: const BorderSide(color: kPrimary, width: 1.4)),
+    focusedBorder: base.copyWith(
+        borderSide: const BorderSide(color: kPrimary, width: 1.4)),
   );
 }

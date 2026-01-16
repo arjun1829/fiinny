@@ -47,11 +47,11 @@ class _SmartNudgeWidgetState extends State<SmartNudgeWidget> {
         margin: const EdgeInsets.only(bottom: 14),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.teal.shade50.withOpacity(0.85),
+          color: Colors.teal.shade50.withValues(alpha: 0.85),
           borderRadius: BorderRadius.circular(15),
           boxShadow: [
             BoxShadow(
-              color: Colors.teal.withOpacity(0.08),
+              color: Colors.teal.withValues(alpha: 0.08),
               blurRadius: 6,
               offset: const Offset(0, 2),
             )

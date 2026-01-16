@@ -39,7 +39,6 @@ final ThemeData freshTheme = ThemeData(
     elevation: 6,
   ),
   cardColor: Colors.white,
-  dialogBackgroundColor: Colors.white,
   colorScheme: ColorScheme.light(
     primary: tiffanyBlue,
     secondary: mintGreen,
@@ -50,7 +49,7 @@ final ThemeData freshTheme = ThemeData(
   textTheme: const TextTheme(
     titleLarge: TextStyle(color: deepTeal, fontWeight: FontWeight.bold),
     bodyMedium: TextStyle(color: deepTeal),
-  ),
+  ), dialogTheme: DialogThemeData(backgroundColor: Colors.white),
 );
 
 final ThemeData royalTheme = ThemeData(
@@ -76,7 +75,6 @@ final ThemeData royalTheme = ThemeData(
     elevation: 6,
   ),
   cardColor: Colors.white,
-  dialogBackgroundColor: Colors.white,
   colorScheme: ColorScheme.light(
     primary: royalBlue,
     secondary: royalGold,
@@ -87,7 +85,7 @@ final ThemeData royalTheme = ThemeData(
   textTheme: const TextTheme(
     titleLarge: TextStyle(color: royalBlue, fontWeight: FontWeight.bold),
     bodyMedium: TextStyle(color: royalBlue),
-  ),
+  ), dialogTheme: DialogThemeData(backgroundColor: Colors.white),
 );
 
 final ThemeData sunnyTheme = ThemeData(
@@ -113,7 +111,6 @@ final ThemeData sunnyTheme = ThemeData(
     elevation: 6,
   ),
   cardColor: Colors.white,
-  dialogBackgroundColor: Colors.white,
   colorScheme: ColorScheme.light(
     primary: sunnyLemon,
     secondary: sunnyCoral,
@@ -124,7 +121,7 @@ final ThemeData sunnyTheme = ThemeData(
   textTheme: const TextTheme(
     titleLarge: TextStyle(color: sunnyCoral, fontWeight: FontWeight.bold),
     bodyMedium: TextStyle(color: sunnyCoral),
-  ),
+  ), dialogTheme: DialogThemeData(backgroundColor: Colors.white),
 );
 
 final ThemeData midnightTheme = ThemeData(
@@ -150,7 +147,6 @@ final ThemeData midnightTheme = ThemeData(
     elevation: 6,
   ),
   cardColor: midnight,
-  dialogBackgroundColor: midnightBlue.withOpacity(0.96),
   colorScheme: ColorScheme.dark(
     primary: midnight,
     secondary: midnightBlue,
@@ -161,7 +157,7 @@ final ThemeData midnightTheme = ThemeData(
   textTheme: const TextTheme(
     titleLarge: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
     bodyMedium: TextStyle(color: Colors.white),
-  ),
+  ), dialogTheme: DialogThemeData(backgroundColor: midnightBlue.withValues(alpha: 0.96)),
 );
 
 final ThemeData classicTheme = ThemeData(
@@ -233,7 +229,6 @@ final ThemeData tealTheme = ThemeData(
     elevation: 6,
   ),
   cardColor: tealPrimary,
-  dialogBackgroundColor: deepTealBackground,
   colorScheme: ColorScheme.dark(
     primary: tealPrimary,
     secondary: Colors.tealAccent,
@@ -244,5 +239,5 @@ final ThemeData tealTheme = ThemeData(
   textTheme: const TextTheme(
     titleLarge: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
     bodyMedium: TextStyle(color: Colors.white),
-  ),
+  ), dialogTheme: DialogThemeData(backgroundColor: deepTealBackground),
 );

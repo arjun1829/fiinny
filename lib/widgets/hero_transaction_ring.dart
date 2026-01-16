@@ -60,7 +60,7 @@ class HeroTransactionRing extends StatelessWidget {
           borderRadius: radius,
           boxShadow: [
             BoxShadow(
-              color: theme.shadowColor.withOpacity(0.1),
+              color: theme.shadowColor.withValues(alpha: 0.1),
               blurRadius: 18,
               offset: const Offset(0, 7),
             ),
@@ -100,7 +100,7 @@ class HeroTransactionRing extends StatelessWidget {
                               subtitle!,
                               style: textTheme.bodyMedium?.copyWith(
                                 fontSize: 12.5,
-                                color: textTheme.bodyMedium?.color?.withOpacity(0.55),
+                                color: textTheme.bodyMedium?.color?.withValues(alpha: 0.55),
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -123,7 +123,7 @@ class HeroTransactionRing extends StatelessWidget {
                                     vertical: Fx.s8,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: colorScheme.primary.withOpacity(0.08),
+                                    color: colorScheme.primary.withValues(alpha: 0.08),
                                     borderRadius: BorderRadius.circular(Fx.r12),
                                   ),
                                   child: Row(
@@ -158,7 +158,7 @@ class HeroTransactionRing extends StatelessWidget {
                                       vertical: Fx.s8,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: colorScheme.primary.withOpacity(0.10),
+                                      color: colorScheme.primary.withValues(alpha: 0.10),
                                       borderRadius: BorderRadius.circular(Fx.r12),
                                     ),
                                     child: Text(
@@ -180,7 +180,7 @@ class HeroTransactionRing extends StatelessWidget {
                                     onTap: onEditLimit,
                                     child: CircleAvatar(
                                       radius: 16,
-                                      backgroundColor: colorScheme.primary.withOpacity(0.12),
+                                      backgroundColor: colorScheme.primary.withValues(alpha: 0.12),
                                       child: Icon(Icons.edit_rounded, size: 17, color: colorScheme.primary),
                                     ),
                                   ),
@@ -210,7 +210,7 @@ class HeroTransactionRing extends StatelessWidget {
                             borderRadius: BorderRadius.circular(14),
                             boxShadow: [
                               BoxShadow(
-                                color: theme.shadowColor.withOpacity(0.15),
+                                color: theme.shadowColor.withValues(alpha: 0.15),
                                 blurRadius: 6,
                                 offset: const Offset(0, 3),
                               ),
@@ -286,13 +286,13 @@ class _Rings extends StatelessWidget {
             percent: debit,
             size: outerSize,
             stroke: isCompact ? 12 : 14,
-            colors: [Fx.bad.withOpacity(.15), Fx.bad],
+            colors: [Fx.bad.withValues(alpha: .15), Fx.bad],
           ),
           _AnimatedArc(
             percent: credit,
             size: innerSize,
             stroke: isCompact ? 9 : 10,
-            colors: [Fx.good.withOpacity(.15), Fx.good],
+            colors: [Fx.good.withValues(alpha: .15), Fx.good],
           ),
         ],
       ),
@@ -343,7 +343,7 @@ class _ArcPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
       ..strokeCap = StrokeCap.round
-      ..color = colors.last.withOpacity(0.12);
+      ..color = colors.last.withValues(alpha: 0.12);
     canvas.drawArc(Rect.fromCircle(center: center, radius: r), 0, 2*math.pi, false, bg);
 
     final sweep = 2 * math.pi * value;

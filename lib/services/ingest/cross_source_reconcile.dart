@@ -35,33 +35,39 @@ class CrossSourceReconcile {
     String? merchantKey,
 
     // NEW (optional) hints to improve matching/merge quality
-    String? txKey,                // if parsers computed one
+    String? txKey, // if parsers computed one
     String? upiVpa,
     String? issuerBank,
-    String? instrument,           // UPI/IMPS/NEFT/RTGS/ATM/POS/Credit Card/Debit Card/Wallet/NetBanking
-    String? network,              // VISA/MASTERCARD/RUPAY/AMEX/DINERS
+    String?
+        instrument, // UPI/IMPS/NEFT/RTGS/ATM/POS/Credit Card/Debit Card/Wallet/NetBanking
+    String? network, // VISA/MASTERCARD/RUPAY/AMEX/DINERS
     double amountTolerancePct = 0, // 0 = exact; e.g., 0.5 for ±0.5%
 
-    int? windowMinutes,           // override default 15m
-    String? docPathIfCreating,    // unused but kept for compatibility
+    int? windowMinutes, // override default 15m
+    String? docPathIfCreating, // unused but kept for compatibility
     Map<String, dynamic>? newSourceMeta, // sourceRecord to merge in
   }) async {
     final minutes = windowMinutes ?? _defaultWindowMinutes;
 
     final coll = FirebaseFirestore.instance
-        .collection('users').doc(userId)
+        .collection('users')
+        .doc(userId)
         .collection(direction == 'debit' ? 'expenses' : 'incomes');
 
     final start = timestamp.subtract(Duration(minutes: minutes));
-    final end   = timestamp.add(Duration(minutes: minutes));
+    final end = timestamp.add(Duration(minutes: minutes));
 
     // Query by time window only (keeps index pressure low & supports client-side tolerance).
-    final q = await coll
-        .where('date', isGreaterThanOrEqualTo: start)
-        .where('date', isLessThanOrEqualTo: end)
-        .limit(50)
-        .get(const GetOptions(source: Source.serverAndCache))
-        .catchError((_) => null);
+    QuerySnapshot<Map<String, dynamic>>? q;
+    try {
+      q = await coll
+          .where('date', isGreaterThanOrEqualTo: start)
+          .where('date', isLessThanOrEqualTo: end)
+          .limit(50)
+          .get(const GetOptions(source: Source.serverAndCache));
+    } catch (_) {
+      q = null;
+    }
 
     if (q == null || q.docs.isEmpty) return null;
 
@@ -76,7 +82,8 @@ class CrossSourceReconcile {
     final candidates = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     for (final d in q.docs) {
       final data = d.data();
-      final amt = (data['amount'] is num) ? (data['amount'] as num).toDouble() : null;
+      final amt =
+          (data['amount'] is num) ? (data['amount'] as num).toDouble() : null;
       if (amt == null) continue;
       if (tol == 0.0) {
         if (amt == amount) candidates.add(d);
@@ -89,13 +96,15 @@ class CrossSourceReconcile {
     // Fast path: direct txKey match (if both sides provide).
     if (txKey != null && txKey.trim().isNotEmpty) {
       final exact = candidates.firstWhere(
-            (d) => ((d.data()['txKey'] ?? d.data()['sourceRecord']?['txKey'])?.toString() ?? '') == txKey,
+        (d) =>
+            ((d.data()['txKey'] ?? d.data()['sourceRecord']?['txKey'])
+                    ?.toString() ??
+                '') ==
+            txKey,
         orElse: () => null as dynamic,
       );
-      if (exact != null) {
-        await _mergeSourceRecord(exact.reference, newSourceMeta);
-        return exact.id;
-      }
+      await _mergeSourceRecord(exact.reference, newSourceMeta);
+      return exact.id;
     }
 
     // Score each candidate; pick best.
@@ -107,13 +116,28 @@ class CrossSourceReconcile {
       final data = d.data();
 
       // Root fields / fallbacks from sourceRecord
-      String? cLast4 = (data['cardLast4'] ?? data['sourceRecord']?['last4'])?.toString();
-      final String mk = ((data['merchantKey'] ?? data['sourceRecord']?['merchant']) ?? '').toString().toUpperCase();
-      final String vpa = (data['upiVpa'] ?? data['sourceRecord']?['upiVpa'])?.toString() ?? '';
-      final String bank = (data['issuerBank'] ?? data['sourceRecord']?['issuerBank'])?.toString() ?? '';
-      final String inst = (data['instrument'] ?? data['sourceRecord']?['instrument'])?.toString() ?? '';
-      final String netw = (data['instrumentNetwork'] ?? data['sourceRecord']?['network'])?.toString() ?? '';
-      final String candTxKey = (data['txKey'] ?? data['sourceRecord']?['txKey'])?.toString() ?? '';
+      final String? cLast4 =
+          (data['cardLast4'] ?? data['sourceRecord']?['last4'])?.toString();
+      final String mk =
+          ((data['merchantKey'] ?? data['sourceRecord']?['merchant']) ?? '')
+              .toString()
+              .toUpperCase();
+      final String vpa =
+          (data['upiVpa'] ?? data['sourceRecord']?['upiVpa'])?.toString() ?? '';
+      final String bank =
+          (data['issuerBank'] ?? data['sourceRecord']?['issuerBank'])
+                  ?.toString() ??
+              '';
+      final String inst =
+          (data['instrument'] ?? data['sourceRecord']?['instrument'])
+                  ?.toString() ??
+              '';
+      final String netw =
+          (data['instrumentNetwork'] ?? data['sourceRecord']?['network'])
+                  ?.toString() ??
+              '';
+      final String candTxKey =
+          (data['txKey'] ?? data['sourceRecord']?['txKey'])?.toString() ?? '';
       final DateTime? dt = _safeDate(data['date']);
       if (dt == null) continue;
 
@@ -121,54 +145,68 @@ class CrossSourceReconcile {
       final hints = <String, dynamic>{};
 
       // Strongest: txKey equality (if both present)
-      if (txKey != null && txKey.isNotEmpty && candTxKey.isNotEmpty && candTxKey == txKey) {
+      if (txKey != null &&
+          txKey.isNotEmpty &&
+          candTxKey.isNotEmpty &&
+          candTxKey == txKey) {
         score += 100; // hard win
         hints['txKey'] = true;
       }
 
       // cardLast4
-      if ((cardLast4 ?? '').isNotEmpty && (cLast4 ?? '').isNotEmpty && cLast4 == cardLast4) {
+      if ((cardLast4 ?? '').isNotEmpty &&
+          (cLast4 ?? '').isNotEmpty &&
+          cLast4 == cardLast4) {
         score += 5;
         hints['last4'] = true;
       }
 
       // merchantKey
-      if ((merchantKey ?? '').isNotEmpty && mk.isNotEmpty && mk == (merchantKey ?? '').toUpperCase()) {
+      if ((merchantKey ?? '').isNotEmpty &&
+          mk.isNotEmpty &&
+          mk == (merchantKey ?? '').toUpperCase()) {
         score += 3;
         hints['merchantKey'] = true;
       }
 
       // upiVpa
-      if ((upiVpa ?? '').isNotEmpty && vpa.isNotEmpty && vpa.toUpperCase() == (upiVpa ?? '').toUpperCase()) {
+      if ((upiVpa ?? '').isNotEmpty &&
+          vpa.isNotEmpty &&
+          vpa.toUpperCase() == (upiVpa ?? '').toUpperCase()) {
         score += 2;
         hints['upiVpa'] = true;
       }
 
       // issuerBank
-      if ((issuerBank ?? '').isNotEmpty && bank.isNotEmpty &&
+      if ((issuerBank ?? '').isNotEmpty &&
+          bank.isNotEmpty &&
           bank.toUpperCase() == (issuerBank ?? '').toUpperCase()) {
         score += 1;
         hints['issuerBank'] = true;
       }
 
       // instrument
-      if ((instrument ?? '').isNotEmpty && inst.isNotEmpty &&
+      if ((instrument ?? '').isNotEmpty &&
+          inst.isNotEmpty &&
           inst.toUpperCase() == (instrument ?? '').toUpperCase()) {
         score += 1;
         hints['instrument'] = true;
       }
 
       // network
-      if ((network ?? '').isNotEmpty && netw.isNotEmpty &&
+      if ((network ?? '').isNotEmpty &&
+          netw.isNotEmpty &&
           netw.toUpperCase() == (network ?? '').toUpperCase()) {
         score += 1;
         hints['network'] = true;
       }
 
       // Time closeness bonus: up to +10, proportional to proximity inside window
-      final diffMs = (dt.millisecondsSinceEpoch - timestamp.millisecondsSinceEpoch).abs();
+      final diffMs =
+          (dt.millisecondsSinceEpoch - timestamp.millisecondsSinceEpoch).abs();
       final windowMs = minutes * 60 * 1000;
-      final timeScore = ((windowMs - diffMs.clamp(0, windowMs)) / windowMs * 10).round();
+      final timeScore =
+          ((windowMs - diffMs.clamp(0, windowMs)) / windowMs * 10).round();
       score += timeScore;
       hints['timeScore'] = timeScore;
 
@@ -191,19 +229,22 @@ class CrossSourceReconcile {
   /// Merge `sourceRecord` maps idempotently and optionally backfill root fields
   /// (merchantKey, upiVpa, cardLast4, issuerBank, instrument, network, txKey)
   static Future<void> _mergeSourceRecord(
-      DocumentReference<Map<String, dynamic>> ref,
-      Map<String, dynamic>? newSourceMeta, {
-        Map<String, dynamic>? hints,
-      }) async {
+    DocumentReference<Map<String, dynamic>> ref,
+    Map<String, dynamic>? newSourceMeta, {
+    Map<String, dynamic>? hints,
+  }) async {
     if (newSourceMeta == null || newSourceMeta.isEmpty) return;
 
     await FirebaseFirestore.instance.runTransaction((tx) async {
       final snap = await tx.get(ref);
       if (!snap.exists) {
         // If somehow missing, just set sourceRecord and minimal roots
-        tx.set(ref, {
-          'sourceRecord': _mergeSourceMaps({}, newSourceMeta),
-        }, SetOptions(merge: true));
+        tx.set(
+            ref,
+            {
+              'sourceRecord': _mergeSourceMaps({}, newSourceMeta),
+            },
+            SetOptions(merge: true));
         return;
       }
 
@@ -220,12 +261,15 @@ class CrossSourceReconcile {
       // Backfill convenience roots if absent (do not overwrite)
       void putIfMissing(String rootKey, dynamic value) {
         if (value == null) return;
-        if (!existing.containsKey(rootKey) || existing[rootKey] == null || existing[rootKey].toString().isEmpty) {
+        if (!existing.containsKey(rootKey) ||
+            existing[rootKey] == null ||
+            existing[rootKey].toString().isEmpty) {
           update[rootKey] = value;
         }
       }
 
-      putIfMissing('merchantKey', newSourceMeta['merchant'] ?? newSourceMeta['merchantKey']);
+      putIfMissing('merchantKey',
+          newSourceMeta['merchant'] ?? newSourceMeta['merchantKey']);
       putIfMissing('cardLast4', newSourceMeta['last4']);
       putIfMissing('upiVpa', newSourceMeta['upiVpa']);
       putIfMissing('issuerBank', newSourceMeta['issuerBank']);

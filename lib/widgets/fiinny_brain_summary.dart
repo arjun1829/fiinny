@@ -10,12 +10,12 @@ class FiinnyBrainSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    List<InsightModel> insights = FiinnyBrainService.generateInsights(userData);
+    final List<InsightModel> insights = FiinnyBrainService.generateInsights(userData);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      color: Colors.white.withOpacity(0.9),
+      color: Colors.white.withValues(alpha: 0.9),
       elevation: 4,
       child: Padding(
         padding: const EdgeInsets.all(16),

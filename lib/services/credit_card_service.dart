@@ -144,8 +144,8 @@ class CreditCardService {
     final latest = await getLatestCycle(userId, cardId);
     if (latest == null) return;
 
-    final double remaining = ((latest.totalDue - latest.paidAmount)
-        .clamp(0.0, double.infinity) as double);
+    final double remaining = (latest.totalDue - latest.paidAmount)
+        .clamp(0.0, double.infinity);
     if (remaining <= 0.01) return;
 
     final p = CreditCardPayment(
@@ -218,7 +218,7 @@ class CreditCardService {
     if (match != null) {
       await updateCardMetadata(
         userId,
-        match!.id,
+        match.id,
         availableLimit: availableLimit,
         totalLimit: totalLimit,
         rewardPoints: rewardPoints,

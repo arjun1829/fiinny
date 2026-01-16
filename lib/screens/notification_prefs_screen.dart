@@ -1,5 +1,4 @@
 // lib/screens/notification_prefs_screen.dart
-import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:firebase_auth/firebase_auth.dart';
@@ -96,7 +95,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter, end: Alignment.bottomCenter,
             colors: [
-              _accent.withOpacity(0.06),
+              _accent.withValues(alpha: 0.06),
               Colors.white,
             ],
           ),
@@ -214,7 +213,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                       Container(
                         width: 44, height: 44,
                         decoration: BoxDecoration(
-                          color: _accent.withOpacity(0.12),
+                          color: _accent.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Center(child: Text('🔔', style: TextStyle(fontSize: 22))),
@@ -234,7 +233,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
 
                 _GlassCard(
                   child: SwitchListTile.adaptive(
-                    activeColor: _accent,
+                    activeTrackColor: _accent,
                     title: const Text('Enable push notifications', style: TextStyle(color: Colors.black87)),
                     subtitle: const Text('You can still see the in-app bell feed anytime.', style: TextStyle(color: Colors.black54)),
                     secondary: _pushBusy
@@ -283,7 +282,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                         title: const Text('No notifications during', style: TextStyle(color: Colors.black87)),
                         subtitle: Text('$start – $end  ($tz)', style: const TextStyle(color: Colors.black54)),
                         trailing: Switch.adaptive(
-                          activeColor: _accent,
+                          activeTrackColor: _accent,
                           value: !(start == '00:00' && end == '00:00'),
                           onChanged: pushEnabled ? (v) async {
                             if (v) {
@@ -325,7 +324,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
-                              color: _accent.withOpacity(0.08),
+                              color: _accent.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
@@ -365,12 +364,12 @@ class _GlassCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.85),
+        color: Colors.white.withValues(alpha: 0.85),
         borderRadius: BorderRadius.circular(18),
         boxShadow: const [
           BoxShadow(color: Colors.black12, blurRadius: 14, offset: Offset(0, 6)),
         ],
-        border: Border.all(color: Colors.black12.withOpacity(0.05)),
+        border: Border.all(color: Colors.black12.withValues(alpha: 0.05)),
       ),
       child: Padding(
         padding: padding ?? const EdgeInsets.symmetric(horizontal: 10),
@@ -407,7 +406,7 @@ class _ChannelTile extends StatelessWidget {
         leading: Container(
           width: 40, height: 40,
           decoration: BoxDecoration(
-            color: color.withOpacity(0.12),
+            color: color.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(icon, color: color),
@@ -478,9 +477,9 @@ class _TimeChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: enabled ? accent.withOpacity(0.06) : Colors.grey.withOpacity(0.10),
+          color: enabled ? accent.withValues(alpha: 0.06) : Colors.grey.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: enabled ? accent.withOpacity(0.18) : Colors.grey.withOpacity(0.18)),
+          border: Border.all(color: enabled ? accent.withValues(alpha: 0.18) : Colors.grey.withValues(alpha: 0.18)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

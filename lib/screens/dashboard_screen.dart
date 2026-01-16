@@ -2,7 +2,8 @@
 
 import 'dart:async';
 import 'dart:ui';
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,54 +31,38 @@ import '../widgets/tx_filter_bar.dart';
 import '../widgets/dashboard/bank_overview_dialog.dart';
 import '../widgets/hero_transaction_ring.dart';
 import '../services/user_data.dart';
-import '../widgets/dashboard_activity_tab.dart';
 import '../widgets/dashboard/bank_cards_carousel.dart';
 import '../models/activity_event.dart';
-import 'dashboard_activity_screen.dart';
-import 'insight_feed_screen.dart';
 import '../widgets/transaction_count_card.dart';
 import '../widgets/transaction_amount_card.dart';
 import '../widgets/goals_summary_card.dart';
 import '../widgets/add_goal_dialog.dart';
 import '../themes/tokens.dart';
-import '../themes/glass_card.dart';
-import '../themes/badge.dart';
 import '../widgets/net_worth_panel.dart';
 import '../core/formatters/inr.dart';
 import 'loans_screen.dart';
-import '../details/models/recurring_scope.dart';
-import '../details/models/shared_item.dart';
 import '../core/ads/ads_banner_card.dart';
 import '../core/ui/snackbar_throttle.dart';
 import '../widgets/empty_state_card.dart';
-import '../widgets/shimmer.dart';
 import '../widgets/gmail_backfill_banner.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 // NEW portfolio module imports (aliased so they don't clash with your old service/model)
-import '../fiinny_assets/modules/portfolio/services/asset_service.dart' as PAssetService;
-import '../fiinny_assets/modules/portfolio/models/asset_model.dart' as PAssetModel;
+import '../fiinny_assets/modules/portfolio/services/asset_service.dart'
+    as PAssetService;
+import '../fiinny_assets/modules/portfolio/models/asset_model.dart'
+    as PAssetModel;
 import '../fiinny_assets/modules/portfolio/models/price_quote.dart';
 import '../fiinny_assets/modules/portfolio/services/market_data_yahoo.dart';
 import 'package:provider/provider.dart';
-import '../services/notif_prefs_service.dart';
 import '../services/notifs/social_events_watch.dart';
-import '../widgets/hidden_charges_card.dart';
-import '../widgets/forex_charges_card.dart';
-import '../widgets/salary_predictor_card.dart';
-import '../widgets/subscriptions_summary_card.dart'; // ✅ NEW
+// ✅ NEW
 import '../services/subscription_service.dart'; // ✅ NEW
-import '../models/subscription_item.dart';
+// import '../models/subscription_item.dart'; unused
 import '../services/subscriptions/subscription_notifier.dart';
 
 import '../brain/loan_detection_service.dart';
 import '../widgets/loan_suggestions_sheet.dart';
 
-import '../widgets/hidden_charges_review_sheet.dart';
-import '../widgets/forex_findings_sheet.dart';
-
-import '../screens/review_inbox_screen.dart';
-import '../services/review_queue_service.dart';
-import '../models/ingest_draft_model.dart';
 import 'fiinny_brain_chat_screen.dart';
 
 import '../core/ads/ad_service.dart';
@@ -89,8 +74,6 @@ import '../services/sms/sms_permission_helper.dart';
 import '../services/gmail_service.dart' as OldGmail;
 import '../services/sms/sms_ingestor.dart';
 import '../services/sync/sync_coordinator.dart';
-import '../services/sync/sync_coordinator.dart';
-
 
 // --- Helper getters for dynamic model ---
 DateTime getTxDate(dynamic tx) =>
@@ -100,7 +83,7 @@ double getTxAmount(dynamic tx) =>
 
 class DashboardScreen extends StatefulWidget {
   final String userPhone;
-  const DashboardScreen({required this.userPhone, Key? key}) : super(key: key);
+  const DashboardScreen({required this.userPhone, super.key});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -117,10 +100,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   int loanCount = 0;
   double totalAssets = 0.0;
   int assetCount = 0;
-  // Subscriptions
-  double _subsTotal = 0.0;
-  int _subsCount = 0;
-  
+  // Subscriptions unused removed
+
   List<GoalModel> goals = [];
   GoalModel? currentGoal;
   List<InsightModel> insights = [];
@@ -140,13 +121,12 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _isFetchingEmail = false;
   SystemRecurringLocalScheduler? _sysNotifs;
 
-  Map<String, List<double>> _amountBarsCache = {};
-  Map<String, List<int>> _countBarsCache = {};
+  final Map<String, List<double>> _amountBarsCache = {};
+  final Map<String, List<int>> _countBarsCache = {};
   int _barsRevision = 0;
 
   final Map<String, Map<String, double>> _summaryCache = {};
   int _summaryRevision = 0;
-
 
   // --- Limit logic ---
   double? _periodLimit;
@@ -154,20 +134,22 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _warned80 = false;
   bool _warned100 = false;
   final _expenseSvc = ExpenseService();
-  final _incomeSvc  = IncomeService();
-  final _assetSvc   = AssetService();
+  final _incomeSvc = IncomeService();
+  final _assetSvc = AssetService();
 
   final _loanDetector = LoanDetectionService();
   int _loanSuggestionsCount = 0;
-  bool _scanningLoans = false;
-  late final AnimationController _ringShineController;
-  bool _ringShineVisible = true;
+  // _scanningLoans removed
+  // _ringShineController removed
+  // _ringShineVisible removed
 
   bool? _hasSmsPermission = SmsPermissionHelper.lastKnownStatus;
   bool _requestingSmsPermission = false;
 
-  bool get _isAndroidPlatform => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-  bool get _showSmsPermissionBanner => _isAndroidPlatform && (_hasSmsPermission == false);
+  bool get _isAndroidPlatform =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  bool get _showSmsPermissionBanner =>
+      _isAndroidPlatform && (_hasSmsPermission == false);
 
   // Animated dashboard numbers (ring + cards)
   late AnimationController _numbersCtrl;
@@ -178,7 +160,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   VoidCallback? _numbersListener;
 
   // Toggle to render insight feed at the bottom of the dashboard
-  static const bool _INSIGHTS_AT_BOTTOM = true;
+  static const bool _insightsAtBottom = true;
 
   Widget _buildDashboardAdCard() {
     return AdsBannerCard(
@@ -213,7 +195,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.amber.withOpacity(0.3),
+            color: Colors.amber.withValues(alpha: 0.3),
             blurRadius: 12,
             offset: const Offset(0, 6),
           ),
@@ -223,7 +205,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () => Navigator.pushNamed(context, '/premium', arguments: widget.userPhone),
+          onTap: () => Navigator.pushNamed(context, '/premium',
+              arguments: widget.userPhone),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
@@ -231,10 +214,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.star_rounded, color: Colors.white, size: 24),
+                  child: const Icon(Icons.star_rounded,
+                      color: Colors.white, size: 24),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -262,7 +246,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
@@ -349,7 +334,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     try {
       await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
-      _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
+      _loanSuggestionsCount =
+          await _loanDetector.pendingCount(widget.userPhone);
       if (mounted) {
         setState(() {});
       }
@@ -361,16 +347,14 @@ class _DashboardScreenState extends State<DashboardScreen>
       final goalsList = await GoalService().getGoals(widget.userPhone);
       final loans = await LoanService().getLoans(widget.userPhone);
       final assetsForInsights = await _assetSvc.getAssets(widget.userPhone);
-    await _loadPortfolioTotals();
+      await _loadPortfolioTotals();
 
-    // Subscriptions
-    final subs = await SubscriptionService().streamSubscriptions(widget.userPhone).first.catchError((_) => <SubscriptionItem>[]);
-    double subTotal = subs.where((s) => s.isActive).fold<double>(0.0, (sum, s) => sum + (s.averageAmount ?? s.amount));
-    
-    // Sync reminders given fresh data
-    SubscriptionNotifier.instance.syncReminders(widget.userPhone);
+      // Subscriptions calculation removed
 
-    final openLoans = loans.where((l) => !(l.isClosed ?? false)).toList();
+      // Sync reminders given fresh data
+      SubscriptionNotifier.instance.syncReminders(widget.userPhone);
+
+      final openLoans = loans.where((l) => !l.isClosed).toList();
       final openLoanTotal =
           openLoans.fold<double>(0.0, (sum, loan) => sum + loan.amount);
 
@@ -382,19 +366,19 @@ class _DashboardScreenState extends State<DashboardScreen>
         loans: loans,
         assets: assetsForInsights,
       );
-      final generated =
-          FiinnyBrainService.generateInsights(userData, userId: widget.userPhone);
+      final generated = FiinnyBrainService.generateInsights(userData,
+          userId: widget.userPhone);
 
       if (!mounted) return;
       setState(() {
         goals = goalsList;
-      currentGoal = goalsList.isNotEmpty ? goalsList.first : null;
-      loanCount = openLoans.length;
-      totalLoan = openLoanTotal;
-      _subsCount = subs.length;
-      _subsTotal = subTotal;
+        currentGoal = goalsList.isNotEmpty ? goalsList.first : null;
+        loanCount = openLoans.length;
+        totalLoan = openLoanTotal;
+        // _subsCount = subs.length; // unused
+        // _subsTotal = subTotal; // unused
 
-      _insightUserData = userData;
+        _insightUserData = userData;
         insights = generated;
         _generateSmartInsight();
       });
@@ -471,7 +455,8 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (granted) {
         _onPermissionGranted();
       } else {
-        SnackThrottle.show(context, 'SMS permission is disabled.', color: Colors.orange);
+        SnackThrottle.show(context, 'SMS permission is disabled.',
+            color: Colors.orange);
       }
       return;
     }
@@ -497,18 +482,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                 '• What we read: Only transaction alerts from banks and cards.\n'
                 '• What we ignore: Personal chats, OTPs, and promotional messages.\n'
                 '• Privacy: Your data is processed locally on your device.',
-                style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.5),
+                style:
+                    TextStyle(fontSize: 13, color: Colors.black87, height: 1.5),
               ),
             ],
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false), // User declined disclosure
-            child: const Text('No thanks', style: TextStyle(color: Colors.grey)),
+            onPressed: () =>
+                Navigator.pop(context, false), // User declined disclosure
+            child:
+                const Text('No thanks', style: TextStyle(color: Colors.grey)),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true), // User agreed to disclosure
+            onPressed: () =>
+                Navigator.pop(context, true), // User agreed to disclosure
             style: FilledButton.styleFrom(backgroundColor: Fx.mintDark),
             child: const Text('Agree & Continue'),
           ),
@@ -565,7 +554,8 @@ class _DashboardScreenState extends State<DashboardScreen>
           children: [
             Row(
               children: [
-                Icon(Icons.sms_failed_outlined, color: Colors.red.shade400, size: 22),
+                Icon(Icons.sms_failed_outlined,
+                    color: Colors.red.shade400, size: 22),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -582,32 +572,38 @@ class _DashboardScreenState extends State<DashboardScreen>
             const SizedBox(height: 12),
             const Text(
               'Allow SMS access so we can automatically read bank alerts and keep your dashboard fresh.',
-              style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+              style:
+                  TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
             ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed:
-                    _requestingSmsPermission ? null : () => _updateSmsPermission(requestPrompt: true),
+                onPressed: _requestingSmsPermission
+                    ? null
+                    : () => _updateSmsPermission(requestPrompt: true),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Fx.mintDark,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
                 child: _requestingSmsPermission
                     ? const SizedBox(
                         height: 20,
                         width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation(Colors.white)),
                       )
                     : const Text('Enable SMS sync'),
               ),
             ),
             TextButton(
-              onPressed:
-                  _requestingSmsPermission ? null : () => _updateSmsPermission(requestPrompt: false),
+              onPressed: _requestingSmsPermission
+                  ? null
+                  : () => _updateSmsPermission(requestPrompt: false),
               child: const Text('Already enabled? Refresh status'),
             ),
           ],
@@ -620,22 +616,17 @@ class _DashboardScreenState extends State<DashboardScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    SmsPermissionHelper.permissionStatus.addListener(_onSmsPermissionStatusChanged);
+    SmsPermissionHelper.permissionStatus
+        .addListener(_onSmsPermissionStatusChanged);
     if (_isAndroidPlatform) {
-      _hasSmsPermission = SmsPermissionHelper.permissionStatus.value ?? SmsPermissionHelper.lastKnownStatus;
+      _hasSmsPermission = SmsPermissionHelper.permissionStatus.value ??
+          SmsPermissionHelper.lastKnownStatus;
     } else {
       _hasSmsPermission = null;
     }
-    _ringShineController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..addStatusListener((status) {
-        if (status == AnimationStatus.completed && mounted) {
-          setState(() => _ringShineVisible = false);
-        }
-      });
-    _ringShineController.forward();
-    _numbersCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
+    // _ringShineController init removed
+    _numbersCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900));
     _initDashboard();
     SyncCoordinator.instance.onAppStart(widget.userPhone);
     // 🔔 Start system recurring reminders (subs, SIPs, loans, card bills)
@@ -645,8 +636,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     unawaited(NotificationService().scheduleMonthlyWrapIfNeeded());
 
     Future.microtask(() async {
-      await _fetchUserName();              // sets _isEmailLinked / _userEmail
-      await _wirePipelines();              // trigger Gmail backfill after profile loads
+      await _fetchUserName(); // sets _isEmailLinked / _userEmail
+      await _wirePipelines(); // trigger Gmail backfill after profile loads
       await SyncCoordinator.instance.onAppStart(widget.userPhone);
     });
 
@@ -667,24 +658,22 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     SyncCoordinator.instance.onAppStop();
     unawaited(SocialEventsWatch.unbind());
     _sysNotifs?.unbind();
-    _ringShineController.dispose();
+    // _ringShineController dispose removed
     if (_numbersListener != null) {
       _numbersCtrl.removeListener(_numbersListener!);
     }
     _numbersCtrl.dispose();
-    SmsPermissionHelper.permissionStatus.removeListener(_onSmsPermissionStatusChanged);
+    SmsPermissionHelper.permissionStatus
+        .removeListener(_onSmsPermissionStatusChanged);
     ExpenseService.globalUpdate.removeListener(_handleGlobalUpdate);
     super.dispose();
   }
-
-
 
   void _openInsightFeed() {
     final data = _insightUserData;
@@ -709,7 +698,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         child: EmptyStateCard(
           icon: Icons.psychology_alt_rounded,
           title: 'Fiinny Brain is warming up',
-          subtitle: 'Add a few more transactions or fetch Gmail data to unlock personalised insights.',
+          subtitle:
+              'Add a few more transactions or fetch Gmail data to unlock personalised insights.',
           ctaText: 'Open Insights',
           onTap: _openInsightFeed,
         ),
@@ -756,7 +746,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         _userEmail = data?['email'];
         _isEmailLinked = (_userEmail != null && _userEmail!.isNotEmpty);
 
-        final url = (photo != null && photo.isNotEmpty) ? photo : (avatar ?? "");
+        final url =
+            (photo != null && photo.isNotEmpty) ? photo : (avatar ?? "");
         userAvatar = url.isNotEmpty ? url : "assets/images/profile_default.png";
       });
     } catch (_) {
@@ -776,7 +767,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _setGmailStatus(String status, {String? error}) async {
-    final docRef = FirebaseFirestore.instance.collection('users').doc(_userDocId);
+    final docRef =
+        FirebaseFirestore.instance.collection('users').doc(_userDocId);
     await docRef.set({
       'gmailBackfillStatus': status,
       if (error != null) 'gmailBackfillError': error,
@@ -788,14 +780,16 @@ class _DashboardScreenState extends State<DashboardScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       SyncCoordinator.instance.onAppResume(widget.userPhone);
-    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
       SyncCoordinator.instance.onAppStop();
     }
     super.didChangeAppLifecycleState(state);
   }
 
   Future<void> _maybeRunGmailBackfillOnce() async {
-    final docRef = FirebaseFirestore.instance.collection('users').doc(_userDocId);
+    final docRef =
+        FirebaseFirestore.instance.collection('users').doc(_userDocId);
     bool already = false;
     try {
       final snapshot = await docRef.get();
@@ -808,7 +802,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     try {
       await _setGmailStatus('running');
-      await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
+      await OldGmail.GmailService()
+          .fetchAndStoreTransactionsFromGmail(widget.userPhone);
       await docRef.set({
         'gmailBackfillDone': true,
         'gmailBackfillUpdatedAt': FieldValue.serverTimestamp(),
@@ -831,9 +826,10 @@ class _DashboardScreenState extends State<DashboardScreen>
       final prefs = await SharedPreferences.getInstance();
       final now = DateTime.now();
       final todayKey = 'manual_sync_count_${now.year}_${now.month}_${now.day}';
-      int count = prefs.getInt(todayKey) ?? 0;
+      final int count = prefs.getInt(todayKey) ?? 0;
 
-      final isPremium = Provider.of<SubscriptionService>(context, listen: false).isPremium;
+      final isPremium =
+          Provider.of<SubscriptionService>(context, listen: false).isPremium;
 
       // Limit: 3 free syncs per day (unless Premium)
       if (count >= 3 && !isPremium) {
@@ -842,7 +838,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         if (shown) {
           // Success (monetized)
         } else {
-           // Ad not ready or failed? Let them sync anyway (generous).
+          // Ad not ready or failed? Let them sync anyway (generous).
         }
       } else {
         // Free sync
@@ -863,7 +859,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     // 1. Gmail Fetch
     try {
-      await OldGmail.GmailService().fetchAndStoreTransactionsFromGmail(widget.userPhone);
+      await OldGmail.GmailService()
+          .fetchAndStoreTransactionsFromGmail(widget.userPhone);
     } catch (e) {
       errors.add("Gmail: $e");
     }
@@ -871,7 +868,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     // 2. SMS Realtime Sync (Delta)
     try {
       // Delta sync checks recent messages since last sync
-      await SmsIngestor.instance.syncDelta(userPhone: widget.userPhone, lookbackHours: 24);
+      await SmsIngestor.instance
+          .syncDelta(userPhone: widget.userPhone, lookbackHours: 24);
     } catch (e) {
       if (kIsWeb || (defaultTargetPlatform != TargetPlatform.android)) {
         // Ignore SMS error on non-Android
@@ -882,17 +880,20 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     // Refresh Dashboard Data
     await _initDashboard();
-    
+
     // Status update
     if (errors.isEmpty) {
       await _setGmailStatus('ok');
       if (mounted) {
-        SnackThrottle.show(context, "Synced Gmail & SMS transactions!", color: Colors.green);
+        SnackThrottle.show(context, "Synced Gmail & SMS transactions!",
+            color: Colors.green);
       }
     } else {
       await _setGmailStatus('error', error: errors.join(', '));
       if (mounted) {
-        SnackThrottle.show(context, "Sync completed with warnings: ${errors.join(', ')}", color: Colors.orange);
+        SnackThrottle.show(
+            context, "Sync completed with warnings: ${errors.join(', ')}",
+            color: Colors.orange);
       }
     }
 
@@ -908,8 +909,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     // Build symbols to quote
     final symbols = <String>{
-      for (final a in assets)
-        a.type == 'stock' ? a.name.toUpperCase() : 'GOLD',
+      for (final a in assets) a.type == 'stock' ? a.name.toUpperCase() : 'GOLD',
     }.toList();
 
     Map<String, PriceQuote> quotes = {};
@@ -937,7 +937,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     final range = _periodRange(period);
     if (range == null) return allExpenses;
     return allExpenses
-        .where((e) => !e.date.isBefore(range.start) && e.date.isBefore(range.end))
+        .where(
+            (e) => !e.date.isBefore(range.start) && e.date.isBefore(range.end))
         .toList();
   }
 
@@ -945,13 +946,15 @@ class _DashboardScreenState extends State<DashboardScreen>
     final range = _periodRange(period);
     if (range == null) return allIncomes;
     return allIncomes
-        .where((e) => !e.date.isBefore(range.start) && e.date.isBefore(range.end))
+        .where(
+            (e) => !e.date.isBefore(range.start) && e.date.isBefore(range.end))
         .toList();
   }
 
   // --- Limit helpers (SPENDING only) ---
   double get periodSpendOnly {
-    return _filteredExpensesForPeriod(txPeriod).fold(0.0, (a, b) => a + b.amount);
+    return _filteredExpensesForPeriod(txPeriod)
+        .fold(0.0, (a, b) => a + b.amount);
   }
 
   void _resetLimitWarnings() {
@@ -1094,8 +1097,9 @@ class _DashboardScreenState extends State<DashboardScreen>
         if (minDate == null || maxDate == null) {
           bars = <double>[];
         } else {
-          final months =
-              (maxDate.year - minDate.year) * 12 + (maxDate.month - minDate.month) + 1;
+          final months = (maxDate.year - minDate.year) * 12 +
+              (maxDate.month - minDate.month) +
+              1;
           bars = List<double>.filled(months, 0.0);
           for (var e in expenses) {
             final idx = (e.date.year - minDate.year) * 12 +
@@ -1205,8 +1209,9 @@ class _DashboardScreenState extends State<DashboardScreen>
         if (minDate == null || maxDate == null) {
           bars = <int>[];
         } else {
-          final months =
-              (maxDate.year - minDate.year) * 12 + (maxDate.month - minDate.month) + 1;
+          final months = (maxDate.year - minDate.year) * 12 +
+              (maxDate.month - minDate.month) +
+              1;
           bars = List<int>.filled(months, 0);
           for (var e in expenses) {
             final idx = (e.date.year - minDate.year) * 12 +
@@ -1235,10 +1240,10 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // 4️⃣ --- Get Total For Current Period ---
   double get periodTotalAmount {
-    final exp = _filteredExpensesForPeriod(txPeriod)
-        .fold(0.0, (a, b) => a + b.amount);
-    final inc = _filteredIncomesForPeriod(txPeriod)
-        .fold(0.0, (a, b) => a + b.amount);
+    final exp =
+        _filteredExpensesForPeriod(txPeriod).fold(0.0, (a, b) => a + b.amount);
+    final inc =
+        _filteredIncomesForPeriod(txPeriod).fold(0.0, (a, b) => a + b.amount);
     return exp + inc;
   }
 
@@ -1253,15 +1258,16 @@ class _DashboardScreenState extends State<DashboardScreen>
     setState(() => _loading = true);
     try {
       final expenses = await _expenseSvc.getExpenses(widget.userPhone);
-      final incomes  = await _incomeSvc.getIncomes(widget.userPhone);
+      final incomes = await _incomeSvc.getIncomes(widget.userPhone);
 
       final goalsList = await GoalService().getGoals(widget.userPhone);
       final loanService = LoanService();
       final loans = await loanService.getLoans(widget.userPhone);
       final assetsForInsights = await _assetSvc.getAssets(widget.userPhone);
 
-      final openLoans = loans.where((l) => !(l.isClosed ?? false)).toList();
-      final openLoanTotal = openLoans.fold<double>(0.0, (sum, loan) => sum + loan.amount);
+      final openLoans = loans.where((l) => !l.isClosed).toList();
+      final openLoanTotal =
+          openLoans.fold<double>(0.0, (sum, loan) => sum + loan.amount);
 
       // ⬇️ NEW: compute assets from the Portfolio module store
       await _loadPortfolioTotals();
@@ -1283,8 +1289,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         loans: loans,
         assets: assetsForInsights,
       );
-      final generatedInsights =
-          FiinnyBrainService.generateInsights(userData, userId: widget.userPhone);
+      final generatedInsights = FiinnyBrainService.generateInsights(userData,
+          userId: widget.userPhone);
 
       if (!mounted) return;
       setState(() {
@@ -1314,7 +1320,6 @@ class _DashboardScreenState extends State<DashboardScreen>
 
       // Fetch current limit for this period
       await _loadPeriodLimit();
-
     } catch (e) {
       print('[Dashboard] ERROR: $e');
       SnackThrottle.show(context, "Dashboard error: $e");
@@ -1392,20 +1397,25 @@ class _DashboardScreenState extends State<DashboardScreen>
     switch (period) {
       case 'D':
       case 'Today':
-        return DateTimeRange(start: todayStart, end: todayStart.add(const Duration(days: 1)));
+        return DateTimeRange(
+            start: todayStart, end: todayStart.add(const Duration(days: 1)));
       case 'Yesterday':
         final start = todayStart.subtract(const Duration(days: 1));
         return DateTimeRange(start: start, end: todayStart);
       case 'Last 2 Days':
         final start = todayStart.subtract(const Duration(days: 1));
-        return DateTimeRange(start: start, end: todayStart.add(const Duration(days: 1)));
+        return DateTimeRange(
+            start: start, end: todayStart.add(const Duration(days: 1)));
       case 'Last 5 Days':
         final start = todayStart.subtract(const Duration(days: 4));
-        return DateTimeRange(start: start, end: todayStart.add(const Duration(days: 1)));
+        return DateTimeRange(
+            start: start, end: todayStart.add(const Duration(days: 1)));
       case 'W':
       case 'This Week':
-        final start = todayStart.subtract(Duration(days: todayStart.weekday - 1));
-        return DateTimeRange(start: start, end: start.add(const Duration(days: 7)));
+        final start =
+            todayStart.subtract(Duration(days: todayStart.weekday - 1));
+        return DateTimeRange(
+            start: start, end: start.add(const Duration(days: 7)));
       case 'M':
       case 'This Month':
         final start = DateTime(now.year, now.month);
@@ -1445,7 +1455,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         return 'Transactions for last 5 days (${formatRange(start, now)})';
       case 'W':
       case 'This Week':
-        final start = todayStart.subtract(Duration(days: todayStart.weekday - 1));
+        final start =
+            todayStart.subtract(Duration(days: todayStart.weekday - 1));
         return 'Transactions for this week (${formatRange(start, now)})';
       case 'M':
       case 'This Month':
@@ -1541,9 +1552,12 @@ class _DashboardScreenState extends State<DashboardScreen>
   Future<void> _editLimitDialog() async {
     final suggested = _suggestedLimitForPeriod();
     final baseIncome = _incomeBaseForPresets();
-    final p50 = baseIncome > 0 ? ((baseIncome * 0.50) / 1000).round() * 1000 : null;
-    final p30 = baseIncome > 0 ? ((baseIncome * 0.30) / 1000).round() * 1000 : null;
-    final p20 = baseIncome > 0 ? ((baseIncome * 0.20) / 1000).round() * 1000 : null;
+    final p50 =
+        baseIncome > 0 ? ((baseIncome * 0.50) / 1000).round() * 1000 : null;
+    final p30 =
+        baseIncome > 0 ? ((baseIncome * 0.30) / 1000).round() * 1000 : null;
+    final p20 =
+        baseIncome > 0 ? ((baseIncome * 0.20) / 1000).round() * 1000 : null;
     final ctrl = TextEditingController(
       text: _periodLimit != null ? _periodLimit!.toStringAsFixed(0) : '',
     );
@@ -1580,12 +1594,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                   Text(
                     'Set a spending limit',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'Choose how much you want to spend for $periodName. We’ll alert you at 80% and 100% of the limit.',
-                    style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[700]),
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: Colors.grey[700]),
                   ),
                   const SizedBox(height: 20),
                   TextField(
@@ -1594,7 +1610,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     decoration: InputDecoration(
                       labelText: 'Limit amount (₹)',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14)),
                       suffixIcon: ctrl.text.isNotEmpty
                           ? IconButton(
                               icon: const Icon(Icons.clear),
@@ -1603,7 +1620,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                           : null,
                     ),
                   ),
-                  if (p50 != null || p30 != null || p20 != null || suggested != null) ...[
+                  if (p50 != null ||
+                      p30 != null ||
+                      p20 != null ||
+                      suggested != null) ...[
                     const SizedBox(height: 16),
                     Text('Quick picks', style: theme.textTheme.labelLarge),
                     const SizedBox(height: 8),
@@ -1611,13 +1631,17 @@ class _DashboardScreenState extends State<DashboardScreen>
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        if (p50 != null) _presetChip(ctx, '50% of income', p50, ctrl),
-                        if (p30 != null) _presetChip(ctx, '30% of income', p30, ctrl),
-                        if (p20 != null) _presetChip(ctx, '20% of income', p20, ctrl),
+                        if (p50 != null)
+                          _presetChip(ctx, '50% of income', p50, ctrl),
+                        if (p30 != null)
+                          _presetChip(ctx, '30% of income', p30, ctrl),
+                        if (p20 != null)
+                          _presetChip(ctx, '20% of income', p20, ctrl),
                         if (suggested != null)
                           ActionChip(
                             label: Text('Suggested ${INR.f(suggested)}'),
-                            onPressed: () => ctrl.text = suggested.toStringAsFixed(0),
+                            onPressed: () =>
+                                ctrl.text = suggested.toStringAsFixed(0),
                           ),
                       ],
                     ),
@@ -1688,30 +1712,31 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   void _generateSmartInsight() {
     if (totalAssets > 0 || totalLoan > 0) {
-      double netWorth = totalAssets - totalLoan;
+      final double netWorth = totalAssets - totalLoan;
       if (netWorth > 0) {
         smartInsight =
-        "Your net worth is ₹${netWorth.toStringAsFixed(0)}. You're building real wealth! 💰";
+            "Your net worth is ₹${netWorth.toStringAsFixed(0)}. You're building real wealth! 💰";
       } else {
         smartInsight =
-        "Your net worth is negative (₹${netWorth.toStringAsFixed(0)}). Focus on reducing loans and growing assets! 🔄";
+            "Your net worth is negative (₹${netWorth.toStringAsFixed(0)}). Focus on reducing loans and growing assets! 🔄";
       }
     } else if (totalIncome == 0 && totalExpense == 0) {
       smartInsight =
-      "Add your first transaction or fetch from Gmail to get insights!";
+          "Add your first transaction or fetch from Gmail to get insights!";
     } else if (totalExpense > totalIncome) {
       smartInsight =
-      "You're spending more than you earn this month. Be careful!";
+          "You're spending more than you earn this month. Be careful!";
     } else if (totalIncome > 0 && (savings / totalIncome) > 0.3) {
       smartInsight = "Great! You’ve saved over 30% of your income this month.";
     } else if (currentGoal != null &&
         currentGoal!.targetAmount > 0 &&
         savings > 0) {
-      double months = ((currentGoal!.targetAmount - currentGoal!.savedAmount) /
-          (savings == 0 ? 1 : savings))
-          .clamp(1, 36);
+      final double months =
+          ((currentGoal!.targetAmount - currentGoal!.savedAmount) /
+                  (savings == 0 ? 1 : savings))
+              .clamp(1, 36);
       smartInsight =
-      "At this pace, you'll reach your goal '${currentGoal!.title}' in about ${months.toStringAsFixed(0)} months!";
+          "At this pace, you'll reach your goal '${currentGoal!.title}' in about ${months.toStringAsFixed(0)} months!";
     } else {
       smartInsight = "Keep tracking your expenses and save more!";
     }
@@ -1733,7 +1758,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         : null;
 
     const EdgeInsets horizontalPadding = EdgeInsets.symmetric(horizontal: 14);
-    final String avatarValue = userAvatar ?? 'assets/images/profile_default.png';
+    final String avatarValue =
+        userAvatar ?? 'assets/images/profile_default.png';
     final bool isNetworkAvatar = avatarValue.startsWith('http');
     final ImageProvider<Object> avatarImage = isNetworkAvatar
         ? NetworkImage(avatarValue)
@@ -1779,9 +1805,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                     actions: [
                       IconButton(
                         tooltip: 'Gmail Link',
-                        icon: const Icon(Icons.mark_email_read_outlined, color: Fx.mintDark, size: 22),
+                        icon: const Icon(Icons.mark_email_read_outlined,
+                            color: Fx.mintDark, size: 22),
                         onPressed: () {
-                          Navigator.pushNamed(context, '/settings/gmail', arguments: widget.userPhone);
+                          Navigator.pushNamed(context, '/settings/gmail',
+                              arguments: widget.userPhone);
                         },
                       ),
                       IconButton(
@@ -1800,16 +1828,17 @@ class _DashboardScreenState extends State<DashboardScreen>
                         padding: const EdgeInsets.only(right: 4),
                         child: IconButton(
                           tooltip: 'Fiinny AI',
-                            icon: const Icon(
-                              Icons.chat_bubble_outline_rounded,
-                              color: Fx.mintDark,
-                              size: 24,
-                            ),
+                          icon: const Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            color: Fx.mintDark,
+                            size: 24,
+                          ),
                           onPressed: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => FiinnyBrainChatScreen(userPhone: widget.userPhone),
+                                builder: (context) => FiinnyBrainChatScreen(
+                                    userPhone: widget.userPhone),
                               ),
                             );
                           },
@@ -1820,18 +1849,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                             ? const SizedBox(
                                 width: 22,
                                 height: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : const Icon(Icons.sync_rounded, color: Fx.mintDark, size: 22),
+                            : const Icon(Icons.sync_rounded,
+                                color: Fx.mintDark, size: 22),
                         tooltip: 'Fetch Email Data',
-                        onPressed: _isFetchingEmail
-                            ? null
-                            : _handleManualSync,
+                        onPressed: _isFetchingEmail ? null : _handleManualSync,
                       ),
 
                       GestureDetector(
                         onTap: () {
-                          Navigator.pushNamed(context, '/profile', arguments: widget.userPhone);
+                          Navigator.pushNamed(context, '/profile',
+                              arguments: widget.userPhone);
                         },
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1840,7 +1870,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: Colors.black.withOpacity(.10),
+                                color: Colors.black.withValues(alpha: .10),
                                 width: 1,
                               ),
                             ),
@@ -1876,107 +1906,115 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ],
                   ),
-                if (_loading)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else
-                  (() {
-                    final sub = Provider.of<SubscriptionService>(context);
-                    final sections = <Widget>[
-                      const SizedBox(height: 6),
-                      CriticalAlertBanner(userId: widget.userPhone),
-                      
-                      if (!sub.isPremium) ...[
+                  if (_loading)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else
+                    (() {
+                      final sub = Provider.of<SubscriptionService>(context);
+                      final sections = <Widget>[
+                        const SizedBox(height: 6),
+                        CriticalAlertBanner(userId: widget.userPhone),
+                        if (!sub.isPremium) ...[
+                          Padding(
+                            padding: horizontalPadding,
+                            child: _buildPremiumCTA(context),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        if (!sub.isPremium)
+                          Padding(
+                            padding: horizontalPadding,
+                            child: _buildDashboardAdCard(),
+                          ),
+                        const SizedBox(height: 12),
                         Padding(
                           padding: horizontalPadding,
-                          child: _buildPremiumCTA(context),
+                          child: Text(
+                            'Welcome, ${userName ?? '...'}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Fx.mintDark,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: horizontalPadding,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              Navigator.pushNamed(
+                                context,
+                                '/tx-day-details',
+                                arguments: widget.userPhone,
+                              );
+                            },
+                            child: HeroTransactionRing(
+                              credit: _animCredit,
+                              debit: _animDebit,
+                              period: txPeriod,
+                              title: summaryTitle,
+                              titleStyle: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16),
+                              subtitle: summarySubtitle,
+                              onFilterTap: () async {
+                                final result =
+                                    await showModalBottomSheet<String>(
+                                  context: context,
+                                  builder: (ctx) => TxFilterBar(
+                                    selected: txPeriod,
+                                    onSelect: (period) =>
+                                        Navigator.pop(ctx, period),
+                                  ),
+                                );
+                                if (result != null && result != txPeriod) {
+                                  await _changePeriod(result);
+                                }
+                              },
+                              limitInfo: limitUsageText,
+                              onEditLimit:
+                                  _savingLimit ? null : _editLimitDialog,
+                              onLimitTap:
+                                  _savingLimit ? null : _editLimitDialog,
+                              showLimitButton: true,
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 12),
-                      ],
-                      
-                      if (!sub.isPremium)
                         Padding(
                           padding: horizontalPadding,
-                          child: _buildDashboardAdCard(),
-                        ),
-                      const SizedBox(height: 12),
-                      Padding(
-                        padding: horizontalPadding,
-                        child: Text(
-                          'Welcome, ${userName ?? '...'}',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: Fx.mintDark,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Padding(
-                        padding: horizontalPadding,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            Navigator.pushNamed(
-                              context,
-                              '/tx-day-details',
-                              arguments: widget.userPhone,
-                            );
-                          },
-                          child: HeroTransactionRing(
-                            credit: _animCredit,
-                            debit: _animDebit,
-                            period: txPeriod,
-                            title: summaryTitle,
-                            titleStyle: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
-                            subtitle: summarySubtitle,
-                            onFilterTap: () async {
-                              final result = await showModalBottomSheet<String>(
-                                context: context,
-                                builder: (ctx) => TxFilterBar(
-                                  selected: txPeriod,
-                                  onSelect: (period) => Navigator.pop(ctx, period),
-                                ),
-                              );
-                              if (result != null && result != txPeriod) {
-                                await _changePeriod(result);
-                              }
-                            },
-                            limitInfo: limitUsageText,
-                            onEditLimit: _savingLimit ? null : _editLimitDialog,
-                            onLimitTap: _savingLimit ? null : _editLimitDialog,
-                            showLimitButton: true,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Padding(
-                        padding: horizontalPadding,
-                        child: Row(
+                          child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Expanded(
                                 child: SizedBox(
                                   height: 220,
                                   child: TransactionCountCard(
-                                    key: ValueKey('count|$_barsRevision|$txPeriod'),
+                                    key: ValueKey(
+                                        'count|$_barsRevision|$txPeriod'),
                                     count: _animTxCount,
                                     period: txPeriod,
                                     barData: _barDataCount(),
                                     onFilterTap: () async {
-                                      final result = await showModalBottomSheet<String>(
+                                      final result =
+                                          await showModalBottomSheet<String>(
                                         context: context,
                                         builder: (ctx) => TxFilterBar(
                                           selected: txPeriod,
-                                          onSelect: (period) => Navigator.pop(ctx, period),
+                                          onSelect: (period) =>
+                                              Navigator.pop(ctx, period),
                                         ),
                                       );
-                                      if (result != null && result != txPeriod) {
+                                      if (result != null &&
+                                          result != txPeriod) {
                                         await _changePeriod(result);
                                       }
                                     },
@@ -1995,20 +2033,24 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 child: SizedBox(
                                   height: 220,
                                   child: TransactionAmountCard(
-                                    key: ValueKey('amount|$_barsRevision|$txPeriod'),
+                                    key: ValueKey(
+                                        'amount|$_barsRevision|$txPeriod'),
                                     label: 'Transaction Amount',
                                     amount: _animAmount,
                                     barData: _barDataAmount(),
                                     period: txPeriod,
                                     onFilterTap: () async {
-                                      final result = await showModalBottomSheet<String>(
+                                      final result =
+                                          await showModalBottomSheet<String>(
                                         context: context,
                                         builder: (ctx) => TxFilterBar(
                                           selected: txPeriod,
-                                          onSelect: (period) => Navigator.pop(ctx, period),
+                                          onSelect: (period) =>
+                                              Navigator.pop(ctx, period),
                                         ),
                                       );
-                                      if (result != null && result != txPeriod) {
+                                      if (result != null &&
+                                          result != txPeriod) {
                                         await _changePeriod(result);
                                       }
                                     },
@@ -2033,7 +2075,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                             incomes: filteredIncomes,
                             userName: userName ?? 'User',
                             onAddCard: () {
-                              SnackThrottle.show(context, "Add Card feature coming soon!");
+                              SnackThrottle.show(
+                                  context, "Add Card feature coming soon!");
                             },
                             onViewAll: () {
                               Navigator.pushNamed(
@@ -2043,21 +2086,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                               );
                             },
                             onCardSelected: (slug) {
-                               // Assuming we can get Bank Name from slug simply by capitalizing or mapped logic
-                               // For display purposes, convert slug like 'hdfc' -> 'HDFC'
-                               final bankName = slug.toUpperCase(); 
+                              // Assuming we can get Bank Name from slug simply by capitalizing or mapped logic
+                              // For display purposes, convert slug like 'hdfc' -> 'HDFC'
+                              final bankName = slug.toUpperCase();
 
-                               showDialog(
-                                 context: context,
-                                 builder: (_) => BankOverviewDialog(
-                                   bankSlug: slug,
-                                   bankName: bankName,
-                                   allExpenses: filteredExpenses, // Use local filtered list or _expenses if available
-                                   allIncomes: filteredIncomes,
-                                   userPhone: widget.userPhone,
-                                   userName: userName ?? 'User',
-                                 ),
-                               );
+                              showDialog(
+                                context: context,
+                                builder: (_) => BankOverviewDialog(
+                                  bankSlug: slug,
+                                  bankName: bankName,
+                                  allExpenses:
+                                      filteredExpenses, // Use local filtered list or _expenses if available
+                                  allIncomes: filteredIncomes,
+                                  userPhone: widget.userPhone,
+                                  userName: userName ?? 'User',
+                                ),
+                              );
                             },
                           ),
                         ),
@@ -2072,9 +2116,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                           child: GmailBackfillBanner(
                             userId: widget.userPhone,
                             isLinked: _isEmailLinked,
-                            onRetry: _isFetchingEmail
-                                ? null
-                                : _handleManualSync,
+                            onRetry:
+                                _isFetchingEmail ? null : _handleManualSync,
                           ),
                         ),
                         const SizedBox(height: 10),
@@ -2090,19 +2133,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                         Padding(
                           padding: horizontalPadding,
                           child: SmartInsightCard(
-                            key: ValueKey('smart|$_summaryRevision|$txPeriod|body'),
+                            key: ValueKey(
+                                'smart|$_summaryRevision|$txPeriod|body'),
                             income: totalIncome,
                             expense: totalExpense,
                             savings: savings,
                             goal: currentGoal,
                             totalLoan: totalLoan,
                             totalAssets: totalAssets,
-                            insightText: smartInsight.trim().isEmpty ? null : smartInsight.trim(),
+                            insightText: smartInsight.trim().isEmpty
+                                ? null
+                                : smartInsight.trim(),
                             showToday: true,
                           ),
                         ),
                         const SizedBox(height: 12),
-                        if (_insightUserData != null && !_INSIGHTS_AT_BOTTOM) ...[
+                        if (_insightUserData != null && !_insightsAtBottom) ...[
                           _buildInsightFeedSection(horizontalPadding),
                           const SizedBox(height: 14),
                         ] else
@@ -2117,6 +2163,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 if (isNarrow) return child;
                                 return SizedBox(height: 188, child: child);
                               }
+
                               final loansTile = wrapTile(_buildLoansTile());
                               final assetsTile = wrapTile(_buildAssetsTile());
                               if (isNarrow) {
@@ -2140,7 +2187,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ),
                         const SizedBox(height: 10),
-
                         Padding(
                           padding: horizontalPadding,
                           child: _buildGoalsTile(),
@@ -2148,7 +2194,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                         const SizedBox(height: 10),
                         Padding(
                           padding: horizontalPadding,
-                          child: NetWorthPanel(totalAssets: totalAssets, totalLoan: totalLoan),
+                          child: NetWorthPanel(
+                              totalAssets: totalAssets, totalLoan: totalLoan),
                         ),
                         if (goals.isEmpty) ...[
                           const SizedBox(height: 10),
@@ -2157,10 +2204,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                             child: EmptyStateCard(
                               icon: Icons.flag_rounded,
                               title: 'No goals yet',
-                              subtitle: 'Set a saving goal and track progress effortlessly.',
+                              subtitle:
+                                  'Set a saving goal and track progress effortlessly.',
                               ctaText: 'Add your first goal',
                               onTap: () async {
-                                await Navigator.pushNamed(context, '/goals', arguments: widget.userPhone);
+                                await Navigator.pushNamed(context, '/goals',
+                                    arguments: widget.userPhone);
                                 await _initDashboard();
                               },
                             ),
@@ -2174,41 +2223,44 @@ class _DashboardScreenState extends State<DashboardScreen>
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Fx.mintDark,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 13),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 13),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(15),
                                 ),
                                 elevation: 4,
                               ),
-                              icon: const Icon(Icons.mail_rounded, color: Colors.white),
+                              icon: const Icon(Icons.mail_rounded,
+                                  color: Colors.white),
                               label: const Text(
                                 'Fetch Email Data',
-                                style: TextStyle(color: Colors.white, fontSize: 15),
+                                style: TextStyle(
+                                    color: Colors.white, fontSize: 15),
                               ),
                               onPressed: _handleManualSync,
                             ),
                           ),
                         ],
                         const SizedBox(height: 18),
-                        if (_insightUserData != null && _INSIGHTS_AT_BOTTOM) ...[
+                        if (_insightUserData != null && _insightsAtBottom) ...[
                           _buildInsightFeedSection(horizontalPadding),
                           const SizedBox(height: 14),
                         ],
                         const SizedBox(height: 48),
                       ];
-                    final builtSections = List<Widget>.unmodifiable(sections);
-                    return SliverPadding(
-                      padding: const EdgeInsets.only(bottom: 32),
-                      sliver: SliverList(
-                        delegate: SliverChildListDelegate(
-                          builtSections,
-                          addAutomaticKeepAlives: false,
-                          addRepaintBoundaries: true,
-                          addSemanticIndexes: false,
+                      final builtSections = List<Widget>.unmodifiable(sections);
+                      return SliverPadding(
+                        padding: const EdgeInsets.only(bottom: 32),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate(
+                            builtSections,
+                            addAutomaticKeepAlives: false,
+                            addRepaintBoundaries: true,
+                            addSemanticIndexes: false,
+                          ),
                         ),
-                      ),
-                    );
-                  })(),
+                      );
+                    })(),
                   if (_showSmsPermissionBanner)
                     SliverToBoxAdapter(
                       child: _buildSmsPermissionBanner(),
@@ -2221,7 +2273,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       ),
     );
   }
-
 
   Widget _buildLoansTile() {
     return LayoutBuilder(
@@ -2243,25 +2294,29 @@ class _DashboardScreenState extends State<DashboardScreen>
           },
           onReviewSuggestions: () async {
             if (!mounted) return;
-            setState(() => _scanningLoans = true);
+            // setState(() => _scanningLoans = true);
             try {
-              await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
-              _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
+              await _loanDetector.scanAndWrite(widget.userPhone,
+                  daysWindow: 360);
+              _loanSuggestionsCount =
+                  await _loanDetector.pendingCount(widget.userPhone);
             } finally {
-              if (mounted) setState(() => _scanningLoans = false);
+              // if (mounted) setState(() => _scanningLoans = false);
             }
 
             await showModalBottomSheet(
               context: context,
               isScrollControlled: true,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               builder: (_) => SizedBox(
                 height: MediaQuery.of(context).size.height * 0.70,
                 child: LoanSuggestionsSheet(userId: widget.userPhone),
               ),
             );
 
-            _loanSuggestionsCount = await _loanDetector.pendingCount(widget.userPhone);
+            _loanSuggestionsCount =
+                await _loanDetector.pendingCount(widget.userPhone);
             final ls = await LoanService().countOpenLoans(widget.userPhone);
             final sum = await LoanService().sumOutstanding(widget.userPhone);
             if (mounted) {
@@ -2320,59 +2375,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-
-
-  Widget _wrapRingWithShine(Widget child) {
-    if (!_ringShineVisible) return child;
-    return AnimatedBuilder(
-      animation: _ringShineController,
-      child: child,
-      builder: (context, child) {
-        final t = Curves.easeInOut.transform(_ringShineController.value);
-        return Stack(
-          children: [
-            if (child != null) child,
-            Positioned.fill(
-              child: IgnorePointer(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    var width = constraints.maxWidth;
-                    if (!width.isFinite || width <= 0) {
-                      width = MediaQuery.of(context).size.width - 28; // approximate horizontal padding
-                    }
-                    if (width < 120) width = 120;
-                    final shineWidth = width * 0.45;
-                    final dx = (width + shineWidth) * t - shineWidth;
-                    final opacity = (1 - t).clamp(0.0, 1.0) * 0.55;
-                    return Opacity(
-                      opacity: opacity,
-                      child: Transform.translate(
-                        offset: Offset(dx, 0),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                              colors: [
-                                Colors.white.withOpacity(0.0),
-                                Colors.white.withOpacity(0.75),
-                                Colors.white.withOpacity(0.0),
-                              ],
-                              stops: const [0.0, 0.5, 1.0],
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
+  // _wrapRingWithShine removed
 
   Widget _buildGoalsTile() {
     return Material(
@@ -2390,7 +2393,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         child: GoalsSummaryCard(
           userId: widget.userPhone,
           goalCount: goals.length,
-          totalGoalAmount: goals.fold<double>(0.0, (sum, g) => sum + g.targetAmount),
+          totalGoalAmount:
+              goals.fold<double>(0.0, (sum, g) => sum + g.targetAmount),
           onAddGoal: () async {
             final added = await showDialog<bool>(
               context: context,
@@ -2409,19 +2413,20 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-
-  Widget _presetChip(BuildContext ctx, String label, num amount, TextEditingController ctrl) {
+  Widget _presetChip(
+      BuildContext ctx, String label, num amount, TextEditingController ctrl) {
     return InkWell(
       borderRadius: BorderRadius.circular(999),
       onTap: () => ctrl.text = amount.toStringAsFixed(0),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.teal.withOpacity(0.10),
+          color: Colors.teal.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Colors.teal.withOpacity(0.25)),
+          border: Border.all(color: Colors.teal.withValues(alpha: 0.25)),
         ),
-        child: Text('$label • ₹${amount.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+        child: Text('$label • ₹${amount.toStringAsFixed(0)}',
+            style: const TextStyle(fontWeight: FontWeight.w700)),
       ),
     );
   }
@@ -2440,18 +2445,20 @@ class _DashboardScreenState extends State<DashboardScreen>
       credit = allIncomes.fold(0.0, (a, b) => a + b.amount);
       debit = allExpenses.fold(0.0, (a, b) => a + b.amount);
     } else {
-      credit = _filteredIncomesForPeriod(period).fold(0.0, (a, b) => a + b.amount);
-      debit = _filteredExpensesForPeriod(period).fold(0.0, (a, b) => a + b.amount);
+      credit =
+          _filteredIncomesForPeriod(period).fold(0.0, (a, b) => a + b.amount);
+      debit =
+          _filteredExpensesForPeriod(period).fold(0.0, (a, b) => a + b.amount);
     }
 
     final summary = {"credit": credit, "debit": debit, "net": credit - debit};
     _summaryCache[cacheKey] = summary;
     return summary;
-    }
+  }
 }
 
 class _AnimatedMintBackground extends StatelessWidget {
-  const _AnimatedMintBackground({super.key});
+  const _AnimatedMintBackground();
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
@@ -2463,9 +2470,9 @@ class _AnimatedMintBackground extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: RadialGradient(
               colors: [
-                Colors.tealAccent.withOpacity(0.2),
-                Colors.teal.withOpacity(0.1),
-                Colors.white.withOpacity(0.6),
+                Colors.tealAccent.withValues(alpha: 0.2),
+                Colors.teal.withValues(alpha: 0.1),
+                Colors.white.withValues(alpha: 0.6),
               ],
               center: Alignment.topLeft,
               radius: 0.8 + 0.4 * v,

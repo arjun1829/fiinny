@@ -70,10 +70,10 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
           (i) => DateTime(now.year, now.month, now.day).subtract(Duration(days: 6 - i)),
     );
 
-    List<double> percents = [];
-    List<double> credits = [];
-    List<double> debits = [];
-    double weeklyMax = 1000.0; // Adjust target as needed
+    final List<double> percents = [];
+    final List<double> credits = [];
+    final List<double> debits = [];
+    final double weeklyMax = 1000.0; // Adjust target as needed
 
     for (var day in last7Days) {
       final dayStart = DateTime(day.year, day.month, day.day);
@@ -140,7 +140,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
 
     double credit = 0.0, debit = 0.0;
     int count = 0;
-    List<Map<String, dynamic>> txs = [];
+    final List<Map<String, dynamic>> txs = [];
     for (final doc in incomeSnap.docs) {
       credit += (doc.data()['amount'] as num? ?? 0).toDouble();
       count += 1;
@@ -183,7 +183,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
   @override
   Widget build(BuildContext context) {
     final avatar = userAvatar ?? "assets/images/profile_default.png";
-    String dateStr = "${selectedDay.day}/${selectedDay.month}/${selectedDay.year}";
+    final String dateStr = "${selectedDay.day}/${selectedDay.month}/${selectedDay.year}";
 
     return Scaffold(
       appBar: AppBar(
@@ -216,7 +216,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
                         backgroundImage: avatar.startsWith('http')
                             ? NetworkImage(avatar)
                             : AssetImage(avatar) as ImageProvider,
-                        backgroundColor: Colors.teal.withOpacity(0.13),
+                        backgroundColor: Colors.teal.withValues(alpha: 0.13),
                       ),
                     ],
                   ),

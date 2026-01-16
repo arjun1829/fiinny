@@ -68,9 +68,9 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
               decoration: BoxDecoration(
                 gradient: RadialGradient(
                   colors: [
-                    Fx.mint.withOpacity(.10),
-                    Fx.mintDark.withOpacity(.06),
-                    Colors.white.withOpacity(.60),
+                    Fx.mint.withValues(alpha: .10),
+                    Fx.mintDark.withValues(alpha: .06),
+                    Colors.white.withValues(alpha: .60),
                   ],
                   center: Alignment.topLeft,
                   radius: .9,
