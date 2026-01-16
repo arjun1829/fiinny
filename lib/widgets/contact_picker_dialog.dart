@@ -6,10 +6,10 @@ class ContactPickerDialog extends StatefulWidget {
   final bool singleSelect; // NEW: Enable single or multi selection
 
   const ContactPickerDialog({
-    Key? key,
+    super.key,
     required this.contacts,
-    this.singleSelect = false, // NEW: default is multi-select
-  }) : super(key: key);
+    this.singleSelect = false,
+  });
 
   @override
   State<ContactPickerDialog> createState() => _ContactPickerDialogState();
@@ -31,9 +31,8 @@ class _ContactPickerDialogState extends State<ContactPickerDialog> {
       searchQuery = query;
       filteredContacts = widget.contacts
           .where((c) =>
-      c.displayName.toLowerCase().contains(query.toLowerCase()) ||
-          (c.phones.isNotEmpty &&
-              c.phones.first.number.contains(query)))
+              c.displayName.toLowerCase().contains(query.toLowerCase()) ||
+              (c.phones.isNotEmpty && c.phones.first.number.contains(query)))
           .toList();
     });
   }
@@ -74,57 +73,57 @@ class _ContactPickerDialogState extends State<ContactPickerDialog> {
               child: filteredContacts.isEmpty
                   ? const Center(child: Text('No contacts found.'))
                   : ListView.builder(
-                itemCount: filteredContacts.length,
-                itemBuilder: (context, index) {
-                  final contact = filteredContacts[index];
-                  final selected = selectedContacts.contains(contact);
-                  return ListTile(
-                    leading: CircleAvatar(
-                      child: Text(contact.displayName.isNotEmpty
-                          ? contact.displayName[0]
-                          : '?'),
+                      itemCount: filteredContacts.length,
+                      itemBuilder: (context, index) {
+                        final contact = filteredContacts[index];
+                        final selected = selectedContacts.contains(contact);
+                        return ListTile(
+                          leading: CircleAvatar(
+                            child: Text(contact.displayName.isNotEmpty
+                                ? contact.displayName[0]
+                                : '?'),
+                          ),
+                          title: Text(contact.displayName),
+                          subtitle: Text(
+                            contact.phones.isNotEmpty
+                                ? contact.phones.first.number
+                                : (contact.emails.isNotEmpty
+                                    ? contact.emails.first.address
+                                    : ''),
+                          ),
+                          trailing: widget.singleSelect
+                              ? null
+                              : Checkbox(
+                                  value: selected,
+                                  onChanged: (val) => _toggleSelection(contact),
+                                ),
+                          onTap: () => _toggleSelection(contact),
+                        );
+                      },
                     ),
-                    title: Text(contact.displayName),
-                    subtitle: Text(
-                      contact.phones.isNotEmpty
-                          ? contact.phones.first.number
-                          : (contact.emails.isNotEmpty
-                          ? contact.emails.first.address
-                          : ''),
-                    ),
-                    trailing: widget.singleSelect
-                        ? null
-                        : Checkbox(
-                      value: selected,
-                      onChanged: (val) => _toggleSelection(contact),
-                    ),
-                    onTap: () => _toggleSelection(contact),
-                  );
-                },
-              ),
             ),
           ],
         ),
       ),
       actions: widget.singleSelect
           ? [
-        TextButton(
-          child: const Text("Cancel"),
-          onPressed: () => Navigator.pop(context, null),
-        ),
-      ]
+              TextButton(
+                child: const Text("Cancel"),
+                onPressed: () => Navigator.pop(context, null),
+              ),
+            ]
           : [
-        TextButton(
-          child: const Text("Cancel"),
-          onPressed: () => Navigator.pop(context, null),
-        ),
-        ElevatedButton(
-          child: const Text("Add Selected"),
-          onPressed: selectedContacts.isEmpty
-              ? null
-              : () => Navigator.pop(context, selectedContacts),
-        ),
-      ],
+              TextButton(
+                child: const Text("Cancel"),
+                onPressed: () => Navigator.pop(context, null),
+              ),
+              ElevatedButton(
+                child: const Text("Add Selected"),
+                onPressed: selectedContacts.isEmpty
+                    ? null
+                    : () => Navigator.pop(context, selectedContacts),
+              ),
+            ],
     );
   }
 }

@@ -10,7 +10,7 @@ class TransactionCountCard extends StatelessWidget {
   final int? limit;
 
   const TransactionCountCard({
-    Key? key,
+    super.key,
     this.label = 'Transaction Count',
     required this.count,
     required this.barData,
@@ -18,22 +18,45 @@ class TransactionCountCard extends StatelessWidget {
     required this.onViewAllTap,
     required this.onFilterTap,
     this.limit,
-  }) : super(key: key);
+  });
 
   String _labelForIndex(int idx) {
     if (barData.length == 24) {
-      if (idx == 0) return '0AM';
-      if (idx == 6) return '6AM';
-      if (idx == 12) return '12PM';
-      if (idx == 18) return '6PM';
+      if (idx == 0) {
+        return '0AM';
+      }
+      if (idx == 6) {
+        return '6AM';
+      }
+      if (idx == 12) {
+        return '12PM';
+      }
+      if (idx == 18) {
+        return '6PM';
+      }
     } else if (barData.length == 7) {
       const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
       return days[idx];
     } else if (barData.length == 12) {
-      const months = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+      const months = [
+        'J',
+        'F',
+        'M',
+        'A',
+        'M',
+        'J',
+        'J',
+        'A',
+        'S',
+        'O',
+        'N',
+        'D'
+      ];
       return months[idx];
     } else if (barData.length >= 28 && barData.length <= 31) {
-      if (idx % 7 == 0) return '${idx + 1}';
+      if (idx % 7 == 0) {
+        return '${idx + 1}';
+      }
     }
     return '';
   }
@@ -112,7 +135,8 @@ class TransactionCountCard extends StatelessWidget {
                         shape: BoxShape.circle,
                         color: colorScheme.primary.withValues(alpha: 0.13),
                       ),
-                      child: Icon(Icons.filter_list_rounded, color: colorScheme.primary, size: 19),
+                      child: Icon(Icons.filter_list_rounded,
+                          color: colorScheme.primary, size: 19),
                     ),
                   ),
                 ],
@@ -157,10 +181,15 @@ class TransactionCountCard extends StatelessWidget {
                         margin: EdgeInsets.symmetric(horizontal: hMargin),
                         alignment: Alignment.bottomCenter,
                         child: Container(
-                          height: barHeight < 2 && val > 0 ? 2 : barHeight, // Min height for visibility
+                          height: barHeight < 2 && val > 0
+                              ? 2
+                              : barHeight, // Min height for visibility
                           decoration: BoxDecoration(
-                            color: barHeight > 0 ? colorScheme.primary : colorScheme.primary.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(2), // slightly rounder
+                            color: barHeight > 0
+                                ? colorScheme.primary
+                                : colorScheme.primary.withValues(alpha: 0.15),
+                            borderRadius:
+                                BorderRadius.circular(2), // slightly rounder
                           ),
                         ),
                       ),

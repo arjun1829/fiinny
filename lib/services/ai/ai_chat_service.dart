@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+
 import '../../models/ai_message.dart';
 
 class AiChatService {
@@ -36,7 +36,7 @@ class AiChatService {
       });
       return sessionId;
     } catch (e) {
-      debugPrint('Error getting/creating session: $e');
+      // debugPrint('Error getting/creating session: $e');
       // Fallback
       return 'default_session';
     }
@@ -61,7 +61,8 @@ class AiChatService {
   }
 
   /// Send a user message to a specific session
-  Future<void> sendUserMessage(String userId, String sessionId, String text) async {
+  Future<void> sendUserMessage(
+      String userId, String sessionId, String text) async {
     await _firestore
         .collection('users')
         .doc(userId)
@@ -77,7 +78,8 @@ class AiChatService {
   }
 
   /// Add an AI response and update session metadata
-  Future<void> addAiResponse(String userId, String sessionId, String text) async {
+  Future<void> addAiResponse(
+      String userId, String sessionId, String text) async {
     final sessionRef = _firestore
         .collection('users')
         .doc(userId)
@@ -97,7 +99,7 @@ class AiChatService {
     // Update session metadata
     final countSnapshot = await messageRef.count().get();
     final count = countSnapshot.count;
-    
+
     await sessionRef.update({
       'lastMessage': text.length > 100 ? text.substring(0, 100) + '...' : text,
       'lastUpdated': FieldValue.serverTimestamp(),
@@ -115,19 +117,19 @@ class AiChatService {
         .doc(sessionId)
         .collection('messages')
         .get();
-        
+
     final batch = _firestore.batch();
     for (var doc in messages.docs) {
       batch.delete(doc.reference);
     }
-    
+
     // Delete session doc
     batch.delete(_firestore
         .collection('users')
         .doc(userId)
         .collection('chat_sessions')
         .doc(sessionId));
-        
+
     await batch.commit();
   }
 }

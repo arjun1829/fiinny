@@ -8,12 +8,12 @@ class PartnerChatFullScreen extends StatelessWidget {
   final String? partnerAvatar;
 
   const PartnerChatFullScreen({
-    Key? key,
+    super.key,
     required this.partnerName,
     required this.partnerUserId,
     required this.currentUserId,
     this.partnerAvatar,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

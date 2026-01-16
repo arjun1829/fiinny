@@ -15,12 +15,12 @@ class InsightFeedCard extends StatelessWidget {
   final String? userId;
 
   const InsightFeedCard({
-    Key? key,
+    super.key,
     required this.insights,
     this.maxItems = 5,
     this.showHeader = true,
     this.userId,
-  }) : super(key: key);
+  });
 
   static final _dt = DateFormat('dd MMM, hh:mm a');
 
@@ -35,7 +35,8 @@ class InsightFeedCard extends StatelessWidget {
       } else {
         final a = existing.severity ?? 0;
         final b = i.severity ?? 0;
-        final worse = (b > a) || (b == a && i.timestamp.isAfter(existing.timestamp));
+        final worse =
+            (b > a) || (b == a && i.timestamp.isAfter(existing.timestamp));
         if (worse) map[key] = i;
       }
     }
@@ -132,11 +133,13 @@ class InsightFeedCard extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: Row(
                   children: [
-                    const Icon(Icons.psychology_alt_rounded, color: Fx.mintDark),
+                    const Icon(Icons.psychology_alt_rounded,
+                        color: Fx.mintDark),
                     const SizedBox(width: Fx.s8),
                     Text("Smart Insights", style: Fx.title),
                     const Spacer(),
-                    PillBadge("${list.length}", color: Fx.mintDark, icon: Icons.insights_rounded),
+                    PillBadge("${list.length}",
+                        color: Fx.mintDark, icon: Icons.insights_rounded),
                   ],
                 ),
               ),
@@ -146,7 +149,8 @@ class InsightFeedCard extends StatelessWidget {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: list.length,
-              separatorBuilder: (context, index) => const Divider(height: 1, indent: 56),
+              separatorBuilder: (context, index) =>
+                  const Divider(height: 1, indent: 56),
               itemBuilder: (context, index) {
                 final insight = list[index];
                 final color = _color(insight.type, insight.severity);
@@ -156,23 +160,30 @@ class InsightFeedCard extends StatelessWidget {
                 // Determine badge style
                 final Color badgeBg = color.withValues(alpha: 0.1);
                 final Color badgeText = color;
-                
+
                 return Padding(
-                  key: ValueKey('${insight.title}|${insight.timestamp.toIso8601String()}'),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  key: ValueKey(
+                      '${insight.title}|${insight.timestamp.toIso8601String()}'),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(Fx.r12),
                     onTap: () {
-                        // Keep tap logic for detail if needed, or remove if just display
-                        showDialog(
+                      // Keep tap logic for detail if needed, or remove if just display
+                      showDialog(
                         context: context,
                         builder: (_) => AlertDialog(
                           title: Row(children: [
                             Icon(icon, color: color),
                             const SizedBox(width: Fx.s8),
-                            Expanded(child: Text(insight.title.isEmpty ? "Insight" : insight.title)),
+                            Expanded(
+                                child: Text(insight.title.isEmpty
+                                    ? "Insight"
+                                    : insight.title)),
                           ]),
-                          content: Text(insight.description.isEmpty ? fallback : insight.description),
+                          content: Text(insight.description.isEmpty
+                              ? fallback
+                              : insight.description),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context),
@@ -188,79 +199,88 @@ class InsightFeedCard extends StatelessWidget {
                         // Left Icon
                         Container(
                             padding: const EdgeInsets.all(8),
-                            child: Icon(icon, color: color, size: 24)
-                        ),
+                            child: Icon(icon, color: color, size: 24)),
                         const SizedBox(width: Fx.s12),
-                        
+
                         // Center Content
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                insight.title.isEmpty ? "No Title" : insight.title,
+                                insight.title.isEmpty
+                                    ? "No Title"
+                                    : insight.title,
                                 style: TextStyle(
-                                  color: color, 
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15,
-                                  height: 1.2
-                                ),
+                                    color: color,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    height: 1.2),
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                insight.description.isEmpty ? fallback : insight.description,
-                                style: Fx.label.copyWith(fontSize: 13, color: Colors.black87, height: 1.4),
+                                insight.description.isEmpty
+                                    ? fallback
+                                    : insight.description,
+                                style: Fx.label.copyWith(
+                                    fontSize: 13,
+                                    color: Colors.black87,
+                                    height: 1.4),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 8),
-                              if (insight.severity != null && insight.severity! > 0)
+                              if (insight.severity != null &&
+                                  insight.severity! > 0)
                                 Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
                                         color: badgeBg,
-                                        borderRadius: BorderRadius.circular(12)
-                                    ),
-                                    child: Text(
-                                        "Severity: ${insight.severity}",
-                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: badgeText)
-                                    )
-                                )
+                                        borderRadius:
+                                            BorderRadius.circular(12)),
+                                    child: Text("Severity: ${insight.severity}",
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: badgeText)))
                             ],
                           ),
                         ),
-                        
+
                         const SizedBox(width: 8),
 
                         // Right Meta
                         Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                                if ((insight.category ?? '').isNotEmpty)
-                                    Container(
-                                        margin: const EdgeInsets.only(bottom: 6),
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                         decoration: BoxDecoration(
-                                            color: Colors.white,
-                                            border: Border.all(color: Colors.grey.shade300),
-                                            borderRadius: BorderRadius.circular(12)
-                                        ),
-                                        child: Text(
-                                            _categoryLabel(insight.category),
-                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.orange.shade800)
-                                        )
-                                    ),
-                                Text(
-                                    _timeAgo(insight.timestamp),
-                                    style: TextStyle(fontSize: 11, color: Colors.grey[500], fontWeight: FontWeight.w500)
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                    _dt.format(insight.timestamp),
-                                    style: TextStyle(fontSize: 10, color: Colors.grey[400])
-                                )
-                            ]
-                        )
+                              if ((insight.category ?? '').isNotEmpty)
+                                Container(
+                                    margin: const EdgeInsets.only(bottom: 6),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        border: Border.all(
+                                            color: Colors.grey.shade300),
+                                        borderRadius:
+                                            BorderRadius.circular(12)),
+                                    child: Text(
+                                        _categoryLabel(insight.category),
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.orange.shade800))),
+                              Text(_timeAgo(insight.timestamp),
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[500],
+                                      fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 2),
+                              Text(_dt.format(insight.timestamp),
+                                  style: TextStyle(
+                                      fontSize: 10, color: Colors.grey[400]))
+                            ])
                       ],
                     ),
                   ),
@@ -284,9 +304,10 @@ class InsightFeedCard extends StatelessWidget {
         final isPro = snapshot.data == true;
         // We can still keep the item limit logic if desired, or just show maxItems.
         // User asked to remove the badge, implying "give insights in free only".
-        // Let's keep the limit logic for now but remove visual upsell, 
+        // Let's keep the limit logic for now but remove visual upsell,
         // to avoid overwhelming the UI if there are too many.
-        final limit = (isPro ? maxItems.clamp(5, 20) : maxItems.clamp(3, 6)).toInt();
+        final limit =
+            (isPro ? maxItems.clamp(5, 20) : maxItems.clamp(3, 6)).toInt();
         final display = prepared.take(limit).toList();
         return buildCard(display);
       },

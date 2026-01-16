@@ -20,13 +20,13 @@ class SimpleBarChartWidget extends StatefulWidget {
   final bool? showFilters;
 
   const SimpleBarChartWidget({
-    Key? key,
+    super.key,
     required this.owe,
     required this.owed,
     this.expenses,
     this.categoryOptions,
     this.showFilters,
-  }) : super(key: key);
+  });
 
   @override
   State<SimpleBarChartWidget> createState() => _SimpleBarChartWidgetState();

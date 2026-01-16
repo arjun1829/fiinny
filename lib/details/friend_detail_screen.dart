@@ -2687,18 +2687,16 @@ class _StatusChip extends StatelessWidget {
 class _Pill extends StatelessWidget {
   final String text;
   final Color base;
-  final EdgeInsetsGeometry padding;
 
   const _Pill(
     this.text, {
     this.base = AppColors.mint,
-    this.padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: padding,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: base.withValues(alpha: .12),
         borderRadius: BorderRadius.circular(999),

@@ -54,7 +54,7 @@ class _AddAssetScreenState extends State<AddAssetScreen>
 
   // Dates
   DateTime? _purchaseDate;
-  final DateTime? _valuationDate = DateTime.now();
+  final DateTime _valuationDate = DateTime.now();
 
   // Meta
   final _currencyCtrl = TextEditingController(text: 'INR');
@@ -697,7 +697,9 @@ class _AddAssetScreenState extends State<AddAssetScreen>
                       // Make Qty required if Avg is entered or generally for stocks
                       if (_type == 'equity' &&
                           _asDouble(_qtyCtrl) <= 0 &&
-                          _asDouble(_valueCtrl) <= 0) return "Req.";
+                          _asDouble(_valueCtrl) <= 0) {
+                        return "Req.";
+                      }
                       return null;
                     },
                   ),

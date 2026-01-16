@@ -11,8 +11,8 @@ class GoalsSummaryCard extends StatelessWidget {
     required this.goalCount,
     required this.totalGoalAmount,
     required this.onAddGoal,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {

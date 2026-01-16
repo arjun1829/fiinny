@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+
 import '../ai/tx_extractor.dart';
 import '../categorization/category_rules.dart';
 import '../user_overrides.dart';
@@ -131,7 +131,7 @@ class EnrichmentService {
           );
         }
       } catch (e) {
-        debugPrint('[EnrichmentService] LLM failed: $e');
+        // debugPrint('[EnrichmentService] LLM failed: $e');
         // Fallthrough to rules
       }
     }

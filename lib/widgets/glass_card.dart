@@ -14,8 +14,8 @@ class GlassCard extends StatelessWidget {
     this.margin,
     this.borderRadius = 18,
     this.color, // <-- New
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +23,10 @@ class GlassCard extends StatelessWidget {
     return Container(
       margin: margin,
       decoration: BoxDecoration(
-        color: color ?? (isDark ? Colors.white.withValues(alpha: 0.13) : Colors.black.withValues(alpha: 0.05)),
+        color: color ??
+            (isDark
+                ? Colors.white.withValues(alpha: 0.13)
+                : Colors.black.withValues(alpha: 0.05)),
         borderRadius: BorderRadius.circular(borderRadius),
         boxShadow: [
           BoxShadow(
@@ -32,7 +35,8 @@ class GlassCard extends StatelessWidget {
             offset: Offset(0, 8),
           )
         ],
-        border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1),
+        border:
+            Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),

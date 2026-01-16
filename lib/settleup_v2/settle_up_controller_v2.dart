@@ -21,11 +21,13 @@ class SettleUpControllerV2 extends ChangeNotifier {
 
     final defaultSelection = initialSelection ??
         _outstandingByGroup.entries
-            .where((entry) => entry.value != 0 && (entry.value > 0) == _isReceiveFlow)
+            .where((entry) =>
+                entry.value != 0 && (entry.value > 0) == _isReceiveFlow)
             .map((entry) => entry.key)
             .toSet();
 
-    _selectedGroupIds = defaultSelection.isEmpty ? <String>{} : defaultSelection;
+    _selectedGroupIds =
+        defaultSelection.isEmpty ? <String>{} : defaultSelection;
 
     final suggested = initialAmount ?? _maxSelectableAmount();
     _setAmountInternal(suggested);
@@ -57,11 +59,16 @@ class SettleUpControllerV2 extends ChangeNotifier {
   String? get errorText => _errorText;
 
   bool get canSubmit =>
-      hasSelection && _proposedAmount > 0 && _errorText == null && _proposedAmount <= _maxSelectableAmount() + 0.005;
+      hasSelection &&
+      _proposedAmount > 0 &&
+      _errorText == null &&
+      _proposedAmount <= _maxSelectableAmount() + 0.005;
 
   List<double> get quickChipValues {
     final max = _maxSelectableAmount();
-    if (max <= 0) return const [];
+    if (max <= 0) {
+      return const [];
+    }
 
     double clamp(double value) {
       final capped = value.clamp(0, max);
@@ -84,14 +91,20 @@ class SettleUpControllerV2 extends ChangeNotifier {
     const absolute = [100.0, 200.0, 500.0];
     for (final raw in absolute) {
       final v = clamp(raw);
-      if (v <= 0) continue;
-      if (!isDuplicate(values, v)) values.add(v);
+      if (v <= 0) {
+        continue;
+      }
+      if (!isDuplicate(values, v)) {
+        values.add(v);
+      }
     }
     return values;
   }
 
   void toggleGroup(String id) {
-    if (!_outstandingByGroup.containsKey(id)) return;
+    if (!_outstandingByGroup.containsKey(id)) {
+      return;
+    }
     final amount = _outstandingByGroup[id] ?? 0.0;
     if ((amount > 0) != _isReceiveFlow && amount != 0) {
       // Mixing opposite polarity is not allowed – ignore toggle.

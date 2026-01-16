@@ -8,14 +8,15 @@ import '../services/contact_name_service.dart';
 class FriendListWidget extends StatefulWidget {
   final List<FriendModel> friends;
   final void Function(FriendModel)? onTap;
-  final void Function(FriendModel)? onLongPress; // Optional: for edit/delete menus
+  final void Function(FriendModel)?
+      onLongPress; // Optional: for edit/delete menus
 
   const FriendListWidget({
-    Key? key,
+    super.key,
     required this.friends,
     this.onTap,
     this.onLongPress,
-  }) : super(key: key);
+  });
 
   @override
   State<FriendListWidget> createState() => _FriendListWidgetState();
@@ -51,7 +52,8 @@ class _FriendListWidgetState extends State<FriendListWidget> {
   void _primeContacts(List<FriendModel> friends) {
     for (final friend in friends) {
       final remote = friend.name.trim();
-      if (_contactNames.shouldPreferContact(remote.isNotEmpty ? remote : null, friend.phone)) {
+      if (_contactNames.shouldPreferContact(
+          remote.isNotEmpty ? remote : null, friend.phone)) {
         _contactNames.lookup(friend.phone);
       }
     }
@@ -93,10 +95,15 @@ class _FriendListWidgetState extends State<FriendListWidget> {
 
         return InkWell(
           onTap: widget.onTap != null ? () => widget.onTap!(friend) : null,
-          onLongPress: widget.onLongPress != null ? () => widget.onLongPress!(friend) : null,
+          onLongPress: widget.onLongPress != null
+              ? () => widget.onLongPress!(friend)
+              : null,
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.16),
+              backgroundColor: Theme.of(context)
+                  .colorScheme
+                  .secondary
+                  .withValues(alpha: 0.16),
               child: Text(
                 leadingLabel,
                 style: const TextStyle(fontSize: 20),

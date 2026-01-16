@@ -8,18 +8,19 @@ class GoalCard extends StatelessWidget {
   final VoidCallback? onTap;
 
   const GoalCard({
-    Key? key,
+    super.key,
     required this.goal,
     required this.onDelete,
     this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
     final progress = (goal.savedAmount / goal.targetAmount).clamp(0.0, 1.0);
     final isCompleted = goal.savedAmount >= goal.targetAmount;
     final percentString = (progress * 100).toStringAsFixed(0);
-    final currencyFormat = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+    final currencyFormat =
+        NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -55,13 +56,18 @@ class GoalCard extends StatelessWidget {
                       width: 48,
                       height: 48,
                       decoration: BoxDecoration(
-                        color: isCompleted ? const Color(0xFFD1FAE5) : const Color(0xFFE0F2FE), // emerald-100 : blue-100
+                        color: isCompleted
+                            ? const Color(0xFFD1FAE5)
+                            : const Color(0xFFE0F2FE), // emerald-100 : blue-100
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Center(
                         child: isCompleted
-                            ? const Icon(Icons.check_circle_rounded, color: Color(0xFF059669), size: 24) // emerald-600
-                            : const Icon(Icons.track_changes_rounded, color: Color(0xFF2563EB), size: 24), // blue-600
+                            ? const Icon(Icons.check_circle_rounded,
+                                color: Color(0xFF059669),
+                                size: 24) // emerald-600
+                            : const Icon(Icons.track_changes_rounded,
+                                color: Color(0xFF2563EB), size: 24), // blue-600
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -81,10 +87,12 @@ class GoalCard extends StatelessWidget {
                           const SizedBox(height: 4),
                           Row(
                             children: [
-                              Icon(Icons.calendar_today_rounded, size: 12, color: Colors.grey.shade500),
+                              Icon(Icons.calendar_today_rounded,
+                                  size: 12, color: Colors.grey.shade500),
                               const SizedBox(width: 4),
                               Text(
-                                DateFormat('MMM d, yyyy').format(goal.targetDate),
+                                DateFormat('MMM d, yyyy')
+                                    .format(goal.targetDate),
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: Colors.grey.shade500,
@@ -101,14 +109,15 @@ class GoalCard extends StatelessWidget {
                       color: Colors.grey.shade400,
                       onPressed: onDelete,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                      constraints:
+                          const BoxConstraints(minWidth: 32, minHeight: 32),
                       splashRadius: 20,
                     ),
                   ],
                 ),
-                
+
                 const SizedBox(height: 20),
-                
+
                 // Amounts Row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -119,12 +128,18 @@ class GoalCard extends StatelessWidget {
                       children: [
                         Text(
                           "Saved",
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade400, fontWeight: FontWeight.w500),
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade400,
+                              fontWeight: FontWeight.w500),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           currencyFormat.format(goal.savedAmount),
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                          style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF0F172A)),
                         ),
                       ],
                     ),
@@ -134,12 +149,18 @@ class GoalCard extends StatelessWidget {
                       children: [
                         Text(
                           "Target",
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade400, fontWeight: FontWeight.w500),
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade400,
+                              fontWeight: FontWeight.w500),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           currencyFormat.format(goal.targetAmount),
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                          style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF0F172A)),
                         ),
                       ],
                     ),
@@ -161,7 +182,9 @@ class GoalCard extends StatelessWidget {
                     widthFactor: progress,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: isCompleted ? const Color(0xFF10B981) : const Color(0xFF3B82F6), // emerald-500 : blue-500
+                        color: isCompleted
+                            ? const Color(0xFF10B981)
+                            : const Color(0xFF3B82F6), // emerald-500 : blue-500
                         borderRadius: BorderRadius.circular(100),
                       ),
                     ),
@@ -179,14 +202,19 @@ class GoalCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: isCompleted ? const Color(0xFF059669) : const Color(0xFF2563EB),
+                        color: isCompleted
+                            ? const Color(0xFF059669)
+                            : const Color(0xFF2563EB),
                       ),
                     ),
-                     Text(
+                    Text(
                       isCompleted
                           ? "Goal Reached!"
                           : "${currencyFormat.format(goal.targetAmount - goal.savedAmount)} to go",
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade400, fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade400,
+                          fontWeight: FontWeight.w500),
                     ),
                   ],
                 ),

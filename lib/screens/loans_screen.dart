@@ -20,8 +20,7 @@ const Color kLine = Color(0x14000000);
 class _HeroHeader extends StatelessWidget {
   final String quoteText;
   final int quoteIndex;
-  const _HeroHeader(
-      {super.key, required this.quoteText, required this.quoteIndex});
+  const _HeroHeader({required this.quoteText, required this.quoteIndex});
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +72,7 @@ class _HeroHeader extends StatelessWidget {
 class _LoansQuote extends StatelessWidget {
   final String text;
   final int index;
-  const _LoansQuote({super.key, required this.text, required this.index});
+  const _LoansQuote({required this.text, required this.index});
 
   @override
   Widget build(BuildContext context) {
@@ -380,8 +379,6 @@ class _LoansScreenState extends State<LoansScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    // final safeTop = media.padding.top; // unused
     final bottomInset = context.adsBottomPadding(extra: 24);
 
     return GestureDetector(
@@ -566,8 +563,9 @@ class _LoansScreenState extends State<LoansScreen> {
                                         final res = await Navigator.pushNamed(
                                             context, '/addLoan',
                                             arguments: widget.userId);
-                                        if (res == true || res is String)
+                                        if (res == true || res is String) {
                                           setState(_fetchLoans);
+                                        }
                                       },
                                       icon: const Icon(Icons.add),
                                       label: const Text("Add Loan"),
@@ -789,7 +787,7 @@ class _LoansScreenState extends State<LoansScreen> {
 class _BackgroundDecor extends StatelessWidget {
   final Color top;
   final Color bottom;
-  const _BackgroundDecor({super.key, required this.top, required this.bottom});
+  const _BackgroundDecor({required this.top, required this.bottom});
 
   @override
   Widget build(BuildContext context) {
@@ -839,7 +837,7 @@ class _BackgroundDecor extends StatelessWidget {
 }
 
 class _SheenOverlay extends StatelessWidget {
-  const _SheenOverlay({super.key});
+  const _SheenOverlay();
 
   @override
   Widget build(BuildContext context) {
@@ -871,7 +869,6 @@ class _Glass extends StatelessWidget {
   final double radius;
 
   const _Glass({
-    super.key,
     required this.child,
     this.blur = 14,
     this.opacity = .25,
@@ -929,7 +926,7 @@ class _Glass extends StatelessWidget {
 
 class _GlassChip extends StatelessWidget {
   final Widget child;
-  const _GlassChip({super.key, required this.child});
+  const _GlassChip({required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -957,8 +954,7 @@ class _Segments extends StatelessWidget {
   final Map<String, int> counts;
   final Color accent;
   const _Segments(
-      {super.key,
-      required this.segment,
+      {required this.segment,
       required this.onChanged,
       required this.counts,
       required this.accent});
@@ -1025,7 +1021,6 @@ class _SummaryCard extends StatelessWidget {
   final NumberFormat currency;
 
   const _SummaryCard({
-    super.key,
     required this.bg,
     required this.accent,
     required this.segment,
@@ -1158,7 +1153,6 @@ class _LoanTile extends StatelessWidget {
   final _ShareMeta shareMeta;
 
   const _LoanTile({
-    super.key,
     required this.loan,
     required this.accent,
     required this.currency,
@@ -1449,7 +1443,6 @@ class _BankLogoCircle extends StatelessWidget {
   final double size;
 
   const _BankLogoCircle({
-    super.key,
     required this.lenderName,
     required this.lenderType,
     required this.accent,
@@ -1594,7 +1587,7 @@ class _AssetIndex {
 // ==================== Sharing UI bits ====================
 
 class _SharedBadge extends StatelessWidget {
-  const _SharedBadge({super.key});
+  const _SharedBadge();
 
   @override
   Widget build(BuildContext context) {
@@ -1620,7 +1613,7 @@ class _SharedBadge extends StatelessWidget {
 
 class _AvatarStack extends StatelessWidget {
   final List<_ShareEntry> members;
-  const _AvatarStack({super.key, required this.members});
+  const _AvatarStack({required this.members});
 
   @override
   Widget build(BuildContext context) {
@@ -1667,7 +1660,7 @@ class _AvatarStack extends StatelessWidget {
 
 class _ShareMembersBlock extends StatelessWidget {
   final _ShareMeta share;
-  const _ShareMembersBlock({super.key, required this.share});
+  const _ShareMembersBlock({required this.share});
 
   @override
   Widget build(BuildContext context) {

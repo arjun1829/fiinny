@@ -13,16 +13,20 @@ class SharedGoalsWidget extends StatelessWidget {
   /// }
   final List<Map<String, dynamic>> goals;
 
-  const SharedGoalsWidget({Key? key, required this.goals}) : super(key: key);
+  const SharedGoalsWidget({super.key, required this.goals});
 
   String _safeTitle(Map<String, dynamic> g) {
     final t = (g['title'] ?? '').toString().trim();
     return t.isEmpty ? 'Untitled goal' : t;
-    }
+  }
 
   double _toDouble(dynamic v) {
-    if (v is num) return v.toDouble();
-    if (v is String) return double.tryParse(v.replaceAll(',', '').trim()) ?? 0.0;
+    if (v is num) {
+      return v.toDouble();
+    }
+    if (v is String) {
+      return double.tryParse(v.replaceAll(',', '').trim()) ?? 0.0;
+    }
     return 0.0;
   }
 
@@ -34,7 +38,9 @@ class SharedGoalsWidget extends StatelessWidget {
 
   /// Accepts Timestamp / DateTime / String and returns a short dd/MM/yy string.
   String _fmtDate(dynamic v) {
-    if (v == null) return '';
+    if (v == null) {
+      return '';
+    }
     DateTime? d;
     if (v is Timestamp) {
       d = v.toDate();
@@ -47,9 +53,13 @@ class SharedGoalsWidget extends StatelessWidget {
       } catch (_) {
         d = null;
       }
-      if (d == null) return v;
+      if (d == null) {
+        return v;
+      }
     }
-    if (d == null) return '';
+    if (d == null) {
+      return '';
+    }
     final dd = d.day.toString().padLeft(2, '0');
     final mm = d.month.toString().padLeft(2, '0');
     final yy = (d.year % 100).toString().padLeft(2, '0');
@@ -64,10 +74,12 @@ class SharedGoalsWidget extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.flag_circle_rounded, size: 44, color: Colors.teal.withValues(alpha: 0.7)),
+            Icon(Icons.flag_circle_rounded,
+                size: 44, color: Colors.teal.withValues(alpha: 0.7)),
             const SizedBox(height: 8),
             Text('No shared goals yet!',
-                style: TextStyle(color: Colors.teal[700], fontWeight: FontWeight.w600)),
+                style: TextStyle(
+                    color: Colors.teal[700], fontWeight: FontWeight.w600)),
           ],
         ),
       );
@@ -81,10 +93,11 @@ class SharedGoalsWidget extends StatelessWidget {
         final g = goals[i];
 
         final title = _safeTitle(g);
-        final target = _toDouble(g['amount']);       // target amount
-        final saved = _toDouble(g['savedAmount']);   // saved so far (optional)
+        final target = _toDouble(g['amount']); // target amount
+        final saved = _toDouble(g['savedAmount']); // saved so far (optional)
         final currency = _currency(g);
-        final completed = (g['completed'] == true) || (target > 0 && saved >= target);
+        final completed =
+            (g['completed'] == true) || (target > 0 && saved >= target);
         final targetDateStr = _fmtDate(g['targetDate']);
 
         final progress = target <= 0 ? 0.0 : (saved / target).clamp(0.0, 1.0);
@@ -93,7 +106,8 @@ class SharedGoalsWidget extends StatelessWidget {
         return Card(
           elevation: 2,
           margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: Column(
@@ -116,7 +130,8 @@ class SharedGoalsWidget extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                         color: completed
                             ? Colors.green.withValues(alpha: 0.12)
@@ -127,9 +142,13 @@ class SharedGoalsWidget extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            completed ? Icons.check_circle : Icons.radio_button_unchecked,
+                            completed
+                                ? Icons.check_circle
+                                : Icons.radio_button_unchecked,
                             size: 16,
-                            color: completed ? Colors.green[700] : Colors.orange[800],
+                            color: completed
+                                ? Colors.green[700]
+                                : Colors.orange[800],
                           ),
                           const SizedBox(width: 6),
                           Text(
@@ -137,7 +156,9 @@ class SharedGoalsWidget extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: completed ? Colors.green[700] : Colors.orange[800],
+                              color: completed
+                                  ? Colors.green[700]
+                                  : Colors.orange[800],
                             ),
                           ),
                         ],
@@ -173,9 +194,7 @@ class SharedGoalsWidget extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      pct == '0' && target == 0
-                          ? ''
-                          : '$pct%',
+                      pct == '0' && target == 0 ? '' : '$pct%',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
                         color: completed ? Colors.green[800] : Colors.teal[800],

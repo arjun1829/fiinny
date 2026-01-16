@@ -1,6 +1,5 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+
 import 'package:app_links/app_links.dart';
 import 'package:lifemap/main.dart'; // ✅ Import main.dart for rootNavigatorKey
 
@@ -16,7 +15,7 @@ class VoiceBridge {
 
   /// Start listening for voice commands
   void initialize() {
-    debugPrint("🎙️ VoiceBridge Initializing...");
+    // debugPrint("🎙️ VoiceBridge Initializing...");
     _appLinks = AppLinks();
 
     // Handle links (both initial and subsequent)
@@ -24,13 +23,13 @@ class VoiceBridge {
     _sub = _appLinks.uriLinkStream.listen((Uri uri) {
       _handleLink(uri);
     }, onError: (err) {
-      debugPrint('VoiceBridge Error: $err');
+      // debugPrint('VoiceBridge Error: $err');
     });
   }
 
   void _handleLink(Uri uri) {
-    debugPrint("🎙️ Voice Command Received: $uri");
-    
+    // debugPrint("🎙️ Voice Command Received: $uri");
+
     if (uri.scheme == 'fiinny') {
       if (uri.host == 'add-expense') {
         _handleAddExpense(uri.queryParameters);
@@ -41,20 +40,19 @@ class VoiceBridge {
   }
 
   void _handleAddExpense(Map<String, String> params) {
-    debugPrint("Processing Add Expense: $params");
+    // debugPrint("Processing Add Expense: $params");
     // e.g. /add?amount=50&category=Food
     // We navigate to /add route (AddTransactionScreen) which accepts userId
     // Ideally we pass arguments. For now let's just open the screen.
-    // final userId = params['userId'] ?? ""; 
-    
+    // final userId = params['userId'] ?? "";
+
     // Better: Navigate to /add and maybe pass pre-filled data via a wrapper or simply let user finish
     rootNavigatorKey.currentState?.pushNamed('/add', arguments: "voice_user");
   }
-  
+
   void _handleAsk(Map<String, String> params) {
-     final query = params['q'] ?? "";
-     debugPrint("Processing AI Question: $query");
-     // Future: Open AI Chat Overlay
+    // debugPrint("Processing AI Question: $query");
+    // Future: Open AI Chat Overlay
   }
 
   void dispose() {

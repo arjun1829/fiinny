@@ -43,7 +43,8 @@ class RecurringLoanBridge {
     // Safe monthly due day (1..28). Prefer explicit DOM; else infer from nextPaymentDate; else today.
     final DateTime now = DateTime.now();
     final DateTime? modelNext = loan.nextPaymentDate(now: now);
-    final int dom = (loan.paymentDayOfMonth ?? modelNext?.day ?? now.day).clamp(1, 28);
+    final int dom =
+        (loan.paymentDayOfMonth ?? modelNext?.day ?? now.day).clamp(1, 28);
 
     // Rule: monthly, active, anchored to this month’s (or next’s) safe day.
     final RecurringRule rule = RecurringRule(
@@ -134,11 +135,13 @@ class RecurringLoanBridge {
     String? lenderName,
   }) async {
     // Ensure we are bridging only EMI-like items.
-    final String? kind = (emiItem.meta?['recurringKind'] as String?) ?? emiItem.type;
-    assert(kind == 'emi', 'ensureLoanForRecurringEmi expects an EMI SharedItem');
+    final String? kind =
+        (emiItem.meta?['recurringKind'] as String?) ?? emiItem.type;
+    assert(
+        kind == 'emi', 'ensureLoanForRecurringEmi expects an EMI SharedItem');
 
     final int dueDay = (emiItem.rule.dueDay ?? DateTime.now().day).clamp(1, 28);
-    final double amt = (emiItem.rule.amount ?? 0).toDouble();
+    final double amt = (emiItem.rule.amount).toDouble();
 
     final LoanModel stub = LoanModel(
       userId: userId,

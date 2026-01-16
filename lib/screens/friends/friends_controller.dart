@@ -18,12 +18,14 @@ class FriendsController extends ChangeNotifier {
     _bind();
   }
 
+  bool _disposed = false;
+
   final String userPhone;
 
   // Raw data
   List<ExpenseItem> _expenses = const [];
-  List<FriendModel> _friends  = const [];
-  List<GroupModel>  _groups   = const [];
+  List<FriendModel> _friends = const [];
+  List<GroupModel> _groups = const [];
 
   // Avatars cache (phone -> url?)
   final Map<String, String?> avatarByPhone = {};
@@ -63,6 +65,7 @@ class FriendsController extends ChangeNotifier {
     _sx?.cancel();
     _sf?.cancel();
     _sg?.cancel();
+    _disposed = true;
     super.dispose();
   }
 
@@ -83,13 +86,13 @@ class FriendsController extends ChangeNotifier {
   }
 
   List<_FriendVM> get friendsVM => _friendsVM;
-  List<_GroupVM>  get groupsVM  => _groupsVM;
-  List<_MixedVM>  get allVM     => _allVM;
+  List<_GroupVM> get groupsVM => _groupsVM;
+  List<_MixedVM> get allVM => _allVM;
 
   // ---------- Internal State ----------
   List<_FriendVM> _friendsVM = const [];
-  List<_GroupVM>  _groupsVM  = const [];
-  List<_MixedVM>  _allVM     = const [];
+  List<_GroupVM> _groupsVM = const [];
+  List<_MixedVM> _allVM = const [];
 
   void _rebuild() {
     _friendsVM = _buildFriendVMs(userPhone, _friends, _expenses,
@@ -102,11 +105,12 @@ class FriendsController extends ChangeNotifier {
       ..._friendsVM.map((f) => _MixedVM.friend(f)),
       ..._groupsVM.map((g) => _MixedVM.group(g)),
     ]..sort((a, b) {
-      final aDt = a.lastUpdate ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final bDt = b.lastUpdate ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return bDt.compareTo(aDt);
-    });
+        final aDt = a.lastUpdate ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bDt = b.lastUpdate ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bDt.compareTo(aDt);
+      });
 
+    if (_disposed) return;
     notifyListeners();
   }
 
@@ -135,6 +139,7 @@ class FriendsController extends ChangeNotifier {
         }
       });
       await Future.wait(futures);
+      if (_disposed) return;
       notifyListeners();
     } catch (_) {
       // ignore
@@ -146,7 +151,7 @@ class FriendsController extends ChangeNotifier {
 
 class _FriendVM {
   final FriendModel friend;
-  final double net;               // + => owes you, - => you owe
+  final double net; // + => owes you, - => you owe
   final ExpenseItem? lastTx;
   DateTime? get lastUpdate => lastTx?.date;
 
@@ -167,18 +172,23 @@ class _GroupVM {
 class _MixedVM {
   final bool isGroup;
   final _FriendVM? f;
-  final _GroupVM?  g;
+  final _GroupVM? g;
   final DateTime? lastUpdate;
 
   _MixedVM.friend(this.f)
-      : isGroup = false, g = null, lastUpdate = f?.lastUpdate;
+      : isGroup = false,
+        g = null,
+        lastUpdate = f?.lastUpdate;
   _MixedVM.group(this.g)
-      : isGroup = true,  f = null, lastUpdate = g?.lastUpdate;
+      : isGroup = true,
+        f = null,
+        lastUpdate = g?.lastUpdate;
 }
 
 /* ========================== Build helpers ========================== */
 
-bool _matches(String q, String hay) => hay.toLowerCase().contains(q.toLowerCase());
+bool _matches(String q, String hay) =>
+    hay.toLowerCase().contains(q.toLowerCase());
 
 bool _isSettlement(ExpenseItem e) {
   final t = (e.type).toLowerCase();
@@ -237,17 +247,19 @@ double _pairSigned(ExpenseItem e, String you, String other) {
 }
 
 List<_FriendVM> _buildFriendVMs(
-    String you,
-    List<FriendModel> friends,
-    List<ExpenseItem> txs, {
-      required String query,
-      required bool openOnly,
-      required FriendsSortMode sort,
-    }) {
+  String you,
+  List<FriendModel> friends,
+  List<ExpenseItem> txs, {
+  required String query,
+  required bool openOnly,
+  required FriendsSortMode sort,
+}) {
   final out = <_FriendVM>[];
 
   for (final f in friends) {
-    if (query.isNotEmpty && !_matches(query, f.name) && !_matches(query, f.phone)) {
+    if (query.isNotEmpty &&
+        !_matches(query, f.name) &&
+        !_matches(query, f.phone)) {
       continue;
     }
 
@@ -281,20 +293,21 @@ List<_FriendVM> _buildFriendVMs(
       out.sort((a, b) => b.net.abs().compareTo(a.net.abs()));
       break;
     case FriendsSortMode.az:
-      out.sort((a, b) => a.friend.name.toLowerCase().compareTo(b.friend.name.toLowerCase()));
+      out.sort((a, b) =>
+          a.friend.name.toLowerCase().compareTo(b.friend.name.toLowerCase()));
       break;
   }
   return out;
 }
 
 List<_GroupVM> _buildGroupVMs(
-    String you,
-    List<GroupModel> groups,
-    List<ExpenseItem> txs, {
-      required String query,
-      required bool openOnly,
-      required FriendsSortMode sort,
-    }) {
+  String you,
+  List<GroupModel> groups,
+  List<ExpenseItem> txs, {
+  required String query,
+  required bool openOnly,
+  required FriendsSortMode sort,
+}) {
   final out = <_GroupVM>[];
 
   for (final g in groups) {
@@ -317,7 +330,7 @@ List<_GroupVM> _buildGroupVMs(
       }
     }
     owedToYou = double.parse(owedToYou.toStringAsFixed(2));
-    youOwe   = double.parse(youOwe.toStringAsFixed(2));
+    youOwe = double.parse(youOwe.toStringAsFixed(2));
     if (openOnly && owedToYou == 0.0 && youOwe == 0.0) continue;
 
     final last = gtx.isNotEmpty ? gtx.first : null;
@@ -336,7 +349,8 @@ List<_GroupVM> _buildGroupVMs(
       out.sort((a, b) => b.net.abs().compareTo(a.net.abs()));
       break;
     case FriendsSortMode.az:
-      out.sort((a, b) => a.group.name.toLowerCase().compareTo(b.group.name.toLowerCase()));
+      out.sort((a, b) =>
+          a.group.name.toLowerCase().compareTo(b.group.name.toLowerCase()));
       break;
   }
   return out;

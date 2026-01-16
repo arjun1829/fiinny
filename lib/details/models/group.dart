@@ -8,12 +8,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class Group {
   // --- identity ---
   final String id;
-  final String? name;             // e.g. "Flat 12A", "Family", "Trip Goa"
-  final String? ownerUserId;      // canonical owner/creator
+  final String? name; // e.g. "Flat 12A", "Family", "Trip Goa"
+  final String? ownerUserId; // canonical owner/creator
 
   // --- visuals ---
-  final String? emoji;            // quick icon (e.g., "🏠")
-  final String? photoUrl;         // optional banner/avatar
+  final String? emoji; // quick icon (e.g., "🏠")
+  final String? photoUrl; // optional banner/avatar
 
   // --- membership ---
   final List<GroupMember> members;
@@ -35,7 +35,7 @@ class Group {
   final Map<String, dynamic>? meta;
 
   // --- invites / access ---
-  final String? inviteCode;           // short code for deep-link joins
+  final String? inviteCode; // short code for deep-link joins
   final DateTime? inviteExpiresAt;
 
   // --- lifecycle ---
@@ -110,7 +110,9 @@ class Group {
       return DateTime.fromMillisecondsSinceEpoch(ms);
     }
     if (v is String) {
-      try { return DateTime.parse(v); } catch (_) {}
+      try {
+        return DateTime.parse(v);
+      } catch (_) {}
     }
     return null;
   }
@@ -165,7 +167,8 @@ class Group {
       if (settings != null) 'settings': settings,
       if (meta != null) 'meta': meta,
       if (inviteCode != null) 'inviteCode': inviteCode,
-      if (inviteExpiresAt != null) 'inviteExpiresAt': Timestamp.fromDate(inviteExpiresAt!),
+      if (inviteExpiresAt != null)
+        'inviteExpiresAt': Timestamp.fromDate(inviteExpiresAt!),
       'archived': archived,
       if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
       if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
@@ -205,89 +208,97 @@ class Group {
   }
 
   // ------------ Derived helpers ------------
-  List<String> get memberIds => members.map((m) => m.userId).toList(growable: false);
+  List<String> get memberIds =>
+      members.map((m) => m.userId).toList(growable: false);
 
   bool isOwner(String userId) => ownerUserId != null && ownerUserId == userId;
 
-  bool isAdmin(String userId) =>
-      members.any((m) => m.userId == userId && (m.role == GroupMember.roleOwner || m.role == GroupMember.roleAdmin));
+  bool isAdmin(String userId) => members.any((m) =>
+      m.userId == userId &&
+      (m.role == GroupMember.roleOwner || m.role == GroupMember.roleAdmin));
 
   bool canManage(String userId) => isAdmin(userId);
 
   GroupMember? memberFor(String userId) =>
-      members.firstWhere((m) => m.userId == userId, orElse: () => const GroupMember.missing());
+      members.firstWhere((m) => m.userId == userId,
+          orElse: () => const GroupMember.missing());
 
   /// Compute a per-user split for an amount using group defaults.
-  /// Returns map<userId, amount>. If equal split, divides among ACTIVE members.
+  /// Returns map&lt;userId, amount&gt;. If equal split, divides among ACTIVE members.
   Map<String, double> computeDefaultSplit(double amount) {
     final method = (defaultSplitMethod ?? 'equal').toLowerCase();
-    final active = members.where((m) => m.status == GroupMember.statusActive).toList(growable: false);
+    final active = members
+        .where((m) => m.status == GroupMember.statusActive)
+        .toList(growable: false);
     if (active.isEmpty || amount <= 0) return const {};
 
     switch (method) {
-      case 'percent': {
-        final m = defaultSplit ?? const {};
-        return {
-          for (final gm in active)
-            gm.userId: amount * ((m[gm.userId]?.toDouble() ?? 0.0) / 100.0),
-        };
-      }
-      case 'fixed': {
-        final m = defaultSplit ?? const {};
-        return {
-          for (final gm in active)
-            gm.userId: (m[gm.userId]?.toDouble() ?? 0.0),
-        };
-      }
-      default: {
-        final n = active.length;
-        final each = amount / n;
-        return { for (final gm in active) gm.userId: each };
-      }
+      case 'percent':
+        {
+          final m = defaultSplit ?? const {};
+          return {
+            for (final gm in active)
+              gm.userId: amount * ((m[gm.userId]?.toDouble() ?? 0.0) / 100.0),
+          };
+        }
+      case 'fixed':
+        {
+          final m = defaultSplit ?? const {};
+          return {
+            for (final gm in active)
+              gm.userId: (m[gm.userId]?.toDouble() ?? 0.0),
+          };
+        }
+      default:
+        {
+          final n = active.length;
+          final each = amount / n;
+          return {for (final gm in active) gm.userId: each};
+        }
     }
   }
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is Group &&
-              runtimeType == other.runtimeType &&
-              id == other.id &&
-              name == other.name &&
-              ownerUserId == other.ownerUserId &&
-              emoji == other.emoji &&
-              photoUrl == other.photoUrl &&
-              listEquals(members, other.members) &&
-              currency == other.currency &&
-              defaultSplitMethod == other.defaultSplitMethod &&
-              mapEquals(defaultSplit, other.defaultSplit) &&
-              mapEquals(settings, other.settings) &&
-              mapEquals(meta, other.meta) &&
-              inviteCode == other.inviteCode &&
-              inviteExpiresAt == other.inviteExpiresAt &&
-              archived == other.archived &&
-              createdAt == other.createdAt &&
-              updatedAt == other.updatedAt;
+      other is Group &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          ownerUserId == other.ownerUserId &&
+          emoji == other.emoji &&
+          photoUrl == other.photoUrl &&
+          listEquals(members, other.members) &&
+          currency == other.currency &&
+          defaultSplitMethod == other.defaultSplitMethod &&
+          mapEquals(defaultSplit, other.defaultSplit) &&
+          mapEquals(settings, other.settings) &&
+          mapEquals(meta, other.meta) &&
+          inviteCode == other.inviteCode &&
+          inviteExpiresAt == other.inviteExpiresAt &&
+          archived == other.archived &&
+          createdAt == other.createdAt &&
+          updatedAt == other.updatedAt;
 
   @override
   int get hashCode => Object.hashAll([
-    id,
-    name,
-    ownerUserId,
-    emoji,
-    photoUrl,
-    Object.hashAll(members),
-    currency,
-    defaultSplitMethod,
-    defaultSplit == null ? 0 : Object.hashAll(defaultSplit!.entries),
-    settings == null ? 0 : Object.hashAll(settings!.entries),
-    meta == null ? 0 : Object.hashAll(meta!.entries),
-    inviteCode,
-    inviteExpiresAt,
-    archived,
-    createdAt,
-    updatedAt,
-  ]);
+        id,
+        name,
+        ownerUserId,
+        emoji,
+        photoUrl,
+        Object.hashAll(members),
+        currency,
+        defaultSplitMethod,
+        defaultSplit == null ? 0 : Object.hashAll(defaultSplit!.entries),
+        settings == null ? 0 : Object.hashAll(settings!.entries),
+        meta == null ? 0 : Object.hashAll(meta!.entries),
+        inviteCode,
+        inviteExpiresAt,
+        archived,
+        createdAt,
+        updatedAt,
+      ]);
 }
 
 /// Member record embedded in Group.
@@ -295,19 +306,19 @@ class Group {
 @immutable
 class GroupMember {
   // Soft-enum role values
-  static const roleOwner  = 'owner';
-  static const roleAdmin  = 'admin';
+  static const roleOwner = 'owner';
+  static const roleAdmin = 'admin';
   static const roleMember = 'member';
   static const roleViewer = 'viewer';
 
   // Soft-enum status values
-  static const statusActive  = 'active';
+  static const statusActive = 'active';
   static const statusInvited = 'invited';
-  static const statusLeft    = 'left';
+  static const statusLeft = 'left';
 
   final String userId;
-  final String role;                 // owner|admin|member|viewer
-  final String status;               // active|invited|left
+  final String role; // owner|admin|member|viewer
+  final String status; // active|invited|left
 
   // Optional profile mirrors (handy for quick list rendering)
   final String? displayName;
@@ -409,8 +420,14 @@ class GroupMember {
       displayName: (j['displayName'] as String?)?.trim(),
       phone: (j['phone'] as String?)?.trim(),
       avatarUrl: (j['avatarUrl'] as String?)?.trim(),
-      percentShare: (j['percentShare'] is num) ? j['percentShare'] as num : (j['percentShare'] is String ? num.tryParse(j['percentShare']) : null),
-      fixedShare: (j['fixedShare'] is num) ? j['fixedShare'] as num : (j['fixedShare'] is String ? num.tryParse(j['fixedShare']) : null),
+      percentShare: (j['percentShare'] is num)
+          ? j['percentShare'] as num
+          : (j['percentShare'] is String
+              ? num.tryParse(j['percentShare'])
+              : null),
+      fixedShare: (j['fixedShare'] is num)
+          ? j['fixedShare'] as num
+          : (j['fixedShare'] is String ? num.tryParse(j['fixedShare']) : null),
       joinedAt: _toDate(j['joinedAt']),
       leftAt: _toDate(j['leftAt']),
       notify: _asStringMap(j['notify']),
@@ -422,32 +439,32 @@ class GroupMember {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is GroupMember &&
-              runtimeType == other.runtimeType &&
-              userId == other.userId &&
-              role == other.role &&
-              status == other.status &&
-              displayName == other.displayName &&
-              phone == other.phone &&
-              avatarUrl == other.avatarUrl &&
-              percentShare == other.percentShare &&
-              fixedShare == other.fixedShare &&
-              joinedAt == other.joinedAt &&
-              leftAt == other.leftAt &&
-              mapEquals(notify, other.notify);
+      other is GroupMember &&
+          runtimeType == other.runtimeType &&
+          userId == other.userId &&
+          role == other.role &&
+          status == other.status &&
+          displayName == other.displayName &&
+          phone == other.phone &&
+          avatarUrl == other.avatarUrl &&
+          percentShare == other.percentShare &&
+          fixedShare == other.fixedShare &&
+          joinedAt == other.joinedAt &&
+          leftAt == other.leftAt &&
+          mapEquals(notify, other.notify);
 
   @override
   int get hashCode => Object.hashAll([
-    userId,
-    role,
-    status,
-    displayName,
-    phone,
-    avatarUrl,
-    percentShare,
-    fixedShare,
-    joinedAt,
-    leftAt,
-    notify == null ? 0 : Object.hashAll(notify!.entries),
-  ]);
+        userId,
+        role,
+        status,
+        displayName,
+        phone,
+        avatarUrl,
+        percentShare,
+        fixedShare,
+        joinedAt,
+        leftAt,
+        notify == null ? 0 : Object.hashAll(notify!.entries),
+      ]);
 }

@@ -8,11 +8,11 @@ class SplitExpenseDialog extends StatefulWidget {
   final ValueChanged<List<String>> onSave;
 
   const SplitExpenseDialog({
-    Key? key,
+    super.key,
     required this.expense,
     required this.friendsById,
     required this.onSave,
-  }) : super(key: key);
+  });
 
   @override
   State<SplitExpenseDialog> createState() => _SplitExpenseDialogState();
@@ -30,7 +30,8 @@ class _SplitExpenseDialogState extends State<SplitExpenseDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('Edit Split for "${widget.expense.note.isNotEmpty ? widget.expense.note : widget.expense.type}"'),
+      title: Text(
+          'Edit Split for "${widget.expense.note.isNotEmpty ? widget.expense.note : widget.expense.type}"'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,

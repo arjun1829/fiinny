@@ -10,12 +10,12 @@ class CalendarExpenseView extends StatefulWidget {
   final Function(DateTime selectedDay, DateTime focusedDay) onDaySelected;
 
   const CalendarExpenseView({
-    Key? key,
+    super.key,
     required this.expenses,
     this.incomes = const [],
     required this.focusedDay,
     required this.onDaySelected,
-  }) : super(key: key);
+  });
 
   @override
   State<CalendarExpenseView> createState() => _CalendarExpenseViewState();

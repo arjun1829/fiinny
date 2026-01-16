@@ -17,8 +17,12 @@ import 'ad_ids.dart';
 const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: false);
 
 String maskAdIdentifier(String value) {
-  if (value.isEmpty) return value;
-  if (value.length <= 10) return value;
+  if (value.isEmpty) {
+    return value;
+  }
+  if (value.length <= 10) {
+    return value;
+  }
   final prefix = value.substring(0, 8);
   final suffix = value.substring(value.length - 4);
   return '$prefix…$suffix';
@@ -47,9 +51,13 @@ class AdService {
   bool get isEnabled => _adsEnabled;
 
   Future<void> init() {
-    if (_adsEnabled) return SynchronousFuture<void>(null);
+    if (_adsEnabled) {
+      return SynchronousFuture<void>(null);
+    }
     final pending = _inFlightInit;
-    if (pending != null) return pending;
+    if (pending != null) {
+      return pending;
+    }
 
     final future = _initializeInternal();
     _inFlightInit = future;
@@ -140,7 +148,9 @@ class AdService {
   }
 
   bool _shouldEnableAds() {
-    if (kIsWeb) return false;
+    if (kIsWeb) {
+      return false;
+    }
     if (!(defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS)) {
       return false;
@@ -152,7 +162,9 @@ class AdService {
 
   // ---------- Preload ----------
   void preloadInterstitial() {
-    if (!_adsEnabled || _inter != null) return;
+    if (!_adsEnabled || _inter != null) {
+      return;
+    }
     InterstitialAd.load(
       adUnitId: AdIds.interstitial,
       request: AdService.buildAdRequest(),
@@ -178,7 +190,9 @@ class AdService {
   }
 
   void preloadRewarded() {
-    if (!_adsEnabled || _rewarded != null) return;
+    if (!_adsEnabled || _rewarded != null) {
+      return;
+    }
     RewardedAd.load(
       adUnitId: AdIds.rewarded,
       request: AdService.buildAdRequest(),
@@ -208,7 +222,9 @@ class AdService {
     int minActions = 6,
     Duration minGap = const Duration(minutes: 2),
   }) async {
-    if (!_adsEnabled) return;
+    if (!_adsEnabled) {
+      return;
+    }
     _actionsSinceInter++;
     final now = DateTime.now();
 
@@ -216,7 +232,9 @@ class AdService {
         now.difference(_lastInterShown) >= minGap &&
         _inter != null;
 
-    if (!allowed) return;
+    if (!allowed) {
+      return;
+    }
 
     final ad = _inter!;
     _inter = null;
@@ -228,7 +246,9 @@ class AdService {
   /// Forces an interstitial to show if loaded, bypassing frequency caps.
   /// Returns [true] if shown, [false] if not ready/enabled.
   Future<bool> showInterstitialForce() async {
-    if (!_adsEnabled) return false;
+    if (!_adsEnabled) {
+      return false;
+    }
     final ad = _inter;
     if (ad == null) {
       preloadInterstitial();
@@ -254,7 +274,9 @@ class AdService {
   // ---------- Rewarded logic ----------
   Future<bool> showRewarded(
       {required void Function(int, String) onReward}) async {
-    if (!_adsEnabled) return false;
+    if (!_adsEnabled) {
+      return false;
+    }
     final ad = _rewarded;
     if (ad == null) {
       preloadRewarded();

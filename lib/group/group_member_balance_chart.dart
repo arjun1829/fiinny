@@ -10,10 +10,10 @@ class GroupMemberBalanceChart extends StatelessWidget {
   final Map<String, String> displayNames;
 
   const GroupMemberBalanceChart({
-    Key? key,
+    super.key,
     required this.netByMember,
     required this.displayNames,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +39,9 @@ class GroupMemberBalanceChart extends StatelessWidget {
       final e = entries[i];
       labels[i] = _shortName(displayNames[e.key] ?? e.key);
       final v = e.value.abs();
-      if (v > maxAbs) maxAbs = v;
+      if (v > maxAbs) {
+        maxAbs = v;
+      }
     }
     // pad a bit for headroom
     final maxY = (maxAbs == 0 ? 100.0 : maxAbs) * 1.25;
@@ -183,7 +185,9 @@ class GroupMemberBalanceChart extends StatelessWidget {
 
   String _shortName(String name) {
     // keep labels compact
-    if (name.length <= 10) return name;
+    if (name.length <= 10) {
+      return name;
+    }
     return '${name.substring(0, 9)}…';
   }
 

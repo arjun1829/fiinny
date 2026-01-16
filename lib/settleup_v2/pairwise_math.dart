@@ -38,7 +38,9 @@ class PairwiseBreakdown {
 bool isSettlementLike(ExpenseItem e) {
   final type = (e.type).toLowerCase();
   final label = (e.label ?? '').toLowerCase();
-  if (type.contains('settle') || label.contains('settle')) return true;
+  if (type.contains('settle') || label.contains('settle')) {
+    return true;
+  }
   if ((e.friendIds.length == 1) &&
       (e.customSplits == null || e.customSplits!.isEmpty)) {
     return e.isBill == true;

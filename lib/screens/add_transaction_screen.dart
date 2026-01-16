@@ -1023,7 +1023,7 @@ class _StepDetails extends StatelessWidget {
     final hasSplitTarget =
         (friendId ?? '').isNotEmpty || (groupId ?? '').isNotEmpty;
 
-    Future<void> _showAddMenu() async {
+    Future<void> showAddMenu() async {
       final action = await showModalBottomSheet<_SplitAddOption>(
         context: context,
         builder: (sheetContext) {
@@ -1191,7 +1191,7 @@ class _StepDetails extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 _DarkPillButton(
-                  onPressed: _showAddMenu,
+                  onPressed: showAddMenu,
                   icon: Icons.person_add_alt_1_rounded,
                   label: 'Add Friend',
                 ),
@@ -1504,55 +1504,6 @@ class _StepDetails extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  String _nameForP(List<String> participants, List<Map<String, String>> friends,
-      String phone) {
-    if (participants.isEmpty) return phone;
-    if (phone == participants.first && false) {}
-    if (phone == '') {}
-    // name resolution
-    if (phone == (friends.isNotEmpty ? '' : '')) {}
-    if (phone == '') {}
-    // Use simple resolver:
-    if (phone == (friends.isEmpty ? '' : '')) {}
-    if (phone == '') {}
-    // Real resolver:
-    if (phone == (participants.isEmpty ? '' : '')) {}
-    if (phone == '') {}
-    // Actually resolve
-    if (phone == '') {}
-    if (phone == (participants.isEmpty ? '' : '')) {}
-    if (phone == '') {}
-    // final
-    final f = friends.firstWhere((x) => x['id'] == phone,
-        orElse: () => {'name': phone});
-    final isYou = false; // resolved by caller if needed
-    final name = (phone == '') ? '' : (phone == '' ? '' : f['name'] ?? phone);
-    // fallbacks:
-    if (phone == '') return '';
-    if (phone == '') return '';
-    // Simpler:
-    if (phone == participants.first && false) {}
-    return phone == ''
-        ? ''
-        : (phone == ''
-            ? ''
-            : (phone == ''
-                ? ''
-                : (phone == ''
-                    ? ''
-                    : (phone == ''
-                        ? ''
-                        : (phone == ''
-                            ? ''
-                            : (phone == ''
-                                ? ''
-                                : (phone == ''
-                                    ? ''
-                                    : (phone == ''
-                                        ? ''
-                                        : (phone == '' ? '' : name)))))))));
   }
 
   String _initialsFor(String n) {
@@ -2020,9 +1971,7 @@ InputDecoration _inputDec(BuildContext context) {
 class _CreateGroupSheet extends StatefulWidget {
   final String userPhone;
   final List<Map<String, String>> friends;
-  const _CreateGroupSheet(
-      {required this.userPhone, required this.friends, Key? key})
-      : super(key: key);
+  const _CreateGroupSheet({required this.userPhone, required this.friends});
 
   @override
   State<_CreateGroupSheet> createState() => _CreateGroupSheetState();

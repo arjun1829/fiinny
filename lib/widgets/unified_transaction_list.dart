@@ -2841,9 +2841,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint(
-      'UTL build: allTx=${allTx.length}, shown=$shownCount, groupBy=${_activeFilter.groupBy}',
-    );
+    // debugPrint(
+    //   'UTL build: allTx=${allTx.length}, shown=$shownCount, groupBy=${_activeFilter.groupBy}',
+    // );
 
     final Widget emptyContent = widget.emptyBuilder != null
         ? widget.emptyBuilder!(context)
@@ -3163,7 +3163,7 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         );
       }
     } catch (e) {
-      debugPrint('Report error: $e');
+      // debugPrint('Report error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Failed to report transaction.')),

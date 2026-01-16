@@ -7,11 +7,11 @@ class SubscriptionsSummaryCard extends StatelessWidget {
   final int count;
 
   const SubscriptionsSummaryCard({
-    Key? key,
+    super.key,
     required this.onTap,
     required this.totalAmount,
     required this.count,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +45,8 @@ class SubscriptionsSummaryCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Center(
-                    child: Icon(Icons.subscriptions_outlined, color: Colors.purple, size: 24),
+                    child: Icon(Icons.subscriptions_outlined,
+                        color: Colors.purple, size: 24),
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -93,7 +94,8 @@ class SubscriptionsSummaryCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(width: 8),
-                const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.black26),
+                const Icon(Icons.arrow_forward_ios_rounded,
+                    size: 16, color: Colors.black26),
               ],
             ),
           ),

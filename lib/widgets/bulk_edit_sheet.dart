@@ -20,11 +20,11 @@ class BulkEditSpec {
 
   bool get isNoop =>
       (title == null || title!.trim().isEmpty) &&
-          (comments == null || comments!.trim().isEmpty) &&
-          (category == null || category!.trim().isEmpty) &&
-          date == null &&
-          addLabels.isEmpty &&
-          removeLabels.isEmpty;
+      (comments == null || comments!.trim().isEmpty) &&
+      (category == null || category!.trim().isEmpty) &&
+      date == null &&
+      addLabels.isEmpty &&
+      removeLabels.isEmpty;
 }
 
 class BulkEditSheet extends StatefulWidget {
@@ -78,7 +78,8 @@ class _BulkEditSheetState extends State<BulkEditSheet> {
 
   void _hydrateFromInitial() {
     if (widget.initial.title != null) _titleCtl.text = widget.initial.title!;
-    if (widget.initial.comments != null) _commentsCtl.text = widget.initial.comments!;
+    if (widget.initial.comments != null)
+      _commentsCtl.text = widget.initial.comments!;
     _category = widget.initial.category;
     _date = widget.initial.date;
     _addLabels.addAll(widget.initial.addLabels);
@@ -89,7 +90,8 @@ class _BulkEditSheetState extends State<BulkEditSheet> {
     try {
       final cats = <String>[
         ...widget.categories,
-        if (widget.loadCategories != null) ...await widget.loadCategories!.call(),
+        if (widget.loadCategories != null)
+          ...await widget.loadCategories!.call(),
       ];
       final labs = <String>[
         if (widget.loadLabels != null) ...await widget.loadLabels!.call(),
@@ -132,6 +134,7 @@ class _BulkEditSheetState extends State<BulkEditSheet> {
       firstDate: DateTime(now.year - 5),
       lastDate: DateTime(now.year + 2),
     );
+    if (!mounted) return;
     if (picked != null) {
       setState(() => _date = DateTime(picked.year, picked.month, picked.day));
     }
@@ -198,9 +201,11 @@ class _BulkEditSheetState extends State<BulkEditSheet> {
             children: [
               const SizedBox(height: 8),
               Container(
-                width: 40, height: 4,
+                width: 40,
+                height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.black12, borderRadius: BorderRadius.circular(4),
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(4),
                 ),
               ),
               const SizedBox(height: 12),
@@ -208,7 +213,9 @@ class _BulkEditSheetState extends State<BulkEditSheet> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    Text('Bulk Edit', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                    Text('Bulk Edit',
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800)),
                     const Spacer(),
                     IconButton(
                       tooltip: 'Reset',
@@ -231,158 +238,182 @@ class _BulkEditSheetState extends State<BulkEditSheet> {
               ),
               Expanded(
                 child: _loading
-                    ? const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
+                    ? const Center(
+                        child: Padding(
+                            padding: EdgeInsets.all(24),
+                            child: CircularProgressIndicator()))
                     : SingleChildScrollView(
-                  padding: EdgeInsets.only(
-                    left: 16, right: 16,
-                    bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Title
-                      TextField(
-                        controller: _titleCtl,
-                        decoration: const InputDecoration(
-                          labelText: 'Set Title (optional)',
-                          prefixIcon: Icon(Icons.title),
+                        padding: EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
                         ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Comments
-                      TextField(
-                        controller: _commentsCtl,
-                        maxLines: 2,
-                        decoration: const InputDecoration(
-                          labelText: 'Set Comments (optional)',
-                          hintText: 'Personal thoughts or context',
-                          prefixIcon: Icon(Icons.mode_comment_outlined),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Category
-                      InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Set Category (optional)',
-                          prefixIcon: Icon(Icons.category_outlined),
-                          border: OutlineInputBorder(),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _category,
-                            isExpanded: true,
-                            hint: const Text('— leave as-is —'),
-                            items: [
-                              const DropdownMenuItem(value: null, child: Text('— leave as-is —')),
-                              ..._allCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))),
-                            ],
-                            onChanged: (v) => setState(() => _category = v),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Date
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _pickDate,
-                              icon: const Icon(Icons.date_range),
-                              label: Text(
-                                _date == null
-                                    ? 'Set Date (optional)'
-                                    : _date!.toString().split(' ').first,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Title
+                            TextField(
+                              controller: _titleCtl,
+                              decoration: const InputDecoration(
+                                labelText: 'Set Title (optional)',
+                                prefixIcon: Icon(Icons.title),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          if (_date != null)
-                            IconButton(
-                              tooltip: 'Clear date',
-                              onPressed: () => setState(() => _date = null),
-                              icon: const Icon(Icons.clear),
+                            const SizedBox(height: 12),
+
+                            // Comments
+                            TextField(
+                              controller: _commentsCtl,
+                              maxLines: 2,
+                              decoration: const InputDecoration(
+                                labelText: 'Set Comments (optional)',
+                                hintText: 'Personal thoughts or context',
+                                prefixIcon: Icon(Icons.mode_comment_outlined),
+                              ),
                             ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
+                            const SizedBox(height: 16),
 
-                      // Add Labels
-                      Text('Add Labels', style: theme.textTheme.labelLarge),
-                      const SizedBox(height: 6),
-                      _ChipInputRow(
-                        controller: _addCtl,
-                        hint: 'Type and press Enter (or comma) to add',
-                        onSubmit: () => _addChipFromField(_addCtl, _addLabels),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: -8,
-                        children: _addLabels.map((l) => Chip(
-                          label: Text('#$l'),
-                          onDeleted: () => setState(() => _addLabels.remove(l)),
-                        )).toList(),
-                      ),
-                      if (_labelSuggestions.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Text('Suggestions', style: theme.textTheme.bodySmall),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: -8,
-                          children: _labelSuggestions.take(24).map((l) {
-                            final selected = _addLabels.contains(l);
-                            return FilterChip(
-                              label: Text('#$l'),
-                              selected: selected,
-                              onSelected: (_) => _toggleSuggestionLabel(l, _addLabels),
-                            );
-                          }).toList(),
+                            // Category
+                            InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Set Category (optional)',
+                                prefixIcon: Icon(Icons.category_outlined),
+                                border: OutlineInputBorder(),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: _category,
+                                  isExpanded: true,
+                                  hint: const Text('— leave as-is —'),
+                                  items: [
+                                    const DropdownMenuItem(
+                                        value: null,
+                                        child: Text('— leave as-is —')),
+                                    ..._allCategories.map((c) =>
+                                        DropdownMenuItem(
+                                            value: c, child: Text(c))),
+                                  ],
+                                  onChanged: (v) =>
+                                      setState(() => _category = v),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Date
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _pickDate,
+                                    icon: const Icon(Icons.date_range),
+                                    label: Text(
+                                      _date == null
+                                          ? 'Set Date (optional)'
+                                          : _date!.toString().split(' ').first,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                if (_date != null)
+                                  IconButton(
+                                    tooltip: 'Clear date',
+                                    onPressed: () =>
+                                        setState(() => _date = null),
+                                    icon: const Icon(Icons.clear),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+
+                            // Add Labels
+                            Text('Add Labels',
+                                style: theme.textTheme.labelLarge),
+                            const SizedBox(height: 6),
+                            _ChipInputRow(
+                              controller: _addCtl,
+                              hint: 'Type and press Enter (or comma) to add',
+                              onSubmit: () =>
+                                  _addChipFromField(_addCtl, _addLabels),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: -8,
+                              children: _addLabels
+                                  .map((l) => Chip(
+                                        label: Text('#$l'),
+                                        onDeleted: () => setState(
+                                            () => _addLabels.remove(l)),
+                                      ))
+                                  .toList(),
+                            ),
+                            if (_labelSuggestions.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Text('Suggestions',
+                                  style: theme.textTheme.bodySmall),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: -8,
+                                children: _labelSuggestions.take(24).map((l) {
+                                  final selected = _addLabels.contains(l);
+                                  return FilterChip(
+                                    label: Text('#$l'),
+                                    selected: selected,
+                                    onSelected: (_) =>
+                                        _toggleSuggestionLabel(l, _addLabels),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+
+                            const SizedBox(height: 20),
+
+                            // Remove Labels
+                            Text('Remove Labels',
+                                style: theme.textTheme.labelLarge),
+                            const SizedBox(height: 6),
+                            _ChipInputRow(
+                              controller: _remCtl,
+                              hint: 'Type and press Enter (or comma) to add',
+                              onSubmit: () =>
+                                  _addChipFromField(_remCtl, _removeLabels),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: -8,
+                              children: _removeLabels
+                                  .map((l) => Chip(
+                                        label: Text('#$l'),
+                                        onDeleted: () => setState(
+                                            () => _removeLabels.remove(l)),
+                                      ))
+                                  .toList(),
+                            ),
+                            if (_labelSuggestions.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Text('Suggestions',
+                                  style: theme.textTheme.bodySmall),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: -8,
+                                children: _labelSuggestions.take(24).map((l) {
+                                  final selected = _removeLabels.contains(l);
+                                  return FilterChip(
+                                    label: Text('#$l'),
+                                    selected: selected,
+                                    onSelected: (_) => _toggleSuggestionLabel(
+                                        l, _removeLabels),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ],
                         ),
-                      ],
-
-                      const SizedBox(height: 20),
-
-                      // Remove Labels
-                      Text('Remove Labels', style: theme.textTheme.labelLarge),
-                      const SizedBox(height: 6),
-                      _ChipInputRow(
-                        controller: _remCtl,
-                        hint: 'Type and press Enter (or comma) to add',
-                        onSubmit: () => _addChipFromField(_remCtl, _removeLabels),
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: -8,
-                        children: _removeLabels.map((l) => Chip(
-                          label: Text('#$l'),
-                          onDeleted: () => setState(() => _removeLabels.remove(l)),
-                        )).toList(),
-                      ),
-                      if (_labelSuggestions.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Text('Suggestions', style: theme.textTheme.bodySmall),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: -8,
-                          children: _labelSuggestions.take(24).map((l) {
-                            final selected = _removeLabels.contains(l);
-                            return FilterChip(
-                              label: Text('#$l'),
-                              selected: selected,
-                              onSelected: (_) => _toggleSuggestionLabel(l, _removeLabels),
-                            );
-                          }).toList(),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),

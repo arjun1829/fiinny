@@ -66,7 +66,7 @@ class ExpenseService {
       await groupDoc.set(expense.toJson());
     } catch (err) {
       if (kDebugMode) {
-        debugPrint('[ExpenseService] failed to mirror group expense: $err');
+        // debugPrint('[ExpenseService] failed to mirror group expense: $err');
       }
     }
   }
@@ -295,8 +295,8 @@ class ExpenseService {
             .delete();
       } catch (err) {
         if (kDebugMode) {
-          debugPrint(
-              '[ExpenseService] failed to delete mirrored group expense: $err');
+          // debugPrint(
+          //     '[ExpenseService] failed to delete mirrored group expense: $err');
         }
       }
     }
@@ -334,8 +334,8 @@ class ExpenseService {
               .delete();
         } catch (err) {
           if (kDebugMode) {
-            debugPrint(
-                '[ExpenseService] failed to delete mirrored group expense globally: $err');
+            // debugPrint(
+            //     '[ExpenseService] failed to delete mirrored group expense globally: $err');
           }
         }
       }
@@ -381,19 +381,19 @@ class ExpenseService {
 
     if (!FxFlags.groupCanonicalWrites) {
       if (kDebugMode) {
-        debugPrint(
-            '[ExpenseService] listen group stream (user scoped) user=$userPhone group=$groupId');
+        // debugPrint(
+        //     '[ExpenseService] listen group stream (user scoped) user=$userPhone group=$groupId');
       }
       return userQuery.map((snap) {
         final expenses =
             snap.docs.map((d) => ExpenseItem.fromJson(d.data())).toList();
         if (kDebugMode) {
-          final preview = expenses
-              .take(3)
-              .map((e) => '${e.id}:${e.groupId ?? ''}')
-              .join(', ');
-          debugPrint(
-              '[ExpenseService] group stream update user=$userPhone group=$groupId count=${expenses.length} recent=[$preview]');
+          // final preview = expenses
+          //     .take(3)
+          //     .map((e) => '${e.id}:${e.groupId ?? ''}')
+          //     .join(', ');
+          // debugPrint(
+          //     '[ExpenseService] group stream update user=$userPhone group=$groupId count=${expenses.length} recent=[$preview]');
         }
         return expenses;
       });
@@ -407,8 +407,8 @@ class ExpenseService {
         .snapshots();
 
     if (kDebugMode) {
-      debugPrint(
-          '[ExpenseService] listen group stream (combined) user=$userPhone group=$groupId');
+      // debugPrint(
+      //     '[ExpenseService] listen group stream (combined) user=$userPhone group=$groupId');
     }
 
     return Rx.combineLatest2<QuerySnapshot<Map<String, dynamic>>,
@@ -428,10 +428,10 @@ class ExpenseService {
         final list = combined.values.toList()
           ..sort((a, b) => b.date.compareTo(a.date));
         if (kDebugMode) {
-          final preview =
-              list.take(3).map((e) => '${e.id}:${e.groupId ?? ''}').join(', ');
-          debugPrint(
-              '[ExpenseService] group stream update (combined) user=$userPhone group=$groupId count=${list.length} recent=[$preview]');
+          // final preview =
+          //     list.take(3).map((e) => '${e.id}:${e.groupId ?? ''}').join(', ');
+          // debugPrint(
+          //     '[ExpenseService] group stream update (combined) user=$userPhone group=$groupId count=${list.length} recent=[$preview]');
         }
         return list;
       },

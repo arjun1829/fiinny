@@ -16,7 +16,7 @@ class GroupTotalsTab extends StatelessWidget {
   final VoidCallback? onRemind;
 
   const GroupTotalsTab({
-    Key? key,
+    super.key,
     required this.currentUserPhone,
     required this.group,
     required this.members,
@@ -24,7 +24,7 @@ class GroupTotalsTab extends StatelessWidget {
     this.onAddExpense,
     this.onSettleUp,
     this.onRemind,
-  }) : super(key: key);
+  });
 
   FriendModel _friend(String phone) {
     try {
@@ -40,7 +40,8 @@ class GroupTotalsTab extends StatelessWidget {
   Widget _chip(Color bg, Color fg, IconData icon, String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -56,7 +57,8 @@ class GroupTotalsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     // Pairwise net from *your* POV for THIS group only:
     // + => they owe YOU, - => YOU owe them
-    final pairNet = pairwiseNetForUser(expenses, currentUserPhone, onlyGroupId: group.id);
+    final pairNet =
+        pairwiseNetForUser(expenses, currentUserPhone, onlyGroupId: group.id);
 
     final rows = pairNet.entries.toList()
       ..sort((a, b) => b.value.abs().compareTo(a.value.abs()));
@@ -64,8 +66,12 @@ class GroupTotalsTab extends StatelessWidget {
     // Totals for header chips
     double owedToYou = 0, youOwe = 0;
     for (final v in pairNet.values) {
-      if (v > 0) owedToYou += v;
-      if (v < 0) youOwe += (-v);
+      if (v > 0) {
+        owedToYou += v;
+      }
+      if (v < 0) {
+        youOwe += (-v);
+      }
     }
     final net = owedToYou - youOwe;
 
@@ -81,7 +87,9 @@ class GroupTotalsTab extends StatelessWidget {
           runSpacing: 8,
           children: [
             _chip(
-              owedToYou > 0 ? Colors.green.withValues(alpha: .12) : Colors.grey.withValues(alpha: .12),
+              owedToYou > 0
+                  ? Colors.green.withValues(alpha: .12)
+                  : Colors.grey.withValues(alpha: .12),
               owedToYou > 0 ? Colors.green.shade700 : Colors.grey.shade700,
               Icons.call_received_rounded,
               owedToYou > 0
@@ -89,16 +97,24 @@ class GroupTotalsTab extends StatelessWidget {
                   : "No one owes you",
             ),
             _chip(
-              youOwe > 0 ? Colors.red.withValues(alpha: .12) : Colors.grey.withValues(alpha: .12),
+              youOwe > 0
+                  ? Colors.red.withValues(alpha: .12)
+                  : Colors.grey.withValues(alpha: .12),
               youOwe > 0 ? Colors.redAccent : Colors.grey.shade700,
               Icons.call_made_rounded,
-              youOwe > 0 ? "You owe ₹${youOwe.toStringAsFixed(0)}" : "You owe none",
+              youOwe > 0
+                  ? "You owe ₹${youOwe.toStringAsFixed(0)}"
+                  : "You owe none",
             ),
             _chip(
-              net >= 0 ? Colors.teal.withValues(alpha: .12) : Colors.orange.withValues(alpha: .12),
+              net >= 0
+                  ? Colors.teal.withValues(alpha: .12)
+                  : Colors.orange.withValues(alpha: .12),
               net >= 0 ? Colors.teal.shade800 : Colors.orange.shade800,
               Icons.balance_rounded,
-              net >= 0 ? "Net +₹${net.toStringAsFixed(0)}" : "Net -₹${(-net).toStringAsFixed(0)}",
+              net >= 0
+                  ? "Net +₹${net.toStringAsFixed(0)}"
+                  : "Net -₹${(-net).toStringAsFixed(0)}",
             ),
             _chip(
               Colors.indigo.withValues(alpha: .08),
@@ -142,7 +158,8 @@ class GroupTotalsTab extends StatelessWidget {
               style: ButtonStyle(
                 backgroundColor: WidgetStatePropertyAll(Colors.orange.shade600),
               ),
-              icon: const Icon(Icons.notifications_active_rounded, color: Colors.white),
+              icon: const Icon(Icons.notifications_active_rounded,
+                  color: Colors.white),
               tooltip: 'Send reminder',
             ),
           ],
@@ -152,12 +169,16 @@ class GroupTotalsTab extends StatelessWidget {
         // --- Per-member sentences (skip zeros) ---
         Text(
           "Balances by member",
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.teal.shade900),
+          style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: Colors.teal.shade900),
         ),
         const SizedBox(height: 8),
 
         if (rows.isEmpty)
-          Text("All settled for now.", style: TextStyle(color: Colors.grey[700]))
+          Text("All settled for now.",
+              style: TextStyle(color: Colors.grey[700]))
         else
           ...rows.map((e) {
             final phone = e.key;
@@ -177,7 +198,8 @@ class GroupTotalsTab extends StatelessWidget {
                 ? "$displayName owes you ₹${amount.toStringAsFixed(2)}"
                 : "You owe $displayName ₹${(-amount).toStringAsFixed(2)}";
 
-            final amtColor = amount > 0 ? Colors.teal.shade800 : Colors.redAccent;
+            final amtColor =
+                amount > 0 ? Colors.teal.shade800 : Colors.redAccent;
 
             return Container(
               margin: const EdgeInsets.symmetric(vertical: 6),
@@ -206,7 +228,8 @@ class GroupTotalsTab extends StatelessWidget {
                   ),
                   Text(
                     "₹${amount.abs().toStringAsFixed(0)}",
-                    style: TextStyle(fontWeight: FontWeight.w800, color: amtColor),
+                    style:
+                        TextStyle(fontWeight: FontWeight.w800, color: amtColor),
                   ),
                 ],
               ),

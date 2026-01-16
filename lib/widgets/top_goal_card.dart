@@ -4,11 +4,12 @@ import '../models/goal_model.dart';
 class TopGoalCard extends StatelessWidget {
   final GoalModel goal;
 
-  const TopGoalCard({Key? key, required this.goal}) : super(key: key);
+  const TopGoalCard({super.key, required this.goal});
 
   @override
   Widget build(BuildContext context) {
-    double percent = goal.savedAmount / (goal.targetAmount == 0 ? 1 : goal.targetAmount);
+    double percent =
+        goal.savedAmount / (goal.targetAmount == 0 ? 1 : goal.targetAmount);
     percent = percent.clamp(0.0, 1.0);
     final int daysLeft = goal.targetDate.difference(DateTime.now()).inDays;
     final String progressPhrase = percent >= 1
@@ -31,7 +32,8 @@ class TopGoalCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     goal.title,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],

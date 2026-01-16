@@ -14,14 +14,14 @@ class AllTab extends StatefulWidget {
   final String userId;
 
   const AllTab({
-    Key? key,
+    super.key,
     required this.friends,
     required this.netBalancesByFriend,
     required this.groups,
     required this.groupsById,
     required this.expenses,
     required this.userId,
-  }) : super(key: key);
+  });
 
   @override
   State<AllTab> createState() => _AllTabState();

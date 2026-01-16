@@ -233,7 +233,6 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
 
     final isToday = nextDue.day == DateTime.now().day &&
         nextDue.month == DateTime.now().month;
-    final daysLeft = nextDue.difference(DateTime.now()).inDays;
 
     return Container(
       width: 80,

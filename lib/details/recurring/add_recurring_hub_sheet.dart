@@ -6,11 +6,11 @@ class AddRecurringHubSheet extends StatelessWidget {
   final String? friendName;
 
   const AddRecurringHubSheet({
-    Key? key,
+    super.key,
     required this.userPhone,
     required this.friendId,
     this.friendName,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -25,8 +25,9 @@ class AddRecurringHubSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Row(children: [
-              Text(title, style: const TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.w900)),
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w900)),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.close_rounded),
@@ -34,7 +35,6 @@ class AddRecurringHubSheet extends StatelessWidget {
               ),
             ]),
             const SizedBox(height: 8),
-
             _Grid(
               tiles: [
                 _Tile(
@@ -61,10 +61,12 @@ class AddRecurringHubSheet extends StatelessWidget {
                   label: 'Subscription',
                   onTap: () async {
                     // TODO replace with your real Add Subscription screen/route
-                    final res = await Navigator.pushNamed(context, '/addSubscription', arguments: {
-                      'userId': userPhone,
-                      'friendId': friendId,
-                    });
+                    final res = await Navigator.pushNamed(
+                        context, '/addSubscription',
+                        arguments: {
+                          'userId': userPhone,
+                          'friendId': friendId,
+                        });
                     Navigator.pop(context, res);
                   },
                 ),
@@ -73,10 +75,11 @@ class AddRecurringHubSheet extends StatelessWidget {
                   label: 'Bill / Utility',
                   onTap: () async {
                     // TODO replace with your real Add Bill screen/route
-                    final res = await Navigator.pushNamed(context, '/addBill', arguments: {
-                      'userId': userPhone,
-                      'friendId': friendId,
-                    });
+                    final res = await Navigator.pushNamed(context, '/addBill',
+                        arguments: {
+                          'userId': userPhone,
+                          'friendId': friendId,
+                        });
                     Navigator.pop(context, res);
                   },
                 ),
@@ -85,10 +88,12 @@ class AddRecurringHubSheet extends StatelessWidget {
                   label: 'Custom Recurring',
                   onTap: () async {
                     // TODO if you have a generic recurring form
-                    final res = await Navigator.pushNamed(context, '/addRecurringGeneric', arguments: {
-                      'userId': userPhone,
-                      'friendId': friendId,
-                    });
+                    final res = await Navigator.pushNamed(
+                        context, '/addRecurringGeneric',
+                        arguments: {
+                          'userId': userPhone,
+                          'friendId': friendId,
+                        });
                     Navigator.pop(context, res);
                   },
                 ),
@@ -125,11 +130,11 @@ class _Tile extends StatelessWidget {
   final VoidCallback onTap;
 
   const _Tile({
-    Key? key,
+    super.key,
     required this.icon,
     required this.label,
     required this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +150,8 @@ class _Tile extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                height: 48, width: 48,
+                height: 48,
+                width: 48,
                 decoration: BoxDecoration(
                   color: Colors.teal.withValues(alpha: .10),
                   borderRadius: BorderRadius.circular(12),
@@ -156,7 +162,8 @@ class _Tile extends StatelessWidget {
               Text(label,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w800, fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13.5,
                   )),
             ],
           ),

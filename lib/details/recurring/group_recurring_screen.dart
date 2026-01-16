@@ -743,13 +743,13 @@ class _FourCards extends StatelessWidget {
   final void Function(String key) onAdd;
 
   const _FourCards({
-    Key? key,
+    super.key,
     required this.items,
     required this.counts,
     required this.nextDue,
     required this.onTap,
     required this.onAdd,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

@@ -1,4 +1,3 @@
-
 import 'package:flutter/foundation.dart';
 
 import '../connector.dart';
@@ -17,8 +16,12 @@ class AndroidSmsConnector extends SourceConnector {
 
   @override
   Future<void> initialize() async {
-    if (!_isAndroid) return;
-    if (!region.allowSmsIngestion) return;
+    if (!_isAndroid) {
+      return;
+    }
+    if (!region.allowSmsIngestion) {
+      return;
+    }
 
     // Check permissions? Usually handled by UI before calling this.
   }

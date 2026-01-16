@@ -4,7 +4,8 @@ import '../models/expense_item.dart';
 import '../models/friend_model.dart';
 
 // keep the logic consistent across app
-import '../group/group_balance_math.dart' show computeSplits, looksLikeSettlement;
+import '../group/group_balance_math.dart'
+    show computeSplits, looksLikeSettlement;
 
 /// A bottom sheet that explains an expense like Splitwise:
 /// - who paid
@@ -19,11 +20,11 @@ class ExpenseBreakdownSheet extends StatelessWidget {
   final Map<String, FriendModel> membersByPhone; // phone -> FriendModel
 
   const ExpenseBreakdownSheet({
-    Key? key,
+    super.key,
     required this.expense,
     required this.currentUserPhone,
     required this.membersByPhone,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -31,8 +32,10 @@ class ExpenseBreakdownSheet extends StatelessWidget {
 
     // Participants (payer + friendIds). For custom splits that include
     // someone not in friendIds (rare), computeSplits() already covers that.
-    final participants = <String>{expense.payerId, ...expense.friendIds}.toList()
-      ..sort((a, b) => _nameOf(a).toLowerCase().compareTo(_nameOf(b).toLowerCase()));
+    final participants = <String>{expense.payerId, ...expense.friendIds}
+        .toList()
+      ..sort((a, b) =>
+          _nameOf(a).toLowerCase().compareTo(_nameOf(b).toLowerCase()));
 
     // Display amounts per member
     Map<String, double> perMember;
@@ -61,13 +64,14 @@ class ExpenseBreakdownSheet extends StatelessWidget {
     final payerName = _displayName(expense.payerId);
     final splitCount = participants.length;
     final payerShare = perMember[expense.payerId] ?? 0.0;
-    final payerGetsBack = isSettlement ? 0.0 : _round2(expense.amount - payerShare);
+    final payerGetsBack =
+        isSettlement ? 0.0 : _round2(expense.amount - payerShare);
 
     final title = expense.label?.isNotEmpty == true
         ? expense.label!
         : (expense.type.isNotEmpty
-        ? expense.type
-        : (isSettlement ? 'Settlement' : 'Expense'));
+            ? expense.type
+            : (isSettlement ? 'Settlement' : 'Expense'));
 
     return SafeArea(
       child: Padding(
@@ -92,14 +96,16 @@ class ExpenseBreakdownSheet extends StatelessWidget {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.teal.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
                       "₹${expense.amount.toStringAsFixed(2)}",
-                      style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.teal),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, color: Colors.teal),
                     ),
                   ),
                 ],
@@ -113,18 +119,25 @@ class ExpenseBreakdownSheet extends StatelessWidget {
                 children: [
                   _chip(icon: Icons.person, label: "Paid by $payerName"),
                   if (!isSettlement)
-                    _chip(icon: Icons.people_alt_rounded, label: "Split among $splitCount")
+                    _chip(
+                        icon: Icons.people_alt_rounded,
+                        label: "Split among $splitCount")
                   else
                     _chip(icon: Icons.swap_horiz_rounded, label: "Settlement"),
                   if ((expense.category ?? '').isNotEmpty)
-                    _chip(icon: Icons.category_outlined, label: expense.category!),
-                  _chip(icon: Icons.calendar_today, label: _dateStr(expense.date)),
+                    _chip(
+                        icon: Icons.category_outlined,
+                        label: expense.category!),
+                  _chip(
+                      icon: Icons.calendar_today,
+                      label: _dateStr(expense.date)),
                 ],
               ),
 
               if (expense.note.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                Text(expense.note, style: TextStyle(color: Colors.grey.shade800)),
+                Text(expense.note,
+                    style: TextStyle(color: Colors.grey.shade800)),
               ],
 
               const SizedBox(height: 14),
@@ -133,7 +146,8 @@ class ExpenseBreakdownSheet extends StatelessWidget {
 
               Text(
                 isSettlement ? "Settlement details" : "Who owes what",
-                style: TextStyle(fontWeight: FontWeight.w800, color: Colors.teal.shade900),
+                style: TextStyle(
+                    fontWeight: FontWeight.w800, color: Colors.teal.shade900),
               ),
               const SizedBox(height: 8),
 
@@ -148,16 +162,21 @@ class ExpenseBreakdownSheet extends StatelessWidget {
 
                 if (isSettlement) {
                   if (isPayer) {
-                    final others = participants.where((p) => p != expense.payerId).toList();
-                    final joined = _joinNames(others.map(_displayName).toList());
-                    lineText = "Paid $joined ₹${expense.amount.abs().toStringAsFixed(2)}";
+                    final others = participants
+                        .where((p) => p != expense.payerId)
+                        .toList();
+                    final joined =
+                        _joinNames(others.map(_displayName).toList());
+                    lineText =
+                        "Paid $joined ₹${expense.amount.abs().toStringAsFixed(2)}";
                     lineStyle = TextStyle(
                       fontSize: 12,
                       color: Colors.teal.shade700,
                       fontWeight: FontWeight.w600,
                     );
                   } else {
-                    lineText = "Received from $payerName ₹${_perOtherSettlementShare().toStringAsFixed(2)}";
+                    lineText =
+                        "Received from $payerName ₹${_perOtherSettlementShare().toStringAsFixed(2)}";
                     lineStyle = const TextStyle(
                       fontSize: 12,
                       color: Colors.green,
@@ -193,7 +212,8 @@ class ExpenseBreakdownSheet extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(_displayName(phone),
-                                style: const TextStyle(fontWeight: FontWeight.w700)),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700)),
                             Text(lineText, style: lineStyle),
                           ],
                         ),
@@ -204,8 +224,12 @@ class ExpenseBreakdownSheet extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                           // tint a bit to match semantics
                           color: isSettlement
-                              ? (isPayer ? Colors.teal.shade800 : Colors.green.shade800)
-                              : (isPayer ? Colors.teal.shade800 : Colors.grey.shade900),
+                              ? (isPayer
+                                  ? Colors.teal.shade800
+                                  : Colors.green.shade800)
+                              : (isPayer
+                                  ? Colors.teal.shade800
+                                  : Colors.grey.shade900),
                         ),
                       ),
                     ],
@@ -223,7 +247,9 @@ class ExpenseBreakdownSheet extends StatelessWidget {
                   Expanded(
                     child: Text(
                       isSettlement ? "Transfer amount" : "Shares total",
-                      style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                          color: Colors.grey.shade800,
+                          fontWeight: FontWeight.w600),
                     ),
                   ),
                   Text(
@@ -232,7 +258,8 @@ class ExpenseBreakdownSheet extends StatelessWidget {
                   ),
                 ],
               ),
-              if (!isSettlement && (_diff(expense.amount, sumShown)).abs() > 0.01) ...[
+              if (!isSettlement &&
+                  (_diff(expense.amount, sumShown)).abs() > 0.01) ...[
                 const SizedBox(height: 4),
                 Text(
                   "Note: shares don’t add up exactly due to rounding.",
@@ -252,14 +279,22 @@ class ExpenseBreakdownSheet extends StatelessWidget {
 
   double _perOtherSettlementShare() {
     final others = expense.friendIds.where((id) => id.isNotEmpty).toList();
-    if (others.isEmpty) return 0.0;
+    if (others.isEmpty) {
+      return 0.0;
+    }
     return _round2(expense.amount.abs() / others.length);
   }
 
   String _joinNames(List<String> names) {
-    if (names.isEmpty) return '';
-    if (names.length == 1) return names.first;
-    if (names.length == 2) return "${names[0]} and ${names[1]}";
+    if (names.isEmpty) {
+      return '';
+    }
+    if (names.length == 1) {
+      return names.first;
+    }
+    if (names.length == 2) {
+      return "${names[0]} and ${names[1]}";
+    }
     return "${names[0]}, ${names[1]} and ${names.length - 2} others";
   }
 
@@ -268,10 +303,13 @@ class ExpenseBreakdownSheet extends StatelessWidget {
     return (f != null && f.name.isNotEmpty) ? f.name : phone;
   }
 
-  String _displayName(String phone) => phone == currentUserPhone ? "You" : _nameOf(phone);
+  String _displayName(String phone) =>
+      phone == currentUserPhone ? "You" : _nameOf(phone);
 
   String _dateStr(DateTime? d) {
-    if (d == null) return '';
+    if (d == null) {
+      return '';
+    }
     final y = d.year.toString().padLeft(4, '0');
     final m = d.month.toString().padLeft(2, '0');
     final day = d.day.toString().padLeft(2, '0');
@@ -292,7 +330,10 @@ class ExpenseBreakdownSheet extends StatelessWidget {
           Icon(icon, size: 14, color: Colors.grey.shade800),
           const SizedBox(width: 6),
           Text(label,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade900, fontWeight: FontWeight.w600)),
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade900,
+                  fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -304,10 +345,10 @@ class ExpenseBreakdownSheet extends StatelessWidget {
     if (avatarUrl.startsWith('http')) {
       return CircleAvatar(radius: 16, backgroundImage: NetworkImage(avatarUrl));
     }
-    final initial = (f?.name.isNotEmpty == true)
-        ? f!.name.characters.first
-        : '👤';
-    return CircleAvatar(radius: 16, child: Text(initial, style: const TextStyle(fontSize: 14)));
+    final initial =
+        (f?.name.isNotEmpty == true) ? f!.name.characters.first : '👤';
+    return CircleAvatar(
+        radius: 16, child: Text(initial, style: const TextStyle(fontSize: 14)));
   }
 
   double _round2(double v) => (v * 100).roundToDouble() / 100.0;

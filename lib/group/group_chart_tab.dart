@@ -14,11 +14,11 @@ class GroupChartTab extends StatefulWidget {
   final List<ExpenseItem> expenses;
 
   const GroupChartTab({
-    Key? key,
+    super.key,
     required this.currentUserPhone,
     required this.members,
     required this.expenses,
-  }) : super(key: key);
+  });
 
   @override
   State<GroupChartTab> createState() => _GroupChartTabState();
@@ -34,7 +34,9 @@ class _GroupChartTabState extends State<GroupChartTab> {
     final set = <String>{};
     for (final e in widget.expenses) {
       final c = (e.category ?? '').trim();
-      if (c.isNotEmpty) set.add(c);
+      if (c.isNotEmpty) {
+        set.add(c);
+      }
     }
     final list = set.toList()..sort();
     return list;
@@ -42,8 +44,12 @@ class _GroupChartTabState extends State<GroupChartTab> {
 
   // ------ filtering ------
   bool _inRange(DateTime d) {
-    if (_from != null && d.isBefore(_from!)) return false;
-    if (_to != null && d.isAfter(_to!)) return false;
+    if (_from != null && d.isBefore(_from!)) {
+      return false;
+    }
+    if (_to != null && d.isAfter(_to!)) {
+      return false;
+    }
     return true;
   }
 
@@ -80,9 +86,7 @@ class _GroupChartTabState extends State<GroupChartTab> {
     }
 
     return widget.expenses.where((e) {
-      final inDate = (from == null && to == null)
-          ? true
-          : _inRange(e.date);
+      final inDate = (from == null && to == null) ? true : _inRange(e.date);
       final inCat = (_category == null || (_category ?? '').isEmpty)
           ? true
           : (e.category ?? '') == _category;
@@ -91,9 +95,9 @@ class _GroupChartTabState extends State<GroupChartTab> {
   }
 
   Map<String, String> _displayNames() => {
-    for (final m in widget.members)
-      m.phone: (m.phone == widget.currentUserPhone ? 'You' : m.name)
-  };
+        for (final m in widget.members)
+          m.phone: (m.phone == widget.currentUserPhone ? 'You' : m.name)
+      };
 
   Future<void> _pickCustomRange() async {
     final now = DateTime.now();
@@ -104,7 +108,9 @@ class _GroupChartTabState extends State<GroupChartTab> {
       lastDate: now,
       helpText: 'Select start date',
     );
-    if (pickedFrom == null) return;
+    if (pickedFrom == null) {
+      return;
+    }
     final pickedTo = await showDatePicker(
       context: context,
       initialDate: _to ?? now,
@@ -112,7 +118,9 @@ class _GroupChartTabState extends State<GroupChartTab> {
       lastDate: now,
       helpText: 'Select end date',
     );
-    if (pickedTo == null) return;
+    if (pickedTo == null) {
+      return;
+    }
     setState(() {
       _time = _TimeFilter.custom;
       _from = DateTime(pickedFrom.year, pickedFrom.month, pickedFrom.day);
@@ -231,16 +239,20 @@ class _GroupChartTabState extends State<GroupChartTab> {
                     onPressed: _pickCustomRange,
                     backgroundColor: Colors.indigo.withValues(alpha: .08),
                   ),
-                  if (_time == _TimeFilter.custom && (_from != null || _to != null))
+                  if (_time == _TimeFilter.custom &&
+                      (_from != null || _to != null))
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: Colors.indigo.withValues(alpha: .08),
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        "${_from?.toLocal().toString().substring(0,10) ?? '…'} → ${_to?.toLocal().toString().substring(0,10) ?? '…'}",
-                        style: TextStyle(color: Colors.indigo.shade900, fontWeight: FontWeight.w700),
+                        "${_from?.toLocal().toString().substring(0, 10) ?? '…'} → ${_to?.toLocal().toString().substring(0, 10) ?? '…'}",
+                        style: TextStyle(
+                            color: Colors.indigo.shade900,
+                            fontWeight: FontWeight.w700),
                       ),
                     ),
                   const SizedBox(width: 6),
@@ -251,14 +263,17 @@ class _GroupChartTabState extends State<GroupChartTab> {
                       decoration: BoxDecoration(
                         color: Colors.orange.withValues(alpha: .08),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.orange.withValues(alpha: .3)),
+                        border: Border.all(
+                            color: Colors.orange.withValues(alpha: .3)),
                       ),
                       child: DropdownButton<String>(
                         value: _category,
                         hint: const Text('Category'),
                         items: <DropdownMenuItem<String>>[
-                          const DropdownMenuItem(value: null, child: Text('All')),
-                          ..._allCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))),
+                          const DropdownMenuItem(
+                              value: null, child: Text('All')),
+                          ..._allCategories.map((c) =>
+                              DropdownMenuItem(value: c, child: Text(c))),
                         ],
                         onChanged: (v) => setState(() => _category = v),
                       ),
@@ -294,20 +309,28 @@ class _GroupChartTabState extends State<GroupChartTab> {
                 children: [
                   _miniChip(
                     color: Colors.green,
-                    text: owed > 0 ? "Owed to you ₹${owed.toStringAsFixed(0)}" : "No credit",
+                    text: owed > 0
+                        ? "Owed to you ₹${owed.toStringAsFixed(0)}"
+                        : "No credit",
                     bg: Colors.green.withValues(alpha: .10),
                   ),
                   _miniChip(
                     color: Colors.redAccent,
-                    text: owe > 0 ? "You owe ₹${owe.toStringAsFixed(0)}" : "No dues",
+                    text: owe > 0
+                        ? "You owe ₹${owe.toStringAsFixed(0)}"
+                        : "No dues",
                     bg: Colors.red.withValues(alpha: .10),
                   ),
                   _miniChip(
-                    color: (owed - owe) >= 0 ? Colors.teal.shade800 : Colors.orange.shade800,
+                    color: (owed - owe) >= 0
+                        ? Colors.teal.shade800
+                        : Colors.orange.shade800,
                     text: (owed - owe) >= 0
                         ? "Net +₹${(owed - owe).toStringAsFixed(0)}"
                         : "Net -₹${(owe - owed).toStringAsFixed(0)}",
-                    bg: (owed - owe) >= 0 ? Colors.teal.withValues(alpha: .10) : Colors.orange.withValues(alpha: .10),
+                    bg: (owed - owe) >= 0
+                        ? Colors.teal.withValues(alpha: .10)
+                        : Colors.orange.withValues(alpha: .10),
                   ),
                 ],
               ),
@@ -350,16 +373,19 @@ class _GroupChartTabState extends State<GroupChartTab> {
     );
   }
 
-  Widget _miniChip({required Color color, required String text, required Color bg}) {
+  Widget _miniChip(
+      {required Color color, required String text, required Color bg}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.circle, size: 8, color: color),
           const SizedBox(width: 6),
-          Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w700)),
+          Text(text,
+              style: TextStyle(color: color, fontWeight: FontWeight.w700)),
         ],
       ),
     );

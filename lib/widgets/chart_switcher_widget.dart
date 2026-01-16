@@ -7,12 +7,12 @@ class ChartSwitcherWidget extends StatelessWidget {
   final ValueChanged<String> onDataTypeChanged;
 
   const ChartSwitcherWidget({
-    Key? key,
+    super.key,
     required this.chartType,
     required this.dataType,
     required this.onChartTypeChanged,
     required this.onDataTypeChanged,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -34,8 +34,7 @@ class ChartSwitcherWidget extends StatelessWidget {
             dataType == "Expense"
           ],
           onPressed: (i) {
-            onDataTypeChanged(
-                i == 0 ? "All" : (i == 1 ? "Income" : "Expense"));
+            onDataTypeChanged(i == 0 ? "All" : (i == 1 ? "Income" : "Expense"));
           },
         ),
       ],

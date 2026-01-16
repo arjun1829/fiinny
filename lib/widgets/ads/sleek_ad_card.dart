@@ -145,8 +145,9 @@ class _SleekAdCardState extends State<SleekAdCard> {
       return const SizedBox.shrink();
     }
 
-    final useNative = !kIsWeb && 
-        (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) && 
+    final useNative = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS) &&
         AdIds.native.isNotEmpty;
 
     final childAd = useNative
@@ -155,8 +156,8 @@ class _SleekAdCardState extends State<SleekAdCard> {
             adUnitId: AdIds.native,
             inlineMaxHeight: 120, // Hint for template selection
             onLoadChanged: (isLoaded) {
-               if (!mounted || _loaded == isLoaded) return;
-               setState(() => _loaded = isLoaded);
+              if (!mounted || _loaded == isLoaded) return;
+              setState(() => _loaded = isLoaded);
             },
           )
         : AdaptiveBanner(
@@ -167,10 +168,10 @@ class _SleekAdCardState extends State<SleekAdCard> {
             padding: EdgeInsets.zero,
             onLoadChanged: (isLoaded) {
               assert(() {
-                debugPrint(
-                  '[SleekAdCard] banner ${maskAdIdentifier(AdIds.banner)} '
-                  'loaded=$isLoaded generation=$_bannerGeneration',
-                );
+                // debugPrint(
+                //   '[SleekAdCard] banner ${maskAdIdentifier(AdIds.banner)} '
+                //   'loaded=$isLoaded generation=$_bannerGeneration',
+                // );
                 return true;
               }());
               if (!mounted || _loaded == isLoaded) return;
@@ -211,7 +212,6 @@ class _SleekAdCardState extends State<SleekAdCard> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-
               Align(
                 alignment: Alignment.center,
                 child: childAd,

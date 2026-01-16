@@ -29,13 +29,13 @@ class AddGroupExpenseScreen extends StatefulWidget {
   final List<FriendModel> allFriends; // For names/avatars resolution
 
   const AddGroupExpenseScreen({
-    Key? key,
+    super.key,
     required this.userPhone,
     required this.userName,
     this.userAvatar,
     required this.group,
     required this.allFriends,
-  }) : super(key: key);
+  });
 
   @override
   State<AddGroupExpenseScreen> createState() => _AddGroupExpenseScreenState();
@@ -100,7 +100,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
     groupMembers = widget.group.memberPhones.map((phone) {
       if (phone == widget.userPhone) return currentUser;
       return widget.allFriends.firstWhere(
-            (f) => f.phone == phone,
+        (f) => f.phone == phone,
         orElse: () => FriendModel(phone: phone, name: "Unknown", avatar: "👤"),
       );
     }).toList();
@@ -258,11 +258,13 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
       if (kIsWeb) {
         final bytes = f.bytes;
         if (bytes == null) return;
-        await _uploadBytes(bytes, name, mime, typeHint: _isImage(mime) ? 'image' : 'file');
+        await _uploadBytes(bytes, name, mime,
+            typeHint: _isImage(mime) ? 'image' : 'file');
       } else {
         final path = f.path;
         if (path == null) return;
-        await _uploadFilePath(path, name, mime, typeHint: _isImage(mime) ? 'image' : 'file');
+        await _uploadFilePath(path, name, mime,
+            typeHint: _isImage(mime) ? 'image' : 'file');
       }
     } catch (_) {
       _toast('File picker error');
@@ -298,11 +300,11 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
   }
 
   Future<void> _uploadBytes(
-      Uint8List bytes,
-      String name,
-      String mime, {
-        required String typeHint,
-      }) async {
+    Uint8List bytes,
+    String name,
+    String mime, {
+    required String typeHint,
+  }) async {
     try {
       final ref = FirebaseStorage.instance
           .ref()
@@ -328,11 +330,11 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
   }
 
   Future<void> _uploadFilePath(
-      String path,
-      String name,
-      String mime, {
-        required String typeHint,
-      }) async {
+    String path,
+    String name,
+    String mime, {
+    required String typeHint,
+  }) async {
     try {
       final ref = FirebaseStorage.instance
           .ref()
@@ -376,14 +378,17 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
     }
     if (_step < 3) {
       setState(() => _step++);
-      _pg.animateToPage(_step, duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
+      _pg.animateToPage(_step,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic);
     }
   }
 
   void _goBack() {
     if (_step > 0) {
       setState(() => _step--);
-      _pg.animateToPage(_step, duration: const Duration(milliseconds: 260), curve: Curves.easeOut);
+      _pg.animateToPage(_step,
+          duration: const Duration(milliseconds: 260), curve: Curves.easeOut);
     } else {
       Navigator.pop(context, false);
     }
@@ -404,7 +409,9 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
     String noteOut = _note.trim();
     if (_attachments.isNotEmpty) {
       final parts = _attachments.map((a) => '${a.name} (${a.url})').join(', ');
-      noteOut = noteOut.isEmpty ? 'Attachments: $parts' : '$noteOut\nAttachments: $parts';
+      noteOut = noteOut.isEmpty
+          ? 'Attachments: $parts'
+          : '$noteOut\nAttachments: $parts';
     }
 
     setState(() => _saving = true);
@@ -428,20 +435,30 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
         if ((sum - _amount).abs() > 0.01) {
           final scaled = {
             for (final e in raw.entries)
-              e.key: _amount == 0 ? 0.0 : (e.value * _amount / (sum == 0 ? 1 : sum))
+              e.key: _amount == 0
+                  ? 0.0
+                  : (e.value * _amount / (sum == 0 ? 1 : sum))
           };
           final scaledSum = scaled.values.fold(0.0, (a, b) => a + b);
           final delta = _amount - scaledSum;
-          scaled[_selectedPayerPhone!] = (scaled[_selectedPayerPhone!] ?? 0) + delta;
+          scaled[_selectedPayerPhone!] =
+              (scaled[_selectedPayerPhone!] ?? 0) + delta;
 
-          custom = {for (final e in scaled.entries) e.key: double.parse(e.value.toStringAsFixed(2))};
+          custom = {
+            for (final e in scaled.entries)
+              e.key: double.parse(e.value.toStringAsFixed(2))
+          };
         } else {
-          custom = {for (final e in raw.entries) e.key: double.parse(e.value.toStringAsFixed(2))};
+          custom = {
+            for (final e in raw.entries)
+              e.key: double.parse(e.value.toStringAsFixed(2))
+          };
         }
       }
 
       // friendIds = participants minus payer
-      final friendIds = participants.where((p) => p != _selectedPayerPhone!).toList();
+      final friendIds =
+          participants.where((p) => p != _selectedPayerPhone!).toList();
 
       final expense = ExpenseItem(
         id: '',
@@ -454,7 +471,8 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
         groupId: widget.group.id,
         payerId: _selectedPayerPhone!,
         customSplits: custom, // null = equal split downstream
-        counterparty: _counterparty.trim().isNotEmpty ? _counterparty.trim() : null,
+        counterparty:
+            _counterparty.trim().isNotEmpty ? _counterparty.trim() : null,
       );
 
       await ExpenseService().addExpenseWithSync(widget.userPhone, expense);
@@ -468,7 +486,8 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
   }
 
   // --------------- UI pieces ---------------
-  InputDecoration _pillDec({required String label, IconData? icon, String? hint}) {
+  InputDecoration _pillDec(
+      {required String label, IconData? icon, String? hint}) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
@@ -501,7 +520,8 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
       backgroundColor: _kTeal.withValues(alpha: .12),
       foregroundImage: prov,
       child: prov == null
-          ? Text((f.name.isNotEmpty ? f.name[0] : '👤').toUpperCase(), style: const TextStyle(fontSize: 12))
+          ? Text((f.name.isNotEmpty ? f.name[0] : '👤').toUpperCase(),
+              style: const TextStyle(fontSize: 12))
           : null,
     );
   }
@@ -514,7 +534,9 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
       radius: r,
       backgroundColor: _kIndigo.withValues(alpha: .12),
       foregroundImage: prov,
-      child: prov == null ? Text(widget.userName.characters.first.toUpperCase()) : null,
+      child: prov == null
+          ? Text(widget.userName.characters.first.toUpperCase())
+          : null,
     );
   }
 
@@ -570,12 +592,14 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                 child: Text(
                   widget.group.name,
                   key: ValueKey("${widget.group.id}.$_step"),
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: _kText),
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w900, color: _kText),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
             ),
-            Text("${_step + 1}/4", style: const TextStyle(color: Colors.black54)),
+            Text("${_step + 1}/4",
+                style: const TextStyle(color: Colors.black54)),
           ],
         ),
         const SizedBox(height: 6),
@@ -584,7 +608,9 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
         Row(
           children: [
             if ((widget.group.avatarUrl ?? '').isNotEmpty)
-              CircleAvatar(radius: 14, backgroundImage: NetworkImage(widget.group.avatarUrl!)),
+              CircleAvatar(
+                  radius: 14,
+                  backgroundImage: NetworkImage(widget.group.avatarUrl!)),
             const SizedBox(width: 8),
             Expanded(
               child: SizedBox(
@@ -599,19 +625,27 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                     return CircleAvatar(
                       radius: 12,
                       child: url.startsWith('http')
-                          ? ClipOval(child: Image.network(url, width: 24, height: 24, fit: BoxFit.cover))
-                          : Text((m.name.isNotEmpty ? m.name[0] : '👤').toUpperCase(), style: const TextStyle(fontSize: 11)),
+                          ? ClipOval(
+                              child: Image.network(url,
+                                  width: 24, height: 24, fit: BoxFit.cover))
+                          : Text(
+                              (m.name.isNotEmpty ? m.name[0] : '👤')
+                                  .toUpperCase(),
+                              style: const TextStyle(fontSize: 11)),
                     );
                   },
                 ),
               ),
             ),
             const SizedBox(width: 8),
-            Text("Members: ${groupMembers.length}", style: TextStyle(color: Colors.grey.shade700)),
+            Text("Members: ${groupMembers.length}",
+                style: TextStyle(color: Colors.grey.shade700)),
           ],
         ),
         const SizedBox(height: 8),
-        Text(titles[_step], style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _kText)),
+        Text(titles[_step],
+            style: const TextStyle(
+                fontSize: 15, fontWeight: FontWeight.w700, color: _kText)),
       ],
     );
   }
@@ -625,9 +659,15 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
         _SlideFade(
           delayMs: 0,
           child: TextFormField(
-            decoration: _pillDec(label: "Amount", icon: Icons.currency_rupee, hint: "e.g. 2400.00"),
+            decoration: _pillDec(
+                label: "Amount",
+                icon: Icons.currency_rupee,
+                hint: "e.g. 2400.00"),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d{0,7}(\.\d{0,2})?$'))],
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(
+                  RegExp(r'^\d{0,7}(\.\d{0,2})?$'))
+            ],
             validator: (v) {
               if (_step != 3) return null;
               final d = double.tryParse((v ?? '').trim());
@@ -650,11 +690,16 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
             initialValue: _category.isEmpty ? null : _category,
             items: _categories
                 .map((c) => DropdownMenuItem(
-              value: c.label,
-              child: Row(children: [Icon(c.icon, size: 18), const SizedBox(width: 8), Text(c.label)]),
-            ))
+                      value: c.label,
+                      child: Row(children: [
+                        Icon(c.icon, size: 18),
+                        const SizedBox(width: 8),
+                        Text(c.label)
+                      ]),
+                    ))
                 .toList(),
-            onChanged: _saving ? null : (v) => setState(() => _category = v ?? ''),
+            onChanged:
+                _saving ? null : (v) => setState(() => _category = v ?? ''),
             decoration: _pillDec(label: "Category", icon: Icons.category),
           ),
         ),
@@ -673,7 +718,9 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                   Text(c.label),
                 ]),
                 selected: selected,
-                onSelected: _saving ? null : (v) => setState(() => _category = v ? c.label : ''),
+                onSelected: _saving
+                    ? null
+                    : (v) => setState(() => _category = v ? c.label : ''),
               );
             }).toList(),
           ),
@@ -705,7 +752,8 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                 ),
               );
             }).toList(),
-            onChanged: _saving ? null : (v) => setState(() => _selectedPayerPhone = v),
+            onChanged:
+                _saving ? null : (v) => setState(() => _selectedPayerPhone = v),
           ),
         ),
       ],
@@ -723,12 +771,13 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
           onChanged: _saving
               ? null
               : (v) {
-            setState(() {
-              _customSplit = v;
-              if (_customSplit && _amount > 0) _recalcEqualSplit();
-            });
-          },
-          title: const Text("Custom split", style: TextStyle(fontWeight: FontWeight.w700)),
+                  setState(() {
+                    _customSplit = v;
+                    if (_customSplit && _amount > 0) _recalcEqualSplit();
+                  });
+                },
+          title: const Text("Custom split",
+              style: TextStyle(fontWeight: FontWeight.w700)),
           subtitle: const Text("Turn off for equal split"),
           activeTrackColor: _kIndigo,
         ),
@@ -749,14 +798,16 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                 onPressed: _saving ? null : _clearSplits,
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(colors: [_kIndigo, _kTeal]),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
                   "Sum: ₹${_fmt2(_sumSplits)} / ₹${_fmt2(_amount)}",
-                  style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, color: Colors.white),
                 ),
               ),
             ],
@@ -765,7 +816,8 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
 
           // All participants
           ..._participantsPhones.map((phone) {
-            final f = groupMembers.firstWhere((m) => m.phone == phone, orElse: () => currentUser);
+            final f = groupMembers.firstWhere((m) => m.phone == phone,
+                orElse: () => currentUser);
             final isYou = phone == currentUser.phone;
             final ctrl = _splitCtrls[phone]!;
             return Padding(
@@ -776,7 +828,8 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                   const SizedBox(width: 8),
                   SizedBox(
                     width: 140,
-                    child: Text(isYou ? "You" : f.name, overflow: TextOverflow.ellipsis),
+                    child: Text(isYou ? "You" : f.name,
+                        overflow: TextOverflow.ellipsis),
                   ),
                   const Spacer(),
                   SizedBox(
@@ -784,9 +837,11 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                     child: TextField(
                       controller: ctrl,
                       enabled: !_saving,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
                       inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'^\d{0,7}(\.\d{0,2})?$')),
+                        FilteringTextInputFormatter.allow(
+                            RegExp(r'^\d{0,7}(\.\d{0,2})?$')),
                       ],
                       decoration: _pillDec(label: "₹"),
                       textAlign: TextAlign.right,
@@ -799,7 +854,8 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
           if (_amount <= 0)
             Padding(
               padding: const EdgeInsets.only(top: 6),
-              child: Text("Tip: Enter amount first to enable equal split.", style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+              child: Text("Tip: Enter amount first to enable equal split.",
+                  style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
             ),
         ],
         if (!_customSplit)
@@ -810,7 +866,8 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                 const Icon(Icons.info_outline, size: 18, color: Colors.black45),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text("Equal split between all group members.", style: TextStyle(color: Colors.grey.shade700)),
+                  child: Text("Equal split between all group members.",
+                      style: TextStyle(color: Colors.grey.shade700)),
                 ),
               ],
             ),
@@ -825,7 +882,8 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         TextFormField(
-          decoration: _pillDec(label: "Label (e.g., Dinner, Cab)", icon: Icons.label_outline),
+          decoration: _pillDec(
+              label: "Label (e.g., Dinner, Cab)", icon: Icons.label_outline),
           onChanged: (v) => _label = v,
           enabled: !_saving,
         ),
@@ -834,20 +892,26 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
           children: [
             const Icon(Icons.calendar_today, size: 18, color: Colors.black54),
             const SizedBox(width: 8),
-            Expanded(child: Text("Date: ${_date.toLocal().toString().substring(0, 10)}")),
-            TextButton(onPressed: _saving ? null : _pickDate, child: const Text("Change")),
+            Expanded(
+                child: Text(
+                    "Date: ${_date.toLocal().toString().substring(0, 10)}")),
+            TextButton(
+                onPressed: _saving ? null : _pickDate,
+                child: const Text("Change")),
           ],
         ),
         const SizedBox(height: 10),
         TextFormField(
-          decoration: _pillDec(label: "Note", icon: Icons.sticky_note_2_outlined),
+          decoration:
+              _pillDec(label: "Note", icon: Icons.sticky_note_2_outlined),
           onChanged: (v) => _note = v,
           enabled: !_saving,
           maxLines: 2,
         ),
         const SizedBox(height: 10),
         TextFormField(
-          decoration: _pillDec(label: "Paid to (optional)", icon: Icons.storefront_rounded),
+          decoration: _pillDec(
+              label: "Paid to (optional)", icon: Icons.storefront_rounded),
           onChanged: (v) => _counterparty = v,
           enabled: !_saving,
         ),
@@ -860,13 +924,18 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
               onPressed: _saving ? null : _showAttachmentSheet,
               icon: const Icon(Icons.attach_file_rounded),
               label: const Text("Add attachment"),
-              style: FilledButton.styleFrom(backgroundColor: _kIndigo, foregroundColor: Colors.white),
+              style: FilledButton.styleFrom(
+                  backgroundColor: _kIndigo, foregroundColor: Colors.white),
             ),
             ..._attachments.map((a) => InputChip(
-              label: Text(a.name),
-              avatar: Icon(_isImage(a.mime) ? Icons.image : Icons.insert_drive_file, size: 18),
-              onDeleted: _saving ? null : () => setState(() => _attachments.remove(a)),
-            )),
+                  label: Text(a.name),
+                  avatar: Icon(
+                      _isImage(a.mime) ? Icons.image : Icons.insert_drive_file,
+                      size: 18),
+                  onDeleted: _saving
+                      ? null
+                      : () => setState(() => _attachments.remove(a)),
+                )),
           ],
         ),
         if (_saving || _uploading) ...[
@@ -919,12 +988,21 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                         child: Container(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
-                              colors: [Colors.white.withValues(alpha: .98), Colors.white.withValues(alpha: .94)],
+                              colors: [
+                                Colors.white.withValues(alpha: .98),
+                                Colors.white.withValues(alpha: .94)
+                              ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
-                            border: Border.all(color: Colors.white.withValues(alpha: .65)),
-                            boxShadow: const [BoxShadow(color: Color(0x1F000000), blurRadius: 22, offset: Offset(0, 10))],
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: .65)),
+                            boxShadow: const [
+                              BoxShadow(
+                                  color: Color(0x1F000000),
+                                  blurRadius: 22,
+                                  offset: Offset(0, 10))
+                            ],
                             borderRadius: BorderRadius.circular(20),
                           ),
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -965,10 +1043,13 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                               icon: const Icon(Icons.chevron_left_rounded),
                               label: const Text("Back"),
                               style: OutlinedButton.styleFrom(
-                                side: BorderSide(color: _kIndigo.withValues(alpha: .35)),
+                                side: BorderSide(
+                                    color: _kIndigo.withValues(alpha: .35)),
                                 foregroundColor: _kIndigo,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 12),
                               ),
                             ),
                           )
@@ -986,8 +1067,10 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                                 backgroundColor: _kIndigo,
                                 foregroundColor: Colors.white,
                                 elevation: 6,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 12),
                               ),
                             ),
                           ),
@@ -998,14 +1081,20 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                               onPressed: _saving ? null : _submit,
                               icon: const Icon(Icons.check_rounded),
                               label: _saving
-                                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.white))
                                   : const Text("Add Expense"),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _kTeal,
                                 foregroundColor: Colors.white,
                                 elevation: 6,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 12),
                               ),
                             ),
                           ),
@@ -1102,7 +1191,8 @@ class _SlideFadeState extends State<_SlideFade> {
         final dy = 16 * (1 - t);
         return Opacity(
           opacity: t,
-          child: Transform.translate(offset: Offset(0, dy), child: widget.child),
+          child:
+              Transform.translate(offset: Offset(0, dy), child: widget.child),
         );
       },
     );

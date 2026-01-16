@@ -8,14 +8,14 @@ import 'expense_breakdown_sheet.dart';
 class GroupOverviewTab extends StatelessWidget {
   final String currentUserPhone;
   final GroupModel group;
-  final List<FriendModel> members;           // resolved members
-  final List<ExpenseItem> expenses;          // group-only expenses
+  final List<FriendModel> members; // resolved members
+  final List<ExpenseItem> expenses; // group-only expenses
   final VoidCallback onAddExpense;
   final VoidCallback onSettleUp;
-  final VoidCallback onRemind;               // new button
+  final VoidCallback onRemind; // new button
 
   const GroupOverviewTab({
-    Key? key,
+    super.key,
     required this.currentUserPhone,
     required this.group,
     required this.members,
@@ -23,13 +23,15 @@ class GroupOverviewTab extends StatelessWidget {
     required this.onAddExpense,
     required this.onSettleUp,
     required this.onRemind,
-  }) : super(key: key);
+  });
 
   Map<String, FriendModel> get _byPhone =>
       {for (final f in members) f.phone: f};
 
   String _nameOf(String phone) {
-    if (phone == currentUserPhone) return 'You';
+    if (phone == currentUserPhone) {
+      return 'You';
+    }
     return _byPhone[phone]?.name ?? phone;
   }
 
@@ -38,7 +40,9 @@ class GroupOverviewTab extends StatelessWidget {
     final net = <String, double>{for (final m in members) m.phone: 0.0};
 
     for (final e in expenses) {
-      if (e.payerId.isEmpty) continue;
+      if (e.payerId.isEmpty) {
+        continue;
+      }
       final participants = <String>{e.payerId, ...e.friendIds};
       final splits = e.customSplits ??
           {for (final id in participants) id: e.amount / participants.length};
@@ -60,8 +64,12 @@ class GroupOverviewTab extends StatelessWidget {
     final creditors = <_Balance>[];
 
     net.forEach((id, v) {
-      if (v < -0.01) debtors.add(_Balance(id, -v)); // owes
-      if (v > 0.01) creditors.add(_Balance(id, v)); // is owed
+      if (v < -0.01) {
+        debtors.add(_Balance(id, -v)); // owes
+      }
+      if (v > 0.01) {
+        creditors.add(_Balance(id, v)); // is owed
+      }
     });
 
     debtors.sort((a, b) => b.amount.compareTo(a.amount));
@@ -74,13 +82,18 @@ class GroupOverviewTab extends StatelessWidget {
           ? debtors[i].amount
           : creditors[j].amount;
 
-      transfers.add(_Transfer(from: debtors[i].id, to: creditors[j].id, amount: take));
+      transfers.add(
+          _Transfer(from: debtors[i].id, to: creditors[j].id, amount: take));
 
       debtors[i] = _Balance(debtors[i].id, debtors[i].amount - take);
       creditors[j] = _Balance(creditors[j].id, creditors[j].amount - take);
 
-      if (debtors[i].amount <= 0.01) i++;
-      if (creditors[j].amount <= 0.01) j++;
+      if (debtors[i].amount <= 0.01) {
+        i++;
+      }
+      if (creditors[j].amount <= 0.01) {
+        j++;
+      }
     }
     return transfers;
   }
@@ -112,11 +125,13 @@ class GroupOverviewTab extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(group.name,
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                        style: const TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 4),
                     Text(
                       'Created by ${createdByYou ? "You" : _nameOf(group.createdBy)}',
-                      style: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                          color: Colors.grey[800], fontWeight: FontWeight.w600),
                     ),
                     Text(
                       'Members: ${group.memberPhones.length}',
@@ -143,8 +158,10 @@ class GroupOverviewTab extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.redAccent,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
               ElevatedButton.icon(
@@ -154,8 +171,10 @@ class GroupOverviewTab extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.teal.shade700,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
               ElevatedButton.icon(
@@ -165,8 +184,10 @@ class GroupOverviewTab extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange.shade700,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ],
@@ -180,7 +201,10 @@ class GroupOverviewTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Your balances', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.teal.shade900)),
+                Text('Your balances',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.teal.shade900)),
                 const SizedBox(height: 8),
                 ...pairs.map((t) {
                   final youOwe = t.from == currentUserPhone;
@@ -189,7 +213,9 @@ class GroupOverviewTab extends StatelessWidget {
                     child: Row(
                       children: [
                         Icon(
-                          youOwe ? Icons.call_made_rounded : Icons.call_received_rounded,
+                          youOwe
+                              ? Icons.call_made_rounded
+                              : Icons.call_received_rounded,
                           size: 16,
                           color: youOwe ? Colors.redAccent : Colors.green,
                         ),
@@ -199,7 +225,8 @@ class GroupOverviewTab extends StatelessWidget {
                             youOwe
                                 ? 'You owe ${_nameOf(t.to)} ₹${t.amount.toStringAsFixed(2)}'
                                 : '${_nameOf(t.from)} owes you ₹${t.amount.toStringAsFixed(2)}',
-                            style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
+                            style: const TextStyle(
+                                fontSize: 14.5, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
@@ -224,12 +251,15 @@ class GroupOverviewTab extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Shared Group Activity',
-                  style: TextStyle(fontWeight: FontWeight.w800, color: Colors.teal.shade900)),
+                  style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.teal.shade900)),
               const SizedBox(height: 6),
               if (expenses.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Text('No transactions yet.', style: TextStyle(color: Colors.grey[700])),
+                  child: Text('No transactions yet.',
+                      style: TextStyle(color: Colors.grey[700])),
                 )
               else
                 ...expenses.map((e) {
@@ -240,7 +270,8 @@ class GroupOverviewTab extends StatelessWidget {
                       useSafeArea: true,
                       isScrollControlled: true,
                       shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(20)),
                       ),
                       builder: (_) => ExpenseBreakdownSheet(
                         expense: e,
@@ -251,16 +282,23 @@ class GroupOverviewTab extends StatelessWidget {
                     child: ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: CircleAvatar(
-                        backgroundColor: isPaidByYou ? Colors.blue.shade50 : Colors.green.shade50,
+                        backgroundColor: isPaidByYou
+                            ? Colors.blue.shade50
+                            : Colors.green.shade50,
                         child: Icon(
-                          isPaidByYou ? Icons.call_received_rounded : Icons.call_made_rounded,
+                          isPaidByYou
+                              ? Icons.call_received_rounded
+                              : Icons.call_made_rounded,
                           color: isPaidByYou ? Colors.blue : Colors.green,
                         ),
                       ),
-                      title: Text(e.label?.isNotEmpty == true ? e.label! : 'Expense',
+                      title: Text(
+                          e.label?.isNotEmpty == true ? e.label! : 'Expense',
                           style: const TextStyle(fontWeight: FontWeight.w700)),
                       subtitle: Text(
-                        (isPaidByYou ? 'You paid' : '${_nameOf(e.payerId)} paid') +
+                        (isPaidByYou
+                                ? 'You paid'
+                                : '${_nameOf(e.payerId)} paid') +
                             (e.note.isNotEmpty ? ' • ${e.note}' : ''),
                       ),
                       trailing: Text('₹${e.amount.toStringAsFixed(2)}',
@@ -282,7 +320,12 @@ class GroupOverviewTab extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 12, offset: const Offset(0, 6))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 6))
+        ],
       ),
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       child: child,

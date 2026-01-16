@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
 
 class ChatLikeListTile extends StatelessWidget {
-  final String title;              // Friend or Group Name
-  final String subtitle;           // Last activity (expense, settlement, etc)
-  final String? imageUrl;          // Main avatar image URL (optional, for group/friend)
-  final List<String>? memberAvatars; // For group: list of member avatars (emojis or URLs)
-  final DateTime? lastUpdate;      // Last update time
-  final bool unread;               // Show unread dot
-  final int unreadCount;           // Unread count (optional)
+  final String title; // Friend or Group Name
+  final String subtitle; // Last activity (expense, settlement, etc)
+  final String? imageUrl; // Main avatar image URL (optional, for group/friend)
+  final List<String>?
+      memberAvatars; // For group: list of member avatars (emojis or URLs)
+  final DateTime? lastUpdate; // Last update time
+  final bool unread; // Show unread dot
+  final int unreadCount; // Unread count (optional)
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
-  final bool isGroup;              // True if this is a group chat-style row
+  final bool isGroup; // True if this is a group chat-style row
 
   const ChatLikeListTile({
-    Key? key,
+    super.key,
     required this.title,
     required this.subtitle,
     this.imageUrl,
@@ -24,7 +25,7 @@ class ChatLikeListTile extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.isGroup = false,
-  }) : super(key: key);
+  });
 
   // WhatsApp-style time format
   String _formatTime(DateTime? dt) {
@@ -50,19 +51,18 @@ class ChatLikeListTile extends StatelessWidget {
         width: 46,
         height: 46,
         child: Stack(
-          children: memberAvatars!
-              .take(3)
-              .toList()
-              .asMap()
-              .entries
-              .map((entry) {
+          children:
+              memberAvatars!.take(3).toList().asMap().entries.map((entry) {
             final idx = entry.key;
             final avatar = entry.value;
             return Positioned(
               left: idx * 18.0,
               child: avatar.startsWith("http")
-                  ? CircleAvatar(radius: 13, backgroundImage: NetworkImage(avatar))
-                  : CircleAvatar(radius: 13, child: Text(avatar, style: TextStyle(fontSize: 14))),
+                  ? CircleAvatar(
+                      radius: 13, backgroundImage: NetworkImage(avatar))
+                  : CircleAvatar(
+                      radius: 13,
+                      child: Text(avatar, style: TextStyle(fontSize: 14))),
             );
           }).toList(),
         ),
@@ -84,7 +84,8 @@ class ChatLikeListTile extends StatelessWidget {
     if (memberAvatars != null && memberAvatars!.isNotEmpty) {
       final av = memberAvatars!.first;
       if (av.length == 1) {
-        return CircleAvatar(radius: 23, child: Text(av, style: TextStyle(fontSize: 20)));
+        return CircleAvatar(
+            radius: 23, child: Text(av, style: TextStyle(fontSize: 20)));
       }
     }
     // Default person
@@ -118,7 +119,8 @@ class ChatLikeListTile extends StatelessWidget {
                         child: Text(
                           title,
                           style: TextStyle(
-                            fontWeight: unread ? FontWeight.bold : FontWeight.w500,
+                            fontWeight:
+                                unread ? FontWeight.bold : FontWeight.w500,
                             fontSize: 17,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -129,7 +131,8 @@ class ChatLikeListTile extends StatelessWidget {
                           _formatTime(lastUpdate),
                           style: TextStyle(
                             color: Colors.grey[600],
-                            fontWeight: unread ? FontWeight.bold : FontWeight.normal,
+                            fontWeight:
+                                unread ? FontWeight.bold : FontWeight.normal,
                             fontSize: 13,
                           ),
                         ),
@@ -154,24 +157,25 @@ class ChatLikeListTile extends StatelessWidget {
                 padding: const EdgeInsets.only(left: 8.0),
                 child: unreadCount > 0
                     ? Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.blue,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(
-                    unreadCount.toString(),
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                )
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.blue,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Text(
+                          unreadCount.toString(),
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      )
                     : Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: Colors.blue,
-                    shape: BoxShape.circle,
-                  ),
-                ),
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: Colors.blue,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
               ),
           ],
         ),

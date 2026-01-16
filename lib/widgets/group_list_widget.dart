@@ -6,14 +6,15 @@ import '../models/group_model.dart';
 class GroupListWidget extends StatelessWidget {
   final List<GroupModel> groups;
   final void Function(GroupModel)? onTap;
-  final void Function(GroupModel)? onLongPress; // Optional: for edit/delete menus
+  final void Function(GroupModel)?
+      onLongPress; // Optional: for edit/delete menus
 
   const GroupListWidget({
-    Key? key,
+    super.key,
     required this.groups,
     this.onTap,
     this.onLongPress,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -68,7 +69,8 @@ class GroupListWidget extends StatelessWidget {
             CircleAvatar(
               radius: 9,
               backgroundColor: Colors.grey.shade200,
-              child: Text("+${group.memberCount - 5}", style: TextStyle(fontSize: 11)),
+              child: Text("+${group.memberCount - 5}",
+                  style: TextStyle(fontSize: 11)),
             ),
           );
         }
@@ -79,15 +81,19 @@ class GroupListWidget extends StatelessWidget {
           child: ListTile(
             leading: group.avatarUrl != null && group.avatarUrl!.isNotEmpty
                 ? CircleAvatar(
-              radius: 22,
-              backgroundImage: NetworkImage(group.avatarUrl!),
-              backgroundColor: Colors.transparent,
-            )
+                    radius: 22,
+                    backgroundImage: NetworkImage(group.avatarUrl!),
+                    backgroundColor: Colors.transparent,
+                  )
                 : CircleAvatar(
-              radius: 22,
-              backgroundColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.13),
-              child: Icon(Icons.groups_rounded, color: Theme.of(context).colorScheme.secondary),
-            ),
+                    radius: 22,
+                    backgroundColor: Theme.of(context)
+                        .colorScheme
+                        .secondary
+                        .withValues(alpha: 0.13),
+                    child: Icon(Icons.groups_rounded,
+                        color: Theme.of(context).colorScheme.secondary),
+                  ),
             title: Text(group.name),
             subtitle: Row(
               children: [

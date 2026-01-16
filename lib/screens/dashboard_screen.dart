@@ -1321,8 +1321,10 @@ class _DashboardScreenState extends State<DashboardScreen>
       // Fetch current limit for this period
       await _loadPeriodLimit();
     } catch (e) {
-      print('[Dashboard] ERROR: $e');
-      SnackThrottle.show(context, "Dashboard error: $e");
+      debugPrint('[Dashboard] ERROR: $e');
+      if (mounted) {
+        SnackThrottle.show(context, "Dashboard error: $e");
+      }
     }
 
     // 🔎 NEW: refresh "new loan detected" badge count

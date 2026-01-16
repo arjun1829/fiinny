@@ -23,7 +23,7 @@ class SharingHeroRing extends StatelessWidget {
   final bool showCenterDot;
 
   const SharingHeroRing({
-    Key? key,
+    super.key,
     required this.credit,
     required this.debit,
     this.size = 86,
@@ -32,19 +32,21 @@ class SharingHeroRing extends StatelessWidget {
     this.animationDuration = const Duration(milliseconds: 900),
     this.animationCurve = Curves.easeOutCubic,
     this.showCenterDot = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
     // Guard against NaN/inf and zero
     final safeCredit = (credit.isFinite && credit >= 0) ? credit : 0.0;
-    final safeDebit  = (debit.isFinite  && debit  >= 0) ? debit  : 0.0;
+    final safeDebit = (debit.isFinite && debit >= 0) ? debit : 0.0;
 
     double maxValue = max(safeCredit, safeDebit);
-    if (maxValue <= 0) maxValue = 1.0;
+    if (maxValue <= 0) {
+      maxValue = 1.0;
+    }
 
     final percentCredit = (safeCredit / maxValue).clamp(0.0, 1.0);
-    final percentDebit  = (safeDebit  / maxValue).clamp(0.0, 1.0);
+    final percentDebit = (safeDebit / maxValue).clamp(0.0, 1.0);
 
     // Scaled strokes that still look good at tiny/large sizes
     final outerStroke = (size * 0.16).clamp(8.0, 20.0);
@@ -112,14 +114,14 @@ class _AnimatedRing extends StatelessWidget {
   final Curve curve;
 
   const _AnimatedRing({
-    Key? key,
+    super.key,
     required this.percent,
     required this.color,
     required this.size,
     required this.strokeWidth,
     this.duration = const Duration(milliseconds: 900),
     this.curve = Curves.easeOutCubic,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

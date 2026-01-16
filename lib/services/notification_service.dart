@@ -28,9 +28,9 @@ class NotificationService {
             return;
           }
         }
-      } catch (err, stack) {
-        debugPrint(
-            '[NotificationService] Android notification permission check failed: $err\n$stack');
+      } catch (err) {
+        // debugPrint(
+        //     '[NotificationService] Android notification permission check failed: $err\n$stack');
       }
       return;
     }
@@ -48,16 +48,16 @@ class NotificationService {
         criticalAlert: false,
         provisional: true,
       );
-    } catch (err, stack) {
-      debugPrint(
-          '[NotificationService] requestPermissionLight failed: $err\n$stack');
+    } catch (err) {
+      // debugPrint(
+      //     '[NotificationService] requestPermissionLight failed: $err\n$stack');
     }
   }
 
   static Future<void> initFull() async {
     if (!kIsWeb && kDiagBuild && Platform.isIOS) {
-      debugPrint(
-          '[NotificationService] Skipping full init on diagnostic iOS build.');
+      // debugPrint(
+      //     '[NotificationService] Skipping full init on diagnostic iOS build.');
       return;
     }
 
@@ -111,7 +111,7 @@ class NotificationService {
   }
 
   static void onDidReceiveNotificationResponse(NotificationResponse response) {
-    debugPrint('🔔 Notification tapped: ${response.payload}');
+    // debugPrint('🔔 Notification tapped: ${response.payload}');
     // TODO: route using your app router with response.payload (deeplink)
   }
 

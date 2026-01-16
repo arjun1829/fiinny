@@ -8,12 +8,22 @@ class PremiumGate {
   static final instance = PremiumGate._();
 
   Future<bool> isPremium(String userId) async {
-    final enabled = await RemoteFlags.instance.get<bool>('premiumEnabled', fallback: false, userId: userId);
-    if (!enabled) return false;
+    final enabled = await RemoteFlags.instance
+        .get<bool>('premiumEnabled', fallback: false, userId: userId);
+    if (!enabled) {
+      return false;
+    }
 
-    final doc = await FirebaseFirestore.instance.collection('users').doc(userId).collection('meta').doc('flags').get();
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('meta')
+        .doc('flags')
+        .get();
     final data = doc.data() ?? {};
-    if (data['premium'] == true) return true;
+    if (data['premium'] == true) {
+      return true;
+    }
     final until = data['premiumUntil'];
     if (until is Timestamp) {
       return until.toDate().isAfter(DateTime.now());
@@ -22,7 +32,8 @@ class PremiumGate {
   }
 
   Stream<bool> onPremium(String userId) async* {
-    final enabled = await RemoteFlags.instance.get<bool>('premiumEnabled', fallback: false, userId: userId);
+    final enabled = await RemoteFlags.instance
+        .get<bool>('premiumEnabled', fallback: false, userId: userId);
     if (!enabled) {
       yield false;
       return;
@@ -37,7 +48,8 @@ class PremiumGate {
       final data = snap.data() ?? {};
       final isFlagged = data['premium'] == true;
       final until = data['premiumUntil'];
-      final activeUntil = until is Timestamp ? until.toDate().isAfter(DateTime.now()) : false;
+      final activeUntil =
+          until is Timestamp ? until.toDate().isAfter(DateTime.now()) : false;
       return isFlagged || activeUntil;
     });
   }

@@ -3,7 +3,8 @@ import '../models/expense_item.dart';
 class TimeEngine {
   // ==================== TIME OF DAY ====================
 
-  static List<ExpenseItem> filterByTimeOfDay(List<ExpenseItem> expenses, String period) {
+  static List<ExpenseItem> filterByTimeOfDay(
+      List<ExpenseItem> expenses, String period) {
     return expenses.where((e) {
       final hour = e.date.hour;
       switch (period.toLowerCase()) {
@@ -25,7 +26,8 @@ class TimeEngine {
 
   // ==================== WEEKEND / WEEKDAY ====================
 
-  static List<ExpenseItem> filterByDayType(List<ExpenseItem> expenses, {required bool isWeekend}) {
+  static List<ExpenseItem> filterByDayType(List<ExpenseItem> expenses,
+      {required bool isWeekend}) {
     return expenses.where((e) {
       final weekday = e.date.weekday; // 1 = Mon, 7 = Sun
       final isSatSun = weekday == 6 || weekday == 7;
@@ -33,26 +35,37 @@ class TimeEngine {
     }).toList();
   }
 
-  static List<ExpenseItem> filterBySpecificDay(List<ExpenseItem> expenses, String dayName) {
+  static List<ExpenseItem> filterBySpecificDay(
+      List<ExpenseItem> expenses, String dayName) {
     final dayMap = {
-      'monday': 1, 'mon': 1,
-      'tuesday': 2, 'tue': 2,
-      'wednesday': 3, 'wed': 3,
-      'thursday': 4, 'thu': 4,
-      'friday': 5, 'fri': 5,
-      'saturday': 6, 'sat': 6,
-      'sunday': 7, 'sun': 7,
+      'monday': 1,
+      'mon': 1,
+      'tuesday': 2,
+      'tue': 2,
+      'wednesday': 3,
+      'wed': 3,
+      'thursday': 4,
+      'thu': 4,
+      'friday': 5,
+      'fri': 5,
+      'saturday': 6,
+      'sat': 6,
+      'sunday': 7,
+      'sun': 7,
     };
-    
+
     final targetDay = dayMap[dayName.toLowerCase()];
-    if (targetDay == null) return [];
+    if (targetDay == null) {
+      return [];
+    }
 
     return expenses.where((e) => e.date.weekday == targetDay).toList();
   }
 
   // ==================== SEASONS ====================
 
-  static List<ExpenseItem> filterBySeason(List<ExpenseItem> expenses, String season) {
+  static List<ExpenseItem> filterBySeason(
+      List<ExpenseItem> expenses, String season) {
     return expenses.where((e) {
       final month = e.date.month;
       switch (season.toLowerCase()) {

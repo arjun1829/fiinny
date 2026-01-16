@@ -12,7 +12,7 @@ import '../utils/sharing_permissions.dart';
 
 class AddPartnerDialog extends StatefulWidget {
   final String currentUserId; // (phone) kept name to avoid breaking callers
-  const AddPartnerDialog({Key? key, required this.currentUserId}) : super(key: key);
+  const AddPartnerDialog({super.key, required this.currentUserId});
 
   @override
   State<AddPartnerDialog> createState() => _AddPartnerDialogState();
@@ -38,7 +38,14 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
   // 👉 Change to your preferred default if needed
   static const String _defaultCountryCode = '+91';
 
-  final _relations = const ['Partner','Spouse', 'Brother', 'Child', 'Friend', 'Other'];
+  final _relations = const [
+    'Partner',
+    'Spouse',
+    'Brother',
+    'Child',
+    'Friend',
+    'Other'
+  ];
 
   @override
   void dispose() {
@@ -52,7 +59,9 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
   Future<void> _addPartner() async {
     FocusScope.of(context).unfocus();
 
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
     setState(() {
       _loading = true;
@@ -64,28 +73,34 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
     try {
       final partnerId = await PartnerService().addPartner(
         currentUserPhone: widget.currentUserId, // phone-based doc IDs
-        partnerIdentifier: idInput,             // email OR phone OR referral
+        partnerIdentifier: idInput, // email OR phone OR referral
         relation: _relation,
-        permissions: _permissions,              // only tx=true
+        permissions: _permissions, // only tx=true
       );
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       setState(() => _loading = false);
 
       if (partnerId == null) {
-        setState(() => _errorMsg = "No matching user found for that email/phone/referral.");
+        setState(() => _errorMsg =
+            "No matching user found for that email/phone/referral.");
         return;
       }
 
       Navigator.pop(context, true); // success -> signal caller to refresh
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _loading = false;
         _errorMsg = mapFirebaseError(
           e,
-          fallback: 'Could not add partner. Please check your Firebase connection and try again.',
+          fallback:
+              'Could not add partner. Please check your Firebase connection and try again.',
         );
       });
     }
@@ -93,7 +108,9 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
 
   String? _validateIdentifier(String? v) {
     final s = (v ?? '').trim();
-    if (s.isEmpty) return "Enter partner's email, phone, or referral";
+    if (s.isEmpty) {
+      return "Enter partner's email, phone, or referral";
+    }
 
     final normalized = s.replaceAll(RegExp(r'\s+'), '');
     final email = RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(normalized);
@@ -120,7 +137,9 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
     });
 
     final result = await getContactsWithPermission();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     setState(() {
       _loadingContacts = false;
@@ -179,7 +198,9 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
     if (picked != null) {
       final raw = picked.phones.isNotEmpty ? picked.phones.first.number : '';
       final formatted = await _formatToE164(raw);
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _identifierController.text = formatted;
         _errorMsg = null;
@@ -225,7 +246,8 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
     );
   }
 
-  InputDecoration _fieldDecoration(BuildContext context, {String? label, Widget? prefixIcon, Widget? suffixIcon, String? helper}) {
+  InputDecoration _fieldDecoration(BuildContext context,
+      {String? label, Widget? prefixIcon, Widget? suffixIcon, String? helper}) {
     return InputDecoration(
       labelText: label,
       helperText: helper,
@@ -240,7 +262,8 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.2),
+        borderSide: BorderSide(
+            color: Theme.of(context).colorScheme.primary, width: 1.2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -283,16 +306,22 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
                                 width: 40,
                                 height: 40,
                                 decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .primary
+                                      .withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: const Icon(Icons.favorite_outline, size: 22),
+                                child: const Icon(Icons.favorite_outline,
+                                    size: 22),
                               ),
                               const SizedBox(width: 12),
                               const Expanded(
                                 child: Text(
                                   'Add Partner',
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                                  style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700),
                                 ),
                               ),
                             ],
@@ -307,19 +336,31 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
                                   ? const SizedBox(
                                       width: 18,
                                       height: 18,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
                                     )
                                   : const Icon(Icons.contacts_rounded),
                               label: Text(
-                                _loadingContacts ? 'Loading contacts…' : 'Add from Contacts',
+                                _loadingContacts
+                                    ? 'Loading contacts…'
+                                    : 'Add from Contacts',
                               ),
                               style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                side: BorderSide(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35)),
-                                foregroundColor: Theme.of(context).colorScheme.primary,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                                side: BorderSide(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primary
+                                        .withValues(alpha: 0.35)),
+                                foregroundColor:
+                                    Theme.of(context).colorScheme.primary,
                               ),
-                              onPressed: _loading || _loadingContacts ? null : _pickFromContacts,
+                              onPressed: _loading || _loadingContacts
+                                  ? null
+                                  : _pickFromContacts,
                             ),
                           ),
 
@@ -337,32 +378,38 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
                               suffixIcon: _identifierController.text.isEmpty
                                   ? null
                                   : IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: () {
-                                  setState(() => _identifierController.clear());
-                                },
-                              ),
-                              helper: "Tip: only Transactions are shared (+Chat). Prefer phone: +91XXXXXXXXXX",
+                                      icon: const Icon(Icons.clear),
+                                      onPressed: () {
+                                        setState(() =>
+                                            _identifierController.clear());
+                                      },
+                                    ),
+                              helper:
+                                  "Tip: only Transactions are shared (+Chat). Prefer phone: +91XXXXXXXXXX",
                             ),
                             autofocus: true,
-                            keyboardType: TextInputType.text, // mixed: email / phone / referral
+                            keyboardType: TextInputType
+                                .text, // mixed: email / phone / referral
                             textInputAction: TextInputAction.done,
                             autocorrect: false,
                             enableSuggestions: false,
                             validator: _validateIdentifier,
-                            onChanged: (_) => setState(() {}), // for clear button visibility
+                            onChanged: (_) =>
+                                setState(() {}), // for clear button visibility
                           ),
                           const SizedBox(height: 12),
 
                           // Relation
                           DropdownButtonFormField<String>(
                             initialValue: _relation,
-                            decoration: _fieldDecoration(context, label: "Relation (optional)"),
+                            decoration: _fieldDecoration(context,
+                                label: "Relation (optional)"),
                             items: _relations
                                 .map((rel) => DropdownMenuItem(
-                              value: rel,
-                              child: Text(rel[0].toUpperCase() + rel.substring(1)),
-                            ))
+                                      value: rel,
+                                      child: Text(rel[0].toUpperCase() +
+                                          rel.substring(1)),
+                                    ))
                                 .toList(),
                             onChanged: (val) => setState(() => _relation = val),
                           ),
@@ -374,7 +421,9 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
                               alignment: Alignment.centerLeft,
                               child: Text(
                                 _errorMsg!,
-                                style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+                                style: const TextStyle(
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.w600),
                               ),
                             ),
                           ],
@@ -386,10 +435,15 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
                             children: [
                               Expanded(
                                 child: OutlinedButton(
-                                  onPressed: _loading ? null : () => Navigator.pop(context),
+                                  onPressed: _loading
+                                      ? null
+                                      : () => Navigator.pop(context),
                                   style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 14),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(14)),
                                   ),
                                   child: const Text('Cancel'),
                                 ),
@@ -399,15 +453,19 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
                                 child: ElevatedButton(
                                   onPressed: _loading ? null : _addPartner,
                                   style: ElevatedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 14),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(14)),
                                   ),
                                   child: _loading
                                       ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2),
+                                        )
                                       : const Text('Add'),
                                 ),
                               ),
@@ -453,7 +511,7 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
 // -----------------------------------------
 class _InlineDivider extends StatelessWidget {
   final String text;
-  const _InlineDivider({Key? key, required this.text}) : super(key: key);
+  const _InlineDivider({super.key, required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -484,6 +542,7 @@ class _ContactPickerSheet extends StatefulWidget {
   final Color accent;
 
   const _ContactPickerSheet({
+    super.key,
     required this.contacts,
     required this.accent,
   });
@@ -494,9 +553,8 @@ class _ContactPickerSheet extends StatefulWidget {
 
 class _ContactPickerSheetState extends State<_ContactPickerSheet> {
   final TextEditingController _search = TextEditingController();
-  late final List<Contact> _withPhones = widget.contacts
-      .where((c) => c.phones.isNotEmpty)
-      .toList(growable: false);
+  late final List<Contact> _withPhones =
+      widget.contacts.where((c) => c.phones.isNotEmpty).toList(growable: false);
   late List<Contact> _filtered = List<Contact>.from(_withPhones);
 
   @override
@@ -525,7 +583,8 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
         final phone = c.phones.isNotEmpty
             ? c.phones.first.number.replaceAll(RegExp(r'\s+'), '')
             : '';
-        return name.contains(query) || phone.contains(query.replaceAll(RegExp(r'\s+'), ''));
+        return name.contains(query) ||
+            phone.contains(query.replaceAll(RegExp(r'\s+'), ''));
       }).toList();
     });
   }
@@ -625,23 +684,36 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
                         : ListView.separated(
                             controller: scrollController,
                             itemCount: _filtered.length,
-                            separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                            separatorBuilder: (_, __) =>
+                                Divider(height: 1, color: Colors.grey.shade200),
                             itemBuilder: (context, index) {
                               final contact = _filtered[index];
-                              final name = contact.displayName.isEmpty ? 'Unknown' : contact.displayName;
-                              final phone = contact.phones.isNotEmpty ? contact.phones.first.number : '';
-                              final initial = name.isNotEmpty ? name.characters.first.toUpperCase() : '👤';
+                              final name = contact.displayName.isEmpty
+                                  ? 'Unknown'
+                                  : contact.displayName;
+                              final phone = contact.phones.isNotEmpty
+                                  ? contact.phones.first.number
+                                  : '';
+                              final initial = name.isNotEmpty
+                                  ? name.characters.first.toUpperCase()
+                                  : '👤';
                               return ListTile(
                                 leading: CircleAvatar(
                                   radius: 20,
-                                  backgroundColor: accent.withValues(alpha: 0.10),
+                                  backgroundColor:
+                                      accent.withValues(alpha: 0.10),
                                   child: Text(
                                     initial,
-                                    style: const TextStyle(fontWeight: FontWeight.w700),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w700),
                                   ),
                                 ),
-                                title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                subtitle: Text(phone, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                title: Text(name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                                subtitle: Text(phone,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
                                 onTap: () => Navigator.pop(context, contact),
                               );
                             },
@@ -677,7 +749,8 @@ class _GlossPainter extends CustomPainter {
       ..moveTo(0, 0)
       ..quadraticBezierTo(size.width * 0.4, size.height * 0.02, size.width, 0)
       ..lineTo(size.width, size.height * 0.25)
-      ..quadraticBezierTo(size.width * 0.5, size.height * 0.18, 0, size.height * 0.28)
+      ..quadraticBezierTo(
+          size.width * 0.5, size.height * 0.18, 0, size.height * 0.28)
       ..close();
 
     canvas.drawPath(path, gloss);

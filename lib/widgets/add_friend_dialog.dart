@@ -19,8 +19,8 @@ class AddFriendDialog extends StatefulWidget {
     required this.userPhone,
     this.onFriendCreated,
     this.autoOpenContacts = false,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<AddFriendDialog> createState() => _AddFriendDialogState();
@@ -114,121 +114,145 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
               return StatefulBuilder(
                 builder: (context, setModalState) {
                   return ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.white.withValues(alpha: 0.95),
-                          Colors.white.withValues(alpha: 0.88),
-                        ],
-                      ),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x1F000000),
-                          blurRadius: 20,
-                          offset: Offset(0, -6),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 10),
-                        Container(
-                          width: 42,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade300,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          child: Row(
-                            children: [
-                              Icon(Icons.contacts_rounded, color: accent),
-                              const SizedBox(width: 8),
-                              Text(
-                                "Pick a contact",
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: accent,
-                                ),
-                              ),
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(24)),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.white.withValues(alpha: 0.95),
+                              Colors.white.withValues(alpha: 0.88),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 10),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.06),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.grey.shade200),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.6)),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x1F000000),
+                              blurRadius: 20,
+                              offset: Offset(0, -6),
                             ),
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            child: Row(
-                              children: [
-                                Icon(Icons.search_rounded, size: 20, color: accent),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: TextField(
-                                    controller: searchCtrl,
-                                    decoration: const InputDecoration(
-                                      hintText: "Search contacts…",
-                                      border: InputBorder.none,
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 10),
+                            Container(
+                              width: 42,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade300,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 14),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.contacts_rounded, color: accent),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    "Pick a contact",
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: accent,
                                     ),
-                                    onChanged: (q) {
-                                      final query = q.trim().toLowerCase();
-                                      setModalState(() {
-                                        _filtered = _allContacts.where((c) {
-                                          final name = c.displayName.toLowerCase();
-                                          final phone = c.phones.isNotEmpty ? c.phones.first.number.toLowerCase() : '';
-                                          return name.contains(query) || phone.contains(query);
-                                        }).toList();
-                                      });
-                                    },
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Expanded(
-                          child: ListView.separated(
-                            controller: scrollController,
-                            itemCount: _filtered.length,
-                            separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
-                            itemBuilder: (context, i) {
-                              final c = _filtered[i];
-                              final display = c.displayName;
-                              final phone = c.phones.isNotEmpty ? c.phones.first.number : '';
-                              final initial = display.isNotEmpty ? display[0].toUpperCase() : '👤';
-                              return ListTile(
-                                leading: CircleAvatar(
-                                  radius: 20,
-                                  backgroundColor: accent.withValues(alpha: 0.10),
-                                  child: Text(initial, style: const TextStyle(fontWeight: FontWeight.w700)),
+                            const SizedBox(height: 10),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 14),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: accent.withValues(alpha: 0.06),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border:
+                                      Border.all(color: Colors.grey.shade200),
                                 ),
-                                title: Text(display, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                subtitle: Text(phone, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                onTap: () => Navigator.pop(context, c),
-                              );
-                            },
-                          ),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 10),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.search_rounded,
+                                        size: 20, color: accent),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: TextField(
+                                        controller: searchCtrl,
+                                        decoration: const InputDecoration(
+                                          hintText: "Search contacts…",
+                                          border: InputBorder.none,
+                                        ),
+                                        onChanged: (q) {
+                                          final query = q.trim().toLowerCase();
+                                          setModalState(() {
+                                            _filtered = _allContacts.where((c) {
+                                              final name =
+                                                  c.displayName.toLowerCase();
+                                              final phone = c.phones.isNotEmpty
+                                                  ? c.phones.first.number
+                                                      .toLowerCase()
+                                                  : '';
+                                              return name.contains(query) ||
+                                                  phone.contains(query);
+                                            }).toList();
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Expanded(
+                              child: ListView.separated(
+                                controller: scrollController,
+                                itemCount: _filtered.length,
+                                separatorBuilder: (_, __) => Divider(
+                                    height: 1, color: Colors.grey.shade200),
+                                itemBuilder: (context, i) {
+                                  final c = _filtered[i];
+                                  final display = c.displayName;
+                                  final phone = c.phones.isNotEmpty
+                                      ? c.phones.first.number
+                                      : '';
+                                  final initial = display.isNotEmpty
+                                      ? display[0].toUpperCase()
+                                      : '👤';
+                                  return ListTile(
+                                    leading: CircleAvatar(
+                                      radius: 20,
+                                      backgroundColor:
+                                          accent.withValues(alpha: 0.10),
+                                      child: Text(initial,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w700)),
+                                    ),
+                                    title: Text(display,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis),
+                                    subtitle: Text(phone,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis),
+                                    onTap: () => Navigator.pop(context, c),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-              );
+                  );
                 },
               );
             },
@@ -278,7 +302,8 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
         _loading = false;
         _error = mapFirebaseError(
           e,
-          fallback: 'Could not add friend. Please check your Firebase connection and try again.',
+          fallback:
+              'Could not add friend. Please check your Firebase connection and try again.',
         );
       });
     }
@@ -291,13 +316,13 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
     final accent = Colors.black87;
     // Glassy dialog body
     return Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: Container(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
@@ -356,17 +381,24 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                       child: OutlinedButton.icon(
                         icon: _loadingContacts
                             ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
                             : const Icon(Icons.contacts_rounded),
-                        label: Text(_loadingContacts ? "Loading contacts…" : "Add from Contacts"),
-                        onPressed: _loading || _loadingContacts ? null : _importFromContacts,
+                        label: Text(_loadingContacts
+                            ? "Loading contacts…"
+                            : "Add from Contacts"),
+                        onPressed: _loading || _loadingContacts
+                            ? null
+                            : _importFromContacts,
                         style: OutlinedButton.styleFrom(
                           foregroundColor: accent,
-                          side: BorderSide(color: accent.withValues(alpha: 0.35)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          side:
+                              BorderSide(color: accent.withValues(alpha: 0.35)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                       ),
@@ -379,7 +411,9 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                       controller: _nameCtrl,
                       label: "Name",
                       icon: Icons.person,
-                      validator: (v) => (v == null || v.trim().isEmpty) ? "Enter a name" : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? "Enter a name"
+                          : null,
                     ),
 
                     const SizedBox(height: 12),
@@ -394,9 +428,13 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                             isExpanded: true,
                             decoration: _pillDecoration(label: "Code"),
                             items: countryCodes
-                                .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                                .map((c) =>
+                                    DropdownMenuItem(value: c, child: Text(c)))
                                 .toList(),
-                            onChanged: _loading ? null : (v) => setState(() => _countryCode = v ?? '+91'),
+                            onChanged: _loading
+                                ? null
+                                : (v) =>
+                                    setState(() => _countryCode = v ?? '+91'),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -411,7 +449,8 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                             validator: (v) {
                               final s = (v ?? '').trim();
                               if (s.isEmpty) return "Enter phone";
-                              if (!RegExp(r'^[0-9]{8,15}$').hasMatch(s)) return "Enter valid phone";
+                              if (!RegExp(r'^[0-9]{8,15}$').hasMatch(s))
+                                return "Enter valid phone";
                               return null;
                             },
                           ),
@@ -426,7 +465,10 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                       alignment: Alignment.centerLeft,
                       child: Text(
                         "Will be saved as  $_fullE164",
-                        style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.grey.shade700,
+                            fontWeight: FontWeight.w600),
                       ),
                     ),
 
@@ -436,7 +478,8 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                         alignment: Alignment.centerLeft,
                         child: Text(
                           _error!,
-                          style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+                          style: const TextStyle(
+                              color: Colors.red, fontWeight: FontWeight.w600),
                         ),
                       ),
                     ],
@@ -452,31 +495,36 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                     Row(
                       children: [
                         TextButton(
-                          onPressed: _loading ? null : () => Navigator.pop(context, false),
+                          onPressed: _loading
+                              ? null
+                              : () => Navigator.pop(context, false),
                           child: const Text("Cancel"),
                         ),
                         const Spacer(),
                         _loading
                             ? const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 6),
-                          child: SizedBox(
-                            width: 26,
-                            height: 26,
-                            child: CircularProgressIndicator(strokeWidth: 2.6),
-                          ),
-                        )
+                                padding: EdgeInsets.symmetric(horizontal: 6),
+                                child: SizedBox(
+                                  width: 26,
+                                  height: 26,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2.6),
+                                ),
+                              )
                             : ElevatedButton.icon(
-                          onPressed: _submit,
-                          icon: const Icon(Icons.check_rounded),
-                          label: const Text("Add"),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: accent,
-                            foregroundColor: Colors.white,
-                            elevation: 6,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          ),
-                        ),
+                                onPressed: _submit,
+                                icon: const Icon(Icons.check_rounded),
+                                label: const Text("Add"),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: accent,
+                                  foregroundColor: Colors.white,
+                                  elevation: 6,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14)),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 12),
+                                ),
+                              ),
                       ],
                     ),
                   ],
@@ -497,9 +545,15 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
       filled: true,
       fillColor: Colors.black87.withValues(alpha: 0.06),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade300)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade300)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Colors.black87)),
+      border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: Colors.grey.shade300)),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: Colors.grey.shade300)),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Colors.black87)),
     );
   }
 }
@@ -511,12 +565,12 @@ class _GlassField extends StatelessWidget {
   final String? Function(String?)? validator;
 
   const _GlassField({
-    Key? key,
+    super.key,
     required this.controller,
     required this.label,
     required this.icon,
     this.validator,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -527,13 +581,19 @@ class _GlassField extends StatelessWidget {
         prefixIcon: Icon(icon),
         filled: true,
         fillColor: Colors.black87.withValues(alpha: 0.06),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade300)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade300)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Colors.black87)),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Colors.black87)),
       ),
       validator: validator,
     );
   }
 }
-

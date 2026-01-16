@@ -18,23 +18,20 @@ class RecurringCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    final String title =
-    (item.title?.trim().isNotEmpty == true
+    final String title = (item.title?.trim().isNotEmpty == true
         ? item.title
         : (item.provider?.trim().isNotEmpty == true
-        ? item.provider
-        : (item.type ?? 'Item')))
-    !;
+            ? item.provider
+            : (item.type ?? 'Item')))!;
 
     final String dueStr = _fmt(item.nextDueAt);
     final bool isPaused = item.rule.status == 'paused';
-    final bool isEnded  = item.rule.status == 'ended';
+    final bool isEnded = item.rule.status == 'ended';
     final bool isReminder = (item.rule.amount == 0);
 
     final Color? fgDim =
-    isEnded ? Colors.grey : (isPaused ? Colors.brown : null);
-    final Color? subDim =
-    isEnded ? Colors.grey : Colors.grey.shade700;
+        isEnded ? Colors.grey : (isPaused ? Colors.brown : null);
+    final Color subDim = isEnded ? Colors.grey : Colors.grey.shade700;
 
     final IconData leadingIcon = _iconFor(item.type);
 
@@ -86,7 +83,9 @@ class RecurringCard extends StatelessWidget {
               IconButton(
                 onPressed: onPause,
                 icon: Icon(
-                  isPaused ? Icons.play_arrow_rounded : Icons.pause_circle_outline,
+                  isPaused
+                      ? Icons.play_arrow_rounded
+                      : Icons.pause_circle_outline,
                 ),
                 tooltip: isPaused ? 'Resume' : 'Pause',
               ),

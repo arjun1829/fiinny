@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 class CriticalAlertBanner extends StatefulWidget {
   final String userId;
 
-  const CriticalAlertBanner({Key? key, required this.userId}) : super(key: key);
+  const CriticalAlertBanner({super.key, required this.userId});
 
   @override
   State<CriticalAlertBanner> createState() => _CriticalAlertBannerState();
@@ -70,7 +70,8 @@ class _CriticalAlertBannerState extends State<CriticalAlertBanner> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: (isResolving ? Colors.green : Colors.red).withValues(alpha: 0.3),
+                color: (isResolving ? Colors.green : Colors.red)
+                    .withValues(alpha: 0.3),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -83,7 +84,8 @@ class _CriticalAlertBannerState extends State<CriticalAlertBanner> {
                     key: const ValueKey('resolved'),
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: const [
-                      Icon(Icons.check_circle_rounded, color: Colors.white, size: 28),
+                      Icon(Icons.check_circle_rounded,
+                          color: Colors.white, size: 28),
                       SizedBox(width: 12),
                       Text(
                         "Marked as Paid! 🎉",
@@ -99,7 +101,8 @@ class _CriticalAlertBannerState extends State<CriticalAlertBanner> {
                     key: const ValueKey('alert'),
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.error_outline_rounded, color: Colors.white, size: 28),
+                      const Icon(Icons.error_outline_rounded,
+                          color: Colors.white, size: 28),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -130,14 +133,17 @@ class _CriticalAlertBannerState extends State<CriticalAlertBanner> {
                                 InkWell(
                                   onTap: () => _markPaid(docId, doc.reference),
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 8),
                                     decoration: BoxDecoration(
                                       color: Colors.white,
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Row(
                                       children: [
-                                        Icon(Icons.check_rounded, size: 16, color: Colors.red.shade700),
+                                        Icon(Icons.check_rounded,
+                                            size: 16,
+                                            color: Colors.red.shade700),
                                         const SizedBox(width: 6),
                                         Text(
                                           "Paid Already?",
@@ -154,11 +160,14 @@ class _CriticalAlertBannerState extends State<CriticalAlertBanner> {
                                 const SizedBox(width: 12),
                                 // Secondary: Dismiss
                                 InkWell(
-                                  onTap: () => doc.reference.update({'isRead': true}),
+                                  onTap: () =>
+                                      doc.reference.update({'isRead': true}),
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 8),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.2),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.2),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: const Text(

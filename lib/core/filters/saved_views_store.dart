@@ -85,31 +85,39 @@ class SavedViewsStore {
       };
 
   TransactionFilter _fromMap(Map<String, dynamic> m) {
-    String? _s(String k) => (m[k] is String && (m[k] as String).trim().isNotEmpty) ? m[k] as String : null;
-    List<String> _ls(String k) => (m[k] is List) ? List<String>.from(m[k]) : const [];
+    String? _s(String k) =>
+        (m[k] is String && (m[k] as String).trim().isNotEmpty)
+            ? m[k] as String
+            : null;
+    List<String> _ls(String k) =>
+        (m[k] is List) ? List<String>.from(m[k]) : const [];
     double? _d(String k) => (m[k] is num) ? (m[k] as num).toDouble() : null;
     bool? _b(String k) => (m[k] is bool) ? m[k] as bool : null;
-    DateTime? _dt(String k) => (m[k] is num) ? DateTime.fromMillisecondsSinceEpoch((m[k] as num).toInt()) : null;
+    DateTime? _dt(String k) => (m[k] is num)
+        ? DateTime.fromMillisecondsSinceEpoch((m[k] as num).toInt())
+        : null;
 
     final type = switch ((m['type'] ?? 'all') as String) {
       'expense' => TxType.expense,
-      'income'  => TxType.income,
-      _         => TxType.all,
+      'income' => TxType.income,
+      _ => TxType.all,
     };
     final sortField = switch ((m['sortField'] ?? 'date') as String) {
-      'amount'   => SortField.amount,
+      'amount' => SortField.amount,
       'merchant' => SortField.merchant,
       'category' => SortField.category,
-      _          => SortField.date,
+      _ => SortField.date,
     };
-    final sortDir = ((m['sortDir'] ?? 'desc') as String) == 'asc' ? SortDir.asc : SortDir.desc;
+    final sortDir = ((m['sortDir'] ?? 'desc') as String) == 'asc'
+        ? SortDir.asc
+        : SortDir.desc;
     final groupBy = switch ((m['groupBy'] ?? 'day') as String) {
-      'none'     => GroupBy.none,
-      'week'     => GroupBy.week,
-      'month'    => GroupBy.month,
+      'none' => GroupBy.none,
+      'week' => GroupBy.week,
+      'month' => GroupBy.month,
       'merchant' => GroupBy.merchant,
       'category' => GroupBy.category,
-      _          => GroupBy.day,
+      _ => GroupBy.day,
     };
 
     return TransactionFilter.defaults().copyWith(
@@ -145,10 +153,16 @@ class SavedViewsStore {
   /// Slugify name -> document id (lowercase, dash-separated, 1..120 chars)
   String _slug(String name) {
     var s = name.trim().toLowerCase();
-    s = s.replaceAll(RegExp(r'[^a-z0-9_-]+'), '-').replaceAll(RegExp(r'-+'), '-');
+    s = s
+        .replaceAll(RegExp(r'[^a-z0-9_-]+'), '-')
+        .replaceAll(RegExp(r'-+'), '-');
     s = s.replaceAll(RegExp(r'^-+|-+$'), '');
-    if (s.isEmpty) s = 'view';
-    if (s.length > 120) s = s.substring(0, 120);
+    if (s.isEmpty) {
+      s = 'view';
+    }
+    if (s.length > 120) {
+      s = s.substring(0, 120);
+    }
     return s;
   }
 }

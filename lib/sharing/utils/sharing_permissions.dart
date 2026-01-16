@@ -49,9 +49,11 @@ class SharingPermissions {
       case viewInsights:
         return 'Insights';
       default:
-      // Fallback: Title Case the raw key (never used if you stick to known keys)
+        // Fallback: Title Case the raw key (never used if you stick to known keys)
         final clean = key.replaceAll(RegExp(r'[_\-]+'), ' ').trim();
-        if (clean.isEmpty) return key;
+        if (clean.isEmpty) {
+          return key;
+        }
         return clean[0].toUpperCase() + clean.substring(1);
     }
   }
@@ -61,29 +63,30 @@ class SharingPermissions {
   // -----------------------------
   /// Default set used across the app (unchanged values from your current code).
   static Map<String, bool> defaultPermissions() => {
-    viewRing: true,
-    viewTransactions: true,
-    viewGoals: true,
-    viewNotes: true,
-    viewInsights: false,
-  };
+        viewRing: true,
+        viewTransactions: true,
+        viewGoals: true,
+        viewNotes: true,
+        viewInsights: false,
+      };
 
   /// Everything off.
   static Map<String, bool> empty() => {
-    for (final k in _orderedKeys) k: false,
-  };
+        for (final k in _orderedKeys) k: false,
+      };
 
   /// Minimal preset (example): only ring.
   static Map<String, bool> presetMinimal() => {
-    viewRing: true,
-    viewTransactions: false,
-    viewGoals: false,
-    viewNotes: false,
-    viewInsights: false,
-  };
+        viewRing: true,
+        viewTransactions: false,
+        viewGoals: false,
+        viewNotes: false,
+        viewInsights: false,
+      };
 
   /// Standard preset (example): defaults clone.
-  static Map<String, bool> presetStandard() => Map<String, bool>.from(defaultPermissions());
+  static Map<String, bool> presetStandard() =>
+      Map<String, bool>.from(defaultPermissions());
 
   // -----------------------------
   // Queries
@@ -93,14 +96,18 @@ class SharingPermissions {
 
   /// Check if a permission is enabled. Coerces non-bool values defensively.
   static bool canView(String key, Map<String, bool> permissions) {
-    if (!_known.contains(key)) return false;
+    if (!_known.contains(key)) {
+      return false;
+    }
     final v = permissions[key];
     return v == true;
   }
 
   /// Toggle a permission (no-ops for unknown keys).
   static void togglePermission(String key, Map<String, bool> permissions) {
-    if (!_known.contains(key)) return;
+    if (!_known.contains(key)) {
+      return;
+    }
     permissions[key] = !(permissions[key] ?? false);
   }
 
@@ -127,7 +134,9 @@ class SharingPermissions {
   /// Existing values overwrite defaults, but only for known keys.
   static Map<String, bool> ensureAllKeys(Map<String, bool>? permissions) {
     final base = defaultPermissions();
-    if (permissions == null) return base;
+    if (permissions == null) {
+      return base;
+    }
 
     permissions.forEach((k, v) {
       if (_known.contains(k)) {
@@ -140,7 +149,9 @@ class SharingPermissions {
   /// Sanitize a dynamic map (e.g., Firestore) into a strict {String: bool} over known keys.
   static Map<String, bool> sanitize(Map<String, dynamic>? raw) {
     final out = defaultPermissions();
-    if (raw == null) return out;
+    if (raw == null) {
+      return out;
+    }
 
     raw.forEach((k, v) {
       if (_known.contains(k)) {
@@ -157,13 +168,16 @@ class SharingPermissions {
   static Map<String, bool> fromTrueList(Iterable<String> keys) {
     final out = empty();
     for (final k in keys) {
-      if (_known.contains(k)) out[k] = true;
+      if (_known.contains(k)) {
+        out[k] = true;
+      }
     }
     return out;
   }
 
   /// Merge two permission maps safely (b overwrites a), both sanitized.
-  static Map<String, bool> merge(Map<String, dynamic>? a, Map<String, dynamic>? b) {
+  static Map<String, bool> merge(
+      Map<String, dynamic>? a, Map<String, dynamic>? b) {
     final left = sanitize(a);
     final right = sanitize(b);
     final out = Map<String, bool>.from(left);
@@ -175,8 +189,12 @@ class SharingPermissions {
   // Internals
   // -----------------------------
   static bool _toBool(dynamic v) {
-    if (v is bool) return v;
-    if (v is num) return v != 0;
+    if (v is bool) {
+      return v;
+    }
+    if (v is num) {
+      return v != 0;
+    }
     if (v is String) {
       final s = v.trim().toLowerCase();
       return s == '1' || s == 'true' || s == 'yes' || s == 'y';

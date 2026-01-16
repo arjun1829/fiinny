@@ -127,10 +127,13 @@ class _AdvancedSearchSheetState extends State<AdvancedSearchSheet> {
           ? DateTimeRange(start: _from!, end: _to!)
           : null,
     );
+    if (!mounted) return;
     if (picked != null) {
       setState(() {
-        _from = DateTime(picked.start.year, picked.start.month, picked.start.day);
-        _to = DateTime(picked.end.year, picked.end.month, picked.end.day, 23, 59, 59, 999);
+        _from =
+            DateTime(picked.start.year, picked.start.month, picked.start.day);
+        _to = DateTime(
+            picked.end.year, picked.end.month, picked.end.day, 23, 59, 59, 999);
       });
     }
   }
@@ -168,19 +171,25 @@ class _AdvancedSearchSheetState extends State<AdvancedSearchSheet> {
         title: const Text('Add label filter'),
         content: TextField(
           controller: ctl,
-          decoration: const InputDecoration(hintText: 'e.g. office, trip, food'),
+          decoration:
+              const InputDecoration(hintText: 'e.g. office, trip, food'),
           autofocus: true,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, ctl.text.trim()), child: const Text('Add')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, ctl.text.trim()),
+              child: const Text('Add')),
         ],
       ),
     );
+    if (!mounted) return;
     if (res != null && res.isNotEmpty) {
       setState(() {
         _labels.add(res);
-        if (!_allLabels.contains(res)) _allLabels = [..._allLabels, res]..sort();
+        if (!_allLabels.contains(res))
+          _allLabels = [..._allLabels, res]..sort();
       });
     }
   }
@@ -219,7 +228,8 @@ class _AdvancedSearchSheetState extends State<AdvancedSearchSheet> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    Text('Advanced Search', style: Theme.of(context).textTheme.titleMedium),
+                    Text('Advanced Search',
+                        style: Theme.of(context).textTheme.titleMedium),
                     const Spacer(),
                     IconButton(
                       tooltip: 'Reset',
@@ -231,128 +241,146 @@ class _AdvancedSearchSheetState extends State<AdvancedSearchSheet> {
               ),
               Expanded(
                 child: _loading
-                    ? const Center(child: Padding(
-                  padding: EdgeInsets.all(24.0),
-                  child: CircularProgressIndicator(),
-                ))
+                    ? const Center(
+                        child: Padding(
+                        padding: EdgeInsets.all(24.0),
+                        child: CircularProgressIndicator(),
+                      ))
                     : SingleChildScrollView(
-                  padding: EdgeInsets.only(
-                    left: 16,
-                    right: 16,
-                    bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-                    top: 4,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextField(
-                        controller: _textCtl,
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.search),
-                          labelText: 'Search text (title, comments, note, labels, category)',
+                        padding: EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                          top: 4,
                         ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Categories
-                      Text('Categories', style: Theme.of(context).textTheme.labelLarge),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: -8,
-                        children: _allCats.map((c) {
-                          final selected = _cats.contains(c);
-                          return FilterChip(
-                            label: Text(c),
-                            selected: selected,
-                            onSelected: (_) => setState(() {
-                              selected ? _cats.remove(c) : _cats.add(c);
-                            }),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Labels
-                      Row(
-                        children: [
-                          Text('Labels', style: Theme.of(context).textTheme.labelLarge),
-                          const Spacer(),
-                          TextButton.icon(
-                            onPressed: _addLabelManually,
-                            icon: const Icon(Icons.add),
-                            label: const Text('Add filter'),
-                          ),
-                        ],
-                      ),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: -8,
-                        children: _allLabels.map((l) {
-                          final selected = _labels.contains(l);
-                          return FilterChip(
-                            label: Text('#$l'),
-                            selected: selected,
-                            onSelected: (_) => setState(() {
-                              selected ? _labels.remove(l) : _labels.add(l);
-                            }),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Amount range
-                      Text('Amount range', style: Theme.of(context).textTheme.labelLarge),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _minCtl,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              decoration: const InputDecoration(labelText: 'Min'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: _maxCtl,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              decoration: const InputDecoration(labelText: 'Max'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Date range
-                      Text('Date range', style: Theme.of(context).textTheme.labelLarge),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _pickRange,
-                              icon: const Icon(Icons.date_range),
-                              label: Text(
-                                _from == null || _to == null
-                                    ? 'Pick range'
-                                    : '${_from!.toString().split(' ').first} → ${_to!.toString().split(' ').first}',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextField(
+                              controller: _textCtl,
+                              decoration: const InputDecoration(
+                                prefixIcon: Icon(Icons.search),
+                                labelText:
+                                    'Search text (title, comments, note, labels, category)',
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          IconButton(
-                            tooltip: 'Clear',
-                            onPressed: () => setState(() { _from = null; _to = null; }),
-                            icon: const Icon(Icons.clear),
-                          ),
-                        ],
+                            const SizedBox(height: 16),
+
+                            // Categories
+                            Text('Categories',
+                                style: Theme.of(context).textTheme.labelLarge),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: -8,
+                              children: _allCats.map((c) {
+                                final selected = _cats.contains(c);
+                                return FilterChip(
+                                  label: Text(c),
+                                  selected: selected,
+                                  onSelected: (_) => setState(() {
+                                    selected ? _cats.remove(c) : _cats.add(c);
+                                  }),
+                                );
+                              }).toList(),
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Labels
+                            Row(
+                              children: [
+                                Text('Labels',
+                                    style:
+                                        Theme.of(context).textTheme.labelLarge),
+                                const Spacer(),
+                                TextButton.icon(
+                                  onPressed: _addLabelManually,
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Add filter'),
+                                ),
+                              ],
+                            ),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: -8,
+                              children: _allLabels.map((l) {
+                                final selected = _labels.contains(l);
+                                return FilterChip(
+                                  label: Text('#$l'),
+                                  selected: selected,
+                                  onSelected: (_) => setState(() {
+                                    selected
+                                        ? _labels.remove(l)
+                                        : _labels.add(l);
+                                  }),
+                                );
+                              }).toList(),
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Amount range
+                            Text('Amount range',
+                                style: Theme.of(context).textTheme.labelLarge),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _minCtl,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                            decimal: true),
+                                    decoration:
+                                        const InputDecoration(labelText: 'Min'),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _maxCtl,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                            decimal: true),
+                                    decoration:
+                                        const InputDecoration(labelText: 'Max'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Date range
+                            Text('Date range',
+                                style: Theme.of(context).textTheme.labelLarge),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _pickRange,
+                                    icon: const Icon(Icons.date_range),
+                                    label: Text(
+                                      _from == null || _to == null
+                                          ? 'Pick range'
+                                          : '${_from!.toString().split(' ').first} → ${_to!.toString().split(' ').first}',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                IconButton(
+                                  tooltip: 'Clear',
+                                  onPressed: () => setState(() {
+                                    _from = null;
+                                    _to = null;
+                                  }),
+                                  icon: const Icon(Icons.clear),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 16),
-                    ],
-                  ),
-                ),
               ),
 
               // Action bar
@@ -362,7 +390,8 @@ class _AdvancedSearchSheetState extends State<AdvancedSearchSheet> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () => Navigator.of(context).pop(const AdvancedSearchSpec()),
+                        onPressed: () => Navigator.of(context)
+                            .pop(const AdvancedSearchSpec()),
                         icon: const Icon(Icons.close),
                         label: const Text('Cancel'),
                       ),

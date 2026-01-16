@@ -17,7 +17,8 @@ class HiddenChargesReviewSheet extends StatefulWidget {
   });
 
   @override
-  State<HiddenChargesReviewSheet> createState() => _HiddenChargesReviewSheetState();
+  State<HiddenChargesReviewSheet> createState() =>
+      _HiddenChargesReviewSheetState();
 }
 
 class _HiddenChargesReviewSheetState extends State<HiddenChargesReviewSheet> {
@@ -71,7 +72,8 @@ class _HiddenChargesReviewSheetState extends State<HiddenChargesReviewSheet> {
 
     while (true) {
       Query q = FirebaseFirestore.instance
-          .collection('users').doc(widget.userId)
+          .collection('users')
+          .doc(widget.userId)
           .collection('expenses')
           .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
           .orderBy('date', descending: true)
@@ -84,7 +86,8 @@ class _HiddenChargesReviewSheetState extends State<HiddenChargesReviewSheet> {
       for (final d in snap.docs) {
         final e = ExpenseItem.fromFirestore(d);
         final tags = (e.toJson()['tags'] as List?)?.cast<String>() ?? const [];
-        final isFee = tags.contains('fee') || _feeWords.hasMatch(e.note.toLowerCase());
+        final isFee =
+            tags.contains('fee') || _feeWords.hasMatch(e.note.toLowerCase());
         if (isFee) out.add(e);
       }
       cursor = snap.docs.last;
@@ -100,16 +103,20 @@ class _HiddenChargesReviewSheetState extends State<HiddenChargesReviewSheet> {
     final List<ExpenseItem> xs = _items.where((e) {
       if (e.amount < _minAmt) return false;
       if (q.isEmpty) return true;
-      final text = '${e.note} ${e.label ?? ''} ${e.category ?? ''}'.toLowerCase();
+      final text =
+          '${e.note} ${e.label ?? ''} ${e.category ?? ''}'.toLowerCase();
       return text.contains(q);
     }).toList();
 
     xs.sort((a, b) {
       switch (_sort) {
-        case 'amount_desc': return b.amount.compareTo(a.amount);
-        case 'amount_asc': return a.amount.compareTo(b.amount);
+        case 'amount_desc':
+          return b.amount.compareTo(a.amount);
+        case 'amount_asc':
+          return a.amount.compareTo(b.amount);
         case 'date_desc':
-        default: return b.date.compareTo(a.date);
+        default:
+          return b.date.compareTo(a.date);
       }
     });
 
@@ -128,212 +135,256 @@ class _HiddenChargesReviewSheetState extends State<HiddenChargesReviewSheet> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header row
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Hidden Charges',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'What counts as a hidden charge?',
-                  icon: const Icon(Icons.info_outline, size: 18),
-                  onPressed: () => _showInfo(
-                    context,
-                    'Hidden charges include convenience/processing/markup/penalty/GST lines and any expense tagged as a fee.',
-                  ),
-                ),
-                IconButton(
-                  tooltip: _selectMode ? 'Exit selection' : 'Select',
-                  icon: Icon(_selectMode ? Icons.checklist_rtl : Icons.checklist),
-                  onPressed: () => setState(() {
-                    _selectMode = !_selectMode;
-                    _selected.clear();
-                  }),
-                ),
-                IconButton(
-                  tooltip: 'Close',
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 4),
-            // Stats chips
-            Wrap(
-              spacing: 8, runSpacing: 8,
-              children: [
-                _chip('Total', '₹${sum.toStringAsFixed(0)}'),
-                _chip('Lines', '${_filtered.length}'),
-                _chip('Window', '${widget.daysWindow}d'),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            // Search + sort row
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _q,
-                    decoration: InputDecoration(
-                      hintText: 'Search notes / merchant',
-                      prefixIcon: const Icon(Icons.search),
-                      isDense: true,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    onChanged: (_) => _applyFilters(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                PopupMenuButton<String>(
-                  tooltip: 'Sort',
-                  onSelected: (v) { _sort = v; _applyFilters(); },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'date_desc', child: Text('Newest first')),
-                    PopupMenuItem(value: 'amount_desc', child: Text('Amount (high → low)')),
-                    PopupMenuItem(value: 'amount_asc', child: Text('Amount (low → high)')),
-                  ],
-                  child: const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: Icon(Icons.sort_rounded),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                PopupMenuButton<double>(
-                  tooltip: 'Min amount',
-                  onSelected: (v) { _minAmt = v; _applyFilters(); },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 0,    child: Text('₹0+')),
-                    PopupMenuItem(value: 50,   child: Text('₹50+')),
-                    PopupMenuItem(value: 100,  child: Text('₹100+')),
-                    PopupMenuItem(value: 250,  child: Text('₹250+')),
-                    PopupMenuItem(value: 500,  child: Text('₹500+')),
-                    PopupMenuItem(value: 1000, child: Text('₹1,000+')),
-                  ],
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Text('₹≥${_minAmt.toStringAsFixed(0)}',
-                        style: const TextStyle(fontWeight: FontWeight.w700)),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            if (_selectMode)
-              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextButton.icon(
-                    onPressed: _selected.isEmpty ? null : () async {
-                      final ids = _selected.toList();
-                      for (final id in ids) {
-                        await _markSuggestion(id, 'hidden_charge_suggestions', 'dismissed');
-                        _items.removeWhere((e) => e.id == id);
-                      }
-                      _applyFilters();
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Dismissed ${ids.length} fee line(s).')),
-                        );
-                      }
-                    },
-                    icon: const Icon(Icons.done_all_rounded),
-                    label: const Text('Dismiss selected'),
+                  // Header row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Hidden Charges',
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'What counts as a hidden charge?',
+                        icon: const Icon(Icons.info_outline, size: 18),
+                        onPressed: () => _showInfo(
+                          context,
+                          'Hidden charges include convenience/processing/markup/penalty/GST lines and any expense tagged as a fee.',
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: _selectMode ? 'Exit selection' : 'Select',
+                        icon: Icon(_selectMode
+                            ? Icons.checklist_rtl
+                            : Icons.checklist),
+                        onPressed: () => setState(() {
+                          _selectMode = !_selectMode;
+                          _selected.clear();
+                        }),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.of(context).maybePop(),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  TextButton(
-                    onPressed: () => setState(() { _selected
-                      ..clear()
-                      ..addAll(_filtered.map((e) => e.id)); }),
-                    child: const Text('Select all'),
+
+                  const SizedBox(height: 4),
+                  // Stats chips
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _chip('Total', '₹${sum.toStringAsFixed(0)}'),
+                      _chip('Lines', '${_filtered.length}'),
+                      _chip('Window', '${widget.daysWindow}d'),
+                    ],
                   ),
-                  TextButton(
-                    onPressed: () => setState(() => _selected.clear()),
-                    child: const Text('Clear'),
+
+                  const SizedBox(height: 10),
+
+                  // Search + sort row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _q,
+                          decoration: InputDecoration(
+                            hintText: 'Search notes / merchant',
+                            prefixIcon: const Icon(Icons.search),
+                            isDense: true,
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onChanged: (_) => _applyFilters(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      PopupMenuButton<String>(
+                        tooltip: 'Sort',
+                        onSelected: (v) {
+                          _sort = v;
+                          _applyFilters();
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(
+                              value: 'date_desc', child: Text('Newest first')),
+                          PopupMenuItem(
+                              value: 'amount_desc',
+                              child: Text('Amount (high → low)')),
+                          PopupMenuItem(
+                              value: 'amount_asc',
+                              child: Text('Amount (low → high)')),
+                        ],
+                        child: const Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: Icon(Icons.sort_rounded),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      PopupMenuButton<double>(
+                        tooltip: 'Min amount',
+                        onSelected: (v) {
+                          _minAmt = v;
+                          _applyFilters();
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(value: 0, child: Text('₹0+')),
+                          PopupMenuItem(value: 50, child: Text('₹50+')),
+                          PopupMenuItem(value: 100, child: Text('₹100+')),
+                          PopupMenuItem(value: 250, child: Text('₹250+')),
+                          PopupMenuItem(value: 500, child: Text('₹500+')),
+                          PopupMenuItem(value: 1000, child: Text('₹1,000+')),
+                        ],
+                        child: Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Text('₹≥${_minAmt.toStringAsFixed(0)}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700)),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  if (_selectMode)
+                    Row(
+                      children: [
+                        TextButton.icon(
+                          onPressed: _selected.isEmpty
+                              ? null
+                              : () async {
+                                  final ids = _selected.toList();
+                                  for (final id in ids) {
+                                    await _markSuggestion(
+                                        id,
+                                        'hidden_charge_suggestions',
+                                        'dismissed');
+                                    _items.removeWhere((e) => e.id == id);
+                                  }
+                                  _applyFilters();
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content: Text(
+                                              'Dismissed ${ids.length} fee line(s).')),
+                                    );
+                                  }
+                                },
+                          icon: const Icon(Icons.done_all_rounded),
+                          label: const Text('Dismiss selected'),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: () => setState(() {
+                            _selected
+                              ..clear()
+                              ..addAll(_filtered.map((e) => e.id));
+                          }),
+                          child: const Text('Select all'),
+                        ),
+                        TextButton(
+                          onPressed: () => setState(() => _selected.clear()),
+                          child: const Text('Clear'),
+                        ),
+                      ],
+                    ),
+
+                  const SizedBox(height: 6),
+
+                  // List
+                  Expanded(
+                    child: _filtered.isEmpty
+                        ? const Center(
+                            child:
+                                Text('No hidden charges match your filters.'))
+                        : ListView.separated(
+                            itemCount: _filtered.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
+                            itemBuilder: (_, i) {
+                              final e = _filtered[i];
+                              final selected = _selected.contains(e.id);
+                              return ListTile(
+                                dense: true,
+                                leading: _selectMode
+                                    ? Checkbox(
+                                        value: selected,
+                                        onChanged: (v) {
+                                          setState(() {
+                                            if (v == true) {
+                                              _selected.add(e.id);
+                                            } else {
+                                              _selected.remove(e.id);
+                                            }
+                                          });
+                                        },
+                                      )
+                                    : const Icon(
+                                        Icons.report_gmailerrorred_rounded,
+                                        color: Colors.deepOrange),
+                                title: Text(
+                                    '₹${e.amount.toStringAsFixed(0)} • ${_ddmmyy(e.date)}'),
+                                subtitle: Text(
+                                  e.note,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: !_selectMode
+                                    ? PopupMenuButton<String>(
+                                        onSelected: (v) async {
+                                          if (v == 'dismiss') {
+                                            await _markSuggestion(
+                                                e.id,
+                                                'hidden_charge_suggestions',
+                                                'dismissed');
+                                            setState(() => _items.removeWhere(
+                                                (x) => x.id == e.id));
+                                            _applyFilters();
+                                          }
+                                        },
+                                        itemBuilder: (_) => const [
+                                          PopupMenuItem(
+                                              value: 'dismiss',
+                                              child: Text('Dismiss')),
+                                        ],
+                                      )
+                                    : null,
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),
-
-            const SizedBox(height: 6),
-
-            // List
-            Expanded(
-              child: _filtered.isEmpty
-                  ? const Center(child: Text('No hidden charges match your filters.'))
-                  : ListView.separated(
-                itemCount: _filtered.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (_, i) {
-                  final e = _filtered[i];
-                  final selected = _selected.contains(e.id);
-                  return ListTile(
-                    dense: true,
-                    leading: _selectMode
-                        ? Checkbox(
-                      value: selected,
-                      onChanged: (v) {
-                        setState(() {
-                          if (v == true) _selected.add(e.id);
-                          else _selected.remove(e.id);
-                        });
-                      },
-                    )
-                        : const Icon(Icons.report_gmailerrorred_rounded, color: Colors.deepOrange),
-                    title: Text('₹${e.amount.toStringAsFixed(0)} • ${_ddmmyy(e.date)}'),
-                    subtitle: Text(
-                      e.note,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing: !_selectMode
-                        ? PopupMenuButton<String>(
-                      onSelected: (v) async {
-                        if (v == 'dismiss') {
-                          await _markSuggestion(e.id, 'hidden_charge_suggestions', 'dismissed');
-                          setState(() => _items.removeWhere((x) => x.id == e.id));
-                          _applyFilters();
-                        }
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'dismiss', child: Text('Dismiss')),
-                      ],
-                    )
-                        : null,
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
 
   Widget _chip(String t, String v) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: Colors.deepOrange.withValues(alpha: 0.08),
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Text('$t: ', style: const TextStyle(color: Colors.black54)),
-      Text(v, style: const TextStyle(fontWeight: FontWeight.w800)),
-    ]),
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.deepOrange.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text('$t: ', style: const TextStyle(color: Colors.black54)),
+          Text(v, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ]),
+      );
 
-  Future<void> _markSuggestion(String expenseId, String col, String status) async {
+  Future<void> _markSuggestion(
+      String expenseId, String col, String status) async {
     final ref = FirebaseFirestore.instance
-        .collection('users').doc(widget.userId)
-        .collection(col).doc(expenseId);
+        .collection('users')
+        .doc(widget.userId)
+        .collection(col)
+        .doc(expenseId);
     await ref.set({'status': status}, SetOptions(merge: true));
   }
 
@@ -351,6 +402,7 @@ class _HiddenChargesReviewSheetState extends State<HiddenChargesReviewSheet> {
     );
   }
 
-  static String _ddmmyy(DateTime d) => '${_tw(d.day)}/${_tw(d.month)}/${d.year % 100}';
+  static String _ddmmyy(DateTime d) =>
+      '${_tw(d.day)}/${_tw(d.month)}/${d.year % 100}';
   static String _tw(int n) => n < 10 ? '0$n' : '$n';
 }

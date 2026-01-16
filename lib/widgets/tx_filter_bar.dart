@@ -14,7 +14,8 @@ class TxFilterBar extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
 
-  const TxFilterBar({Key? key, required this.selected, required this.onSelect}) : super(key: key);
+  const TxFilterBar(
+      {super.key, required this.selected, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
@@ -30,12 +31,16 @@ class TxFilterBar extends StatelessWidget {
             ),
           ),
           ..._periods.map((period) => ListTile(
-            leading: selected == period
-                ? Icon(Icons.check_circle, color: Colors.teal)
-                : Icon(Icons.circle_outlined, color: Colors.grey[400]),
-            title: Text(period, style: TextStyle(fontWeight: selected == period ? FontWeight.bold : FontWeight.normal)),
-            onTap: () => onSelect(period),
-          )),
+                leading: selected == period
+                    ? Icon(Icons.check_circle, color: Colors.teal)
+                    : Icon(Icons.circle_outlined, color: Colors.grey[400]),
+                title: Text(period,
+                    style: TextStyle(
+                        fontWeight: selected == period
+                            ? FontWeight.bold
+                            : FontWeight.normal)),
+                onTap: () => onSelect(period),
+              )),
           const SizedBox(height: 8),
         ],
       ),

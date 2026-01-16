@@ -3,13 +3,14 @@ import '../models/credit_card_model.dart';
 
 class CreditCardReminderWidget extends StatelessWidget {
   final List<CreditCardModel> cards;
-  final void Function(CreditCardModel)? onTapPay; // Optional: handler for pay button
+  final void Function(CreditCardModel)?
+      onTapPay; // Optional: handler for pay button
 
   const CreditCardReminderWidget({
-    Key? key,
+    super.key,
     required this.cards,
     this.onTapPay,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -65,15 +66,17 @@ class CreditCardReminderWidget extends StatelessWidget {
             trailing: card.isPaid
                 ? const Icon(Icons.check_circle, color: Colors.green)
                 : ElevatedButton(
-              onPressed: onTapPay != null ? () => onTapPay!(card) : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: overdue ? Colors.red : Colors.orange[800],
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                textStyle: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              child: Text(overdue ? "Pay Now" : "Pay"),
-            ),
+                    onPressed: onTapPay != null ? () => onTapPay!(card) : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor:
+                          overdue ? Colors.red : Colors.orange[800],
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 10),
+                      textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    child: Text(overdue ? "Pay Now" : "Pay"),
+                  ),
           ),
         );
       }).toList(),

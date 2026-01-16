@@ -10,7 +10,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 // @JS('openRazorpayWeb')
 // external void _openRazorpayWeb(JSString options, JSFunction successCallback, JSFunction failureCallback);
 
-
 class UpgradeScreen extends StatefulWidget {
   const UpgradeScreen({super.key});
 
@@ -52,7 +51,8 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Welcome to Premium! payment successful.")),
+          const SnackBar(
+              content: Text("Welcome to Premium! payment successful.")),
         );
         Navigator.pop(context);
       }
@@ -76,7 +76,8 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
 
   void _handleExternalWallet(ExternalWalletResponse response) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("External Wallet Selected: ${response.walletName}")),
+      SnackBar(
+          content: Text("External Wallet Selected: ${response.walletName}")),
     );
   }
 
@@ -88,14 +89,16 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
       if (user == null) return;
 
       // 1. Create Order on Backend
-      final orderData = await service.createOrder(_selectedPlan, _selectedCycle);
-      
+      final orderData =
+          await service.createOrder(_selectedPlan, _selectedCycle);
+
       // 2. Open Razorpay Checkout
       final options = {
         'key': orderData['key_id'],
         'amount': orderData['amount'],
         'name': 'Fiinny',
-        'description': '${_selectedPlan.toUpperCase()} Plan (${_selectedCycle})',
+        'description':
+            '${_selectedPlan.toUpperCase()} Plan (${_selectedCycle})',
         'order_id': orderData['order_id'],
         'prefill': {
           'contact': user.phoneNumber ?? '',
@@ -139,9 +142,9 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
         _razorpay.open(options);
         // --------------------------------------
       }
-
     } catch (e, stack) {
       debugPrint("Payment Start Error: $e\n$stack");
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Failed to initiate payment: $e")),
       );
@@ -154,7 +157,8 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
     return Scaffold(
       backgroundColor: Colors.black, // Premium feel
       appBar: AppBar(
-        title: const Text("Upgrade Plan", style: TextStyle(color: Colors.white)),
+        title:
+            const Text("Upgrade Plan", style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -181,7 +185,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            
+
             // Premium Card
             _buildPlanCard(
               title: "Premium ⭐",
@@ -197,7 +201,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
               isBestValue: _selectedCycle == 'yearly',
               planId: 'premium',
             ),
-            
+
             const SizedBox(height: 16),
 
             // Pro Card
@@ -215,7 +219,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
             ),
 
             const SizedBox(height: 32),
-            
+
             if (_isLoading)
               const Center(child: CircularProgressIndicator())
             else
@@ -225,16 +229,20 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.amberAccent,
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: _startPayment,
                   child: Text(
                     "Upgrade to ${_selectedPlan.toUpperCase()}",
-                    style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
-              
+
             const SizedBox(height: 16),
             const Center(
               child: Text(
@@ -295,28 +303,41 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                Text(title,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold)),
                 if (isBestValue)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(8)),
-                    child: const Text("SAVE 37%", style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold)),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: Colors.amber,
+                        borderRadius: BorderRadius.circular(8)),
+                    child: const Text("SAVE 37%",
+                        style: TextStyle(
+                            color: Colors.black,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold)),
                   ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(price, style: const TextStyle(color: Colors.white70, fontSize: 18)),
+            Text(price,
+                style: const TextStyle(color: Colors.white70, fontSize: 18)),
             const Divider(color: Colors.white24, height: 32),
             ...features.map((f) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.check, color: Colors.greenAccent, size: 18),
-                  const SizedBox(width: 8),
-                  Text(f, style: const TextStyle(color: Colors.white70)),
-                ],
-              ),
-            )),
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check,
+                          color: Colors.greenAccent, size: 18),
+                      const SizedBox(width: 8),
+                      Text(f, style: const TextStyle(color: Colors.white70)),
+                    ],
+                  ),
+                )),
           ],
         ),
       ),

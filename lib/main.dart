@@ -29,10 +29,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'services/voice_bridge.dart'; // ✅ Voice Bridge
 
 // Toggle from CI: --dart-define=SAFE_MODE=true
-const bool SAFE_MODE = bool.fromEnvironment('SAFE_MODE', defaultValue: false);
+const bool safeMode = bool.fromEnvironment('SAFE_MODE', defaultValue: false);
 const bool kDiagBuild = bool.fromEnvironment('DIAG_BUILD', defaultValue: false);
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
-const MethodChannel _systemUiChannel = MethodChannel('lifemap/system_ui');
 
 Future<void> configureSystemUI() async {
   if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
@@ -53,24 +52,17 @@ Future<void> configureSystemUI() async {
 
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  if (sdk != 0 && sdk < 35) {
+  if (sdk == 0 || sdk < 35) {
     // Only set colors on older Android versions where it's still allowed/needed.
+    // If sdk detection failed (0), we assume typical older behavior to be safe.
     const style = SystemUiOverlayStyle(
       statusBarColor: Color(0x00000000),
       systemNavigationBarColor: Color(0x00000000),
-      statusBarIconBrightness: Brightness.dark,
-      systemNavigationBarIconBrightness: Brightness.dark,
     );
     SystemChrome.setSystemUIOverlayStyle(style);
   } else {
     // For Android 15+, edge-to-edge is enforced.
-    // Do NOT set deprecated color properties.
-    // Just ensure brightness.
-    const style = SystemUiOverlayStyle(
-      statusBarIconBrightness: Brightness.dark,
-      systemNavigationBarIconBrightness: Brightness.dark,
-    );
-    SystemChrome.setSystemUIOverlayStyle(style);
+    // We let the app theme/AppBar control the brightness.
   }
 }
 
@@ -160,7 +152,7 @@ void main() {
       }
     }
 
-    if (SAFE_MODE) {
+    if (safeMode) {
       runApp(MaterialApp(
         debugShowCheckedModeBanner: false,
         builder: (context, child) => AdsShell(child: child),
@@ -321,7 +313,7 @@ class _AttSettingsDialog extends StatelessWidget {
 }
 
 class LifemapApp extends StatefulWidget {
-  const LifemapApp({required this.tracer});
+  const LifemapApp({required this.tracer, super.key});
   final StartupTracer tracer;
 
   static GlobalKey<NavigatorState> get navKey => rootNavigatorKey;
@@ -338,13 +330,6 @@ class LifemapApp extends StatefulWidget {
 
 class _LifemapAppState extends State<LifemapApp> {
   VoidCallback? _tracerListener;
-
-  void _afterFirstFrame(VoidCallback fn) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      fn();
-    });
-  }
 
   void _safeSetState(VoidCallback fn) {
     if (!mounted) return;

@@ -27,7 +27,7 @@ class BankCardItem extends StatefulWidget {
   final VoidCallback? onTap;
 
   const BankCardItem({
-    Key? key,
+    super.key,
     required this.bankName,
     required this.cardType,
     required this.last4,
@@ -37,7 +37,7 @@ class BankCardItem extends StatefulWidget {
     this.logoAsset,
     this.stats,
     this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   State<BankCardItem> createState() => _BankCardItemState();
@@ -50,7 +50,10 @@ class _BankCardItemState extends State<BankCardItem> {
     switch (widget.colorTheme) {
       case 'purple':
         return const LinearGradient(
-          colors: [Color(0xFF4C1D95), Color(0xFF3730A3)], // purple-900 to indigo-800
+          colors: [
+            Color(0xFF4C1D95),
+            Color(0xFF3730A3)
+          ], // purple-900 to indigo-800
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         );
@@ -62,7 +65,10 @@ class _BankCardItemState extends State<BankCardItem> {
         );
       case 'green':
         return const LinearGradient(
-          colors: [Color(0xFF065F46), Color(0xFF059669)], // green-800 to emerald-600
+          colors: [
+            Color(0xFF065F46),
+            Color(0xFF059669)
+          ], // green-800 to emerald-600
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         );
@@ -75,7 +81,10 @@ class _BankCardItemState extends State<BankCardItem> {
       case 'blue':
       default:
         return const LinearGradient(
-          colors: [Color(0xFF1E3A8A), Color(0xFF155E75)], // blue-900 to cyan-800
+          colors: [
+            Color(0xFF1E3A8A),
+            Color(0xFF155E75)
+          ], // blue-900 to cyan-800
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         );
@@ -99,7 +108,6 @@ class _BankCardItemState extends State<BankCardItem> {
         margin: const EdgeInsets.only(right: 16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
-
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.15),
@@ -115,17 +123,18 @@ class _BankCardItemState extends State<BankCardItem> {
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1),
+                border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.2), width: 1),
                 gradient: LinearGradient(
-                   begin: Alignment.topLeft,
-                   end: Alignment.bottomRight,
-                   colors: [
-                     // If background is dark/solid, these will tint it.
-                     // But for true glass on a light background, we need semi-transparent whites/greys.
-                     // Since individual banks have colors, we can mix their color in.
-                     _getGradient().colors.first.withValues(alpha: 0.85),
-                     _getGradient().colors.first.withValues(alpha: 0.65),
-                   ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    // If background is dark/solid, these will tint it.
+                    // But for true glass on a light background, we need semi-transparent whites/greys.
+                    // Since individual banks have colors, we can mix their color in.
+                    _getGradient().colors.first.withValues(alpha: 0.85),
+                    _getGradient().colors.first.withValues(alpha: 0.65),
+                  ],
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -136,61 +145,61 @@ class _BankCardItemState extends State<BankCardItem> {
                 ],
               ),
               child: Stack(
-          children: [
-            // Decorative circles
-            Positioned(
-              right: -64,
-              top: -64,
-              child: Container(
-                width: 192,
-                height: 192,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.05),
-                ),
-              ),
-            ),
-             Positioned(
-              left: -64,
-              bottom: -64,
-              child: Container(
-                width: 160,
-                height: 160,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.05),
-                ),
-              ),
-            ),
+                children: [
+                  // Decorative circles
+                  Positioned(
+                    right: -64,
+                    top: -64,
+                    child: Container(
+                      width: 192,
+                      height: 192,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.05),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: -64,
+                    bottom: -64,
+                    child: Container(
+                      width: 160,
+                      height: 160,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.05),
+                      ),
+                    ),
+                  ),
 
-            // Gloss
-            Container(
-              height: 96,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.white.withValues(alpha: 0.08),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
+                  // Gloss
+                  Container(
+                    height: 96,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.08),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
 
-            // Content
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: _showStats && widget.stats != null
-                  ? _buildStatsView()
-                  : _buildCardView(),
-            ),
-          ],
-                ),
+                  // Content
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: _showStats && widget.stats != null
+                        ? _buildStatsView()
+                        : _buildCardView(),
+                  ),
+                ],
               ),
             ),
           ),
         ),
+      ),
     );
   }
 
@@ -224,7 +233,8 @@ class _BankCardItemState extends State<BankCardItem> {
                     color: Colors.white.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.visibility_off, color: Colors.white, size: 18),
+                  child: const Icon(Icons.visibility_off,
+                      color: Colors.white, size: 18),
                 ),
               ),
             ],
@@ -236,9 +246,18 @@ class _BankCardItemState extends State<BankCardItem> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('TOTAL SPEND', style: TextStyle(color: Colors.grey[300], fontSize: 10, letterSpacing: 1.0, fontWeight: FontWeight.bold)),
+                    Text('TOTAL SPEND',
+                        style: TextStyle(
+                            color: Colors.grey[300],
+                            fontSize: 10,
+                            letterSpacing: 1.0,
+                            fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
-                    Text(INR.f(s.totalDebit), style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(INR.f(s.totalDebit),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
@@ -246,9 +265,18 @@ class _BankCardItemState extends State<BankCardItem> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('TRANSACTIONS', style: TextStyle(color: Colors.grey[300], fontSize: 10, letterSpacing: 1.0, fontWeight: FontWeight.bold)),
+                    Text('TRANSACTIONS',
+                        style: TextStyle(
+                            color: Colors.grey[300],
+                            fontSize: 10,
+                            letterSpacing: 1.0,
+                            fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
-                    Text('${s.txCount}', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text('${s.txCount}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
@@ -261,17 +289,25 @@ class _BankCardItemState extends State<BankCardItem> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('CREDITS', style: TextStyle(color: Colors.green[300], fontSize: 10, letterSpacing: 1.0, fontWeight: FontWeight.bold)),
+                    Text('CREDITS',
+                        style: TextStyle(
+                            color: Colors.green[300],
+                            fontSize: 10,
+                            letterSpacing: 1.0,
+                            fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
-                    Text(INR.f(s.totalCredit), style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
+                    Text(INR.f(s.totalCredit),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500)),
                   ],
                 ),
               ),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                  ],
+                  children: [],
                 ),
               ),
             ],
@@ -306,7 +342,8 @@ class _BankCardItemState extends State<BankCardItem> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       padding: const EdgeInsets.all(4),
-                      child: Image.asset(widget.logoAsset!, errorBuilder: (_,__,___) => const SizedBox()),
+                      child: Image.asset(widget.logoAsset!,
+                          errorBuilder: (_, __, ___) => const SizedBox()),
                     ),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -318,7 +355,7 @@ class _BankCardItemState extends State<BankCardItem> {
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                           letterSpacing: 1.0,
-                          fontFamily: 'monospace', 
+                          fontFamily: 'monospace',
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -349,7 +386,8 @@ class _BankCardItemState extends State<BankCardItem> {
                             color: Colors.transparent,
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: const Icon(Icons.remove_red_eye_outlined, color: Colors.white70, size: 20),
+                          child: const Icon(Icons.remove_red_eye_outlined,
+                              color: Colors.white70, size: 20),
                         ),
                       ),
                     ),
@@ -368,12 +406,16 @@ class _BankCardItemState extends State<BankCardItem> {
                 height: 32,
                 margin: const EdgeInsets.only(bottom: 12),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(colors: [Color(0xFFFDE047), Color(0xFFEAB308)]),
+                  gradient: const LinearGradient(
+                      colors: [Color(0xFFFDE047), Color(0xFFEAB308)]),
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: Colors.yellow[800]!),
                 ),
                 child: Center(
-                  child: Container(height: 1, color: Colors.yellow[900]!.withValues(alpha: 0.3), width: 30),
+                  child: Container(
+                      height: 1,
+                      color: Colors.yellow[900]!.withValues(alpha: 0.3),
+                      width: 30),
                 ),
               ),
               Row(
@@ -409,17 +451,35 @@ class _BankCardItemState extends State<BankCardItem> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('CARD HOLDER', style: TextStyle(color: Colors.grey[400], fontSize: 8, letterSpacing: 1.0)),
+                  Text('CARD HOLDER',
+                      style: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 8,
+                          letterSpacing: 1.0)),
                   const SizedBox(height: 2),
-                  Text(widget.holderName.toUpperCase(), style: TextStyle(color: Colors.grey[100], fontSize: 13, fontWeight: FontWeight.w500, letterSpacing: 1.0)),
+                  Text(widget.holderName.toUpperCase(),
+                      style: TextStyle(
+                          color: Colors.grey[100],
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 1.0)),
                 ],
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('VALID THRU', style: TextStyle(color: Colors.grey[400], fontSize: 8, letterSpacing: 1.0)),
+                  Text('VALID THRU',
+                      style: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 8,
+                          letterSpacing: 1.0)),
                   const SizedBox(height: 2),
-                  Text(widget.expiry, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                  Text(widget.expiry,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.0)),
                 ],
               ),
             ],
@@ -429,7 +489,8 @@ class _BankCardItemState extends State<BankCardItem> {
     );
   }
 }
+
 // Placeholder class to handle BoxUi reference in dummy code
 class BoxUi {
-  static  bool get iconImage => false;
+  static bool get iconImage => false;
 }

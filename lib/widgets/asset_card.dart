@@ -11,13 +11,13 @@ class AssetCard extends StatelessWidget {
   final String? logoPath;
 
   const AssetCard({
-    Key? key,
+    super.key,
     required this.asset,
     required this.currency,
     required this.onTap,
     this.onDelete,
     this.logoPath,
-  }) : super(key: key);
+  });
 
   Color get _baseColor {
     switch (asset.assetType.toLowerCase()) {

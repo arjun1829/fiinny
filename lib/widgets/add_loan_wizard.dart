@@ -72,13 +72,13 @@ class AddLoanWizard extends StatefulWidget {
   final String mode; // 'add' | 'edit'
 
   const AddLoanWizard({
-    Key? key,
+    super.key,
     required this.userId,
     required this.initial,
     required this.onSubmit,
     this.saving = false,
     this.mode = 'add',
-  }) : super(key: key);
+  });
 
   @override
   State<AddLoanWizard> createState() => _AddLoanWizardState();
@@ -375,13 +375,13 @@ class _StepBasics extends StatelessWidget {
   final VoidCallback onNext;
 
   const _StepBasics({
-    Key? key,
+    super.key,
     required this.titleCtrl,
     required this.lenderType,
     required this.onLenderType,
     required this.lenderNameCtrl,
     required this.onNext,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -449,14 +449,14 @@ class _StepNumbers extends StatelessWidget {
   final VoidCallback onNext;
 
   const _StepNumbers({
-    Key? key,
+    super.key,
     required this.amountCtrl,
     required this.originalCtrl,
     required this.emiCtrl,
     required this.rateCtrl,
     required this.onBack,
     required this.onNext,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -523,7 +523,7 @@ class _StepSchedule extends StatelessWidget {
   final VoidCallback onNext;
 
   const _StepSchedule({
-    Key? key,
+    super.key,
     required this.tenureCtrl,
     required this.payDomCtrl,
     required this.finalDue,
@@ -535,7 +535,7 @@ class _StepSchedule extends StatelessWidget {
     required this.onReminders,
     required this.onBack,
     required this.onNext,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -656,12 +656,12 @@ class _StepReview extends StatelessWidget {
   final VoidCallback onSave;
 
   const _StepReview({
-    Key? key,
+    super.key,
     required this.data,
     required this.saving,
     required this.onBack,
     required this.onSave,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

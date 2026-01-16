@@ -8,13 +8,13 @@ class CrisisOptionCard extends StatelessWidget {
   final bool isActive; // optional highlight
 
   const CrisisOptionCard({
-    Key? key,
+    super.key,
     required this.title,
     required this.subtitle,
     required this.onTap,
     this.icon,
     this.isActive = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -30,9 +30,11 @@ class CrisisOptionCard extends StatelessWidget {
         child: Card(
           elevation: isActive ? 5 : 3,
           color: cardColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 18.0, horizontal: 18.0),
+            padding:
+                const EdgeInsets.symmetric(vertical: 18.0, horizontal: 18.0),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

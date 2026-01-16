@@ -12,7 +12,7 @@ class UnifiedTxTile extends StatelessWidget {
   final VoidCallback? onLongPress;
 
   const UnifiedTxTile({
-    Key? key,
+    super.key,
     required this.isIncome,
     required this.amount,
     required this.category,
@@ -22,10 +22,12 @@ class UnifiedTxTile extends StatelessWidget {
     this.isSelected = false,
     this.onTap,
     this.onLongPress,
-  }) : super(key: key);
+  });
 
-  Color get color => isIncome ? const Color(0xFF1DB954) : Colors.redAccent.shade700;
-  IconData get icon => isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
+  Color get color =>
+      isIncome ? const Color(0xFF1DB954) : Colors.redAccent.shade700;
+  IconData get icon =>
+      isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
 
   @override
   Widget build(BuildContext context) {
@@ -37,10 +39,12 @@ class UnifiedTxTile extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.teal.withValues(alpha: 0.08) : Colors.white,
+          color:
+              isSelected ? Colors.teal.withValues(alpha: 0.08) : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? Colors.teal : Colors.grey.withValues(alpha: 0.12),
+            color:
+                isSelected ? Colors.teal : Colors.grey.withValues(alpha: 0.12),
             width: isSelected ? 1.5 : 1,
           ),
           boxShadow: [
@@ -67,7 +71,9 @@ class UnifiedTxTile extends StatelessWidget {
                 child: selectionMode
                     ? Center(
                         child: Icon(
-                          isSelected ? Icons.check_circle : Icons.circle_outlined,
+                          isSelected
+                              ? Icons.check_circle
+                              : Icons.circle_outlined,
                           color: isSelected ? Colors.teal : Colors.grey,
                           size: 24,
                         ),
@@ -75,7 +81,7 @@ class UnifiedTxTile extends StatelessWidget {
                     : Icon(icon, color: color, size: 22),
               ),
               const SizedBox(width: 16),
-              
+
               // Text Info
               Expanded(
                 child: Column(
@@ -107,7 +113,7 @@ class UnifiedTxTile extends StatelessWidget {
                   ],
                 ),
               ),
-              
+
               // Amount & Time
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,

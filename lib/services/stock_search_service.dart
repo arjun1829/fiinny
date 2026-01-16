@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/stock_ticker_model.dart';
@@ -86,7 +86,7 @@ class StockSearchService {
         return results;
       }
     } catch (e) {
-      debugPrint("Yahoo Search Error: $e");
+      // debugPrint("Yahoo Search Error: $e");
     }
     return [];
   }
@@ -107,7 +107,7 @@ class StockSearchService {
         }
       }
     } catch (e) {
-      debugPrint("Yahoo Price Error for $symbol: $e");
+      // debugPrint("Yahoo Price Error for $symbol: $e");
     }
     return null;
   }

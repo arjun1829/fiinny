@@ -11,16 +11,17 @@ class GroupExpenseListWidget extends StatelessWidget {
   final void Function(ExpenseItem)? onDelete;
 
   const GroupExpenseListWidget({
-    Key? key,
+    super.key,
     required this.expenses,
     required this.currentUserId,
     required this.members,
     this.onDelete,
-  }) : super(key: key);
+  });
 
   // Helper: find a FriendModel by id (for payer display, etc)
   FriendModel? _findMember(String id) =>
-      members.firstWhere((f) => f.phone == id, orElse: () => FriendModel(phone: id, name: "Unknown", avatar: "👤"));
+      members.firstWhere((f) => f.phone == id,
+          orElse: () => FriendModel(phone: id, name: "Unknown", avatar: "👤"));
 
   @override
   Widget build(BuildContext context) {
@@ -38,13 +39,16 @@ class GroupExpenseListWidget extends StatelessWidget {
       separatorBuilder: (_, __) => Divider(height: 1),
       itemBuilder: (context, i) {
         final e = expenses[i];
-        final isSettlement = e.type.toLowerCase().contains('settle') || (e.label ?? '').toLowerCase().contains('settle');
+        final isSettlement = e.type.toLowerCase().contains('settle') ||
+            (e.label ?? '').toLowerCase().contains('settle');
         final payer = _findMember(e.payerId);
         final isPaidByYou = e.payerId == currentUserId;
 
         // For custom splits, show your share in trailing and optionally other splits
-        final isCustomSplit = e.customSplits != null && e.customSplits!.isNotEmpty;
-        final yourShare = e.customSplits?[currentUserId] ?? (e.amount / (e.friendIds.length + 1));
+        final isCustomSplit =
+            e.customSplits != null && e.customSplits!.isNotEmpty;
+        final yourShare = e.customSplits?[currentUserId] ??
+            (e.amount / (e.friendIds.length + 1));
         String splitText = '';
         if (isCustomSplit) {
           splitText = 'Split: ';
@@ -76,9 +80,15 @@ class GroupExpenseListWidget extends StatelessWidget {
         }
 
         return ListTile(
-          leading: payer != null && payer.avatar.isNotEmpty && payer.avatar.startsWith('http')
-              ? CircleAvatar(backgroundImage: NetworkImage(payer.avatar), radius: 20)
-              : CircleAvatar(child: Text(payer?.avatar.isNotEmpty == true ? payer!.avatar : payer?.name[0] ?? "👤")),
+          leading: payer != null &&
+                  payer.avatar.isNotEmpty &&
+                  payer.avatar.startsWith('http')
+              ? CircleAvatar(
+                  backgroundImage: NetworkImage(payer.avatar), radius: 20)
+              : CircleAvatar(
+                  child: Text(payer?.avatar.isNotEmpty == true
+                      ? payer!.avatar
+                      : payer?.name[0] ?? "👤")),
           title: Text(
             isSettlement
                 ? "Settlement"
@@ -90,7 +100,8 @@ class GroupExpenseListWidget extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                (isPaidByYou ? "- " : "+ ") + "₹${yourShare.toStringAsFixed(2)}",
+                (isPaidByYou ? "- " : "+ ") +
+                    "₹${yourShare.toStringAsFixed(2)}",
                 style: TextStyle(
                   color: isPaidByYou ? Colors.red : Colors.green,
                   fontWeight: FontWeight.w600,
@@ -120,7 +131,9 @@ class GroupExpenseListWidget extends StatelessWidget {
                       Text(
                         isSettlement
                             ? "Settlement"
-                            : (e.label?.isNotEmpty == true ? e.label! : "Expense"),
+                            : (e.label?.isNotEmpty == true
+                                ? e.label!
+                                : "Expense"),
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       SizedBox(height: 8),
@@ -130,18 +143,21 @@ class GroupExpenseListWidget extends StatelessWidget {
                         Text("Custom Splits:"),
                         ...e.customSplits!.entries.map((entry) {
                           final m = _findMember(entry.key);
-                          return Text("  • ${m?.name ?? 'User'}: ₹${entry.value.toStringAsFixed(2)}");
+                          return Text(
+                              "  • ${m?.name ?? 'User'}: ₹${entry.value.toStringAsFixed(2)}");
                         }),
                       ],
                       if (e.note.isNotEmpty) ...[
                         SizedBox(height: 10),
-                        Text("Note:", style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text("Note:",
+                            style: TextStyle(fontWeight: FontWeight.bold)),
                         Text(e.note),
                       ],
                       ...[
-                      SizedBox(height: 10),
-                      Text("Date: ${e.date.toLocal().toString().substring(0, 10)}"),
-                    ],
+                        SizedBox(height: 10),
+                        Text(
+                            "Date: ${e.date.toLocal().toString().substring(0, 10)}"),
+                      ],
                       if (e.category != null && e.category!.isNotEmpty) ...[
                         SizedBox(height: 10),
                         Text("Category: ${e.category}"),

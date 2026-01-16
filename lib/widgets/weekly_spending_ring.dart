@@ -4,7 +4,8 @@ class WeeklySpendingRing extends StatelessWidget {
   final double spent;
   final double limit;
 
-  const WeeklySpendingRing({Key? key, required this.spent, required this.limit}) : super(key: key);
+  const WeeklySpendingRing(
+      {super.key, required this.spent, required this.limit});
 
   @override
   Widget build(BuildContext context) {
@@ -13,7 +14,8 @@ class WeeklySpendingRing extends StatelessWidget {
 
     return Column(
       children: [
-        const Text("Weekly Spend Progress", style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text("Weekly Spend Progress",
+            style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 10),
         Stack(
           alignment: Alignment.center,
@@ -28,7 +30,8 @@ class WeeklySpendingRing extends StatelessWidget {
                 strokeWidth: 10,
               ),
             ),
-            Text("₹${spent.toStringAsFixed(0)} / ₹${limit.toStringAsFixed(0)}", textAlign: TextAlign.center),
+            Text("₹${spent.toStringAsFixed(0)} / ₹${limit.toStringAsFixed(0)}",
+                textAlign: TextAlign.center),
           ],
         ),
       ],

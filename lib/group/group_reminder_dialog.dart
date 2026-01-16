@@ -10,12 +10,12 @@ class GroupReminderDialog extends StatefulWidget {
   final List<ExpenseItem> groupExpenses;
 
   const GroupReminderDialog({
-    Key? key,
+    super.key,
     required this.groupId,
     required this.currentUserPhone,
     required this.participantPhones,
     required this.groupExpenses,
-  }) : super(key: key);
+  });
 
   @override
   State<GroupReminderDialog> createState() => _GroupReminderDialogState();
@@ -59,12 +59,14 @@ class _GroupReminderDialogState extends State<GroupReminderDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("Will notify:", style: TextStyle(fontWeight: FontWeight.w700)),
+                  const Text("Will notify:",
+                      style: TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
                   ...debtors.map((d) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text("• ${d.key} (₹${d.value.abs().toStringAsFixed(2)})"),
-                  )),
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(
+                            "• ${d.key} (₹${d.value.abs().toStringAsFixed(2)})"),
+                      )),
                 ],
               ),
             ),
@@ -87,7 +89,9 @@ class _GroupReminderDialogState extends State<GroupReminderDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel')),
         ElevatedButton.icon(
           onPressed: () async {
             await _svc.sendGroupReminder(
@@ -98,7 +102,9 @@ class _GroupReminderDialogState extends State<GroupReminderDialog> {
               customMessage: _c.text.trim().isEmpty ? null : _c.text.trim(),
               alsoSendDMs: _alsoDM,
             );
-            if (!mounted) return;
+            if (!mounted) {
+              return;
+            }
             Navigator.pop(context, true);
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Reminder sent')),

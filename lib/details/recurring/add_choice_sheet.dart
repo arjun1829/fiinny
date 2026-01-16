@@ -31,12 +31,12 @@ class AddChoiceSheet extends StatelessWidget {
   final Color accent;
 
   const AddChoiceSheet({
-    Key? key,
+    super.key,
     required this.onPick,
     this.options,
     this.title,
     this.accent = Colors.teal,
-  }) : super(key: key);
+  });
 
   List<AddChoice> get _defaultRecurringChoices => const [
         AddChoice(

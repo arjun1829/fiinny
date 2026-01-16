@@ -7,11 +7,11 @@ class FriendPicker extends StatelessWidget {
   final Function(List<String>) onChanged;
 
   const FriendPicker({
-    Key? key,
+    super.key,
     required this.friends,
     required this.selectedIds,
     required this.onChanged,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

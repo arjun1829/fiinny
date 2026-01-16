@@ -16,12 +16,9 @@ import 'package:lifemap/services/friend_service.dart';
 import 'package:lifemap/services/group_service.dart';
 import 'package:lifemap/services/expense_service.dart';
 
-import 'package:lifemap/widgets/add_friend_dialog.dart';
-import 'package:lifemap/widgets/add_group_dialog.dart';
 import 'package:lifemap/widgets/settleup_dialog.dart';
 import 'package:lifemap/widgets/split_summary_widget.dart';
 import 'package:lifemap/settleup_v2/index.dart';
-import 'package:lifemap/widgets/pickers/quick_create_pick_sheet.dart';
 
 import 'package:lifemap/details/friend_detail_screen.dart';
 import 'package:lifemap/details/group_detail_screen.dart';
@@ -29,22 +26,6 @@ import 'package:lifemap/widgets/add_expense_dialog.dart';
 import 'package:lifemap/screens/activity/activity_screen.dart';
 import 'package:lifemap/ui/sheets/settle_smart_sheet.dart';
 import 'package:lifemap/ui/theme/small_typography_overlay.dart';
-
-// --- SAFE stubs so tiles compile; they call legacy dialog if v2 not wired ---
-Future<void> _launchSettleForFriend(dynamic friend) async {
-  try {
-    // if you have SettleUpFlowV2Launcher open it here, else fallback:
-    // await SettleUpFlowV2Launcher.openForFriend(...);
-  } catch (_) {
-    // Optional: show legacy dialog or ignore
-  }
-}
-
-Future<void> _launchSettleForGroup(dynamic group) async {
-  try {
-    // Same pattern as above
-  } catch (_) {}
-}
 
 /* ===========================================================================
  * FRIENDS & GROUPS — Upgraded UI (self-contained)
@@ -57,7 +38,7 @@ enum Direction { all, owedToYou, youOwe }
 
 class FriendsScreen extends StatefulWidget {
   final String userPhone;
-  const FriendsScreen({required this.userPhone, Key? key}) : super(key: key);
+  const FriendsScreen({required this.userPhone, super.key});
 
   @override
   State<FriendsScreen> createState() => _FriendsScreenState();
@@ -214,31 +195,10 @@ class _SettleSmartCTAState extends State<_SettleSmartCTA>
   }
 }
 
-class _ActionTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  const _ActionTile(
-      {required this.icon, required this.label, required this.onTap});
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: CircleAvatar(
-          backgroundColor:
-              Theme.of(context).primaryColor.withValues(alpha: .10),
-          child: Icon(icon, color: Theme.of(context).primaryColor)),
-      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: onTap,
-    );
-  }
-}
-
 class _FriendsScreenState extends State<FriendsScreen>
     with TickerProviderStateMixin {
   late TabController _tabController;
   final tabs = const ['All', 'Friends', 'Groups', 'Activity'];
-  bool get _filtersActive => _direction != Direction.all || _openOnly;
 
   final ContactNameService _contactNames = ContactNameService.instance;
 
@@ -250,7 +210,7 @@ class _FriendsScreenState extends State<FriendsScreen>
   String _query = '';
   bool _searchOpen = false;
   late final AnimationController _searchAnim;
-  late final Animation<double> _searchSlide;
+
   Direction _direction = Direction.all;
 
   void _onContactNamesChanged() {
@@ -272,8 +232,7 @@ class _FriendsScreenState extends State<FriendsScreen>
 
     _searchAnim = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 220));
-    _searchSlide =
-        CurvedAnimation(parent: _searchAnim, curve: Curves.easeOutCubic);
+
     _contactNames.addListener(_onContactNamesChanged);
     Future.microtask(
         () => FriendService().backfillNamesForUser(widget.userPhone));
@@ -326,6 +285,7 @@ class _FriendsScreenState extends State<FriendsScreen>
   }) async {
     final resolvedFriends = friends ?? await _fetchAllFriends();
     final resolvedGroups = groups ?? await _fetchAllGroups();
+    if (!mounted) return;
     final result = await showDialog(
       context: context,
       builder: (_) => SettleUpDialog(
@@ -748,174 +708,6 @@ class _FriendsScreenState extends State<FriendsScreen>
     );
   }
 
-  Future<void> _quickPickAndOpen(BuildContext context,
-      {required bool forSettle}) async {
-    final allFriends = await _fetchAllFriends();
-    final allGroups = await _fetchAllGroups();
-
-    if (!mounted) return;
-
-    final friendPhonesBefore = allFriends.map((f) => f.phone).toSet();
-    final groupIdsBefore = allGroups.map((g) => g.id).toSet();
-
-    final result = await showQuickCreatePickSheet(
-      context: context,
-      friends: allFriends,
-      groups: allGroups,
-      contactNames: _contactNames,
-    );
-
-    if (!mounted || result == null) return;
-
-    if (result.friend != null) {
-      final friend = result.friend!;
-      if (forSettle) {
-        await _launchSettleForFriend(friend);
-      } else {
-        await Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => FriendDetailScreen(
-            userPhone: widget.userPhone,
-            userName: "You",
-            friend: friend,
-          ),
-        ));
-        if (mounted) setState(() {});
-      }
-      return;
-    }
-
-    if (result.group != null) {
-      final group = result.group!;
-      if (forSettle) {
-        await _launchSettleForGroup(group);
-      } else {
-        await Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => GroupDetailScreen(
-            userId: widget.userPhone,
-            group: group,
-          ),
-        ));
-        if (mounted) setState(() {});
-      }
-      return;
-    }
-
-    switch (result.action) {
-      case QuickCreateAction.addFriendFromContacts:
-      case QuickCreateAction.addFriendManual:
-        await _handleFriendCreationAction(
-          context,
-          action: result.action!,
-          before: friendPhonesBefore,
-        );
-        break;
-      case QuickCreateAction.createGroup:
-        await _handleGroupCreationAction(
-          context,
-          before: groupIdsBefore,
-          friends: allFriends,
-        );
-        break;
-      case null:
-        break;
-    }
-  }
-
-  Future<void> _handleFriendCreationAction(
-    BuildContext context, {
-    required QuickCreateAction action,
-    required Set<String> before,
-  }) async {
-    String? createdPhone;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AddFriendDialog(
-        userPhone: widget.userPhone,
-        autoOpenContacts: action == QuickCreateAction.addFriendFromContacts,
-        onFriendCreated: (phone) => createdPhone = phone,
-      ),
-    );
-
-    if (ok == true) {
-      final friend = await _resolveCreatedFriend(createdPhone, before);
-      if (friend != null && mounted) {
-        await Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => FriendDetailScreen(
-            userPhone: widget.userPhone,
-            userName: "You",
-            friend: friend,
-          ),
-        ));
-        setState(() {});
-      }
-    }
-  }
-
-  Future<void> _handleGroupCreationAction(
-    BuildContext context, {
-    required Set<String> before,
-    required List<FriendModel> friends,
-  }) async {
-    String? createdGroupId;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AddGroupDialog(
-        userPhone: widget.userPhone,
-        allFriends: friends,
-        onGroupCreated: (id) => createdGroupId = id,
-      ),
-    );
-
-    if (ok == true) {
-      final group = await _resolveCreatedGroup(createdGroupId, before);
-      if (group != null && mounted) {
-        await Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => GroupDetailScreen(
-            userId: widget.userPhone,
-            group: group,
-          ),
-        ));
-        setState(() {});
-      }
-    }
-  }
-
-  Future<FriendModel?> _resolveCreatedFriend(
-    String? phone,
-    Set<String> before,
-  ) async {
-    if (phone != null) {
-      final byPhone =
-          await FriendService().getFriendByPhone(widget.userPhone, phone);
-      if (byPhone != null) return byPhone;
-    }
-    final snapshot =
-        await FriendService().streamFriends(widget.userPhone).first;
-    for (final friend in snapshot.reversed) {
-      if (!before.contains(friend.phone)) {
-        return friend;
-      }
-    }
-    return null;
-  }
-
-  Future<GroupModel?> _resolveCreatedGroup(
-    String? id,
-    Set<String> before,
-  ) async {
-    if (id != null) {
-      final group = await GroupService().getGroupById(id);
-      if (group != null) return group;
-    }
-    final snapshot = await GroupService().fetchUserGroups(widget.userPhone);
-    for (final group in snapshot.reversed) {
-      if (!before.contains(group.id)) {
-        return group;
-      }
-    }
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
     return SmallTypographyOverlay(
@@ -1050,6 +842,8 @@ class _FriendsScreenState extends State<FriendsScreen>
                     onOpenFilters: _openFilterSheet,
                     contactNames: _contactNames,
                     onLaunchSettleSmart: _handleSettleSmartRecord,
+                    onLaunchSettleFriend: _launchSettleForFriend,
+                    onLaunchSettleGroup: _launchSettleForGroup,
                   ),
                   FriendsTab(
                     userPhone: widget.userPhone,
@@ -1057,12 +851,14 @@ class _FriendsScreenState extends State<FriendsScreen>
                     query: _query,
                     direction: _direction,
                     contactNames: _contactNames,
+                    onLaunchSettleFriend: _launchSettleForFriend,
                   ),
                   GroupsTab(
                     userPhone: widget.userPhone,
                     openOnly: _openOnly,
                     query: _query,
                     direction: _direction,
+                    onLaunchSettleGroup: _launchSettleForGroup,
                   ),
                   ActivityTab(
                     userPhone: widget.userPhone,
@@ -1191,6 +987,8 @@ class AllTab extends StatelessWidget {
   final VoidCallback onOpenFilters; // <— add
   final ContactNameService contactNames;
   final Future<void> Function(String counterpartyPhone)? onLaunchSettleSmart;
+  final Future<void> Function(FriendModel) onLaunchSettleFriend;
+  final Future<void> Function(GroupModel) onLaunchSettleGroup;
 
   const AllTab({
     required this.userPhone,
@@ -1200,8 +998,10 @@ class AllTab extends StatelessWidget {
     required this.onOpenFilters,
     required this.contactNames,
     this.onLaunchSettleSmart,
-    Key? key,
-  }) : super(key: key);
+    required this.onLaunchSettleFriend,
+    required this.onLaunchSettleGroup,
+    super.key,
+  });
 
   bool _matches(String query, String hay) =>
       hay.toLowerCase().contains(query.toLowerCase());
@@ -1295,7 +1095,9 @@ class AllTab extends StatelessWidget {
                   if (query.isNotEmpty &&
                       !_matches(query, displayName) &&
                       !_matches(query, f.name) &&
-                      !_matches(query, f.phone)) continue;
+                      !_matches(query, f.phone)) {
+                    continue;
+                  }
 
                   final affecting = allTx
                       .where((e) =>
@@ -1365,21 +1167,21 @@ class AllTab extends StatelessWidget {
                           await FriendService().streamFriends(userPhone).first;
                       final allGroups =
                           await GroupService().streamGroups(userPhone).first;
-                      final ok = await Navigator.push<bool>(
+                      if (!context.mounted) return;
+                      await Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => AddExpenseScreen(
                             userPhone: userPhone,
                             friends: allFriends,
                             groups: allGroups,
-                            contextFriend: f, // context-aware
+                            contextFriend: f,
                           ),
                         ),
                       );
-                      if (ok == true && context.mounted) {}
                     },
                     onSettle: () async {
-                      await _launchSettleForFriend(f);
+                      await onLaunchSettleFriend(f);
                     },
                     openDetails: () => Navigator.push(
                       context,
@@ -1470,21 +1272,21 @@ class AllTab extends StatelessWidget {
                           await FriendService().streamFriends(userPhone).first;
                       final allGroups =
                           await GroupService().streamGroups(userPhone).first;
-                      final ok = await Navigator.push<bool>(
+                      if (!context.mounted) return;
+                      await Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => AddExpenseScreen(
                             userPhone: userPhone,
                             friends: allFriends,
                             groups: allGroups,
-                            contextGroup: g, // context-aware
+                            contextGroup: g,
                           ),
                         ),
                       );
-                      if (ok == true && context.mounted) {}
                     },
                     onSettle: () async {
-                      await _launchSettleForGroup(g);
+                      await onLaunchSettleGroup(g);
                     },
                     openDetails: () => Navigator.push(
                       context,
@@ -1658,14 +1460,17 @@ class FriendsTab extends StatelessWidget {
   final String query;
   final Direction direction;
   final ContactNameService contactNames;
+  final Future<void> Function(FriendModel) onLaunchSettleFriend;
+
   const FriendsTab({
     required this.userPhone,
     required this.openOnly,
     required this.query,
     required this.direction,
     required this.contactNames,
-    Key? key,
-  }) : super(key: key);
+    required this.onLaunchSettleFriend,
+    super.key,
+  });
 
   bool _matches(String query, String hay) =>
       hay.toLowerCase().contains(query.toLowerCase());
@@ -1757,6 +1562,7 @@ class FriendsTab extends StatelessWidget {
                       await FriendService().streamFriends(userPhone).first;
                   final allGroups =
                       await GroupService().streamGroups(userPhone).first;
+                  if (!context.mounted) return;
                   await Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -1770,7 +1576,7 @@ class FriendsTab extends StatelessWidget {
                   );
                 },
                 onSettle: () async {
-                  await _launchSettleForFriend(f);
+                  await onLaunchSettleFriend(f);
                 },
                 openDetails: () => Navigator.push(
                   context,
@@ -1832,13 +1638,16 @@ class GroupsTab extends StatelessWidget {
   final bool openOnly;
   final String query;
   final Direction direction;
+  final Future<void> Function(GroupModel) onLaunchSettleGroup;
+
   const GroupsTab({
     required this.userPhone,
     required this.openOnly,
     required this.query,
     required this.direction,
-    Key? key,
-  }) : super(key: key);
+    required this.onLaunchSettleGroup,
+    super.key,
+  });
 
   bool _matches(String query, String hay) =>
       hay.toLowerCase().contains(query.toLowerCase());
@@ -1857,8 +1666,6 @@ class GroupsTab extends StatelessWidget {
             return StreamBuilder<List<FriendModel>>(
               stream: FriendService().streamFriends(userPhone),
               builder: (context, friendSnap) {
-                final friends = friendSnap.data ?? [];
-
                 final items = <_ChatListItem>[];
                 for (final g in groups) {
                   if (query.isNotEmpty && !_matches(query, g.name)) continue;
@@ -1934,6 +1741,7 @@ class GroupsTab extends StatelessWidget {
                           await FriendService().streamFriends(userPhone).first;
                       final allGroups =
                           await GroupService().streamGroups(userPhone).first;
+                      if (!context.mounted) return;
                       await Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -1947,7 +1755,7 @@ class GroupsTab extends StatelessWidget {
                       );
                     },
                     onSettle: () async {
-                      await _launchSettleForGroup(g);
+                      await onLaunchSettleGroup(g);
                     },
                     openDetails: () => Navigator.push(
                       context,
@@ -2011,8 +1819,8 @@ class ActivityTab extends StatelessWidget {
   const ActivityTab({
     required this.userPhone,
     required this.contactNames,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2663,7 +2471,7 @@ class _ChatListItem {
 
 class _GlassyChatTile extends StatelessWidget {
   final _ChatListItem item;
-  const _GlassyChatTile({required this.item, Key? key}) : super(key: key);
+  const _GlassyChatTile({required this.item});
 
   ImageProvider? _imgFromPath(String? path) {
     if (path == null || path.isEmpty) return null;

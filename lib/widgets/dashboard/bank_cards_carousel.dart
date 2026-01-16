@@ -14,7 +14,7 @@ class BankCardsCarousel extends StatefulWidget {
   final VoidCallback? onViewAll;
 
   const BankCardsCarousel({
-    Key? key,
+    super.key,
     required this.expenses,
     required this.incomes,
     required this.userName,
@@ -22,7 +22,7 @@ class BankCardsCarousel extends StatefulWidget {
     this.onCardSelected,
     this.selectedBankSlug,
     this.onViewAll,
-  }) : super(key: key);
+  });
 
   static String slugBankStatic(String bankName) {
     return bankName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');

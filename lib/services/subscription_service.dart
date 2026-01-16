@@ -6,8 +6,9 @@ import 'package:lifemap/models/subscription_item.dart';
 
 class SubscriptionService extends ChangeNotifier {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: 'asia-south1');
-  
+  final FirebaseFunctions _functions =
+      FirebaseFunctions.instanceFor(region: 'asia-south1');
+
   SubscriptionModel? _currentSubscription;
   SubscriptionModel? get currentSubscription => _currentSubscription;
 
@@ -24,7 +25,7 @@ class SubscriptionService extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      debugPrint("Error fetching subscription: $e");
+      // debugPrint("Error fetching subscription: $e");
     }
   }
 
@@ -37,7 +38,7 @@ class SubscriptionService extends ChangeNotifier {
       });
       return Map<String, dynamic>.from(result.data);
     } catch (e) {
-      debugPrint("Error creating order: $e");
+      // debugPrint("Error creating order: $e");
       rethrow;
     }
   }
@@ -63,7 +64,7 @@ class SubscriptionService extends ChangeNotifier {
         await fetchSubscription(_currentSubscription!.userId);
       }
     } catch (e) {
-      debugPrint("Error verifying payment: $e");
+      // debugPrint("Error verifying payment: $e");
       rethrow;
     }
   }
@@ -76,7 +77,7 @@ class SubscriptionService extends ChangeNotifier {
         await fetchSubscription(_currentSubscription!.userId);
       }
     } catch (e) {
-      debugPrint("Error cancelling subscription: $e");
+      // debugPrint("Error cancelling subscription: $e");
       rethrow;
     }
   }
@@ -91,12 +92,13 @@ class SubscriptionService extends ChangeNotifier {
 
   Future<void> addSubscription(String userId, SubscriptionItem item) async {
     try {
-      final docRef = _db.collection('users').doc(userId).collection('subscriptions').doc();
+      final docRef =
+          _db.collection('users').doc(userId).collection('subscriptions').doc();
       final newItem = item.copyWith(id: docRef.id);
       await docRef.set(newItem.toJson());
       notifyListeners();
     } catch (e) {
-      debugPrint("Error adding subscription expense: $e");
+      // debugPrint("Error adding subscription expense: $e");
       rethrow;
     }
   }
@@ -112,7 +114,7 @@ class SubscriptionService extends ChangeNotifier {
           .update(item.toJson());
       notifyListeners();
     } catch (e) {
-      debugPrint("Error updating subscription expense: $e");
+      // debugPrint("Error updating subscription expense: $e");
       rethrow;
     }
   }
@@ -127,7 +129,7 @@ class SubscriptionService extends ChangeNotifier {
           .delete();
       notifyListeners();
     } catch (e) {
-      debugPrint("Error deleting subscription expense: $e");
+      // debugPrint("Error deleting subscription expense: $e");
       rethrow;
     }
   }
@@ -145,7 +147,8 @@ class SubscriptionService extends ChangeNotifier {
     });
   }
 
-  DateTime calculateNextDueDate(DateTime last, String frequency, int? customDays) {
+  DateTime calculateNextDueDate(
+      DateTime last, String frequency, int? customDays) {
     if (customDays != null && customDays > 0) {
       return last.add(Duration(days: customDays));
     }

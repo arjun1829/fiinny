@@ -1,14 +1,10 @@
-import 'dart:io' show File;
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-
 
 class GroupChatTab extends StatefulWidget {
   final String groupId;
@@ -16,11 +12,11 @@ class GroupChatTab extends StatefulWidget {
   final VoidCallback onSettleUp;
 
   const GroupChatTab({
-    Key? key,
+    super.key,
     required this.groupId,
     required this.currentUserId,
     required this.onSettleUp,
-  }) : super(key: key);
+  });
 
   @override
   State<GroupChatTab> createState() => GroupChatTabState();
@@ -29,64 +25,11 @@ class GroupChatTab extends StatefulWidget {
 class GroupChatTabState extends State<GroupChatTab> {
   final _msgController = TextEditingController();
   final _scrollController = ScrollController();
-  final _imagePicker = ImagePicker();
 
-  List<Map<String, dynamic>> _attachedTxs = [];
+  final List<Map<String, dynamic>> _attachedTxs = [];
 
   bool _pickingEmoji = false;
   bool _pickingSticker = false;
-  bool _uploading = false;
-
-  // Helper for small icons
-  Widget _smallIconButton({
-    required IconData icon,
-    String? tooltip,
-    VoidCallback? onPressed,
-    Color color = Colors.teal,
-  }) {
-    return IconButton(
-      icon: Icon(icon, color: color, size: 24),
-      tooltip: tooltip,
-      onPressed: onPressed,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-      splashRadius: 20,
-    );
-  }
-
-  String? _mimeFromExtension(String? ext) {
-    switch (ext) {
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'png':
-        return 'image/png';
-      case 'gif':
-        return 'image/gif';
-      case 'webp':
-        return 'image/webp';
-      case 'pdf':
-        return 'application/pdf';
-      case 'txt':
-        return 'text/plain';
-      case 'csv':
-        return 'text/csv';
-      case 'doc':
-        return 'application/msword';
-      case 'docx':
-        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      case 'xls':
-        return 'application/vnd.ms-excel';
-      case 'xlsx':
-        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      case 'ppt':
-        return 'application/vnd.ms-powerpoint';
-      case 'pptx':
-        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-      default:
-        return null;
-    }
-  }
 
   String get _threadId {
     return widget.groupId;
@@ -113,12 +56,6 @@ class GroupChatTabState extends State<GroupChatTab> {
           _attachedTxs.add(tx);
         }
       }
-    });
-  }
-
-  void _removeAttachment(int index) {
-    setState(() {
-      _attachedTxs.removeAt(index);
     });
   }
 
@@ -188,150 +125,7 @@ class GroupChatTabState extends State<GroupChatTab> {
   }
 
   // ---------- Attachments ----------
-  Future<void> _pickFromCamera() async {
-    try {
-      final shot = await _imagePicker.pickImage(
-          source: ImageSource.camera, imageQuality: 85);
-      if (shot == null) return;
-      await _uploadImageXFile(shot);
-    } catch (e) {
-      _toast('Camera unavailable');
-    }
-  }
-
-  Future<void> _pickFromGallery() async {
-    try {
-      final img = await _imagePicker.pickImage(
-          source: ImageSource.gallery, imageQuality: 85);
-      if (img == null) return;
-      await _uploadImageXFile(img);
-    } catch (e) {
-      _toast('Gallery unavailable');
-    }
-  }
-
-  Future<void> _pickAnyFile() async {
-    try {
-      final res = await FilePicker.platform.pickFiles(
-        allowMultiple: false,
-        withData: kIsWeb, // bytes on web
-        type: FileType.any,
-      );
-      if (res == null || res.files.isEmpty) return;
-      final file = res.files.first;
-      final name = file.name;
-      final ext = (file.extension ?? '').toLowerCase();
-      final mime = _mimeFromExtension(ext) ?? _guessMimeByName(name);
-      if (kIsWeb) {
-        final bytes = file.bytes;
-        if (bytes == null) return;
-        await _uploadBytes(bytes, name, mime,
-            typeHint: _isImageMime(mime) ? 'image' : 'file');
-      } else {
-        final path = file.path;
-        if (path == null) return;
-        await _uploadFilePath(path, name, mime,
-            typeHint: _isImageMime(mime) ? 'image' : 'file');
-      }
-    } catch (e) {
-      _toast('File picker error');
-    }
-  }
-
-  String _guessMimeByName(String name) {
-    final lower = name.toLowerCase();
-    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-    if (lower.endsWith('.png')) return 'image/png';
-    if (lower.endsWith('.gif')) return 'image/gif';
-    if (lower.endsWith('.webp')) return 'image/webp';
-    if (lower.endsWith('.pdf')) return 'application/pdf';
-    return 'application/octet-stream';
-  }
-
-  bool _isImageMime(String? mime) => (mime ?? '').startsWith('image/');
-
-  Future<void> _uploadImageXFile(XFile xf) async {
-    final name = xf.name;
-    final mime = _guessMimeByName(name);
-    if (kIsWeb) {
-      final bytes = await xf.readAsBytes();
-      await _uploadBytes(bytes, name, mime, typeHint: 'image');
-    } else {
-      await _uploadFilePath(xf.path, name, mime, typeHint: 'image');
-    }
-  }
-
-  Future<void> _uploadBytes(
-    Uint8List bytes,
-    String name,
-    String mime, {
-    required String typeHint,
-  }) async {
-    setState(() => _uploading = true);
-    try {
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('chat_uploads')
-          .child(_threadId)
-          .child('${DateTime.now().millisecondsSinceEpoch}_$name');
-
-      final metadata = SettableMetadata(contentType: mime);
-      final task = await ref.putData(bytes, metadata);
-      final url = await task.ref.getDownloadURL();
-
-      await _sendMessage(
-        text: typeHint == 'image' ? '[photo]' : name,
-        type: typeHint,
-        extra: {
-          'fileUrl': url,
-          'fileName': name,
-          'mime': mime,
-          'size': bytes.length,
-        },
-      );
-    } catch (e) {
-      _toast('Upload failed');
-    } finally {
-      if (mounted) setState(() => _uploading = false);
-    }
-  }
-
-  Future<void> _uploadFilePath(
-    String path,
-    String name,
-    String mime, {
-    required String typeHint,
-  }) async {
-    setState(() => _uploading = true);
-    try {
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('chat_uploads')
-          .child(_threadId)
-          .child('${DateTime.now().millisecondsSinceEpoch}_$name');
-
-      final metadata = SettableMetadata(contentType: mime);
-      final task = await ref.putFile(File(path), metadata);
-      final url = await task.ref.getDownloadURL();
-
-      final fileSize = await File(path).length();
-
-      await _sendMessage(
-        text: typeHint == 'image' ? '[photo]' : name,
-        type: typeHint,
-        extra: {
-          'fileUrl': url,
-          'fileName': name,
-          'mime': mime,
-          'size': fileSize,
-        },
-      );
-    } catch (e) {
-      _toast('Upload failed');
-    } finally {
-      if (mounted) setState(() => _uploading = false);
-    }
-  }
+  // (Unused pickers removed)
 
   // ---------- Message actions ----------
   Future<void> _editMessage(DocumentSnapshot<Map<String, dynamic>> doc) async {
@@ -614,24 +408,6 @@ class GroupChatTabState extends State<GroupChatTab> {
     );
   }
 
-  void _onOpenAttachment(Map<String, dynamic> data) {
-    final url = (data['fileUrl'] ?? '').toString();
-    if (url.isEmpty) return;
-
-    // Simple logic: just copy link or show dialog
-    if ((data['mime'] ?? '').toString().startsWith('image/')) {
-      showDialog(
-        context: context,
-        builder: (_) => Dialog(
-          child: Image.network(url, fit: BoxFit.contain),
-        ),
-      );
-    } else {
-      Clipboard.setData(ClipboardData(text: url));
-      _toast('Link copied');
-    }
-  }
-
   @override
   void dispose() {
     _msgController.dispose();
@@ -718,7 +494,8 @@ class GroupChatTabState extends State<GroupChatTab> {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 4)
                 ],
               ),
               child: Row(
@@ -993,8 +770,9 @@ class ChatBubble extends StatelessWidget {
                   time,
                   style: TextStyle(
                     // Lighter text for timestamp
-                    color:
-                        isMe ? Colors.white.withValues(alpha: 0.7) : Colors.grey[500],
+                    color: isMe
+                        ? Colors.white.withValues(alpha: 0.7)
+                        : Colors.grey[500],
                     fontSize: 10,
                   ),
                 ),

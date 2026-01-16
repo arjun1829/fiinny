@@ -11,9 +11,9 @@ class LoansSummaryCard extends StatelessWidget {
   final VoidCallback onAddLoan;
 
   // NEW (already existed in your file):
-  final int pendingSuggestions;               // default 0
-  final VoidCallback? onReviewSuggestions;    // open review sheet
-  final VoidCallback? onTap;                  // whole-card tap handler
+  final int pendingSuggestions; // default 0
+  final VoidCallback? onReviewSuggestions; // open review sheet
+  final VoidCallback? onTap; // whole-card tap handler
 
   const LoansSummaryCard({
     required this.userId,
@@ -23,10 +23,11 @@ class LoansSummaryCard extends StatelessWidget {
     this.pendingSuggestions = 0,
     this.onReviewSuggestions,
     this.onTap,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
-  static final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+  static final _inr =
+      NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +50,8 @@ class LoansSummaryCard extends StatelessWidget {
               InkWell(
                 borderRadius: BorderRadius.circular(999),
                 onTap: onReviewSuggestions,
-                child: PillBadge('Detected $pendingSuggestions', color: Fx.warn, icon: Icons.search_rounded),
+                child: PillBadge('Detected $pendingSuggestions',
+                    color: Fx.warn, icon: Icons.search_rounded),
               ),
             const Spacer(),
             IconButton(
@@ -73,7 +75,8 @@ class LoansSummaryCard extends StatelessWidget {
               Text("$loanCount active", style: Fx.label),
               if (onReviewSuggestions != null)
                 IconButton(
-                  icon: const Icon(Icons.manage_search_rounded, color: Fx.mintDark),
+                  icon: const Icon(Icons.manage_search_rounded,
+                      color: Fx.mintDark),
                   tooltip: "Review detected loans",
                   onPressed: onReviewSuggestions,
                 ),

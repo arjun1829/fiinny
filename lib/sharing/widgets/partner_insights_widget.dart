@@ -3,7 +3,7 @@ import '../models/partner_model.dart';
 
 class PartnerInsightsWidget extends StatelessWidget {
   final PartnerModel partner;
-  const PartnerInsightsWidget({Key? key, required this.partner}) : super(key: key);
+  const PartnerInsightsWidget({super.key, required this.partner});
 
   @override
   Widget build(BuildContext context) {
@@ -30,13 +30,17 @@ class PartnerInsightsWidget extends StatelessWidget {
             // Header: avatar + name + relation + status
             Row(
               children: [
-                _PartnerAvatar(avatar: partner.avatar, name: partner.partnerName),
+                _PartnerAvatar(
+                    avatar: partner.avatar, name: partner.partnerName),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(partner.partnerName.isNotEmpty ? partner.partnerName : 'Partner',
+                      Text(
+                          partner.partnerName.isNotEmpty
+                              ? partner.partnerName
+                              : 'Partner',
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w700,
                             color: theme.colorScheme.primary,
@@ -47,12 +51,15 @@ class PartnerInsightsWidget extends StatelessWidget {
                           if ((partner.relation ?? '').isNotEmpty)
                             _Chip(
                               label: partner.relation!,
-                              color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                              color: theme.colorScheme.primary
+                                  .withValues(alpha: 0.1),
                               textColor: theme.colorScheme.primary,
                             ),
                           const SizedBox(width: 6),
                           _Chip(
-                            label: partner.status.isNotEmpty ? partner.status : 'pending',
+                            label: partner.status.isNotEmpty
+                                ? partner.status
+                                : 'pending',
                             color: _statusBg(partner.status, theme),
                             textColor: _statusFg(partner.status, theme),
                           ),
@@ -68,11 +75,17 @@ class PartnerInsightsWidget extends StatelessWidget {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      _Ring(percent: pctDebit, color: Colors.red, strokeWidth: 6),
-                      _Ring(percent: pctCredit, color: Colors.green, strokeWidth: 4, inset: 6),
+                      _Ring(
+                          percent: pctDebit, color: Colors.red, strokeWidth: 6),
+                      _Ring(
+                          percent: pctCredit,
+                          color: Colors.green,
+                          strokeWidth: 4,
+                          inset: 6),
                       Text(
                         ringMax == 1 ? '—' : (net >= 0 ? '↑' : '↓'),
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w700),
                       ),
                     ],
                   ),
@@ -86,7 +99,8 @@ class PartnerInsightsWidget extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   _permSummary(partner.permissions),
-                  style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: Colors.grey[700]),
                 ),
               ),
             if (partner.permissions.isNotEmpty) const SizedBox(height: 10),
@@ -143,14 +157,21 @@ class PartnerInsightsWidget extends StatelessWidget {
 
   static String _money(double v) {
     // Keep it generic (no currency symbol assumptions)
-    if (v.abs() >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
-    if (v.abs() >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    if (v.abs() >= 1000000) {
+      return '${(v / 1000000).toStringAsFixed(1)}M';
+    }
+    if (v.abs() >= 1000) {
+      return '${(v / 1000).toStringAsFixed(1)}K';
+    }
     return v.toStringAsFixed(0);
   }
 
   static String _permSummary(Map<String, bool> perms) {
-    final enabled = perms.entries.where((e) => e.value).map((e) => e.key).toList();
-    if (enabled.isEmpty) return 'No permissions granted yet.';
+    final enabled =
+        perms.entries.where((e) => e.value).map((e) => e.key).toList();
+    if (enabled.isEmpty) {
+      return 'No permissions granted yet.';
+    }
     return 'Access: ${enabled.join(', ')}';
   }
 
@@ -191,17 +212,24 @@ class _PartnerAvatar extends StatelessWidget {
     return CircleAvatar(
       radius: 24,
       backgroundColor: bg,
-      backgroundImage: (avatar != null && avatar!.startsWith('http')) ? NetworkImage(avatar!) : null,
+      backgroundImage: (avatar != null && avatar!.startsWith('http'))
+          ? NetworkImage(avatar!)
+          : null,
       child: (avatar == null || avatar!.isEmpty || !avatar!.startsWith('http'))
-          ? Text(initials, style: TextStyle(fontWeight: FontWeight.w700, color: fg))
+          ? Text(initials,
+              style: TextStyle(fontWeight: FontWeight.w700, color: fg))
           : null,
     );
   }
 
   String _initials(String s) {
-    if (s.trim().isEmpty) return '👤';
+    if (s.trim().isEmpty) {
+      return '👤';
+    }
     final parts = s.trim().split(RegExp(r'\s+'));
-    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    if (parts.length == 1) {
+      return parts.first.substring(0, 1).toUpperCase();
+    }
     return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
   }
 }
@@ -210,14 +238,18 @@ class _Chip extends StatelessWidget {
   final String label;
   final Color color;
   final Color textColor;
-  const _Chip({required this.label, required this.color, required this.textColor});
+  const _Chip(
+      {required this.label, required this.color, required this.textColor});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
-      child: Text(label, style: TextStyle(fontSize: 12, color: textColor, fontWeight: FontWeight.w600)),
+      decoration:
+          BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 12, color: textColor, fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -237,7 +269,11 @@ class _Ring extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _RingPainter(percent: percent, color: color, strokeWidth: strokeWidth, inset: inset),
+      painter: _RingPainter(
+          percent: percent,
+          color: color,
+          strokeWidth: strokeWidth,
+          inset: inset),
       size: const Size.square(56),
     );
   }
@@ -248,11 +284,16 @@ class _RingPainter extends CustomPainter {
   final Color color;
   final double strokeWidth;
   final double inset;
-  _RingPainter({required this.percent, required this.color, required this.strokeWidth, required this.inset});
+  _RingPainter(
+      {required this.percent,
+      required this.color,
+      required this.strokeWidth,
+      required this.inset});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rect = Offset(inset, inset) & Size(size.width - inset * 2, size.height - inset * 2);
+    final rect = Offset(inset, inset) &
+        Size(size.width - inset * 2, size.height - inset * 2);
     final bg = Paint()
       ..color = color.withValues(alpha: 0.12)
       ..style = PaintingStyle.stroke
@@ -268,12 +309,16 @@ class _RingPainter extends CustomPainter {
     // full circle background
     canvas.drawArc(rect, 0, 2 * 3.1415926535, false, bg);
     // progress arc
-    canvas.drawArc(rect, -3.1415926535 / 2, 2 * 3.1415926535 * percent, false, fg);
+    canvas.drawArc(
+        rect, -3.1415926535 / 2, 2 * 3.1415926535 * percent, false, fg);
   }
 
   @override
   bool shouldRepaint(covariant _RingPainter old) {
-    return old.percent != percent || old.color != color || old.strokeWidth != strokeWidth || old.inset != inset;
+    return old.percent != percent ||
+        old.color != color ||
+        old.strokeWidth != strokeWidth ||
+        old.inset != inset;
   }
 }
 
@@ -289,7 +334,7 @@ class _StatRow extends StatelessWidget {
   final Color rightColor;
 
   const _StatRow({
-    Key? key,
+    super.key,
     required this.leftIcon,
     required this.leftLabel,
     required this.leftValue,
@@ -298,21 +343,37 @@ class _StatRow extends StatelessWidget {
     required this.rightLabel,
     required this.rightValue,
     required this.rightColor,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
-    final labelStyle = Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[700]);
-    final valueStyle = const TextStyle(fontSize: 18, fontWeight: FontWeight.w800);
+    final labelStyle = Theme.of(context)
+        .textTheme
+        .bodySmall
+        ?.copyWith(color: Colors.grey[700]);
+    final valueStyle =
+        const TextStyle(fontSize: 18, fontWeight: FontWeight.w800);
 
     return Row(
       children: [
         Expanded(
-          child: _LabeledValue(icon: leftIcon, label: leftLabel, value: leftValue, color: leftColor, labelStyle: labelStyle, valueStyle: valueStyle),
+          child: _LabeledValue(
+              icon: leftIcon,
+              label: leftLabel,
+              value: leftValue,
+              color: leftColor,
+              labelStyle: labelStyle,
+              valueStyle: valueStyle),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: _LabeledValue(icon: rightIcon, label: rightLabel, value: rightValue, color: rightColor, labelStyle: labelStyle, valueStyle: valueStyle),
+          child: _LabeledValue(
+              icon: rightIcon,
+              label: rightLabel,
+              value: rightValue,
+              color: rightColor,
+              labelStyle: labelStyle,
+              valueStyle: valueStyle),
         ),
       ],
     );
@@ -328,14 +389,14 @@ class _LabeledValue extends StatelessWidget {
   final TextStyle? valueStyle;
 
   const _LabeledValue({
-    Key? key,
+    super.key,
     required this.icon,
     required this.label,
     required this.value,
     required this.color,
     this.labelStyle,
     this.valueStyle,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -372,12 +433,12 @@ class _MiniStat extends StatelessWidget {
   final Color? color;
 
   const _MiniStat({
-    Key? key,
+    super.key,
     required this.icon,
     required this.label,
     required this.value,
     this.color,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -394,7 +455,11 @@ class _MiniStat extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[700])),
+              Text(label,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Colors.grey[700])),
               const SizedBox(height: 2),
               Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
             ],
@@ -408,7 +473,8 @@ class _MiniStat extends StatelessWidget {
 class _Divider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Divider(height: 18, thickness: 1, color: Colors.grey.withValues(alpha: 0.2));
+    return Divider(
+        height: 18, thickness: 1, color: Colors.grey.withValues(alpha: 0.2));
   }
 }
 
@@ -424,7 +490,8 @@ class _EmptyHint extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             "No activity yet today",
-            style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600),
+            style:
+                TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 2),
           Text(

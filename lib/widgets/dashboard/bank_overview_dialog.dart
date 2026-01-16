@@ -16,14 +16,14 @@ class BankOverviewDialog extends StatefulWidget {
   final String userName;
 
   const BankOverviewDialog({
-    Key? key,
+    super.key,
     required this.bankSlug,
     required this.bankName,
     required this.allExpenses,
     required this.allIncomes,
     required this.userPhone,
     required this.userName,
-  }) : super(key: key);
+  });
 
   @override
   State<BankOverviewDialog> createState() => _BankOverviewDialogState();
@@ -44,7 +44,8 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
     // 1. Filter all tx for this bank
     final bankTx = <dynamic>[...widget.allExpenses, ...widget.allIncomes];
     final relevant = bankTx.where((tx) {
-      final b = (tx is ExpenseItem) ? tx.issuerBank : (tx as IncomeItem).issuerBank;
+      final b =
+          (tx is ExpenseItem) ? tx.issuerBank : (tx as IncomeItem).issuerBank;
       if (b == null) return false;
       return _slugBank(b) == widget.bankSlug;
     }).toList();
@@ -67,18 +68,20 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
         isDebit = true;
       } else if (tx is IncomeItem) {
         // Incomes might not have cardLast4 populated often, but if they do:
-        last4 = null; // Usually we don't track card last4 on income unless parsed
+        last4 =
+            null; // Usually we don't track card last4 on income unless parsed
         type = tx.instrument;
         network = tx.instrumentNetwork;
         amount = tx.amount;
         isDebit = false;
       }
 
-      if (last4 == null || last4.isEmpty) continue; // Skip if no card info? Or group into "Unknown"?
+      if (last4 == null || last4.isEmpty)
+        continue; // Skip if no card info? Or group into "Unknown"?
       // The screenshot showed specific cards. Let's assume we have last4.
 
       final key = "$last4-${type ?? 'Unknown'}";
-      
+
       if (!map.containsKey(key)) {
         map[key] = _UniqueCard(
           last4: last4,
@@ -87,7 +90,7 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
           bankName: widget.bankName,
         );
       }
-      
+
       final c = map[key]!;
       if (isDebit) {
         c.stats.totalDebit += amount;
@@ -112,7 +115,8 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
     final relevantExpenses = widget.allExpenses.where((e) {
       if (e.issuerBank == null) return false;
       if (_slugBank(e.issuerBank!) != widget.bankSlug) return false;
-      if (_selectedCardLast4 != null && e.cardLast4 != _selectedCardLast4) return false;
+      if (_selectedCardLast4 != null && e.cardLast4 != _selectedCardLast4)
+        return false;
       return true;
     }).toList();
 
@@ -121,7 +125,7 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
       if (_slugBank(i.issuerBank!) != widget.bankSlug) return false;
       // Incomes might not have last4, so strict filtering might hide them?
       // For now assume strict filtering if selected.
-      if (_selectedCardLast4 != null) return false; 
+      if (_selectedCardLast4 != null) return false;
       return true;
     }).toList();
 
@@ -151,7 +155,8 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
             children: [
               // Header
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
                 color: Colors.white,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -185,7 +190,7 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
                   ],
                 ),
               ),
-              
+
               const Divider(height: 1),
 
               // Scrollable Content
@@ -202,47 +207,57 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
                           spacing: 24,
                           runSpacing: 24,
                           children: _cards.map((c) {
-                             final isSelected = _selectedCardLast4 == c.last4;
-                             return GestureDetector(
-                               onTap: () {
-                                 setState(() {
-                                   if (isSelected) _selectedCardLast4 = null;
-                                   else _selectedCardLast4 = c.last4;
-                                 });
-                               },
-                               child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(24),
-                                    border: isSelected 
+                            final isSelected = _selectedCardLast4 == c.last4;
+                            return GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  if (isSelected)
+                                    _selectedCardLast4 = null;
+                                  else
+                                    _selectedCardLast4 = c.last4;
+                                });
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: isSelected
                                       ? Border.all(color: Fx.mint, width: 3)
-                                      : Border.all(color: Colors.transparent, width: 3),
-                                    boxShadow: isSelected 
-                                      ? [BoxShadow(color: Fx.mint.withValues(alpha: 0.3), blurRadius: 12)] 
+                                      : Border.all(
+                                          color: Colors.transparent, width: 3),
+                                  boxShadow: isSelected
+                                      ? [
+                                          BoxShadow(
+                                              color: Fx.mint
+                                                  .withValues(alpha: 0.3),
+                                              blurRadius: 12)
+                                        ]
                                       : [],
+                                ),
+                                child: BankCardItem(
+                                  bankName: widget.bankName,
+                                  cardType: c.type,
+                                  last4: c.last4,
+                                  holderName: widget.userName,
+                                  // Cycle colors based on index or type?
+                                  colorTheme: _getColorForCard(c),
+                                  logoAsset: _getLogoAsset(widget.bankSlug),
+                                  stats: BankStats(
+                                    totalDebit: c.stats.totalDebit,
+                                    totalCredit: c.stats.totalCredit,
+                                    txCount: c.stats.txCount,
                                   ),
-                                  child: BankCardItem(
-                                    bankName: widget.bankName,
-                                    cardType: c.type,
-                                    last4: c.last4,
-                                    holderName: widget.userName,
-                                    // Cycle colors based on index or type?
-                                    colorTheme: _getColorForCard(c), 
-                                    logoAsset: _getLogoAsset(widget.bankSlug),
-                                    stats: BankStats(
-                                      totalDebit: c.stats.totalDebit,
-                                      totalCredit: c.stats.totalCredit,
-                                      txCount: c.stats.txCount,
-                                    ),
-                                    onTap: () {
-                                       setState(() {
-                                         if (isSelected) _selectedCardLast4 = null;
-                                         else _selectedCardLast4 = c.last4;
-                                       });
-                                    },
-                                  ),
-                               ),
-                             );
+                                  onTap: () {
+                                    setState(() {
+                                      if (isSelected)
+                                        _selectedCardLast4 = null;
+                                      else
+                                        _selectedCardLast4 = c.last4;
+                                    });
+                                  },
+                                ),
+                              ),
+                            );
                           }).toList(),
                         ),
 
@@ -250,47 +265,50 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
 
                       // Filter Header
                       Text(
-                         _selectedCardLast4 == null 
-                           ? "All Bank Transactions"
-                           : "Transactions • XX${_selectedCardLast4}",
-                         style: const TextStyle(
-                           fontSize: 18, 
-                           fontWeight: FontWeight.bold, 
-                           color: Colors.black87
-                         ),
+                        _selectedCardLast4 == null
+                            ? "All Bank Transactions"
+                            : "Transactions • XX${_selectedCardLast4}",
+                        style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87),
                       ),
                       const SizedBox(height: 16),
-                      
+
                       // List
                       Container(
                         decoration: BoxDecoration(
-                           color: Colors.white,
-                           borderRadius: BorderRadius.circular(16),
-                           border: Border.all(color: Colors.grey.shade200),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey.shade200),
                         ),
                         clipBehavior: Clip.antiAlias,
                         child: UnifiedTransactionList(
-                            expenses: relevantExpenses,
-                            incomes: relevantIncomes,
-                            friendsById: {}, // Pass empty for now or fetch
-                            userPhone: widget.userPhone,
-                            previewCount: 20,
-                            enableScrolling: false, // Let parent scroll
-                             onEdit: (tx) async {
-                                 if (tx is ExpenseItem) {
-                                    await showModalBottomSheet(
-                                      context: context,
-                                      isScrollControlled: true,
-                                      builder: (_) => TransactionModal(
-                                        expense: tx,
-                                        userPhone: widget.userPhone,
-                                        onSave: (updated) => ExpenseService().updateExpense(widget.userPhone, updated),
-                                        onDelete: (id) => ExpenseService().deleteExpense(widget.userPhone, id),
-                                      ),
-                                    );
-                                    setState(() {}); 
-                                 }
-                              },
+                          expenses: relevantExpenses,
+                          incomes: relevantIncomes,
+                          friendsById: {}, // Pass empty for now or fetch
+                          userPhone: widget.userPhone,
+                          previewCount: 20,
+                          enableScrolling: false, // Let parent scroll
+                          onEdit: (tx) async {
+                            if (tx is ExpenseItem) {
+                              await showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                builder: (_) => TransactionModal(
+                                  expense: tx,
+                                  userPhone: widget.userPhone,
+                                  onSave: (updated) => ExpenseService()
+                                      .updateExpense(widget.userPhone, updated),
+                                  onDelete: (id) => ExpenseService()
+                                      .deleteExpense(widget.userPhone, id),
+                                ),
+                              );
+                              if (mounted) {
+                                setState(() {});
+                              }
+                            }
+                          },
                         ),
                       ),
                     ],
@@ -316,7 +334,7 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
   }
 
   String? _getLogoAsset(String slug) {
-     return 'assets/banks/$slug.png'; // Basic path assumption
+    return 'assets/banks/$slug.png'; // Basic path assumption
   }
 
   String _getColorForCard(_UniqueCard c) {

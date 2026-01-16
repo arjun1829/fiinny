@@ -64,11 +64,14 @@ class ContactNameService extends ChangeNotifier {
     final remoteTrimmed = remoteName?.trim() ?? '';
     final cached = lookupCached(phone);
 
-    if (cached != null && cached.isNotEmpty && shouldPreferContact(remoteTrimmed, phone)) {
+    if (cached != null &&
+        cached.isNotEmpty &&
+        shouldPreferContact(remoteTrimmed, phone)) {
       return cached;
     }
 
-    if (remoteTrimmed.isNotEmpty && !shouldPreferContact(remoteTrimmed, phone)) {
+    if (remoteTrimmed.isNotEmpty &&
+        !shouldPreferContact(remoteTrimmed, phone)) {
       return remoteTrimmed;
     }
 
@@ -129,8 +132,8 @@ class ContactNameService extends ChangeNotifier {
         });
         _cache = restored;
       }
-    } catch (e, stack) {
-      debugPrint('ContactNameService prefs load failed: $e\n$stack');
+    } catch (e) {
+      // debugPrint('ContactNameService prefs load failed: $e\n$stack');
     } finally {
       _prefsLoaded = true;
     }
@@ -141,8 +144,8 @@ class ContactNameService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_prefsKey, jsonEncode(_cache));
-    } catch (e, stack) {
-      debugPrint('ContactNameService prefs save failed: $e\n$stack');
+    } catch (e) {
+      // debugPrint('ContactNameService prefs save failed: $e\n$stack');
     }
   }
 
@@ -188,8 +191,8 @@ class ContactNameService extends ChangeNotifier {
         await _persistCache();
         notifyListeners();
       }
-    } catch (e, stack) {
-      debugPrint('ContactNameService load failed: $e\n$stack');
+    } catch (e) {
+      // debugPrint('ContactNameService load failed: $e\n$stack');
     }
   }
 

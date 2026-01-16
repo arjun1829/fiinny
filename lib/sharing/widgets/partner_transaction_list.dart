@@ -9,11 +9,11 @@ class PartnerTransactionList extends StatefulWidget {
   final int maxItems;
 
   const PartnerTransactionList({
-    Key? key,
+    super.key,
     required this.partnerUserId,
     this.lookbackDays = 7,
     this.maxItems = 100,
-  }) : super(key: key);
+  });
 
   @override
   State<PartnerTransactionList> createState() => _PartnerTransactionListState();
@@ -202,9 +202,12 @@ class _PartnerTransactionListState extends State<PartnerTransactionList> {
     final today = DateTime.now();
     final justDate = DateTime(date.year, date.month, date.day);
     final todayDate = DateTime(today.year, today.month, today.day);
-    if (justDate == todayDate) return 'Today';
-    if (justDate == todayDate.subtract(const Duration(days: 1)))
+    if (justDate == todayDate) {
+      return 'Today';
+    }
+    if (justDate == todayDate.subtract(const Duration(days: 1))) {
       return 'Yesterday';
+    }
     return DateFormat('d MMM, yyyy').format(date);
   }
 }
@@ -217,6 +220,7 @@ class _SharingUnifiedTile extends StatelessWidget {
   final String time;
 
   const _SharingUnifiedTile({
+    super.key,
     required this.isIncome,
     required this.amount,
     required this.category,
@@ -268,7 +272,10 @@ class _SharingUnifiedTile extends StatelessWidget {
                 height: 68,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [_side.withValues(alpha: .95), _side.withValues(alpha: .7)],
+                    colors: [
+                      _side.withValues(alpha: .95),
+                      _side.withValues(alpha: .7)
+                    ],
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                   ),

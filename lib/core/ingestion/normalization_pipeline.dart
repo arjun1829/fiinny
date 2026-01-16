@@ -9,7 +9,9 @@ class NormalizationPipeline {
 
   /// Main entry point: Process a batch of raw events into clean transactions
   Future<List<Transaction>> process(List<RawTransactionEvent> events) async {
-    if (events.isEmpty) return [];
+    if (events.isEmpty) {
+      return [];
+    }
 
     // 1. Deduplicate (Merge SMS & Email)
     final uniqueEvents = _deduplicate(events);
@@ -31,12 +33,13 @@ class NormalizationPipeline {
     // Simple strategy: Group by (Amount + Date(Day) + AccountHint)
     // If multiple exist, prefer Email > SMS
     // In a real system, we'd merge metadata. Here we pick the "best" source.
-    
+
     final Map<String, List<RawTransactionEvent>> groups = {};
 
     for (final e in events) {
       // Key: 120.50_2023-10-27_1234
-      final key = '${e.amount.toStringAsFixed(2)}_${e.timestamp.year}-${e.timestamp.month}-${e.timestamp.day}_${e.accountHint ?? "NOHINT"}';
+      final key =
+          '${e.amount.toStringAsFixed(2)}_${e.timestamp.year}-${e.timestamp.month}-${e.timestamp.day}_${e.accountHint ?? "NOHINT"}';
       groups.putIfAbsent(key, () => []).add(e);
     }
 
@@ -49,8 +52,12 @@ class NormalizationPipeline {
         // Conflict resolution: Prefer Email over SMS
         // Sort: Email first
         group.sort((a, b) {
-          if (a.sourceChannel == TransactionSourceChannel.email) return -1;
-          if (b.sourceChannel == TransactionSourceChannel.email) return 1;
+          if (a.sourceChannel == TransactionSourceChannel.email) {
+            return -1;
+          }
+          if (b.sourceChannel == TransactionSourceChannel.email) {
+            return 1;
+          }
           return 0;
         });
         result.add(group.first);
@@ -87,17 +94,17 @@ class NormalizationPipeline {
       merchant: merchant,
       amount: amountBase,
       description: event.rawText,
-      
+
       regionCode: region.countryCode,
       baseCurrency: region.defaultCurrency,
       originalCurrency: event.currency,
       amountOriginal: event.amount,
       fxRate: fxRate,
-      
+
       sourceChannels: [event.sourceChannel],
       instrumentType: event.instrumentType,
       // instrumentId: resolveAccount(event.accountHint),
-      
+
       category: category,
       metadata: event.extraMetadata,
     );

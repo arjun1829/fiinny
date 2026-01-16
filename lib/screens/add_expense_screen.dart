@@ -41,7 +41,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   List<String> _subcategories = [];
 
   // --- New: Local label list for this user session ---
-  List<String> _labels = [
+  final List<String> _labels = [
     "Goa Trip",
     "Birthday",
     "Office",
@@ -94,7 +94,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     final desc = _descController.text.trim();
     final label = _labelController.text.trim().isNotEmpty
         ? _labelController.text.trim()
-        : (_selectedLabel ?? null);
+        : _selectedLabel;
 
     // Add new label to _labels if not present
     if (label != null && !_labels.contains(label)) {
@@ -149,11 +149,13 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         Navigator.of(context).pop(true);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Failed to add expense.'),
-            backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Failed to add expense.'),
+              backgroundColor: Colors.red),
+        );
+      }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }

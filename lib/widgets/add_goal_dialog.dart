@@ -8,7 +8,7 @@ import '../models/goal_model.dart';
 class AddGoalDialog extends StatefulWidget {
   final Function(GoalModel) onAdd;
 
-  const AddGoalDialog({required this.onAdd, Key? key}) : super(key: key);
+  const AddGoalDialog({required this.onAdd, super.key});
 
   @override
   State<AddGoalDialog> createState() => _AddGoalDialogState();
@@ -30,11 +30,35 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
 
   // Options
   final List<String> _categoryOptions = const [
-    "Travel", "Gadget", "Emergency", "Education", "Health", "Home", "Vehicle", "Other"
+    "Travel",
+    "Gadget",
+    "Emergency",
+    "Education",
+    "Health",
+    "Home",
+    "Vehicle",
+    "Other"
   ];
   final List<String> _priorityOptions = const ["Low", "Medium", "High"];
   final List<String> _emojiOptions = const [
-    "🎯","🎁","📱","💻","🎒","✈️","🏡","🚗","🍼","💍","🏖️","🎓","🏥","📷","🛠️","🛋️","🏋️","📚"
+    "🎯",
+    "🎁",
+    "📱",
+    "💻",
+    "🎒",
+    "✈️",
+    "🏡",
+    "🚗",
+    "🍼",
+    "💍",
+    "🏖️",
+    "🎓",
+    "🏥",
+    "📷",
+    "🛠️",
+    "🛋️",
+    "🏋️",
+    "📚"
   ];
   final List<int> _quickAmounts = const [5000, 10000, 25000, 50000, 100000];
 
@@ -48,12 +72,14 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
   int _tipIndex = 0;
 
   // Helpers
-  final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+  final _inr =
+      NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
   Color get _brand => const Color(0xFF09857a);
 
   bool get _valid {
     final title = _titleController.text.trim();
-    final amount = double.tryParse(_amountController.text.replaceAll(',', '')) ?? 0.0;
+    final amount =
+        double.tryParse(_amountController.text.replaceAll(',', '')) ?? 0.0;
     return title.isNotEmpty && amount > 0 && _targetDate != null;
   }
 
@@ -68,7 +94,8 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
   }
 
   // --- UI helpers (match AddExpenseDialog look) ---
-  InputDecoration _pillDec({required String label, IconData? icon, String? hint}) {
+  InputDecoration _pillDec(
+      {required String label, IconData? icon, String? hint}) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
@@ -92,9 +119,10 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
   }
 
   Widget _sectionLabel(String text) => Padding(
-    padding: const EdgeInsets.only(top: 10, bottom: 6),
-    child: Text(text, style: TextStyle(color: _brand, fontWeight: FontWeight.w700)),
-  );
+        padding: const EdgeInsets.only(top: 10, bottom: 6),
+        child: Text(text,
+            style: TextStyle(color: _brand, fontWeight: FontWeight.w700)),
+      );
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
@@ -130,13 +158,18 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
   }
 
   Map<String, String> _suggestion() {
-    final amount = double.tryParse(_amountController.text.replaceAll(',', '')) ?? 0.0;
+    final amount =
+        double.tryParse(_amountController.text.replaceAll(',', '')) ?? 0.0;
     if (_targetDate == null || amount <= 0) {
       return {"subtitle": "Pick a date & amount to see plan", "detail": ""};
     }
     final now = DateTime.now();
     final daysLeft = _targetDate!.difference(now).inDays;
-    if (daysLeft <= 0) return {"subtitle": "Target date is today — try a later date", "detail": ""};
+    if (daysLeft <= 0)
+      return {
+        "subtitle": "Target date is today — try a later date",
+        "detail": ""
+      };
     final perMonth = (amount / daysLeft) * 30;
     return {
       "subtitle": "Save around ${_inr.format(perMonth)} / month",
@@ -147,7 +180,8 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
   void _onAdd() {
     if (!_valid) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please fill title, amount, and target date.")),
+        const SnackBar(
+            content: Text("Please fill title, amount, and target date.")),
       );
       return;
     }
@@ -158,7 +192,8 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
       id: '',
       title: _titleController.text.trim(),
       emoji: _emojiController.text.isNotEmpty ? _emojiController.text : "🎯",
-      targetAmount: double.tryParse(_amountController.text.replaceAll(',', '')) ?? 0.0,
+      targetAmount:
+          double.tryParse(_amountController.text.replaceAll(',', '')) ?? 0.0,
       savedAmount: 0,
       targetDate: _targetDate!,
       category: _category ?? "Other",
@@ -233,8 +268,8 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                         tooltip: "New tip",
                         icon: const Icon(Icons.auto_awesome_rounded),
                         color: _brand,
-                        onPressed: () =>
-                            setState(() => _tipIndex = (_tipIndex + 1) % _tips.length),
+                        onPressed: () => setState(
+                            () => _tipIndex = (_tipIndex + 1) % _tips.length),
                       ),
                       TextButton(
                         onPressed: () => Navigator.pop(context, false),
@@ -248,14 +283,16 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                   // Tip
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: _brand.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       _tips[_tipIndex],
-                      style: TextStyle(color: _brand, fontWeight: FontWeight.w600),
+                      style:
+                          TextStyle(color: _brand, fontWeight: FontWeight.w600),
                     ),
                   ),
 
@@ -263,7 +300,9 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
 
                   // Preview
                   _PreviewRow(
-                    emoji: _emojiController.text.isNotEmpty ? _emojiController.text : "🎯",
+                    emoji: _emojiController.text.isNotEmpty
+                        ? _emojiController.text
+                        : "🎯",
                     title: _titleController.text.trim().isEmpty
                         ? "Your awesome goal"
                         : _titleController.text.trim(),
@@ -297,24 +336,32 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             itemCount: _emojiOptions.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 6),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 6),
                             itemBuilder: (ctx, i) {
                               final e = _emojiOptions[i];
                               final selected = e == _emojiController.text;
                               return GestureDetector(
-                                onTap: () => setState(() => _emojiController.text = e),
+                                onTap: () =>
+                                    setState(() => _emojiController.text = e),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 180),
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
                                   decoration: BoxDecoration(
-                                    color: selected ? _brand.withValues(alpha: 0.12) : Colors.grey[100],
+                                    color: selected
+                                        ? _brand.withValues(alpha: 0.12)
+                                        : Colors.grey[100],
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
-                                      color: selected ? _brand : Colors.transparent,
+                                      color: selected
+                                          ? _brand
+                                          : Colors.transparent,
                                       width: 1,
                                     ),
                                   ),
-                                  child: Text(e, style: const TextStyle(fontSize: 20)),
+                                  child: Text(e,
+                                      style: const TextStyle(fontSize: 20)),
                                 ),
                               );
                             },
@@ -328,7 +375,8 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                   _sectionLabel("Title"),
                   TextField(
                     controller: _titleController,
-                    decoration: _pillDec(label: "Goal Title", icon: Icons.edit_rounded),
+                    decoration:
+                        _pillDec(label: "Goal Title", icon: Icons.edit_rounded),
                     onChanged: (_) => setState(() {}),
                     textInputAction: TextInputAction.next,
                   ),
@@ -342,8 +390,11 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                       icon: Icons.currency_rupee_rounded,
                       hint: "e.g. 50000",
                     ),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))
+                    ],
                     onChanged: (_) => setState(() {}),
                     textInputAction: TextInputAction.next,
                   ),
@@ -374,7 +425,8 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                       return ChoiceChip(
                         label: Text(cat),
                         selected: selected,
-                        onSelected: (_) => setState(() => _category = selected ? null : cat),
+                        onSelected: (_) =>
+                            setState(() => _category = selected ? null : cat),
                         selectedColor: _brand.withValues(alpha: 0.12),
                       );
                     }).toList(),
@@ -400,7 +452,8 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                     borderRadius: BorderRadius.circular(12),
                     onTap: _pickDate,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
                       decoration: BoxDecoration(
                         border: Border.all(color: Colors.grey[300]!),
                         borderRadius: BorderRadius.circular(12),
@@ -412,8 +465,10 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                           Text(
                             _targetDate == null
                                 ? "Select target date"
-                                : DateFormat("d MMM, yyyy").format(_targetDate!),
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                                : DateFormat("d MMM, yyyy")
+                                    .format(_targetDate!),
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w500),
                           ),
                           const Spacer(),
                           const Icon(Icons.chevron_right_rounded),
@@ -470,9 +525,11 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _brand,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 12),
                           elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
                     ],
@@ -486,7 +543,8 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                         children: _dependencies.map((dep) {
                           return Chip(
                             label: Text(dep),
-                            onDeleted: () => setState(() => _dependencies.remove(dep)),
+                            onDeleted: () =>
+                                setState(() => _dependencies.remove(dep)),
                           );
                         }).toList(),
                       ),
@@ -513,8 +571,10 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
                         backgroundColor: _valid ? _brand : Colors.grey[300],
                         foregroundColor: _valid ? Colors.white : Colors.black54,
                         elevation: 6,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
                       ),
                     ),
                   ),
@@ -536,17 +596,18 @@ class _PreviewRow extends StatelessWidget {
   final Color brand;
 
   const _PreviewRow({
-    Key? key,
+    super.key,
     required this.emoji,
     required this.title,
     required this.date,
     required this.amountText,
     required this.brand,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
-    final inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+    final inr =
+        NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
     final amount = double.tryParse(amountText.replaceAll(',', '')) ?? 0.0;
     return Container(
       width: double.infinity,
@@ -565,22 +626,27 @@ class _PreviewRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title.isEmpty ? "Your awesome goal" : title,
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 16)),
                 const SizedBox(height: 4),
                 Row(
                   children: [
                     Icon(Icons.calendar_today_rounded, size: 14, color: brand),
                     const SizedBox(width: 6),
                     Text(
-                      date == null ? "Pick target date" : DateFormat("d MMM, yyyy").format(date!),
-                      style: TextStyle(color: brand, fontWeight: FontWeight.w600),
+                      date == null
+                          ? "Pick target date"
+                          : DateFormat("d MMM, yyyy").format(date!),
+                      style:
+                          TextStyle(color: brand, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(width: 10),
                     Icon(Icons.currency_rupee_rounded, size: 14, color: brand),
                     const SizedBox(width: 2),
                     Text(
                       amount <= 0 ? "--" : inr.format(amount),
-                      style: TextStyle(color: brand, fontWeight: FontWeight.w600),
+                      style:
+                          TextStyle(color: brand, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -599,11 +665,11 @@ class _SuggestionCard extends StatelessWidget {
   final Color brand;
 
   const _SuggestionCard({
-    Key? key,
+    super.key,
     required this.subtitle,
     required this.detail,
     required this.brand,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -625,7 +691,8 @@ class _SuggestionCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (subtitle.isNotEmpty)
-                  Text(subtitle, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text(subtitle,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
                 if (detail.isNotEmpty)
                   Text(detail, style: const TextStyle(color: Colors.black54)),
               ],
@@ -640,7 +707,7 @@ class _SuggestionCard extends StatelessWidget {
 class _QuickDateChip extends StatelessWidget {
   final String label;
   final int addDays;
-  const _QuickDateChip({required this.label, required this.addDays, Key? key}) : super(key: key);
+  const _QuickDateChip({required this.label, required this.addDays, super.key});
 
   @override
   Widget build(BuildContext context) {

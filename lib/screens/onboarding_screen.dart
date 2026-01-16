@@ -112,6 +112,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         .pickImage(source: ImageSource.gallery, imageQuality: 78);
     if (f != null) {
       final bytes = await f.readAsBytes();
+      if (!mounted) return;
       setState(() {
         _picked = f;
         _pickedBytes = bytes;
@@ -173,10 +174,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       final displayName = name.isNotEmpty ? name : "Fiinny User";
       await FriendService().claimPendingFor(docId, displayName);
     } catch (e) {
-      setState(() {
-        _error = "Could not save. Please try again.";
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = "Could not save. Please try again.";
+          _loading = false;
+        });
+      }
       return;
     }
 

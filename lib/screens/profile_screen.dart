@@ -27,7 +27,7 @@ import 'package:lifemap/core/ads/adaptive_banner.dart';
 import 'package:lifemap/core/ads/ad_ids.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({Key? key}) : super(key: key);
+  const ProfileScreen({super.key});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -39,7 +39,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // ---- Logout helpers ----
   static bool _signingOut = false;
-  static const String _AUTH_ROUTE = '/';
 
   String? profileImageUrl;
   String? avatarAsset;
@@ -54,7 +53,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _personalizeTips = true;
 
   // Theme persistence (Firestore write guard)
-  bool _persistingTheme = false;
 
   // Expand/collapse states — start CLOSED by default
   bool _expandAvatar = false;
@@ -86,35 +84,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   };
 
   String _getUserPhone(User user) => user.phoneNumber ?? '';
-
-  // --- Theme key helpers (persist/read) ---
-  String _themeKey(FiinnyTheme t) {
-    switch (t) {
-      case FiinnyTheme.teal:
-        return 'teal';
-      case FiinnyTheme.black:
-        return 'black';
-      case FiinnyTheme.white:
-        return 'white';
-      case FiinnyTheme.mint:
-        return 'mint';
-    }
-  }
-
-  FiinnyTheme _themeFromKey(String? key) {
-    switch (key) {
-      case 'teal':
-        return FiinnyTheme.teal;
-      case 'black':
-        return FiinnyTheme.black;
-      case 'white':
-        return FiinnyTheme.white;
-      case 'mint':
-        return FiinnyTheme.mint;
-      default:
-        return FiinnyTheme.white;
-    }
-  }
 
   @override
   void initState() {
@@ -225,7 +194,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       final ref =
           FirebaseStorage.instance.ref().child('users/$phoneId/profile.jpg');
+      if (!mounted) return;
       await ref.putFile(file);
+      if (!mounted) return;
       final url = await ref.getDownloadURL();
       setState(() {
         profileImageUrl = url;
@@ -403,6 +374,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _exportData() async {
     final sub = Provider.of<SubscriptionService>(context, listen: false);
+    if (!mounted) return;
     if (!sub.isPremium) {
       _showUpgradeDialog("Unlock Data Export",
           "Export your financial data to JSON/CSV with Premium.");
@@ -584,21 +556,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // ---------- UI helpers ----------
 
-  Widget _sectionTitle(BuildContext context, String text) {
-    // Kept for any small headings
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontWeight: FontWeight.bold,
-          fontSize: 15,
-          color: Theme.of(context).textTheme.titleMedium?.color,
-        ),
-      ),
-    );
-  }
-
   Widget _cardContainer({required Widget child}) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -611,8 +568,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               blurRadius: 14,
               offset: const Offset(0, 6)),
         ],
-        border:
-            Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.1)),
+        border: Border.all(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.1)),
       ),
       child: child,
     );
@@ -625,7 +582,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (userEmail.trim().isNotEmpty) score++;
     if (userPhone.trim().isNotEmpty) score++;
     if ((profileImageUrl?.isNotEmpty ?? false) ||
-        (avatarAsset?.isNotEmpty ?? false)) score++;
+        (avatarAsset?.isNotEmpty ?? false)) {
+      score++;
+    }
     if (userEmail.trim().isNotEmpty) score++;
     const total = 5;
     return (score / total) * 100.0;
@@ -794,8 +753,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color:
-                      Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(Icons.tune_rounded,
@@ -832,7 +793,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ? Colors.amber.shade700
         : Theme.of(context).colorScheme.primary;
 
-    void _handleTap() {
+    void handleTap() {
       if (isPremium) {
         Navigator.push(
             context,
@@ -862,7 +823,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         trailing: isPremium
             ? const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey)
             : ElevatedButton(
-                onPressed: _handleTap,
+                onPressed: handleTap,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.black,
                   foregroundColor: Colors.amberAccent,
@@ -871,7 +832,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 child: const Text("Upgrade"),
               ),
-        onTap: _handleTap,
+        onTap: handleTap,
       ),
     );
   }
@@ -1293,7 +1254,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary
+                    .withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(

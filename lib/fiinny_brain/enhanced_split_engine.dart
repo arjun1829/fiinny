@@ -7,29 +7,34 @@ class EnhancedSplitEngine {
     List<ExpenseItem> expenses,
     String userPhone, {
     Map<String, String>? friendNames, // phone -> name mapping
-    Map<String, String>? groupNames,  // groupId -> name mapping
+    Map<String, String>? groupNames, // groupId -> name mapping
   }) {
     if (expenses.isEmpty) {
       return EnhancedSplitReport.empty();
     }
 
     // Filter to split expenses only (has friendIds or groupId)
-    final splitExpenses = expenses.where((e) => 
-      e.friendIds.isNotEmpty || (e.groupId != null && e.groupId!.isNotEmpty)
-    ).toList();
+    final splitExpenses = expenses
+        .where((e) =>
+            e.friendIds.isNotEmpty ||
+            (e.groupId != null && e.groupId!.isNotEmpty))
+        .toList();
 
     if (splitExpenses.isEmpty) {
       return EnhancedSplitReport.empty();
     }
 
     // 1. Analyze friend-level details
-    final friendDetails = _analyzeFriendDetails(splitExpenses, userPhone, friendNames ?? {});
+    final friendDetails =
+        _analyzeFriendDetails(splitExpenses, userPhone, friendNames ?? {});
 
     // 2. Analyze group details
-    final groupDetails = _analyzeGroupDetails(splitExpenses, userPhone, groupNames ?? {});
+    final groupDetails =
+        _analyzeGroupDetails(splitExpenses, userPhone, groupNames ?? {});
 
     // 3. Analyze behavior patterns
-    final behavior = _analyzeBehavior(splitExpenses, userPhone, friendDetails, expenses);
+    final behavior =
+        _analyzeBehavior(splitExpenses, userPhone, friendDetails, expenses);
 
     // 4. Identify risks
     final risks = _identifyRisks(friendDetails, groupDetails);
@@ -37,7 +42,7 @@ class EnhancedSplitEngine {
     // 5. Calculate totals
     double totalReceivable = 0;
     double totalPayable = 0;
-    
+
     for (final detail in friendDetails.values) {
       if (detail.netBalance > 0) {
         totalReceivable += detail.netBalance;
@@ -69,12 +74,15 @@ class EnhancedSplitEngine {
     for (final expense in splitExpenses) {
       // Case 1: Friend is in friendIds list
       for (final friendPhone in expense.friendIds) {
-        if (friendPhone == userPhone) continue;
+        if (friendPhone == userPhone) {
+          continue;
+        }
         friendMap.putIfAbsent(friendPhone, () => []).add(expense);
       }
-      
+
       // Case 2: Friend is the payer (and user is in friendIds)
-      if (expense.payerId != userPhone && expense.friendIds.contains(userPhone)) {
+      if (expense.payerId != userPhone &&
+          expense.friendIds.contains(userPhone)) {
         friendMap.putIfAbsent(expense.payerId, () => []).add(expense);
       }
     }
@@ -101,19 +109,21 @@ class EnhancedSplitEngine {
         }
 
         // Check if settled
-        final isSettled = expense.settledFriendIds.contains(friendPhone) || 
-                         expense.settledFriendIds.contains(userPhone);
+        final isSettled = expense.settledFriendIds.contains(friendPhone) ||
+            expense.settledFriendIds.contains(userPhone);
 
         if (!isSettled) {
           unsettledCount++;
-          if (oldestUnsettledDate == null || expense.date.isBefore(oldestUnsettledDate)) {
+          if (oldestUnsettledDate == null ||
+              expense.date.isBefore(oldestUnsettledDate)) {
             oldestUnsettledDate = expense.date;
           }
         }
 
         // Calculate balance
-        final splitAmount = _calculateSplitAmount(expense, userPhone, friendPhone);
-        
+        final splitAmount =
+            _calculateSplitAmount(expense, userPhone, friendPhone);
+
         if (expense.payerId == userPhone) {
           totalPaidByUser += splitAmount;
           if (!isSettled) {
@@ -133,13 +143,15 @@ class EnhancedSplitEngine {
 
         // Category breakdown
         final category = expense.category ?? 'Uncategorized';
-        categoryBreakdown[category] = (categoryBreakdown[category] ?? 0) + splitAmount;
+        categoryBreakdown[category] =
+            (categoryBreakdown[category] ?? 0) + splitAmount;
       }
 
       // Calculate days since last settlement
       int daysSinceLastSettlement = 0;
       if (oldestUnsettledDate != null) {
-        daysSinceLastSettlement = DateTime.now().difference(oldestUnsettledDate).inDays;
+        daysSinceLastSettlement =
+            DateTime.now().difference(oldestUnsettledDate).inDays;
       }
 
       details[friendPhone] = FriendSplitDetail(
@@ -162,14 +174,16 @@ class EnhancedSplitEngine {
   }
 
   /// Calculate split amount for a specific friend in an expense
-  static double _calculateSplitAmount(ExpenseItem expense, String userPhone, String friendPhone) {
+  static double _calculateSplitAmount(
+      ExpenseItem expense, String userPhone, String friendPhone) {
     // Check custom splits first
     if (expense.customSplits != null && expense.customSplits!.isNotEmpty) {
       return expense.customSplits![friendPhone] ?? 0;
     }
 
     // Equal split among all participants
-    final participants = expense.friendIds.length + 1; // +1 for payer if not in friendIds
+    final participants =
+        expense.friendIds.length + 1; // +1 for payer if not in friendIds
     return expense.amount / participants;
   }
 
@@ -258,7 +272,8 @@ class EnhancedSplitEngine {
     }
 
     // Calculate percentages
-    final alwaysPaysFirst = totalSplitExpenses > 0 && (userPaidCount / totalSplitExpenses) > 0.7;
+    final alwaysPaysFirst =
+        totalSplitExpenses > 0 && (userPaidCount / totalSplitExpenses) > 0.7;
     final lendsEasily = userPaidCount > totalSplitExpenses * 0.5;
 
     // Find most expensive/reliable friends
@@ -271,32 +286,39 @@ class EnhancedSplitEngine {
 
     for (final entry in friendDetails.entries) {
       final detail = entry.value;
-      
+
       if (detail.totalPaidByYou + detail.totalPaidByThem > maxExpense) {
         maxExpense = detail.totalPaidByYou + detail.totalPaidByThem;
         mostExpensiveFriend = entry.key;
       }
 
-      if (detail.daysSinceLastSettlement < minDelay && detail.unsettledExpenses == 0) {
+      if (detail.daysSinceLastSettlement < minDelay &&
+          detail.unsettledExpenses == 0) {
         minDelay = detail.daysSinceLastSettlement;
         mostReliableFriend = entry.key;
       }
 
-      if (detail.daysSinceLastSettlement > maxDelay && detail.unsettledExpenses > 0) {
+      if (detail.daysSinceLastSettlement > maxDelay &&
+          detail.unsettledExpenses > 0) {
         maxDelay = detail.daysSinceLastSettlement;
         mostDelayedFriend = entry.key;
       }
     }
 
     // Calculate social spending percentage
-    final totalExpenseAmount = allExpenses.fold<double>(0, (sum, e) => sum + e.amount);
-    final splitExpenseAmount = splitExpenses.fold<double>(0, (sum, e) => sum + e.amount);
-    final socialSpendingPct = totalExpenseAmount > 0 ? (splitExpenseAmount / totalExpenseAmount) * 100 : 0;
+    final totalExpenseAmount =
+        allExpenses.fold<double>(0, (sum, e) => sum + e.amount);
+    final splitExpenseAmount =
+        splitExpenses.fold<double>(0, (sum, e) => sum + e.amount);
+    final socialSpendingPct = totalExpenseAmount > 0
+        ? (splitExpenseAmount / totalExpenseAmount) * 100
+        : 0;
 
     return SplitBehaviorAnalysis(
       alwaysPaysFirst: alwaysPaysFirst,
       lendsEasily: lendsEasily,
-      avgSettlementDelay: settledCount > 0 ? totalSettlementDelay / settledCount : 0,
+      avgSettlementDelay:
+          settledCount > 0 ? totalSettlementDelay / settledCount : 0,
       mostExpensiveFriend: mostExpensiveFriend,
       mostReliableFriend: mostReliableFriend,
       mostDelayedFriend: mostDelayedFriend,
@@ -314,11 +336,12 @@ class EnhancedSplitEngine {
     // Check for delayed payments (>30 days)
     for (final entry in friendDetails.entries) {
       final detail = entry.value;
-      
+
       if (detail.daysSinceLastSettlement > 30 && detail.unsettledExpenses > 0) {
         risks.add(SplitRisk(
           type: 'DELAYED_PAYMENT',
-          description: '${detail.friendName} has pending amount for ${detail.daysSinceLastSettlement} days',
+          description:
+              '${detail.friendName} has pending amount for ${detail.daysSinceLastSettlement} days',
           friendPhone: entry.key,
           amount: detail.netBalance.abs(),
           days: detail.daysSinceLastSettlement,

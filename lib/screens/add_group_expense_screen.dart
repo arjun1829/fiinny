@@ -12,8 +12,8 @@ class AddGroupExpenseScreen extends StatefulWidget {
   const AddGroupExpenseScreen({
     required this.userPhone,
     required this.group,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<AddGroupExpenseScreen> createState() => _AddGroupExpenseScreenState();
@@ -33,7 +33,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
   Map<String, double>? _customSplits;
 
   // -- New: label support --
-  List<String> _labels = [
+  final List<String> _labels = [
     "Goa Trip",
     "Birthday",
     "Office",
@@ -110,6 +110,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
     );
 
     await ExpenseService().addExpense(widget.userPhone, newExpense);
+    if (!mounted) return;
     Navigator.of(context).pop(true);
   }
 
@@ -221,6 +222,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
       },
     );
 
+    if (!mounted) return;
     if (result != null) {
       setState(() {
         _customSplits = result;

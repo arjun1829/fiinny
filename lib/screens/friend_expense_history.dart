@@ -14,24 +14,27 @@ class FriendExpenseHistoryScreen extends StatefulWidget {
   final FriendModel friend;
 
   const FriendExpenseHistoryScreen({
-    Key? key,
+    super.key,
     required this.userId,
     required this.friend,
-  }) : super(key: key);
+  });
 
   @override
-  State<FriendExpenseHistoryScreen> createState() => _FriendExpenseHistoryScreenState();
+  State<FriendExpenseHistoryScreen> createState() =>
+      _FriendExpenseHistoryScreenState();
 }
 
-class _FriendExpenseHistoryScreenState extends State<FriendExpenseHistoryScreen> {
+class _FriendExpenseHistoryScreenState
+    extends State<FriendExpenseHistoryScreen> {
   late Stream<List<ExpenseItem>> _expensesStream;
 
   @override
   void initState() {
     super.initState();
-    _expensesStream = ExpenseService()
-        .getExpensesStream(widget.userId)
-        .map((list) => list.where((e) => e.friendIds.contains(widget.friend.phone)).toList());
+    _expensesStream = ExpenseService().getExpensesStream(widget.userId).map(
+        (list) => list
+            .where((e) => e.friendIds.contains(widget.friend.phone))
+            .toList());
   }
 
   Future<void> _settleExpense(ExpenseItem expense) async {
@@ -41,8 +44,9 @@ class _FriendExpenseHistoryScreenState extends State<FriendExpenseHistoryScreen>
     }
     final updated = expense.copyWith(settledFriendIds: newSettled);
     await ExpenseService().updateExpense(widget.userId, updated);
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+      const SnackBar(
         content: Text('Marked as settled!'),
         backgroundColor: mintGreen,
       ),
@@ -57,7 +61,8 @@ class _FriendExpenseHistoryScreenState extends State<FriendExpenseHistoryScreen>
         preferredSize: const Size.fromHeight(74),
         child: ClipRRect(
           borderRadius: const BorderRadius.only(
-            bottomLeft: Radius.circular(18), bottomRight: Radius.circular(18),
+            bottomLeft: Radius.circular(18),
+            bottomRight: Radius.circular(18),
           ),
           child: Container(
             height: 74,
@@ -74,7 +79,8 @@ class _FriendExpenseHistoryScreenState extends State<FriendExpenseHistoryScreen>
             child: SafeArea(
               child: Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   child: Row(
                     children: [
                       Text(
@@ -111,13 +117,17 @@ class _FriendExpenseHistoryScreenState extends State<FriendExpenseHistoryScreen>
           StreamBuilder<List<ExpenseItem>>(
             stream: _expensesStream,
             builder: (context, snapshot) {
-              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+              if (!snapshot.hasData)
+                return const Center(child: CircularProgressIndicator());
               final expenses = snapshot.data!;
               if (expenses.isEmpty) {
                 return Center(
                   child: Text(
                     'No shared expenses with this friend.',
-                    style: TextStyle(color: deepTeal, fontSize: 18, fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                        color: deepTeal,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500),
                   ),
                 );
               }
@@ -129,7 +139,8 @@ class _FriendExpenseHistoryScreenState extends State<FriendExpenseHistoryScreen>
                   final expense = expenses[i];
                   final splitCount = (expense.friendIds.length + 1);
                   final share = expense.amount / splitCount;
-                  final isSettled = expense.settledFriendIds.contains(widget.friend.phone);
+                  final isSettled =
+                      expense.settledFriendIds.contains(widget.friend.phone);
 
                   return _GlassExpenseCard(
                     child: ListTile(
@@ -137,32 +148,37 @@ class _FriendExpenseHistoryScreenState extends State<FriendExpenseHistoryScreen>
                         backgroundColor: tiffanyBlue.withValues(alpha: 0.75),
                         child: Text(
                           expense.type.isNotEmpty ? expense.type[0] : 'E',
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, color: Colors.white),
                         ),
                       ),
                       title: Text(
                         '${expense.type} • ₹${share.toStringAsFixed(2)}',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: deepTeal),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, color: deepTeal),
                       ),
                       subtitle: Text(
                         'On ${expense.date.day}/${expense.date.month}/${expense.date.year}\n'
-                            '${expense.note.isNotEmpty ? expense.note : ""}',
+                        '${expense.note.isNotEmpty ? expense.note : ""}',
                         style: const TextStyle(fontSize: 13),
                       ),
                       isThreeLine: true,
                       trailing: isSettled
                           ? Chip(
-                        label: const Text('Settled', style: TextStyle(fontWeight: FontWeight.w500)),
-                        backgroundColor: mintGreen.withValues(alpha: 0.63),
-                      )
+                              label: const Text('Settled',
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.w500)),
+                              backgroundColor:
+                                  mintGreen.withValues(alpha: 0.63),
+                            )
                           : ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: deepTeal,
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: () => _settleExpense(expense),
-                        child: const Text('Settle Up'),
-                      ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: deepTeal,
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () => _settleExpense(expense),
+                              child: const Text('Settle Up'),
+                            ),
                     ),
                   );
                 },
@@ -186,7 +202,8 @@ class _GlassExpenseCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(15),
         color: Colors.white.withValues(alpha: 0.16),
-        border: Border.all(color: tiffanyBlue.withValues(alpha: 0.18), width: 1),
+        border:
+            Border.all(color: tiffanyBlue.withValues(alpha: 0.18), width: 1),
         boxShadow: [
           BoxShadow(
             color: mintGreen.withValues(alpha: 0.10),

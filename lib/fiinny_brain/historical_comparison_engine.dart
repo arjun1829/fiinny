@@ -15,12 +15,14 @@ class HistoricalComparisonEngine {
     // 1. Savings Rate Trend
     final currentSavings = current.behavior.savingsRate;
     final previousSavings = previous.behavior.savingsRate;
-    final savingsRateTrend = _calculatePercentChange(previousSavings, currentSavings);
+    final savingsRateTrend =
+        _calculatePercentChange(previousSavings, currentSavings);
 
     // 2. Expense Growth
     final currentExpense = current.expenseSummary.total;
     final previousExpense = previous.expenseSummary.total;
-    final expenseGrowth = _calculatePercentChange(previousExpense, currentExpense);
+    final expenseGrowth =
+        _calculatePercentChange(previousExpense, currentExpense);
 
     // 3. Category Trends
     final categoryTrends = <String, double>{};
@@ -31,16 +33,19 @@ class HistoricalComparisonEngine {
     final previousCategories = previous.patterns.categorySpendPercentage;
 
     // Analyze each category
-    final allCategories = {...currentCategories.keys, ...previousCategories.keys};
-    
+    final allCategories = {
+      ...currentCategories.keys,
+      ...previousCategories.keys
+    };
+
     for (final category in allCategories) {
       final currentPct = currentCategories[category] ?? 0.0;
       final previousPct = previousCategories[category] ?? 0.0;
-      
+
       if (previousPct > 0) {
         final change = _calculatePercentChange(previousPct, currentPct);
         categoryTrends[category] = change;
-        
+
         // Improving = spending less (negative change)
         // Worsening = spending more (positive change > 10%)
         if (change < -5.0) {
@@ -68,7 +73,9 @@ class HistoricalComparisonEngine {
   /// Calculate percentage change from old to new value
   /// Returns 0 if old value is 0 (to avoid division by zero)
   static double _calculatePercentChange(double oldValue, double newValue) {
-    if (oldValue == 0) return 0.0;
+    if (oldValue == 0) {
+      return 0.0;
+    }
     return ((newValue - oldValue) / oldValue.abs()) * 100.0;
   }
 }

@@ -7,8 +7,13 @@ class SnackThrottle {
 
   static void show(BuildContext ctx, String msg, {Color? color}) {
     final now = DateTime.now();
-    if (_lastMsg == msg && _lastAt != null && now.difference(_lastAt!) < const Duration(seconds: 2)) return;
-    _lastMsg = msg; _lastAt = now;
+    if (_lastMsg == msg &&
+        _lastAt != null &&
+        now.difference(_lastAt!) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastMsg = msg;
+    _lastAt = now;
     ScaffoldMessenger.of(ctx).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: color),
     );

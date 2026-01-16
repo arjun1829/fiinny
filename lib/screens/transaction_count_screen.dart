@@ -7,8 +7,7 @@ import '../models/income_item.dart';
 
 class TransactionCountScreen extends StatefulWidget {
   final String userId;
-  const TransactionCountScreen({Key? key, required this.userId})
-      : super(key: key);
+  const TransactionCountScreen({super.key, required this.userId});
 
   @override
   State<TransactionCountScreen> createState() => _TransactionCountScreenState();
@@ -65,6 +64,7 @@ class _TransactionCountScreenState extends State<TransactionCountScreen>
     setState(() => _loading = true);
     _allExpenses = await ExpenseService().getExpenses(widget.userId);
     _allIncomes = await IncomeService().getIncomes(widget.userId);
+    if (!mounted) return;
     _updateForPeriod(animate: true);
     setState(() => _loading = false);
   }

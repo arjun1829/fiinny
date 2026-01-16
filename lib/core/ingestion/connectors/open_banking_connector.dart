@@ -6,7 +6,9 @@ class OpenBankingConnector extends SourceConnector {
 
   @override
   Future<void> initialize() async {
-    if (region.supportedAggregators.isEmpty) return;
+    if (region.supportedAggregators.isEmpty) {
+      return;
+    }
     // TODO: Initialize Plaid/TrueLayer SDKs
   }
 

@@ -1,6 +1,5 @@
 // lib/services/txn_mirror_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 
 class TxnMirrorService {
   TxnMirrorService(this.userDocId, {FirebaseFirestore? firestore})
@@ -20,9 +19,11 @@ class TxnMirrorService {
       _db.collection('users').doc(userDocId).collection('incomes');
 
   // Cursor
-  DocumentReference<Map<String, dynamic>> get _cursorDoc =>
-      _db.collection('users').doc(userDocId)
-          .collection('ingest_index').doc('mirror');
+  DocumentReference<Map<String, dynamic>> get _cursorDoc => _db
+      .collection('users')
+      .doc(userDocId)
+      .collection('ingest_index')
+      .doc('mirror');
 
   Future<int> mirrorRecent({int pageSize = 400, int maxPages = 10}) async {
     assert(pageSize > 0 && pageSize <= 500);
@@ -33,7 +34,7 @@ class TxnMirrorService {
 
     Future<QuerySnapshot<Map<String, dynamic>>> _runPage(Timestamp? c) {
       Query<Map<String, dynamic>> q =
-      _txCol.orderBy('updatedAt', descending: false).limit(pageSize);
+          _txCol.orderBy('updatedAt', descending: false).limit(pageSize);
       if (c != null) q = q.where('updatedAt', isGreaterThan: c);
       return q.get();
     }
@@ -43,14 +44,13 @@ class TxnMirrorService {
 
     // ---- SAFETY: if empty but we know there are transactions, reset cursor once
     if (snap.docs.isEmpty && cursor != null) {
-      final newest = await _txCol
-          .orderBy('updatedAt', descending: true)
-          .limit(1)
-          .get();
+      final newest =
+          await _txCol.orderBy('updatedAt', descending: true).limit(1).get();
       if (newest.docs.isNotEmpty) {
         final newestUpdatedAt = newest.docs.first.data()['updatedAt'];
-        if (newestUpdatedAt is Timestamp && newestUpdatedAt.compareTo(cursor) <= 0) {
-          debugPrint('[TxnMirror] cursor ${cursor.toDate()} is too new; resetting.');
+        if (newestUpdatedAt is Timestamp &&
+            newestUpdatedAt.compareTo(cursor) <= 0) {
+          // debugPrint('[TxnMirror] cursor ${cursor.toDate()} is too new; resetting.');
           cursor = null;
           snap = await _runPage(null);
         }
@@ -60,7 +60,7 @@ class TxnMirrorService {
     while (pages < maxPages) {
       pages++;
       if (snap.docs.isEmpty) {
-        if (pages == 1) debugPrint('[TxnMirror] nothing new to mirror.');
+        // if (pages == 1) debugPrint('[TxnMirror] nothing new to mirror.');
         break;
       }
 
@@ -73,41 +73,75 @@ class TxnMirrorService {
 
         final updatedAt = _asTimestamp(data['updatedAt']);
         if (updatedAt != null &&
-            (newestSeenUpdatedAt == null || updatedAt.compareTo(newestSeenUpdatedAt) > 0)) {
+            (newestSeenUpdatedAt == null ||
+                updatedAt.compareTo(newestSeenUpdatedAt) > 0)) {
           newestSeenUpdatedAt = updatedAt;
         }
 
         final rawStatus = (data['status'] ?? '').toString().toUpperCase();
         final isPostedLike = rawStatus.isEmpty ||
-            rawStatus == 'POSTED' || rawStatus == 'SUCCESS' ||
-            rawStatus == 'COMPLETED' || rawStatus == 'PAID';
+            rawStatus == 'POSTED' ||
+            rawStatus == 'SUCCESS' ||
+            rawStatus == 'COMPLETED' ||
+            rawStatus == 'PAID';
         if (!isPostedLike) continue;
 
         final dirRaw = (data['direction'] ?? '').toString().toUpperCase();
-        final normDir = (dirRaw == 'DR') ? 'DEBIT' : (dirRaw == 'CR') ? 'CREDIT' : dirRaw;
+        final normDir = (dirRaw == 'DR')
+            ? 'DEBIT'
+            : (dirRaw == 'CR')
+                ? 'CREDIT'
+                : dirRaw;
         final amount = _asDouble(data['amount']);
-        if ((normDir != 'DEBIT' && normDir != 'CREDIT') || amount == null || amount <= 0) continue;
+        if ((normDir != 'DEBIT' && normDir != 'CREDIT') ||
+            amount == null ||
+            amount <= 0) continue;
 
         final cat = (data['category'] ?? 'General').toString();
         final merchant = (data['merchantName'] ?? '').toString().trim();
-        final note = merchant.isNotEmpty ? merchant : (data['source']?.toString() ?? 'UnifiedTxn');
+        final note = merchant.isNotEmpty
+            ? merchant
+            : (data['source']?.toString() ?? 'UnifiedTxn');
 
-        final when = _bestTime(data['occurredAt'], fallback1: data['postedAt'], fallback2: data['updatedAt']);
+        final when = _bestTime(data['occurredAt'],
+            fallback1: data['postedAt'], fallback2: data['updatedAt']);
 
         final txKey = (data['txKey'] ?? d.id).toString();
         final docId = 'tx_$txKey';
 
         if (normDir == 'DEBIT') {
-          wb.set(_db.collection('users').doc(userDocId).collection('expenses').doc(docId), {
-            'id': docId, 'type': cat, 'amount': amount, 'note': note,
-            'date': Timestamp.fromDate(when), 'source': (data['source'] ?? 'UnifiedTxn').toString(),
-          }, SetOptions(merge: true));
+          wb.set(
+              _db
+                  .collection('users')
+                  .doc(userDocId)
+                  .collection('expenses')
+                  .doc(docId),
+              {
+                'id': docId,
+                'type': cat,
+                'amount': amount,
+                'note': note,
+                'date': Timestamp.fromDate(when),
+                'source': (data['source'] ?? 'UnifiedTxn').toString(),
+              },
+              SetOptions(merge: true));
           mirroredThisPage++;
         } else {
-          wb.set(_db.collection('users').doc(userDocId).collection('incomes').doc(docId), {
-            'id': docId, 'type': cat, 'amount': amount, 'note': note,
-            'date': Timestamp.fromDate(when), 'source': (data['source'] ?? 'UnifiedTxn').toString(),
-          }, SetOptions(merge: true));
+          wb.set(
+              _db
+                  .collection('users')
+                  .doc(userDocId)
+                  .collection('incomes')
+                  .doc(docId),
+              {
+                'id': docId,
+                'type': cat,
+                'amount': amount,
+                'note': note,
+                'date': Timestamp.fromDate(when),
+                'source': (data['source'] ?? 'UnifiedTxn').toString(),
+              },
+              SetOptions(merge: true));
           mirroredThisPage++;
         }
       }
@@ -120,7 +154,7 @@ class TxnMirrorService {
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
         cursor = newestSeenUpdatedAt;
-        debugPrint('[TxnMirror] checkpoint -> ${newestSeenUpdatedAt.toDate()}');
+        // debugPrint('[TxnMirror] checkpoint -> ${newestSeenUpdatedAt.toDate()}');
       }
 
       totalMirrored += mirroredThisPage;
@@ -129,10 +163,9 @@ class TxnMirrorService {
       snap = await _runPage(cursor); // next page
     }
 
-    debugPrint('[TxnMirror] mirrored total: $totalMirrored (pages=$pages)');
+    // debugPrint('[TxnMirror] mirrored total: $totalMirrored (pages=$pages)');
     return totalMirrored;
   }
-
 
   Future<Timestamp?> _loadLastMirroredAt() async {
     try {

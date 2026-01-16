@@ -113,7 +113,8 @@ class StatMini extends StatelessWidget {
   final String label;
   final double value;
   final Color? color;
-  const StatMini({required this.label, required this.value, this.color});
+  const StatMini(
+      {super.key, required this.label, required this.value, this.color});
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -125,7 +126,9 @@ class StatMini extends StatelessWidget {
         Text(
           "₹${value.toStringAsFixed(0)}",
           style: TextStyle(
-              fontWeight: FontWeight.bold, fontSize: 14, color: color ?? Colors.teal[900]),
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              color: color ?? Colors.teal[900]),
         ),
       ],
     );
@@ -134,12 +137,13 @@ class StatMini extends StatelessWidget {
 
 class TxIconBubble extends StatelessWidget {
   final bool isIncome;
-  const TxIconBubble({required this.isIncome});
+  const TxIconBubble({super.key, required this.isIncome});
   @override
   Widget build(BuildContext context) {
     final color = isIncome ? const Color(0xFF1DB954) : const Color(0xFFE53935);
     final bg = isIncome ? const Color(0x221DB954) : const Color(0x22E53935);
-    final icon = isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
+    final icon =
+        isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
     return Container(
       width: 44,
       height: 44,

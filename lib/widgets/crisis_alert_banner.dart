@@ -9,14 +9,14 @@ class CrisisAlertBanner extends StatelessWidget {
   final String? customMessage;
 
   const CrisisAlertBanner({
-    Key? key,
+    super.key,
     required this.userId,
     required this.totalIncome,
     required this.totalExpense,
     this.totalLoan,
     this.totalAssets,
     this.customMessage,
-  }) : super(key: key);
+  });
 
   bool get isCrisis => totalExpense > totalIncome;
 

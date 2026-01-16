@@ -10,12 +10,12 @@ class ActivityTab extends StatelessWidget {
   final String userId;
 
   const ActivityTab({
-    Key? key,
+    super.key,
     required this.expenses,
     required this.friends,
     required this.groups,
     required this.userId,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -39,28 +39,30 @@ class ActivityTab extends StatelessWidget {
           final isSettlement = e.type == "Settlement";
           final payer = friendsById[e.payerId];
           final avatar = isSettlement
-              ? Icon(Icons.compare_arrows_rounded, size: 32, color: Colors.teal[700])
+              ? Icon(Icons.compare_arrows_rounded,
+                  size: 32, color: Colors.teal[700])
               : (payer != null
-              ? CircleAvatar(
-            backgroundColor: Colors.teal[100],
-            child: Text(
-              payer.name.isNotEmpty
-                  ? payer.name[0].toUpperCase()
-                  : "U",
-              style: const TextStyle(
-                  color: Colors.teal, fontWeight: FontWeight.bold),
-            ),
-          )
-              : CircleAvatar(
-            backgroundColor: Colors.teal[50],
-            child: const Icon(Icons.person, color: Colors.teal),
-          ));
+                  ? CircleAvatar(
+                      backgroundColor: Colors.teal[100],
+                      child: Text(
+                        payer.name.isNotEmpty
+                            ? payer.name[0].toUpperCase()
+                            : "U",
+                        style: const TextStyle(
+                            color: Colors.teal, fontWeight: FontWeight.bold),
+                      ),
+                    )
+                  : CircleAvatar(
+                      backgroundColor: Colors.teal[50],
+                      child: const Icon(Icons.person, color: Colors.teal),
+                    ));
 
           return Card(
             margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
             elevation: 2,
             color: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
             child: ListTile(
               leading: avatar,
               title: Text(
@@ -80,11 +82,14 @@ class ActivityTab extends StatelessWidget {
                           : Colors.teal.withValues(alpha: 0.09),
                       borderRadius: BorderRadius.circular(7),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
                     child: Text(
                       isSettlement ? "Settlement" : "Expense",
                       style: TextStyle(
-                        color: isSettlement ? Colors.orange[700] : Colors.teal[700],
+                        color: isSettlement
+                            ? Colors.orange[700]
+                            : Colors.teal[700],
                         fontWeight: FontWeight.w600,
                         fontSize: 12.8,
                       ),
@@ -116,18 +121,22 @@ class ActivityTab extends StatelessWidget {
   }
 
   String _describeExpense(
-      ExpenseItem e,
-      Map<String, FriendModel> friendsById,
-      Map<String, GroupModel> groupsById,
-      String userId,
-      ) {
-    final payer = friendsById[e.payerId]?.name ?? (e.payerId == userId ? "You" : "Someone");
+    ExpenseItem e,
+    Map<String, FriendModel> friendsById,
+    Map<String, GroupModel> groupsById,
+    String userId,
+  ) {
+    final payer = friendsById[e.payerId]?.name ??
+        (e.payerId == userId ? "You" : "Someone");
     final isYouPayer = e.payerId == userId;
     final group = e.groupId != null ? groupsById[e.groupId!] : null;
     final groupName = group != null ? ' in "${group.name}"' : "";
 
     if (e.type == "Settlement") {
-      final receivers = e.friendIds.map((id) => friendsById[id]?.name ?? (id == userId ? "You" : "someone")).toList();
+      final receivers = e.friendIds
+          .map((id) =>
+              friendsById[id]?.name ?? (id == userId ? "You" : "someone"))
+          .toList();
       if (isYouPayer) {
         if (receivers.length == 1) {
           return "You settled with ${receivers.first}$groupName";
@@ -145,7 +154,9 @@ class ActivityTab extends StatelessWidget {
           final friend = friendsById[e.friendIds.first];
           return "You paid for ${friend?.name ?? "someone"}$groupName";
         } else if (e.friendIds.isNotEmpty) {
-          final names = e.friendIds.map((id) => friendsById[id]?.name ?? "someone").toList();
+          final names = e.friendIds
+              .map((id) => friendsById[id]?.name ?? "someone")
+              .toList();
           return "You paid for ${names.join(', ')}$groupName";
         }
         return "You added an expense$groupName";

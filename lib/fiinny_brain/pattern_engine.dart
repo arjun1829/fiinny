@@ -12,26 +12,28 @@ class PatternReport {
     required this.highSpendCategories,
     required this.categorySpendPercentage,
   });
-  
+
   Map<String, dynamic> toJson() => {
-    'subscriptions': subscriptions,
-    'highSpendCategories': highSpendCategories,
-    'categorySpendPercentage': categorySpendPercentage,
-  };
+        'subscriptions': subscriptions,
+        'highSpendCategories': highSpendCategories,
+        'categorySpendPercentage': categorySpendPercentage,
+      };
 }
 
 class PatternEngine {
-  static PatternReport analyze(List<TransactionModel> transactions, double totalIncome) {
+  static PatternReport analyze(
+      List<TransactionModel> transactions, double totalIncome) {
     // 1. Group by Normalized Merchant/Description with amount tolerance
     final Map<String, List<TransactionModel>> groups = {};
     final Map<String, double> categoryTotals = {};
-    double totalExpense = 0;
 
     for (var t in transactions) {
       final analysis = TransactionEngine.analyze(t);
-      
+
       // Skip income and transfers
-      if (analysis.isIncome || analysis.isTransfer) continue;
+      if (analysis.isIncome || analysis.isTransfer) {
+        continue;
+      }
 
       // Grouping for recurrence (simple key-based)
       final key = t.note?.trim().toUpperCase() ?? 'UNKNOWN';
@@ -40,29 +42,28 @@ class PatternEngine {
       // Category totals (exclude transfers)
       final cat = analysis.category;
       categoryTotals[cat] = (categoryTotals[cat] ?? 0) + t.amount;
-      totalExpense += t.amount;
     }
 
     // 2. Identify Recurrence / Subscriptions
     final Set<String> subscriptions = {};
-    
+
     groups.forEach((key, list) {
-       // Rule: Min 3 occurrences + similar amount (±10%) + within 3 months
-       if (list.length >= 3 && _isRecurring(list)) {
-         subscriptions.add(key);
-       } else {
-         // Explicit Subscription Detection (brand-based)
-         final subBrand = CategoryRules.detectSubscriptionBrand(key);
-         if (subBrand != null) {
-           subscriptions.add(subBrand);
-         }
-       }
+      // Rule: Min 3 occurrences + similar amount (±10%) + within 3 months
+      if (list.length >= 3 && _isRecurring(list)) {
+        subscriptions.add(key);
+      } else {
+        // Explicit Subscription Detection (brand-based)
+        final subBrand = CategoryRules.detectSubscriptionBrand(key);
+        if (subBrand != null) {
+          subscriptions.add(subBrand);
+        }
+      }
     });
 
     // 3. Category % Analysis
     final Map<String, double> catPct = {};
     final List<String> highSpend = [];
-    
+
     categoryTotals.forEach((cat, amount) {
       if (totalIncome > 0) {
         final double pct = (amount / totalIncome) * 100;
@@ -72,7 +73,7 @@ class PatternEngine {
           highSpend.add(cat);
         }
       } else {
-        catPct[cat] = 0.0; 
+        catPct[cat] = 0.0;
       }
     });
 
@@ -85,7 +86,9 @@ class PatternEngine {
 
   // Check if transactions are recurring (similar amount + within 3 months)
   static bool _isRecurring(List<TransactionModel> transactions) {
-    if (transactions.length < 3) return false;
+    if (transactions.length < 3) {
+      return false;
+    }
 
     // Sort by date
     final sorted = List<TransactionModel>.from(transactions)
@@ -95,7 +98,9 @@ class PatternEngine {
     final first = sorted.first.date;
     final last = sorted.last.date;
     final daysDiff = last.difference(first).inDays;
-    if (daysDiff > 90) return false; // Must be within 3 months
+    if (daysDiff > 90) {
+      return false;
+    } // Must be within 3 months
 
     // Check amount similarity (±10%)
     final amounts = sorted.map((t) => t.amount).toList();

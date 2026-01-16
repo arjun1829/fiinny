@@ -29,13 +29,13 @@ class AddFriendExpenseScreen extends StatefulWidget {
   final Map<String, double>? initialSplits;
 
   const AddFriendExpenseScreen({
-    Key? key,
+    super.key,
     required this.userPhone,
     required this.friend,
     required this.userName,
     this.userAvatar,
     this.initialSplits,
-  }) : super(key: key);
+  });
 
   @override
   State<AddFriendExpenseScreen> createState() => _AddFriendExpenseScreenState();
@@ -248,11 +248,13 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
       if (kIsWeb) {
         final bytes = f.bytes;
         if (bytes == null) return;
-        await _uploadBytes(bytes, name, mime, typeHint: _isImage(mime) ? 'image' : 'file');
+        await _uploadBytes(bytes, name, mime,
+            typeHint: _isImage(mime) ? 'image' : 'file');
       } else {
         final path = f.path;
         if (path == null) return;
-        await _uploadFilePath(path, name, mime, typeHint: _isImage(mime) ? 'image' : 'file');
+        await _uploadFilePath(path, name, mime,
+            typeHint: _isImage(mime) ? 'image' : 'file');
       }
     } catch (_) {
       _toast('File picker error');
@@ -288,11 +290,11 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
   }
 
   Future<void> _uploadBytes(
-      Uint8List bytes,
-      String name,
-      String mime, {
-        required String typeHint,
-      }) async {
+    Uint8List bytes,
+    String name,
+    String mime, {
+    required String typeHint,
+  }) async {
     try {
       final ref = FirebaseStorage.instance
           .ref()
@@ -318,11 +320,11 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
   }
 
   Future<void> _uploadFilePath(
-      String path,
-      String name,
-      String mime, {
-        required String typeHint,
-      }) async {
+    String path,
+    String name,
+    String mime, {
+    required String typeHint,
+  }) async {
     try {
       final ref = FirebaseStorage.instance
           .ref()
@@ -366,14 +368,17 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
     }
     if (_step < 3) {
       setState(() => _step++);
-      _pg.animateToPage(_step, duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
+      _pg.animateToPage(_step,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic);
     }
   }
 
   void _goBack() {
     if (_step > 0) {
       setState(() => _step--);
-      _pg.animateToPage(_step, duration: const Duration(milliseconds: 260), curve: Curves.easeOut);
+      _pg.animateToPage(_step,
+          duration: const Duration(milliseconds: 260), curve: Curves.easeOut);
     } else {
       Navigator.pop(context, false);
     }
@@ -394,7 +399,9 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
     String noteOut = _note.trim();
     if (_attachments.isNotEmpty) {
       final parts = _attachments.map((a) => '${a.name} (${a.url})').join(', ');
-      noteOut = noteOut.isEmpty ? 'Attachments: $parts' : '$noteOut\nAttachments: $parts';
+      noteOut = noteOut.isEmpty
+          ? 'Attachments: $parts'
+          : '$noteOut\nAttachments: $parts';
     }
 
     setState(() => _saving = true);
@@ -411,7 +418,8 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
           friendIds: [widget.friend.phone],
           payerId: _selectedPayerPhone!,
           customSplits: _customSplit ? _normalizedSplits() : null,
-          counterparty: _counterparty.trim().isNotEmpty ? _counterparty.trim() : null,
+          counterparty:
+              _counterparty.trim().isNotEmpty ? _counterparty.trim() : null,
         ),
       );
       if (!mounted) return;
@@ -430,7 +438,8 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
   }
 
   // --- UI --------------------------------------------------------------------
-  InputDecoration _pillDec({required String label, IconData? icon, String? hint}) {
+  InputDecoration _pillDec(
+      {required String label, IconData? icon, String? hint}) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
@@ -464,9 +473,10 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
       foregroundImage: prov,
       child: prov == null
           ? Text(
-        (a.isNotEmpty ? a.characters.first : f.name.characters.first).toUpperCase(),
-        style: const TextStyle(fontSize: 12),
-      )
+              (a.isNotEmpty ? a.characters.first : f.name.characters.first)
+                  .toUpperCase(),
+              style: const TextStyle(fontSize: 12),
+            )
           : null,
     );
   }
@@ -550,13 +560,15 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
                 ),
               ),
             ),
-            Text("${_step + 1}/4", style: const TextStyle(color: Colors.black54)),
+            Text("${_step + 1}/4",
+                style: const TextStyle(color: Colors.black54)),
           ],
         ),
         const SizedBox(height: 8),
         Text(
           titles[_step],
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _kText),
+          style: const TextStyle(
+              fontSize: 15, fontWeight: FontWeight.w700, color: _kText),
         ),
       ],
     );
@@ -578,7 +590,8 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'^\d{0,7}(\.\d{0,2})?$')),
+              FilteringTextInputFormatter.allow(
+                  RegExp(r'^\d{0,7}(\.\d{0,2})?$')),
             ],
             validator: (v) {
               if (_step != 3) return null; // full validate on submit
@@ -605,17 +618,18 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
             decoration: _pillDec(label: "Category", icon: Icons.category),
             items: _categories
                 .map((c) => DropdownMenuItem(
-              value: c.label,
-              child: Row(
-                children: [
-                  Icon(c.icon, size: 18),
-                  const SizedBox(width: 8),
-                  Text(c.label),
-                ],
-              ),
-            ))
+                      value: c.label,
+                      child: Row(
+                        children: [
+                          Icon(c.icon, size: 18),
+                          const SizedBox(width: 8),
+                          Text(c.label),
+                        ],
+                      ),
+                    ))
                 .toList(),
-            onChanged: _saving ? null : (v) => setState(() => _category = v ?? ''),
+            onChanged:
+                _saving ? null : (v) => setState(() => _category = v ?? ''),
           ),
         ),
         const SizedBox(height: 8),
@@ -633,7 +647,9 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
                   Text(c.label),
                 ]),
                 selected: selected,
-                onSelected: _saving ? null : (v) => setState(() => _category = v ? c.label : ''),
+                onSelected: _saving
+                    ? null
+                    : (v) => setState(() => _category = v ? c.label : ''),
               );
             }).toList(),
           ),
@@ -750,14 +766,15 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
           onChanged: _saving
               ? null
               : (v) {
-            setState(() {
-              _customSplit = v;
-              if (_customSplit && _amount > 0) {
-                _recalcEqualSplit();
-              }
-            });
-          },
-          title: const Text("Custom split", style: TextStyle(fontWeight: FontWeight.w700)),
+                  setState(() {
+                    _customSplit = v;
+                    if (_customSplit && _amount > 0) {
+                      _recalcEqualSplit();
+                    }
+                  });
+                },
+          title: const Text("Custom split",
+              style: TextStyle(fontWeight: FontWeight.w700)),
           subtitle: const Text("Turn off for equal split"),
           activeTrackColor: _kIndigo,
         ),
@@ -778,14 +795,16 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
                 onPressed: _saving ? null : _clearSplits,
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(colors: [_kIndigo, _kTeal]),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
                   "Sum: ₹${_fmt2(_sumSplits)} / ₹${_fmt2(_amount)}",
-                  style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, color: Colors.white),
                 ),
               ),
             ],
@@ -804,7 +823,8 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
                   const SizedBox(width: 8),
                   SizedBox(
                     width: 100,
-                    child: Text(isYou ? "You" : f.name, overflow: TextOverflow.ellipsis),
+                    child: Text(isYou ? "You" : f.name,
+                        overflow: TextOverflow.ellipsis),
                   ),
                   const Spacer(),
                   SizedBox(
@@ -812,9 +832,11 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
                     child: TextField(
                       controller: ctrl,
                       enabled: !_saving,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
                       inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'^\d{0,7}(\.\d{0,2})?$')),
+                        FilteringTextInputFormatter.allow(
+                            RegExp(r'^\d{0,7}(\.\d{0,2})?$')),
                       ],
                       decoration: _pillDec(label: "₹"),
                       textAlign: TextAlign.right,
@@ -859,7 +881,8 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         TextFormField(
-          decoration: _pillDec(label: "Label (e.g., Dinner, Cab)", icon: Icons.label_outline),
+          decoration: _pillDec(
+              label: "Label (e.g., Dinner, Cab)", icon: Icons.label_outline),
           onChanged: (v) => _label = v,
           enabled: !_saving,
         ),
@@ -868,20 +891,26 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
           children: [
             const Icon(Icons.calendar_today, size: 18, color: Colors.black54),
             const SizedBox(width: 8),
-            Expanded(child: Text("Date: ${_date.toLocal().toString().substring(0, 10)}")),
-            TextButton(onPressed: _saving ? null : _pickDate, child: const Text("Change")),
+            Expanded(
+                child: Text(
+                    "Date: ${_date.toLocal().toString().substring(0, 10)}")),
+            TextButton(
+                onPressed: _saving ? null : _pickDate,
+                child: const Text("Change")),
           ],
         ),
         const SizedBox(height: 10),
         TextFormField(
-          decoration: _pillDec(label: "Note", icon: Icons.sticky_note_2_outlined),
+          decoration:
+              _pillDec(label: "Note", icon: Icons.sticky_note_2_outlined),
           onChanged: (v) => _note = v,
           enabled: !_saving,
           maxLines: 2,
         ),
         const SizedBox(height: 10),
-         TextFormField(
-          decoration: _pillDec(label: "Paid to (optional)", icon: Icons.storefront_rounded),
+        TextFormField(
+          decoration: _pillDec(
+              label: "Paid to (optional)", icon: Icons.storefront_rounded),
           onChanged: (v) => _counterparty = v,
           enabled: !_saving,
         ),
@@ -900,14 +929,16 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
               ),
             ),
             ..._attachments.map((a) => InputChip(
-              label: Text(a.name),
-              avatar: Icon(_isImage(a.mime) ? Icons.image : Icons.insert_drive_file, size: 18),
-              onDeleted: _saving
-                  ? null
-                  : () {
-                setState(() => _attachments.remove(a));
-              },
-            )),
+                  label: Text(a.name),
+                  avatar: Icon(
+                      _isImage(a.mime) ? Icons.image : Icons.insert_drive_file,
+                      size: 18),
+                  onDeleted: _saving
+                      ? null
+                      : () {
+                          setState(() => _attachments.remove(a));
+                        },
+                )),
           ],
         ),
         if (_saving || _uploading) ...[
@@ -947,7 +978,8 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
             child: Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, context.adsBottomPadding(extra: 16)),
+              padding: EdgeInsets.fromLTRB(
+                  16, 8, 16, context.adsBottomPadding(extra: 16)),
               child: Form(
                 key: _formKey,
                 child: Column(
@@ -960,12 +992,21 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
                         child: Container(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
-                              colors: [Colors.white.withValues(alpha: .98), Colors.white.withValues(alpha: .94)],
+                              colors: [
+                                Colors.white.withValues(alpha: .98),
+                                Colors.white.withValues(alpha: .94)
+                              ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
-                            border: Border.all(color: Colors.white.withValues(alpha: .65)),
-                            boxShadow: const [BoxShadow(color: Color(0x1F000000), blurRadius: 22, offset: Offset(0, 10))],
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: .65)),
+                            boxShadow: const [
+                              BoxShadow(
+                                  color: Color(0x1F000000),
+                                  blurRadius: 22,
+                                  offset: Offset(0, 10))
+                            ],
                             borderRadius: BorderRadius.circular(20),
                           ),
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -997,10 +1038,13 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
                               icon: const Icon(Icons.chevron_left_rounded),
                               label: const Text("Back"),
                               style: OutlinedButton.styleFrom(
-                                side: BorderSide(color: _kIndigo.withValues(alpha: .35)),
+                                side: BorderSide(
+                                    color: _kIndigo.withValues(alpha: .35)),
                                 foregroundColor: _kIndigo,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 12),
                               ),
                             ),
                           )
@@ -1018,8 +1062,10 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
                                 backgroundColor: _kIndigo,
                                 foregroundColor: Colors.white,
                                 elevation: 6,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 12),
                               ),
                             ),
                           ),
@@ -1030,14 +1076,20 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
                               onPressed: _saving ? null : _submit,
                               icon: const Icon(Icons.check_rounded),
                               label: _saving
-                                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.white))
                                   : const Text("Add Expense"),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _kTeal,
                                 foregroundColor: Colors.white,
                                 elevation: 6,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 12),
                               ),
                             ),
                           ),
@@ -1135,7 +1187,8 @@ class _SlideFadeState extends State<_SlideFade> {
         final dy = 16 * (1 - t);
         return Opacity(
           opacity: t,
-          child: Transform.translate(offset: Offset(0, dy), child: widget.child),
+          child:
+              Transform.translate(offset: Offset(0, dy), child: widget.child),
         );
       },
     );

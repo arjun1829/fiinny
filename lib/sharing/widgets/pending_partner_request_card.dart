@@ -18,8 +18,8 @@ class _PendingPartnerRequestCard extends StatefulWidget {
     required this.onApprove,
     required this.onReject, // optional, non-breaking
     this.viewerPhone,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<_PendingPartnerRequestCard> createState() =>
@@ -43,15 +43,21 @@ class _PendingPartnerRequestCardState
 
   String _bestRequesterId(Map<String, dynamic> data) {
     final phone = (data['fromUserPhone'] ?? '').toString().trim();
-    if (phone.isNotEmpty) return phone;
+    if (phone.isNotEmpty) {
+      return phone;
+    }
     final legacy = (data['fromUserId'] ?? '').toString().trim();
-    if (legacy.isNotEmpty) return legacy;
+    if (legacy.isNotEmpty) {
+      return legacy;
+    }
     return widget.request.id;
   }
 
   String _maskId(String raw) {
     final s = raw.trim();
-    if (s.isEmpty) return '';
+    if (s.isEmpty) {
+      return '';
+    }
     if (s.contains('@')) {
       final parts = s.split('@');
       final local = parts.first;
@@ -60,15 +66,21 @@ class _PendingPartnerRequestCardState
       return '$keep***@$domain';
     }
     final digits = s.replaceAll(RegExp(r'\D'), '');
-    if (digits.length <= 4) return s;
+    if (digits.length <= 4) {
+      return s;
+    }
     final last4 = digits.substring(digits.length - 4);
     return '••• •• •• $last4';
   }
 
   ImageProvider? _avatarProvider(String? avatar) {
-    if (avatar == null || avatar.trim().isEmpty) return null;
+    if (avatar == null || avatar.trim().isEmpty) {
+      return null;
+    }
     final a = avatar.trim();
-    if (a.startsWith('http')) return NetworkImage(a);
+    if (a.startsWith('http')) {
+      return NetworkImage(a);
+    }
     return AssetImage(a);
   }
 
@@ -160,8 +172,10 @@ class _PendingPartnerRequestCardState
 
                   final leading = CircleAvatar(
                     radius: 24,
-                    backgroundColor:
-                        Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                    backgroundColor: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: 0.08),
                     foregroundImage: _avatarProvider(avatar),
                     child: _avatarProvider(avatar) == null
                         ? Icon(Icons.person,
@@ -346,12 +360,12 @@ class _TrailingArea extends StatelessWidget {
   final bool outgoing;
 
   const _TrailingArea({
-    Key? key,
+    super.key,
     required this.showActions,
     required this.onApprove,
     required this.onReject,
     required this.outgoing,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -387,7 +401,9 @@ class _ActionsState extends State<_Actions> {
   bool _busy = false;
 
   Future<void> _safeRun(Future<void> Function() run) async {
-    if (_busy) return;
+    if (_busy) {
+      return;
+    }
     setState(() => _busy = true);
     try {
       await run();

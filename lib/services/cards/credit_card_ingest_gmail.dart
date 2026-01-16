@@ -150,16 +150,14 @@ class CreditCardIngestGmail {
         final headers = full.payload?.headers ?? [];
         final subject = _headerValue(headers, 'subject');
         final dateHeader = _headerValue(headers, 'date');
-        final date = DateTime.tryParse(dateHeader ?? '') ?? DateTime.now();
+        final date = DateTime.tryParse(dateHeader) ?? DateTime.now();
 
         final bodyText = _extractPlainText(full.payload);
-        final amount =
-            _findAmount(subject) ?? _findAmount(bodyText) ?? 0;
-        final last4 =
-            _guessLast4(subject) ?? _guessLast4(bodyText) ?? '';
+        final amount = _findAmount(subject) ?? _findAmount(bodyText) ?? 0;
+        final last4 = _guessLast4(subject) ?? _guessLast4(bodyText) ?? '';
         final issuer = _guessIssuer('', subject);
-        final cardId =
-            _cardId(issuer.isEmpty ? 'Card' : issuer, last4.isEmpty ? '0000' : last4);
+        final cardId = _cardId(
+            issuer.isEmpty ? 'Card' : issuer, last4.isEmpty ? '0000' : last4);
 
         final payment = CreditCardPayment(
           id: 'gmail_$id',
@@ -185,8 +183,8 @@ class CreditCardIngestGmail {
 
     try {
       await CardDueNotifier(_svc, NotificationService()).scheduleAll(userId);
-    } catch (err, stack) {
-      debugPrint('[CreditCardIngestGmail] scheduleAll failed: $err\n$stack');
+    } catch (err) {
+      // debugPrint('[CreditCardIngestGmail] scheduleAll failed: $err\n$stack');
     }
   }
 

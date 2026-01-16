@@ -2,7 +2,7 @@ import 'entity_resolution_models.dart';
 
 class EntityResolver {
   // ==================== FRIEND NAME RESOLUTION ====================
-  
+
   /// Resolve friend name to phone number
   /// Requires a phone-to-name mapping (from ContactNameService or other source)
   static FriendResolution resolveFriendName(
@@ -66,7 +66,8 @@ class EntityResolver {
 
     // If top candidate has high confidence and is significantly better, return it
     if (candidates.length == 1 || candidates.first.score >= 0.9) {
-      return FriendResolution.success(candidates.first.phone, candidates.first.name);
+      return FriendResolution.success(
+          candidates.first.phone, candidates.first.name);
     }
 
     // Multiple good matches, need clarification
@@ -142,9 +143,11 @@ class EntityResolver {
     matches.sort((a, b) => b.score.compareTo(a.score));
 
     // Return all matches above threshold
-    final goodMatches = matches.where((m) => m.score >= 0.5).map((m) => m.value).toList();
-    
-    return EntityResolution.success(goodMatches, confidence: matches.first.score);
+    final goodMatches =
+        matches.where((m) => m.score >= 0.5).map((m) => m.value).toList();
+
+    return EntityResolution.success(goodMatches,
+        confidence: matches.first.score);
   }
 
   // ==================== CATEGORY RESOLUTION ====================
@@ -170,7 +173,8 @@ class EntityResolver {
       }
 
       // Starts with
-      if (categoryLower.startsWith(queryLower) || queryLower.startsWith(categoryLower)) {
+      if (categoryLower.startsWith(queryLower) ||
+          queryLower.startsWith(categoryLower)) {
         candidates.add(MatchCandidate(
           value: category,
           displayName: category,
@@ -181,7 +185,8 @@ class EntityResolver {
       }
 
       // Contains
-      if (categoryLower.contains(queryLower) || queryLower.contains(categoryLower)) {
+      if (categoryLower.contains(queryLower) ||
+          queryLower.contains(categoryLower)) {
         candidates.add(MatchCandidate(
           value: category,
           displayName: category,
@@ -203,7 +208,8 @@ class EntityResolver {
     }
 
     if (candidates.isEmpty) {
-      return EntityResolution.notFound('No matching category found for "$query"');
+      return EntityResolution.notFound(
+          'No matching category found for "$query"');
     }
 
     // Sort by score
@@ -211,15 +217,18 @@ class EntityResolver {
 
     // If top match is strong, return it
     if (candidates.first.score >= 0.7) {
-      return EntityResolution.success(candidates.first.value, confidence: candidates.first.score);
+      return EntityResolution.success(candidates.first.value,
+          confidence: candidates.first.score);
     }
 
     // Multiple weak matches, need clarification
     if (candidates.length > 1) {
-      return EntityResolution.ambiguous(candidates.map((c) => c.value).take(5).toList());
+      return EntityResolution.ambiguous(
+          candidates.map((c) => c.value).take(5).toList());
     }
 
-    return EntityResolution.success(candidates.first.value, confidence: candidates.first.score);
+    return EntityResolution.success(candidates.first.value,
+        confidence: candidates.first.score);
   }
 
   // ==================== GROUP NAME RESOLUTION ====================
@@ -276,14 +285,17 @@ class EntityResolver {
     candidates.sort((a, b) => b.score.compareTo(a.score));
 
     if (candidates.first.score >= 0.8) {
-      return EntityResolution.success(candidates.first.value, confidence: candidates.first.score);
+      return EntityResolution.success(candidates.first.value,
+          confidence: candidates.first.score);
     }
 
     if (candidates.length > 1) {
-      return EntityResolution.ambiguous(candidates.map((c) => c.value).take(5).toList());
+      return EntityResolution.ambiguous(
+          candidates.map((c) => c.value).take(5).toList());
     }
 
-    return EntityResolution.success(candidates.first.value, confidence: candidates.first.score);
+    return EntityResolution.success(candidates.first.value,
+        confidence: candidates.first.score);
   }
 
   // ==================== HELPER METHODS ====================
@@ -292,20 +304,27 @@ class EntityResolver {
   static bool _fuzzyMatch(String s1, String s2) {
     final distance = _levenshteinDistance(s1, s2);
     final maxLen = s1.length > s2.length ? s1.length : s2.length;
-    
+
     // Allow up to 30% difference
     return distance <= (maxLen * 0.3).ceil();
   }
 
   /// Calculate Levenshtein distance between two strings
   static int _levenshteinDistance(String s1, String s2) {
-    if (s1 == s2) return 0;
-    if (s1.isEmpty) return s2.length;
-    if (s2.isEmpty) return s1.length;
+    if (s1 == s2) {
+      return 0;
+    }
+    if (s1.isEmpty) {
+      return s2.length;
+    }
+    if (s2.isEmpty) {
+      return s1.length;
+    }
 
     final len1 = s1.length;
     final len2 = s2.length;
-    final matrix = List.generate(len1 + 1, (_) => List<int>.filled(len2 + 1, 0));
+    final matrix =
+        List.generate(len1 + 1, (_) => List<int>.filled(len2 + 1, 0));
 
     for (int i = 0; i <= len1; i++) {
       matrix[i][0] = i;
@@ -318,8 +337,8 @@ class EntityResolver {
       for (int j = 1; j <= len2; j++) {
         final cost = s1[i - 1] == s2[j - 1] ? 0 : 1;
         matrix[i][j] = [
-          matrix[i - 1][j] + 1,      // deletion
-          matrix[i][j - 1] + 1,      // insertion
+          matrix[i - 1][j] + 1, // deletion
+          matrix[i][j - 1] + 1, // insertion
           matrix[i - 1][j - 1] + cost, // substitution
         ].reduce((a, b) => a < b ? a : b);
       }
@@ -330,7 +349,15 @@ class EntityResolver {
 
   /// Resolve travel-related labels (special case for common query)
   static List<String> resolveTravelLabels(List<String> availableLabels) {
-    final travelKeywords = ['trip', 'travel', 'flight', 'hotel', 'vacation', 'tour', 'visit'];
+    final travelKeywords = [
+      'trip',
+      'travel',
+      'flight',
+      'hotel',
+      'vacation',
+      'tour',
+      'visit'
+    ];
     final matches = <String>[];
 
     for (final label in availableLabels) {

@@ -17,7 +17,7 @@ class FriendsTab extends StatefulWidget {
   final VoidCallback reloadData;
 
   const FriendsTab({
-    Key? key,
+    super.key,
     required this.friends,
     required this.netBalances,
     required this.totalOwedToYou,
@@ -28,7 +28,7 @@ class FriendsTab extends StatefulWidget {
     required this.userId,
     required this.friendsById,
     required this.reloadData,
-  }) : super(key: key);
+  });
 
   @override
   State<FriendsTab> createState() => _FriendsTabState();

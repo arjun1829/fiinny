@@ -27,7 +27,7 @@ class AnimatedSlideFade extends StatefulWidget {
   final Curve slideCurve;
 
   const AnimatedSlideFade({
-    Key? key,
+    super.key,
     required this.child,
     this.delayMilliseconds = 0,
     this.duration = AppAnim.med,
@@ -35,7 +35,7 @@ class AnimatedSlideFade extends StatefulWidget {
     this.beginDx = 0.0,
     this.fadeCurve = AppAnim.fade,
     this.slideCurve = AppAnim.slide,
-  }) : super(key: key);
+  });
 
   @override
   State<AnimatedSlideFade> createState() => _AnimatedSlideFadeState();
@@ -105,7 +105,10 @@ class _AnimatedSlideFadeState extends State<AnimatedSlideFade>
     }
 
     // If not started yet (e.g., the widget rebuilt quickly) and we're at zero, start.
-    if (!_started && !_controller.isAnimating && _controller.value == 0 && !AppPerf.lowGpuMode) {
+    if (!_started &&
+        !_controller.isAnimating &&
+        _controller.value == 0 &&
+        !AppPerf.lowGpuMode) {
       _started = true;
       _controller.forward();
     }

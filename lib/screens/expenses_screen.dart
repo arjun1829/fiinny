@@ -1,9 +1,8 @@
 // lib/screens/expenses_screen.dart
 import 'dart:async';
-import 'dart:math' as math;
+import 'package:fl_chart/fl_chart.dart';
 
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 
 import 'package:intl/intl.dart';
 
@@ -17,9 +16,9 @@ import '../services/income_service.dart';
 import '../services/friend_service.dart';
 
 import 'edit_expense_screen.dart';
-import '../widgets/chart_switcher_widget.dart';
+
 import '../widgets/unified_transaction_list.dart';
-import '../themes/custom_card.dart';
+
 import '../themes/tokens.dart';
 
 // Needed for data passing
@@ -36,8 +35,8 @@ class ExpensesScreen extends StatefulWidget {
 class _ExpensesScreenState extends State<ExpensesScreen> {
   // -------- UI State --------
   String _selectedFilter = "Month";
-  String _chartType = "Pie";
-  String _dataType = "All";
+
+  final String _dataType = "All";
 
   // Data
   List<ExpenseItem> allExpenses = [];
@@ -60,7 +59,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   List<IncomeItem> _incomesForSelectedDay = [];
 
   // Multi-select & Bulk Edit/Delete
-  bool _multiSelectMode = false;
+  final bool _multiSelectMode = false;
   final Set<String> _selectedTxIds = {};
 
   // Search & Filters
@@ -70,10 +69,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   Set<String> _selectedCategories = {};
-  Set<String> _selectedMerchants = {};
-  Set<String> _selectedBanks = {};
-  Set<String> _friendFilterPhones = {};
-  Set<String> _groupFilterIds = {};
+  final Set<String> _selectedMerchants = {};
+  final Set<String> _selectedBanks = {};
+  final Set<String> _friendFilterPhones = {};
+  final Set<String> _groupFilterIds = {};
 
   // Subscriptions / Debounce
   StreamSubscription<List<ExpenseItem>>? _expSub;
@@ -252,23 +251,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   // _displayMerchantSelectionLabel removed
 
-  String _transactionPanelKey() {
-    final parts = [
-      _selectedFilter,
-      _searchFrom?.toIso8601String() ?? '',
-      _searchTo?.toIso8601String() ?? '',
-      _selectedCategories.join(','),
-      _selectedMerchants.join(','),
-      _selectedBanks.join(','),
-      _friendFilterPhones.join(','),
-      _groupFilterIds.join(','),
-      _dataType,
-      filteredExpenses.length.toString(),
-      filteredIncomes.length.toString(),
-    ];
-    return parts.join('|');
-  }
-
   Widget _noTransactionsPlaceholder(String filterLabel) {
     final theme = Theme.of(context);
     final label = filterLabel == "All"
@@ -399,7 +381,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     periodTotalExpense = filteredExpenses.fold(0.0, (a, b) => a + b.amount);
     periodTotalIncome = filteredIncomes.fold(0.0, (a, b) => a + b.amount);
 
-    final catsNow = _expenseCategories().toSet();
+    final catsNow =
+        filteredExpenses.map((e) => e.type.isEmpty ? 'Other' : e.type).toSet();
     _selectedCategories =
         _selectedCategories.where((cat) => catsNow.contains(cat)).toSet();
   }
@@ -598,7 +581,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                       _scheduleRecompute();
                     },
                   );
-                }).toList(),
+                }),
                 const SizedBox(height: 12),
               ],
             ),
@@ -1167,575 +1150,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   // _openBulkSplit removed
 
-  Widget _chartsView(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          CustomDiamondCard(
-            borderRadius: 24,
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-            glassGradient: [
-              Colors.white.withValues(alpha: 0.16),
-              Colors.white.withValues(alpha: 0.06),
-            ],
-            child: ChartSwitcherWidget(
-              chartType: _chartType,
-              dataType: _dataType,
-              onChartTypeChanged: (val) => setState(() => _chartType = val),
-              onDataTypeChanged: (val) => setState(() => _dataType = val),
-            ),
-          ),
-          const SizedBox(height: 16),
-          if ((_dataType == "All" || _dataType == "Expense") &&
-              filteredExpenses.isNotEmpty &&
-              _chartType == "Pie" &&
-              _hasExpenseCategoryData())
-            CustomDiamondCard(
-              borderRadius: 26,
-              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
-              glassGradient: [
-                Colors.white.withValues(alpha: 0.19),
-                Colors.white.withValues(alpha: 0.08),
-              ],
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Expense Breakdown",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-                  ),
-                  const SizedBox(height: 10),
-                  AspectRatio(
-                    aspectRatio: 1.6,
-                    child: PieChart(
-                      PieChartData(
-                        sections: _expenseCategorySections(),
-                        sectionsSpace: 3,
-                        centerSpaceRadius: 28,
-                        pieTouchData: PieTouchData(
-                          touchCallback: (event, response) {},
-                        ),
-                      ),
-                      duration: const Duration(milliseconds: 650),
-                      curve: Curves.easeOutCubic,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          if ((_dataType == "All" || _dataType == "Income") &&
-              filteredIncomes.isNotEmpty &&
-              _chartType == "Pie")
-            CustomDiamondCard(
-              borderRadius: 26,
-              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
-              glassGradient: [
-                Colors.white.withValues(alpha: 0.19),
-                Colors.white.withValues(alpha: 0.08),
-              ],
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Income Breakdown",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-                  ),
-                  const SizedBox(height: 10),
-                  AspectRatio(
-                    aspectRatio: 1.6,
-                    child: PieChart(
-                      PieChartData(
-                        sections: _incomeCategorySections(),
-                        sectionsSpace: 3,
-                        centerSpaceRadius: 28,
-                        pieTouchData: PieTouchData(),
-                      ),
-                      duration: const Duration(milliseconds: 650),
-                      curve: Curves.easeOutCubic,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          if ((_dataType == "All" || _dataType == "Expense") &&
-              filteredExpenses.isNotEmpty &&
-              _chartType == "Bar")
-            CustomDiamondCard(
-              borderRadius: 26,
-              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
-              glassGradient: [
-                Colors.white.withValues(alpha: 0.19),
-                Colors.white.withValues(alpha: 0.08),
-              ],
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Expense by Category",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-                  ),
-                  const SizedBox(height: 10),
-                  AspectRatio(
-                    aspectRatio: 1.8,
-                    child: BarChart(
-                      BarChartData(
-                        barGroups: _expenseCategoryBarGroups(),
-                        titlesData: FlTitlesData(
-                          leftTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              reservedSize: 36,
-                            ),
-                          ),
-                          bottomTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              getTitlesWidget: (double value, TitleMeta meta) {
-                                final cats = _expenseCategories();
-                                if (value.toInt() >= 0 &&
-                                    value.toInt() < cats.length) {
-                                  return Text(
-                                    cats[value.toInt()],
-                                    style: const TextStyle(fontSize: 12),
-                                    overflow: TextOverflow.ellipsis,
-                                  );
-                                }
-                                return const SizedBox();
-                              },
-                            ),
-                          ),
-                        ),
-                        borderData: FlBorderData(show: false),
-                        gridData: FlGridData(
-                          show: true,
-                          horizontalInterval: (_expenseMaxAmount() / 4)
-                              .clamp(1, double.infinity),
-                        ),
-                      ),
-                      duration: const Duration(milliseconds: 650),
-                      curve: Curves.easeOutCubic,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          if ((_dataType == "All" || _dataType == "Income") &&
-              filteredIncomes.isNotEmpty &&
-              _chartType == "Bar")
-            CustomDiamondCard(
-              borderRadius: 26,
-              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
-              glassGradient: [
-                Colors.white.withValues(alpha: 0.19),
-                Colors.white.withValues(alpha: 0.08),
-              ],
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Income by Category",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-                  ),
-                  const SizedBox(height: 10),
-                  AspectRatio(
-                    aspectRatio: 1.8,
-                    child: BarChart(
-                      BarChartData(
-                        barGroups: _incomeCategoryBarGroups(),
-                        titlesData: FlTitlesData(
-                          leftTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              reservedSize: 36,
-                            ),
-                          ),
-                          bottomTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              getTitlesWidget: (double value, TitleMeta meta) {
-                                final cats = _incomeCategories();
-                                if (value.toInt() >= 0 &&
-                                    value.toInt() < cats.length) {
-                                  return Text(
-                                    cats[value.toInt()],
-                                    style: const TextStyle(fontSize: 12),
-                                    overflow: TextOverflow.ellipsis,
-                                  );
-                                }
-                                return const SizedBox();
-                              },
-                            ),
-                          ),
-                        ),
-                        borderData: FlBorderData(show: false),
-                        gridData: FlGridData(
-                          show: true,
-                          horizontalInterval: (_incomeMaxAmount() / 4)
-                              .clamp(1, double.infinity),
-                        ),
-                      ),
-                      duration: const Duration(milliseconds: 650),
-                      curve: Curves.easeOutCubic,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          SizedBox(
-            width: double.infinity,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.04),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                ),
-              ),
-              child: CustomDiamondCard(
-                key: ValueKey(
-                  'summary-${_transactionPanelKey()}-${filteredExpenses.length}-${filteredIncomes.length}-${_dataType}',
-                ),
-                borderRadius: 24,
-                glassGradient: [
-                  Colors.white.withValues(alpha: 0.23),
-                  Colors.white.withValues(alpha: 0.09),
-                ],
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
-                child: UnifiedTransactionList(
-                  expenses: _dataType == "Income" ? [] : filteredExpenses,
-                  incomes: _dataType == "Expense" ? [] : filteredIncomes,
-                  userPhone: widget.userPhone,
-                  filterType: _dataType,
-                  previewCount: 15,
-                  friendsById: _friendsById,
-                  showBillIcon: true,
-                  emptyBuilder: (context) =>
-                      _noTransactionsPlaceholder(_dataType),
-                  multiSelectEnabled: _multiSelectMode,
-                  selectedIds: _selectedTxIds,
-                  onSelectTx: (txId, selected) {
-                    setState(() {
-                      if (selected) {
-                        _selectedTxIds.add(txId);
-                      } else {
-                        _selectedTxIds.remove(txId);
-                      }
-                    });
-                  },
-                  onEdit: (tx) async {
-                    if (_multiSelectMode) return;
-                    if (tx is ExpenseItem) {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => EditExpenseScreen(
-                            userPhone: widget.userPhone,
-                            expense: tx,
-                          ),
-                        ),
-                      );
-                      _scheduleRecompute();
-                    }
-                  },
-                  onDelete: (tx) async {
-                    if (_multiSelectMode) return;
-                    if (tx is ExpenseItem) {
-                      await ExpenseService()
-                          .deleteExpense(widget.userPhone, tx.id);
-                    } else if (tx is IncomeItem) {
-                      await IncomeService()
-                          .deleteIncome(widget.userPhone, tx.id);
-                    }
-                    _scheduleRecompute();
-                  },
-                  onSplit: (tx) async {
-                    if (_multiSelectMode) return;
-                    if (tx is ExpenseItem) {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => EditExpenseScreen(
-                            userPhone: widget.userPhone,
-                            expense: tx,
-                            initialStep: 1,
-                          ),
-                        ),
-                      );
-                      _scheduleRecompute();
-                    }
-                  },
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------- Chart helpers (with Top-N + "Other") ----------
-  Map<String, double> _buildByCategory<T>(Iterable<T> items,
-      String Function(T) typeOf, double Function(T) amountOf) {
-    final Map<String, double> byCategory = {};
-    for (final t in items) {
-      final key = (typeOf(t).isEmpty ? "Other" : typeOf(t));
-      byCategory[key] = (byCategory[key] ?? 0) + amountOf(t);
-    }
-    return byCategory;
-  }
-
-  Map<String, double> _topN(Map<String, double> map, {int n = 6}) {
-    final entries = map.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final top = entries.take(n).toList();
-    final rest = entries.skip(n).fold<double>(0, (s, e) => s + e.value);
-    return {
-      for (final e in top) e.key: e.value,
-      if (rest > 0) 'Other': rest,
-    };
-  }
-
-  List<PieChartSectionData> _expenseCategorySections() {
-    if (filteredExpenses.isEmpty) return [];
-    final byCategory = _topN(
-      _buildByCategory<ExpenseItem>(
-        filteredExpenses,
-        (e) => e.type,
-        (e) => e.amount,
-      ),
-    );
-
-    final total = byCategory.values.fold<double>(0, (s, v) => s + v);
-    if (total == 0) return [];
-
-    final colors = [
-      Colors.pinkAccent,
-      Colors.deepPurpleAccent,
-      Colors.lightBlue,
-      Colors.teal,
-      Colors.greenAccent,
-      Colors.orange,
-      Colors.amber,
-      Colors.cyan,
-      Colors.indigo,
-      Colors.redAccent,
-    ];
-
-    int i = 0;
-    return byCategory.entries.map((e) {
-      final percent = (e.value / total * 100);
-      final label = e.key.length > 9 ? '${e.key.substring(0, 8)}…' : e.key;
-      return PieChartSectionData(
-        value: e.value,
-        color: colors[i++ % colors.length],
-        radius: 44,
-        title: '$label\n${percent.toStringAsFixed(1)}%',
-        titleStyle: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 11,
-          height: 1.13,
-        ),
-        titlePositionPercentageOffset: 0.63,
-      );
-    }).toList();
-  }
-
-  List<PieChartSectionData> _incomeCategorySections() {
-    if (filteredIncomes.isEmpty) return [];
-    final byCategory = _topN(
-      _buildByCategory<IncomeItem>(
-        filteredIncomes,
-        (i) => i.type,
-        (i) => i.amount,
-      ),
-    );
-
-    final total = byCategory.values.fold<double>(0, (s, v) => s + v);
-    if (total == 0) return [];
-
-    final colors = [
-      Colors.green,
-      Colors.lightGreen,
-      Colors.amber,
-      Colors.blue,
-      Colors.purple,
-      Colors.teal,
-      Colors.orange,
-      Colors.yellow,
-      Colors.cyan,
-      Colors.indigo,
-    ];
-
-    int i = 0;
-    return byCategory.entries.map((e) {
-      final percent = (e.value / total * 100);
-      final label = e.key.length > 9 ? '${e.key.substring(0, 8)}…' : e.key;
-      return PieChartSectionData(
-        value: e.value,
-        color: colors[i++ % colors.length],
-        radius: 44,
-        title: '$label\n${percent.toStringAsFixed(1)}%',
-        titleStyle: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 11,
-          height: 1.13,
-        ),
-        titlePositionPercentageOffset: 0.63,
-      );
-    }).toList();
-  }
-
-  bool _hasExpenseCategoryData() {
-    return filteredExpenses.any((t) => t.type.isNotEmpty);
-  }
-
-  List<BarChartGroupData> _expenseCategoryBarGroups() {
-    final byCategory = _topN(
-      _buildByCategory<ExpenseItem>(
-        filteredExpenses,
-        (e) => e.type,
-        (e) => e.amount,
-      ),
-    ).entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value)); // desc
-
-    final colors = [
-      Colors.pinkAccent,
-      Colors.deepPurpleAccent,
-      Colors.lightBlue,
-      Colors.teal,
-      Colors.greenAccent,
-      Colors.orange,
-      Colors.amber,
-      Colors.cyan,
-      Colors.indigo,
-      Colors.redAccent,
-    ];
-    final maxY = byCategory.isEmpty
-        ? 100.0
-        : byCategory.map((e) => e.value).reduce(math.max).toDouble();
-
-    return List<BarChartGroupData>.generate(byCategory.length, (i) {
-      final e = byCategory[i];
-      return BarChartGroupData(
-        x: i,
-        barRods: [
-          BarChartRodData(
-            toY: e.value,
-            color: colors[i % colors.length],
-            width: 18,
-            borderRadius: BorderRadius.circular(6),
-            backDrawRodData: BackgroundBarChartRodData(
-              show: true,
-              toY: maxY,
-              color: colors[i % colors.length].withValues(alpha: 0.12),
-            ),
-          ),
-        ],
-      );
-    });
-  }
-
-  double _expenseMaxAmount() {
-    if (filteredExpenses.isEmpty) return 100.0;
-    final byCategory = _buildByCategory<ExpenseItem>(
-      filteredExpenses,
-      (e) => e.type,
-      (e) => e.amount,
-    );
-    final double maxVal = byCategory.isEmpty
-        ? 0.0
-        : byCategory.values.reduce(math.max).toDouble();
-
-    return maxVal < 100.0 ? 100.0 : maxVal;
-  }
-
-  List<String> _expenseCategories() {
-    final byCategory = _buildByCategory<ExpenseItem>(
-      filteredExpenses,
-      (e) => e.type,
-      (e) => e.amount,
-    );
-    return byCategory.keys.toList();
-  }
-
-  List<BarChartGroupData> _incomeCategoryBarGroups() {
-    final byCategory = _topN(
-      _buildByCategory<IncomeItem>(
-        filteredIncomes,
-        (i) => i.type,
-        (i) => i.amount,
-      ),
-    ).entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value)); // desc
-
-    final colors = [
-      Colors.green,
-      Colors.lightGreen,
-      Colors.amber,
-      Colors.blue,
-      Colors.purple,
-      Colors.teal,
-      Colors.orange,
-      Colors.yellow,
-      Colors.cyan,
-      Colors.indigo,
-    ];
-    final maxY = byCategory.isEmpty
-        ? 100.0
-        : byCategory.map((e) => e.value).reduce(math.max).toDouble();
-
-    return List<BarChartGroupData>.generate(byCategory.length, (i) {
-      final e = byCategory[i];
-      return BarChartGroupData(
-        x: i,
-        barRods: [
-          BarChartRodData(
-            toY: e.value,
-            color: colors[i % colors.length],
-            width: 18,
-            borderRadius: BorderRadius.circular(6),
-            backDrawRodData: BackgroundBarChartRodData(
-              show: true,
-              toY: maxY,
-              color: colors[i % colors.length].withValues(alpha: 0.12),
-            ),
-          ),
-        ],
-      );
-    });
-  }
-
-  double _incomeMaxAmount() {
-    if (filteredIncomes.isEmpty) return 100.0;
-    final byCategory = _buildByCategory<IncomeItem>(
-      filteredIncomes,
-      (i) => i.type,
-      (i) => i.amount,
-    );
-    final double maxVal = byCategory.isEmpty
-        ? 0.0
-        : byCategory.values.reduce(math.max).toDouble();
-    return maxVal < 100.0 ? 100.0 : maxVal;
-  }
-
-  List<String> _incomeCategories() {
-    final byCategory = _buildByCategory<IncomeItem>(
-      filteredIncomes,
-      (i) => i.type,
-      (i) => i.amount,
-    );
-    return byCategory.keys.toList();
-  }
-
   // _confirmBulkDelete removed
 
   // _showLabelDialog removed
@@ -2025,13 +1439,13 @@ class ExpenseFiltersScreen extends StatefulWidget {
   final List<GroupModel> groups;
 
   const ExpenseFiltersScreen({
-    Key? key,
+    super.key,
     required this.initialConfig,
     required this.expenses,
     required this.incomes,
     this.friendsById = const {},
     this.groups = const [],
-  }) : super(key: key);
+  });
 
   @override
   State<ExpenseFiltersScreen> createState() => _ExpenseFiltersScreenState();
@@ -2985,19 +2399,24 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
 
   IconData _categoryIcon(String type) {
     final t = type.toLowerCase();
-    if (t.contains('food') || t.contains('restaurant'))
+    if (t.contains('food') || t.contains('restaurant')) {
       return Icons.restaurant_rounded;
+    }
     if (t.contains('grocery')) return Icons.shopping_cart_rounded;
     if (t.contains('rent')) return Icons.home_rounded;
-    if (t.contains('fuel') || t.contains('petrol'))
+    if (t.contains('fuel') || t.contains('petrol')) {
       return Icons.local_gas_station_rounded;
+    }
     if (t.contains('shopping')) return Icons.shopping_bag_rounded;
-    if (t.contains('health') || t.contains('medicine'))
+    if (t.contains('health') || t.contains('medicine')) {
       return Icons.local_hospital_rounded;
-    if (t.contains('travel') || t.contains('flight') || t.contains('train'))
+    }
+    if (t.contains('travel') || t.contains('flight') || t.contains('train')) {
       return Icons.flight_takeoff_rounded;
-    if (t.contains('entertainment') || t.contains('movie'))
+    }
+    if (t.contains('entertainment') || t.contains('movie')) {
       return Icons.movie_rounded;
+    }
     if (t.contains('education')) return Icons.school_rounded;
     if (t.contains('loan')) return Icons.account_balance_rounded;
     return Icons.category_rounded;

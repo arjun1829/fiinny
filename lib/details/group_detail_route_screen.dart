@@ -11,10 +11,10 @@ class GroupDetailRouteScreen extends StatefulWidget {
   final String? groupNameHint;
 
   const GroupDetailRouteScreen({
-    Key? key,
+    super.key,
     required this.groupId,
     this.groupNameHint,
-  }) : super(key: key);
+  });
 
   @override
   State<GroupDetailRouteScreen> createState() => _GroupDetailRouteScreenState();

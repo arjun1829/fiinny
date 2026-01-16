@@ -22,14 +22,14 @@ class TransactionClassification {
   });
 
   Map<String, dynamic> toJson() => {
-    'category': category,
-    'subcategory': subcategory,
-    'isIncome': isIncome,
-    'isTransfer': isTransfer,
-    'isSalary': isSalary,
-    'confidence': confidence,
-    'tags': tags,
-  };
+        'category': category,
+        'subcategory': subcategory,
+        'isIncome': isIncome,
+        'isTransfer': isTransfer,
+        'isSalary': isSalary,
+        'confidence': confidence,
+        'tags': tags,
+      };
 }
 
 class TransactionEngine {
@@ -37,7 +37,7 @@ class TransactionEngine {
     double amount = 0.0;
     String type = '';
     String note = '';
-    
+
     // Extract common fields
     if (t is TransactionModel) {
       amount = t.amount;
@@ -65,17 +65,17 @@ class TransactionEngine {
 
     // 1. Detect Transfer (must happen FIRST to exclude from income/expense)
     final bool isTransfer = _detectTransfer(normalizedNote, normalizedType);
-    
+
     // 2. Detect Income vs Expense (skip if transfer)
     bool isIncome = false;
     if (!isTransfer) {
       if (t is TransactionModel) {
         isIncome = normalizedType == 'income';
       } else if (t is ExpenseItem) {
-        isIncome = normalizedType.contains('credit') || 
-                   normalizedType.contains('deposit') || 
-                   normalizedType.contains('income') ||
-                   normalizedType.contains('refund');
+        isIncome = normalizedType.contains('credit') ||
+            normalizedType.contains('deposit') ||
+            normalizedType.contains('income') ||
+            normalizedType.contains('refund');
       }
     }
 
@@ -93,9 +93,15 @@ class TransactionEngine {
 
     // Collect tags
     final tags = List<String>.from(catGuess.tags);
-    if (isSalary) tags.add('salary');
-    if (isIncome) tags.add('income');
-    if (isTransfer) tags.add('transfer');
+    if (isSalary) {
+      tags.add('salary');
+    }
+    if (isIncome) {
+      tags.add('income');
+    }
+    if (isTransfer) {
+      tags.add('transfer');
+    }
 
     // Final confidence is min of category confidence and salary confidence (if salary)
     double finalConfidence = catGuess.confidence;
@@ -117,11 +123,14 @@ class TransactionEngine {
   // Transfer detection logic
   static bool _detectTransfer(String note, String type) {
     // UPI to self/friend
-    if (note.contains('upi') && (note.contains('transfer') || note.contains('sent'))) {
+    if (note.contains('upi') &&
+        (note.contains('transfer') || note.contains('sent'))) {
       return true;
     }
     // IMPS/NEFT/RTGS
-    if (note.contains('imps') || note.contains('neft') || note.contains('rtgs')) {
+    if (note.contains('imps') ||
+        note.contains('neft') ||
+        note.contains('rtgs')) {
       return true;
     }
     // Explicit transfer type
@@ -138,11 +147,19 @@ class TransactionEngine {
 
     // Keyword matching (weighted)
     int keywordScore = 0;
-    if (note.contains('salary')) keywordScore += 3;
-    if (note.contains('sal')) keywordScore += 2;
-    if (note.contains('payroll')) keywordScore += 3;
-    if (note.contains('credited')) keywordScore += 1;
-    
+    if (note.contains('salary')) {
+      keywordScore += 3;
+    }
+    if (note.contains('sal')) {
+      keywordScore += 2;
+    }
+    if (note.contains('payroll')) {
+      keywordScore += 3;
+    }
+    if (note.contains('credited')) {
+      keywordScore += 1;
+    }
+
     // Amount heuristic (no hardcoded threshold, just scoring)
     // TODO: This should be replaced with historical pattern analysis
     // For now: amounts > 10k get higher confidence

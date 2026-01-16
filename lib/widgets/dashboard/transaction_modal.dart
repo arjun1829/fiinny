@@ -11,13 +11,13 @@ class TransactionModal extends StatefulWidget {
   final Function(String id) onDelete;
 
   const TransactionModal({
-    Key? key,
+    super.key,
     this.expense,
     this.income,
     required this.userPhone,
     required this.onSave,
     required this.onDelete,
-  }) : super(key: key);
+  });
 
   @override
   State<TransactionModal> createState() => _TransactionModalState();
@@ -30,7 +30,8 @@ class _TransactionModalState extends State<TransactionModal> {
     final isExpense = widget.expense != null;
     final id = isExpense ? widget.expense!.id : widget.income!.id;
     final amount = isExpense ? widget.expense!.amount : widget.income!.amount;
-    final category = isExpense ? widget.expense!.category : widget.income!.category;
+    final category =
+        isExpense ? widget.expense!.category : widget.income!.category;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -45,13 +46,16 @@ class _TransactionModalState extends State<TransactionModal> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(isExpense ? "Edit Expense" : "Edit Income", style: Fx.title),
-              IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+              IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close)),
             ],
           ),
           const SizedBox(height: 24),
           // Placeholder details
           ListTile(
-            leading: Icon(isExpense ? Icons.arrow_downward : Icons.arrow_upward, color: isExpense ? Colors.red : Colors.green),
+            leading: Icon(isExpense ? Icons.arrow_downward : Icons.arrow_upward,
+                color: isExpense ? Colors.red : Colors.green),
             title: Text(category ?? 'Unknown', style: Fx.label),
             trailing: Text("₹$amount", style: Fx.number.copyWith(fontSize: 18)),
           ),
@@ -65,11 +69,13 @@ class _TransactionModalState extends State<TransactionModal> {
                     Navigator.pop(context);
                   },
                   icon: const Icon(Icons.delete, color: Colors.red),
-                  label: const Text("Delete", style: TextStyle(color: Colors.red)),
+                  label:
+                      const Text("Delete", style: TextStyle(color: Colors.red)),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     side: const BorderSide(color: Colors.red),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ),
@@ -82,11 +88,12 @@ class _TransactionModalState extends State<TransactionModal> {
                   },
                   icon: const Icon(Icons.save),
                   label: const Text("Save"),
-                   style: ElevatedButton.styleFrom(
+                  style: ElevatedButton.styleFrom(
                     backgroundColor: Fx.mint,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ),

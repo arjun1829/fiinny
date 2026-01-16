@@ -24,8 +24,8 @@ class CrowdSourcingService {
           if (json is Map && json.containsKey('mappings')) {
             _dictionary = Map<String, dynamic>.from(json['mappings']);
             _isLoaded = true;
-            debugPrint(
-                '[Crowd] Loaded from local cache (${_dictionary.length} entries)');
+            // debugPrint(
+            //     '[Crowd] Loaded from local cache (${_dictionary.length} entries)');
             return;
           }
         }
@@ -38,8 +38,8 @@ class CrowdSourcingService {
       if (json is Map && json.containsKey('mappings')) {
         _dictionary = Map<String, dynamic>.from(json['mappings']);
         _isLoaded = true;
-        debugPrint(
-            '[Crowd] Loaded from bundled asset (${_dictionary.length} entries)');
+        // debugPrint(
+        //     '[Crowd] Loaded from bundled asset (${_dictionary.length} entries)');
 
         if (!kIsWeb) {
           // Save to cache for next time (simulate "first download" behavior)
@@ -50,7 +50,7 @@ class CrowdSourcingService {
         }
       }
     } catch (e) {
-      debugPrint('[Crowd] Failed to init: $e');
+      // debugPrint('[Crowd] Failed to init: $e');
     }
   }
 
@@ -68,7 +68,7 @@ class CrowdSourcingService {
   /// (Stub) future method to report a new mapping
   Future<void> contribute(String merchant, String category) async {
     // In future: Push to Firestore "unverified_mappings" collection
-    debugPrint('[Crowd] Vote recorded: $merchant -> $category');
+    // debugPrint('[Crowd] Vote recorded: $merchant -> $category');
   }
 
   Future<File?> _getCacheFile() async {
@@ -77,7 +77,7 @@ class CrowdSourcingService {
       final directory = await getApplicationDocumentsDirectory();
       return File('${directory.path}/merchants_crowd_local.json');
     } catch (e) {
-      debugPrint('[Crowd] Failed to get cache directory: $e');
+      // debugPrint('[Crowd] Failed to get cache directory: $e');
       return null;
     }
   }

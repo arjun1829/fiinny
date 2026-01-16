@@ -11,8 +11,8 @@ class EditFriendWidget extends StatefulWidget {
     required this.userId,
     required this.friend,
     this.onSave,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<EditFriendWidget> createState() => _EditFriendWidgetState();
@@ -50,9 +50,10 @@ class _EditFriendWidgetState extends State<EditFriendWidget> {
     );
     await FriendService()
         .updateFriend(widget.userId, widget.friend.phone, updated.toJson());
+    if (!mounted) return;
     if (widget.onSave != null) widget.onSave!();
     if (Navigator.canPop(context)) Navigator.of(context).pop(); // For dialog
-    setState(() => _isSaving = false);
+    if (mounted) setState(() => _isSaving = false);
   }
 
   @override

@@ -27,13 +27,17 @@ class SettleGroupRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final isPositive = amount >= 0;
     final textTheme = Theme.of(context).textTheme;
-    final neutral = textTheme.bodyMedium?.color?.withValues(alpha: .72) ?? AppColors.ink500;
+    final neutral =
+        textTheme.bodyMedium?.color?.withValues(alpha: .72) ?? AppColors.ink500;
     final badgeColor = isPositive ? AppColors.mint : neutral;
     final badgeLabel = isPositive ? 'You get back' : 'You owe';
     final amountText = '₹${amount.abs().toStringAsFixed(2)}';
     final backgroundColor = selected
         ? AppColors.mint.withValues(alpha: .12)
-        : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: .32);
+        : Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: .32);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
@@ -44,14 +48,17 @@ class SettleGroupRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.m, vertical: AppSpacing.m),
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.m, vertical: AppSpacing.m),
             decoration: BoxDecoration(
               color: backgroundColor,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: selected
                     ? AppColors.mint.withValues(alpha: .7)
-                    : Theme.of(context).dividerColor.withValues(alpha: enabled ? .18 : .08),
+                    : Theme.of(context)
+                        .dividerColor
+                        .withValues(alpha: enabled ? .18 : .08),
               ),
             ),
             child: Row(
@@ -63,8 +70,12 @@ class SettleGroupRow extends StatelessWidget {
                   child: Checkbox(
                     value: selected,
                     onChanged: enabled ? (_) => onToggle() : null,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                    side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: .4)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6)),
+                    side: BorderSide(
+                        color: Theme.of(context)
+                            .dividerColor
+                            .withValues(alpha: .4)),
                     fillColor: WidgetStateProperty.resolveWith((states) {
                       if (states.contains(WidgetState.selected)) {
                         return AppColors.mint;
@@ -100,7 +111,8 @@ class SettleGroupRow extends StatelessWidget {
                             subtitle!,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: textTheme.bodySmall?.copyWith(color: neutral),
+                            style:
+                                textTheme.bodySmall?.copyWith(color: neutral),
                           ),
                         ),
                     ],
@@ -109,7 +121,8 @@ class SettleGroupRow extends StatelessWidget {
                 const SizedBox(width: AppSpacing.m),
                 // UX: Inline badge surfaces owed direction at a glance.
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: badgeColor.withValues(alpha: .14),
                     borderRadius: BorderRadius.circular(999),

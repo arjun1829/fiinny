@@ -17,12 +17,13 @@ class ForecastingEngine {
 
     // Base case: likely scenario (current behavior)
     final monthsToTarget = _calculateMonths(monthlySavings, targetAmount);
-    final isAchievable = monthsToTarget > 0 && monthsToTarget <= _kMaxReasonableMonths;
+    final isAchievable =
+        monthsToTarget > 0 && monthsToTarget <= _kMaxReasonableMonths;
 
     // Scenarios
     final bestCaseSavings = monthlySavings * 1.10; // 10% improvement
     final worstCaseSavings = monthlySavings * 0.90; // 10% decline
-    
+
     final scenarios = {
       'best': _calculateMonths(bestCaseSavings, targetAmount).toDouble(),
       'worst': _calculateMonths(worstCaseSavings, targetAmount).toDouble(),
@@ -51,7 +52,9 @@ class ForecastingEngine {
   /// Calculate months needed to reach target
   /// Returns -1 if impossible (zero or negative savings)
   static int _calculateMonths(double monthlySavings, double targetAmount) {
-    if (monthlySavings <= 0 || targetAmount <= 0) return -1;
+    if (monthlySavings <= 0 || targetAmount <= 0) {
+      return -1;
+    }
     return (targetAmount / monthlySavings).ceil();
   }
 
@@ -62,15 +65,18 @@ class ForecastingEngine {
   }) {
     final monthlyExpense = snapshot.expenseSummary.total;
     final targetAmount = monthlyExpense * months;
-    
+
     return projectTimeline(snapshot, targetAmount);
   }
 
   /// Project "survival time" if income stops (based on current savings)
   /// This would require knowing current savings balance, which we don't have in snapshot
   /// Placeholder for future implementation
-  static int projectSurvivalMonths(double currentSavings, double monthlyExpense) {
-    if (monthlyExpense <= 0) return -1;
+  static int projectSurvivalMonths(
+      double currentSavings, double monthlyExpense) {
+    if (monthlyExpense <= 0) {
+      return -1;
+    }
     return (currentSavings / monthlyExpense).floor();
   }
 }

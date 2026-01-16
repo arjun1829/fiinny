@@ -23,13 +23,15 @@ class ManualUploadConnector extends SourceConnector {
 
   /// Specific method for this connector to process a file
   Future<List<RawTransactionEvent>> processFile(File file) async {
-    if (!region.allowManualUpload) return [];
-    
+    if (!region.allowManualUpload) {
+      return [];
+    }
+
     // TODO: Implement CSV/PDF parsing logic
     // 1. Detect file type
     // 2. Parse rows
     // 3. Map to RawTransactionEvent
-    
+
     return [];
   }
 }

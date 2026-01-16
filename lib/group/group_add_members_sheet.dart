@@ -10,10 +10,10 @@ class GroupAddMembersSheet extends StatefulWidget {
   final GroupModel group;
 
   const GroupAddMembersSheet({
-    Key? key,
+    super.key,
     required this.currentUserPhone,
     required this.group,
-  }) : super(key: key);
+  });
 
   @override
   State<GroupAddMembersSheet> createState() => _GroupAddMembersSheetState();
@@ -34,10 +34,15 @@ class _GroupAddMembersSheetState extends State<GroupAddMembersSheet> {
       Navigator.pop(context, false);
       return;
     }
-    await FirebaseFirestore.instance.collection('groups').doc(widget.group.id).update({
+    await FirebaseFirestore.instance
+        .collection('groups')
+        .doc(widget.group.id)
+        .update({
       'memberPhones': FieldValue.arrayUnion(_selected.toList()),
     });
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     Navigator.pop(context, true);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Added ${_selected.length} member(s).')),
@@ -56,17 +61,21 @@ class _GroupAddMembersSheetState extends State<GroupAddMembersSheet> {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
             child: Column(
               children: [
-                const Text('Add members', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                const Text('Add members',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
                 Expanded(
                   child: StreamBuilder<List<FriendModel>>(
-                    stream: FriendService().streamFriends(widget.currentUserPhone),
+                    stream:
+                        FriendService().streamFriends(widget.currentUserPhone),
                     builder: (context, snap) {
                       final friends = (snap.data ?? [])
                           .where((f) => !_existing.contains(f.phone))
                           .toList();
                       if (friends.isEmpty) {
-                        return const Center(child: Text('No more friends to add.'));
+                        return const Center(
+                            child: Text('No more friends to add.'));
                       }
                       return ListView.separated(
                         controller: scroll,
@@ -79,15 +88,24 @@ class _GroupAddMembersSheetState extends State<GroupAddMembersSheet> {
                             value: checked,
                             onChanged: (v) {
                               setState(() {
-                                if (v == true) _selected.add(f.phone);
-                                else _selected.remove(f.phone);
+                                if (v == true) {
+                                  _selected.add(f.phone);
+                                } else {
+                                  _selected.remove(f.phone);
+                                }
                               });
                             },
-                            title: Text(f.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                            title: Text(f.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600)),
                             subtitle: f.phone.isNotEmpty ? Text(f.phone) : null,
                             secondary: f.avatar.startsWith('http')
-                                ? CircleAvatar(backgroundImage: NetworkImage(f.avatar))
-                                : CircleAvatar(child: Text((f.name.isNotEmpty ? f.name[0] : '?').toUpperCase())),
+                                ? CircleAvatar(
+                                    backgroundImage: NetworkImage(f.avatar))
+                                : CircleAvatar(
+                                    child: Text(
+                                        (f.name.isNotEmpty ? f.name[0] : '?')
+                                            .toUpperCase())),
                           );
                         },
                       );

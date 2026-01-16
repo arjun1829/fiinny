@@ -359,9 +359,13 @@ class AnalyticsAgg {
     final out = <String, double>{};
     for (final e in exp) {
       final raw = (e.counterparty ?? e.upiVpa ?? e.label ?? '').trim();
-      if (raw.isEmpty) continue;
+      if (raw.isEmpty) {
+        continue;
+      }
       final key = _displayMerchantKey(raw);
-      if (key.isEmpty) continue;
+      if (key.isEmpty) {
+        continue;
+      }
       out[key] = (out[key] ?? 0) + e.amount;
     }
     final entries = out.entries.toList()
@@ -386,7 +390,9 @@ class AnalyticsAgg {
   }
 
   static String _toTitle(String s) {
-    if (s.isEmpty) return s;
+    if (s.isEmpty) {
+      return s;
+    }
     return s
         .split(' ')
         .map(

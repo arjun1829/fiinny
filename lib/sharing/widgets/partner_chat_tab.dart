@@ -13,10 +13,10 @@ class PartnerChatTab extends StatefulWidget {
   final String partnerUserId; // phone-based id
   final String currentUserId; // phone-based id
   const PartnerChatTab({
-    Key? key,
+    super.key,
     required this.partnerUserId,
     required this.currentUserId,
-  }) : super(key: key);
+  });
 
   @override
   State<PartnerChatTab> createState() => PartnerChatTabState();
@@ -32,21 +32,6 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   bool _pickingEmoji = false;
   bool _pickingSticker = false;
   bool _uploading = false;
-  Widget _miniIcon({
-    required IconData icon,
-    String? tooltip,
-    VoidCallback? onPressed,
-  }) {
-    return IconButton(
-      icon: Icon(icon, size: 18),
-      tooltip: tooltip,
-      onPressed: onPressed,
-      padding: EdgeInsets.zero,
-      visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-      splashRadius: 18,
-    );
-  }
 
   String? _mimeFromExtension(String? ext) {
     switch (ext) {
@@ -138,7 +123,9 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     Map<String, dynamic> extra = const {},
   }) async {
     final msg = text.trim();
-    if (type == 'text' && msg.isEmpty) return;
+    if (type == 'text' && msg.isEmpty) {
+      return;
+    }
 
     final now = FieldValue.serverTimestamp();
 
@@ -153,8 +140,6 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     });
 
     final lastPreview = switch (type) {
-      'image' => '[photo]',
-      'file' => extra['fileName'] ?? '[file]',
       'image' => '[photo]',
       'file' => extra['fileName'] ?? '[file]',
       'sticker' => msg,
@@ -191,7 +176,9 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     try {
       final shot = await _imagePicker.pickImage(
           source: ImageSource.camera, imageQuality: 85);
-      if (shot == null) return;
+      if (shot == null) {
+        return;
+      }
       await _uploadImageXFile(shot);
     } catch (e) {
       _toast('Camera unavailable');
@@ -202,7 +189,9 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     try {
       final img = await _imagePicker.pickImage(
           source: ImageSource.gallery, imageQuality: 85);
-      if (img == null) return;
+      if (img == null) {
+        return;
+      }
       await _uploadImageXFile(img);
     } catch (e) {
       _toast('Gallery unavailable');
@@ -216,19 +205,25 @@ class PartnerChatTabState extends State<PartnerChatTab> {
         withData: kIsWeb, // bytes on web
         type: FileType.any,
       );
-      if (res == null || res.files.isEmpty) return;
+      if (res == null || res.files.isEmpty) {
+        return;
+      }
       final file = res.files.first;
       final name = file.name;
       final ext = (file.extension ?? '').toLowerCase();
       final mime = _mimeFromExtension(ext) ?? _guessMimeByName(name);
       if (kIsWeb) {
         final bytes = file.bytes;
-        if (bytes == null) return;
+        if (bytes == null) {
+          return;
+        }
         await _uploadBytes(bytes, name, mime,
             typeHint: _isImageMime(mime) ? 'image' : 'file');
       } else {
         final path = file.path;
-        if (path == null) return;
+        if (path == null) {
+          return;
+        }
         await _uploadFilePath(path, name, mime,
             typeHint: _isImageMime(mime) ? 'image' : 'file');
       }
@@ -239,11 +234,21 @@ class PartnerChatTabState extends State<PartnerChatTab> {
 
   String _guessMimeByName(String name) {
     final lower = name.toLowerCase();
-    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-    if (lower.endsWith('.png')) return 'image/png';
-    if (lower.endsWith('.gif')) return 'image/gif';
-    if (lower.endsWith('.webp')) return 'image/webp';
-    if (lower.endsWith('.pdf')) return 'application/pdf';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+      return 'image/jpeg';
+    }
+    if (lower.endsWith('.png')) {
+      return 'image/png';
+    }
+    if (lower.endsWith('.gif')) {
+      return 'image/gif';
+    }
+    if (lower.endsWith('.webp')) {
+      return 'image/webp';
+    }
+    if (lower.endsWith('.pdf')) {
+      return 'application/pdf';
+    }
     return 'application/octet-stream';
   }
 
@@ -335,9 +340,15 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   // ---------- Message actions ----------
   Future<void> _editMessage(DocumentSnapshot<Map<String, dynamic>> doc) async {
     final data = doc.data();
-    if (data == null) return;
-    if (data['from'] != widget.currentUserId) return;
-    if ((data['type'] ?? 'text') != 'text') return;
+    if (data == null) {
+      return;
+    }
+    if (data['from'] != widget.currentUserId) {
+      return;
+    }
+    if ((data['type'] ?? 'text') != 'text') {
+      return;
+    }
 
     final controller =
         TextEditingController(text: (data['message'] ?? '').toString());
@@ -362,7 +373,9 @@ class PartnerChatTabState extends State<PartnerChatTab> {
       ),
     );
 
-    if (newText == null) return;
+    if (newText == null) {
+      return;
+    }
     if (newText.isEmpty) {
       _toast('Message cannot be empty');
       return;
@@ -384,8 +397,12 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   Future<void> _deleteMessage(
       DocumentSnapshot<Map<String, dynamic>> doc) async {
     final data = doc.data();
-    if (data == null) return;
-    if (data['from'] != widget.currentUserId) return;
+    if (data == null) {
+      return;
+    }
+    if (data['from'] != widget.currentUserId) {
+      return;
+    }
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -403,7 +420,9 @@ class PartnerChatTabState extends State<PartnerChatTab> {
         ],
       ),
     );
-    if (confirm != true) return;
+    if (confirm != true) {
+      return;
+    }
 
     final fileUrl = (data['fileUrl'] ?? '').toString();
     if (fileUrl.isNotEmpty) {
@@ -413,50 +432,6 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     }
 
     await doc.reference.delete();
-  }
-
-  Future<void> _clearChat() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Clear chat?'),
-        content:
-            const Text('This will delete all messages for both participants.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Clear')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-
-    try {
-      const batchSize = 50;
-      while (true) {
-        final snap =
-            await _messagesRef.orderBy('timestamp').limit(batchSize).get();
-        if (snap.docs.isEmpty) break;
-        final batch = FirebaseFirestore.instance.batch();
-        for (final d in snap.docs) {
-          final fu = (d.data()['fileUrl'] ?? '').toString();
-          if (fu.isNotEmpty) {
-            try {
-              await FirebaseStorage.instance.refFromURL(fu).delete();
-            } catch (_) {}
-          }
-          batch.delete(d.reference);
-        }
-        await batch.commit();
-        if (snap.docs.length < batchSize) break;
-      }
-      _toast('Chat cleared');
-    } catch (e) {
-      _toast('Failed to clear chat');
-    }
   }
 
   // ---------- Pickers UI ----------
@@ -600,7 +575,9 @@ class PartnerChatTabState extends State<PartnerChatTab> {
 
   // ---------- UI helpers ----------
   void _toast(String msg) {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
@@ -718,13 +695,13 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   @override
   Widget build(BuildContext context) {
     // 1. USE THESE COLORS
-    final Color _kTealColor = const Color(0xFF00897B);
-    final Color _kBgColor = const Color(0xFFF1F5F9);
+    final Color kTealColor = const Color(0xFF00897B);
+    final Color kBgColor = const Color(0xFFF1F5F9);
 
     final pickerVisible = _pickingEmoji || _pickingSticker;
 
     return Scaffold(
-      backgroundColor: _kBgColor,
+      backgroundColor: kBgColor,
       body: Column(
         children: [
           // MESSAGES LIST
@@ -773,7 +750,7 @@ class PartnerChatTabState extends State<PartnerChatTab> {
                       time: timeStr,
                       isMe: isMe,
                       senderName: senderName,
-                      color: _kTealColor,
+                      color: kTealColor,
                       type: type,
                       imageUrl: type == 'image' ? fileUrl : null,
                       onLongPress: () => _onBubbleLongPress(d, isMe, type),
@@ -788,7 +765,7 @@ class PartnerChatTabState extends State<PartnerChatTab> {
             LinearProgressIndicator(
                 minHeight: 2,
                 backgroundColor: Colors.transparent,
-                color: _kTealColor),
+                color: kTealColor),
 
           // CONTEXT AREA (Expenses) - KEEPING YOUR LOGIC
           if (_attachedTxs.isNotEmpty)
@@ -800,12 +777,13 @@ class PartnerChatTabState extends State<PartnerChatTab> {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 4)
                 ],
               ),
               child: Row(
                 children: [
-                  Icon(Icons.receipt, color: _kTealColor),
+                  Icon(Icons.receipt, color: kTealColor),
                   const SizedBox(width: 8),
                   Text("${_attachedTxs.length} expenses attached"),
                   const Spacer(),

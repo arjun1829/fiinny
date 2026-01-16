@@ -14,12 +14,12 @@ class SplitSummaryWidget extends StatelessWidget {
   final ContactNameService? contactNames;
 
   const SplitSummaryWidget({
-    Key? key,
+    super.key,
     required this.expenses,
     required this.friends,
     required this.userPhone,
     this.contactNames,
-  }) : super(key: key);
+  });
 
   FriendModel? _friend(String phone) {
     try {
@@ -38,7 +38,7 @@ class SplitSummaryWidget extends StatelessWidget {
   String _groupDigits(String s) {
     return s.replaceAllMapped(
       RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
-          (m) => '${m[1]} ',
+      (m) => '${m[1]} ',
     );
   }
 
@@ -165,17 +165,15 @@ class SplitSummaryWidget extends StatelessWidget {
               final friend = _friend(entry.key);
               final displayName = _displayName(friend, entry.key);
               final owesYou = entry.value > 0;
-              final description = owesYou
-                  ? '$displayName owes you'
-                  : 'You owe $displayName';
+              final description =
+                  owesYou ? '$displayName owes you' : 'You owe $displayName';
               return _TopLine(
                 phone: entry.key,
                 friend: friend,
                 displayName: displayName,
                 description: description,
                 amountText: _money0(entry.value.abs()),
-                amountColor:
-                    owesYou ? Colors.teal.shade800 : Colors.redAccent,
+                amountColor: owesYou ? Colors.teal.shade800 : Colors.redAccent,
               );
             }),
         ],
@@ -208,12 +206,11 @@ class _RowLine extends StatelessWidget {
   final bool isBold;
 
   const _RowLine({
-    Key? key,
     required this.label,
     required this.value,
     this.valueColor,
     this.isBold = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -245,14 +242,13 @@ class _TopLine extends StatelessWidget {
   final Color amountColor;
 
   const _TopLine({
-    Key? key,
     required this.phone,
     required this.friend,
     required this.displayName,
     required this.description,
     required this.amountText,
     required this.amountColor,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -274,8 +270,7 @@ class _TopLine extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             amountText,
-            style: TextStyle(
-                color: amountColor, fontWeight: FontWeight.w800),
+            style: TextStyle(color: amountColor, fontWeight: FontWeight.w800),
           ),
         ],
       ),
@@ -289,10 +284,8 @@ class _AvatarCache {
   static Future<String?> getUrl(String phone) async {
     if (_map.containsKey(phone)) return _map[phone];
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(phone)
-          .get();
+      final snap =
+          await FirebaseFirestore.instance.collection('users').doc(phone).get();
       final url = (snap.data()?['avatar'] as String?)?.trim();
       _map[phone] = (url != null && url.isNotEmpty) ? url : null;
       return _map[phone];
@@ -340,7 +333,8 @@ class _TinyAvatar extends StatelessWidget {
             ? nameSource.characters.first.toUpperCase()
             : '👤';
         return CircleAvatar(
-            radius: 14, child: Text(initial, style: const TextStyle(fontSize: 13)));
+            radius: 14,
+            child: Text(initial, style: const TextStyle(fontSize: 13)));
       },
     );
   }

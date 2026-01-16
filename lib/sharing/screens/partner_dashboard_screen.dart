@@ -18,12 +18,12 @@ class PartnerDashboardScreen extends StatefulWidget {
   final double debit;
 
   const PartnerDashboardScreen({
-    Key? key,
+    super.key,
     required this.partner,
     required this.currentUserId,
     this.credit = 0.0,
     this.debit = 0.0,
-  }) : super(key: key);
+  });
 
   @override
   State<PartnerDashboardScreen> createState() => _PartnerDashboardScreenState();
@@ -35,11 +35,11 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
   late Map<String, bool> permissions;
 
   final GlobalKey<PartnerChatTabState> _chatKey = GlobalKey();
-  
+
   // Multi-select & Discuss
   bool _isSelectionMode = false;
-  final Set<String> _selectedTxIds = {}; // using date timestamp string as ID for now
-
+  final Set<String> _selectedTxIds =
+      {}; // using date timestamp string as ID for now
 
   String? partnerAvatar;
   String partnerName = "";
@@ -63,9 +63,12 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this); // Transactions + Chat
+    _tabController =
+        TabController(length: 2, vsync: this); // Transactions + Chat
     _tabController.addListener(() {
-      if (mounted) setState(() {}); // so the expand icon shows only on Chat tab
+      if (mounted) {
+        setState(() {}); // so the expand icon shows only on Chat tab
+      }
     });
     permissions = widget.partner.permissions;
     _loadAll();
@@ -80,16 +83,17 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
     setState(() {
       partnerAvatar = profileDoc.data()?['avatar'] as String?;
       partnerName =
-      (profileDoc.data()?['name'] as String?)?.trim().isNotEmpty == true
-          ? profileDoc.data()!['name']
-          : widget.partner.partnerName;
+          (profileDoc.data()?['name'] as String?)?.trim().isNotEmpty == true
+              ? profileDoc.data()!['name']
+              : widget.partner.partnerName;
     });
 
     // dates
     final now = DateTime.now();
     last8Days = List.generate(
       8,
-          (i) => DateTime(now.year, now.month, now.day).subtract(Duration(days: 7 - i)),
+      (i) => DateTime(now.year, now.month, now.day)
+          .subtract(Duration(days: 7 - i)),
     );
 
     // if tx not allowed, keep graphs zeroed and bail (no reads)
@@ -217,7 +221,8 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
         'date': d['date'],
       });
     }
-    txs.sort((a, b) => (b['date'] as Timestamp).compareTo(a['date'] as Timestamp));
+    txs.sort(
+        (a, b) => (b['date'] as Timestamp).compareTo(a['date'] as Timestamp));
 
     setState(() {
       selectedDay = day;
@@ -229,10 +234,10 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
     });
   }
 
-
-
   void _onRingTap(int ringIndex) async {
-    if (ringIndex < 0 || ringIndex >= last8Days.length) return;
+    if (ringIndex < 0 || ringIndex >= last8Days.length) {
+      return;
+    }
     // Clear selection on day change
     if (_isSelectionMode) {
       setState(() {
@@ -266,17 +271,21 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
   }
 
   void _onDiscussSelected() {
-    if (_selectedTxIds.isEmpty) return;
-    
+    if (_selectedTxIds.isEmpty) {
+      return;
+    }
+
     // gather selected tx objects
-    final selected = selTxList.where((tx) => _selectedTxIds.contains(tx['date'].toString())).toList();
-    
+    final selected = selTxList
+        .where((tx) => _selectedTxIds.contains(tx['date'].toString()))
+        .toList();
+
     // Pass to chat
     _chatKey.currentState?.attachTransactions(selected);
-    
+
     // Switch tab
     _tabController.animateTo(1);
-    
+
     // Clear selection
     setState(() {
       _isSelectionMode = false;
@@ -324,7 +333,8 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                 Expanded(
                   child: Text(
                     isIncome ? "Income" : "Expense",
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w800),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -384,7 +394,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
               ),
             ],
             const SizedBox(height: 20),
-            
+
             // Discuss Button
             SizedBox(
               width: double.infinity,
@@ -399,7 +409,8 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                 label: const Text("Discuss this transaction"),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
@@ -431,7 +442,8 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
     final avatar = (partnerAvatar != null && partnerAvatar!.isNotEmpty)
         ? partnerAvatar!
         : "assets/images/profile_default.png";
-    final String dateStr = "${selectedDay.day}/${selectedDay.month}/${selectedDay.year}";
+    final String dateStr =
+        "${selectedDay.day}/${selectedDay.month}/${selectedDay.year}";
     final bool isChatTab = _tabController.index == 1;
 
     return Scaffold(
@@ -456,7 +468,8 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
           // --- Partner Card ---
           Card(
             margin: const EdgeInsets.fromLTRB(18, 22, 18, 0),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
             elevation: 5,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
@@ -506,9 +519,15 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      StatMini(label: "CREDIT", value: selCredit, color: Colors.green),
+                      StatMini(
+                          label: "CREDIT",
+                          value: selCredit,
+                          color: Colors.green),
                       const SizedBox(height: 6),
-                      StatMini(label: "DEBIT", value: selDebit, color: Colors.deepOrange),
+                      StatMini(
+                          label: "DEBIT",
+                          value: selDebit,
+                          color: Colors.deepOrange),
                     ],
                   ),
 
@@ -538,16 +557,21 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
             child: Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18)),
               elevation: 2,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 18.0, horizontal: 10),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 18.0, horizontal: 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Last 8 Days Activity',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.teal[700]),
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.teal[700]),
                     ),
                     const SizedBox(height: 10),
                     if (!_canReadTx)
@@ -566,11 +590,13 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                     else
                       (dailyCredits.length == 8 && dailyDebits.length == 8)
                           ? WeeklyPartnerRingsWidget(
-                        dailyCredits: dailyCredits,
-                        dailyDebits: dailyDebits,
-                        onRingTap: _onRingTap,
-                        dateLabels: last8Days.map((d) => "${d.day}/${d.month}").toList(),
-                      )
+                              dailyCredits: dailyCredits,
+                              dailyDebits: dailyDebits,
+                              onRingTap: _onRingTap,
+                              dateLabels: last8Days
+                                  .map((d) => "${d.day}/${d.month}")
+                                  .toList(),
+                            )
                           : const Center(child: CircularProgressIndicator()),
                   ],
                 ),
@@ -593,7 +619,8 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
             ),
           ),
           Container(
-            height: 360, // keep your compact area; full screen is a separate route now
+            height:
+                360, // keep your compact area; full screen is a separate route now
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: TabBarView(
               controller: _tabController,
@@ -602,28 +629,37 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
 
                 // ---------------- Transactions (Unified, tappable) ----------------
                 if (!_canReadTx)
-                  const Center(child: Text("You don't have permission to view transactions."))
+                  const Center(
+                      child: Text(
+                          "You don't have permission to view transactions."))
                 else if (selTxList.isEmpty)
                   const Center(child: Text("No transactions for this day"))
                 else
                   Stack(
                     children: [
                       ListView.separated(
-                        padding: EdgeInsets.fromLTRB(4, 10, 4, safeBottom + 80), // extra padding for FAB/Discuss bar
+                        padding: EdgeInsets.fromLTRB(
+                            4,
+                            10,
+                            4,
+                            safeBottom +
+                                80), // extra padding for FAB/Discuss bar
                         itemCount: selTxList.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (ctx, i) {
                           final tx = selTxList[i];
-                          final isIncome = (tx['type']?.toString() ?? '') == 'income';
+                          final isIncome =
+                              (tx['type']?.toString() ?? '') == 'income';
                           final amount = (tx['amount'] as num? ?? 0).toDouble();
-                          final category = (tx['category'] as String?)?.trim() ?? 'General';
+                          final category =
+                              (tx['category'] as String?)?.trim() ?? 'General';
                           final note = (tx['note'] as String?)?.trim() ?? '';
                           final ts = tx['date'] as Timestamp?;
                           final dt = ts?.toDate();
                           final time = dt == null
                               ? ''
                               : "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-                          
+
                           final id = tx['date'].toString();
                           final isSelected = _selectedTxIds.contains(id);
 
@@ -660,16 +696,20 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                               onTap: _onDiscussSelected,
                               borderRadius: BorderRadius.circular(50),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 24, vertical: 14),
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    const Icon(Icons.chat_bubble_outline, color: Colors.white),
+                                    const Icon(Icons.chat_bubble_outline,
+                                        color: Colors.white),
                                     const SizedBox(width: 12),
                                     Text(
                                       "Discuss (${_selectedTxIds.length})",
                                       style: const TextStyle(
-                                          color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold),
                                     ),
                                   ],
                                 ),
@@ -679,7 +719,6 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
                         ),
                     ],
                   ),
-
 
                 // ---------------- Chat (compact) ----------------
                 SafeArea(
@@ -700,7 +739,9 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
   }
 
   String _formatDate(dynamic date) {
-    if (date == null) return "";
+    if (date == null) {
+      return "";
+    }
     if (date is Timestamp) {
       final d = date.toDate();
       return "${d.hour}:${d.minute.toString().padLeft(2, '0')}";
@@ -719,13 +760,16 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 14, color: fg),
           const SizedBox(width: 6),
-          Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
+          Text(text,
+              style: TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
         ],
       ),
     );

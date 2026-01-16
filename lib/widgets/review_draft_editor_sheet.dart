@@ -8,7 +8,8 @@ import '../models/ingest_draft_model.dart';
 class ReviewDraftEditorSheet extends StatefulWidget {
   final String userId;
   final IngestDraft draft;
-  const ReviewDraftEditorSheet({super.key, required this.userId, required this.draft});
+  const ReviewDraftEditorSheet(
+      {super.key, required this.userId, required this.draft});
 
   @override
   State<ReviewDraftEditorSheet> createState() => _ReviewDraftEditorSheetState();
@@ -26,10 +27,13 @@ class _ReviewDraftEditorSheetState extends State<ReviewDraftEditorSheet> {
   void initState() {
     super.initState();
     _amount = TextEditingController(
-      text: widget.draft.amount == null ? '' : widget.draft.amount!.toStringAsFixed(2),
+      text: widget.draft.amount == null
+          ? ''
+          : widget.draft.amount!.toStringAsFixed(2),
     );
     _note = TextEditingController(text: widget.draft.note);
-    _category = TextEditingController(text: widget.draft.brain?['category'] ?? '');
+    _category =
+        TextEditingController(text: widget.draft.brain?['category'] ?? '');
     _date = widget.draft.date;
     _direction = widget.draft.direction;
   }
@@ -65,24 +69,34 @@ class _ReviewDraftEditorSheetState extends State<ReviewDraftEditorSheet> {
                   children: [
                     Center(
                       child: Container(
-                        width: 38, height: 4,
+                        width: 38,
+                        height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.black26, borderRadius: BorderRadius.circular(999),
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(999),
                         ),
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Text('Edit Draft', style: Theme.of(context).textTheme.titleLarge),
+                    Text('Edit Draft',
+                        style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 8),
                     Row(
                       children: [
                         SegmentedButton<String>(
                           segments: const [
-                            ButtonSegment(value: 'debit', label: Text('Debit'), icon: Icon(Icons.call_made_rounded)),
-                            ButtonSegment(value: 'credit', label: Text('Credit'), icon: Icon(Icons.call_received_rounded)),
+                            ButtonSegment(
+                                value: 'debit',
+                                label: Text('Debit'),
+                                icon: Icon(Icons.call_made_rounded)),
+                            ButtonSegment(
+                                value: 'credit',
+                                label: Text('Credit'),
+                                icon: Icon(Icons.call_received_rounded)),
                           ],
                           selected: {_direction},
-                          onSelectionChanged: (s) => setState(()=> _direction = s.first),
+                          onSelectionChanged: (s) =>
+                              setState(() => _direction = s.first),
                         ),
                         const Spacer(),
                         FilledButton.tonal(
@@ -90,37 +104,51 @@ class _ReviewDraftEditorSheetState extends State<ReviewDraftEditorSheet> {
                             final picked = await showDatePicker(
                               context: context,
                               firstDate: DateTime(2019),
-                              lastDate: DateTime.now().add(const Duration(days: 2)),
+                              lastDate:
+                                  DateTime.now().add(const Duration(days: 2)),
                               initialDate: _date,
                             );
                             if (picked != null) {
+                              if (!context.mounted) return;
                               final time = await showTimePicker(
                                 context: context,
                                 initialTime: TimeOfDay.fromDateTime(_date),
                               );
                               if (time != null) {
-                                setState(()=> _date = DateTime(
-                                  picked.year, picked.month, picked.day, time.hour, time.minute,
-                                ));
+                                setState(() => _date = DateTime(
+                                      picked.year,
+                                      picked.month,
+                                      picked.day,
+                                      time.hour,
+                                      time.minute,
+                                    ));
                               } else {
-                                setState(()=> _date = DateTime(picked.year, picked.month, picked.day, _date.hour, _date.minute));
+                                setState(() => _date = DateTime(
+                                    picked.year,
+                                    picked.month,
+                                    picked.day,
+                                    _date.hour,
+                                    _date.minute));
                               }
                             }
                           },
-                          child: Text(DateFormat('d MMM yyyy, h:mm a').format(_date)),
+                          child: Text(
+                              DateFormat('d MMM yyyy, h:mm a').format(_date)),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _amount,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
                       decoration: const InputDecoration(
                         labelText: 'Amount (INR)',
                         prefixText: '₹ ',
                       ),
                       validator: (v) {
-                        if (_direction == 'debit' && (v==null || v.trim().isEmpty)) {
+                        if (_direction == 'debit' &&
+                            (v == null || v.trim().isEmpty)) {
                           return 'Amount is required for debit.';
                         }
                         if (v != null && v.trim().isNotEmpty) {
@@ -133,14 +161,16 @@ class _ReviewDraftEditorSheetState extends State<ReviewDraftEditorSheet> {
                     ),
                     const SizedBox(height: 12),
                     if (d.fxOriginal != null)
-                      Text('FX detected: ${d.fxOriginal!['currency']} ${d.fxOriginal!['amount']}',
+                      Text(
+                          'FX detected: ${d.fxOriginal!['currency']} ${d.fxOriginal!['amount']}',
                           style: Theme.of(context).textTheme.bodySmall),
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _category,
                       decoration: const InputDecoration(
                         labelText: 'Category (optional)',
-                        helperText: 'Saved into brain.category to pre-fill the final entry',
+                        helperText:
+                            'Saved into brain.category to pre-fill the final entry',
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -159,7 +189,8 @@ class _ReviewDraftEditorSheetState extends State<ReviewDraftEditorSheet> {
                           icon: const Icon(Icons.delete_outline_rounded),
                           label: const Text('Reject'),
                           onPressed: () async {
-                            await ReviewQueueService.instance.reject(widget.userId, d.key);
+                            await ReviewQueueService.instance
+                                .reject(widget.userId, d.key);
                             if (context.mounted) Navigator.pop(context, true);
                           },
                         ),
@@ -170,14 +201,18 @@ class _ReviewDraftEditorSheetState extends State<ReviewDraftEditorSheet> {
                           onPressed: () async {
                             if (!_formKey.currentState!.validate()) return;
                             final amtStr = _amount.text.trim();
-                            final amt = amtStr.isEmpty ? null : double.parse(amtStr);
+                            final amt =
+                                amtStr.isEmpty ? null : double.parse(amtStr);
                             await ReviewQueueService.instance.updateDraft(
-                              widget.userId, d.key,
+                              widget.userId,
+                              d.key,
                               amount: amt,
                               date: _date,
                               direction: _direction,
                               note: _note.text,
-                              category: _category.text.isEmpty ? null : _category.text,
+                              category: _category.text.isEmpty
+                                  ? null
+                                  : _category.text,
                             );
                             if (context.mounted) Navigator.pop(context, true);
                           },
@@ -192,16 +227,20 @@ class _ReviewDraftEditorSheetState extends State<ReviewDraftEditorSheet> {
                         if (!_formKey.currentState!.validate()) return;
                         // Persist edits then approve
                         final amtStr = _amount.text.trim();
-                        final amt = amtStr.isEmpty ? null : double.parse(amtStr);
+                        final amt =
+                            amtStr.isEmpty ? null : double.parse(amtStr);
                         await ReviewQueueService.instance.updateDraft(
-                          widget.userId, d.key,
+                          widget.userId,
+                          d.key,
                           amount: amt,
                           date: _date,
                           direction: _direction,
                           note: _note.text,
-                          category: _category.text.isEmpty ? null : _category.text,
+                          category:
+                              _category.text.isEmpty ? null : _category.text,
                         );
-                        await ReviewQueueService.instance.approve(widget.userId, d.key);
+                        await ReviewQueueService.instance
+                            .approve(widget.userId, d.key);
                         if (context.mounted) Navigator.pop(context, true);
                       },
                     ),

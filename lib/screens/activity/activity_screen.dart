@@ -256,6 +256,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                       final allFriends = await FriendService()
                                           .streamFriends(widget.userPhone)
                                           .first;
+                                      if (!mounted) return;
                                       final ok = await showDialog<bool>(
                                         context: context,
                                         builder: (_) => AddGroupDialog(

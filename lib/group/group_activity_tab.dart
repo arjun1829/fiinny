@@ -20,7 +20,7 @@ class GroupActivityTab extends StatelessWidget {
   final void Function(ExpenseItem e)? onComment;
 
   const GroupActivityTab({
-    Key? key,
+    super.key,
     required this.currentUserPhone,
     required this.group,
     required this.members,
@@ -28,7 +28,7 @@ class GroupActivityTab extends StatelessWidget {
     this.onEdit,
     this.onDelete,
     this.onComment,
-  }) : super(key: key);
+  });
 
   // ---------- Helpers ----------
   FriendModel _friend(String phone) => members.firstWhere(
@@ -70,9 +70,15 @@ class GroupActivityTab extends StatelessWidget {
     final today = DateTime(now.year, now.month, now.day);
     final d = DateTime(dt.year, dt.month, dt.day);
     final diff = today.difference(d).inDays;
-    if (diff == 0) return 'Today';
-    if (diff == 1) return 'Yesterday';
-    if (now.year == dt.year && now.month == dt.month) return 'This Month';
+    if (diff == 0) {
+      return 'Today';
+    }
+    if (diff == 1) {
+      return 'Yesterday';
+    }
+    if (now.year == dt.year && now.month == dt.month) {
+      return 'This Month';
+    }
     return 'Earlier';
   }
 
@@ -345,7 +351,7 @@ class _GlassExpenseCard extends StatelessWidget {
   final void Function(ExpenseItem e)? onComment;
 
   const _GlassExpenseCard({
-    Key? key,
+    super.key,
     required this.expense,
     required this.currentUserPhone,
     required this.friendResolver,
@@ -354,7 +360,7 @@ class _GlassExpenseCard extends StatelessWidget {
     this.onEdit,
     this.onDelete,
     this.onComment,
-  }) : super(key: key);
+  });
 
   String _dateStr(DateTime d) =>
       "${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}";
@@ -431,10 +437,15 @@ class _GlassExpenseCard extends StatelessWidget {
                   PopupMenuButton<String>(
                     tooltip: 'More',
                     onSelected: (v) {
-                      if (v == 'edit' && onEdit != null) onEdit!(expense);
-                      if (v == 'delete' && onDelete != null) onDelete!(expense);
-                      if (v == 'discuss' && onComment != null)
+                      if (v == 'edit' && onEdit != null) {
+                        onEdit!(expense);
+                      }
+                      if (v == 'delete' && onDelete != null) {
+                        onDelete!(expense);
+                      }
+                      if (v == 'discuss' && onComment != null) {
                         onComment!(expense);
+                      }
                     },
                     itemBuilder: (_) => [
                       const PopupMenuItem(

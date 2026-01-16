@@ -8,10 +8,10 @@ class CrisisModeToggleCard extends StatefulWidget {
   final ValueChanged<bool>? onChanged; // Optionally notify parent
 
   const CrisisModeToggleCard({
-    Key? key,
+    super.key,
     required this.userData,
     this.onChanged,
-  }) : super(key: key);
+  });
 
   @override
   State<CrisisModeToggleCard> createState() => _CrisisModeToggleCardState();
@@ -124,17 +124,17 @@ class _CrisisModeToggleCardState extends State<CrisisModeToggleCard> {
             duration: const Duration(milliseconds: 200),
             child: _loading
                 ? SizedBox(
-              width: 36,
-              height: 36,
-              child: Padding(
-                padding: const EdgeInsets.all(4.0),
-                child: CircularProgressIndicator(strokeWidth: 3),
-              ),
-            )
+                    width: 36,
+                    height: 36,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4.0),
+                      child: CircularProgressIndicator(strokeWidth: 3),
+                    ),
+                  )
                 : Switch(
-              value: _isEnabled,
-              onChanged: _toggleCrisis,
-            ),
+                    value: _isEnabled,
+                    onChanged: _toggleCrisis,
+                  ),
           ),
         ),
       ),

@@ -27,14 +27,15 @@ class SyncCoordinator {
 
   Future<void> onAppResume(String userPhone) async {
     _running = true;
-     _trackActivity(); // Track valid session
+    _trackActivity(); // Track valid session
     await _ensureSmsPipelines(userPhone, coldStart: false);
   }
 
   Future<void> _trackActivity() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('last_active_timestamp', DateTime.now().millisecondsSinceEpoch);
+      await prefs.setInt(
+          'last_active_timestamp', DateTime.now().millisecondsSinceEpoch);
     } catch (_) {}
   }
 
@@ -55,7 +56,7 @@ class SyncCoordinator {
         backoffPolicyDelay: const Duration(minutes: 10),
       );
     } catch (e) {
-      debugPrint("Failed to schedule daily gmail sync: $e");
+      // debugPrint("Failed to schedule daily gmail sync: $e");
     }
   }
 
@@ -66,12 +67,13 @@ class SyncCoordinator {
   Future<void> runGmailBackfill(String userPhone) async {
     try {
       await GmailService().fetchAndStoreTransactionsFromGmail(userPhone);
-    } catch (e, st) {
-      debugPrint('[SyncCoordinator] Gmail backfill error: $e\n$st');
+    } catch (e) {
+      // debugPrint('[SyncCoordinator] Gmail backfill error: $e\n$st');
     }
   }
 
-  Future<void> _ensureSmsPipelines(String userPhone, {required bool coldStart}) async {
+  Future<void> _ensureSmsPipelines(String userPhone,
+      {required bool coldStart}) async {
     try {
       final bool granted = await SmsPermissionHelper.hasPermissions();
 
@@ -84,7 +86,8 @@ class SyncCoordinator {
         _smsInitialBackfillRan = true;
       } else {
         final now = DateTime.now();
-        if (_lastSmsSync == null || now.difference(_lastSmsSync!) > const Duration(minutes: 10)) {
+        if (_lastSmsSync == null ||
+            now.difference(_lastSmsSync!) > const Duration(minutes: 10)) {
           await SmsIngestor.instance.syncDelta(
             userPhone: userPhone,
             overlapHours: 12,
@@ -99,8 +102,8 @@ class SyncCoordinator {
       }
 
       await SmsIngestor.instance.scheduleDaily48hSync(userPhone);
-    } catch (e, st) {
-      debugPrint('[SyncCoordinator] SMS pipeline error: $e\n$st');
+    } catch (e) {
+      // debugPrint('[SyncCoordinator] SMS pipeline error: $e\n$st');
     }
   }
 }

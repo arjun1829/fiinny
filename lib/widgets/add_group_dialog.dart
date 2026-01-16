@@ -113,7 +113,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
   Future<void> _pickGroupPhoto() async {
     final picker = ImagePicker();
     final picked =
-    await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+        await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
     if (picked != null) {
       setState(() => _groupPhoto = File(picked.path));
     }
@@ -172,7 +172,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
             builder: (context, scrollController) {
               return ClipRRect(
                 borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(24)),
+                    const BorderRadius.vertical(top: Radius.circular(24)),
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                   child: Container(
@@ -183,8 +183,8 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                           Colors.white.withValues(alpha: 0.9)
                         ],
                       ),
-                      border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.6)),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.6)),
                       boxShadow: const [
                         BoxShadow(
                           color: Color(0x1F000000),
@@ -230,11 +230,9 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                             decoration: BoxDecoration(
                               color: accent.withValues(alpha: 0.06),
                               borderRadius: BorderRadius.circular(12),
-                              border:
-                              Border.all(color: Colors.grey.shade200),
+                              border: Border.all(color: Colors.grey.shade200),
                             ),
-                            padding:
-                            const EdgeInsets.symmetric(horizontal: 10),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
                             child: Row(
                               children: [
                                 Icon(Icons.search_rounded,
@@ -248,16 +246,15 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                                       border: InputBorder.none,
                                     ),
                                     onChanged: (q) {
-                                      final query =
-                                      q.trim().toLowerCase();
+                                      final query = q.trim().toLowerCase();
                                       setState(() {
-                                        _filteredContacts = _allContacts
-                                            .where((c) {
-                                          final name = c.displayName
-                                              .toLowerCase();
+                                        _filteredContacts =
+                                            _allContacts.where((c) {
+                                          final name =
+                                              c.displayName.toLowerCase();
                                           final phone = c.phones.isNotEmpty
                                               ? c.phones.first.number
-                                              .toLowerCase()
+                                                  .toLowerCase()
                                               : '';
                                           return name.contains(query) ||
                                               phone.contains(query);
@@ -276,18 +273,17 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                           child: ListView.separated(
                             controller: scrollController,
                             itemCount: _filteredContacts.length,
-                            separatorBuilder: (_, __) => Divider(
-                                height: 1,
-                                color: Colors.grey.shade200),
+                            separatorBuilder: (_, __) =>
+                                Divider(height: 1, color: Colors.grey.shade200),
                             itemBuilder: (context, i) {
                               final c = _filteredContacts[i];
-                              final phone =
-                              c.phones.isNotEmpty ? c.phones.first.number : '';
+                              final phone = c.phones.isNotEmpty
+                                  ? c.phones.first.number
+                                  : '';
                               final initial = c.displayName.isNotEmpty
                                   ? c.displayName[0].toUpperCase()
                                   : '👤';
-                              final checked =
-                              tempSelected.contains(c);
+                              final checked = tempSelected.contains(c);
 
                               return ListTile(
                                 leading: CircleAvatar(
@@ -351,12 +347,10 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                                 icon: const Icon(Icons.check_rounded),
                                 label: const Text("Add Selected"),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor:
-                                      accent,
+                                  backgroundColor: accent,
                                   foregroundColor: Colors.white,
                                   shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                      BorderRadius.circular(12)),
+                                      borderRadius: BorderRadius.circular(12)),
                                   elevation: 6,
                                 ),
                               ),
@@ -432,10 +426,12 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
 
   Future<FriendModel?> _resolveFriend(String? phone, Set<String> before) async {
     if (phone != null) {
-      final byPhone = await FriendService().getFriendByPhone(widget.userPhone, phone);
+      final byPhone =
+          await FriendService().getFriendByPhone(widget.userPhone, phone);
       if (byPhone != null) return byPhone;
     }
-    final snapshot = await FriendService().streamFriends(widget.userPhone).first;
+    final snapshot =
+        await FriendService().streamFriends(widget.userPhone).first;
     for (final friend in snapshot.reversed) {
       if (!before.contains(friend.phone)) {
         return friend;
@@ -462,8 +458,8 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
         'createdAt': FieldValue.serverTimestamp(),
         'createdBy': widget.userPhone,
       }, SetOptions(merge: true));
-    } catch (e, stack) {
-      debugPrint('Group meta save failed: $e\n$stack');
+    } catch (e) {
+      // debugPrint('Group meta save failed: $e\n$stack');
     }
   }
 
@@ -508,7 +504,8 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
         _loading = false;
         _error = mapFirebaseError(
           e,
-          fallback: 'Could not create group. Please check your Firebase connection and try again.',
+          fallback:
+              'Could not create group. Please check your Firebase connection and try again.',
         );
       });
     }
@@ -520,13 +517,13 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
   Widget build(BuildContext context) {
     final accent = Colors.black87;
     return Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: Container(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
@@ -626,8 +623,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                         label: "Group Name",
                         icon: Icons.group_rounded,
                       ),
-                      validator: (v) =>
-                      (v == null || v.trim().isEmpty)
+                      validator: (v) => (v == null || v.trim().isEmpty)
                           ? "Enter a group name"
                           : null,
                     ),
@@ -647,7 +643,8 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                                 child: Text(type),
                               ))
                           .toList(),
-                      onChanged: (value) => setState(() => _selectedType = value),
+                      onChanged: (value) =>
+                          setState(() => _selectedType = value),
                     ),
 
                     const SizedBox(height: 10),
@@ -675,12 +672,12 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                             isExpanded: true,
                             items: _countryCodes
                                 .map((c) => DropdownMenuItem<String>(
-                              value: c,
-                              child: Text(c),
-                            ))
+                                      value: c,
+                                      child: Text(c),
+                                    ))
                                 .toList(),
-                            onChanged: (v) => setState(
-                                    () => _countryCode = v ?? '+91'),
+                            onChanged: (v) =>
+                                setState(() => _countryCode = v ?? '+91'),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -689,22 +686,22 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                             onPressed: _loading ? null : _openContactsPicker,
                             icon: _loadingContacts
                                 ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2),
-                            )
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
                                 : const Icon(Icons.contacts_rounded),
                             label: Text(_loadingContacts
                                 ? "Loading…"
                                 : "Select From Contacts"),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: accent,
-                              side: BorderSide(color: accent.withValues(alpha: 0.35)),
+                              side: BorderSide(
+                                  color: accent.withValues(alpha: 0.35)),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12)),
-                              padding:
-                              const EdgeInsets.symmetric(vertical: 12),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                           ),
                         ),
@@ -781,13 +778,15 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                                     : '👤');
                             leading = CircleAvatar(
                               radius: 16,
-                              child: Text(initial, style: const TextStyle(fontSize: 14)),
+                              child: Text(initial,
+                                  style: const TextStyle(fontSize: 14)),
                             );
                           }
                           return CheckboxListTile(
                             value: selected,
                             onChanged: (v) => _toggleFriend(friend, v ?? false),
-                            title: Text(friend.name, overflow: TextOverflow.ellipsis),
+                            title: Text(friend.name,
+                                overflow: TextOverflow.ellipsis),
                             subtitle: Text(friend.phone),
                             secondary: leading,
                           );
@@ -812,8 +811,8 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                         runSpacing: 6,
                         children: _selectedFriends.map((f) {
                           return InputChip(
-                            label: Text(f.name,
-                                overflow: TextOverflow.ellipsis),
+                            label:
+                                Text(f.name, overflow: TextOverflow.ellipsis),
                             onDeleted: () => _toggleFriend(f, false),
                           );
                         }).toList(),
@@ -849,26 +848,25 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
                         const Spacer(),
                         _loading
                             ? const SizedBox(
-                          width: 26,
-                          height: 26,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2.6),
-                        )
+                                width: 26,
+                                height: 26,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2.6),
+                              )
                             : ElevatedButton.icon(
-                          onPressed: _submit,
-                          icon: const Icon(Icons.check_rounded),
-                          label: const Text("Create"),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: accent,
-                            foregroundColor: Colors.white,
-                            elevation: 6,
-                            shape: RoundedRectangleBorder(
-                                borderRadius:
-                                BorderRadius.circular(14)),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
-                          ),
-                        ),
+                                onPressed: _submit,
+                                icon: const Icon(Icons.check_rounded),
+                                label: const Text("Create"),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: accent,
+                                  foregroundColor: Colors.white,
+                                  elevation: 6,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14)),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 12),
+                                ),
+                              ),
                       ],
                     ),
                   ],
@@ -888,8 +886,7 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
       prefixIcon: icon != null ? Icon(icon) : null,
       filled: true,
       fillColor: Colors.black87.withValues(alpha: 0.06),
-      contentPadding:
-      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: Colors.grey.shade300),

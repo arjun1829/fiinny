@@ -19,13 +19,13 @@ class AddCustomReminderSheet extends StatefulWidget {
   final bool mirrorToFriend;
   final String? friendId;
   const AddCustomReminderSheet({
-    Key? key,
+    super.key,
     required this.userPhone,
     required this.scope,
     this.participantUserIds = const <String>[],
     this.mirrorToFriend = true,
     this.friendId,
-  }) : super(key: key);
+  });
 
   @override
   State<AddCustomReminderSheet> createState() => _AddCustomReminderSheetState();
@@ -43,7 +43,8 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
   );
 
   // Frequency UI
-  String _freq = 'monthly'; // 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
+  String _freq =
+      'monthly'; // 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
   int _weekday = DateTime.now().weekday; // 1..7 (Mon..Sun)
   int _customDays = 3; // for custom: every N days (>=1)
 
@@ -78,7 +79,9 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
   // --------- Pickers ---------
   Future<void> _pickTime() async {
     final t = await showTimePicker(context: context, initialTime: _time);
-    if (t != null) setState(() => _time = t);
+    if (t != null) {
+      setState(() => _time = t);
+    }
   }
 
   Future<void> _pickDate() async {
@@ -109,18 +112,21 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
   }
 
   // --------- Formatting helpers ---------
-  String _fmtDate(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}-'
-          '${d.month.toString().padLeft(2, '0')}-'
-          '${d.year}';
+  String _fmtDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.year}';
 
   String _fmtTime(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   // --------- Save ---------
   Future<void> _save() async {
-    if (_saving) return;
-    if (!_form.currentState!.validate()) return;
+    if (_saving) {
+      return;
+    }
+    if (!_form.currentState!.validate()) {
+      return;
+    }
 
     final now = DateTime.now();
 
@@ -151,9 +157,9 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
     // Compute first next due: if firstDue is today/future -> use it; else roll forward
     final computed = _svc.computeNextDue(rule, from: now);
     final DateTime nextDue =
-    _firstDue.isAfter(now.subtract(const Duration(minutes: 1)))
-        ? _firstDue
-        : computed;
+        _firstDue.isAfter(now.subtract(const Duration(minutes: 1)))
+            ? _firstDue
+            : computed;
 
     final item = SharedItem(
       id: '', // service assigns id
@@ -170,7 +176,8 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
     setState(() => _saving = true);
     try {
       // 0) Make sure the local-notifs pipeline is ready (same as prefs screen)
-      await PushService.init(); // idempotent; ensures channels on Android & hooks
+      await PushService
+          .init(); // idempotent; ensures channels on Android & hooks
 
       String newId;
       if (_isGroup) {
@@ -192,7 +199,8 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
 
           await _scheduleLocalOnce(
             id: newId,
-            title: item.title?.trim().isEmpty == true ? 'Reminder' : item.title!,
+            title:
+                item.title?.trim().isEmpty == true ? 'Reminder' : item.title!,
             due: nextDue,
           );
         }
@@ -218,7 +226,8 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
         if (_notifyEnabled) {
           await _scheduleLocalOnce(
             id: newId,
-            title: item.title?.trim().isEmpty == true ? 'Reminder' : item.title!,
+            title:
+                item.title?.trim().isEmpty == true ? 'Reminder' : item.title!,
             due: nextDue,
           );
         }
@@ -232,7 +241,9 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
         SnackBar(content: Text('Failed to save reminder: $e')),
       );
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 
@@ -255,16 +266,13 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
     ).subtract(Duration(days: _daysBefore));
 
     // If it's in the past (e.g., large daysBefore), bump to now + 1 min.
-    final fireAt = planned.isAfter(now)
-        ? planned
-        : now.add(const Duration(minutes: 1));
+    final fireAt =
+        planned.isAfter(now) ? planned : now.add(const Duration(minutes: 1));
 
     final payload = _isGroup && _groupId != null
-        ? 'app://group/${_groupId}/recurring'
-        : 'app://friend/${_friendId}/recurring';
-    final itemId = _isGroup && _groupId != null
-        ? 'group_${_groupId}_$id'
-        : id;
+        ? 'app://group/$_groupId/recurring'
+        : 'app://friend/$_friendId/recurring';
+    final itemId = _isGroup && _groupId != null ? 'group_${_groupId}_$id' : id;
 
     // Try your wrapper first (keeps your existing implementation)
     try {
@@ -319,7 +327,7 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
         SnackBar(
           content: Text(
             'Reminder saved. Fallback scheduled for '
-                '${_fmtDate(fireAt)} ${_fmtTime(TimeOfDay.fromDateTime(fireAt))}',
+            '${_fmtDate(fireAt)} ${_fmtTime(TimeOfDay.fromDateTime(fireAt))}',
           ),
         ),
       );
@@ -418,7 +426,8 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                     textInputAction: TextInputAction.next,
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) return 'Enter a title';
-                      if (v.trim().length < 3) return 'Make it at least 3 chars';
+                      if (v.trim().length < 3)
+                        return 'Make it at least 3 chars';
                       return null;
                     },
                   ),
@@ -490,16 +499,22 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                           prefixIcon: Icon(Icons.autorenew_rounded),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'daily', child: Text('Every day')),
-                          DropdownMenuItem(value: 'weekly', child: Text('Every week')),
-                          DropdownMenuItem(value: 'monthly', child: Text('Every month')),
-                          DropdownMenuItem(value: 'yearly', child: Text('Every year')),
-                          DropdownMenuItem(value: 'custom', child: Text('Custom (every N days)')),
+                          DropdownMenuItem(
+                              value: 'daily', child: Text('Every day')),
+                          DropdownMenuItem(
+                              value: 'weekly', child: Text('Every week')),
+                          DropdownMenuItem(
+                              value: 'monthly', child: Text('Every month')),
+                          DropdownMenuItem(
+                              value: 'yearly', child: Text('Every year')),
+                          DropdownMenuItem(
+                              value: 'custom',
+                              child: Text('Custom (every N days)')),
                         ],
-                        onChanged: (v) => setState(() => _freq = v ?? 'monthly'),
+                        onChanged: (v) =>
+                            setState(() => _freq = v ?? 'monthly'),
                       ),
                       const SizedBox(height: 8),
-
                       if (_freq == 'weekly') ...[
                         DropdownButtonFormField<int>(
                           initialValue: _weekday,
@@ -510,7 +525,8 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                           items: const [
                             DropdownMenuItem(value: 1, child: Text('Monday')),
                             DropdownMenuItem(value: 2, child: Text('Tuesday')),
-                            DropdownMenuItem(value: 3, child: Text('Wednesday')),
+                            DropdownMenuItem(
+                                value: 3, child: Text('Wednesday')),
                             DropdownMenuItem(value: 4, child: Text('Thursday')),
                             DropdownMenuItem(value: 5, child: Text('Friday')),
                             DropdownMenuItem(value: 6, child: Text('Saturday')),
@@ -519,13 +535,14 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                           onChanged: (v) => setState(() => _weekday = v ?? 1),
                         ),
                       ],
-
                       if (_freq == 'custom') ...[
                         const SizedBox(height: 8),
                         TextFormField(
                           initialValue: _customDays.toString(),
                           keyboardType: TextInputType.number,
-                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly
+                          ],
                           decoration: const InputDecoration(
                             labelText: 'Every N days',
                             hintText: 'e.g. 3',
@@ -559,7 +576,8 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                         value: _notifyEnabled,
                         onChanged: (v) => setState(() => _notifyEnabled = v),
                         title: const Text('Notify'),
-                        subtitle: const Text('Send a local notification before the due'),
+                        subtitle: const Text(
+                            'Send a local notification before the due'),
                         contentPadding: EdgeInsets.zero,
                       ),
                       AnimatedCrossFade(
@@ -571,7 +589,8 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.notifications_active, size: 18),
+                                const Icon(Icons.notifications_active,
+                                    size: 18),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Slider(
@@ -615,7 +634,8 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                             Align(
                               alignment: Alignment.centerLeft,
                               child: OutlinedButton.icon(
-                                icon: const Icon(Icons.notification_important_outlined),
+                                icon: const Icon(
+                                    Icons.notification_important_outlined),
                                 label: const Text('Test on this device'),
                                 onPressed: _testLocalNow,
                               ),
@@ -630,7 +650,8 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                                 subtitle: const Text(
                                     'Sends to you and your friend (recommended)'),
                                 dense: true,
-                                controlAffinity: ListTileControlAffinity.leading,
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
                                 contentPadding: EdgeInsets.zero,
                               ),
                           ],
@@ -648,8 +669,9 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed:
-                        _saving ? null : () => Navigator.of(context).maybePop(),
+                        onPressed: _saving
+                            ? null
+                            : () => Navigator.of(context).maybePop(),
                         icon: const Icon(Icons.close_rounded),
                         label: const Text('Cancel'),
                       ),
@@ -660,10 +682,11 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                         onPressed: _saving ? null : _save,
                         icon: _saving
                             ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
                             : const Icon(Icons.check_rounded),
                         label: const Text('Save'),
                       ),

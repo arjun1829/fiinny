@@ -14,10 +14,11 @@ class AssetsSummaryCard extends StatelessWidget {
     required this.assetCount,
     required this.totalAssets,
     required this.onAddAsset,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
-  static final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+  static final _inr =
+      NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
   @override
   Widget build(BuildContext context) {

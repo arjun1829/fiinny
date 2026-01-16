@@ -21,7 +21,9 @@ class _SettleSuccessDialogState extends State<SettleSuccessDialog> {
     super.initState();
     HapticFeedback.lightImpact();
     _timer = Timer(const Duration(milliseconds: 900), () {
-      if (mounted) Navigator.of(context).maybePop();
+      if (mounted) {
+        Navigator.of(context).maybePop();
+      }
     });
     Future.microtask(() {
       if (mounted) {
@@ -57,11 +59,15 @@ class _SettleSuccessDialogState extends State<SettleSuccessDialog> {
               child: Container(
                 padding: const EdgeInsets.all(AppSpacing.xl),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface.withValues(alpha: .92),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surface
+                      .withValues(alpha: .92),
                   borderRadius: BorderRadius.circular(28),
                   boxShadow: [
                     BoxShadow(
-                      color: Theme.of(context).shadowColor.withValues(alpha: .16),
+                      color:
+                          Theme.of(context).shadowColor.withValues(alpha: .16),
                       blurRadius: 24,
                       offset: const Offset(0, 12),
                     ),
@@ -77,20 +83,27 @@ class _SettleSuccessDialogState extends State<SettleSuccessDialog> {
                         color: Theme.of(context).colorScheme.primary,
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(Icons.check_rounded, color: Theme.of(context).colorScheme.onPrimary, size: 42),
+                      child: Icon(Icons.check_rounded,
+                          color: Theme.of(context).colorScheme.onPrimary,
+                          size: 42),
                     ),
                     const SizedBox(height: AppSpacing.l),
                     Text(
                       'Success!',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                      style:
+                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
                     ),
                     const SizedBox(height: AppSpacing.s),
                     Text(
                       'Marked as settled.',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: .72),
+                            color: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.color
+                                ?.withValues(alpha: .72),
                           ),
                     ),
                   ],

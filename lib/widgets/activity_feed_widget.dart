@@ -7,7 +7,7 @@ class ActivityFeedWidget extends StatelessWidget {
   final List<ActivityItem> activities;
   final Function(ActivityItem)? onTap;
 
-  const ActivityFeedWidget({Key? key, required this.activities, this.onTap}) : super(key: key);
+  const ActivityFeedWidget({super.key, required this.activities, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +58,7 @@ class ActivityFeedWidget extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
           subtitle: Text(
-            "${typeLabel} • ${item.date.toLocal().toString().substring(0, 16)}",
+            "$typeLabel • ${item.date.toLocal().toString().substring(0, 16)}",
             style: TextStyle(color: Colors.grey[600]),
           ),
           trailing: Text(

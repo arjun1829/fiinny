@@ -35,7 +35,9 @@ class FxService {
   }
 
   bool _shouldFetch() {
-    if (_lastFetch == null) return true;
+    if (_lastFetch == null) {
+      return true;
+    }
     final difference = DateTime.now().difference(_lastFetch!);
     return difference.inHours > 24;
   }
@@ -92,7 +94,9 @@ class FxService {
 
   /// Returns rate to convert 1 Unit of [from] -> [to]
   double getRate(String from, String to) {
-    if (from == to) return 1.0;
+    if (from == to) {
+      return 1.0;
+    }
 
     // Everything is stored relative to USD (Base 1.0)
     // if from=EUR, rate is ~0.92 (meaning 1 USD = 0.92 EUR) => NO, wait.
@@ -112,7 +116,9 @@ class FxService {
     if (fromRate == 0 || toRate == 0) {
       // Fallback
       debugPrint('FxService Warning: Missing rate for $from or $to');
-      if (from == 'USD') return 1.0;
+      if (from == 'USD') {
+        return 1.0;
+      }
       return 1.0;
     }
 
@@ -120,7 +126,9 @@ class FxService {
   }
 
   double convert(double amount, String from, String to) {
-    if (from == to) return amount;
+    if (from == to) {
+      return amount;
+    }
     return amount * getRate(from, to);
   }
 }

@@ -4,7 +4,7 @@ import '../services/balance_service.dart';
 class SummaryCards extends StatelessWidget {
   final String userId;
 
-  const SummaryCards({Key? key, required this.userId}) : super(key: key);
+  const SummaryCards({super.key, required this.userId});
 
   @override
   Widget build(BuildContext context) {
@@ -12,7 +12,8 @@ class SummaryCards extends StatelessWidget {
       stream: BalanceService().streamUserBalances(userId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: Padding(
+          return Center(
+              child: Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
             child: CircularProgressIndicator(),
           ));
@@ -69,12 +70,12 @@ class _SummaryCard extends StatelessWidget {
   final IconData icon;
 
   const _SummaryCard({
-    Key? key,
+    super.key,
     required this.title,
     required this.value,
     required this.color,
     required this.icon,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

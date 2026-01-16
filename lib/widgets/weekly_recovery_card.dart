@@ -6,11 +6,11 @@ class WeeklyRecoveryCard extends StatelessWidget {
   final int daysLeft;
 
   const WeeklyRecoveryCard({
-    Key? key,
+    super.key,
     required this.weeklyLimit,
     required this.spentSoFar,
     required this.daysLeft,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

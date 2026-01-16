@@ -39,13 +39,17 @@ Map<String, MemberTotals> computeMemberTotals(List<ExpenseItem> expenses) {
   final map = <String, MemberTotals>{};
 
   for (final e in expenses) {
-    if ((e.payerId).isEmpty) continue;
+    if ((e.payerId).isEmpty) {
+      continue;
+    }
 
     if (looksLikeSettlement(e)) {
       // Treat settlement as cash transfer from payer -> others.
       final payer = e.payerId;
       final others = e.friendIds.toSet().where((id) => id.isNotEmpty).toList();
-      if (others.isEmpty) continue;
+      if (others.isEmpty) {
+        continue;
+      }
 
       final amt = e.amount.abs();
       final perOther = amt / others.length;
@@ -96,14 +100,18 @@ Map<String, double> pairwiseNetForUser(
     if (looksLikeSettlement(e)) {
       // Settlement = direct transfer between payer and friendIds
       final others = e.friendIds.where((id) => id.isNotEmpty).toList();
-      if (others.isEmpty) continue;
+      if (others.isEmpty) {
+        continue;
+      }
 
       final perOther = e.amount / others.length;
 
       if (e.payerId == currentUser) {
         // You paid them -> they owe you
         for (final o in others) {
-          if (o == currentUser) continue;
+          if (o == currentUser) {
+            continue;
+          }
           add(o, perOther);
         }
         continue;
@@ -123,7 +131,9 @@ Map<String, double> pairwiseNetForUser(
     // You paid, they participated -> they owe you their share
     if (e.payerId == currentUser) {
       for (final p in participants) {
-        if (p == currentUser) continue;
+        if (p == currentUser) {
+          continue;
+        }
         final share = splits[p] ?? 0.0;
         add(p, share);
       }
@@ -147,7 +157,9 @@ Map<String, double> pairwiseNetForUser(
 bool looksLikeSettlement(ExpenseItem e) {
   final t = (e.type).toLowerCase();
   final lbl = (e.label ?? '').toLowerCase();
-  if (t.contains('settle') || lbl.contains('settle')) return true;
+  if (t.contains('settle') || lbl.contains('settle')) {
+    return true;
+  }
 
   // Your Settle Up flow: single counterparty, no custom splits, marked as bill/transfer.
   if ((e.friendIds.length == 1) &&

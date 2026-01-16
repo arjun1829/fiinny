@@ -31,7 +31,7 @@ class WeeklyPartnerRingsWidget extends StatelessWidget {
   final Curve animationCurve;
 
   const WeeklyPartnerRingsWidget({
-    Key? key,
+    super.key,
     required this.dailyCredits,
     required this.dailyDebits,
     this.dateLabels,
@@ -44,7 +44,7 @@ class WeeklyPartnerRingsWidget extends StatelessWidget {
     this.animate = true,
     this.animationDuration = const Duration(milliseconds: 650),
     this.animationCurve = Curves.easeOutCubic,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -59,8 +59,10 @@ class WeeklyPartnerRingsWidget extends StatelessWidget {
         final credit = _safe(dailyCredits[i]);
         final debit = _safe(dailyDebits[i]);
         final total = (credit + debit);
-        final incomePercent = total > 0 ? (credit / total).clamp(0.0, 1.0) : 0.0;
-        final expensePercent = total > 0 ? (debit / total).clamp(0.0, 1.0) : 0.0;
+        final incomePercent =
+            total > 0 ? (credit / total).clamp(0.0, 1.0) : 0.0;
+        final expensePercent =
+            total > 0 ? (debit / total).clamp(0.0, 1.0) : 0.0;
 
         final ring = _AnimatedMiniSplitRing(
           incomePercent: incomePercent,
@@ -102,11 +104,9 @@ class WeeklyPartnerRingsWidget extends StatelessWidget {
     );
   }
 
-  static double _safe(double v) =>
-      (v.isFinite && v >= 0) ? v : 0.0;
+  static double _safe(double v) => (v.isFinite && v >= 0) ? v : 0.0;
 
-  static String _asCurrency(double v) =>
-      '₹${v.toStringAsFixed(0)}';
+  static String _asCurrency(double v) => '₹${v.toStringAsFixed(0)}';
 }
 
 class _AnimatedMiniSplitRing extends StatelessWidget {
@@ -122,7 +122,7 @@ class _AnimatedMiniSplitRing extends StatelessWidget {
   final Curve curve;
 
   const _AnimatedMiniSplitRing({
-    Key? key,
+    super.key,
     required this.incomePercent,
     required this.expensePercent,
     required this.size,
@@ -133,7 +133,7 @@ class _AnimatedMiniSplitRing extends StatelessWidget {
     required this.animate,
     required this.duration,
     required this.curve,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -215,8 +215,8 @@ class _MiniSplitRingPainter extends CustomPainter {
         ..strokeWidth = strokeWidth
         ..strokeCap = StrokeCap.round;
       final sweep = 2 * pi * incomePercent;
-      canvas.drawArc(Rect.fromCircle(center: center, radius: radius),
-          -pi / 2, sweep, false, p);
+      canvas.drawArc(Rect.fromCircle(center: center, radius: radius), -pi / 2,
+          sweep, false, p);
     }
 
     // Expense arc (starts after income arc)
@@ -228,8 +228,8 @@ class _MiniSplitRingPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round;
       final start = -pi / 2 + (2 * pi * incomePercent);
       final sweep = 2 * pi * expensePercent;
-      canvas.drawArc(Rect.fromCircle(center: center, radius: radius),
-          start, sweep, false, p);
+      canvas.drawArc(Rect.fromCircle(center: center, radius: radius), start,
+          sweep, false, p);
     }
   }
 

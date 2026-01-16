@@ -12,9 +12,9 @@ import 'package:lifemap/fiinny_brain/services/gpt_service.dart'; // We'll need t
 
 import 'package:lifemap/fiinny_brain/insight_models.dart';
 
-// REFACTOR GptService to accept client? 
-// Or I can use runWithClient from http package if on new version? 
-// Current environment sdk is >=3.2.0. http package 1.2.0. 
+// REFACTOR GptService to accept client?
+// Or I can use runWithClient from http package if on new version?
+// Current environment sdk is >=3.2.0. http package 1.2.0.
 // runWithClient is available.
 
 void main() {
@@ -50,40 +50,41 @@ void main() {
       // Mock the HTTP client
       await http.runWithClient(() async {
         final result = await GptService.explainInsight(testInsight);
-        
+
         expect(result, isNotNull);
         expect(result!.explanation, contains('10%'));
         expect(result.suggestions.length, 2);
-      }, () => MockClient((request) async {
-         expect(request.url.toString(), 'https://api.openai.com/v1/chat/completions');
-         expect(request.headers['Authorization'], 'Bearer test-key');
-         
-         // Verify body structure
-         final body = jsonDecode(request.body);
-         expect(body['model'], 'gpt-4o-mini');
-         expect(body['temperature'], 0.3);
-         expect(body['max_tokens'], 150);
-         
-         return http.Response(jsonEncode(mockResponse), 200);
-      }));
+      },
+          () => MockClient((request) async {
+                expect(request.url.toString(),
+                    'https://api.openai.com/v1/chat/completions');
+                expect(request.headers['Authorization'], 'Bearer test-key');
+
+                // Verify body structure
+                final body = jsonDecode(request.body);
+                expect(body['model'], 'gpt-4o-mini');
+                expect(body['temperature'], 0.3);
+                expect(body['max_tokens'], 150);
+
+                return http.Response(jsonEncode(mockResponse), 200);
+              }));
     });
 
     test('Returns null on API failure', () async {
       await http.runWithClient(() async {
         final result = await GptService.explainInsight(testInsight);
         expect(result, isNull);
-      }, () => MockClient((request) async {
-        return http.Response('Server Error', 500);
-      }));
+      },
+          () => MockClient((request) async {
+                return http.Response('Server Error', 500);
+              }));
     });
 
     test('Returns null on invalid JSON schema', () async {
-       final mockResponse = {
+      final mockResponse = {
         'choices': [
           {
-            'message': {
-              'content': 'Not JSON'
-            }
+            'message': {'content': 'Not JSON'}
           }
         ]
       };
@@ -91,22 +92,23 @@ void main() {
       await http.runWithClient(() async {
         final result = await GptService.explainInsight(testInsight);
         expect(result, isNull);
-      }, () => MockClient((request) async {
-        return http.Response(jsonEncode(mockResponse), 200);
-      }));
+      },
+          () => MockClient((request) async {
+                return http.Response(jsonEncode(mockResponse), 200);
+              }));
     });
-    
+
     test('Returns null if API Key is missing', () async {
       SharedPreferences.setMockInitialValues({}); // No key
-      
+
       // Client shouldn't even be called
       await http.runWithClient(() async {
         final result = await GptService.explainInsight(testInsight);
         expect(result, isNull);
-      }, () => MockClient((request) async {
-        fail('Http client should not be called without API key');
-        return http.Response('', 500);
-      }));
+      },
+          () => MockClient((request) async {
+                fail('Http client should not be called without API key');
+              }));
     });
   });
 }

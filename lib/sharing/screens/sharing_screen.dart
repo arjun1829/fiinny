@@ -14,10 +14,10 @@ import '../utils/sharing_permissions.dart';
 
 /// --- Edit Permissions dialog (phone-based & labeled) ---
 Future<bool?> showEditPermissionsDialog(
-    BuildContext context, {
-      required String currentUserPhone,
-      required PartnerModel partner,
-    }) async {
+  BuildContext context, {
+  required String currentUserPhone,
+  required PartnerModel partner,
+}) async {
   final Map<String, bool> permissions = {
     for (final k in SharingPermissions.allKeys()) k: false,
     ...partner.permissions,
@@ -32,14 +32,14 @@ Future<bool?> showEditPermissionsDialog(
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: SharingPermissions
-                  .allKeys()
+              children: SharingPermissions.allKeys()
                   .map((key) => CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(SharingPermissions.label(key)),
-                value: permissions[key] ?? false,
-                onChanged: (val) => setSt(() => permissions[key] = val ?? false),
-              ))
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(SharingPermissions.label(key)),
+                        value: permissions[key] ?? false,
+                        onChanged: (val) =>
+                            setSt(() => permissions[key] = val ?? false),
+                      ))
                   .toList(),
             ),
           ),
@@ -71,15 +71,20 @@ Future<bool?> showEditPermissionsDialog(
   return false;
 }
 
-Future<bool?> showConfirmRemoveDialog(BuildContext context, PartnerModel partner) {
+Future<bool?> showConfirmRemoveDialog(
+    BuildContext context, PartnerModel partner) {
   return showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Remove Partner?'),
       content: Text('Are you sure you want to remove ${partner.partnerName}?'),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-        ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove')),
+        TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel')),
+        ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove')),
       ],
     ),
   );
@@ -97,7 +102,7 @@ const Map<String, String> relationEmojis = {
 
 class SharingScreen extends StatefulWidget {
   final String currentUserPhone; // phone-based doc id
-  const SharingScreen({Key? key, required this.currentUserPhone}) : super(key: key);
+  const SharingScreen({super.key, required this.currentUserPhone});
 
   @override
   State<SharingScreen> createState() => _SharingScreenState();
@@ -122,9 +127,12 @@ class _SharingScreenState extends State<SharingScreen> {
   }
 
   void _refreshAll() {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
-      _partnersFuture = PartnerService().fetchSharedPartnersWithStats(widget.currentUserPhone);
+      _partnersFuture = PartnerService()
+          .fetchSharedPartnersWithStats(widget.currentUserPhone);
       _selectedPartner = null;
     });
     _fetchMyProfileAndTodayStats();
@@ -138,12 +146,15 @@ class _SharingScreenState extends State<SharingScreen> {
         .get();
 
     final data = userDoc.data() ?? {};
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       final n = (data['name'] as String?)?.trim();
       userName = (n != null && n.isNotEmpty) ? n : 'You';
       final avatar = (data['avatar'] as String?)?.trim() ?? '';
-      userAvatar = avatar.isNotEmpty ? avatar : 'assets/images/profile_default.png';
+      userAvatar =
+          avatar.isNotEmpty ? avatar : 'assets/images/profile_default.png';
     });
 
     // Today's stats
@@ -176,7 +187,9 @@ class _SharingScreenState extends State<SharingScreen> {
       count++;
     }
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _todayTxCount = count;
       _todayTxAmount = credit + debit;
@@ -189,7 +202,8 @@ class _SharingScreenState extends State<SharingScreen> {
     final refresh = await showDialog(
       context: context,
       // Keep prop name as-is to avoid breaking your existing dialog API.
-      builder: (ctx) => AddPartnerDialog(currentUserId: widget.currentUserPhone),
+      builder: (ctx) =>
+          AddPartnerDialog(currentUserId: widget.currentUserPhone),
     );
     if (refresh == true) {
       _refreshAll();
@@ -197,7 +211,9 @@ class _SharingScreenState extends State<SharingScreen> {
   }
 
   Future<void> _onEditPermissions() async {
-    if (_selectedPartner == null) return;
+    if (_selectedPartner == null) {
+      return;
+    }
     final saved = await showEditPermissionsDialog(
       context,
       currentUserPhone: widget.currentUserPhone,
@@ -209,7 +225,9 @@ class _SharingScreenState extends State<SharingScreen> {
   }
 
   Future<void> _onRemovePartner() async {
-    if (_selectedPartner == null) return;
+    if (_selectedPartner == null) {
+      return;
+    }
     final confirm = await showConfirmRemoveDialog(context, _selectedPartner!);
     if (confirm == true) {
       await PartnerService().removePartner(
@@ -230,7 +248,8 @@ class _SharingScreenState extends State<SharingScreen> {
         padding: const EdgeInsets.fromLTRB(10, 14, 10, 18),
         child: SharingHeroCard(
           userName: "$relationEmoji ${partner.partnerName}",
-          avatar: partner.avatar?.trim().isNotEmpty == true ? partner.avatar : null,
+          avatar:
+              partner.avatar?.trim().isNotEmpty == true ? partner.avatar : null,
           credit: partner.todayCredit ?? 0.0,
           debit: partner.todayDebit ?? 0.0,
           txCount: partner.todayTxCount ?? 0,
@@ -285,7 +304,9 @@ class _SharingScreenState extends State<SharingScreen> {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: PartnerService().streamIncomingPending(widget.currentUserPhone),
       builder: (context, snap) {
-        if (!snap.hasData || snap.data!.docs.isEmpty) return const SizedBox.shrink();
+        if (!snap.hasData || snap.data!.docs.isEmpty) {
+          return const SizedBox.shrink();
+        }
 
         final items = snap.data!.docs;
         return Column(
@@ -308,16 +329,20 @@ class _SharingScreenState extends State<SharingScreen> {
               final relation = (data['relation'] ?? '').toString();
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
                 child: ListTile(
                   leading: const CircleAvatar(child: Icon(Icons.person)),
-                  title: Text(fromPhone, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(relation.isNotEmpty ? "Relation: $relation" : "Pending"),
+                  title: Text(fromPhone,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                      relation.isNotEmpty ? "Relation: $relation" : "Pending"),
                   trailing: Wrap(
                     spacing: 8,
                     children: [
                       ElevatedButton(
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green),
                         onPressed: () async {
                           await PartnerService().approveRequest(
                             requestId: doc.id,
@@ -356,7 +381,9 @@ class _SharingScreenState extends State<SharingScreen> {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: PartnerService().streamSentPending(widget.currentUserPhone),
       builder: (context, snap) {
-        if (!snap.hasData || snap.data!.docs.isEmpty) return const SizedBox.shrink();
+        if (!snap.hasData || snap.data!.docs.isEmpty) {
+          return const SizedBox.shrink();
+        }
 
         final items = snap.data!.docs;
         return Column(
@@ -379,11 +406,14 @@ class _SharingScreenState extends State<SharingScreen> {
               final relation = (data['relation'] ?? '').toString();
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
                 child: ListTile(
                   leading: const CircleAvatar(child: Icon(Icons.schedule)),
-                  title: Text(toPhone, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(relation.isNotEmpty ? "Relation: $relation" : "Pending"),
+                  title: Text(toPhone,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                      relation.isNotEmpty ? "Relation: $relation" : "Pending"),
                   trailing: OutlinedButton(
                     onPressed: () async {
                       await PartnerService().cancelRequest(
@@ -489,15 +519,16 @@ class _SharingScreenState extends State<SharingScreen> {
                     // 3) Active partners
                     if (snapshot.hasData && snapshot.data!.isNotEmpty) {
                       int i = 0;
-                      for (final partner
-                          in snapshot.data!.where((p) => p.status == 'active')) {
+                      for (final partner in snapshot.data!
+                          .where((p) => p.status == 'active')) {
                         partnerCards.add(_buildPartnerCard(partner, i));
                         i++;
                         if (i % 2 == 0) {
                           partnerCards.add(_buildPartnerAd(i ~/ 2));
                         }
                       }
-                    } else if (snapshot.connectionState == ConnectionState.done &&
+                    } else if (snapshot.connectionState ==
+                            ConnectionState.done &&
                         (snapshot.data == null || snapshot.data!.isEmpty)) {
                       partnerCards.add(
                         AnimatedSlideFade(
@@ -508,7 +539,8 @@ class _SharingScreenState extends State<SharingScreen> {
                               child: Text(
                                 "No partners added yet.\nTap '+' to add your first partner.",
                                 textAlign: TextAlign.center,
-                                style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                                style: TextStyle(
+                                    fontSize: 18, color: Colors.grey[600]),
                               ),
                             ),
                           ),

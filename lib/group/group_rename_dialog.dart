@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 class GroupRenameDialog extends StatefulWidget {
   final String initial;
-  const GroupRenameDialog({Key? key, required this.initial}) : super(key: key);
+  const GroupRenameDialog({super.key, required this.initial});
 
   @override
   State<GroupRenameDialog> createState() => _GroupRenameDialogState();
@@ -37,8 +37,12 @@ class _GroupRenameDialogState extends State<GroupRenameDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        ElevatedButton(onPressed: () => Navigator.pop(context, _c.text.trim()), child: const Text('Save')),
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        ElevatedButton(
+            onPressed: () => Navigator.pop(context, _c.text.trim()),
+            child: const Text('Save')),
       ],
     );
   }

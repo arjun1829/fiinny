@@ -232,8 +232,7 @@ class FiinnyBrainService {
       ));
     }
 
-    final openLoans =
-        userData.loans.where((l) => !(l.isClosed ?? false)).toList();
+    final openLoans = userData.loans.where((l) => !(l.isClosed)).toList();
     if (openLoans.isNotEmpty) {
       final now = DateTime.now();
       for (final loan in openLoans) {

@@ -13,7 +13,7 @@ const kMintBase = Color(0xFF21B9A3); // lighter mint
 const kMintDeep = Color(0xFF159E8A); // deeper mint for gradient start
 
 class WelcomeScreen extends StatefulWidget {
-  const WelcomeScreen({Key? key}) : super(key: key);
+  const WelcomeScreen({super.key});
 
   @override
   State<WelcomeScreen> createState() => _WelcomeScreenState();

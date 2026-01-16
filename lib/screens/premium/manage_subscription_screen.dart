@@ -6,7 +6,8 @@ class ManageSubscriptionScreen extends StatefulWidget {
   const ManageSubscriptionScreen({super.key});
 
   @override
-  State<ManageSubscriptionScreen> createState() => _ManageSubscriptionScreenState();
+  State<ManageSubscriptionScreen> createState() =>
+      _ManageSubscriptionScreenState();
 }
 
 class _ManageSubscriptionScreenState extends State<ManageSubscriptionScreen> {
@@ -41,10 +42,13 @@ class _ManageSubscriptionScreenState extends State<ManageSubscriptionScreen> {
   Future<void> _handleCancel() async {
     setState(() => _isLoading = true);
     try {
-      await Provider.of<SubscriptionService>(context, listen: false).cancelSubscription();
+      await Provider.of<SubscriptionService>(context, listen: false)
+          .cancelSubscription();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Subscription has been cancelled. Auto-renew is off.")),
+          const SnackBar(
+              content:
+                  Text("Subscription has been cancelled. Auto-renew is off.")),
         );
       }
     } catch (e) {
@@ -69,10 +73,12 @@ class _ManageSubscriptionScreenState extends State<ManageSubscriptionScreen> {
 
     final isPremium = subService.isPremium;
     final isPro = subService.isPro;
-    final planName = isPro ? "Pro Plan" : (isPremium ? "Premium Plan" : "Free Plan");
-    final status = sub.status.toUpperCase() ?? "INACTIVE";
+    final planName =
+        isPro ? "Pro Plan" : (isPremium ? "Premium Plan" : "Free Plan");
+    final status = sub.status.toUpperCase();
     final expiry = subService.formattedExpiry;
-    final isCanceled = status == 'CANCELED_PENDING_EXPIRY' || sub.autoRenew == false;
+    final isCanceled =
+        status == 'CANCELED_PENDING_EXPIRY' || sub.autoRenew == false;
 
     return Scaffold(
       appBar: AppBar(title: const Text("Manage Subscription")),
@@ -94,7 +100,12 @@ class _ManageSubscriptionScreenState extends State<ManageSubscriptionScreen> {
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4))],
+                boxShadow: const [
+                  BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 10,
+                      offset: Offset(0, 4))
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -112,37 +123,46 @@ class _ManageSubscriptionScreenState extends State<ManageSubscriptionScreen> {
                       ),
                       if (isPremium)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(8)),
-                          child: Text(status, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                              color: Colors.amber,
+                              borderRadius: BorderRadius.circular(8)),
+                          child: Text(status,
+                              style: const TextStyle(
+                                  fontSize: 10, fontWeight: FontWeight.bold)),
                         ),
                     ],
                   ),
                   const SizedBox(height: 16),
                   if (isPremium) ...[
-                    Text("Renews/Expires on: $expiry", style: const TextStyle(color: Colors.white70)),
+                    Text("Renews/Expires on: $expiry",
+                        style: const TextStyle(color: Colors.white70)),
                     const SizedBox(height: 8),
                     if (isCanceled)
                       const Text(
                         "Auto-renew is OFF. You will not be charged again.",
-                        style: TextStyle(color: Colors.amberAccent, fontSize: 13),
+                        style:
+                            TextStyle(color: Colors.amberAccent, fontSize: 13),
                       )
                     else
                       const Text(
                         "Membership is active and will auto-renew.",
-                        style: TextStyle(color: Colors.greenAccent, fontSize: 13),
+                        style:
+                            TextStyle(color: Colors.greenAccent, fontSize: 13),
                       ),
                   ] else
-                    const Text("You are on the free plan with limited features."),
+                    const Text(
+                        "You are on the free plan with limited features."),
                 ],
               ),
             ),
-            
+
             const SizedBox(height: 32),
 
             // Actions
             if (isPremium && !isCanceled) ...[
-               SizedBox(
+              SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: _isLoading ? null : _confirmCancel,
@@ -172,31 +192,36 @@ class _ManageSubscriptionScreenState extends State<ManageSubscriptionScreen> {
                   icon: const Icon(Icons.arrow_upward),
                   label: const Text("Upgrade to Pro"),
                   style: ElevatedButton.styleFrom(
-                     backgroundColor: Colors.purple,
-                     foregroundColor: Colors.white,
-                     padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: Colors.purple,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                 ),
               ),
               const SizedBox(height: 8),
-               const Text(
+              const Text(
                 "Upgrade now and get credit for your unused Premium days!",
-                style: TextStyle(color: Colors.purple, fontSize: 12, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    color: Colors.purple,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
             ],
 
-             if (!isPremium) ...[
+            if (!isPremium) ...[
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () => Navigator.pushNamed(context, '/premium'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.amber, padding: const EdgeInsets.symmetric(vertical: 16)),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.amber,
+                      padding: const EdgeInsets.symmetric(vertical: 16)),
                   child: const Text("Upgrade Now"),
                 ),
               ),
             ]
-
           ],
         ),
       ),

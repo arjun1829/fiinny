@@ -4,19 +4,19 @@ import 'sharing_hero_ring.dart';
 
 class SharingHeroCard extends StatelessWidget {
   final String userName;
-  final String? avatar;          // http(s) url, asset path, or even an emoji like "😄"
+  final String? avatar; // http(s) url, asset path, or even an emoji like "😄"
   final int txCount;
   final double txAmount;
   final double credit;
   final double debit;
   final bool isMe;
-  final double cardScale;        // 1.0 = normal, 1.1 = 10% bigger
+  final double cardScale; // 1.0 = normal, 1.1 = 10% bigger
   final bool glossy;
   final VoidCallback onTap;
   final Widget? trailingActions; // optional trailing widget
 
   const SharingHeroCard({
-    Key? key,
+    super.key,
     required this.userName,
     required this.avatar,
     required this.credit,
@@ -28,7 +28,7 @@ class SharingHeroCard extends StatelessWidget {
     this.cardScale = 1.0,
     this.glossy = false,
     this.trailingActions,
-  }) : super(key: key);
+  });
 
   bool get _isEmojiAvatar {
     final a = (avatar ?? '').trim();
@@ -41,9 +41,15 @@ class SharingHeroCard extends StatelessWidget {
 
   ImageProvider<Object>? _imageForAvatar() {
     final a = avatar?.trim();
-    if (a == null || a.isEmpty) return const AssetImage('assets/images/profile_default.png');
-    if (a.startsWith('http')) return NetworkImage(a);
-    if (a.contains('/')) return AssetImage(a);
+    if (a == null || a.isEmpty) {
+      return const AssetImage('assets/images/profile_default.png');
+    }
+    if (a.startsWith('http')) {
+      return NetworkImage(a);
+    }
+    if (a.contains('/')) {
+      return AssetImage(a);
+    }
     // If it's not http or asset-like, treat it as non-image (emoji/text handled elsewhere)
     return null;
   }
@@ -64,7 +70,8 @@ class SharingHeroCard extends StatelessWidget {
     return Center(
       child: Semantics(
         button: true,
-        label: '$userName, $txCount transactions today, amount ₹${txAmount.toStringAsFixed(0)}',
+        label:
+            '$userName, $txCount transactions today, amount ₹${txAmount.toStringAsFixed(0)}',
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -100,7 +107,8 @@ class SharingHeroCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(32 * cardScale),
                         child: BackdropFilter(
                           filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                          child: Container(color: Colors.white.withValues(alpha: 0.10)),
+                          child: Container(
+                              color: Colors.white.withValues(alpha: 0.10)),
                         ),
                       ),
                     ),
@@ -139,15 +147,18 @@ class SharingHeroCard extends StatelessWidget {
                       _isEmojiAvatar
                           ? CircleAvatar(
                               radius: avatarRadius,
-                              backgroundColor: Colors.teal.withValues(alpha: 0.12),
+                              backgroundColor:
+                                  Colors.teal.withValues(alpha: 0.12),
                               child: Text(
                                 avatar!,
-                                style: TextStyle(fontSize: avatarRadius), // big emoji
+                                style: TextStyle(
+                                    fontSize: avatarRadius), // big emoji
                               ),
                             )
                           : CircleAvatar(
                               radius: avatarRadius,
-                              backgroundColor: Colors.teal.withValues(alpha: 0.13),
+                              backgroundColor:
+                                  Colors.teal.withValues(alpha: 0.13),
                               backgroundImage: _imageForAvatar(),
                             ),
 
@@ -179,10 +190,13 @@ class SharingHeroCard extends StatelessWidget {
                                   Padding(
                                     padding: const EdgeInsets.only(left: 6),
                                     child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFF09857a).withValues(alpha: 0.10),
-                                        borderRadius: BorderRadius.circular(999),
+                                        color: const Color(0xFF09857a)
+                                            .withValues(alpha: 0.10),
+                                        borderRadius:
+                                            BorderRadius.circular(999),
                                       ),
                                       child: const Text(
                                         'You',
@@ -200,7 +214,8 @@ class SharingHeroCard extends StatelessWidget {
                             Row(
                               children: [
                                 Icon(Icons.compare_arrows_rounded,
-                                    color: Colors.teal[400], size: 17 * cardScale),
+                                    color: Colors.teal[400],
+                                    size: 17 * cardScale),
                                 const SizedBox(width: 5),
                                 Text(
                                   '$txCount today',
@@ -216,7 +231,8 @@ class SharingHeroCard extends StatelessWidget {
                             Row(
                               children: [
                                 Icon(Icons.currency_rupee,
-                                    color: Colors.teal[400], size: 16 * cardScale),
+                                    color: Colors.teal[400],
+                                    size: 16 * cardScale),
                                 const SizedBox(width: 3.5),
                                 Text(
                                   '₹${txAmount.toStringAsFixed(0)}',

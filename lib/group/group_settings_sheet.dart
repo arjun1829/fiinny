@@ -26,12 +26,12 @@ class GroupSettingsSheet extends StatelessWidget {
   final VoidCallback? onChanged; // call to refresh parent
 
   const GroupSettingsSheet({
-    Key? key,
+    super.key,
     required this.currentUserPhone,
     required this.group,
     required this.members,
     this.onChanged,
-  }) : super(key: key);
+  });
 
   static Future<void> show(
     BuildContext context, {
@@ -144,7 +144,9 @@ class GroupSettingsSheet extends StatelessWidget {
         currentUserPhone: currentUserPhone,
       ),
     );
-    if (changed == true) onChanged?.call();
+    if (changed == true) {
+      onChanged?.call();
+    }
   }
 
   // ---------------- EXISTING ACTIONS (kept API) ----------------
@@ -153,7 +155,9 @@ class GroupSettingsSheet extends StatelessWidget {
       context: context,
       builder: (_) => GroupRenameDialog(initial: group.name),
     );
-    if (newName == null || newName.trim().isEmpty) return;
+    if (newName == null || newName.trim().isEmpty) {
+      return;
+    }
     await FirebaseFirestore.instance.collection('groups').doc(group.id).update({
       'name': newName.trim(),
     });
@@ -175,7 +179,9 @@ class GroupSettingsSheet extends StatelessWidget {
         members: members,
       ),
     );
-    if (changed == true) onChanged?.call();
+    if (changed == true) {
+      onChanged?.call();
+    }
   }
 
   Future<void> _leaveGroup(BuildContext context) async {
@@ -201,16 +207,22 @@ class GroupSettingsSheet extends StatelessWidget {
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true) {
+      return;
+    }
     await FirebaseFirestore.instance.collection('groups').doc(group.id).update({
       'memberPhones': FieldValue.arrayRemove([currentUserPhone]),
     });
     onChanged?.call();
-    if (context.mounted) Navigator.pop(context); // close settings
+    if (context.mounted) {
+      Navigator.pop(context); // close settings
+    }
   }
 
   Future<void> _deleteGroup(BuildContext context) async {
-    if (!_isCreator) return;
+    if (!_isCreator) {
+      return;
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -229,7 +241,9 @@ class GroupSettingsSheet extends StatelessWidget {
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true) {
+      return;
+    }
     await FirebaseFirestore.instance
         .collection('groups')
         .doc(group.id)
@@ -355,7 +369,9 @@ class GroupSettingsSheet extends StatelessWidget {
                         source: ImageSource.camera,
                         imageQuality: 82,
                       );
-                      if (x == null) return;
+                      if (x == null) {
+                        return;
+                      }
                       final bytes = await x.readAsBytes();
                       await uploadBytes(bytes, 'image/jpeg');
                     } catch (_) {}
@@ -372,7 +388,9 @@ class GroupSettingsSheet extends StatelessWidget {
                         source: ImageSource.gallery,
                         imageQuality: 82,
                       );
-                      if (x == null) return;
+                      if (x == null) {
+                        return;
+                      }
                       final bytes = await x.readAsBytes();
                       await uploadBytes(bytes, 'image/jpeg');
                     } catch (_) {}
@@ -389,16 +407,22 @@ class GroupSettingsSheet extends StatelessWidget {
                       withData: kIsWeb,
                       type: FileType.image,
                     );
-                    if (res == null || res.files.isEmpty) return;
+                    if (res == null || res.files.isEmpty) {
+                      return;
+                    }
                     final f = res.files.first;
                     final mime = _guessImageMime(f.name);
                     if (kIsWeb) {
                       final bytes = f.bytes;
-                      if (bytes == null) return;
+                      if (bytes == null) {
+                        return;
+                      }
                       await uploadBytes(bytes, mime);
                     } else {
                       final path = f.path;
-                      if (path == null) return;
+                      if (path == null) {
+                        return;
+                      }
                       await uploadFilePath(path, mime);
                     }
                   } catch (e) {
@@ -485,6 +509,7 @@ class _FintechHeaderCard extends StatelessWidget {
   final VoidCallback onChangePhoto;
 
   const _FintechHeaderCard({
+    super.key,
     required this.name,
     required this.memberCount,
     required this.avatarUrl,
@@ -596,6 +621,7 @@ class _FintechActionButton extends StatelessWidget {
   final VoidCallback? onTap;
 
   const _FintechActionButton({
+    super.key,
     required this.icon,
     required this.title,
     this.subtitle,
@@ -658,7 +684,7 @@ class _FintechActionButton extends StatelessWidget {
 
 class _SectionLabel extends StatelessWidget {
   final String text;
-  const _SectionLabel(this.text);
+  const _SectionLabel(this.text, {super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -685,11 +711,11 @@ class _AddMembersReviewSheet extends StatefulWidget {
   final String currentUserPhone;
 
   const _AddMembersReviewSheet({
-    Key? key,
+    super.key,
     required this.groupId,
     required this.members,
     required this.currentUserPhone,
-  }) : super(key: key);
+  });
 
   @override
   State<_AddMembersReviewSheet> createState() => _AddMembersReviewSheetState();
@@ -760,7 +786,9 @@ class _AddMembersReviewSheetState extends State<_AddMembersReviewSheet> {
                                 ),
                               ),
                             );
-                            if (!mounted) return;
+                            if (!mounted) {
+                              return;
+                            }
                             setState(() => _busy = false);
                             Navigator.pop(context, changed == true);
                           },
@@ -791,10 +819,10 @@ class _ContactsPickerSheet extends StatefulWidget {
   final String groupId;
   final String defaultCountryCode;
   const _ContactsPickerSheet({
-    Key? key,
+    super.key,
     required this.groupId,
     required this.defaultCountryCode,
-  }) : super(key: key);
+  });
 
   @override
   State<_ContactsPickerSheet> createState() => _ContactsPickerSheetState();
@@ -811,14 +839,18 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future.delayed(const Duration(milliseconds: 250));
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       await _loadContacts();
     });
   }
 
   Future<void> _loadContacts() async {
     final result = await getContactsWithPermission();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     if (result.permanentlyDenied) {
       await showContactsPermissionSettingsDialog(context);
@@ -965,7 +997,9 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
 
   List<Contact> _filter(List<Contact> list, String q) {
     final qq = q.trim().toLowerCase();
-    if (qq.isEmpty) return list;
+    if (qq.isEmpty) {
+      return list;
+    }
     return list.where((c) {
       final name = c.displayName.toLowerCase();
       final phones = c.phones.map((p) => p.number).join(' ').toLowerCase();
@@ -985,7 +1019,9 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
     // Write to group's memberPhones array
     final entries =
         _selectedPhones.entries.where((e) => e.key.isNotEmpty).toList();
-    if (entries.isEmpty) return;
+    if (entries.isEmpty) {
+      return;
+    }
     final phones = entries.map((e) => e.key).toList();
     final names = {
       for (final e in entries)
@@ -994,10 +1030,14 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
     try {
       await GroupService()
           .addMembers(widget.groupId, phones, displayNames: names);
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       Navigator.pop(context, true);
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -1018,7 +1058,7 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
 class _EmptyState extends StatelessWidget {
   final String title;
   final String subtitle;
-  const _EmptyState({required this.title, required this.subtitle});
+  const _EmptyState({super.key, required this.title, required this.subtitle});
 
   @override
   Widget build(BuildContext context) {

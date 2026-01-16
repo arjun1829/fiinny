@@ -6,13 +6,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// - threadId is a stable key made from the two ids (sorted + joined with "__").
 /// - A parent doc is created with participants & lastMessage for future listing.
 class SharedChatWidget extends StatefulWidget {
-  final String partnerId;      // phone (or legacy doc id)
-  final String currentUserId;  // phone (or legacy doc id)
+  final String partnerId; // phone (or legacy doc id)
+  final String currentUserId; // phone (or legacy doc id)
   const SharedChatWidget({
-    Key? key,
+    super.key,
     required this.partnerId,
     required this.currentUserId,
-  }) : super(key: key);
+  });
 
   @override
   State<SharedChatWidget> createState() => _SharedChatWidgetState();
@@ -49,7 +49,9 @@ class _SharedChatWidgetState extends State<SharedChatWidget> {
 
   Future<void> _sendMessage() async {
     final text = _msgCtrl.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty) {
+      return;
+    }
 
     await _ensureThreadDoc();
 
@@ -108,10 +110,13 @@ class _SharedChatWidgetState extends State<SharedChatWidget> {
                   final text = (data['text'] ?? '').toString();
 
                   return Align(
-                    alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                    alignment:
+                        isMe ? Alignment.centerRight : Alignment.centerLeft,
                     child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
                       constraints: const BoxConstraints(maxWidth: 280),
                       decoration: BoxDecoration(
                         color: isMe
@@ -152,7 +157,8 @@ class _SharedChatWidgetState extends State<SharedChatWidget> {
                     onSubmitted: (_) => _sendMessage(),
                     decoration: InputDecoration(
                       hintText: "Type a message…",
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
                       filled: true,
                       fillColor: Colors.grey.withValues(alpha: 0.10),
                       border: OutlineInputBorder(

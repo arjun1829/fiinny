@@ -4,19 +4,21 @@ import '../models/bill_model.dart';
 
 class CalendarBillView extends StatelessWidget {
   final List<BillModel> bills;
-  final void Function(DateTime, List<BillModel>)? onDaySelected; // Optional callback
+  final void Function(DateTime, List<BillModel>)?
+      onDaySelected; // Optional callback
 
   const CalendarBillView({
-    Key? key,
+    super.key,
     required this.bills,
     this.onDaySelected,
-  }) : super(key: key);
+  });
 
   // Groups bills by due date (yyyy-mm-dd)
   Map<DateTime, List<BillModel>> _billsByDay() {
     final map = <DateTime, List<BillModel>>{};
     for (final bill in bills) {
-      final date = DateTime(bill.dueDate.year, bill.dueDate.month, bill.dueDate.day);
+      final date =
+          DateTime(bill.dueDate.year, bill.dueDate.month, bill.dueDate.day);
       map.putIfAbsent(date, () => []).add(bill);
     }
     return map;
@@ -30,7 +32,8 @@ class CalendarBillView extends StatelessWidget {
       firstDay: DateTime.now().subtract(const Duration(days: 180)),
       lastDay: DateTime.now().add(const Duration(days: 365)),
       focusedDay: DateTime.now(),
-      eventLoader: (day) => billEvents[DateTime(day.year, day.month, day.day)] ?? [],
+      eventLoader: (day) =>
+          billEvents[DateTime(day.year, day.month, day.day)] ?? [],
       calendarStyle: CalendarStyle(
         markerDecoration: BoxDecoration(
           color: Colors.orange,
@@ -57,9 +60,7 @@ class CalendarBillView extends StatelessWidget {
                 height: 7,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: (events[idx]).isOverdue
-                      ? Colors.red
-                      : Colors.orange,
+                  color: (events[idx]).isOverdue ? Colors.red : Colors.orange,
                 ),
               );
             }),

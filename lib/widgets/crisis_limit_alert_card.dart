@@ -5,14 +5,15 @@ class CrisisLimitAlertCard extends StatelessWidget {
   final double limit;
 
   const CrisisLimitAlertCard({
-    Key? key,
+    super.key,
     required this.spent,
     required this.limit,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (spent <= limit) return const SizedBox.shrink(); // Don't show if not exceeded
+    if (spent <= limit)
+      return const SizedBox.shrink(); // Don't show if not exceeded
 
     final overBy = spent - limit;
 
@@ -22,7 +23,8 @@ class CrisisLimitAlertCard extends StatelessWidget {
       elevation: 6,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: ListTile(
-        leading: const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 32),
+        leading: const Icon(Icons.warning_amber_rounded,
+            color: Colors.red, size: 32),
         title: const Text(
           "Limit Exceeded!",
           style: TextStyle(

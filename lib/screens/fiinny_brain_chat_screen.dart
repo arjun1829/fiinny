@@ -2,12 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import '../models/ai_message.dart';
-import '../models/expense_item.dart';
-import '../models/income_item.dart';
+
 import '../services/ai/ai_chat_service.dart';
 
-import '../services/expense_service.dart';
-import '../services/income_service.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
@@ -21,8 +18,8 @@ class FiinnyBrainChatScreen extends StatefulWidget {
 
   const FiinnyBrainChatScreen({
     required this.userPhone,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<FiinnyBrainChatScreen> createState() => _FiinnyBrainChatScreenState();
@@ -32,14 +29,8 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final AiChatService _chatService = AiChatService();
-  final ExpenseService _expenseService = ExpenseService();
-  final IncomeService _incomeService = IncomeService();
-  
-  bool _isProcessing = false;
-  List<ExpenseItem> _expenses = [];
-  List<IncomeItem> _incomes = [];
 
-  Map<String, String> _phoneToNameMap = {};
+  bool _isProcessing = false;
   String? _currentSessionId;
 
   // Speech to Text
@@ -59,18 +50,20 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
   void _initSpeech() async {
     try {
       _speechEnabled = await _speechToText.initialize(
-        onError: (val) => print('Speech error: $val'),
-        onStatus: (val) => print('Speech status: $val'),
+        onError: (val) => debugPrint('Speech error: $val'),
+        onStatus: (val) => debugPrint('Speech status: $val'),
       );
+      if (!mounted) return;
       setState(() {});
     } catch (e) {
-      print("Speech initialization error: $e");
+      debugPrint("Speech initialization error: $e");
     }
   }
 
   /// Each time to start a speech recognition session
   void _startListening() async {
     await _speechToText.listen(onResult: _onSpeechResult);
+    if (!mounted) return;
     setState(() {
       _isListening = true;
     });
@@ -79,6 +72,7 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
   /// Manually stop the active speech recognition session
   void _stopListening() async {
     await _speechToText.stop();
+    if (!mounted) return;
     setState(() {
       _isListening = false;
     });
@@ -100,28 +94,19 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
         _isListening = false;
       });
       // Optional: Auto-send if desired, but user might want to edit.
-      // _sendMessage(); 
+      // _sendMessage();
     }
   }
 
   Future<void> _loadData() async {
     try {
-      final expenses = await _expenseService.getExpenses(widget.userPhone);
-      final incomes = await _incomeService.getIncomes(widget.userPhone);
-      
-      // Build phone-to-name map from ContactNameService
-      // Note: This is a simplified version - you may need to enhance this
-      final phoneToName = <String, String>{};
-      // TODO: Populate from ContactNameService or friend list
-      
+      // Get or create session
+
       // Get or create session
       final sessionId = await _chatService.getOrCreateSession(widget.userPhone);
-      
+
       if (mounted) {
         setState(() {
-          _expenses = expenses;
-          _incomes = incomes;
-          _phoneToNameMap = phoneToName;
           _currentSessionId = sessionId;
         });
       }
@@ -144,7 +129,8 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
 
     try {
       // Send user message
-      await _chatService.sendUserMessage(widget.userPhone, _currentSessionId!, text);
+      await _chatService.sendUserMessage(
+          widget.userPhone, _currentSessionId!, text);
       _controller.clear();
 
       // Scroll to bottom
@@ -152,7 +138,8 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
 
       // Call Cloud Function via HTTP
       final response = await http.post(
-        Uri.parse('https://us-central1-lifemap-72b21.cloudfunctions.net/fiinnyBrainQuery'),
+        Uri.parse(
+            'https://us-central1-lifemap-72b21.cloudfunctions.net/fiinnyBrainQuery'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'userPhone': widget.userPhone,
@@ -160,21 +147,26 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
         }),
       );
 
+      if (!mounted) return;
+
       String aiResponseText;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         aiResponseText = data['response'] ?? "I didn't get a response.";
       } else {
-        aiResponseText = "Sorry, I encountered a server error (${response.statusCode}). Please try again.";
+        aiResponseText =
+            "Sorry, I encountered a server error (${response.statusCode}). Please try again.";
       }
 
       // Clean up markdown since mobile text widget might not render it perfectly yet
       // Simple strip for now, or keep it if using markdown renderer later.
       // For now, let's just strip basic Bold markdown for cleaner text
-      aiResponseText = aiResponseText.replaceAll('**', '').replaceAll('### ', '');
+      aiResponseText =
+          aiResponseText.replaceAll('**', '').replaceAll('### ', '');
 
       // Send AI response to Firestore
-      await _chatService.addAiResponse(widget.userPhone, _currentSessionId!, aiResponseText);
+      await _chatService.addAiResponse(
+          widget.userPhone, _currentSessionId!, aiResponseText);
 
       // Scroll to bottom again
       _scrollToBottom();
@@ -218,7 +210,7 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
   @override
   Widget build(BuildContext context) {
     // 🔒 Access Control REMOVED (Replaced by soft limits)
-    
+
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -230,7 +222,8 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
                 color: Fx.mintDark,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.psychology_rounded, color: Colors.white, size: 20),
+              child: const Icon(Icons.psychology_rounded,
+                  color: Colors.white, size: 20),
             ),
             const SizedBox(width: 12),
             const Text('Fiinny AI'),
@@ -244,7 +237,8 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
                 context: context,
                 builder: (context) => AlertDialog(
                   title: const Text('Clear Chat'),
-                  content: const Text('Are you sure you want to clear all messages?'),
+                  content: const Text(
+                      'Are you sure you want to clear all messages?'),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context, false),
@@ -252,15 +246,18 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
                     ),
                     TextButton(
                       onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Clear', style: TextStyle(color: Colors.red)),
+                      child: const Text('Clear',
+                          style: TextStyle(color: Colors.red)),
                     ),
                   ],
                 ),
               );
               if (confirm == true && _currentSessionId != null) {
-                await _chatService.clearChat(widget.userPhone, _currentSessionId!);
+                await _chatService.clearChat(
+                    widget.userPhone, _currentSessionId!);
                 // Create new session immediately so screen doesn't break
-                final newId = await _chatService.getOrCreateSession(widget.userPhone);
+                final newId =
+                    await _chatService.getOrCreateSession(widget.userPhone);
                 if (mounted) setState(() => _currentSessionId = newId);
               }
             },
@@ -271,36 +268,37 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
         children: [
           // Suggestion chips
           _buildSuggestionChips(),
-          
+
           // Messages
           Expanded(
-            child: _currentSessionId == null 
+            child: _currentSessionId == null
                 ? const Center(child: CircularProgressIndicator())
                 : StreamBuilder<List<AiMessage>>(
-                    stream: _chatService.streamMessages(widget.userPhone, _currentSessionId!),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator());
-                        }
+                    stream: _chatService.streamMessages(
+                        widget.userPhone, _currentSessionId!),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
 
-                final messages = snapshot.data ?? [];
+                      final messages = snapshot.data ?? [];
 
-                if (messages.isEmpty) {
-                  return _buildEmptyState();
-                }
+                      if (messages.isEmpty) {
+                        return _buildEmptyState();
+                      }
 
-                return ListView.builder(
-                  controller: _scrollController,
-                  reverse: true,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message = messages[index];
-                    return _buildMessageBubble(message);
-                  },
-                );
-              },
-            ),
+                      return ListView.builder(
+                        controller: _scrollController,
+                        reverse: true,
+                        padding: const EdgeInsets.all(16),
+                        itemCount: messages.length,
+                        itemBuilder: (context, index) {
+                          final message = messages[index];
+                          return _buildMessageBubble(message);
+                        },
+                      );
+                    },
+                  ),
           ),
 
           // Input field
@@ -355,7 +353,8 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
                 color: Fx.mint.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: Icon(Icons.psychology_rounded, size: 40, color: Fx.mintDark),
+              child:
+                  Icon(Icons.psychology_rounded, size: 40, color: Fx.mintDark),
             ),
             const SizedBox(height: 24),
             const Text(
@@ -380,11 +379,12 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
 
   Widget _buildMessageBubble(AiMessage message) {
     final isUser = message.isUser;
-    
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
@@ -395,7 +395,8 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
                 color: Fx.mintDark,
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: const Icon(Icons.psychology_rounded, color: Colors.white, size: 18),
+              child: const Icon(Icons.psychology_rounded,
+                  color: Colors.white, size: 18),
             ),
             const SizedBox(width: 8),
           ],
@@ -445,76 +446,81 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
           ),
         ],
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              decoration: InputDecoration(
-                hintText: 'Ask me anything...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                decoration: InputDecoration(
+                  hintText: 'Ask me anything...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide.none,
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 ),
-                filled: true,
-                fillColor: Colors.grey[100],
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                maxLines: null,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _sendMessage(),
+                enabled: !_isProcessing,
               ),
-              maxLines: null,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _sendMessage(),
-              enabled: !_isProcessing,
             ),
-          ),
-          const SizedBox(width: 8),
-          
-          // Microphone Button
-          Container(
-             decoration: BoxDecoration(
-              color: _isListening ? Colors.redAccent : Colors.grey[200],
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: IconButton(
-              icon: Icon(
-                _isListening ? Icons.mic : Icons.mic_none,
-                color: _isListening ? Colors.white : Colors.black54,
-              ),
-              onPressed: _speechEnabled
-                  ? (_isListening ? _stopListening : _startListening)
-                  : null, // Disabled if speech not initialized
-            ),
-          ),
+            const SizedBox(width: 8),
 
-          const SizedBox(width: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: Fx.mintDark,
-              borderRadius: BorderRadius.circular(24),
+            // Microphone Button
+            Container(
+              decoration: BoxDecoration(
+                color: _isListening ? Colors.redAccent : Colors.grey[200],
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: IconButton(
+                icon: Icon(
+                  _isListening ? Icons.mic : Icons.mic_none,
+                  color: _isListening ? Colors.white : Colors.black54,
+                ),
+                onPressed: _speechEnabled
+                    ? (_isListening ? _stopListening : _startListening)
+                    : null, // Disabled if speech not initialized
+              ),
             ),
-            child: IconButton(
-              icon: _isProcessing
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation(Colors.white),
-                      ),
-                    )
-                  : const Icon(Icons.send, color: Colors.white),
-              onPressed: _isProcessing ? null : _sendMessage,
+
+            const SizedBox(width: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: Fx.mintDark,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: IconButton(
+                icon: _isProcessing
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(Colors.white),
+                        ),
+                      )
+                    : const Icon(Icons.send, color: Colors.white),
+                onPressed: _isProcessing ? null : _sendMessage,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+
   Future<bool> _checkAndConsumeDailyLimit() async {
     final sub = Provider.of<SubscriptionService>(context, listen: false);
     if (sub.isPro) return true; // Unlimited
 
-    final int limit = sub.isPremium ? 20 : 10; 
-    
+    final int limit = sub.isPremium ? 20 : 10;
+
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now();
     final key = 'brain_prompts_${now.year}_${now.month}_${now.day}';
@@ -536,21 +542,18 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
         title: const Text('Daily Limit Reached'),
         content: Text(
           isPremium
-            ? "You've used your $limit daily Premium prompts. Upgrade to Pro for unlimited access!"
-            : "You've used your $limit free prompts. Upgrade to Premium for 20 prompts/day or Pro for unlimited!",
+              ? "You've used your $limit daily Premium prompts. Upgrade to Pro for unlimited access!"
+              : "You've used your $limit free prompts. Upgrade to Premium for 20 prompts/day or Pro for unlimited!",
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context), 
-            child: const Text("OK", style: TextStyle(color: Colors.grey))
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK", style: TextStyle(color: Colors.grey))),
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
-              Navigator.push(
-                context, 
-                MaterialPageRoute(builder: (_) => const UpgradeScreen())
-              );
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const UpgradeScreen()));
             },
             style: FilledButton.styleFrom(backgroundColor: Fx.mintDark),
             child: const Text("Upgrade"),

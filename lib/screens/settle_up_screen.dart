@@ -156,6 +156,7 @@ class _SettleUpScreenState extends State<SettleUpScreen> {
         note: "Settlement (${widget.group.name})",
       );
       await _initData();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Settlement recorded!"),
@@ -405,7 +406,8 @@ class _GlassSettleCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         color: Colors.white.withValues(alpha: 0.15),
-        border: Border.all(color: tiffanyBlue.withValues(alpha: 0.16), width: 1.1),
+        border:
+            Border.all(color: tiffanyBlue.withValues(alpha: 0.16), width: 1.1),
         boxShadow: [
           BoxShadow(
             color: mintGreen.withValues(alpha: 0.12),

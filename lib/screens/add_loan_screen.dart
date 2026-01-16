@@ -122,7 +122,6 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     'Home Credit',
     'Mahindra Finance'
   ];
-  static const String _other = 'Other…';
 
   // ----- Restoration (optional) -----
   @override
@@ -474,7 +473,7 @@ class _AddLoanScreenState extends State<AddLoanScreen>
         amount: _principal,
         originalAmount: _origCtrl.text.trim().isEmpty
             ? null
-            : (double.tryParse(_digitsOnly(_origCtrl.text)) ?? null),
+            : double.tryParse(_digitsOnly(_origCtrl.text)),
         lenderType: _lenderType,
         lenderName: _lenderNameCtrl.text.trim().isEmpty
             ? null
@@ -533,11 +532,15 @@ class _AddLoanScreenState extends State<AddLoanScreen>
       if (mounted) await _showSuccessOverlay();
       return true;
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Save failed: $e")));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Save failed: $e")));
+      }
       return false;
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 
@@ -880,8 +883,6 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                 duration: const Duration(milliseconds: 250),
                                 switchInCurve: Curves.easeOut,
                                 child: _SummaryCard(
-                                  key: ValueKey(
-                                      "${plan.emi}-${plan.months}-${plan.totalPayable}"),
                                   brand: _brand,
                                   plan: plan,
                                   currency: _inr,
@@ -938,8 +939,9 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                     _shareEnabled = v;
                                     if (!v) {
                                       // if user turns it off, clear state & controllers
-                                      for (final m in _members)
+                                      for (final m in _members) {
                                         _removePctCtrl(m.key);
+                                      }
                                       _members.clear();
                                       _customPct.clear();
                                     } else {
@@ -1147,8 +1149,9 @@ class _AddLoanScreenState extends State<AddLoanScreen>
                                         final t = await showTimePicker(
                                             context: context,
                                             initialTime: _reminderTime);
-                                        if (t != null)
+                                        if (t != null) {
                                           setState(() => _reminderTime = t);
+                                        }
                                       },
                                       label: Text(
                                           "${_reminderTime.hour.toString().padLeft(2, '0')}:${_reminderTime.minute.toString().padLeft(2, '0')}"),
@@ -1650,7 +1653,6 @@ class _RateSliderField extends StatefulWidget {
   final Color brand;
 
   const _RateSliderField({
-    Key? key,
     required this.label,
     required this.icon,
     required this.controller,
@@ -1659,7 +1661,7 @@ class _RateSliderField extends StatefulWidget {
     required this.divisions,
     required this.onChanged,
     required this.brand,
-  }) : super(key: key);
+  });
 
   @override
   State<_RateSliderField> createState() => _RateSliderFieldState();
@@ -1766,11 +1768,10 @@ class _SummaryCard extends StatelessWidget {
   final NumberFormat currency;
 
   const _SummaryCard({
-    Key? key,
     required this.brand,
     required this.plan,
     required this.currency,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1869,11 +1870,7 @@ class _SuccessCard extends StatelessWidget {
   final VoidCallback onDone;
   final bool showDone;
   const _SuccessCard(
-      {Key? key,
-      required this.brand,
-      required this.onDone,
-      this.showDone = true})
-      : super(key: key);
+      {required this.brand, required this.onDone, this.showDone = true});
 
   @override
   Widget build(BuildContext context) {
@@ -1939,12 +1936,12 @@ class AnimatedToggleButtons extends StatelessWidget {
   final List<String> labels;
   final Color brand;
   const AnimatedToggleButtons({
-    Key? key,
+    super.key,
     required this.isSelected,
     required this.onPressed,
     required this.labels,
     required this.brand,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2145,7 +2142,7 @@ class _KV {
 
 class _ReviewList extends StatelessWidget {
   final List<_KV> rows;
-  const _ReviewList({Key? key, required this.rows}) : super(key: key);
+  const _ReviewList({required this.rows});
 
   @override
   Widget build(BuildContext context) {
@@ -2235,14 +2232,13 @@ class _MembersList extends StatelessWidget {
   final void Function(_Member, double) onChangePct;
 
   const _MembersList({
-    Key? key,
     required this.members,
     required this.shareMode,
     required this.customPct,
     required this.controllers,
     required this.onRemove,
     required this.onChangePct,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2320,11 +2316,7 @@ class _CustomTotalHint extends StatelessWidget {
   final List<_Member> members;
   final Color brand;
   const _CustomTotalHint(
-      {Key? key,
-      required this.customPct,
-      required this.members,
-      required this.brand})
-      : super(key: key);
+      {required this.customPct, required this.members, required this.brand});
 
   @override
   Widget build(BuildContext context) {
@@ -2357,9 +2349,7 @@ class _CustomTotalHint extends StatelessWidget {
 class _SharePickerSheet extends StatefulWidget {
   final List<_Member> initial;
   final String userId; // <-- pass widget.userId from AddLoanScreen
-  const _SharePickerSheet(
-      {Key? key, required this.initial, required this.userId})
-      : super(key: key);
+  const _SharePickerSheet({required this.initial, required this.userId});
 
   @override
   State<_SharePickerSheet> createState() => _SharePickerSheetState();

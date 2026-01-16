@@ -14,7 +14,7 @@ class TransactionsSummaryCard extends StatelessWidget {
   final bool savingLimit;
 
   const TransactionsSummaryCard({
-    Key? key,
+    super.key,
     required this.credit,
     required this.debit,
     required this.net,
@@ -26,7 +26,7 @@ class TransactionsSummaryCard extends StatelessWidget {
     this.limit,
     this.used,
     this.savingLimit = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +45,8 @@ class TransactionsSummaryCard extends StatelessWidget {
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: Padding(
-        padding: EdgeInsets.fromLTRB(isCompact ? 14 : 18, 16, isCompact ? 14 : 18, 18),
+        padding: EdgeInsets.fromLTRB(
+            isCompact ? 14 : 18, 16, isCompact ? 14 : 18, 18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -92,7 +93,8 @@ class TransactionsSummaryCard extends StatelessWidget {
                     ),
                   ),
                   onPressed: onFilterTap,
-                  icon: Icon(Icons.filter_list_rounded, size: isCompact ? 16 : 18),
+                  icon: Icon(Icons.filter_list_rounded,
+                      size: isCompact ? 16 : 18),
                   label: Text(period),
                 ),
               ],
@@ -182,7 +184,8 @@ class TransactionsSummaryCard extends StatelessWidget {
                                 ? const SizedBox(
                                     width: 16,
                                     height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2.3),
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2.3),
                                   )
                                 : Text(hasLimit ? 'Edit' : 'Set limit'),
                           ),
@@ -197,7 +200,9 @@ class TransactionsSummaryCard extends StatelessWidget {
                           value: progress,
                           backgroundColor: Colors.white,
                           valueColor: AlwaysStoppedAnimation<Color>(
-                            progress >= 1.0 ? Colors.redAccent : const Color(0xFF0F766E),
+                            progress >= 1.0
+                                ? Colors.redAccent
+                                : const Color(0xFF0F766E),
                           ),
                         ),
                       ),

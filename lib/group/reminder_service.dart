@@ -9,16 +9,13 @@ class ReminderService {
   Map<String, double> computeNetByMember(List<ExpenseItem> expenses) {
     final net = <String, double>{};
     for (final e in expenses) {
-      if (e.payerId.isEmpty) continue;
+      if (e.payerId.isEmpty) {
+        continue;
+      }
       final participants = <String>{e.payerId, ...e.friendIds};
       final splits = e.customSplits ??
           {for (final id in participants) id: e.amount / participants.length};
 
-      for (final entry in splits.entries) {
-        final id = entry.key;
-        final share = entry.value;
-        net[id] = net[id] ?? 0.0;
-      }
       splits.forEach((id, share) {
         if (id == e.payerId) {
           net[id] = (net[id] ?? 0) + (e.amount - share);
@@ -76,7 +73,9 @@ class ReminderService {
       'lastType': 'reminder',
     }, SetOptions(merge: true));
 
-    if (!alsoSendDMs || debtors.isEmpty) return;
+    if (!alsoSendDMs || debtors.isEmpty) {
+      return;
+    }
 
     // optional DM nudge to each debtor
     for (final d in debtors) {
@@ -90,7 +89,7 @@ class ReminderService {
         'to': d.key,
         'type': 'reminder',
         'message':
-        "Hey! Could you settle ₹${d.value.abs().toStringAsFixed(2)} when you get a chance? Thanks!",
+            "Hey! Could you settle ₹${d.value.abs().toStringAsFixed(2)} when you get a chance? Thanks!",
         'timestamp': FieldValue.serverTimestamp(),
         'edited': false,
       });

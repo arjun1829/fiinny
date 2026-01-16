@@ -38,7 +38,8 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
     r'\b(forex|fx|cross.?currency|intl|international|overseas|markup)\b',
     caseSensitive: false,
   );
-  final _fxSymbol = RegExp(r'(\$|€|£|usd|eur|gbp|aud|cad|sgd|aed|jpy)', caseSensitive: false);
+  final _fxSymbol =
+      RegExp(r'(\$|€|£|usd|eur|gbp|aud|cad|sgd|aed|jpy)', caseSensitive: false);
   final _fxVerb = RegExp(
     r'\b(spent|purchase|charged|txn|transaction|pos)\b',
     caseSensitive: false,
@@ -105,7 +106,8 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
 
     while (true) {
       Query q = FirebaseFirestore.instance
-          .collection('users').doc(widget.userId)
+          .collection('users')
+          .doc(widget.userId)
           .collection('expenses')
           .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
           .orderBy('date', descending: true)
@@ -120,7 +122,9 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
         final lower = e.note.toLowerCase();
 
         final looksIntl = _fxVerb.hasMatch(lower) &&
-            (_reSpentFx.hasMatch(lower) || _fxHint.hasMatch(lower) || _fxSymbol.hasMatch(lower)) &&
+            (_reSpentFx.hasMatch(lower) ||
+                _fxHint.hasMatch(lower) ||
+                _fxSymbol.hasMatch(lower)) &&
             !_balanceWords.hasMatch(lower) &&
             !_promoWords.hasMatch(lower);
         if (!looksIntl) continue;
@@ -162,7 +166,9 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
     // filter + sort
     final List<ExpenseItem> intl = _intl.where((e) {
       if (q.isEmpty) return true;
-      return ('${e.note} ${e.label ?? ''} ${e.category ?? ''}').toLowerCase().contains(q);
+      return ('${e.note} ${e.label ?? ''} ${e.category ?? ''}')
+          .toLowerCase()
+          .contains(q);
     }).toList();
     intl.sort((a, b) => _sortIntl == 'amount_desc'
         ? b.amount.compareTo(a.amount)
@@ -170,7 +176,9 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
 
     final List<ExpenseItem> fees = _fees.where((e) {
       if (q.isEmpty) return true;
-      return ('${e.note} ${e.label ?? ''} ${e.category ?? ''}').toLowerCase().contains(q);
+      return ('${e.note} ${e.label ?? ''} ${e.category ?? ''}')
+          .toLowerCase()
+          .contains(q);
     }).toList();
     fees.sort((a, b) => _sortFee == 'amount_desc'
         ? b.amount.compareTo(a.amount)
@@ -182,137 +190,159 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'International Spend',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'What is this?',
-                  icon: const Icon(Icons.info_outline, size: 18),
-                  onPressed: () => _showInfo(
-                    context,
-                    'We detect overseas spends using currency symbols/keywords and show explicitly stated INR debits. Markup/FX fee lines are listed separately.',
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Close',
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 8, runSpacing: 8,
-              children: [
-                _chip('Intl INR', '₹${intlInr.toStringAsFixed(0)}'),
-                _chip('Intl Txns', '${intl.length}'),
-                _chip('Fees', '₹${feesSum.toStringAsFixed(0)} (${fees.length})'),
-                _chip('Window', '${widget.daysWindow}d'),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            // Search bar
-            TextField(
-              controller: _q,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                hintText: 'Search merchant / note in all lists',
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            // Tabs
-            DefaultTabController(
-              length: 2,
-              child: Expanded(
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: TabBar(
-                            tabs: [
-                              Tab(text: 'Spends'),
-                              Tab(text: 'Fees'),
-                            ],
-                            isScrollable: false,
-                          ),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'International Spend',
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(width: 8),
-                        PopupMenuButton<String>(
-                          tooltip: 'Sort',
-                          onSelected: (v) => setState(() {
-                            final idx = DefaultTabController.of(context).index;
-                            if (idx == 0) _sortIntl = v; else _sortFee = v;
-                          }),
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(value: 'date_desc', child: Text('Newest first')),
-                            PopupMenuItem(value: 'amount_desc', child: Text('Amount (high → low)')),
-                          ],
-                          child: const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Icon(Icons.sort_rounded),
-                          ),
+                      ),
+                      IconButton(
+                        tooltip: 'What is this?',
+                        icon: const Icon(Icons.info_outline, size: 18),
+                        onPressed: () => _showInfo(
+                          context,
+                          'We detect overseas spends using currency symbols/keywords and show explicitly stated INR debits. Markup/FX fee lines are listed separately.',
                         ),
-                      ],
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.of(context).maybePop(),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _chip('Intl INR', '₹${intlInr.toStringAsFixed(0)}'),
+                      _chip('Intl Txns', '${intl.length}'),
+                      _chip('Fees',
+                          '₹${feesSum.toStringAsFixed(0)} (${fees.length})'),
+                      _chip('Window', '${widget.daysWindow}d'),
+                    ],
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // Search bar
+                  TextField(
+                    controller: _q,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Search merchant / note in all lists',
+                      prefixIcon: const Icon(Icons.search),
+                      isDense: true,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10)),
                     ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: TabBarView(
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // Tabs
+                  DefaultTabController(
+                    length: 2,
+                    child: Expanded(
+                      child: Column(
                         children: [
-                          // Spends
-                          intl.isEmpty
-                              ? const Center(child: Text('No international spends match your filters.'))
-                              : ListView.separated(
-                            itemCount: intl.length,
-                            separatorBuilder: (_, __) => const Divider(height: 1),
-                            itemBuilder: (_, i) => _intlTile(intl[i]),
-                          ),
-                          // Fees
-                          fees.isEmpty
-                              ? const Center(child: Text('No forex/markup fee lines match your filters.'))
-                              : ListView.separated(
-                            itemCount: fees.length,
-                            separatorBuilder: (_, __) => const Divider(height: 1),
-                            itemBuilder: (_, i) {
-                              final e = fees[i];
-                              return ListTile(
-                                dense: true,
-                                leading: const Icon(Icons.price_change_rounded),
-                                title: Text('₹${e.amount.toStringAsFixed(0)} • ${_ddmmyy(e.date)}'),
-                                subtitle: Text(
-                                  e.note,
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: TabBar(
+                                  tabs: [
+                                    Tab(text: 'Spends'),
+                                    Tab(text: 'Fees'),
+                                  ],
+                                  isScrollable: false,
                                 ),
-                              );
-                            },
+                              ),
+                              const SizedBox(width: 8),
+                              PopupMenuButton<String>(
+                                tooltip: 'Sort',
+                                onSelected: (v) => setState(() {
+                                  final idx =
+                                      DefaultTabController.of(context).index;
+                                  if (idx == 0) {
+                                    _sortIntl = v;
+                                  } else {
+                                    _sortFee = v;
+                                  }
+                                }),
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                      value: 'date_desc',
+                                      child: Text('Newest first')),
+                                  PopupMenuItem(
+                                      value: 'amount_desc',
+                                      child: Text('Amount (high → low)')),
+                                ],
+                                child: const Padding(
+                                  padding: EdgeInsets.all(8.0),
+                                  child: Icon(Icons.sort_rounded),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Expanded(
+                            child: TabBarView(
+                              children: [
+                                // Spends
+                                intl.isEmpty
+                                    ? const Center(
+                                        child: Text(
+                                            'No international spends match your filters.'))
+                                    : ListView.separated(
+                                        itemCount: intl.length,
+                                        separatorBuilder: (_, __) =>
+                                            const Divider(height: 1),
+                                        itemBuilder: (_, i) =>
+                                            _intlTile(intl[i]),
+                                      ),
+                                // Fees
+                                fees.isEmpty
+                                    ? const Center(
+                                        child: Text(
+                                            'No forex/markup fee lines match your filters.'))
+                                    : ListView.separated(
+                                        itemCount: fees.length,
+                                        separatorBuilder: (_, __) =>
+                                            const Divider(height: 1),
+                                        itemBuilder: (_, i) {
+                                          final e = fees[i];
+                                          return ListTile(
+                                            dense: true,
+                                            leading: const Icon(
+                                                Icons.price_change_rounded),
+                                            title: Text(
+                                                '₹${e.amount.toStringAsFixed(0)} • ${_ddmmyy(e.date)}'),
+                                            subtitle: Text(
+                                              e.note,
+                                              maxLines: 3,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          );
+                                        },
+                                      ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -330,22 +360,23 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
     return ListTile(
       dense: true,
       leading: const Icon(Icons.public_rounded),
-      title: Text('${fxLabel ?? '₹${e.amount.toStringAsFixed(0)}'} • ${_ddmmyy(e.date)}'),
+      title: Text(
+          '${fxLabel ?? '₹${e.amount.toStringAsFixed(0)}'} • ${_ddmmyy(e.date)}'),
       subtitle: Text(n, maxLines: 3, overflow: TextOverflow.ellipsis),
     );
   }
 
   Widget _chip(String t, String v) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: Colors.teal.withValues(alpha: 0.08),
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Text('$t: ', style: const TextStyle(color: Colors.black54)),
-      Text(v, style: const TextStyle(fontWeight: FontWeight.w800)),
-    ]),
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.teal.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text('$t: ', style: const TextStyle(color: Colors.black54)),
+          Text(v, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ]),
+      );
 
   void _showInfo(BuildContext ctx, String msg) {
     showModalBottomSheet(
@@ -361,6 +392,7 @@ class _ForexFindingsSheetState extends State<ForexFindingsSheet> {
     );
   }
 
-  static String _ddmmyy(DateTime d) => '${_tw(d.day)}/${_tw(d.month)}/${d.year % 100}';
+  static String _ddmmyy(DateTime d) =>
+      '${_tw(d.day)}/${_tw(d.month)}/${d.year % 100}';
   static String _tw(int n) => n < 10 ? '0$n' : '$n';
 }

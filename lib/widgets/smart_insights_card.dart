@@ -10,13 +10,13 @@ class SmartInsightCard extends StatelessWidget {
   final double expense;
   final double savings;
   final GoalModel? goal;
-  final double? totalLoan;      // Pass as 0 if not using loans
-  final double? totalAssets;    // Pass as 0 if not using assets
+  final double? totalLoan; // Pass as 0 if not using loans
+  final double? totalAssets; // Pass as 0 if not using assets
   final bool showToday;
   final String? insightText;
 
   const SmartInsightCard({
-    Key? key,
+    super.key,
     required this.income,
     required this.expense,
     required this.savings,
@@ -25,7 +25,7 @@ class SmartInsightCard extends StatelessWidget {
     this.totalAssets,
     this.showToday = false,
     this.insightText,
-  }) : super(key: key);
+  });
 
   String _resolveInsight() {
     String? sanitize(String? value) {
@@ -48,12 +48,13 @@ class SmartInsightCard extends StatelessWidget {
       }
 
       // 3) Spend vs income
-      final svi =
-          sanitize(InsightMicrocopy.spendVsIncome(income: income, expense: expense));
+      final svi = sanitize(
+          InsightMicrocopy.spendVsIncome(income: income, expense: expense));
       if (svi != null) return svi;
 
       // 4) Savings rate
-      final sr = sanitize(InsightMicrocopy.savingsRate(income: income, savings: savings));
+      final sr = sanitize(
+          InsightMicrocopy.savingsRate(income: income, savings: savings));
       if (sr != null) return sr;
 
       // 5) Goal pace (NULL-SAFE savedAmount!)
@@ -73,8 +74,8 @@ class SmartInsightCard extends StatelessWidget {
       // 6) Fallback
       return sanitize(InsightMicrocopy.fallback()) ??
           'No insights yet — add a transaction or link Gmail to unlock insights.';
-    } catch (e, st) {
-      debugPrint('SmartInsightCard insight error: $e\n$st');
+    } catch (e) {
+      // debugPrint('SmartInsightCard insight error: $e\n$st');
       return 'No insights yet — add a transaction or link Gmail to unlock insights.';
     }
   }
@@ -92,7 +93,7 @@ class SmartInsightCard extends StatelessWidget {
           period = parts[2];
         }
       }
-      debugPrint('[SmartInsightCard] rendered${period != null ? ' for $period' : ''}');
+      // debugPrint('[SmartInsightCard] rendered${period != null ? ' for $period' : ''}');
       return true;
     }());
 
@@ -123,7 +124,8 @@ class SmartInsightCard extends StatelessWidget {
                     const SizedBox(height: Fx.s8),
                     Row(
                       children: [
-                        PillBadge("Today", color: Fx.mintDark, icon: Icons.today_rounded),
+                        PillBadge("Today",
+                            color: Fx.mintDark, icon: Icons.today_rounded),
                         const SizedBox(width: Fx.s8),
                         Text(
                           _prettyDate(DateTime.now()),

@@ -8,14 +8,15 @@ class SharedNotesWidget extends StatefulWidget {
   ///   'text': String,
   ///   'timestamp': String | DateTime | Timestamp
   /// }
-  final List<Map<String, String>> notes; // keeping your original type for compatibility
+  final List<Map<String, String>>
+      notes; // keeping your original type for compatibility
   final Function(String text) onAddNote;
 
   const SharedNotesWidget({
-    Key? key,
+    super.key,
     required this.notes,
     required this.onAddNote,
-  }) : super(key: key);
+  });
 
   @override
   State<SharedNotesWidget> createState() => _SharedNotesWidgetState();
@@ -34,7 +35,9 @@ class _SharedNotesWidgetState extends State<SharedNotesWidget> {
 
   void _submitNote() {
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty) {
+      return;
+    }
     widget.onAddNote(text);
     _controller.clear();
     _focus.requestFocus();
@@ -42,27 +45,38 @@ class _SharedNotesWidgetState extends State<SharedNotesWidget> {
 
   String _initialOf(String? s) {
     final t = (s ?? '').trim();
-    if (t.isEmpty) return '?';
+    if (t.isEmpty) {
+      return '?';
+    }
     return t.characters.first.toUpperCase();
   }
 
   String _formatTime(dynamic ts) {
-    if (ts == null) return '';
+    if (ts == null) {
+      return '';
+    }
     DateTime? d;
     if (ts is String) {
       d = DateTime.tryParse(ts);
-      if (d == null) return ts; // fallback to raw string
+      if (d == null) {
+        return ts; // fallback to raw string
+      }
     } else if (ts is DateTime) {
       d = ts;
     } else if (ts is Timestamp) {
       d = ts.toDate();
     }
-    if (d == null) return '';
+    if (d == null) {
+      return '';
+    }
     final now = DateTime.now();
-    final isToday = d.year == now.year && d.month == now.month && d.day == now.day;
+    final isToday =
+        d.year == now.year && d.month == now.month && d.day == now.day;
     final hh = d.hour.toString().padLeft(2, '0');
     final mm = d.minute.toString().padLeft(2, '0');
-    if (isToday) return 'Today $hh:$mm';
+    if (isToday) {
+      return 'Today $hh:$mm';
+    }
     final dd = d.day.toString().padLeft(2, '0');
     final mo = d.month.toString().padLeft(2, '0');
     final yy = (d.year % 100).toString().padLeft(2, '0');
@@ -82,7 +96,8 @@ class _SharedNotesWidgetState extends State<SharedNotesWidget> {
             child: Column(
               children: [
                 Icon(Icons.sticky_note_2_rounded,
-                    size: 40, color: theme.colorScheme.primary.withValues(alpha: 0.7)),
+                    size: 40,
+                    color: theme.colorScheme.primary.withValues(alpha: 0.7)),
                 const SizedBox(height: 8),
                 Text(
                   'No notes yet — add one below!',
@@ -104,15 +119,18 @@ class _SharedNotesWidgetState extends State<SharedNotesWidget> {
             final n = widget.notes[i];
             final author = n['author'] ?? '';
             final text = n['text'] ?? '';
-            final ts = n['timestamp']; // may be String (per original type), DateTime, or Timestamp (if supplied)
+            final ts = n[
+                'timestamp']; // may be String (per original type), DateTime, or Timestamp (if supplied)
 
             return Card(
               elevation: 1,
               margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
               child: ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
+                  backgroundColor:
+                      theme.colorScheme.primary.withValues(alpha: 0.12),
                   child: Text(
                     _initialOf(author),
                     style: TextStyle(
@@ -151,8 +169,10 @@ class _SharedNotesWidgetState extends State<SharedNotesWidget> {
                   onSubmitted: (_) => _submitNote(),
                   decoration: InputDecoration(
                     hintText: 'Add a note…',
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ),

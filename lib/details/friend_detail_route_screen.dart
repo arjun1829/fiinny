@@ -11,13 +11,14 @@ class FriendDetailRouteScreen extends StatefulWidget {
   final String? friendNameHint;
 
   const FriendDetailRouteScreen({
-    Key? key,
+    super.key,
     required this.friendId,
     this.friendNameHint,
-  }) : super(key: key);
+  });
 
   @override
-  State<FriendDetailRouteScreen> createState() => _FriendDetailRouteScreenState();
+  State<FriendDetailRouteScreen> createState() =>
+      _FriendDetailRouteScreenState();
 }
 
 class _FriendDetailRouteScreenState extends State<FriendDetailRouteScreen> {
@@ -39,7 +40,8 @@ class _FriendDetailRouteScreenState extends State<FriendDetailRouteScreen> {
   Future<FriendModel?> _loadFriend() async {
     if (_userPhone.isEmpty) return null;
     try {
-      return await FriendService().getFriendByPhone(_userPhone, widget.friendId);
+      return await FriendService()
+          .getFriendByPhone(_userPhone, widget.friendId);
     } catch (_) {
       return null;
     }
@@ -67,10 +69,11 @@ class _FriendDetailRouteScreenState extends State<FriendDetailRouteScreen> {
           );
         }
 
-        final friend = snapshot.data ?? FriendModel(
-          phone: widget.friendId,
-          name: widget.friendNameHint ?? widget.friendId,
-        );
+        final friend = snapshot.data ??
+            FriendModel(
+              phone: widget.friendId,
+              name: widget.friendNameHint ?? widget.friendId,
+            );
 
         return FriendDetailScreen(
           userPhone: _userPhone,

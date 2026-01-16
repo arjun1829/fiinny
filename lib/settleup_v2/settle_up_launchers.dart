@@ -23,7 +23,9 @@ class SettleUpFlowV2Launcher {
   }) async {
     final expenses = await ExpenseService().getExpenses(currentUserPhone);
     final pairwise = pairwiseExpenses(currentUserPhone, friend.phone, expenses);
-    if (pairwise.isEmpty) return null;
+    if (pairwise.isEmpty) {
+      return null;
+    }
 
     final breakdown = computePairwiseBreakdown(
       currentUserPhone,
@@ -42,8 +44,12 @@ class SettleUpFlowV2Launcher {
 
     breakdown.buckets.forEach((id, bucket) {
       final net = bucket.net;
-      if (net.abs() < 0.01) return;
-      if ((net >= 0) != isReceiveFlow) return;
+      if (net.abs() < 0.01) {
+        return;
+      }
+      if ((net >= 0) != isReceiveFlow) {
+        return;
+      }
       outstanding[id] = net;
       final isOutside = id == '__none__';
       displays.add(
@@ -57,7 +63,9 @@ class SettleUpFlowV2Launcher {
       );
     });
 
-    if (displays.isEmpty) return null;
+    if (displays.isEmpty) {
+      return null;
+    }
 
     displays.sort((a, b) => b.amount.abs().compareTo(a.amount.abs()));
 
@@ -125,7 +133,9 @@ class SettleUpFlowV2Launcher {
         .toList()
       ..sort((a, b) => b.value.abs().compareTo(a.value.abs()));
 
-    if (options.isEmpty) return null;
+    if (options.isEmpty) {
+      return null;
+    }
 
     final choice = options.length == 1
         ? options.first
@@ -136,7 +146,9 @@ class SettleUpFlowV2Launcher {
             memberDisplayNames: memberDisplayNames,
           );
 
-    if (choice == null) return false;
+    if (choice == null) {
+      return false;
+    }
 
     final friendId = choice.key;
     final amount = choice.value;
@@ -217,9 +229,13 @@ class SettleUpFlowV2Launcher {
 
     for (final entry in submission.allocations.entries) {
       final rawAmount = entry.value;
-      if (rawAmount <= 0) continue;
+      if (rawAmount <= 0) {
+        continue;
+      }
       final amount = double.parse(rawAmount.toStringAsFixed(2));
-      if (amount <= 0) continue;
+      if (amount <= 0) {
+        continue;
+      }
 
       final groupId = entry.key == '__none__' ? null : entry.key;
       final payerId = isReceiveFlow ? friendPhone : you;
@@ -254,7 +270,9 @@ class SettleUpFlowV2Launcher {
     required bool isReceiveFlow,
   }) async {
     final amount = double.parse(submission.amount.toStringAsFixed(2));
-    if (amount <= 0) return;
+    if (amount <= 0) {
+      return;
+    }
 
     final payer = isReceiveFlow ? friendId : currentUserPhone;
     final counterparty = isReceiveFlow ? currentUserPhone : friendId;
@@ -276,7 +294,9 @@ class SettleUpFlowV2Launcher {
     final service = FriendService();
     final list = <FriendModel>[];
     for (final phone in group.memberPhones) {
-      if (phone == currentUserPhone) continue;
+      if (phone == currentUserPhone) {
+        continue;
+      }
       final fetched = await service.getFriendByPhone(currentUserPhone, phone);
       if (fetched != null) {
         list.add(fetched);
@@ -303,14 +323,16 @@ class SettleUpFlowV2Launcher {
           children: [
             for (final entry in options)
               SimpleDialogOption(
-                onPressed: () => Navigator.pop(ctx, MapEntry(entry.key, entry.value)),
+                onPressed: () =>
+                    Navigator.pop(ctx, MapEntry(entry.key, entry.value)),
                 child: Builder(
                   builder: (_) {
                     final friend = members.firstWhere(
                       (f) => f.phone == entry.key,
                       orElse: () => FriendModel(
                         phone: entry.key,
-                        name: memberDisplayNames?[entry.key] ?? _maskPhone(entry.key),
+                        name: memberDisplayNames?[entry.key] ??
+                            _maskPhone(entry.key),
                         avatar: '👤',
                       ),
                     );
@@ -320,12 +342,12 @@ class SettleUpFlowV2Launcher {
                             : _maskPhone(entry.key));
                     final amount = currency.format(entry.value.abs());
                     final positive = entry.value >= 0;
-                    final subtitle = positive
-                        ? 'You get back $amount'
-                        : 'You owe $amount';
+                    final subtitle =
+                        positive ? 'You get back $amount' : 'You owe $amount';
                     return ListTile(
                       leading: friend.avatar.startsWith('http')
-                          ? CircleAvatar(backgroundImage: NetworkImage(friend.avatar))
+                          ? CircleAvatar(
+                              backgroundImage: NetworkImage(friend.avatar))
                           : CircleAvatar(child: Text(_initialFor(name))),
                       title: Text(name),
                       subtitle: Text(subtitle),
@@ -341,13 +363,17 @@ class SettleUpFlowV2Launcher {
 
   static String _maskPhone(String phone) {
     final digits = phone.replaceAll(RegExp(r'\D'), '');
-    if (digits.length < 4) return phone;
+    if (digits.length < 4) {
+      return phone;
+    }
     return 'Member (${digits.substring(digits.length - 4)})';
   }
 
   static String _initialFor(String name) {
     final trimmed = name.trim();
-    if (trimmed.isEmpty) return '?';
+    if (trimmed.isEmpty) {
+      return '?';
+    }
     return trimmed.characters.first.toUpperCase();
   }
 }

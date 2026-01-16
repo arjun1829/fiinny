@@ -8,10 +8,10 @@ class UpcomingDueList extends StatelessWidget {
   final String friendId;
 
   const UpcomingDueList({
-    Key? key,
+    super.key,
     required this.userPhone,
     required this.friendId,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -25,10 +25,10 @@ class UpcomingDueList extends StatelessWidget {
 
         final items = (snap.data ?? const <SharedItem>[])
             .where((e) =>
-        e.rule.status == 'active' &&
-            e.nextDueAt != null &&
-            !e.nextDueAt!.isBefore(now) &&
-            !e.nextDueAt!.isAfter(horizon))
+                e.rule.status == 'active' &&
+                e.nextDueAt != null &&
+                !e.nextDueAt!.isBefore(now) &&
+                !e.nextDueAt!.isAfter(horizon))
             .toList()
           ..sort((a, b) {
             final da = a.nextDueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -60,14 +60,14 @@ class UpcomingDueList extends StatelessWidget {
         : "${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}";
     final String title = e.title ?? e.provider ?? e.type ?? 'Untitled';
 
-    final String trailing =
-        "₹${e.rule.amount.toStringAsFixed(0)}  •  $dd";
+    final String trailing = "₹${e.rule.amount.toStringAsFixed(0)}  •  $dd";
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          const Icon(Icons.calendar_month_rounded, size: 16, color: Colors.teal),
+          const Icon(Icons.calendar_month_rounded,
+              size: 16, color: Colors.teal),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

@@ -23,13 +23,13 @@ class SettleUpDialog extends StatefulWidget {
   final GroupModel? initialGroup;
 
   const SettleUpDialog({
-    Key? key,
+    super.key,
     required this.userPhone,
     required this.friends,
     required this.groups,
     this.initialFriend,
     this.initialGroup,
-  }) : super(key: key);
+  });
 
   @override
   State<SettleUpDialog> createState() => _SettleUpDialogState();
@@ -42,9 +42,10 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
 
   // Amount & direction
   final _amountCtrl = TextEditingController();
-  double _maxAmount = 0.0;   // absolute outstanding for this pair (and group if chosen)
-  double _direction = 0.0;   // + => they owe you, - => you owe them
-  bool _payerIsMe = true;    // who pays for THIS settlement action
+  double _maxAmount =
+      0.0; // absolute outstanding for this pair (and group if chosen)
+  double _direction = 0.0; // + => they owe you, - => you owe them
+  bool _payerIsMe = true; // who pays for THIS settlement action
 
   // Meta
   String _note = '';
@@ -84,7 +85,8 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
       final choices = _friendChoices;
       _selectedFriend = (choices.length == 1) ? choices.first : null;
     }
-    _selectedGroup  = widget.initialGroup  ?? (widget.groups.length == 1 ? widget.groups.first : null);
+    _selectedGroup = widget.initialGroup ??
+        (widget.groups.length == 1 ? widget.groups.first : null);
 
     _relistenAndRecompute();
   }
@@ -131,12 +133,13 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
     if (!mounted) return;
 
     final current = widget.userPhone;
-    final friend  = _selectedFriend?.phone;
+    final friend = _selectedFriend?.phone;
     if (friend == null) return;
 
     // Filter by scope (whole pair or group pair)
     final scoped = all.where((e) {
-      if (_selectedGroup != null && e.groupId != _selectedGroup!.id) return false;
+      if (_selectedGroup != null && e.groupId != _selectedGroup!.id)
+        return false;
       final participants = <String>{e.payerId, ...e.friendIds};
       return participants.contains(current) && participants.contains(friend);
     }).toList();
@@ -147,7 +150,7 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
     final abs = double.parse(net.abs().toStringAsFixed(2));
     if (!mounted) return;
     setState(() {
-      _direction = net;       // + they owe you, - you owe them
+      _direction = net; // + they owe you, - you owe them
       _maxAmount = abs;
       _amountCtrl.text = abs > 0 ? abs.toStringAsFixed(2) : '';
       // Default who pays matches direction (but user can toggle)
@@ -155,7 +158,8 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
     });
   }
 
-  double _pairwiseNet(List<ExpenseItem> items, String currentUser, String friendPhone) {
+  double _pairwiseNet(
+      List<ExpenseItem> items, String currentUser, String friendPhone) {
     double net = 0.0; // + => they owe you, - => you owe them
 
     for (final e in items) {
@@ -168,24 +172,27 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
       }
 
       final participants = <String>{e.payerId, ...e.friendIds};
-      if (!participants.contains(currentUser) || !participants.contains(friendPhone)) continue;
+      if (!participants.contains(currentUser) ||
+          !participants.contains(friendPhone)) continue;
 
       final shares = (e.customSplits != null && e.customSplits!.isNotEmpty)
           ? e.customSplits!
-          : { for (final id in participants) id: e.amount / participants.length };
+          : {for (final id in participants) id: e.amount / participants.length};
 
-      final yourShare   = shares[currentUser] ?? 0.0;
+      final yourShare = shares[currentUser] ?? 0.0;
       final friendShare = shares[friendPhone] ?? 0.0;
 
-      if (e.payerId == currentUser) net += friendShare; // they owe you their share
-      else if (e.payerId == friendPhone) net -= yourShare; // you owe them your share
+      if (e.payerId == currentUser)
+        net += friendShare; // they owe you their share
+      else if (e.payerId == friendPhone)
+        net -= yourShare; // you owe them your share
     }
     return net;
   }
 
   // STRICT: do not piggyback on isBill; match actual settlement label/type.
   bool _looksLikeSettlement(ExpenseItem e) {
-    final t = (e.type ?? '').trim().toLowerCase();
+    final t = (e.type).trim().toLowerCase();
     final lbl = (e.label ?? '').trim().toLowerCase();
     return t == 'settlement' || lbl == 'settlement';
   }
@@ -201,7 +208,8 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
       return;
     }
     if (_maxAmount > 0 && amt > _maxAmount + 0.005) {
-      setState(() => _error = "Amount exceeds outstanding: ₹${_maxAmount.toStringAsFixed(2)}");
+      setState(() => _error =
+          "Amount exceeds outstanding: ₹${_maxAmount.toStringAsFixed(2)}");
       return;
     }
     if (_selectedFriend == null) {
@@ -240,10 +248,11 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
         friendIds: [otherId],
         customSplits: null,
         groupId: _selectedGroup?.id, // nullable for non-group
-        isBill: true,                // keep if other UI relies on this flag
+        isBill: true, // keep if other UI relies on this flag
       );
 
-      await ExpenseService().addExpenseWithSync(widget.userPhone, settlementItem);
+      await ExpenseService()
+          .addExpenseWithSync(widget.userPhone, settlementItem);
 
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -259,7 +268,8 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   String _composeNote() {
     final parts = <String>[];
     if (_note.trim().isNotEmpty) parts.add(_note.trim());
-    if (_uploadedUrl != null && _uploadedUrl!.isNotEmpty) parts.add("Attachment: $_uploadedUrl");
+    if (_uploadedUrl != null && _uploadedUrl!.isNotEmpty)
+      parts.add("Attachment: $_uploadedUrl");
     return parts.join(" • ");
   }
 
@@ -267,14 +277,15 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   Future<void> _pickFromCamera() async {
     if (kIsWeb) return; // not supported on web
     try {
-      final shot = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 88);
+      final shot = await _imagePicker.pickImage(
+          source: ImageSource.camera, imageQuality: 88);
       if (shot == null) return;
       final bytes = await shot.readAsBytes();
       if (!mounted) return;
       setState(() {
         _attachBytes = bytes;
-        _attachName  = shot.name;
-        _attachMime  = _guessMimeByName(shot.name);
+        _attachName = shot.name;
+        _attachMime = _guessMimeByName(shot.name);
       });
     } catch (_) {
       _toast('Camera unavailable');
@@ -284,14 +295,15 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   Future<void> _pickFromGallery() async {
     if (kIsWeb) return; // not supported on web
     try {
-      final img = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      final img = await _imagePicker.pickImage(
+          source: ImageSource.gallery, imageQuality: 85);
       if (img == null) return;
       final bytes = await img.readAsBytes();
       if (!mounted) return;
       setState(() {
         _attachBytes = bytes;
-        _attachName  = img.name;
-        _attachMime  = _guessMimeByName(img.name);
+        _attachName = img.name;
+        _attachMime = _guessMimeByName(img.name);
       });
     } catch (_) {
       _toast('Gallery unavailable');
@@ -312,18 +324,18 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
         if (!mounted) return;
         setState(() {
           _attachBytes = f.bytes!;
-          _attachName  = f.name;
-          _attachMime  = _guessMimeByName(f.name);
+          _attachName = f.name;
+          _attachMime = _guessMimeByName(f.name);
         });
       } else {
         if (f.path == null) return;
-        final file  = File(f.path!);
+        final file = File(f.path!);
         final bytes = await file.readAsBytes();
         if (!mounted) return;
         setState(() {
           _attachBytes = bytes;
-          _attachName  = f.name;
-          _attachMime  = _guessMimeByName(f.name);
+          _attachName = f.name;
+          _attachMime = _guessMimeByName(f.name);
         });
       }
     } catch (_) {
@@ -358,9 +370,11 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
     if (lower.endsWith('.csv')) return 'text/csv';
     if (lower.endsWith('.txt')) return 'text/plain';
     if (lower.endsWith('.doc')) return 'application/msword';
-    if (lower.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (lower.endsWith('.docx'))
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     if (lower.endsWith('.xls')) return 'application/vnd.ms-excel';
-    if (lower.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    if (lower.endsWith('.xlsx'))
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     return 'application/octet-stream';
   }
 
@@ -388,7 +402,8 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   Widget _sectionCard({required Widget child, EdgeInsets? padding}) {
     return Container(
       decoration: _cardDecoration(),
-      child: Padding(padding: padding ?? const EdgeInsets.all(14), child: child),
+      child:
+          Padding(padding: padding ?? const EdgeInsets.all(14), child: child),
     );
   }
 
@@ -422,23 +437,45 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   List<Widget> _chips() {
     final max = _maxAmount;
     return [
-      if (max > 0) _chip('Full', () { _amountCtrl.text = max.toStringAsFixed(2); setState(() {}); }),
-      if (max > 0) _chip('75%', () { _amountCtrl.text = (max * .75).toStringAsFixed(2); setState(() {}); }),
-      if (max > 0) _chip('50%', () { _amountCtrl.text = (max * .50).toStringAsFixed(2); setState(() {}); }),
-      if (max > 0) _chip('25%', () { _amountCtrl.text = (max * .25).toStringAsFixed(2); setState(() {}); }),
+      if (max > 0)
+        _chip('Full', () {
+          _amountCtrl.text = max.toStringAsFixed(2);
+          setState(() {});
+        }),
+      if (max > 0)
+        _chip('75%', () {
+          _amountCtrl.text = (max * .75).toStringAsFixed(2);
+          setState(() {});
+        }),
+      if (max > 0)
+        _chip('50%', () {
+          _amountCtrl.text = (max * .50).toStringAsFixed(2);
+          setState(() {});
+        }),
+      if (max > 0)
+        _chip('25%', () {
+          _amountCtrl.text = (max * .25).toStringAsFixed(2);
+          setState(() {});
+        }),
       _chip('₹500', () {
         final v = max == 0 ? 500.0 : (500.0 > max ? max : 500.0);
-        _amountCtrl.text = v.toStringAsFixed(2); setState(() {});
+        _amountCtrl.text = v.toStringAsFixed(2);
+        setState(() {});
       }),
       _chip('₹200', () {
         final v = max == 0 ? 200.0 : (200.0 > max ? max : 200.0);
-        _amountCtrl.text = v.toStringAsFixed(2); setState(() {});
+        _amountCtrl.text = v.toStringAsFixed(2);
+        setState(() {});
       }),
       _chip('₹100', () {
         final v = max == 0 ? 100.0 : (100.0 > max ? max : 100.0);
-        _amountCtrl.text = v.toStringAsFixed(2); setState(() {});
+        _amountCtrl.text = v.toStringAsFixed(2);
+        setState(() {});
       }),
-      _chip('Clear', () { _amountCtrl.clear(); setState(() {}); }),
+      _chip('Clear', () {
+        _amountCtrl.clear();
+        setState(() {});
+      }),
     ];
   }
 
@@ -446,12 +483,12 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   @override
   Widget build(BuildContext context) {
     final primary = Colors.teal.shade700;
-    final faint   = Colors.teal.withValues(alpha: 0.10);
+    final faint = Colors.teal.withValues(alpha: 0.10);
 
     // Use filtered friend list (exclude me)
     final friendChoices = _friendChoices;
     final singleFriend = friendChoices.length == 1;
-    final singleGroup  = widget.groups.length == 1;
+    final singleGroup = widget.groups.length == 1;
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
@@ -469,19 +506,26 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                 Row(
                   children: [
                     Container(
-                      width: 44, height: 44,
+                      width: 44,
+                      height: 44,
                       decoration: BoxDecoration(
                         color: faint,
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.handshake_rounded, size: 22, color: Colors.teal),
+                      child: const Icon(Icons.handshake_rounded,
+                          size: 22, color: Colors.teal),
                     ),
                     const SizedBox(width: 10),
                     const Expanded(
-                      child: Text("Settle Up", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                      child: Text("Settle Up",
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w800)),
                     ),
                     if (_submitting)
-                      const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                      const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2)),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -491,7 +535,8 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                   Container(
                     width: double.infinity,
                     margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
                       color: Colors.red.withValues(alpha: 0.08),
                       border: Border.all(color: Colors.red.shade200),
@@ -499,12 +544,16 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                        const Icon(Icons.error_outline,
+                            color: Colors.red, size: 18),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(_error!, style: const TextStyle(color: Colors.red))),
+                        Expanded(
+                            child: Text(_error!,
+                                style: const TextStyle(color: Colors.red))),
                         IconButton(
                           tooltip: 'Dismiss',
-                          icon: const Icon(Icons.close, size: 16, color: Colors.red),
+                          icon: const Icon(Icons.close,
+                              size: 16, color: Colors.red),
                           onPressed: () => setState(() => _error = null),
                         ),
                       ],
@@ -522,10 +571,16 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                         DropdownButtonFormField<GroupModel?>(
                           initialValue: _selectedGroup,
                           items: <DropdownMenuItem<GroupModel?>>[
-                            const DropdownMenuItem<GroupModel?>(value: null, child: Text("-- No Group --")),
-                            ...widget.groups.map((g) => DropdownMenuItem<GroupModel?>(value: g, child: Text(g.name))),
+                            const DropdownMenuItem<GroupModel?>(
+                                value: null, child: Text("-- No Group --")),
+                            ...widget.groups.map((g) =>
+                                DropdownMenuItem<GroupModel?>(
+                                    value: g, child: Text(g.name))),
                           ],
-                          onChanged: (g) { setState(() => _selectedGroup = g); _relistenAndRecompute(); },
+                          onChanged: (g) {
+                            setState(() => _selectedGroup = g);
+                            _relistenAndRecompute();
+                          },
                           decoration: const InputDecoration(
                             labelText: "Group (optional)",
                             prefixIcon: Icon(Icons.groups_rounded),
@@ -551,16 +606,23 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                         )
                       else if (!singleFriend) ...[
                         DropdownButtonFormField<FriendModel?>(
-                          initialValue: _selectedFriend != null && !_isMeFriend(_selectedFriend!)
+                          initialValue: _selectedFriend != null &&
+                                  !_isMeFriend(_selectedFriend!)
                               ? _selectedFriend
                               : null,
                           items: <DropdownMenuItem<FriendModel?>>[
-                            const DropdownMenuItem<FriendModel?>(value: null, child: Text("-- Select Friend --")),
+                            const DropdownMenuItem<FriendModel?>(
+                                value: null,
+                                child: Text("-- Select Friend --")),
                             ...friendChoices.map(
-                                  (f) => DropdownMenuItem<FriendModel?>(value: f, child: Text(f.name)),
+                              (f) => DropdownMenuItem<FriendModel?>(
+                                  value: f, child: Text(f.name)),
                             ),
                           ],
-                          onChanged: (f) { setState(() => _selectedFriend = f); _relistenAndRecompute(); },
+                          onChanged: (f) {
+                            setState(() => _selectedFriend = f);
+                            _relistenAndRecompute();
+                          },
                           decoration: const InputDecoration(
                             labelText: "With (Friend)",
                             prefixIcon: Icon(Icons.person_rounded),
@@ -571,19 +633,24 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
 
                       // Direction badge
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           color: _directionColor().withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: _directionColor().withValues(alpha: 0.5)),
+                          border: Border.all(
+                              color: _directionColor().withValues(alpha: 0.5)),
                         ),
                         child: Row(
                           children: [
                             Icon(
-                              _direction < 0 ? Icons.call_made_rounded :
-                              _direction > 0 ? Icons.call_received_rounded :
-                              Icons.info_outline,
-                              size: 18, color: _directionColor(),
+                              _direction < 0
+                                  ? Icons.call_made_rounded
+                                  : _direction > 0
+                                      ? Icons.call_received_rounded
+                                      : Icons.info_outline,
+                              size: 18,
+                              color: _directionColor(),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -604,8 +671,10 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                       DropdownButtonFormField<String>(
                         initialValue: _payerIsMe ? 'me' : 'they',
                         items: const [
-                          DropdownMenuItem(value: 'they', child: Text('They paid me')),
-                          DropdownMenuItem(value: 'me',   child: Text('I paid them')),
+                          DropdownMenuItem(
+                              value: 'they', child: Text('They paid me')),
+                          DropdownMenuItem(
+                              value: 'me', child: Text('I paid them')),
                         ],
                         onChanged: (v) {
                           if (v == null) return;
@@ -627,21 +696,26 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text("Amount", style: TextStyle(fontWeight: FontWeight.w800, color: Colors.teal.shade900)),
+                      Text("Amount",
+                          style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: Colors.teal.shade900)),
                       const SizedBox(height: 10),
                       TextFormField(
                         controller: _amountCtrl,
                         inputFormatters: [
-                          FilteringTextInputFormatter.allow(RegExp(r'^\d{0,9}(\.\d{0,2})?$')),
+                          FilteringTextInputFormatter.allow(
+                              RegExp(r'^\d{0,9}(\.\d{0,2})?$')),
                         ],
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
                         decoration: InputDecoration(
                           prefixIcon: const Icon(Icons.currency_rupee),
                           labelText: "Settle amount",
                           helperText: _maxAmount > 0
                               ? (_direction < 0
-                              ? "Outstanding (you owe): ₹${_maxAmount.toStringAsFixed(2)}"
-                              : "Outstanding (they owe you): ₹${_maxAmount.toStringAsFixed(2)}")
+                                  ? "Outstanding (you owe): ₹${_maxAmount.toStringAsFixed(2)}"
+                                  : "Outstanding (they owe you): ₹${_maxAmount.toStringAsFixed(2)}")
                               : "If this looks wrong, choose friend/group above.",
                         ),
                         onChanged: (_) {
@@ -672,10 +746,13 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                       const SizedBox(height: 10),
                       Row(
                         children: [
-                          const Icon(Icons.calendar_today, size: 18, color: Colors.grey),
+                          const Icon(Icons.calendar_today,
+                              size: 18, color: Colors.grey),
                           const SizedBox(width: 8),
-                          Text("Date: ${_date.toLocal().toString().substring(0, 10)}",
-                              style: const TextStyle(fontWeight: FontWeight.w600)),
+                          Text(
+                              "Date: ${_date.toLocal().toString().substring(0, 10)}",
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600)),
                           const Spacer(),
                           TextButton(
                             onPressed: () async {
@@ -685,7 +762,8 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                                 firstDate: DateTime(2000),
                                 lastDate: DateTime.now(),
                               );
-                              if (picked != null) setState(() => _date = picked);
+                              if (picked != null)
+                                setState(() => _date = picked);
                             },
                             child: const Text("Change"),
                           ),
@@ -694,33 +772,39 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                       const SizedBox(height: 10),
                       Row(
                         children: [
-                          const Icon(Icons.attachment_rounded, size: 18, color: Colors.grey),
+                          const Icon(Icons.attachment_rounded,
+                              size: 18, color: Colors.grey),
                           const SizedBox(width: 8),
-                          const Text("Receipt (optional)", style: TextStyle(fontWeight: FontWeight.w600)),
+                          const Text("Receipt (optional)",
+                              style: TextStyle(fontWeight: FontWeight.w600)),
                           const Spacer(),
                           if (!kIsWeb) ...[
                             IconButton(
                               tooltip: 'Camera',
                               onPressed: _pickFromCamera,
-                              icon: const Icon(Icons.photo_camera_outlined, color: Colors.teal),
+                              icon: const Icon(Icons.photo_camera_outlined,
+                                  color: Colors.teal),
                             ),
                             IconButton(
                               tooltip: 'Gallery',
                               onPressed: _pickFromGallery,
-                              icon: const Icon(Icons.photo_library_outlined, color: Colors.teal),
+                              icon: const Icon(Icons.photo_library_outlined,
+                                  color: Colors.teal),
                             ),
                           ],
                           IconButton(
                             tooltip: 'File / PDF',
                             onPressed: _pickAnyFile,
-                            icon: const Icon(Icons.attach_file_rounded, color: Colors.teal),
+                            icon: const Icon(Icons.attach_file_rounded,
+                                color: Colors.teal),
                           ),
                         ],
                       ),
                       if (_attachName != null) ...[
                         const SizedBox(height: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
                             color: Colors.teal.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(10),
@@ -728,11 +812,14 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.insert_drive_file, size: 18, color: Colors.teal),
+                              const Icon(Icons.insert_drive_file,
+                                  size: 18, color: Colors.teal),
                               const SizedBox(width: 8),
                               Expanded(
-                                child: Text(_attachName!, overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                                child: Text(_attachName!,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600)),
                               ),
                               IconButton(
                                 tooltip: 'Remove',
@@ -759,7 +846,9 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _submitting ? null : () => Navigator.pop(context, false),
+                        onPressed: _submitting
+                            ? null
+                            : () => Navigator.pop(context, false),
                         icon: const Icon(Icons.close_rounded),
                         label: const Text("Cancel"),
                       ),
@@ -774,7 +863,8 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                           backgroundColor: primary,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
                     ),

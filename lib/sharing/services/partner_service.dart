@@ -20,31 +20,43 @@ class PartnerService {
       normalizeToE164(raw, fallbackCountryCode: kDefaultCountryCode);
 
   // Resolve a user by identifier (phone/email/phone field/referral)
-  Future<DocumentSnapshot<Map<String, dynamic>>?> _resolveUserDoc(String identifier) async {
+  Future<DocumentSnapshot<Map<String, dynamic>>?> _resolveUserDoc(
+      String identifier) async {
     final id = identifier.trim();
 
     if (_looksLikePhone(id)) {
       final doc = await _db.collection('users').doc(id).get();
-      if (doc.exists) return doc;
+      if (doc.exists) {
+        return doc;
+      }
     }
 
-    final emailSnap = await _db.collection('users')
+    final emailSnap = await _db
+        .collection('users')
         .where('email', isEqualTo: id.toLowerCase())
         .limit(1)
         .get();
-    if (emailSnap.docs.isNotEmpty) return emailSnap.docs.first;
+    if (emailSnap.docs.isNotEmpty) {
+      return emailSnap.docs.first;
+    }
 
-    final phoneSnap = await _db.collection('users')
+    final phoneSnap = await _db
+        .collection('users')
         .where('phone', isEqualTo: id)
         .limit(1)
         .get();
-    if (phoneSnap.docs.isNotEmpty) return phoneSnap.docs.first;
+    if (phoneSnap.docs.isNotEmpty) {
+      return phoneSnap.docs.first;
+    }
 
-    final refSnap = await _db.collection('users')
+    final refSnap = await _db
+        .collection('users')
         .where('referralCode', isEqualTo: id)
         .limit(1)
         .get();
-    if (refSnap.docs.isNotEmpty) return refSnap.docs.first;
+    if (refSnap.docs.isNotEmpty) {
+      return refSnap.docs.first;
+    }
 
     return null;
   }
@@ -61,10 +73,14 @@ class PartnerService {
     final from = _normalizePhone(currentUserPhone);
 
     final partnerDoc = await _resolveUserDoc(partnerIdentifier);
-    if (partnerDoc == null) return null;
+    if (partnerDoc == null) {
+      return null;
+    }
 
     final partnerId = _normalizePhone(partnerDoc.id);
-    if (partnerId == from) throw Exception('You cannot send a request to yourself.');
+    if (partnerId == from) {
+      throw Exception('You cannot send a request to yourself.');
+    }
 
     final existing = await _db
         .collection('partner_requests')
@@ -148,44 +164,60 @@ class PartnerService {
     await _db.runTransaction((tx) async {
       final reqRef = _db.collection('partner_requests').doc(requestId);
       final reqSnap = await tx.get(reqRef);
-      if (!reqSnap.exists) throw Exception('Request not found');
+      if (!reqSnap.exists) {
+        throw Exception('Request not found');
+      }
 
       final data = reqSnap.data() as Map<String, dynamic>;
       final status = (data['status'] ?? '').toString();
       final from = (data['fromUserPhone'] ?? '').toString();
       final to = (data['toUserPhone'] ?? '').toString();
 
-      if (status != 'pending') return;
-      if (to != approver) throw Exception('Forbidden: only the recipient may approve');
+      if (status != 'pending') {
+        return;
+      }
+      if (to != approver) {
+        throw Exception('Forbidden: only the recipient may approve');
+      }
 
       final perms = Map<String, dynamic>.from(data['permissions'] ?? {});
       final now = FieldValue.serverTimestamp();
 
       // Sender side link
       final senderRef = _db
-          .collection('users').doc(from)
-          .collection('sharedPartners').doc(to);
-      tx.set(senderRef, {
-        'partnerPhone': to,
-        'status': 'active',
-        'permissions': perms,
-        'permissionsGrantedBy': to,
-        'approvedRequestId': requestId,
-        'createdAt': now,
-      }, SetOptions(merge: true));
+          .collection('users')
+          .doc(from)
+          .collection('sharedPartners')
+          .doc(to);
+      tx.set(
+          senderRef,
+          {
+            'partnerPhone': to,
+            'status': 'active',
+            'permissions': perms,
+            'permissionsGrantedBy': to,
+            'approvedRequestId': requestId,
+            'createdAt': now,
+          },
+          SetOptions(merge: true));
 
       // Recipient side link
       final recipRef = _db
-          .collection('users').doc(to)
-          .collection('sharedPartners').doc(from);
-      tx.set(recipRef, {
-        'partnerPhone': from,
-        'status': 'active',
-        'permissions': perms,
-        'permissionsGrantedBy': to,
-        'approvedRequestId': requestId,
-        'createdAt': now,
-      }, SetOptions(merge: true));
+          .collection('users')
+          .doc(to)
+          .collection('sharedPartners')
+          .doc(from);
+      tx.set(
+          recipRef,
+          {
+            'partnerPhone': from,
+            'status': 'active',
+            'permissions': perms,
+            'permissionsGrantedBy': to,
+            'approvedRequestId': requestId,
+            'createdAt': now,
+          },
+          SetOptions(merge: true));
 
       tx.update(reqRef, {
         'status': 'approved',
@@ -204,15 +236,21 @@ class PartnerService {
     await _db.runTransaction((tx) async {
       final reqRef = _db.collection('partner_requests').doc(requestId);
       final reqSnap = await tx.get(reqRef);
-      if (!reqSnap.exists) throw Exception('Request not found');
+      if (!reqSnap.exists) {
+        throw Exception('Request not found');
+      }
 
       final data = reqSnap.data() as Map<String, dynamic>;
       final status = (data['status'] ?? '').toString();
       final to = (data['toUserPhone'] ?? '').toString();
       final from = (data['fromUserPhone'] ?? '').toString();
 
-      if (status != 'pending') return;
-      if (to != approver) throw Exception('Forbidden: only the recipient may reject');
+      if (status != 'pending') {
+        return;
+      }
+      if (to != approver) {
+        throw Exception('Forbidden: only the recipient may reject');
+      }
 
       tx.update(reqRef, {
         'status': 'rejected',
@@ -221,8 +259,10 @@ class PartnerService {
       });
 
       final senderRef = _db
-          .collection('users').doc(from)
-          .collection('sharedPartners').doc(to);
+          .collection('users')
+          .doc(from)
+          .collection('sharedPartners')
+          .doc(to);
       tx.set(senderRef, {'status': 'rejected'}, SetOptions(merge: true));
     });
   }
@@ -236,21 +276,29 @@ class PartnerService {
     await _db.runTransaction((tx) async {
       final reqRef = _db.collection('partner_requests').doc(requestId);
       final reqSnap = await tx.get(reqRef);
-      if (!reqSnap.exists) throw Exception('Request not found');
+      if (!reqSnap.exists) {
+        throw Exception('Request not found');
+      }
 
       final data = reqSnap.data() as Map<String, dynamic>;
       final status = (data['status'] ?? '').toString();
       final from = (data['fromUserPhone'] ?? '').toString();
       final to = (data['toUserPhone'] ?? '').toString();
 
-      if (status != 'pending') return;
-      if (from != sender) throw Exception('Forbidden: only sender may cancel');
+      if (status != 'pending') {
+        return;
+      }
+      if (from != sender) {
+        throw Exception('Forbidden: only sender may cancel');
+      }
 
       tx.update(reqRef, {'status': 'cancelled'});
 
       final senderRef = _db
-          .collection('users').doc(from)
-          .collection('sharedPartners').doc(to);
+          .collection('users')
+          .doc(from)
+          .collection('sharedPartners')
+          .doc(to);
       tx.set(senderRef, {'status': 'cancelled'}, SetOptions(merge: true));
     });
   }
@@ -267,27 +315,33 @@ class PartnerService {
 
     // 1) Delete both sides’ sharedPartners documents atomically
     await _db.runTransaction((tx) async {
-      final aRef = _db.collection('users').doc(a).collection('sharedPartners').doc(b);
-      final bRef = _db.collection('users').doc(b).collection('sharedPartners').doc(a);
+      final aRef =
+          _db.collection('users').doc(a).collection('sharedPartners').doc(b);
+      final bRef =
+          _db.collection('users').doc(b).collection('sharedPartners').doc(a);
       tx.delete(aRef);
       tx.delete(bRef);
     });
 
     // 2) Best-effort: mark any approved request between A<->B as revoked (not required for UI)
     try {
-      final q1 = await _db.collection('partner_requests')
+      final q1 = await _db
+          .collection('partner_requests')
           .where('fromUserPhone', isEqualTo: a)
           .where('toUserPhone', isEqualTo: b)
           .where('status', isEqualTo: 'approved')
           .limit(1)
           .get();
-      final q2 = await _db.collection('partner_requests')
+      final q2 = await _db
+          .collection('partner_requests')
           .where('fromUserPhone', isEqualTo: b)
           .where('toUserPhone', isEqualTo: a)
           .where('status', isEqualTo: 'approved')
           .limit(1)
           .get();
-      final doc = q1.docs.isNotEmpty ? q1.docs.first : (q2.docs.isNotEmpty ? q2.docs.first : null);
+      final doc = q1.docs.isNotEmpty
+          ? q1.docs.first
+          : (q2.docs.isNotEmpty ? q2.docs.first : null);
       if (doc != null) {
         await doc.reference.update({
           'status': 'revoked',
@@ -303,7 +357,8 @@ class PartnerService {
   // -----------------------------
   // Fetch partners for a user (with batch stats) — now RESPECTS PERMS
   // -----------------------------
-  Future<List<PartnerModel>> fetchSharedPartnersWithStats(String currentUserPhone) async {
+  Future<List<PartnerModel>> fetchSharedPartnersWithStats(
+      String currentUserPhone) async {
     final userId = _normalizePhone(currentUserPhone);
 
     final snapshot = await _db
@@ -312,11 +367,12 @@ class PartnerService {
         .collection('sharedPartners')
         .get();
 
-    if (snapshot.docs.isEmpty) return [];
+    if (snapshot.docs.isEmpty) {
+      return [];
+    }
 
-    final relationships = snapshot.docs
-        .map((doc) => PartnerModel.fromFirestore(doc))
-        .toList();
+    final relationships =
+        snapshot.docs.map((doc) => PartnerModel.fromFirestore(doc)).toList();
 
     final partnerIds = relationships.map((r) => r.partnerId).toSet().toList();
 
@@ -325,9 +381,12 @@ class PartnerService {
     final List<QueryDocumentSnapshot<Map<String, dynamic>>> userDocs = [];
     const chunkSize = 10;
     for (var i = 0; i < partnerIds.length; i += chunkSize) {
-      final end = (i + chunkSize < partnerIds.length) ? i + chunkSize : partnerIds.length;
+      final end = (i + chunkSize < partnerIds.length)
+          ? i + chunkSize
+          : partnerIds.length;
       final chunk = partnerIds.sublist(i, end);
-      final q = await usersCol.where(FieldPath.documentId, whereIn: chunk).get();
+      final q =
+          await usersCol.where(FieldPath.documentId, whereIn: chunk).get();
       userDocs.addAll(q.docs);
     }
     final profileMap = {for (var d in userDocs) d.id: d.data()};
@@ -341,7 +400,8 @@ class PartnerService {
       final String? avatar = partnerProfile?['avatar'] as String?;
 
       // Gate reads by status + tx permission (prevents accidental reads + aligns with rules)
-      final canReadTx = (rel.status == 'active') && (rel.permissions['tx'] == true);
+      final canReadTx =
+          (rel.status == 'active') && (rel.permissions['tx'] == true);
 
       double todayCredit = 0.0;
       double todayDebit = 0.0;
@@ -421,7 +481,8 @@ class PartnerService {
   // -----------------------------
   // Streams for inbox/outbox
   // -----------------------------
-  Stream<QuerySnapshot<Map<String, dynamic>>> streamIncomingPending(String viewerPhone) {
+  Stream<QuerySnapshot<Map<String, dynamic>>> streamIncomingPending(
+      String viewerPhone) {
     final phone = _normalizePhone(viewerPhone);
     return _db
         .collection('partner_requests')
@@ -430,7 +491,8 @@ class PartnerService {
         .snapshots();
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> streamSentPending(String viewerPhone) {
+  Stream<QuerySnapshot<Map<String, dynamic>>> streamSentPending(
+      String viewerPhone) {
     final phone = _normalizePhone(viewerPhone);
     return _db
         .collection('partner_requests')

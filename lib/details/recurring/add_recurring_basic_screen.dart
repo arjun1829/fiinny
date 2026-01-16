@@ -45,9 +45,8 @@ class AddRecurringBasicScreen extends StatefulWidget {
     this.initialDueDay,
     this.initialWeekday,
     this.initialIntervalDays,
-  })  : assert(scope.userPhone != null || scope.isGroup,
-            'Recurring scope must include user phone for friend or be group'),
-        super();
+  }) : assert(scope.userPhone != null || scope.isGroup,
+            'Recurring scope must include user phone for friend or be group');
 
   @override
   State<AddRecurringBasicScreen> createState() =>
@@ -365,7 +364,9 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
 
   Future<void> _pickTime() async {
     final t = await showTimePicker(context: context, initialTime: _time);
-    if (t != null) setState(() => _time = t);
+    if (t != null) {
+      setState(() => _time = t);
+    }
   }
 
   String _reminderPreviewText(DateTime due) {
@@ -416,7 +417,9 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
         source: ImageSource.gallery,
         imageQuality: 92,
       );
-      if (picked == null) return;
+      if (picked == null) {
+        return;
+      }
 
       final original = File(picked.path);
       final targetPath =
@@ -436,7 +439,7 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final storagePath = _isGroup && _groupId != null
-          ? 'groups/${_groupId}/recurring/$timestamp.jpg'
+          ? 'groups/$_groupId/recurring/$timestamp.jpg'
           : 'users/${widget.userPhone}/recurring/${_friendId ?? 'unknown'}/$timestamp.jpg';
 
       // Upload to Firebase Storage
@@ -575,12 +578,16 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
       if (!mounted) return;
       Navigator.pop(context, item);
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to save: $e')),
       );
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 

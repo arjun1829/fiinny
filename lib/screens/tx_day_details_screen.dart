@@ -20,7 +20,7 @@ import 'edit_expense_screen.dart' show EditExpenseScreen;
 
 class TxDayDetailsScreen extends StatefulWidget {
   final String userPhone;
-  const TxDayDetailsScreen({required this.userPhone, Key? key}) : super(key: key);
+  const TxDayDetailsScreen({required this.userPhone, super.key});
 
   @override
   State<TxDayDetailsScreen> createState() => _TxDayDetailsScreenState();
@@ -66,23 +66,21 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
   }
 
   void _bindStreams() {
-    _expSub = ExpenseService()
-        .getExpensesStream(widget.userPhone)
-        .listen((exps) {
+    _expSub =
+        ExpenseService().getExpensesStream(widget.userPhone).listen((exps) {
       _allExpenses = exps;
       _recomputeForDay();
     });
 
-    _incSub = IncomeService()
-        .getIncomesStream(widget.userPhone)
-        .listen((incs) {
+    _incSub = IncomeService().getIncomesStream(widget.userPhone).listen((incs) {
       _allIncomes = incs;
       _recomputeForDay();
     });
   }
 
   void _recomputeForDay() {
-    final d0 = DateTime(_selectedDay.year, _selectedDay.month, _selectedDay.day);
+    final d0 =
+        DateTime(_selectedDay.year, _selectedDay.month, _selectedDay.day);
     final d1 = d0.add(const Duration(days: 1));
 
     _dayExpenses = _allExpenses
@@ -96,15 +94,18 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
     _debit = _dayExpenses.fold(0.0, (a, b) => a + b.amount);
 
     // compute Monday start for the selected week
-    _weekStart = _selectedDay.subtract(Duration(days: _selectedDay.weekday - 1));
+    _weekStart =
+        _selectedDay.subtract(Duration(days: _selectedDay.weekday - 1));
     _weekData = [];
     for (int i = 0; i < 7; i++) {
       final d = _weekStart.add(Duration(days: i));
       final s = DateTime(d.year, d.month, d.day);
       final e = s.add(const Duration(days: 1));
 
-      final dayExp = _allExpenses.where((x) => !x.date.isBefore(s) && x.date.isBefore(e));
-      final dayInc = _allIncomes.where((x) => !x.date.isBefore(s) && x.date.isBefore(e));
+      final dayExp =
+          _allExpenses.where((x) => !x.date.isBefore(s) && x.date.isBefore(e));
+      final dayInc =
+          _allIncomes.where((x) => !x.date.isBefore(s) && x.date.isBefore(e));
 
       final c = dayInc.fold(0.0, (a, b) => a + b.amount);
       final db = dayExp.fold(0.0, (a, b) => a + b.amount);
@@ -149,7 +150,8 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
   }
 
   Future<void> _editLimitDialog() async {
-    final ctrl = TextEditingController(text: _dailyLimit?.toStringAsFixed(0) ?? '');
+    final ctrl =
+        TextEditingController(text: _dailyLimit?.toStringAsFixed(0) ?? '');
     final result = await showDialog<double>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -164,8 +166,7 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
               onPressed: () => Navigator.pop(ctx, 0.0),
               child: const Text("Remove")),
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text("Cancel")),
+              onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
           ElevatedButton(
             onPressed: () {
               final v = double.tryParse(ctrl.text.trim());
@@ -240,10 +241,14 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
               // Header
               Container(
                 margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [accent.withValues(alpha: .12), accent.withValues(alpha: .04)],
+                    colors: [
+                      accent.withValues(alpha: .12),
+                      accent.withValues(alpha: .04)
+                    ],
                   ),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: accent.withValues(alpha: .15)),
@@ -263,7 +268,8 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: accent.withValues(alpha: .12),
                         borderRadius: BorderRadius.circular(999),
@@ -302,7 +308,8 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                       label: const Text("This Monday"),
                       onPressed: () {
                         final now = DateTime.now();
-                        final monday = now.subtract(Duration(days: now.weekday - 1));
+                        final monday =
+                            now.subtract(Duration(days: now.weekday - 1));
                         Navigator.pop(ctx, monday);
                       },
                     ),
@@ -378,7 +385,8 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
         elevation: 0,
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.pushNamed(context, '/add', arguments: widget.userPhone),
+        onPressed: () =>
+            Navigator.pushNamed(context, '/add', arguments: widget.userPhone),
         child: const Icon(Icons.add),
       ),
       body: Stack(
@@ -397,7 +405,8 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                     borderRadius: BorderRadius.circular(16),
                     onTap: _openDateSheet,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: Colors.black12),
@@ -411,7 +420,8 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.calendar_today_rounded, color: Colors.grey[800]),
+                          Icon(Icons.calendar_today_rounded,
+                              color: Colors.grey[800]),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
@@ -451,10 +461,9 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                         final c = (_weekData[i]['credit'] as num).toDouble();
                         final deb = (_weekData[i]['debit'] as num).toDouble();
 
-                        final isSelected =
-                            d.year == _selectedDay.year &&
-                                d.month == _selectedDay.month &&
-                                d.day == _selectedDay.day;
+                        final isSelected = d.year == _selectedDay.year &&
+                            d.month == _selectedDay.month &&
+                            d.day == _selectedDay.day;
 
                         return Column(
                           mainAxisSize: MainAxisSize.min,
@@ -463,7 +472,9 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                               width: 46,
                               height: 46,
                               child: Material(
-                                color: isSelected ? Colors.black.withValues(alpha: .04) : Colors.transparent,
+                                color: isSelected
+                                    ? Colors.black.withValues(alpha: .04)
+                                    : Colors.transparent,
                                 borderRadius: BorderRadius.circular(999),
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(999),
@@ -472,15 +483,15 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                                     _recomputeForDay();
                                   },
                                   child: Center(
-                                      child: DashboardHeroRing(
-                                        credit: c,
-                                        debit: deb,
-                                        period: "",
-                                        showHeader: false,
-                                        ringSize: 44,
-                                        strokeWidth: 4,
-                                        tappable: false,
-                                      ),
+                                    child: DashboardHeroRing(
+                                      credit: c,
+                                      debit: deb,
+                                      period: "",
+                                      showHeader: false,
+                                      ringSize: 44,
+                                      strokeWidth: 4,
+                                      tappable: false,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -491,7 +502,9 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
-                                color: isSelected ? Colors.black : Colors.grey[700],
+                                color: isSelected
+                                    ? Colors.black
+                                    : Colors.grey[700],
                               ),
                             ),
                           ],
@@ -520,30 +533,31 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                     children: [
                       Expanded(
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
                             color: Colors.black.withValues(alpha: 0.04),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: (_dailyLimit == null)
                               ? const Text(
-                            "No daily limit set",
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          )
+                                  "No daily limit set",
+                                  style: TextStyle(fontWeight: FontWeight.w700),
+                                )
                               : Builder(
-                            builder: (_) {
-                              final used = _daySpendOnly;
-                              final pct = _dailyLimit! > 0
-                                  ? (used / _dailyLimit! * 100)
-                                  : 0.0;
-                              return Text(
-                                "Limit ₹${_dailyLimit!.toStringAsFixed(0)} • Used ₹${used.toStringAsFixed(0)} (${pct.clamp(0, 100).toStringAsFixed(0)}%)",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
+                                  builder: (_) {
+                                    final used = _daySpendOnly;
+                                    final pct = _dailyLimit! > 0
+                                        ? (used / _dailyLimit! * 100)
+                                        : 0.0;
+                                    return Text(
+                                      "Limit ₹${_dailyLimit!.toStringAsFixed(0)} • Used ₹${used.toStringAsFixed(0)} (${pct.clamp(0, 100).toStringAsFixed(0)}%)",
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    );
+                                  },
                                 ),
-                              );
-                            },
-                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -552,9 +566,10 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                         onPressed: _savingLimit ? null : _editLimitDialog,
                         icon: _savingLimit
                             ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2))
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2))
                             : const Icon(Icons.edit_rounded),
                       ),
                     ],
@@ -572,7 +587,8 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                       Colors.white.withValues(alpha: 0.23),
                       Colors.white.withValues(alpha: 0.09)
                     ],
-                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
                     child: UnifiedTransactionList(
                       expenses: _dayExpenses,
                       incomes: _dayIncomes,
@@ -596,7 +612,7 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                               ),
                             ),
                           );
-                          _recomputeForDay();
+                          if (mounted) _recomputeForDay();
                         } else if (tx is IncomeItem) {
                           // Use your route name for income editing
                           // If you have a screen widget, replace with a direct MaterialPageRoute like above
@@ -609,12 +625,13 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                                 'income': tx,
                               },
                             );
-                            _recomputeForDay();
+                            if (mounted) _recomputeForDay();
                           } catch (_) {
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text("Edit Income screen not found. Set '/edit-income' route."),
+                                content: Text(
+                                    "Edit Income screen not found. Set '/edit-income' route."),
                               ),
                             );
                           }
@@ -622,11 +639,13 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                       },
                       onDelete: (tx) async {
                         if (tx is ExpenseItem) {
-                          await ExpenseService().deleteExpense(widget.userPhone, tx.id);
+                          await ExpenseService()
+                              .deleteExpense(widget.userPhone, tx.id);
                         } else if (tx is IncomeItem) {
-                          await IncomeService().deleteIncome(widget.userPhone, tx.id);
+                          await IncomeService()
+                              .deleteIncome(widget.userPhone, tx.id);
                         }
-                        _recomputeForDay();
+                        if (mounted) _recomputeForDay();
                       },
                       onSplit: (tx) async {
                         if (tx is ExpenseItem) {
@@ -639,7 +658,7 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                               ),
                             ),
                           );
-                          _recomputeForDay();
+                          if (mounted) _recomputeForDay();
                         }
                       },
                     ),

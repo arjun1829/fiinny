@@ -4,28 +4,36 @@ import 'enhanced_split_models.dart';
 /// Query engine for answering split-related questions
 class SplitQueryEngine {
   // ==================== A. PENDING AMOUNTS & DUES (Q1-20) ====================
-  
+
   /// How much money is {friend} pending on me?
-  static double getAmountOwedBy(String friendPhone, EnhancedSplitReport report) {
+  static double getAmountOwedBy(
+      String friendPhone, EnhancedSplitReport report) {
     final detail = report.friendDetails[friendPhone];
-    if (detail == null) return 0;
+    if (detail == null) {
+      return 0;
+    }
     return detail.netBalance > 0 ? detail.netBalance : 0;
   }
 
   /// How much do I owe {friend}?
-  static double getAmountOwedTo(String friendPhone, EnhancedSplitReport report) {
+  static double getAmountOwedTo(
+      String friendPhone, EnhancedSplitReport report) {
     final detail = report.friendDetails[friendPhone];
-    if (detail == null) return 0;
+    if (detail == null) {
+      return 0;
+    }
     return detail.netBalance < 0 ? detail.netBalance.abs() : 0;
   }
 
   /// Who has the highest pending amount with me?
   static String? getHighestPendingFriend(EnhancedSplitReport report) {
-    if (report.friendDetails.isEmpty) return null;
-    
+    if (report.friendDetails.isEmpty) {
+      return null;
+    }
+
     String? highestFriend;
     double highestAmount = 0;
-    
+
     for (final entry in report.friendDetails.entries) {
       final amount = entry.value.netBalance.abs();
       if (amount > highestAmount) {
@@ -33,7 +41,7 @@ class SplitQueryEngine {
         highestFriend = entry.key;
       }
     }
-    
+
     return highestFriend;
   }
 
@@ -75,22 +83,30 @@ class SplitQueryEngine {
 
   /// Am I net positive or negative in splits?
   static String getNetPosition(EnhancedSplitReport report) {
-    if (report.netPosition > 0) return 'positive';
-    if (report.netPosition < 0) return 'negative';
+    if (report.netPosition > 0) {
+      return 'positive';
+    }
+    if (report.netPosition < 0) {
+      return 'negative';
+    }
     return 'balanced';
   }
 
   /// Which friend should I remind first? (highest pending + longest delay)
   static String? getFriendToRemindFirst(EnhancedSplitReport report) {
-    if (report.friendDetails.isEmpty) return null;
-    
+    if (report.friendDetails.isEmpty) {
+      return null;
+    }
+
     String? topFriend;
     double topScore = 0;
-    
+
     for (final entry in report.friendDetails.entries) {
       final detail = entry.value;
-      if (detail.netBalance <= 0 || detail.unsettledExpenses == 0) continue;
-      
+      if (detail.netBalance <= 0 || detail.unsettledExpenses == 0) {
+        continue;
+      }
+
       // Score = amount * days delay
       final score = detail.netBalance * detail.daysSinceLastSettlement;
       if (score > topScore) {
@@ -98,7 +114,7 @@ class SplitQueryEngine {
         topFriend = entry.key;
       }
     }
-    
+
     return topFriend;
   }
 
@@ -109,32 +125,37 @@ class SplitQueryEngine {
     String friendPhone,
     List<ExpenseItem> expenses,
   ) {
-    return expenses.where((e) => 
-      e.friendIds.contains(friendPhone) || e.payerId == friendPhone
-    ).toList();
+    return expenses
+        .where((e) =>
+            e.friendIds.contains(friendPhone) || e.payerId == friendPhone)
+        .toList();
   }
 
   /// How many times have I paid for {friend}?
-  static int getPaymentCount(String friendPhone, List<ExpenseItem> expenses, String userPhone) {
-    return expenses.where((e) => 
-      e.payerId == userPhone && e.friendIds.contains(friendPhone)
-    ).length;
+  static int getPaymentCount(
+      String friendPhone, List<ExpenseItem> expenses, String userPhone) {
+    return expenses
+        .where(
+            (e) => e.payerId == userPhone && e.friendIds.contains(friendPhone))
+        .length;
   }
 
   /// With whom do I split expenses most often?
   static String? getMostFrequentSplitFriend(EnhancedSplitReport report) {
-    if (report.friendDetails.isEmpty) return null;
-    
+    if (report.friendDetails.isEmpty) {
+      return null;
+    }
+
     String? mostFrequent;
     int maxExpenses = 0;
-    
+
     for (final entry in report.friendDetails.entries) {
       if (entry.value.totalExpenses > maxExpenses) {
         maxExpenses = entry.value.totalExpenses;
         mostFrequent = entry.key;
       }
     }
-    
+
     return mostFrequent;
   }
 
@@ -181,8 +202,10 @@ class SplitQueryEngine {
     EnhancedSplitReport report,
   ) {
     final group = report.groupDetails[groupId];
-    if (group == null) return [];
-    
+    if (group == null) {
+      return [];
+    }
+
     return group.memberBalances.entries
         .where((e) => e.value < 0) // Negative balance = they owe
         .map((e) => e.key)
@@ -191,18 +214,20 @@ class SplitQueryEngine {
 
   /// Which group has the highest pending amount?
   static String? getHighestPendingGroup(EnhancedSplitReport report) {
-    if (report.groupDetails.isEmpty) return null;
-    
+    if (report.groupDetails.isEmpty) {
+      return null;
+    }
+
     String? highestGroup;
     double highestPending = 0;
-    
+
     for (final entry in report.groupDetails.entries) {
       if (entry.value.totalPending > highestPending) {
         highestPending = entry.value.totalPending;
         highestGroup = entry.key;
       }
     }
-    
+
     return highestGroup;
   }
 
@@ -219,7 +244,8 @@ class SplitQueryEngine {
   }
 
   /// Is splitting expenses hurting me financially?
-  static bool isSplittingHurtingFinances(EnhancedSplitReport report, double totalIncome) {
+  static bool isSplittingHurtingFinances(
+      EnhancedSplitReport report, double totalIncome) {
     // If social spending > 30% of income, it's concerning
     return report.behavior.socialSpendingPct > 30;
   }
@@ -227,11 +253,13 @@ class SplitQueryEngine {
   /// Which friend causes the most imbalance?
   static String? getMostImbalancedFriend(EnhancedSplitReport report) {
     // Friend with highest absolute net balance
-    if (report.friendDetails.isEmpty) return null;
-    
+    if (report.friendDetails.isEmpty) {
+      return null;
+    }
+
     String? mostImbalanced;
     double maxImbalance = 0;
-    
+
     for (final entry in report.friendDetails.entries) {
       final imbalance = entry.value.netBalance.abs();
       if (imbalance > maxImbalance) {
@@ -239,17 +267,20 @@ class SplitQueryEngine {
         mostImbalanced = entry.key;
       }
     }
-    
+
     return mostImbalanced;
   }
 
   /// Is my friend circle expensive?
-  static bool isFriendCircleExpensive(EnhancedSplitReport report, double totalExpenses) {
-    if (totalExpenses == 0) return false;
-    
-    final splitExpenseTotal = report.friendDetails.values
-        .fold<double>(0, (sum, detail) => sum + detail.totalPaidByYou + detail.totalPaidByThem);
-    
+  static bool isFriendCircleExpensive(
+      EnhancedSplitReport report, double totalExpenses) {
+    if (totalExpenses == 0) {
+      return false;
+    }
+
+    final splitExpenseTotal = report.friendDetails.values.fold<double>(0,
+        (sum, detail) => sum + detail.totalPaidByYou + detail.totalPaidByThem);
+
     // If split expenses > 40% of total, it's expensive
     return (splitExpenseTotal / totalExpenses) > 0.4;
   }
@@ -266,14 +297,17 @@ class SplitQueryEngine {
     EnhancedSplitReport current,
     EnhancedSplitReport? previous,
   ) {
-    if (previous == null) return false;
+    if (previous == null) {
+      return false;
+    }
     return current.netPosition > previous.netPosition;
   }
 
   /// Which friend should I be careful with?
   static List<String> getFriendsToBeCarefulWith(EnhancedSplitReport report) {
     return report.risks
-        .where((r) => r.type == 'DELAYED_PAYMENT' || r.type == 'IMBALANCED_FRIEND')
+        .where(
+            (r) => r.type == 'DELAYED_PAYMENT' || r.type == 'IMBALANCED_FRIEND')
         .map((r) => r.friendPhone!)
         .toSet()
         .toList();
@@ -282,31 +316,37 @@ class SplitQueryEngine {
   /// What is my biggest split expense mistake?
   static String? getBiggestMistake(EnhancedSplitReport report) {
     // Identify the most critical risk
-    if (report.risks.isEmpty) return null;
-    
+    if (report.risks.isEmpty) {
+      return null;
+    }
+
     // Prioritize: HIGH_PENDING > DELAYED_PAYMENT > IMBALANCED_FRIEND
-    final highPending = report.risks.where((r) => r.type == 'HIGH_PENDING').toList();
+    final highPending =
+        report.risks.where((r) => r.type == 'HIGH_PENDING').toList();
     if (highPending.isNotEmpty) {
       return 'High pending amount of ₹${highPending.first.amount?.toStringAsFixed(0)} with ${highPending.first.friendPhone}';
     }
-    
-    final delayed = report.risks.where((r) => r.type == 'DELAYED_PAYMENT').toList();
+
+    final delayed =
+        report.risks.where((r) => r.type == 'DELAYED_PAYMENT').toList();
     if (delayed.isNotEmpty) {
       return 'Payment delayed for ${delayed.first.days} days with ${delayed.first.friendPhone}';
     }
-    
-    final imbalanced = report.risks.where((r) => r.type == 'IMBALANCED_FRIEND').toList();
+
+    final imbalanced =
+        report.risks.where((r) => r.type == 'IMBALANCED_FRIEND').toList();
     if (imbalanced.isNotEmpty) {
       return 'Imbalanced relationship with ${imbalanced.first.friendPhone} (you always pay)';
     }
-    
+
     return null;
   }
 
   // ==================== HELPER METHODS ====================
 
   /// Get all risks for a specific friend
-  static List<SplitRisk> getRisksForFriend(String friendPhone, EnhancedSplitReport report) {
+  static List<SplitRisk> getRisksForFriend(
+      String friendPhone, EnhancedSplitReport report) {
     return report.risks.where((r) => r.friendPhone == friendPhone).toList();
   }
 

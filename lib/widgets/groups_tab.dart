@@ -12,13 +12,13 @@ class GroupsTab extends StatelessWidget {
   final VoidCallback onRefresh;
 
   const GroupsTab({
-    Key? key,
+    super.key,
     required this.groups,
     required this.friendsById,
     required this.userId,
     required this.expenses,
     required this.onRefresh,
-  }) : super(key: key);
+  });
 
   Widget _groupSummary(BuildContext context, GroupModel group) {
     double youNet = 0;

@@ -4,19 +4,21 @@ import 'package:flutter/material.dart';
 import '../models/friend_model.dart';
 
 class GroupBalanceWidget extends StatelessWidget {
-  final Map<String, double> netBalances; // userId -> balance (+ve means owed to user, -ve means user owes)
+  final Map<String, double>
+      netBalances; // userId -> balance (+ve means owed to user, -ve means user owes)
   final List<FriendModel> members;
   final String currentUserId;
 
   const GroupBalanceWidget({
-    Key? key,
+    super.key,
     required this.netBalances,
     required this.members,
     required this.currentUserId,
-  }) : super(key: key);
+  });
 
   FriendModel? _findMember(String id) =>
-      members.firstWhere((f) => f.phone == id, orElse: () => FriendModel(phone: id, name: "Unknown", avatar: "👤"));
+      members.firstWhere((f) => f.phone == id,
+          orElse: () => FriendModel(phone: id, name: "Unknown", avatar: "👤"));
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +46,8 @@ class GroupBalanceWidget extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Group Balances", style: Theme.of(context).textTheme.titleMedium),
+            Text("Group Balances",
+                style: Theme.of(context).textTheme.titleMedium),
             SizedBox(height: 10),
             ...entries.map((entry) {
               final m = _findMember(entry.key);
@@ -53,32 +56,35 @@ class GroupBalanceWidget extends StatelessWidget {
               final color = amount == 0
                   ? Colors.grey
                   : amount > 0
-                  ? Colors.green
-                  : Colors.red;
+                      ? Colors.green
+                      : Colors.red;
 
               return ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: m != null && m.avatar.isNotEmpty && m.avatar.startsWith('http')
+                leading: m != null &&
+                        m.avatar.isNotEmpty &&
+                        m.avatar.startsWith('http')
                     ? CircleAvatar(
-                  backgroundImage: NetworkImage(m.avatar),
-                  radius: 18,
-                )
+                        backgroundImage: NetworkImage(m.avatar),
+                        radius: 18,
+                      )
                     : CircleAvatar(
-                  radius: 18,
-                  child: Text(
-                    m?.avatar.isNotEmpty == true
-                        ? m!.avatar
-                        : m?.name[0].toUpperCase() ?? "👤",
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ),
-                title: Text(isYou ? "${m?.name ?? "You"} (You)" : m?.name ?? "Unknown"),
+                        radius: 18,
+                        child: Text(
+                          m?.avatar.isNotEmpty == true
+                              ? m!.avatar
+                              : m?.name[0].toUpperCase() ?? "👤",
+                          style: TextStyle(fontSize: 16),
+                        ),
+                      ),
+                title: Text(
+                    isYou ? "${m?.name ?? "You"} (You)" : m?.name ?? "Unknown"),
                 trailing: Text(
                   amount == 0
                       ? "Settled"
                       : amount > 0
-                      ? "Gets ₹${amount.toStringAsFixed(2)}"
-                      : "Owes ₹${amount.abs().toStringAsFixed(2)}",
+                          ? "Gets ₹${amount.toStringAsFixed(2)}"
+                          : "Owes ₹${amount.abs().toStringAsFixed(2)}",
                   style: TextStyle(
                     color: color,
                     fontWeight: FontWeight.w600,

@@ -12,13 +12,13 @@ class TransactionTile extends StatelessWidget {
   final VoidCallback? onSplit;
 
   const TransactionTile({
-    Key? key,
+    super.key,
     required this.transaction,
     this.friendsById,
     this.onEdit,
     this.onDelete,
     this.onSplit,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

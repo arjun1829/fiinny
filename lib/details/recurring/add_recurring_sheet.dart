@@ -4,9 +4,9 @@ import 'package:intl/intl.dart';
 
 class AddRecurringDraft {
   final String title;
-  final String type;     // 'subscription' | 'emi' | 'reminder'
+  final String type; // 'subscription' | 'emi' | 'reminder'
   final double amount;
-  final String cycle;    // 'monthly' | 'weekly' | 'yearly'
+  final String cycle; // 'monthly' | 'weekly' | 'yearly'
   final int? dayOfMonth; // for monthly cycles
   final DateTime startDate;
   final DateTime? endDate;
@@ -31,10 +31,10 @@ class AddRecurringSheet extends StatefulWidget {
   final String friendId;
 
   const AddRecurringSheet({
-    Key? key,
+    super.key,
     required this.userPhone,
     required this.friendId,
-  }) : super(key: key);
+  });
 
   @override
   State<AddRecurringSheet> createState() => _AddRecurringSheetState();
@@ -61,7 +61,9 @@ class _AddRecurringSheetState extends State<AddRecurringSheet> {
           : DateTime(base.year, base.month + 1, day);
     } else if (_cycle == 'weekly') {
       final base = DateTime(_start.year, _start.month, _start.day);
-      return base.isAfter(DateTime.now()) ? base : base.add(const Duration(days: 7));
+      return base.isAfter(DateTime.now())
+          ? base
+          : base.add(const Duration(days: 7));
     } else {
       // yearly
       final base = DateTime(_start.year, _start.month, _start.day);
@@ -122,7 +124,8 @@ class _AddRecurringSheetState extends State<AddRecurringSheet> {
             children: [
               Center(
                 child: Container(
-                  height: 4, width: 44,
+                  height: 4,
+                  width: 44,
                   decoration: BoxDecoration(
                     color: Colors.grey[300],
                     borderRadius: BorderRadius.circular(3),
@@ -130,39 +133,39 @@ class _AddRecurringSheetState extends State<AddRecurringSheet> {
                 ),
               ),
               const SizedBox(height: 12),
-              const Text('Add Recurring', style: TextStyle(
-                  fontWeight: FontWeight.w800, fontSize: 18)),
+              const Text('Add Recurring',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
               const SizedBox(height: 12),
-
               TextFormField(
                 controller: _title,
                 decoration: const InputDecoration(labelText: 'Title'),
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
               ),
               const SizedBox(height: 8),
-
               TextFormField(
                 controller: _amount,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Amount'),
-                validator: (v) => (v == null || double.tryParse(v.trim()) == null)
-                    ? 'Enter a number'
-                    : null,
+                validator: (v) =>
+                    (v == null || double.tryParse(v.trim()) == null)
+                        ? 'Enter a number'
+                        : null,
               ),
               const SizedBox(height: 8),
-
               DropdownButtonFormField<String>(
                 initialValue: _type,
                 decoration: const InputDecoration(labelText: 'Type'),
                 items: const [
-                  DropdownMenuItem(value: 'subscription', child: Text('Subscription')),
+                  DropdownMenuItem(
+                      value: 'subscription', child: Text('Subscription')),
                   DropdownMenuItem(value: 'emi', child: Text('EMI / Loan')),
-                  DropdownMenuItem(value: 'reminder', child: Text('Reminder / Other')),
+                  DropdownMenuItem(
+                      value: 'reminder', child: Text('Reminder / Other')),
                 ],
                 onChanged: (v) => setState(() => _type = v ?? 'subscription'),
               ),
               const SizedBox(height: 8),
-
               DropdownButtonFormField<String>(
                 initialValue: _cycle,
                 decoration: const InputDecoration(labelText: 'Cycle'),
@@ -177,14 +180,15 @@ class _AddRecurringSheetState extends State<AddRecurringSheet> {
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: TextFormField(
-                    initialValue: (_dayOfMonth ?? DateTime.now().day).toString(),
-                    decoration: const InputDecoration(labelText: 'Billing day (1–28)'),
+                    initialValue:
+                        (_dayOfMonth ?? DateTime.now().day).toString(),
+                    decoration:
+                        const InputDecoration(labelText: 'Billing day (1–28)'),
                     keyboardType: TextInputType.number,
                     onChanged: (v) =>
-                    _dayOfMonth = int.tryParse(v)?.clamp(1, 28),
+                        _dayOfMonth = int.tryParse(v)?.clamp(1, 28),
                   ),
                 ),
-
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -219,14 +223,12 @@ class _AddRecurringSheetState extends State<AddRecurringSheet> {
                   ),
                 ],
               ),
-
               TextFormField(
                 controller: _note,
                 decoration: const InputDecoration(labelText: 'Note (optional)'),
                 maxLines: 2,
               ),
               const SizedBox(height: 12),
-
               Row(
                 children: [
                   Expanded(

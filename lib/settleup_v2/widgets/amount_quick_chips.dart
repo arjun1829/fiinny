@@ -40,9 +40,12 @@ class AmountQuickChips extends StatelessWidget {
             selected: isSelected,
             onSelected: (_) => onSelected(option.amount),
             selectedColor: AppColors.mint.withValues(alpha: .18),
-            backgroundColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: .35),
+            backgroundColor: theme.colorScheme.surfaceContainerHighest
+                .withValues(alpha: .35),
             labelStyle: TextStyle(
-              color: isSelected ? AppColors.mint : theme.textTheme.bodyMedium?.color,
+              color: isSelected
+                  ? AppColors.mint
+                  : theme.textTheme.bodyMedium?.color,
               fontWeight: FontWeight.w600,
             ),
             side: BorderSide(

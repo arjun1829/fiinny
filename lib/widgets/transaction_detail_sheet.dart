@@ -11,7 +11,7 @@ import '../core/ads/ad_service.dart'; // AdService (init + interstitials)
 /// - Safe bottom padding keeps actions clear of system UI
 /// - Interstitials are cadenced via AdService
 class TransactionDetailSheet extends StatefulWidget {
-  final dynamic tx;            // ex.ExpenseItem or inc.IncomeItem
+  final dynamic tx; // ex.ExpenseItem or inc.IncomeItem
   final VoidCallback? onEdit;
   final VoidCallback? onSplit;
 
@@ -36,7 +36,7 @@ class TransactionDetailSheet extends StatefulWidget {
 
 class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
   bool get _isExpense => widget.tx is ex.ExpenseItem;
-  bool get _isIncome  => widget.tx is inc.IncomeItem;
+  bool get _isIncome => widget.tx is inc.IncomeItem;
 
   @override
   void initState() {
@@ -81,49 +81,67 @@ class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
     try {
       final t = widget.tx.title as String?;
       return (t == null || t.trim().isEmpty) ? null : t.trim();
-    } catch (_) { return null; }
+    } catch (_) {
+      return null;
+    }
   }
 
   String? _comments() {
     try {
       final c = widget.tx.comments as String?;
       return (c == null || c.trim().isEmpty) ? null : c.trim();
-    } catch (_) { return null; }
+    } catch (_) {
+      return null;
+    }
   }
 
   String? _parsedNote() {
     try {
       final n = widget.tx.note as String?;
       return (n == null || n.trim().isEmpty) ? null : n.trim();
-    } catch (_) { return null; }
+    } catch (_) {
+      return null;
+    }
   }
 
   // PATCH: pull common fields if present
   String? _paymentMethod() {
-    try { return (widget.tx.instrument as String?)?.trim(); } catch (_) {}
-    try { return (widget.tx.paymentMethod as String?)?.trim(); } catch (_) {}
+    try {
+      return (widget.tx.instrument as String?)?.trim();
+    } catch (_) {}
+    try {
+      return (widget.tx.paymentMethod as String?)?.trim();
+    } catch (_) {}
     return null;
   }
 
   String? _cardLast4() {
-    try { return (widget.tx.cardLast4 as String?)?.trim(); } catch (_) {}
+    try {
+      return (widget.tx.cardLast4 as String?)?.trim();
+    } catch (_) {}
     return null;
   }
 
   String? _issuerBank() {
-    try { return (widget.tx.issuerBank as String?)?.trim(); } catch (_) {}
+    try {
+      return (widget.tx.issuerBank as String?)?.trim();
+    } catch (_) {}
     return null;
   }
 
   String? _upiVpa() {
-    try { return (widget.tx.upiVpa as String?)?.trim(); } catch (_) {}
+    try {
+      return (widget.tx.upiVpa as String?)?.trim();
+    } catch (_) {}
     return null;
   }
 
   List<String> _labels() {
     try {
       final any = widget.tx.allLabels;
-      if (any is List) return any.whereType<String>().toList();
+      if (any is List) {
+        return any.whereType<String>().toList();
+      }
     } catch (_) {}
     final res = <String>[];
     try {
@@ -133,7 +151,9 @@ class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
     } catch (_) {}
     try {
       final legacy = widget.tx.label as String?;
-      if (legacy != null && legacy.trim().isNotEmpty) res.add(legacy.trim());
+      if (legacy != null && legacy.trim().isNotEmpty) {
+        res.add(legacy.trim());
+      }
     } catch (_) {}
     final seen = <String>{};
     return res
@@ -162,23 +182,37 @@ class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
   }
 
   String? _attUrl(dynamic a) {
-    try { return a.url as String?; } catch (_) {}
-    try { return (a as Map)['url'] as String?; } catch (_) {}
+    try {
+      return a.url as String?;
+    } catch (_) {}
+    try {
+      return (a as Map)['url'] as String?;
+    } catch (_) {}
     return null;
   }
 
   String? _attName(dynamic a) {
-    try { return a.name as String?; } catch (_) {}
-    try { return (a as Map)['name'] as String?; } catch (_) {}
+    try {
+      return a.name as String?;
+    } catch (_) {}
+    try {
+      return (a as Map)['name'] as String?;
+    } catch (_) {}
     return null;
   }
 
   int? _attSize(dynamic a) {
-    try { return a.size as int?; } catch (_) {}
+    try {
+      return a.size as int?;
+    } catch (_) {}
     try {
       final v = (a as Map)['size'];
-      if (v is int) return v;
-      if (v is num) return v.toInt();
+      if (v is int) {
+        return v;
+      }
+      if (v is num) {
+        return v.toInt();
+      }
     } catch (_) {}
     return null;
   }
@@ -186,7 +220,9 @@ class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
   bool _isImage(dynamic a) {
     try {
       final mt = a.mimeType as String?;
-      if (mt != null && mt.startsWith('image/')) return true;
+      if (mt != null && mt.startsWith('image/')) {
+        return true;
+      }
     } catch (_) {}
     final url = _attUrl(a)?.toLowerCase() ?? '';
     return url.endsWith('.png') ||
@@ -222,141 +258,162 @@ class _TransactionDetailSheetState extends State<TransactionDetailSheet> {
                 margin: const EdgeInsets.only(bottom: 12),
               ),
 
-                  // Header
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Icon(
-                        _isExpense ? Icons.remove_circle_outline : Icons.add_circle_outline,
-                        color: _isExpense ? Colors.redAccent : Colors.green,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _categoryText(),
-                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Text(
-                        _amountText(),
-                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                    ],
+              // Header
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(
+                    _isExpense
+                        ? Icons.remove_circle_outline
+                        : Icons.add_circle_outline,
+                    color: _isExpense ? Colors.redAccent : Colors.green,
                   ),
-                  const SizedBox(height: 6),
-
-                  if (_title() != null) ...[
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        _title()!,
-                        style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
-                      ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _categoryText(),
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 6),
-                  ],
-
-                  if (labels.isNotEmpty) ...[
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: -8,
-                        children: labels.take(8).map((l) => Chip(
-                          label: Text('#$l'),
-                          visualDensity: VisualDensity.compact,
-                        )).toList(),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                  ],
-
-                  _MetaRow(icon: Icons.event, label: 'Date', value: _dateText()),
-                  if (_paymentMethod() != null)
-                    _MetaRow(icon: Icons.credit_card, label: 'Payment method', value: _paymentMethod()!),
-                  if (_issuerBank() != null || _cardLast4() != null)
-                    _MetaRow(
-                      icon: Icons.account_balance,
-                      label: 'Card/Bank',
-                      value: [
-                        _issuerBank(),
-                        _cardLast4() != null ? '•••• ${_cardLast4()}' : null,
-                      ].whereType<String>().join(' · '),
-                    ),
-                  if (_upiVpa() != null)
-                    _MetaRow(icon: Icons.alternate_email, label: 'UPI', value: _upiVpa()!),
-                  if ((_isExpense ? (widget.tx as ex.ExpenseItem).bankLogo
-                      : (_isIncome ? (widget.tx as inc.IncomeItem).bankLogo : null)) != null)
-                    const _MetaRow(icon: Icons.account_balance, label: 'Bank', value: 'Linked'),
-
-                  if (_comments() != null) ...[
-                    const SizedBox(height: 10),
-                    const _SectionTitle('Comments'),
-                    const SizedBox(height: 6),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(_comments()!, style: theme.textTheme.bodyMedium),
-                    ),
-                  ],
-
-                  if (_parsedNote() != null) ...[
-                    const SizedBox(height: 12),
-                    const _SectionTitle('Parsed Note'),
-                    const SizedBox(height: 6),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: theme.dividerColor),
-                      ),
-                      child: Text(_parsedNote()!, style: theme.textTheme.bodySmall),
-                    ),
-                  ],
-
-                  if (atts.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    const _SectionTitle('Attachments'),
-                    const SizedBox(height: 8),
-                    _AttachmentsBlock(
-                      attachments: atts,
-                      isImage: _isImage,
-                      urlOf: _attUrl,
-                      nameOf: _attName,
-                      sizeOf: _attSize,
-                    ),
-                  ],
-
-                  const SizedBox(height: 14),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () async {
-                            await _maybeInterOnAction();
-                            widget.onEdit?.call();
-                          },
-                          icon: const Icon(Icons.edit),
-                          label: const Text('Edit'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      if (_isExpense && widget.onSplit != null)
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () async {
-                              await _maybeInterOnAction();
-                              widget.onSplit?.call();
-                            },
-                            icon: const Icon(Icons.call_split),
-                            label: const Text('Split'),
-                          ),
-                        ),
-                    ],
                   ),
+                  Text(
+                    _amountText(),
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+
+              if (_title() != null) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _title()!,
+                    style: theme.textTheme.bodyLarge
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
+
+              if (labels.isNotEmpty) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: -8,
+                    children: labels
+                        .take(8)
+                        .map((l) => Chip(
+                              label: Text('#$l'),
+                              visualDensity: VisualDensity.compact,
+                            ))
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
+
+              _MetaRow(icon: Icons.event, label: 'Date', value: _dateText()),
+              if (_paymentMethod() != null)
+                _MetaRow(
+                    icon: Icons.credit_card,
+                    label: 'Payment method',
+                    value: _paymentMethod()!),
+              if (_issuerBank() != null || _cardLast4() != null)
+                _MetaRow(
+                  icon: Icons.account_balance,
+                  label: 'Card/Bank',
+                  value: [
+                    _issuerBank(),
+                    _cardLast4() != null ? '•••• ${_cardLast4()}' : null,
+                  ].whereType<String>().join(' · '),
+                ),
+              if (_upiVpa() != null)
+                _MetaRow(
+                    icon: Icons.alternate_email,
+                    label: 'UPI',
+                    value: _upiVpa()!),
+              if ((_isExpense
+                      ? (widget.tx as ex.ExpenseItem).bankLogo
+                      : (_isIncome
+                          ? (widget.tx as inc.IncomeItem).bankLogo
+                          : null)) !=
+                  null)
+                const _MetaRow(
+                    icon: Icons.account_balance,
+                    label: 'Bank',
+                    value: 'Linked'),
+
+              if (_comments() != null) ...[
+                const SizedBox(height: 10),
+                const _SectionTitle('Comments'),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(_comments()!, style: theme.textTheme.bodyMedium),
+                ),
+              ],
+
+              if (_parsedNote() != null) ...[
+                const SizedBox(height: 12),
+                const _SectionTitle('Parsed Note'),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: theme.dividerColor),
+                  ),
+                  child: Text(_parsedNote()!, style: theme.textTheme.bodySmall),
+                ),
+              ],
+
+              if (atts.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const _SectionTitle('Attachments'),
+                const SizedBox(height: 8),
+                _AttachmentsBlock(
+                  attachments: atts,
+                  isImage: _isImage,
+                  urlOf: _attUrl,
+                  nameOf: _attName,
+                  sizeOf: _attSize,
+                ),
+              ],
+
+              const SizedBox(height: 14),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        await _maybeInterOnAction();
+                        widget.onEdit?.call();
+                      },
+                      icon: const Icon(Icons.edit),
+                      label: const Text('Edit'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  if (_isExpense && widget.onSplit != null)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          await _maybeInterOnAction();
+                          widget.onSplit?.call();
+                        },
+                        icon: const Icon(Icons.call_split),
+                        label: const Text('Split'),
+                      ),
+                    ),
+                ],
+              ),
             ],
           ),
         ),
@@ -374,7 +431,10 @@ class _SectionTitle extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Text(
         text,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+        style: Theme.of(context)
+            .textTheme
+            .titleSmall
+            ?.copyWith(fontWeight: FontWeight.w800),
       ),
     );
   }
@@ -384,7 +444,8 @@ class _MetaRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
-  const _MetaRow({required this.icon, required this.label, required this.value});
+  const _MetaRow(
+      {required this.icon, required this.label, required this.value});
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -394,8 +455,13 @@ class _MetaRow extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: theme.colorScheme.primary),
           const SizedBox(width: 8),
-          Text('$label: ', style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700)),
-          Expanded(child: Text(value, style: theme.textTheme.bodySmall, overflow: TextOverflow.ellipsis)),
+          Text('$label: ',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(fontWeight: FontWeight.w700)),
+          Expanded(
+              child: Text(value,
+                  style: theme.textTheme.bodySmall,
+                  overflow: TextOverflow.ellipsis)),
         ],
       ),
     );
@@ -460,7 +526,8 @@ class _AttachmentsBlock extends StatelessWidget {
                       errorBuilder: (_, __, ___) => Container(
                         color: theme.colorScheme.surfaceContainerHighest,
                         alignment: Alignment.center,
-                        child: Icon(Icons.broken_image_outlined, color: theme.colorScheme.onSurfaceVariant),
+                        child: Icon(Icons.broken_image_outlined,
+                            color: theme.colorScheme.onSurfaceVariant),
                       ),
                     ),
                   ),
@@ -513,12 +580,16 @@ class _FileTile extends StatelessWidget {
             child: Text(
               name,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w700),
             ),
           ),
           if (size.isNotEmpty) ...[
             const SizedBox(width: 6),
-            Text(size, style: theme.textTheme.bodySmall?.copyWith(color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.7))),
+            Text(size,
+                style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.textTheme.bodySmall?.color
+                        ?.withValues(alpha: 0.7))),
           ]
         ],
       ),

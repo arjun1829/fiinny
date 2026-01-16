@@ -135,7 +135,8 @@ class TransactionFilter {
   static TransactionFilter defaults() => const TransactionFilter();
 }
 
-bool _ciEq(String a, String b) => a.trim().toLowerCase() == b.trim().toLowerCase();
+bool _ciEq(String a, String b) =>
+    a.trim().toLowerCase() == b.trim().toLowerCase();
 
 bool _ciContains(String hay, String needle) =>
     hay.toLowerCase().contains(needle.toLowerCase());
@@ -273,8 +274,8 @@ bool txMatches(Map<String, dynamic> tx, TransactionFilter f) {
 
   if (f.subscriptionsOnly == true) {
     final tags = tx['tags'];
-    final hasTag = tags is String &&
-        tags.toLowerCase().contains('subscription');
+    final hasTag =
+        tags is String && tags.toLowerCase().contains('subscription');
     final recurringKey = _extractRecurringKey(raw);
     if (!(hasTag || recurringKey != null)) {
       return false;
@@ -314,8 +315,8 @@ bool txMatches(Map<String, dynamic> tx, TransactionFilter f) {
     final txLabels = labels is Iterable
         ? labels.whereType<String>().toList(growable: false)
         : const <String>[];
-    final hasLabel = txLabels.any((label) =>
-        f.labels.any((filterLabel) => _ciEq(label, filterLabel)));
+    final hasLabel = txLabels.any(
+        (label) => f.labels.any((filterLabel) => _ciEq(label, filterLabel)));
     if (!hasLabel) {
       return false;
     }
@@ -329,8 +330,8 @@ bool txMatches(Map<String, dynamic> tx, TransactionFilter f) {
     } else if (tagsValue is String) {
       txTags.add(tagsValue);
     }
-    final hasTag = txTags.any((tag) =>
-        f.tags.any((filterTag) => _ciContains(tag, filterTag)));
+    final hasTag = txTags
+        .any((tag) => f.tags.any((filterTag) => _ciContains(tag, filterTag)));
     if (!hasTag) {
       return false;
     }
@@ -507,14 +508,19 @@ List<Map<String, dynamic>> applyFilterAndSort(
   List<Map<String, dynamic>> all,
   TransactionFilter f,
 ) {
-  final filtered =
-      all.where((tx) => txMatches(tx, f)).toList(growable: false);
+  final filtered = all.where((tx) => txMatches(tx, f)).toList(growable: false);
   final sorted = List<Map<String, dynamic>>.of(filtered);
 
   int compareStrings(String? a, String? b) {
-    if (a == null && b == null) return 0;
-    if (a == null) return 1;
-    if (b == null) return -1;
+    if (a == null && b == null) {
+      return 0;
+    }
+    if (a == null) {
+      return 1;
+    }
+    if (b == null) {
+      return -1;
+    }
     return a.toLowerCase().compareTo(b.toLowerCase());
   }
 
@@ -593,15 +599,21 @@ String _groupKey(Map<String, dynamic> tx, GroupBy g) {
     case GroupBy.none:
       return 'All';
     case GroupBy.day:
-      if (date == null) return 'Unknown';
+      if (date == null) {
+        return 'Unknown';
+      }
       return DateFormat('d MMM, yyyy').format(date);
     case GroupBy.week:
-      if (date == null) return 'Unknown';
+      if (date == null) {
+        return 'Unknown';
+      }
       final monday = date.subtract(Duration(days: date.weekday - 1));
       final label = DateFormat('d MMM').format(monday);
       return 'Week of $label';
     case GroupBy.month:
-      if (date == null) return 'Unknown';
+      if (date == null) {
+        return 'Unknown';
+      }
       return DateFormat('MMM yyyy').format(date);
     case GroupBy.merchant:
       final merchant = tx['merchant'];

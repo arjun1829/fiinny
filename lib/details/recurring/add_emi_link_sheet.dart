@@ -14,11 +14,11 @@ class AddEmiLinkSheet extends StatefulWidget {
   final List<String>? participantUserIds; // group-only context
 
   const AddEmiLinkSheet({
-    Key? key,
+    super.key,
     required this.scope,
     required this.currentUserId,
     this.participantUserIds,
-  }) : super(key: key);
+  });
 
   @override
   State<AddEmiLinkSheet> createState() => _AddEmiLinkSheetState();
@@ -31,7 +31,8 @@ class _AddEmiLinkSheetState extends State<AddEmiLinkSheet> {
   final _q = TextEditingController();
   final _scroll = ScrollController();
 
-  final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+  final _inr =
+      NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
   List<LoanModel> _loans = [];
   List<LoanModel> _view = [];
@@ -87,7 +88,8 @@ class _AddEmiLinkSheetState extends State<AddEmiLinkSheet> {
     }
     setState(() {
       _view = _loans.where((l) {
-        final s = "${l.title} ${l.lenderType} ${l.lenderName ?? ''}".toLowerCase();
+        final s =
+            "${l.title} ${l.lenderType} ${l.lenderName ?? ''}".toLowerCase();
         return s.contains(q);
       }).toList();
     });
@@ -129,8 +131,9 @@ class _AddEmiLinkSheetState extends State<AddEmiLinkSheet> {
   Future<void> _createNewLoan() async {
     final res = await Navigator.pushNamed(
       context,
-      '/addLoan',                 // -> lib/screens/add_loan_screen.dart
-      arguments: widget.currentUserId,   // your AddLoanScreen expects userId as argument
+      '/addLoan', // -> lib/screens/add_loan_screen.dart
+      arguments:
+          widget.currentUserId, // your AddLoanScreen expects userId as argument
     );
 
     if (!mounted) return;
@@ -169,7 +172,8 @@ class _AddEmiLinkSheetState extends State<AddEmiLinkSheet> {
   String _dueBadge(LoanModel l) {
     final nd = l.nextPaymentDate();
     if (nd == null) return "--";
-    final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    final today =
+        DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     final d = DateTime(nd.year, nd.month, nd.day);
     final diff = d.difference(today).inDays;
     if (diff < 0) return "Overdue";
@@ -218,7 +222,8 @@ class _AddEmiLinkSheetState extends State<AddEmiLinkSheet> {
                   const Expanded(
                     child: Text(
                       'Link a loan as EMI',
-                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                      style:
+                          TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
                     ),
                   ),
                   TextButton.icon(
@@ -239,8 +244,10 @@ class _AddEmiLinkSheetState extends State<AddEmiLinkSheet> {
                   hintText: 'Search loans…',
                   prefixIcon: const Icon(Icons.search_rounded),
                   isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
 
@@ -259,7 +266,8 @@ class _AddEmiLinkSheetState extends State<AddEmiLinkSheet> {
                     children: [
                       Text(
                         _error!,
-                        style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                            color: Colors.red, fontWeight: FontWeight.w700),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 8),
@@ -272,48 +280,50 @@ class _AddEmiLinkSheetState extends State<AddEmiLinkSheet> {
                   ),
                 )
               else if (_view.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        Text(
-                          _q.text.trim().isEmpty
-                              ? 'No active loans found.'
-                              : 'No results for “${_q.text.trim()}”.',
-                          style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton.icon(
-                          onPressed: _createNewLoan,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add a loan'),
-                        ),
-                      ],
-                    ),
-                  )
-                else
-                  Flexible(
-                    child: RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView.separated(
-                        controller: _scroll,
-                        shrinkWrap: true,
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        itemCount: _view.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (ctx, i) {
-                          final l = _view[i];
-                          return _LoanTile(
-                            loan: l,
-                            inr: _inr,
-                            dueBadge: _dueBadge(l),
-                            onTap: () => _attach(l),
-                          );
-                        },
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Text(
+                        _q.text.trim().isEmpty
+                            ? 'No active loans found.'
+                            : 'No results for “${_q.text.trim()}”.',
+                        style: TextStyle(
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w600),
+                        textAlign: TextAlign.center,
                       ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: _createNewLoan,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add a loan'),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Flexible(
+                  child: RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView.separated(
+                      controller: _scroll,
+                      shrinkWrap: true,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: _view.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (ctx, i) {
+                        final l = _view[i];
+                        return _LoanTile(
+                          loan: l,
+                          inr: _inr,
+                          dueBadge: _dueBadge(l),
+                          onTap: () => _attach(l),
+                        );
+                      },
                     ),
                   ),
+                ),
             ],
           ),
         ),
@@ -379,7 +389,8 @@ class _LoanTile extends StatelessWidget {
                   color: const Color(0xFFEFF7F6),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.receipt_long_rounded, color: Colors.teal),
+                child:
+                    const Icon(Icons.receipt_long_rounded, color: Colors.teal),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -400,7 +411,8 @@ class _LoanTile extends StatelessWidget {
                         Flexible(
                           fit: FlexFit.loose,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: bg,
                               border: Border.all(color: bg),
@@ -410,17 +422,20 @@ class _LoanTile extends StatelessWidget {
                               dueBadge,
                               overflow: TextOverflow.ellipsis,
                               softWrap: false,
-                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: fg),
+                              style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: fg),
                             ),
                           ),
                         ),
-
                       ],
                     ),
                     const SizedBox(height: 2),
                     Text(
                       "${loan.lenderType}${loan.lenderName != null ? ' • ${loan.lenderName}' : ''}",
-                      style: TextStyle(color: subtle, fontWeight: FontWeight.w600),
+                      style:
+                          TextStyle(color: subtle, fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 6),
@@ -430,11 +445,12 @@ class _LoanTile extends StatelessWidget {
                       runSpacing: 6,
                       children: [
                         if (hasEmi)
-                          _pill(Icons.savings_rounded, "EMI ${inr.format(emi)}"),
-                        _pill(Icons.balance_rounded, "Outstanding ${inr.format(loan.amount)}"),
+                          _pill(
+                              Icons.savings_rounded, "EMI ${inr.format(emi)}"),
+                        _pill(Icons.balance_rounded,
+                            "Outstanding ${inr.format(loan.amount)}"),
                       ],
                     ),
-
                   ],
                 ),
               ),
@@ -458,7 +474,8 @@ class _LoanTile extends StatelessWidget {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, size: 14, color: Colors.black87),
         const SizedBox(width: 6),
-        Text(text, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+        Text(text,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
       ]),
     );
   }

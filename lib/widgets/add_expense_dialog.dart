@@ -9,8 +9,6 @@ import '../models/group_model.dart';
 import '../services/expense_service.dart';
 import '../core/ads/ads_banner_card.dart';
 
-
-
 class AddExpenseScreen extends StatefulWidget {
   final String userPhone;
   final List<FriendModel> friends;
@@ -19,7 +17,7 @@ class AddExpenseScreen extends StatefulWidget {
   final ExpenseItem? existingExpense;
   final Map<String, double>? initialSplits;
   final FriendModel? contextFriend; // when opened from a friend detail
-  final GroupModel? contextGroup;   // when opened from a group detail
+  final GroupModel? contextGroup; // when opened from a group detail
 
   const AddExpenseScreen({
     required this.userPhone,
@@ -36,7 +34,8 @@ class AddExpenseScreen extends StatefulWidget {
   State<AddExpenseScreen> createState() => _AddExpenseScreenState();
 }
 
-class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProviderStateMixin {
+class _AddExpenseScreenState extends State<AddExpenseScreen>
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _pg = PageController();
   int _step = 0;
@@ -62,7 +61,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
   List<FriendModel> _filteredFriendOptions = [];
 
   // for animated header progress
-  late final AnimationController _ac = AnimationController(vsync: this, duration: const Duration(milliseconds: 350));
+  late final AnimationController _ac = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 350));
 
   @override
   void initState() {
@@ -107,13 +107,11 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
             .where((g) => g.id == e.groupId)
             .cast<GroupModel?>()
             .firstWhere((g) => g != null, orElse: () => null);
-        _selectedFriends = widget.friends
-            .where((f) => e.friendIds.contains(f.phone))
-            .toList();
+        _selectedFriends =
+            widget.friends.where((f) => e.friendIds.contains(f.phone)).toList();
       } else {
-        _selectedFriends = widget.friends
-            .where((f) => e.friendIds.contains(f.phone))
-            .toList();
+        _selectedFriends =
+            widget.friends.where((f) => e.friendIds.contains(f.phone)).toList();
       }
 
       final payers2 = _payerChoices(baseFriends);
@@ -227,8 +225,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
     if (a.startsWith('assets/')) {
       return CircleAvatar(radius: r, backgroundImage: AssetImage(a));
     }
-    final ch = (a.isNotEmpty ? a.characters.first : f.name.characters.first).toUpperCase();
-    return CircleAvatar(radius: r, child: Text(ch, style: const TextStyle(fontSize: 12)));
+    final ch = (a.isNotEmpty ? a.characters.first : f.name.characters.first)
+        .toUpperCase();
+    return CircleAvatar(
+        radius: r, child: Text(ch, style: const TextStyle(fontSize: 12)));
   }
 
   // ---------------------- Navigation ----------------------
@@ -251,21 +251,24 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
       }
       if (_selectedGroup == null && _selectedFriends.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Select at least one participant or a group")),
+          const SnackBar(
+              content: Text("Select at least one participant or a group")),
         );
         return;
       }
     }
     if (_step < 3) {
       setState(() => _step++);
-      _pg.animateToPage(_step, duration: const Duration(milliseconds: 280), curve: Curves.easeOut);
+      _pg.animateToPage(_step,
+          duration: const Duration(milliseconds: 280), curve: Curves.easeOut);
     }
   }
 
   void _goBack() {
     if (_step > 0) {
       setState(() => _step--);
-      _pg.animateToPage(_step, duration: const Duration(milliseconds: 240), curve: Curves.easeOut);
+      _pg.animateToPage(_step,
+          duration: const Duration(milliseconds: 240), curve: Curves.easeOut);
     } else {
       Navigator.pop(context, false);
     }
@@ -276,7 +279,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedPayer == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Select a payer")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Select a payer")));
       return;
     }
 
@@ -307,9 +311,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
         final distributed =
             splits.values.fold<double>(0.0, (acc, value) => acc + value);
         final remaining = _amount - distributed;
-        splits[payerPhone] = remaining > 0
-            ? double.parse(remaining.toStringAsFixed(2))
-            : 0.0;
+        splits[payerPhone] =
+            remaining > 0 ? double.parse(remaining.toStringAsFixed(2)) : 0.0;
       }
       splits.removeWhere((key, value) => key.trim().isEmpty);
     } else {
@@ -320,24 +323,22 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
     }
 
     final friendSet = _customSplitMode
-        ? (
-            () {
-              final nonZero = splits.entries
-                  .where((entry) => entry.value.abs() >= 0.005)
-                  .map((entry) => entry.key)
-                  .toSet();
-              nonZero.add(payerPhone);
-              return nonZero;
-            }()
-          )
+        ? (() {
+            final nonZero = splits.entries
+                .where((entry) => entry.value.abs() >= 0.005)
+                .map((entry) => entry.key)
+                .toSet();
+            nonZero.add(payerPhone);
+            return nonZero;
+          }())
         : others;
     friendSet.removeWhere((phone) => phone.trim().isEmpty);
     final friendPhones = friendSet.toList();
 
     if (kDebugMode) {
-      final previewFriends = friendPhones.join(', ');
-      debugPrint(
-          "[AddExpenseScreen] submitting expense group=${_selectedGroup?.id} payer=$payerPhone friends=$previewFriends custom=$_customSplitMode");
+      // final previewFriends = friendPhones.join(', ');
+      // debugPrint(
+      //     "[AddExpenseScreen] submitting expense group=${_selectedGroup?.id} payer=$payerPhone friends=$previewFriends custom=$_customSplitMode");
     }
 
     final expense = ExpenseItem(
@@ -352,7 +353,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
       customSplits: splits,
       isBill: _isBill,
       label: _label,
-      counterparty: _counterparty.trim().isNotEmpty ? _counterparty.trim() : null,
+      counterparty:
+          _counterparty.trim().isNotEmpty ? _counterparty.trim() : null,
     );
 
     if (widget.existingExpense == null) {
@@ -375,8 +377,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
           child: LinearProgressIndicator(
             value: (_step + 1) / 4,
             minHeight: 8,
-            backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
-            valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+            backgroundColor:
+                Theme.of(context).primaryColor.withValues(alpha: 0.1),
+            valueColor:
+                AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
           ),
         ),
         const SizedBox(height: 12),
@@ -388,19 +392,29 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                 color: Theme.of(context).primaryColor.withValues(alpha: .10),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(Icons.attach_money_rounded, color: Theme.of(context).primaryColor),
+              child: Icon(Icons.attach_money_rounded,
+                  color: Theme.of(context).primaryColor),
             ),
             const SizedBox(width: 10),
             Text(
               widget.existingExpense == null ? "Add Expense" : "Edit Expense",
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF096A63)),
+              style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF096A63)),
             ),
             const Spacer(),
-            Text("${_step + 1} / 4", style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
+            Text("${_step + 1} / 4",
+                style: TextStyle(
+                    color: Theme.of(context).textTheme.bodySmall?.color)),
           ],
         ),
         const SizedBox(height: 8),
-        Text(titles[_step], style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Theme.of(context).textTheme.bodyLarge?.color)),
+        Text(titles[_step],
+            style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Theme.of(context).textTheme.bodyLarge?.color)),
       ],
     );
   }
@@ -426,7 +440,13 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
         DropdownButtonFormField<String>(
           initialValue: _type,
           items: const [
-            'General', 'Food', 'Travel', 'Rent', 'Shopping', 'Utilities', 'Other',
+            'General',
+            'Food',
+            'Travel',
+            'Rent',
+            'Shopping',
+            'Utilities',
+            'Other',
           ].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
           onChanged: (v) => setState(() => _type = v ?? 'General'),
           decoration: _pillDec(label: "Type", icon: Icons.category_rounded),
@@ -439,7 +459,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
     final payerChoices = _payerChoices(_friendOptionsByContext());
 
     // Ensure current payer is valid
-    if (_selectedPayer != null && !payerChoices.any((p) => p.phone == _selectedPayer!.phone)) {
+    if (_selectedPayer != null &&
+        !payerChoices.any((p) => p.phone == _selectedPayer!.phone)) {
       FriendModel? fallback;
       if (payerChoices.any((p) => p.phone == widget.userPhone)) {
         fallback = payerChoices.firstWhere((p) => p.phone == widget.userPhone);
@@ -479,8 +500,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
           DropdownButtonFormField<GroupModel?>(
             initialValue: _selectedGroup,
             items: <DropdownMenuItem<GroupModel?>>[
-              const DropdownMenuItem<GroupModel?>(value: null, child: Text("-- No Group --")),
-              ...widget.groups.map((g) => DropdownMenuItem<GroupModel?>(value: g, child: Text(g.name))),
+              const DropdownMenuItem<GroupModel?>(
+                  value: null, child: Text("-- No Group --")),
+              ...widget.groups.map((g) =>
+                  DropdownMenuItem<GroupModel?>(value: g, child: Text(g.name))),
             ],
             onChanged: (g) {
               setState(() {
@@ -537,7 +560,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
     final Map<String, FriendModel> participants = {
       if (_selectedPayer != null) _selectedPayer!.phone: _selectedPayer!,
       for (final f in _selectedGroup != null
-          ? widget.friends.where((ff) => _selectedGroup!.memberPhones.contains(ff.phone))
+          ? widget.friends
+              .where((ff) => _selectedGroup!.memberPhones.contains(ff.phone))
           : _selectedFriends)
         f.phone: f,
     };
@@ -549,7 +573,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
           contentPadding: EdgeInsets.zero,
           value: _customSplitMode,
           onChanged: (_) => _toggleCustomSplit(),
-          title: const Text("Custom Split", style: TextStyle(fontWeight: FontWeight.w700)),
+          title: const Text("Custom Split",
+              style: TextStyle(fontWeight: FontWeight.w700)),
           subtitle: const Text("Turn off for equal split"),
           activeTrackColor: Theme.of(context).primaryColor,
         ),
@@ -564,13 +589,16 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                 children: [
                   _friendAvatar(f, r: 12),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  Expanded(
+                      child: Text(f.name,
+                          maxLines: 1, overflow: TextOverflow.ellipsis)),
                   const SizedBox(width: 10),
                   SizedBox(
                     width: 120,
                     child: TextFormField(
                       initialValue: _customSplits[phone]?.toStringAsFixed(2),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
                       decoration: _pillDec(label: "Amount"),
                       onChanged: (v) {
                         final d = double.tryParse(v) ?? 0.0;
@@ -584,35 +612,42 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
           }),
           const SizedBox(height: 6),
           Builder(builder: (_) {
-            final total = _customSplits.values.fold<double>(0.0, (a, b) => a + b);
+            final total =
+                _customSplits.values.fold<double>(0.0, (a, b) => a + b);
             final diff = (_amount - total);
             final ok = (_amount > 0) && (diff.abs() < 0.01 || total == _amount);
             return Align(
               alignment: Alignment.centerRight,
               child: Text(
                 "Total: ₹${total.toStringAsFixed(2)}"
-                    "${_amount > 0 ? " / ₹${_amount.toStringAsFixed(2)}" : ""}"
-                    "${!ok && _amount > 0 ? "  (diff ₹${diff.abs().toStringAsFixed(2)})" : ""}",
-                style: TextStyle(fontWeight: FontWeight.w700, color: ok ? Colors.green[700] : Colors.red[700]),
+                "${_amount > 0 ? " / ₹${_amount.toStringAsFixed(2)}" : ""}"
+                "${!ok && _amount > 0 ? "  (diff ₹${diff.abs().toStringAsFixed(2)})" : ""}",
+                style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: ok ? Colors.green[700] : Colors.red[700]),
               ),
             );
           }),
         ],
-        if (!_customSplitMode) Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Row(
-            children: [
-              Icon(Icons.info_outline, size: 18, color: Theme.of(context).textTheme.bodySmall?.color),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  "Equal split between payer and participants.",
-                  style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+        if (!_customSplitMode)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline,
+                    size: 18,
+                    color: Theme.of(context).textTheme.bodySmall?.color),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    "Equal split between payer and participants.",
+                    style: TextStyle(
+                        color: Theme.of(context).textTheme.bodySmall?.color),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
       ],
     );
   }
@@ -629,19 +664,23 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
         const SizedBox(height: 12),
         TextFormField(
           initialValue: _counterparty,
-          decoration: _pillDec(label: "Paid to (optional)", icon: Icons.storefront_rounded),
+          decoration: _pillDec(
+              label: "Paid to (optional)", icon: Icons.storefront_rounded),
           onChanged: (v) => setState(() => _counterparty = v),
         ),
         const SizedBox(height: 12),
         TextFormField(
           initialValue: _label,
-          decoration: _pillDec(label: "Label (e.g., Dinner, Rent)", icon: Icons.label_outline),
+          decoration: _pillDec(
+              label: "Label (e.g., Dinner, Rent)", icon: Icons.label_outline),
           onChanged: (v) => setState(() => _label = v),
         ),
         const SizedBox(height: 12),
         Row(
           children: [
-            Expanded(child: Text("Date: ${_date.toLocal().toString().substring(0, 10)}")),
+            Expanded(
+                child: Text(
+                    "Date: ${_date.toLocal().toString().substring(0, 10)}")),
             TextButton(onPressed: _pickDate, child: const Text("Change")),
           ],
         ),
@@ -669,12 +708,15 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
         elevation: 0,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, color: Theme.of(context).textTheme.bodyMedium?.color),
+          icon: Icon(Icons.arrow_back_ios_new_rounded,
+              color: Theme.of(context).textTheme.bodyMedium?.color),
           onPressed: _goBack,
         ),
         centerTitle: true,
         title: Text('Add Transaction',
-            style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color, fontWeight: FontWeight.w700)),
+            style: TextStyle(
+                color: Theme.of(context).textTheme.bodyMedium?.color,
+                fontWeight: FontWeight.w700)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -705,13 +747,22 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
-                                colors: [Theme.of(context).cardColor.withValues(alpha: 0.96), Colors.white.withValues(alpha: 0.90)],
+                                colors: [
+                                  Theme.of(context)
+                                      .cardColor
+                                      .withValues(alpha: 0.96),
+                                  Colors.white.withValues(alpha: 0.90)
+                                ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
-                              border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
+                              border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.6)),
                               boxShadow: const [
-                                BoxShadow(color: Color(0x1F000000), blurRadius: 20, offset: Offset(0, 8)),
+                                BoxShadow(
+                                    color: Color(0x1F000000),
+                                    blurRadius: 20,
+                                    offset: Offset(0, 8)),
                               ],
                               borderRadius: BorderRadius.circular(20),
                             ),
@@ -719,7 +770,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                               controller: _pg,
                               physics: const NeverScrollableScrollPhysics(),
                               children: [
-                                SingleChildScrollView(child: _step0AmountCategory()),
+                                SingleChildScrollView(
+                                    child: _step0AmountCategory()),
                                 SingleChildScrollView(child: _step1People()),
                                 SingleChildScrollView(child: _step2Split()),
                                 SingleChildScrollView(child: _step3Details()),
@@ -736,10 +788,14 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                       placement: 'add_expense_inline_banner',
                       inline: true,
                       inlineMaxHeight: 100,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
                       minHeight: 70,
                       boxShadow: const [
-                        BoxShadow(color: Color(0x12000000), blurRadius: 12, offset: Offset(0, 6)),
+                        BoxShadow(
+                            color: Color(0x12000000),
+                            blurRadius: 12,
+                            offset: Offset(0, 6)),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -751,10 +807,15 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                             icon: const Icon(Icons.chevron_left_rounded),
                             label: const Text("Back"),
                             style: OutlinedButton.styleFrom(
-                              side: BorderSide(color: Theme.of(context).primaryColor.withValues(alpha: .4)),
+                              side: BorderSide(
+                                  color: Theme.of(context)
+                                      .primaryColor
+                                      .withValues(alpha: .4)),
                               foregroundColor: Theme.of(context).primaryColor,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
                             ),
                           ),
                         if (_step == 0) const SizedBox.shrink(),
@@ -768,21 +829,27 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> with TickerProvider
                               backgroundColor: Theme.of(context).primaryColor,
                               foregroundColor: Colors.white,
                               elevation: 6,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 12),
                             ),
                           ),
                         if (_step == 3)
                           ElevatedButton.icon(
                             onPressed: _submit,
                             icon: const Icon(Icons.check_rounded),
-                            label: Text(widget.existingExpense == null ? "Add Expense" : "Update Expense"),
+                            label: Text(widget.existingExpense == null
+                                ? "Add Expense"
+                                : "Update Expense"),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Theme.of(context).primaryColor,
                               foregroundColor: Colors.white,
                               elevation: 6,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 12),
                             ),
                           ),
                       ],

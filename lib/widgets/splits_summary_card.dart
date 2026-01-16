@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 class SplitsSummaryCard extends StatelessWidget {
   final String userId;
-  final double youOwe;     // total you need to pay
-  final double owedToYou;  // total you'll receive
+  final double youOwe; // total you need to pay
+  final double owedToYou; // total you'll receive
   final VoidCallback onOpenFriends;
 
   const SplitsSummaryCard({
@@ -11,8 +11,8 @@ class SplitsSummaryCard extends StatelessWidget {
     required this.youOwe,
     required this.owedToYou,
     required this.onOpenFriends,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {

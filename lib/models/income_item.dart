@@ -3,11 +3,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Multiple attachments support (kept local to this file for easy drop-in).
 class AttachmentMeta {
-  final String? url;          // public or gs:// url
-  final String? name;         // original file name
-  final int? size;            // bytes
-  final String? mimeType;     // e.g. image/png, application/pdf
-  final String? storagePath;  // Firebase Storage path for deletes
+  final String? url; // public or gs:// url
+  final String? name; // original file name
+  final int? size; // bytes
+  final String? mimeType; // e.g. image/png, application/pdf
+  final String? storagePath; // Firebase Storage path for deletes
 
   const AttachmentMeta({
     this.url,
@@ -28,44 +28,48 @@ class AttachmentMeta {
   }
 
   Map<String, dynamic> toMap() => {
-    if (url != null) 'url': url,
-    if (name != null) 'name': name,
-    if (size != null) 'size': size,
-    if (mimeType != null) 'mimeType': mimeType,
-    if (storagePath != null) 'storagePath': storagePath,
-  };
+        if (url != null) 'url': url,
+        if (name != null) 'name': name,
+        if (size != null) 'size': size,
+        if (mimeType != null) 'mimeType': mimeType,
+        if (storagePath != null) 'storagePath': storagePath,
+      };
 }
 
 class IncomeItem {
   // --- Core fields (existing) ---
   final String id;
-  final String type;    // "Email Credit" | "SMS Credit" | "Salary" etc.
+  final String type; // "Email Credit" | "SMS Credit" | "Salary" etc.
   final double amount;
+
   /// System/parsed note (from email/SMS extraction). Do not edit by user.
   final String note;
   final DateTime date;
-  final String source;  // "Email" | "SMS" | "Manual"
+  final String source; // "Email" | "SMS" | "Manual"
 
   // Existing UI/meta
   final String? imageUrl;
-  final String? label;      // legacy single label (kept)
+  final String? label; // legacy single label (kept)
   final String? bankLogo;
-  final String? category;   // "Income", "Salary", "Refund", etc.
+  final String? category; // "Income", "Salary", "Refund", etc.
   final String? subcategory; // Added to match Firestore
 
   // --- NEW: Counterparty / Instrument / Banking context (mirrors expense) ---
   /// Display-ready "Received from" (employer/merchant/UPI VPA/person)
   final String? counterparty;
+
   /// EMPLOYER | MERCHANT | FRIEND | SELF | UPI_P2P | REFUND | UNKNOWN
   final String? counterpartyType;
   final String? upiVpa;
+
   /// UPI | IMPS | NEFT | RTGS | NetBanking | Wallet | Cash | CardRefund
   final String? instrument;
   final String? instrumentNetwork; // VISA/MASTERCARD/RUPAY/AMEX (for refunds)
   final String? issuerBank;
   final bool? isInternational;
-  final Map<String, dynamic>? fx;   // {"currency":"USD","amount":100.0,...}
-  final Map<String, double>? fees;  // uncommon for credits, but keep for reversals
+  final Map<String, dynamic>? fx; // {"currency":"USD","amount":100.0,...}
+  final Map<String, double>?
+      fees; // uncommon for credits, but keep for reversals
 
   // --- NEW UX fields (non-breaking) ---
   final String? title;
@@ -79,9 +83,9 @@ class IncomeItem {
   final int? attachmentSize;
 
   // 🧠 Fiinnny Brain (optional)
-  final Map<String, dynamic>? brainMeta;   // employer, recurringKey, etc.
-  final double? confidence;                // 0..1
-  final List<String>? tags;                // ["fixed_income","refund","cashback",...]
+  final Map<String, dynamic>? brainMeta; // employer, recurringKey, etc.
+  final double? confidence; // 0..1
+  final List<String>? tags; // ["fixed_income","refund","cashback",...]
 
   // Audit
   final DateTime? createdAt;
@@ -227,15 +231,16 @@ class IncomeItem {
   }
 
   bool get hasAttachments => attachments.isNotEmpty || attachmentUrl != null;
-  AttachmentMeta? get primaryAttachment =>
-      attachments.isNotEmpty
-          ? attachments.first
-          : (attachmentUrl != null
+  AttachmentMeta? get primaryAttachment => attachments.isNotEmpty
+      ? attachments.first
+      : (attachmentUrl != null
           ? AttachmentMeta(
-          url: attachmentUrl, name: attachmentName, size: attachmentSize)
+              url: attachmentUrl, name: attachmentName, size: attachmentSize)
           : null);
-          
-  bool get isUserEdited => (updatedBy?.contains('user') ?? false) || (createdBy?.contains('user') ?? false);
+
+  bool get isUserEdited =>
+      (updatedBy?.contains('user') ?? false) ||
+      (createdBy?.contains('user') ?? false);
 
   Map<String, dynamic> toJson() {
     final map = <String, dynamic>{
@@ -252,7 +257,8 @@ class IncomeItem {
       if (subcategory != null) 'subcategory': subcategory,
       // NEW context
       // NEW context
-      if (counterparty != null && counterparty!.trim().isNotEmpty) 'counterparty': counterparty,
+      if (counterparty != null && counterparty!.trim().isNotEmpty)
+        'counterparty': counterparty,
       if (counterpartyType != null) 'counterpartyType': counterpartyType,
       if (upiVpa != null && upiVpa!.trim().isNotEmpty) 'upiVpa': upiVpa,
       if (instrument != null) 'instrument': instrument,
@@ -317,14 +323,6 @@ class IncomeItem {
       return null;
     }
 
-    DateTime? _asDate(dynamic v) {
-      if (v is Timestamp) return v.toDate();
-      if (v is DateTime) return v;
-      if (v is String) return DateTime.tryParse(v);
-      if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
-      return null;
-    }
-
     return IncomeItem(
       id: json['id'] ?? '',
       type: json['type'] ?? '',
@@ -353,7 +351,9 @@ class IncomeItem {
       // NEW UX
       title: json['title'],
       comments: json['comments'],
-      labels: (json['labels'] is List) ? List<String>.from(json['labels']) : const [],
+      labels: (json['labels'] is List)
+          ? List<String>.from(json['labels'])
+          : const [],
       attachments: parseAttachments(json),
       // Legacy single-attachment (kept)
       attachmentUrl: json['attachmentUrl'],
@@ -430,7 +430,9 @@ class IncomeItem {
       // NEW UX
       title: data['title'],
       comments: data['comments'],
-      labels: (data['labels'] is List) ? List<String>.from(data['labels']) : const [],
+      labels: (data['labels'] is List)
+          ? List<String>.from(data['labels'])
+          : const [],
       attachments: parseAttachments(data),
       // Legacy single-attachment (kept)
       attachmentUrl: data['attachmentUrl'],
