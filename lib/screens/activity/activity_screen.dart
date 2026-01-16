@@ -15,7 +15,7 @@ import '../../widgets/add_group_expense_dialog.dart';
 
 class ActivityScreen extends StatefulWidget {
   final String userPhone;
-  const ActivityScreen({Key? key, required this.userPhone}) : super(key: key);
+  const ActivityScreen({super.key, required this.userPhone});
 
   @override
   State<ActivityScreen> createState() => _ActivityScreenState();
@@ -256,7 +256,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                       final allFriends = await FriendService()
                                           .streamFriends(widget.userPhone)
                                           .first;
-                                      if (!mounted) return;
+                                      if (!context.mounted) return;
                                       final ok = await showDialog<bool>(
                                         context: context,
                                         builder: (_) => AddGroupDialog(
@@ -264,8 +264,9 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                           allFriends: allFriends,
                                         ),
                                       );
-                                      if (ok == true && mounted)
+                                      if (ok == true && mounted) {
                                         setState(() {});
+                                      }
                                     },
                                     child: const _QuickChip(
                                       icon: Icons.group_add_rounded,
@@ -415,11 +416,10 @@ class _PickerTile extends StatelessWidget {
   final String? subtitle;
 
   const _PickerTile({
-    Key? key,
     required this.leading,
     required this.title,
     this.subtitle,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

@@ -114,7 +114,6 @@ class _AnimatedRing extends StatelessWidget {
   final Curve curve;
 
   const _AnimatedRing({
-    super.key,
     required this.percent,
     required this.color,
     required this.size,

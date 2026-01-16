@@ -334,7 +334,6 @@ class _StatRow extends StatelessWidget {
   final Color rightColor;
 
   const _StatRow({
-    super.key,
     required this.leftIcon,
     required this.leftLabel,
     required this.leftValue,
@@ -389,7 +388,6 @@ class _LabeledValue extends StatelessWidget {
   final TextStyle? valueStyle;
 
   const _LabeledValue({
-    super.key,
     required this.icon,
     required this.label,
     required this.value,
@@ -433,7 +431,6 @@ class _MiniStat extends StatelessWidget {
   final Color? color;
 
   const _MiniStat({
-    super.key,
     required this.icon,
     required this.label,
     required this.value,

@@ -1,20 +1,20 @@
 class PhaseOneProgress {
-  static const int TRANSACTION_ENGINE_WEIGHT = 8;
-  static const int PATTERN_ENGINE_WEIGHT = 8;
-  static const int BEHAVIOR_ENGINE_WEIGHT = 8;
-  static const int GOAL_ENGINE_WEIGHT = 8;
-  static const int SPLIT_ENGINE_WEIGHT = 8;
-  static const int INSIGHT_ENGINE_WEIGHT = 30;
-  static const int GPT_PREP_WEIGHT = 5;
-  static const int GPT_SERVICE_WEIGHT = 10; // Phase 3A
-  static const int HISTORICAL_COMPARISON_WEIGHT = 5; // Phase 3B
-  static const int FORECASTING_WEIGHT = 5; // Phase 3B
-  static const int ADVISORY_WEIGHT = 3; // Phase 3B
+  static const int transactionEngineWeight = 8;
+  static const int patternEngineWeight = 8;
+  static const int behaviorEngineWeight = 8;
+  static const int goalEngineWeight = 8;
+  static const int splitEngineWeight = 8;
+  static const int insightEngineWeight = 30;
+  static const int gptPrepWeight = 5;
+  static const int gptServiceWeight = 10; // Phase 3A
+  static const int historicalComparisonWeight = 5; // Phase 3B
+  static const int forecastingWeight = 5; // Phase 3B
+  static const int advisoryWeight = 3; // Phase 3B
 
-  static const int PHASE_ONE_COMPLETE = 40;
-  static const int PHASE_TWO_COMPLETE = 75;
-  static const int PHASE_THREE_A_COMPLETE = 85; // 75 + 10
-  static const int PHASE_THREE_B_COMPLETE = 98; // 85 + 5 + 5 + 3
+  static const int phaseOneComplete = 40;
+  static const int phaseTwoComplete = 75;
+  static const int phaseThreeAComplete = 85; // 75 + 10
+  static const int phaseThreeBComplete = 98; // 85 + 5 + 5 + 3
 
   final int progressPercentage;
   final Map<String, bool> engineStatus;
@@ -47,37 +47,37 @@ class PhaseOneProgress {
     int progress = 0;
 
     if (transactionEngineComplete) {
-      progress += TRANSACTION_ENGINE_WEIGHT;
+      progress += transactionEngineWeight;
     }
     if (patternEngineComplete) {
-      progress += PATTERN_ENGINE_WEIGHT;
+      progress += patternEngineWeight;
     }
     if (behaviorEngineComplete) {
-      progress += BEHAVIOR_ENGINE_WEIGHT;
+      progress += behaviorEngineWeight;
     }
     if (goalEngineComplete) {
-      progress += GOAL_ENGINE_WEIGHT;
+      progress += goalEngineWeight;
     }
     if (splitEngineComplete) {
-      progress += SPLIT_ENGINE_WEIGHT;
+      progress += splitEngineWeight;
     }
     if (insightEngineComplete) {
-      progress += INSIGHT_ENGINE_WEIGHT;
+      progress += insightEngineWeight;
     }
     if (gptPrepComplete) {
-      progress += GPT_PREP_WEIGHT;
+      progress += gptPrepWeight;
     }
     if (gptServiceComplete) {
-      progress += GPT_SERVICE_WEIGHT;
+      progress += gptServiceWeight;
     }
     if (historicalComparisonComplete) {
-      progress += HISTORICAL_COMPARISON_WEIGHT;
+      progress += historicalComparisonWeight;
     }
     if (forecastingComplete) {
-      progress += FORECASTING_WEIGHT;
+      progress += forecastingWeight;
     }
     if (advisoryComplete) {
-      progress += ADVISORY_WEIGHT;
+      progress += advisoryWeight;
     }
 
     return PhaseOneProgress(

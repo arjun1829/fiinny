@@ -220,7 +220,6 @@ class _SharingUnifiedTile extends StatelessWidget {
   final String time;
 
   const _SharingUnifiedTile({
-    super.key,
     required this.isIncome,
     required this.amount,
     required this.category,

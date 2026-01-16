@@ -8,10 +8,9 @@ import '../services/goal_service.dart';
 import '../widgets/add_goal_dialog.dart';
 import '../widgets/goal_card.dart'; // Import the new card
 
-
 class GoalsScreen extends StatefulWidget {
   final String userId;
-  const GoalsScreen({required this.userId, Key? key}) : super(key: key);
+  const GoalsScreen({required this.userId, super.key});
 
   @override
   State<GoalsScreen> createState() => _GoalsScreenState();
@@ -76,8 +75,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-               Text('Add savings to "${g.title}"',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              Text('Add savings to "${g.title}"',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 18)),
               const SizedBox(height: 16),
               TextField(
                 controller: ctrl,
@@ -86,7 +86,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 decoration: InputDecoration(
                   labelText: "Amount",
                   prefixText: "₹ ",
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
                   filled: true,
                   fillColor: Colors.grey[50],
                 ),
@@ -103,9 +104,12 @@ class _GoalsScreenState extends State<GoalsScreen> {
                     backgroundColor: Colors.teal,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text("Add Savings", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: const Text("Add Savings",
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
@@ -116,11 +120,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
 
     if (result != null) {
       try {
-        await GoalService()
-            .incrementSavedAmount(widget.userId, g.id, result, clampToTarget: true);
+        await GoalService().incrementSavedAmount(widget.userId, g.id, result,
+            clampToTarget: true);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Added ₹${result.toStringAsFixed(0)} to '${g.title}'")),
+            SnackBar(
+                content: Text(
+                    "Added ₹${result.toStringAsFixed(0)} to '${g.title}'")),
           );
         }
       } catch (e) {
@@ -136,7 +142,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
         title: const Text("Delete goal?"),
         content: Text("This will permanently remove '${g.title}'."),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("Cancel")),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -163,12 +171,14 @@ class _GoalsScreenState extends State<GoalsScreen> {
       body: StreamBuilder<List<GoalModel>>(
         stream: GoalService().goalsStream(widget.userId),
         builder: (context, snap) {
-          if (!snap.hasData) { // Loading state
-             return const Center(child: CircularProgressIndicator());
+          if (!snap.hasData) {
+            // Loading state
+            return const Center(child: CircularProgressIndicator());
           }
-          
+
           final goals = snap.data ?? [];
-          final bottomInset = context.adsBottomPadding(extra: 80); // + FAB space
+          final bottomInset =
+              context.adsBottomPadding(extra: 80); // + FAB space
 
           return CustomScrollView(
             slivers: [
@@ -217,15 +227,19 @@ class _GoalsScreenState extends State<GoalsScreen> {
                             color: Colors.grey[100],
                             shape: BoxShape.circle,
                           ),
-                          child: Icon(Icons.track_changes_rounded, size: 40, color: Colors.grey[400]),
+                          child: Icon(Icons.track_changes_rounded,
+                              size: 40, color: Colors.grey[400]),
                         ),
                         const SizedBox(height: 20),
                         const Text(
                           "No goals yet",
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF0F172A)),
                         ),
                         const SizedBox(height: 8),
-                         Text(
+                        Text(
                           "Set financial targets and track your progress.",
                           style: TextStyle(color: Colors.grey[500]),
                         ),
@@ -235,20 +249,20 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 )
               else
                 SliverPadding(
-                   padding: EdgeInsets.fromLTRB(24, 10, 24, bottomInset),
-                   sliver: SliverList(
-                     delegate: SliverChildBuilderDelegate(
-                       (context, index) {
-                         final goal = goals[index];
-                         return GoalCard(
-                           goal: goal,
-                           onDelete: () => _confirmAndDelete(goal),
-                           onTap: () => _addProgressSheet(goal),
-                         );
-                       },
-                       childCount: goals.length,
-                     ),
-                   ),
+                  padding: EdgeInsets.fromLTRB(24, 10, 24, bottomInset),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final goal = goals[index];
+                        return GoalCard(
+                          goal: goal,
+                          onDelete: () => _confirmAndDelete(goal),
+                          onTap: () => _addProgressSheet(goal),
+                        );
+                      },
+                      childCount: goals.length,
+                    ),
+                  ),
                 ),
             ],
           );
@@ -257,4 +271,3 @@ class _GoalsScreenState extends State<GoalsScreen> {
     );
   }
 }
-

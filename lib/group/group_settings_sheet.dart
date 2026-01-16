@@ -249,7 +249,7 @@ class GroupSettingsSheet extends StatelessWidget {
         .doc(group.id)
         .delete();
     if (context.mounted) Navigator.pop(context); // close settings
-    Navigator.of(context).maybePop(); // pop detail screen
+    if (context.mounted) Navigator.of(context).maybePop(); // pop detail screen
   }
 
   // ---------------- PHOTO HELPERS (unchanged core) ----------------
@@ -509,7 +509,6 @@ class _FintechHeaderCard extends StatelessWidget {
   final VoidCallback onChangePhoto;
 
   const _FintechHeaderCard({
-    super.key,
     required this.name,
     required this.memberCount,
     required this.avatarUrl,
@@ -621,7 +620,6 @@ class _FintechActionButton extends StatelessWidget {
   final VoidCallback? onTap;
 
   const _FintechActionButton({
-    super.key,
     required this.icon,
     required this.title,
     this.subtitle,
@@ -684,7 +682,7 @@ class _FintechActionButton extends StatelessWidget {
 
 class _SectionLabel extends StatelessWidget {
   final String text;
-  const _SectionLabel(this.text, {super.key});
+  const _SectionLabel(this.text);
 
   @override
   Widget build(BuildContext context) {
@@ -711,7 +709,6 @@ class _AddMembersReviewSheet extends StatefulWidget {
   final String currentUserPhone;
 
   const _AddMembersReviewSheet({
-    super.key,
     required this.groupId,
     required this.members,
     required this.currentUserPhone,
@@ -786,7 +783,7 @@ class _AddMembersReviewSheetState extends State<_AddMembersReviewSheet> {
                                 ),
                               ),
                             );
-                            if (!mounted) {
+                            if (!context.mounted) {
                               return;
                             }
                             setState(() => _busy = false);
@@ -809,8 +806,12 @@ class _AddMembersReviewSheetState extends State<_AddMembersReviewSheet> {
 
   String _initials(String name) {
     final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty || parts.first.isEmpty) return '?';
-    if (parts.length == 1) return parts.first[0].toUpperCase();
+    if (parts.isEmpty || parts.first.isEmpty) {
+      return '?';
+    }
+    if (parts.length == 1) {
+      return parts.first[0].toUpperCase();
+    }
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
 }
@@ -819,7 +820,6 @@ class _ContactsPickerSheet extends StatefulWidget {
   final String groupId;
   final String defaultCountryCode;
   const _ContactsPickerSheet({
-    super.key,
     required this.groupId,
     required this.defaultCountryCode,
   });
@@ -1058,7 +1058,7 @@ class _ContactsPickerSheetState extends State<_ContactsPickerSheet> {
 class _EmptyState extends StatelessWidget {
   final String title;
   final String subtitle;
-  const _EmptyState({super.key, required this.title, required this.subtitle});
+  const _EmptyState({required this.title, required this.subtitle});
 
   @override
   Widget build(BuildContext context) {

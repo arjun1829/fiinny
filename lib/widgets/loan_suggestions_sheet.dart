@@ -29,9 +29,10 @@ class _LoanSuggestionsSheetState extends State<LoanSuggestionsSheet> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     _items = await _detector.listPending(widget.userId);
-    setState(() => _loading = false);
+    if (mounted) setState(() => _loading = false);
   }
 
   @override
@@ -160,10 +161,11 @@ class _LoanSuggestionsSheetState extends State<LoanSuggestionsSheet> {
                                   ? null
                                   : () async {
                                       for (final id in _selected) {
+                                        if (!mounted) return;
                                         await _detector.dismiss(
                                             widget.userId, id);
                                       }
-                                      await _load();
+                                      if (mounted) await _load();
                                     },
                             ),
                             const SizedBox(width: 6),
@@ -178,15 +180,14 @@ class _LoanSuggestionsSheetState extends State<LoanSuggestionsSheet> {
                                             xs.firstWhere((e) => e['id'] == id);
                                         await _acceptOne(s, silent: true);
                                       }
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                              content: Text(
-                                                  'Accepted ${_selected.length} loan(s).')),
-                                        );
-                                      }
-                                      await _load();
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                            content: Text(
+                                                'Accepted ${_selected.length} loan(s).')),
+                                      );
+                                      if (mounted) await _load();
                                     },
                             ),
                           ],
@@ -219,10 +220,11 @@ class _LoanSuggestionsSheetState extends State<LoanSuggestionsSheet> {
                                   ? Checkbox(
                                       value: selected,
                                       onChanged: (v) => setState(() {
-                                        if (v == true)
+                                        if (v == true) {
                                           _selected.add(id);
-                                        else
+                                        } else {
                                           _selected.remove(id);
+                                        }
                                       }),
                                     )
                                   : const Icon(Icons.account_balance_rounded),
@@ -235,7 +237,8 @@ class _LoanSuggestionsSheetState extends State<LoanSuggestionsSheet> {
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: Colors.blue.withValues(alpha: 0.1),
+                                        color:
+                                            Colors.blue.withValues(alpha: 0.1),
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Text(
@@ -265,14 +268,14 @@ class _LoanSuggestionsSheetState extends State<LoanSuggestionsSheet> {
                                           onPressed: () async {
                                             await _detector.dismiss(
                                                 widget.userId, id);
-                                            await _load();
+                                            if (mounted) await _load();
                                           },
                                         ),
                                         ElevatedButton(
                                           child: const Text('Accept'),
                                           onPressed: () async {
                                             await _acceptOne(s);
-                                            await _load();
+                                            if (mounted) await _load();
                                           },
                                         ),
                                       ],
@@ -294,7 +297,7 @@ class _LoanSuggestionsSheetState extends State<LoanSuggestionsSheet> {
 
     final emiNum = (s['emi'] as num?)?.toDouble() ?? 0.0;
     final firstSeenTs = s['firstSeen'] as Timestamp?;
-    final lastSeenTs = s['lastSeen'] as Timestamp?;
+    // final lastSeenTs = s['lastSeen'] as Timestamp?; // unused
     final paymentDay = (s['paymentDay'] as num?)?.toInt();
 
     final loan = LoanModel(

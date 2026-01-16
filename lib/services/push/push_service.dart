@@ -8,7 +8,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:lifemap/core/notifications/local_notifications.dart';
 import 'package:lifemap/main.dart' show rootNavigatorKey;
-import 'package:lifemap/services/notif_prefs_service.dart' as Prefs;
+import 'package:lifemap/services/notif_prefs_service.dart' as prefs;
 import 'package:lifemap/services/push/first_surface_gate.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -314,9 +314,9 @@ class PushService {
       return;
     }
 
-    final prefs = await Prefs.NotifPrefsService.fetchForUser(uid);
-    final channels = (prefs['channels'] as Map?) ?? const {};
-    final pushOn = (prefs['push_enabled'] ?? true) == true;
+    final prefsData = await prefs.NotifPrefsService.fetchForUser(uid);
+    final channels = (prefsData['channels'] as Map?) ?? const {};
+    final pushOn = (prefsData['push_enabled'] ?? true) == true;
     if (!pushOn) return;
 
     bool enabledFor(String ch) {
@@ -335,7 +335,7 @@ class PushService {
 
     if (!enabledFor(channelId)) return;
 
-    final quiet = (prefs['quiet_hours'] as Map?) ?? const {};
+    final quiet = (prefsData['quiet_hours'] as Map?) ?? const {};
     final start = _parseHhMm(quiet['start'] ?? '22:00');
     final end = _parseHhMm(quiet['end'] ?? '08:00');
 

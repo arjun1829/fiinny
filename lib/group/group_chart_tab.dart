@@ -111,6 +111,7 @@ class _GroupChartTabState extends State<GroupChartTab> {
     if (pickedFrom == null) {
       return;
     }
+    if (!mounted) return;
     final pickedTo = await showDatePicker(
       context: context,
       initialDate: _to ?? now,
@@ -121,6 +122,7 @@ class _GroupChartTabState extends State<GroupChartTab> {
     if (pickedTo == null) {
       return;
     }
+    if (!mounted) return;
     setState(() {
       _time = _TimeFilter.custom;
       _from = DateTime(pickedFrom.year, pickedFrom.month, pickedFrom.day);

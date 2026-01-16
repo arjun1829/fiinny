@@ -122,7 +122,6 @@ class _AnimatedMiniSplitRing extends StatelessWidget {
   final Curve curve;
 
   const _AnimatedMiniSplitRing({
-    super.key,
     required this.incomePercent,
     required this.expensePercent,
     required this.size,

@@ -97,7 +97,7 @@ class EntityResolver {
           value: label,
           displayName: label,
           score: 1.0,
-          matchType: MatchType.EXACT,
+          matchType: MatchType.exact,
         ));
         continue;
       }
@@ -108,7 +108,7 @@ class EntityResolver {
           value: label,
           displayName: label,
           score: 0.8,
-          matchType: MatchType.CONTAINS,
+          matchType: MatchType.contains,
         ));
         continue;
       }
@@ -119,7 +119,7 @@ class EntityResolver {
           value: label,
           displayName: label,
           score: 0.7,
-          matchType: MatchType.CONTAINS,
+          matchType: MatchType.contains,
         ));
         continue;
       }
@@ -130,7 +130,7 @@ class EntityResolver {
           value: label,
           displayName: label,
           score: 0.5,
-          matchType: MatchType.FUZZY,
+          matchType: MatchType.fuzzy,
         ));
       }
     }
@@ -179,7 +179,7 @@ class EntityResolver {
           value: category,
           displayName: category,
           score: 0.9,
-          matchType: MatchType.STARTS_WITH,
+          matchType: MatchType.startsWith,
         ));
         continue;
       }
@@ -191,7 +191,7 @@ class EntityResolver {
           value: category,
           displayName: category,
           score: 0.7,
-          matchType: MatchType.CONTAINS,
+          matchType: MatchType.contains,
         ));
         continue;
       }
@@ -202,7 +202,7 @@ class EntityResolver {
           value: category,
           displayName: category,
           score: 0.5,
-          matchType: MatchType.FUZZY,
+          matchType: MatchType.fuzzy,
         ));
       }
     }
@@ -261,7 +261,7 @@ class EntityResolver {
           value: groupId,
           displayName: groupName,
           score: 0.8,
-          matchType: MatchType.CONTAINS,
+          matchType: MatchType.contains,
         ));
         continue;
       }
@@ -272,7 +272,7 @@ class EntityResolver {
           value: groupId,
           displayName: groupName,
           score: 0.6,
-          matchType: MatchType.FUZZY,
+          matchType: MatchType.fuzzy,
         ));
       }
     }

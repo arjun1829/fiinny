@@ -157,21 +157,27 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   void _listenToData() {
     _expSub =
         ExpenseService().getExpensesStream(widget.userPhone).listen((expenses) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       allExpenses = expenses;
       _scheduleRecompute();
     });
 
     _incSub =
         IncomeService().getIncomesStream(widget.userPhone).listen((incomes) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       allIncomes = incomes;
       _scheduleRecompute();
     });
 
     _friendSub =
         FriendService().streamFriends(widget.userPhone).listen((friends) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         // _friends = friends;
         _friendsById = {for (var f in friends) f.phone: f};
@@ -203,7 +209,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   void _scheduleRecompute() {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     if (_pendingRecompute) return; // already scheduled this frame
     _pendingRecompute = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -222,12 +230,20 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   // _encodeBankSelection removed
 
   bool _matchesBankFilters(String? bank, String? cardLast4) {
-    if (_selectedBanks.isEmpty) return true;
+    if (_selectedBanks.isEmpty) {
+      return true;
+    }
     final normalizedBank = _normalizeBank(bank);
-    if (normalizedBank.isEmpty) return false;
-    if (_selectedBanks.contains(normalizedBank)) return true;
+    if (normalizedBank.isEmpty) {
+      return false;
+    }
+    if (_selectedBanks.contains(normalizedBank)) {
+      return true;
+    }
     final l4 = (cardLast4 ?? '').trim();
-    if (l4.isEmpty) return false;
+    if (l4.isEmpty) {
+      return false;
+    }
     return _selectedBanks.contains('$normalizedBank|$l4');
   }
 
@@ -241,11 +257,17 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   bool _matchesMerchantFilters(String? raw) {
-    if (_selectedMerchants.isEmpty) return true;
+    if (_selectedMerchants.isEmpty) {
+      return true;
+    }
     final source = (raw ?? '').trim();
-    if (source.isEmpty) return false;
+    if (source.isEmpty) {
+      return false;
+    }
     final normalized = _normalizeMerchantKey(source);
-    if (normalized.isEmpty) return false;
+    if (normalized.isEmpty) {
+      return false;
+    }
     return _selectedMerchants.contains(normalized);
   }
 
@@ -310,7 +332,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       }
       if (_selectedCategories.isNotEmpty) {
         final cat = e.type.trim().isEmpty ? 'Other' : e.type.trim();
-        if (!_selectedCategories.contains(cat)) return false;
+        if (!_selectedCategories.contains(cat)) {
+          return false;
+        }
       }
       if (_searchFrom != null && _searchTo != null) {
         final d = _d(e.date);
@@ -355,7 +379,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       }
       if (_selectedCategories.isNotEmpty) {
         final cat = i.type.trim().isEmpty ? 'Other' : i.type.trim();
-        if (!_selectedCategories.contains(cat)) return false;
+        if (!_selectedCategories.contains(cat)) {
+          return false;
+        }
       }
       if (_searchFrom != null && _searchTo != null) {
         final d = _d(i.date);
@@ -473,7 +499,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final yesterday = _d(now.subtract(const Duration(days: 1)));
 
     bool isYesterdaySelected() {
-      if (_searchFrom == null || _searchTo == null) return false;
+      if (_searchFrom == null || _searchTo == null) {
+        return false;
+      }
       return _d(_searchFrom!) == yesterday && _d(_searchTo!) == yesterday;
     }
 
@@ -803,7 +831,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 });
               },
               onEdit: (tx) async {
-                if (_multiSelectMode) return;
+                if (_multiSelectMode) {
+                  return;
+                }
                 if (tx is ExpenseItem) {
                   await Navigator.push(
                     context,
@@ -818,7 +848,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 }
               },
               onDelete: (tx) async {
-                if (_multiSelectMode) return;
+                if (_multiSelectMode) {
+                  return;
+                }
                 if (tx is ExpenseItem) {
                   await ExpenseService().deleteExpense(
                     widget.userPhone,
@@ -828,7 +860,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 }
               },
               onSplit: (tx) async {
-                if (_multiSelectMode) return;
+                if (_multiSelectMode) {
+                  return;
+                }
                 if (tx is ExpenseItem) {
                   await Navigator.push(
                     context,
@@ -1096,7 +1130,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               });
             },
             onEdit: (tx) async {
-              if (_multiSelectMode) return;
+              if (_multiSelectMode) {
+                return;
+              }
               if (tx is ExpenseItem) {
                 await Navigator.push(
                   context,
@@ -1111,7 +1147,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               }
             },
             onDelete: (tx) async {
-              if (_multiSelectMode) return;
+              if (_multiSelectMode) {
+                return;
+              }
               if (tx is ExpenseItem) {
                 await ExpenseService().deleteExpense(
                   widget.userPhone,
@@ -1126,7 +1164,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               _scheduleRecompute();
             },
             onSplit: (tx) async {
-              if (_multiSelectMode) return;
+              if (_multiSelectMode) {
+                return;
+              }
               if (tx is ExpenseItem) {
                 await Navigator.push(
                   context,
@@ -1155,7 +1195,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   // _showLabelDialog removed
 
   Future<void> _openCommentDialog(dynamic tx) async {
-    if (tx is! ExpenseItem && tx is! IncomeItem) return;
+    if (tx is! ExpenseItem && tx is! IncomeItem) {
+      return;
+    }
 
     final String currentNote =
         (tx is ExpenseItem ? tx.note : (tx as IncomeItem).note);
@@ -1503,7 +1545,9 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         .map((b) => b.trim())
         .where((b) => b.isNotEmpty)
         .map((b) {
-      if (!b.contains('|')) return _normalizeBank(b);
+      if (!b.contains('|')) {
+        return _normalizeBank(b);
+      }
       final parts = b.split('|');
       final bank = _normalizeBank(parts.first);
       final card = parts.length > 1 ? parts[1].trim() : '';
@@ -1554,7 +1598,9 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     void addBank(String? bank,
         {String? cardLast4, String? logo, String? network}) {
       final normalized = _normalizeBank(bank);
-      if (normalized.isEmpty) return;
+      if (normalized.isEmpty) {
+        return;
+      }
       final cards = bankMap.putIfAbsent(normalized, () => <String>{});
       final last4 = (cardLast4 ?? '').trim();
       if (last4.isNotEmpty) {
@@ -1751,20 +1797,21 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         _buildSectionTitle('Date / Period'),
         const SizedBox(height: 6),
         for (final option in periodOptions)
-          RadioListTile<String>(
+          ListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
-            value: option.value,
-            groupValue: currentValue,
             title:
                 Text(option.key, style: const TextStyle(color: Colors.black)),
-            onChanged: (_) => _selectPeriod(option.value),
+            leading: Radio<String>(
+              value: option.value,
+              groupValue: currentValue,
+              onChanged: (_) => _selectPeriod(option.value),
+            ),
+            onTap: () => _selectPeriod(option.value),
           ),
-        RadioListTile<String>(
+        ListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          value: 'Custom',
-          groupValue: currentValue,
           title: const Text(
             'Custom range',
             style: TextStyle(color: Colors.black),
@@ -1775,7 +1822,12 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                 : 'Choose a date range',
             style: const TextStyle(color: Colors.black54, fontSize: 12),
           ),
-          onChanged: (_) => _pickCustomRange(),
+          leading: Radio<String>(
+            value: 'Custom',
+            groupValue: currentValue,
+            onChanged: (_) => _pickCustomRange(),
+          ),
+          onTap: () => _pickCustomRange(),
         ),
       ],
     );
@@ -1876,18 +1928,25 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       children: [
         _buildSectionTitle('Merchant'),
         const SizedBox(height: 6),
-        CheckboxListTile(
+        ListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          value: _selectedMerchants.isEmpty,
-          secondary: const Icon(Icons.store_mall_directory_rounded,
+          leading: const Icon(Icons.store_mall_directory_rounded,
               color: Colors.black54),
           title: const Text('All merchants',
               style: TextStyle(color: Colors.black)),
           subtitle: const Text('Show everything',
               style: TextStyle(color: Colors.black54, fontSize: 12)),
-          onChanged: (val) {
-            if (val == true) {
+          trailing: Checkbox(
+            value: _selectedMerchants.isEmpty,
+            onChanged: (val) {
+              if (val == true) {
+                setState(() => _selectedMerchants = {});
+              }
+            },
+          ),
+          onTap: () {
+            if (_selectedMerchants.isNotEmpty) {
               setState(() => _selectedMerchants = {});
             }
           },
@@ -1930,18 +1989,29 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       {required bool isPerson}) {
     final key = entry.key.trim().toUpperCase();
     final selected = _selectedMerchants.contains(key);
-    return CheckboxListTile(
+    return ListTile(
       dense: true,
       contentPadding: EdgeInsets.zero,
-      value: selected,
-      secondary: _merchantAvatar(entry.key, isPerson: isPerson),
+      leading: _merchantAvatar(entry.key, isPerson: isPerson),
       title: Text(_formatMerchant(entry.key),
           style: const TextStyle(color: Colors.black)),
       subtitle: Text(_formatAmount(entry.value),
           style: const TextStyle(color: Colors.black54, fontSize: 12)),
-      onChanged: (val) {
+      trailing: Checkbox(
+        value: selected,
+        onChanged: (val) {
+          setState(() {
+            if (val == true) {
+              _selectedMerchants = {..._selectedMerchants, key};
+            } else {
+              _selectedMerchants = {..._selectedMerchants}..remove(key);
+            }
+          });
+        },
+      ),
+      onTap: () {
         setState(() {
-          if (val == true) {
+          if (!selected) {
             _selectedMerchants = {..._selectedMerchants, key};
           } else {
             _selectedMerchants = {..._selectedMerchants}..remove(key);
@@ -1957,17 +2027,24 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       children: [
         _buildSectionTitle('Bank & Cards'),
         const SizedBox(height: 6),
-        CheckboxListTile(
+        ListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          value: _selectedBanks.isEmpty,
-          secondary:
+          leading:
               const Icon(Icons.account_balance_rounded, color: Colors.black54),
           title: const Text('All banks', style: TextStyle(color: Colors.black)),
           subtitle: const Text('Show everything',
               style: TextStyle(color: Colors.black54, fontSize: 12)),
-          onChanged: (val) {
-            if (val == true) {
+          trailing: Checkbox(
+            value: _selectedBanks.isEmpty,
+            onChanged: (val) {
+              if (val == true) {
+                setState(() => _selectedBanks = {});
+              }
+            },
+          ),
+          onTap: () {
+            if (_selectedBanks.isNotEmpty) {
               setState(() => _selectedBanks = {});
             }
           },
@@ -1987,11 +2064,10 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CheckboxListTile(
+                ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  value: isBankSelected,
-                  secondary: _bankLogo(
+                  leading: _bankLogo(
                     _displayBankName(bank),
                     network: _bankPrimaryNetworks[bank],
                     overrideLogo: _bankLogos[bank],
@@ -1999,9 +2075,25 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                   ),
                   title: Text(_displayBankName(bank),
                       style: const TextStyle(color: Colors.black)),
-                  onChanged: (val) {
+                  trailing: Checkbox(
+                    value: isBankSelected,
+                    onChanged: (val) {
+                      setState(() {
+                        if (val == true) {
+                          _selectedBanks = {..._selectedBanks, bank};
+                        } else {
+                          final updated = {..._selectedBanks};
+                          updated.remove(bank);
+                          updated.removeWhere(
+                              (entry) => entry.startsWith('$bank|'));
+                          _selectedBanks = updated;
+                        }
+                      });
+                    },
+                  ),
+                  onTap: () {
                     setState(() {
-                      if (val == true) {
+                      if (!isBankSelected) {
                         _selectedBanks = {..._selectedBanks, bank};
                       } else {
                         final updated = {..._selectedBanks};
@@ -2016,12 +2108,10 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                 for (final card in cards)
                   Padding(
                     padding: const EdgeInsets.only(left: 32),
-                    child: CheckboxListTile(
+                    child: ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      value: _selectedBanks
-                          .contains(_encodeBankSelection(bank, card)),
-                      secondary: _bankLogo(
+                      leading: _bankLogo(
                         _displayBankName(bank),
                         network: _cardNetworks['$bank|$card'] ??
                             _bankPrimaryNetworks[bank],
@@ -2033,10 +2123,30 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                       subtitle: Text(_displayBankName(bank),
                           style: const TextStyle(
                               color: Colors.black54, fontSize: 12)),
-                      onChanged: (val) {
+                      trailing: Checkbox(
+                        value: _selectedBanks
+                            .contains(_encodeBankSelection(bank, card)),
+                        onChanged: (val) {
+                          final selectionKey = _encodeBankSelection(bank, card);
+                          setState(() {
+                            if (val == true) {
+                              _selectedBanks = {
+                                ..._selectedBanks,
+                                selectionKey
+                              };
+                            } else {
+                              _selectedBanks = {..._selectedBanks}
+                                ..remove(selectionKey);
+                            }
+                          });
+                        },
+                      ),
+                      onTap: () {
                         final selectionKey = _encodeBankSelection(bank, card);
+                        final isSelected =
+                            _selectedBanks.contains(selectionKey);
                         setState(() {
-                          if (val == true) {
+                          if (!isSelected) {
                             _selectedBanks = {..._selectedBanks, selectionKey};
                           } else {
                             _selectedBanks = {..._selectedBanks}
@@ -2065,11 +2175,10 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         else
           ..._friends.map((friend) {
             final selected = _friendPhones.contains(friend.phone);
-            return CheckboxListTile(
+            return ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              value: selected,
-              secondary: _friendAvatar(friend),
+              leading: _friendAvatar(friend),
               title: Text(
                 friend.name.isEmpty ? friend.phone : friend.name,
                 style: const TextStyle(color: Colors.black),
@@ -2079,10 +2188,24 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                       style:
                           const TextStyle(color: Colors.black54, fontSize: 12))
                   : null,
-              onChanged: (val) {
+              trailing: Checkbox(
+                value: selected,
+                onChanged: (val) {
+                  setState(() {
+                    final updated = {..._friendPhones};
+                    if (val == true) {
+                      updated.add(friend.phone);
+                    } else {
+                      updated.remove(friend.phone);
+                    }
+                    _friendPhones = updated;
+                  });
+                },
+              ),
+              onTap: () {
                 setState(() {
                   final updated = {..._friendPhones};
-                  if (val == true) {
+                  if (!selected) {
                     updated.add(friend.phone);
                   } else {
                     updated.remove(friend.phone);
@@ -2135,11 +2258,10 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
             final selected = _groupIds.contains(groupId);
             final group = _groupsById[groupId];
             final memberCount = group?.memberCount ?? 0;
-            return CheckboxListTile(
+            return ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              value: selected,
-              secondary: _groupAvatar(groupId, group),
+              leading: _groupAvatar(groupId, group),
               title: Text(_groupNameForId(groupId),
                   style: const TextStyle(color: Colors.black)),
               subtitle: memberCount > 0
@@ -2147,9 +2269,21 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                       style:
                           const TextStyle(color: Colors.black54, fontSize: 12))
                   : null,
-              onChanged: (val) {
+              trailing: Checkbox(
+                value: selected,
+                onChanged: (val) {
+                  setState(() {
+                    if (val == true) {
+                      _groupIds = {..._groupIds, groupId};
+                    } else {
+                      _groupIds = {..._groupIds}..remove(groupId);
+                    }
+                  });
+                },
+              ),
+              onTap: () {
                 setState(() {
-                  if (val == true) {
+                  if (!selected) {
                     _groupIds = {..._groupIds, groupId};
                   } else {
                     _groupIds = {..._groupIds}..remove(groupId);
@@ -2247,14 +2381,20 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
 
   String _encodeBankSelection(String bank, [String? cardLast4]) {
     final normalized = _normalizeBank(bank);
-    if (normalized.isEmpty) return normalized;
+    if (normalized.isEmpty) {
+      return normalized;
+    }
     final l4 = (cardLast4 ?? '').trim();
-    if (l4.isEmpty) return normalized;
+    if (l4.isEmpty) {
+      return normalized;
+    }
     return '$normalized|$l4';
   }
 
   String _displayBankName(String bank) {
-    if (_bankDisplayNames.containsKey(bank)) return _bankDisplayNames[bank]!;
+    if (_bankDisplayNames.containsKey(bank)) {
+      return _bankDisplayNames[bank]!;
+    }
     return _titleCase(bank.toLowerCase());
   }
 
@@ -2268,12 +2408,24 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
 
   String _slugBank(String s) {
     final x = s.toLowerCase();
-    if (x.contains('axis')) return 'axis';
-    if (x.contains('hdfc')) return 'hdfc';
-    if (x.contains('icici')) return 'icici';
-    if (x.contains('kotak')) return 'kotak';
-    if (x.contains('sbi') || x.contains('state bank')) return 'sbi';
-    if (x.contains('american express') || x.contains('amex')) return 'amex';
+    if (x.contains('axis')) {
+      return 'axis';
+    }
+    if (x.contains('hdfc')) {
+      return 'hdfc';
+    }
+    if (x.contains('icici')) {
+      return 'icici';
+    }
+    if (x.contains('kotak')) {
+      return 'kotak';
+    }
+    if (x.contains('sbi') || x.contains('state bank')) {
+      return 'sbi';
+    }
+    if (x.contains('american express') || x.contains('amex')) {
+      return 'amex';
+    }
     return x.replaceAll(RegExp(r'[^a-z]'), '');
   }
 
@@ -2385,15 +2537,33 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
 
   String? _merchantLogoAsset(String merchant) {
     final lower = merchant.toLowerCase();
-    if (lower.contains('amazon')) return 'assets/brands/amazon.png';
-    if (lower.contains('zomato')) return 'assets/brands/zomato.png';
-    if (lower.contains('swiggy')) return 'assets/brands/swiggy.png';
-    if (lower.contains('uber')) return 'assets/brands/uber.png';
-    if (lower.contains('flipkart')) return 'assets/brands/flipkart.png';
-    if (lower.contains('bigbasket')) return 'assets/brands/bigbasket.png';
-    if (lower.contains('myntra')) return 'assets/brands/myntra.png';
-    if (lower.contains('nykaa')) return 'assets/brands/nykaa.png';
-    if (lower.contains('ajio')) return 'assets/brands/ajio.png';
+    if (lower.contains('amazon')) {
+      return 'assets/brands/amazon.png';
+    }
+    if (lower.contains('zomato')) {
+      return 'assets/brands/zomato.png';
+    }
+    if (lower.contains('swiggy')) {
+      return 'assets/brands/swiggy.png';
+    }
+    if (lower.contains('uber')) {
+      return 'assets/brands/uber.png';
+    }
+    if (lower.contains('flipkart')) {
+      return 'assets/brands/flipkart.png';
+    }
+    if (lower.contains('bigbasket')) {
+      return 'assets/brands/bigbasket.png';
+    }
+    if (lower.contains('myntra')) {
+      return 'assets/brands/myntra.png';
+    }
+    if (lower.contains('nykaa')) {
+      return 'assets/brands/nykaa.png';
+    }
+    if (lower.contains('ajio')) {
+      return 'assets/brands/ajio.png';
+    }
     return null;
   }
 
@@ -2402,12 +2572,18 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     if (t.contains('food') || t.contains('restaurant')) {
       return Icons.restaurant_rounded;
     }
-    if (t.contains('grocery')) return Icons.shopping_cart_rounded;
-    if (t.contains('rent')) return Icons.home_rounded;
+    if (t.contains('grocery')) {
+      return Icons.shopping_cart_rounded;
+    }
+    if (t.contains('rent')) {
+      return Icons.home_rounded;
+    }
     if (t.contains('fuel') || t.contains('petrol')) {
       return Icons.local_gas_station_rounded;
     }
-    if (t.contains('shopping')) return Icons.shopping_bag_rounded;
+    if (t.contains('shopping')) {
+      return Icons.shopping_bag_rounded;
+    }
     if (t.contains('health') || t.contains('medicine')) {
       return Icons.local_hospital_rounded;
     }
@@ -2417,13 +2593,19 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     if (t.contains('entertainment') || t.contains('movie')) {
       return Icons.movie_rounded;
     }
-    if (t.contains('education')) return Icons.school_rounded;
-    if (t.contains('loan')) return Icons.account_balance_rounded;
+    if (t.contains('education')) {
+      return Icons.school_rounded;
+    }
+    if (t.contains('loan')) {
+      return Icons.account_balance_rounded;
+    }
     return Icons.category_rounded;
   }
 
   bool _isYesterdaySelected() {
-    if (_customRange == null) return false;
+    if (_customRange == null) {
+      return false;
+    }
     final start = _customRange!.start;
     final end = _customRange!.end;
     final now = DateTime.now();
@@ -2489,7 +2671,9 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     final lower = merchant.toLowerCase();
     for (final friend in _friends) {
       final nameLower = friend.name.trim().toLowerCase();
-      if (nameLower.isEmpty) continue;
+      if (nameLower.isEmpty) {
+        continue;
+      }
       if (lower == nameLower ||
           lower.contains(nameLower) ||
           nameLower.contains(lower)) {
@@ -2505,7 +2689,9 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       return true;
     }
     final digits = lower.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digits.length >= 8 && digits.length <= 12) return true;
+    if (digits.length >= 8 && digits.length <= 12) {
+      return true;
+    }
     if (_friendPhoneSet.any((phone) =>
         phone.replaceAll(RegExp(r'[^0-9]'), '').endsWith(digits) &&
         digits.isNotEmpty)) {

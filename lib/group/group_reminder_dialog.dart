@@ -105,10 +105,10 @@ class _GroupReminderDialogState extends State<GroupReminderDialog> {
             if (!mounted) {
               return;
             }
-            Navigator.pop(context, true);
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Reminder sent')),
             );
+            Navigator.pop(context, true);
           },
           icon: const Icon(Icons.send_rounded),
           label: const Text('Send'),

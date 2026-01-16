@@ -6,11 +6,11 @@ class SurvivalModeScreen extends StatelessWidget {
   final double salary;
 
   const SurvivalModeScreen({
-    Key? key,
+    super.key,
     required this.userId,
     required this.creditCardBill,
     required this.salary,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -28,10 +28,12 @@ class SurvivalModeScreen extends StatelessWidget {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            Text("🧾 Your credit card bill is ₹${creditCardBill.toStringAsFixed(0)}"),
+            Text(
+                "🧾 Your credit card bill is ₹${creditCardBill.toStringAsFixed(0)}"),
             Text("💼 Your salary is ₹${salary.toStringAsFixed(0)}"),
             const SizedBox(height: 12),
-            Text("🔐 To stay safe, keep spending under ₹${weeklyLimit.toStringAsFixed(0)} per week."),
+            Text(
+                "🔐 To stay safe, keep spending under ₹${weeklyLimit.toStringAsFixed(0)} per week."),
             const SizedBox(height: 20),
             const Text(
               "✅ Tips to survive the month:",

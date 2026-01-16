@@ -341,12 +341,11 @@ class _LoanTile extends StatelessWidget {
   final VoidCallback onTap;
 
   const _LoanTile({
-    Key? key,
     required this.loan,
     required this.inr,
     required this.dueBadge,
     required this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

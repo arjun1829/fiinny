@@ -111,11 +111,7 @@ class TxnMirrorService {
 
         if (normDir == 'DEBIT') {
           wb.set(
-              _db
-                  .collection('users')
-                  .doc(userDocId)
-                  .collection('expenses')
-                  .doc(docId),
+              _expCol.doc(docId),
               {
                 'id': docId,
                 'type': cat,
@@ -128,11 +124,7 @@ class TxnMirrorService {
           mirroredThisPage++;
         } else {
           wb.set(
-              _db
-                  .collection('users')
-                  .doc(userDocId)
-                  .collection('incomes')
-                  .doc(docId),
+              _incCol.doc(docId),
               {
                 'id': docId,
                 'type': cat,

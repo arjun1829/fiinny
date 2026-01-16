@@ -511,7 +511,7 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
 // -----------------------------------------
 class _InlineDivider extends StatelessWidget {
   final String text;
-  const _InlineDivider({super.key, required this.text});
+  const _InlineDivider({required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -542,7 +542,6 @@ class _ContactPickerSheet extends StatefulWidget {
   final Color accent;
 
   const _ContactPickerSheet({
-    super.key,
     required this.contacts,
     required this.accent,
   });

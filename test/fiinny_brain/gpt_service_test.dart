@@ -25,8 +25,8 @@ void main() {
       SharedPreferences.setMockInitialValues({'openai_api_key': 'test-key'});
       testInsight = const FiinnyInsight(
         id: 'LOW_SAVINGS',
-        category: InsightCategory.RISK,
-        severity: InsightSeverity.MEDIUM,
+        category: InsightCategory.risk,
+        severity: InsightSeverity.medium,
         factsUsed: ['behavior.savingsRate'],
         values: {'savingsRate': 10.0},
         actionable: true,

@@ -738,20 +738,6 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
     );
   }
 
-  String _formatDate(dynamic date) {
-    if (date == null) {
-      return "";
-    }
-    if (date is Timestamp) {
-      final d = date.toDate();
-      return "${d.hour}:${d.minute.toString().padLeft(2, '0')}";
-    }
-    if (date is DateTime) {
-      return "${date.hour}:${date.minute.toString().padLeft(2, '0')}";
-    }
-    return date.toString();
-  }
-
   Widget _chip({
     required String text,
     required IconData icon,

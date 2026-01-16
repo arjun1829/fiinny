@@ -49,7 +49,9 @@ class CadenceDetector {
 
     final out = <RecurringItem>[];
     groups.forEach((key, list) {
-      if (list.length < 2) return; // need at least 2 to consider recurring
+      if (list.length < 2) {
+        return; // need at least 2 to consider recurring
+      }
       list.sort((a, b) => a.date.compareTo(b.date));
 
       // build day intervals
@@ -57,7 +59,9 @@ class CadenceDetector {
       for (int i = 1; i < list.length; i++) {
         diffs.add(list[i].date.difference(list[i - 1].date).inDays.abs());
       }
-      if (diffs.isEmpty) return;
+      if (diffs.isEmpty) {
+        return;
+      }
 
       // median
       diffs.sort();
@@ -68,7 +72,9 @@ class CadenceDetector {
 
       // consider monthly if ~27..34 days
       final isMonthly = median >= 27 && median <= 34;
-      if (!isMonthly) return;
+      if (!isMonthly) {
+        return;
+      }
 
       // classify type from tags/notes
       final tagsUnion = <String>{};
@@ -83,14 +89,15 @@ class CadenceDetector {
             tags.contains('subscription') || _subMerchants.hasMatch(n);
       }
       String type;
-      if (isLoan)
+      if (isLoan) {
         type = 'loan_emi';
-      else if (isSubscription)
+      } else if (isSubscription) {
         type = 'subscription';
-      else if (isAutopay)
+      } else if (isAutopay) {
         type = 'autopay';
-      else
+      } else {
         type = 'subscription'; // default bucket
+      }
 
       // approx amount (use avg of last 3 or last)
       final tail = list.sublist(max(0, list.length - 3));

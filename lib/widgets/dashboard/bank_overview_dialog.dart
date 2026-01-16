@@ -76,8 +76,9 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
         isDebit = false;
       }
 
-      if (last4 == null || last4.isEmpty)
+      if (last4 == null || last4.isEmpty) {
         continue; // Skip if no card info? Or group into "Unknown"?
+      }
       // The screenshot showed specific cards. Let's assume we have last4.
 
       final key = "$last4-${type ?? 'Unknown'}";
@@ -115,8 +116,9 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
     final relevantExpenses = widget.allExpenses.where((e) {
       if (e.issuerBank == null) return false;
       if (_slugBank(e.issuerBank!) != widget.bankSlug) return false;
-      if (_selectedCardLast4 != null && e.cardLast4 != _selectedCardLast4)
+      if (_selectedCardLast4 != null && e.cardLast4 != _selectedCardLast4) {
         return false;
+      }
       return true;
     }).toList();
 
@@ -211,10 +213,11 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
                             return GestureDetector(
                               onTap: () {
                                 setState(() {
-                                  if (isSelected)
+                                  if (isSelected) {
                                     _selectedCardLast4 = null;
-                                  else
+                                  } else {
                                     _selectedCardLast4 = c.last4;
+                                  }
                                 });
                               },
                               child: AnimatedContainer(

@@ -138,8 +138,9 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
 
     // Filter by scope (whole pair or group pair)
     final scoped = all.where((e) {
-      if (_selectedGroup != null && e.groupId != _selectedGroup!.id)
+      if (_selectedGroup != null && e.groupId != _selectedGroup!.id) {
         return false;
+      }
       final participants = <String>{e.payerId, ...e.friendIds};
       return participants.contains(current) && participants.contains(friend);
     }).toList();
@@ -182,10 +183,11 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
       final yourShare = shares[currentUser] ?? 0.0;
       final friendShare = shares[friendPhone] ?? 0.0;
 
-      if (e.payerId == currentUser)
+      if (e.payerId == currentUser) {
         net += friendShare; // they owe you their share
-      else if (e.payerId == friendPhone)
+      } else if (e.payerId == friendPhone) {
         net -= yourShare; // you owe them your share
+      }
     }
     return net;
   }
@@ -370,11 +372,15 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
     if (lower.endsWith('.csv')) return 'text/csv';
     if (lower.endsWith('.txt')) return 'text/plain';
     if (lower.endsWith('.doc')) return 'application/msword';
-    if (lower.endsWith('.docx'))
+    if (lower.endsWith('.docx')) {
       return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    if (lower.endsWith('.xls')) return 'application/vnd.ms-excel';
-    if (lower.endsWith('.xlsx'))
+    }
+    if (lower.endsWith('.xls')) {
+      return 'application/vnd.ms-excel';
+    }
+    if (lower.endsWith('.xlsx')) {
       return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    }
     return 'application/octet-stream';
   }
 

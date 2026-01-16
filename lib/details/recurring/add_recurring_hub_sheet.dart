@@ -53,7 +53,9 @@ class AddRecurringHubSheet extends StatelessWidget {
                         'context': 'friendRecurring',
                       },
                     );
-                    Navigator.pop(context, res); // bubble result up
+                    if (context.mounted) {
+                      Navigator.pop(context, res); // bubble result up
+                    }
                   },
                 ),
                 _Tile(
@@ -67,7 +69,9 @@ class AddRecurringHubSheet extends StatelessWidget {
                           'userId': userPhone,
                           'friendId': friendId,
                         });
-                    Navigator.pop(context, res);
+                    if (context.mounted) {
+                      Navigator.pop(context, res);
+                    }
                   },
                 ),
                 _Tile(
@@ -80,7 +84,9 @@ class AddRecurringHubSheet extends StatelessWidget {
                           'userId': userPhone,
                           'friendId': friendId,
                         });
-                    Navigator.pop(context, res);
+                    if (context.mounted) {
+                      Navigator.pop(context, res);
+                    }
                   },
                 ),
                 _Tile(
@@ -94,7 +100,9 @@ class AddRecurringHubSheet extends StatelessWidget {
                           'userId': userPhone,
                           'friendId': friendId,
                         });
-                    Navigator.pop(context, res);
+                    if (context.mounted) {
+                      Navigator.pop(context, res);
+                    }
                   },
                 ),
               ],
@@ -130,7 +138,6 @@ class _Tile extends StatelessWidget {
   final VoidCallback onTap;
 
   const _Tile({
-    super.key,
     required this.icon,
     required this.label,
     required this.onTap,

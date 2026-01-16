@@ -16,15 +16,6 @@ class LoanService {
   Query<Map<String, dynamic>> _userQuery(String userId) =>
       _raw.where('userId', isEqualTo: userId);
 
-  /// Typed converter (handy for reads/writes)
-  CollectionReference<LoanModel> get _typed => _raw.withConverter<LoanModel>(
-        fromFirestore: (snap, _) =>
-            LoanModel.fromJson(snap.data() ?? {}, snap.id),
-        toFirestore: (loan, _) => loan.toJson(asTimestamp: true),
-      );
-
-  DocumentReference<LoanModel> _doc(String id) => _typed.doc(id);
-
   // ------------------------------------ CRUD ------------------------------------
 
   /// Ordered by createdAt desc if index exists; falls back gracefully.

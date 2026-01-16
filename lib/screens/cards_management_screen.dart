@@ -16,7 +16,7 @@ import '../../services/subscription_service.dart'; // SubscriptionService
 class CardsManagementScreen extends StatefulWidget {
   final String userId;
 
-  const CardsManagementScreen({Key? key, required this.userId}) : super(key: key);
+  const CardsManagementScreen({super.key, required this.userId});
 
   @override
   State<CardsManagementScreen> createState() => _CardsManagementScreenState();
@@ -26,15 +26,16 @@ class _CardsManagementScreenState extends State<CardsManagementScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   // ...
-  
+
   void _openUpgrade() {
     Navigator.of(context).pushNamed('/premium');
   }
+
   bool _loading = true;
   List<ExpenseItem> _expenses = [];
   List<IncomeItem> _incomes = [];
   List<CreditCardModel> _creditCards = [];
-  
+
   // Filter state
   String _filterPeriod = 'Month'; // Default to current month
   DateTimeRange? _customDateRange;
@@ -79,19 +80,23 @@ class _CardsManagementScreenState extends State<CardsManagementScreen>
     // Filter expenses/incomes passed to dialog based on current filter?
     // User probably expects to see transactions matching the dashboard filter.
     final range = _getFilterRange();
-    
+
     final filteredEx = _expenses.where((e) {
-      if (e.issuerBank?.toLowerCase() != bankSlug.toLowerCase() && 
-          e.issuerBank?.toLowerCase() != bankName.toLowerCase()) return false;
-      return e.date.isAfter(range.start.subtract(const Duration(seconds: 1))) && 
-             e.date.isBefore(range.end.add(const Duration(seconds: 1)));
+      if (e.issuerBank?.toLowerCase() != bankSlug.toLowerCase() &&
+          e.issuerBank?.toLowerCase() != bankName.toLowerCase()) {
+        return false;
+      }
+      return e.date.isAfter(range.start.subtract(const Duration(seconds: 1))) &&
+          e.date.isBefore(range.end.add(const Duration(seconds: 1)));
     }).toList();
 
     final filteredIn = _incomes.where((i) {
-      if (i.issuerBank?.toLowerCase() != bankSlug.toLowerCase() && 
-          i.issuerBank?.toLowerCase() != bankName.toLowerCase()) return false;
-      return i.date.isAfter(range.start.subtract(const Duration(seconds: 1))) && 
-             i.date.isBefore(range.end.add(const Duration(seconds: 1)));
+      if (i.issuerBank?.toLowerCase() != bankSlug.toLowerCase() &&
+          i.issuerBank?.toLowerCase() != bankName.toLowerCase()) {
+        return false;
+      }
+      return i.date.isAfter(range.start.subtract(const Duration(seconds: 1))) &&
+          i.date.isBefore(range.end.add(const Duration(seconds: 1)));
     }).toList();
 
     showDialog(
@@ -115,11 +120,17 @@ class _CardsManagementScreenState extends State<CardsManagementScreen>
     switch (_filterPeriod) {
       case 'Day':
         final d = DateTime(now.year, now.month, now.day);
-        return DateTimeRange(start: d, end: d.add(const Duration(days: 1)).subtract(const Duration(milliseconds: 1)));
+        return DateTimeRange(
+            start: d,
+            end: d
+                .add(const Duration(days: 1))
+                .subtract(const Duration(milliseconds: 1)));
       case 'Week':
-         final start = now.subtract(Duration(days: now.weekday - 1));
-         final end = start.add(const Duration(days: 6));
-         return DateTimeRange(start: DateTime(start.year, start.month, start.day), end: DateTime(end.year, end.month, end.day, 23, 59, 59));
+        final start = now.subtract(Duration(days: now.weekday - 1));
+        final end = start.add(const Duration(days: 6));
+        return DateTimeRange(
+            start: DateTime(start.year, start.month, start.day),
+            end: DateTime(end.year, end.month, end.day, 23, 59, 59));
       case 'Month':
         final start = DateTime(now.year, now.month, 1);
         final end = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
@@ -136,44 +147,55 @@ class _CardsManagementScreenState extends State<CardsManagementScreen>
 
   List<ExpenseItem> _getFilteredExpenses() {
     final range = _getFilterRange();
-    return _expenses.where((e) => 
-      e.date.isAfter(range.start.subtract(const Duration(seconds: 1))) && 
-      e.date.isBefore(range.end.add(const Duration(seconds: 1)))
-    ).toList();
+    return _expenses
+        .where((e) =>
+            e.date.isAfter(range.start.subtract(const Duration(seconds: 1))) &&
+            e.date.isBefore(range.end.add(const Duration(seconds: 1))))
+        .toList();
   }
 
   List<IncomeItem> _getFilteredIncomes() {
     final range = _getFilterRange();
-    return _incomes.where((i) => 
-      i.date.isAfter(range.start.subtract(const Duration(seconds: 1))) && 
-      i.date.isBefore(range.end.add(const Duration(seconds: 1)))
-    ).toList();
+    return _incomes
+        .where((i) =>
+            i.date.isAfter(range.start.subtract(const Duration(seconds: 1))) &&
+            i.date.isBefore(range.end.add(const Duration(seconds: 1))))
+        .toList();
   }
 
   Future<void> _showFilterSheet() async {
     await showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 12),
-            Container(height: 4, width: 40, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+            Container(
+                height: 4,
+                width: 40,
+                decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 12),
-            const Text('Select Period', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const Text('Select Period',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 12),
             ...['Day', 'Week', 'Month', 'Year', 'All'].map((p) => ListTile(
-              title: Text(p),
-              trailing: _filterPeriod == p ? const Icon(Icons.check, color: Fx.mintDark) : null,
-              onTap: () {
-                setState(() {
-                  _filterPeriod = p;
-                  _customDateRange = null;
-                });
-                Navigator.pop(context);
-              },
-            )),
+                  title: Text(p),
+                  trailing: _filterPeriod == p
+                      ? const Icon(Icons.check, color: Fx.mintDark)
+                      : null,
+                  onTap: () {
+                    setState(() {
+                      _filterPeriod = p;
+                      _customDateRange = null;
+                    });
+                    Navigator.pop(context);
+                  },
+                )),
           ],
         ),
       ),
@@ -188,7 +210,8 @@ class _CardsManagementScreenState extends State<CardsManagementScreen>
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text('My Cards', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('My Cards',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
@@ -200,15 +223,18 @@ class _CardsManagementScreenState extends State<CardsManagementScreen>
           ),
           IconButton(
             icon: const Icon(Icons.add),
-            tooltip: 'Add Card', 
+            tooltip: 'Add Card',
             onPressed: () async {
-              final sub = Provider.of<SubscriptionService>(context, listen: false);
+              final sub =
+                  Provider.of<SubscriptionService>(context, listen: false);
               // Free limit: 1 card
               if (!sub.isPremium && _creditCards.isNotEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: const Text("Free plan limit reached (1 card). Upgrade to add more."),
-                    action: SnackBarAction(label: "Upgrade", onPressed: _openUpgrade),
+                    content: const Text(
+                        "Free plan limit reached (1 card). Upgrade to add more."),
+                    action: SnackBarAction(
+                        label: "Upgrade", onPressed: _openUpgrade),
                   ),
                 );
                 return;
@@ -254,22 +280,26 @@ class _CardsManagementScreenState extends State<CardsManagementScreen>
                   userId: widget.userId,
                   onRefresh: _loadData,
                   onCardTap: (card) {
-                     // Filter transactions for this card
-                     final cardTxs = filteredExpenses.where((e) => 
-                        e.issuerBank?.toLowerCase() == card.bankName.toLowerCase() &&
-                        (e.cardLast4 == card.last4Digits)
-                     ).toList();
+                    // Filter transactions for this card
+                    final cardTxs = filteredExpenses
+                        .where((e) =>
+                            e.issuerBank?.toLowerCase() ==
+                                card.bankName.toLowerCase() &&
+                            (e.cardLast4 == card.last4Digits))
+                        .toList();
 
-                     // Navigate to detail screen 
-                     Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => CardDetailScreen(
-                          userId: widget.userId,
-                          card: card,
-                          recentTransactions: cardTxs,
-                        ),
-                      ),
-                    ).then((_) => _loadData());
+                    // Navigate to detail screen
+                    Navigator.of(context)
+                        .push(
+                          MaterialPageRoute(
+                            builder: (_) => CardDetailScreen(
+                              userId: widget.userId,
+                              card: card,
+                              recentTransactions: cardTxs,
+                            ),
+                          ),
+                        )
+                        .then((_) => _loadData());
                   },
                 ),
                 _DebitCardsTab(
@@ -304,9 +334,11 @@ class _AllCardsTab extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-             Icon(Icons.credit_card_off_outlined, size: 64, color: Colors.grey[300]),
-             const SizedBox(height: 16),
-             const Text("No active cards found from transactions", style: TextStyle(color: Colors.grey)),
+            Icon(Icons.credit_card_off_outlined,
+                size: 64, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            const Text("No active cards found from transactions",
+                style: TextStyle(color: Colors.grey)),
           ],
         ),
       );
@@ -318,7 +350,8 @@ class _AllCardsTab extends StatelessWidget {
       separatorBuilder: (_, __) => const SizedBox(height: 16),
       itemBuilder: (context, index) {
         final card = allCards[index];
-        return Center( // Center to handle width within list
+        return Center(
+          // Center to handle width within list
           child: BankCardItem(
             bankName: card.bank,
             cardType: card.type,
@@ -369,9 +402,9 @@ class _AllCardsTab extends StatelessWidget {
     // Incomes usually don't have card last4, but we group by bank
     for (var i in incomes) {
       if (i.issuerBank == null) continue;
-      // We try to match existing group for this bank if possible, 
-      // otherwise make a generic one. 
-      // Simplification: match generic bank group if specific card not mapped? 
+      // We try to match existing group for this bank if possible,
+      // otherwise make a generic one.
+      // Simplification: match generic bank group if specific card not mapped?
       // For now, let's just make a generic 'XXXX' entry if not exists
       final key = '${i.issuerBank}_XXXX';
       /* 
@@ -422,12 +455,11 @@ class _CreditCardsTab extends StatelessWidget {
 
     // 3. Merge: prefer manual card if last4 matches
     final mergedCards = <CreditCardModel>[...manualCards];
-    
+
     for (var inferred in inferredCards) {
-      final exists = mergedCards.any((m) => 
-        m.last4Digits == inferred.last4Digits && 
-        m.bankName.toLowerCase() == inferred.bankName.toLowerCase()
-      );
+      final exists = mergedCards.any((m) =>
+          m.last4Digits == inferred.last4Digits &&
+          m.bankName.toLowerCase() == inferred.bankName.toLowerCase());
       if (!exists) {
         mergedCards.add(inferred);
       }
@@ -474,14 +506,15 @@ class _CreditCardsTab extends StatelessWidget {
 
         // Check if it's a "real" manual card (has ID) or inferred (ID starts with 'inferred_')
         // We can show a badge or "Add" button for inferred ones if we want, but for now just show them.
-        
+
         return Center(
           child: BankCardItem(
             bankName: card.bankName,
             cardType: card.cardType.isNotEmpty ? card.cardType : 'Credit Card',
             last4: card.last4Digits,
-            holderName: card.cardholderName.isNotEmpty ? card.cardholderName : 'USER',
-            expiry: '12/28', 
+            holderName:
+                card.cardholderName.isNotEmpty ? card.cardholderName : 'USER',
+            expiry: '12/28',
             colorTheme: _getColorForBank(card.bankName),
             stats: stats,
             onTap: () => onCardTap(card),
@@ -566,9 +599,11 @@ class _DebitCardsTab extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-             Icon(Icons.credit_card_off_outlined, size: 64, color: Colors.grey[300]),
-             const SizedBox(height: 16),
-             const Text("No debit card transactions found", style: TextStyle(color: Colors.grey)),
+            Icon(Icons.credit_card_off_outlined,
+                size: 64, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            const Text("No debit card transactions found",
+                style: TextStyle(color: Colors.grey)),
           ],
         ),
       );
@@ -592,7 +627,7 @@ class _DebitCardsTab extends StatelessWidget {
               totalCredit: 0,
               txCount: card.txCount,
             ),
-             onTap: () => onCardTap(card.bank, card.bank),
+            onTap: () => onCardTap(card.bank, card.bank),
           ),
         );
       },
@@ -615,9 +650,9 @@ class _DebitCardsTab extends StatelessWidget {
       if (e.issuerBank == null) continue;
       // Skip if explicitly Credit Card
       if (e.instrument?.toLowerCase().contains('credit') ?? false) continue;
-      
+
       final key = '${e.issuerBank}_${e.cardLast4 ?? "XXXX"}';
-      
+
       /*
        * Heuristic: If we don't know it's credit, and it has a bank, 
        * we treat it as debit/account for now or just generic.

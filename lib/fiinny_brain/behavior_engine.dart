@@ -10,18 +10,18 @@ class BehaviorReport {
   });
 
   Map<String, dynamic> toJson() => {
-    'savingsRate': savingsRate,
-    'expenseToIncomeRatio': expenseToIncomeRatio,
-    'riskFlags': riskFlags,
-  };
+        'savingsRate': savingsRate,
+        'expenseToIncomeRatio': expenseToIncomeRatio,
+        'riskFlags': riskFlags,
+      };
 }
 
 class BehaviorEngine {
   // Risk flag constants (enum-like)
-  static const String LOW_SAVINGS = 'LOW_SAVINGS';
-  static const String HIGH_SPENDING = 'HIGH_SPENDING';
-  static const String INCOME_UNSTABLE = 'INCOME_UNSTABLE';
-  static const String NO_EMERGENCY_BUFFER = 'NO_EMERGENCY_BUFFER';
+  static const String lowSavings = 'LOW_SAVINGS';
+  static const String highSpending = 'HIGH_SPENDING';
+  static const String incomeUnstable = 'INCOME_UNSTABLE';
+  static const String noEmergencyBuffer = 'NO_EMERGENCY_BUFFER';
 
   static BehaviorReport analyze(double income, double expense) {
     // Guard against negative values
@@ -36,25 +36,25 @@ class BehaviorEngine {
       // Calculate metrics
       savingsRate = ((income - expense) / income) * 100;
       expenseRatio = (expense / income) * 100;
-      
+
       // Clamp to reasonable ranges
       savingsRate = savingsRate.clamp(-100.0, 100.0);
       expenseRatio = expenseRatio.clamp(0.0, 200.0);
-      
+
       // Risk Flags (additive, not mutually exclusive)
       if (savingsRate < 5) {
-        risks.add(LOW_SAVINGS);
+        risks.add(lowSavings);
       }
       if (expenseRatio > 90) {
-        risks.add(HIGH_SPENDING);
+        risks.add(highSpending);
       }
       // TODO: INCOME_UNSTABLE requires historical data analysis
       // TODO: NO_EMERGENCY_BUFFER requires savings account balance
     } else {
       // No income scenario
       if (expense > 0) {
-        risks.add(LOW_SAVINGS);
-        risks.add(HIGH_SPENDING);
+        risks.add(lowSavings);
+        risks.add(highSpending);
       }
       // Negative savings rate when no income
       savingsRate = -100.0;

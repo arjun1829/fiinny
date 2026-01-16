@@ -9,14 +9,14 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool diamondOverlay;
 
   const CustomAppBar({
-    Key? key,
+    super.key,
     required this.title,
     this.action,
     this.leading,
     this.height = 86,
     this.backgroundGradient,
     this.diamondOverlay = false,
-  }) : super(key: key);
+  });
 
   @override
   Size get preferredSize => Size.fromHeight(height);

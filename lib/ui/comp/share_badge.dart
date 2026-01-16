@@ -219,11 +219,10 @@ class _Face {
 class _Facepile extends StatelessWidget {
   final List<_Face> faces;
   final Color color;
-  final double size;
+  final double size = 24.0;
   const _Facepile({
     required this.faces,
     required this.color,
-    this.size = 24.0,
   });
 
   @override

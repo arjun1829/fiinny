@@ -135,7 +135,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         userPhone = phoneId; // show phone even if doc missing
       }
     }
-    setState(() => _loading = false);
+    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _updateProfile({
@@ -156,7 +156,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (email != null) 'email': email,
       if (phone != null) 'phone': phone,
     }, SetOptions(merge: true));
-    setState(() => _saving = false);
+    if (mounted) setState(() => _saving = false);
   }
 
   // Theme persistence is now handled by ThemeProvider
@@ -208,7 +208,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text("Image upload failed: $e")));
     }
-    setState(() => _saving = false);
+    if (mounted) setState(() => _saving = false);
   }
 
   void _pickAvatar() async {
@@ -1109,7 +1109,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               cta: () async {
                 await Clipboard.setData(
                     const ClipboardData(text: "support@fiinny.app"));
-                if (!mounted) return;
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                       content: Text("Support email copied to clipboard")),

@@ -86,19 +86,6 @@ class _SleekAdCardState extends State<SleekAdCard> {
     });
   }
 
-  Future<bool> _computeFallback() async {
-    if (kIsWeb) return false;
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-      try {
-        return await RemoteFlags.instance
-            .get<bool>('adsEnabledIOS', fallback: true);
-      } catch (_) {
-        return true;
-      }
-    }
-    return true;
-  }
-
   void _ensureAdInitialization() {
     if (_initializationRequested) return;
     if (AdService.isReady && AdService.I.isEnabled) return;

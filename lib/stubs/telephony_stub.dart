@@ -28,12 +28,12 @@ class SmsMessage {
 }
 
 enum SmsColumn {
-  ADDRESS,
-  BODY,
-  DATE,
-  ID,
-  THREAD_ID,
-  READ,
+  address,
+  body,
+  date,
+  id,
+  threadId,
+  read,
   // Add others if needed
 }
 
@@ -42,8 +42,8 @@ class OrderBy {
 }
 
 enum Sort {
-  ASC,
-  DESC,
+  asc,
+  desc,
 }
 
 class SmsFilter {

@@ -73,6 +73,7 @@ class SettleUpFlowV2Launcher {
         ? friendAvatarUrl
         : (friend.avatar.startsWith('http') ? friend.avatar : null);
     final subtitle = friendSubtitle ?? friend.phone;
+    if (!context.mounted) return null;
     final settled = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -137,6 +138,8 @@ class SettleUpFlowV2Launcher {
       return null;
     }
 
+    if (!context.mounted) return null;
+
     final choice = options.length == 1
         ? options.first
         : await _promptMemberChoice(
@@ -145,6 +148,8 @@ class SettleUpFlowV2Launcher {
             members: members,
             memberDisplayNames: memberDisplayNames,
           );
+
+    if (!context.mounted) return null;
 
     if (choice == null) {
       return false;

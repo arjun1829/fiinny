@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class EMIPlanScreen extends StatelessWidget {
   final double amount;
-  const EMIPlanScreen({Key? key, required this.amount}) : super(key: key);
+  const EMIPlanScreen({super.key, required this.amount});
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +28,8 @@ class EMIPlanScreen extends StatelessWidget {
                   onPressed: () {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                          content: Text("Selected: ₹${monthly.toStringAsFixed(0)} × $m")),
+                          content: Text(
+                              "Selected: ₹${monthly.toStringAsFixed(0)} × $m")),
                     );
                     Navigator.pop(context);
                   },

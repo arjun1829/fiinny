@@ -69,6 +69,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await NotificationService.requestPermissionLight();
+      if (!context.mounted) return;
       for (final d in _onboardData) {
         precacheImage(AssetImage(d['image']!), context);
       }

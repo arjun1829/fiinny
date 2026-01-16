@@ -8,15 +8,16 @@ class CrisisModeScreen extends StatelessWidget {
   final double salary;
 
   const CrisisModeScreen({
-    Key? key,
+    super.key,
     required this.userId,
     required this.creditCardBill,
     required this.salary,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
-    final double riskRatio = creditCardBill / (salary != 0 ? salary : 1); // avoid divide-by-zero
+    final double riskRatio =
+        creditCardBill / (salary != 0 ? salary : 1); // avoid divide-by-zero
 
     return Scaffold(
       appBar: AppBar(
@@ -45,7 +46,8 @@ class CrisisModeScreen extends StatelessWidget {
             // Survival Mode Option
             CrisisOptionCard(
               title: "Survival Mode",
-              subtitle: "Pay full now. We'll help you limit spending for the month.",
+              subtitle:
+                  "Pay full now. We'll help you limit spending for the month.",
               icon: Icons.shield_rounded,
               isActive: true, // If you want to highlight it
               onTap: () {
@@ -66,7 +68,8 @@ class CrisisModeScreen extends StatelessWidget {
             // Convert to EMI Option
             CrisisOptionCard(
               title: "Convert to EMI",
-              subtitle: "Break large payment into smaller parts. We'll create a plan.",
+              subtitle:
+                  "Break large payment into smaller parts. We'll create a plan.",
               icon: Icons.autorenew_rounded,
               isActive: false,
               onTap: () {
@@ -90,7 +93,8 @@ class CrisisModeScreen extends StatelessWidget {
             if (riskRatio > 2.0)
               const Text(
                 "⚠️ This bill is over 2X your income. Urgent action needed!",
-                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                style:
+                    TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
               ),
           ],
         ),

@@ -269,7 +269,7 @@ class _HiddenChargesReviewSheetState extends State<HiddenChargesReviewSheet> {
                                     _items.removeWhere((e) => e.id == id);
                                   }
                                   _applyFilters();
-                                  if (mounted) {
+                                  if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                           content: Text(
@@ -344,9 +344,11 @@ class _HiddenChargesReviewSheetState extends State<HiddenChargesReviewSheet> {
                                                 e.id,
                                                 'hidden_charge_suggestions',
                                                 'dismissed');
-                                            setState(() => _items.removeWhere(
-                                                (x) => x.id == e.id));
-                                            _applyFilters();
+                                            if (mounted) {
+                                              setState(() => _items.removeWhere(
+                                                  (x) => x.id == e.id));
+                                              _applyFilters();
+                                            }
                                           }
                                         },
                                         itemBuilder: (_) => const [

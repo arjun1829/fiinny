@@ -98,7 +98,9 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
     final ids = <String>{widget.userPhone.trim()};
     for (final phone in widget.participantUserIds) {
       final trimmed = phone.trim();
-      if (trimmed.isNotEmpty) ids.add(trimmed);
+      if (trimmed.isNotEmpty) {
+        ids.add(trimmed);
+      }
     }
     return ids.where((e) => e.isNotEmpty).toList();
   }
@@ -286,8 +288,11 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
 
   Future<void> _scrollTo(GlobalKey key) async {
     await Future.delayed(const Duration(milliseconds: 16));
+    if (!mounted) return;
     final ctx = key.currentContext;
-    if (ctx == null) return;
+    if (ctx == null) {
+      return;
+    }
     await Scrollable.ensureVisible(
       ctx,
       alignment: 0,
@@ -342,7 +347,12 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
         child: child!,
       ),
     );
-    if (picked == null) return;
+    if (picked == null) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
 
     setState(() {
       _pickedCalendarDate = picked;
@@ -365,7 +375,9 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
   Future<void> _pickTime() async {
     final t = await showTimePicker(context: context, initialTime: _time);
     if (t != null) {
-      setState(() => _time = t);
+      if (mounted) {
+        setState(() => _time = t);
+      }
     }
   }
 
@@ -435,6 +447,9 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
       );
 
       final toUpload = File(compressed?.path ?? original.path);
+      if (!mounted) {
+        return;
+      }
       setState(() => _attachedImage = toUpload);
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -449,7 +464,9 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
         SettableMetadata(contentType: 'image/jpeg'),
       );
       final url = await task.ref.getDownloadURL();
-      setState(() => _attachmentDownloadUrl = url);
+      if (mounted) {
+        setState(() => _attachmentDownloadUrl = url);
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -575,7 +592,9 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
         }
       }
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       Navigator.pop(context, item);
     } catch (e) {
       if (!mounted) {
@@ -1356,7 +1375,6 @@ class _SummaryCard extends StatelessWidget {
   final int participantCount;
 
   const _SummaryCard({
-    Key? key,
     required this.title,
     required this.frequency,
     required this.amount,
@@ -1368,7 +1386,7 @@ class _SummaryCard extends StatelessWidget {
     this.userAmt,
     this.friendAmt,
     this.participantCount = 0,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

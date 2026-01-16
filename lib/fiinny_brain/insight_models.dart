@@ -1,15 +1,15 @@
 /// Available categories for insights
 enum InsightCategory {
-  RISK,
-  OPPORTUNITY,
-  INFO,
+  risk,
+  opportunity,
+  info,
 }
 
 /// Severity levels for insights
 enum InsightSeverity {
-  LOW,
-  MEDIUM,
-  HIGH,
+  low,
+  medium,
+  high,
 }
 
 /// Represents a single generated insight derived from the user snapshot.

@@ -13,7 +13,7 @@ import 'main_nav_screen.dart';
 import '../services/friend_service.dart';
 
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({Key? key}) : super(key: key);
+  const OnboardingScreen({super.key});
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -325,11 +325,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                                   filledBorder: filledField,
                                 ),
                                 validator: (val) {
-                                  if (val == null || val.trim().isEmpty)
+                                  if (val == null || val.trim().isEmpty) {
                                     return "Please enter your email";
+                                  }
                                   if (!RegExp(r'^[^@]+@[^@]+\.[^@]+')
-                                      .hasMatch(val))
+                                      .hasMatch(val)) {
                                     return "Enter a valid email";
+                                  }
                                   return null;
                                 },
                               ),
@@ -346,10 +348,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             filledBorder: filledField,
                           ),
                           validator: (v) {
-                            if (v == null || v.trim().isEmpty)
+                            if (v == null || v.trim().isEmpty) {
                               return "Please enter your phone number";
-                            if (v.trim().length < 10)
+                            }
+                            if (v.trim().length < 10) {
                               return "Enter a valid phone number";
+                            }
                             return null;
                           },
                         ),

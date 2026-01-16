@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:lifemap/ui/tokens.dart' show AppColors, AppSpacing;
+import 'package:lifemap/ui/tokens.dart' show AppSpacing;
 
 class ConfirmMarkReceivedDialog extends StatelessWidget {
   const ConfirmMarkReceivedDialog({

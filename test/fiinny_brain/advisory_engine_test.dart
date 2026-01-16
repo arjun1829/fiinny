@@ -16,13 +16,37 @@ void main() {
       double totalOwedToYou = 0.0,
     }) {
       return FiinnyUserSnapshot(
-        incomeSummary: IncomeSummary(total: income, salaryIncome: income, otherIncome: 0, transactionCount: 1),
-        expenseSummary: const ExpenseSummary(total: 8000, transferAmount: 0, transactionCount: 1, transferCount: 0),
-        transactionInsights: const TransactionInsights(categoryBreakdown: {}, totalTransactions: 1, incomeTransactions: 1, expenseTransactions: 0, transferTransactions: 0),
-        patterns: PatternSummary(subscriptions: [], highSpendCategories: highSpendCategories, categorySpendPercentage: categoryPct),
-        behavior: BehaviorMetrics(savingsRate: savingsRate, expenseToIncomeRatio: 100 - savingsRate, riskFlags: []),
-        goals: const GoalStatusSummary(goals: [], totalGoals: 0, onTrackGoals: 0, offTrackGoals: 0),
-        splits: SplitStatusSummary(netBalances: {}, totalOwedToYou: totalOwedToYou, totalYouOwe: 0, friendCount: 0),
+        incomeSummary: IncomeSummary(
+            total: income,
+            salaryIncome: income,
+            otherIncome: 0,
+            transactionCount: 1),
+        expenseSummary: const ExpenseSummary(
+            total: 8000,
+            transferAmount: 0,
+            transactionCount: 1,
+            transferCount: 0),
+        transactionInsights: const TransactionInsights(
+            categoryBreakdown: {},
+            totalTransactions: 1,
+            incomeTransactions: 1,
+            expenseTransactions: 0,
+            transferTransactions: 0),
+        patterns: PatternSummary(
+            subscriptions: [],
+            highSpendCategories: highSpendCategories,
+            categorySpendPercentage: categoryPct),
+        behavior: BehaviorMetrics(
+            savingsRate: savingsRate,
+            expenseToIncomeRatio: 100 - savingsRate,
+            riskFlags: []),
+        goals: const GoalStatusSummary(
+            goals: [], totalGoals: 0, onTrackGoals: 0, offTrackGoals: 0),
+        splits: SplitStatusSummary(
+            netBalances: {},
+            totalOwedToYou: totalOwedToYou,
+            totalYouOwe: 0,
+            friendCount: 0),
         generatedAt: DateTime.now(),
         progress: PhaseOneProgress.current(),
       );
@@ -45,8 +69,8 @@ void main() {
       final insights = [
         const FiinnyInsight(
           id: 'LOW_SAVINGS',
-          category: InsightCategory.RISK,
-          severity: InsightSeverity.MEDIUM,
+          category: InsightCategory.risk,
+          severity: InsightSeverity.medium,
           factsUsed: ['behavior.savingsRate'],
           values: {'savingsRate': 10.0},
           actionable: true,
@@ -66,10 +90,12 @@ void main() {
       final insights = [
         const FiinnyInsight(
           id: 'HIGH_FOOD_SPEND',
-          category: InsightCategory.INFO,
-          severity: InsightSeverity.LOW,
+          category: InsightCategory.info,
+          severity: InsightSeverity.low,
           factsUsed: ['patterns.highSpendCategories'],
-          values: {'categories': ['Food']},
+          values: {
+            'categories': ['Food']
+          },
           actionable: true,
         ),
       ];
@@ -85,8 +111,8 @@ void main() {
       final insights = [
         const FiinnyInsight(
           id: 'UNSETTLED_SPLITS',
-          category: InsightCategory.INFO,
-          severity: InsightSeverity.LOW,
+          category: InsightCategory.info,
+          severity: InsightSeverity.low,
           factsUsed: ['splits.totalOwedToYou'],
           values: {'totalOwedToYou': 1500.0},
           actionable: true,
@@ -108,16 +134,16 @@ void main() {
       final insights = [
         const FiinnyInsight(
           id: 'LOW_SAVINGS',
-          category: InsightCategory.RISK,
-          severity: InsightSeverity.MEDIUM,
+          category: InsightCategory.risk,
+          severity: InsightSeverity.medium,
           factsUsed: [],
           values: {},
           actionable: true,
         ),
         const FiinnyInsight(
           id: 'UNSETTLED_SPLITS',
-          category: InsightCategory.INFO,
-          severity: InsightSeverity.LOW,
+          category: InsightCategory.info,
+          severity: InsightSeverity.low,
           factsUsed: [],
           values: {},
           actionable: true,
@@ -135,8 +161,8 @@ void main() {
       final insights = [
         const FiinnyInsight(
           id: 'UNSETTLED_SPLITS',
-          category: InsightCategory.INFO,
-          severity: InsightSeverity.LOW,
+          category: InsightCategory.info,
+          severity: InsightSeverity.low,
           factsUsed: [],
           values: {},
           actionable: true,
@@ -157,8 +183,8 @@ void main() {
       final insights = [
         const FiinnyInsight(
           id: 'LOW_SAVINGS',
-          category: InsightCategory.RISK,
-          severity: InsightSeverity.MEDIUM,
+          category: InsightCategory.risk,
+          severity: InsightSeverity.medium,
           factsUsed: [],
           values: {},
           actionable: true,

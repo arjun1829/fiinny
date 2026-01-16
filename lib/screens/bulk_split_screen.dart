@@ -18,10 +18,10 @@ class BulkSplitScreen extends StatefulWidget {
   final List<ExpenseItem> expenses;
 
   const BulkSplitScreen({
-    Key? key,
+    super.key,
     required this.userPhone,
     required this.expenses,
-  }) : super(key: key);
+  });
 
   @override
   State<BulkSplitScreen> createState() => _BulkSplitScreenState();
@@ -47,7 +47,7 @@ class _BulkSplitScreenState extends State<BulkSplitScreen> {
   List<String> _labels = ['Trip', 'Food', 'Weekend', 'Office', 'Home'];
 
   bool _loading = true;
-  bool _saving = false;
+  final bool _saving = false;
 
   @override
   void initState() {
@@ -60,14 +60,17 @@ class _BulkSplitScreenState extends State<BulkSplitScreen> {
   Future<void> _loadData() async {
     final fs = context.read<FriendService>();
     final gs = context.read<GroupService>();
-    
+
     // Asynchronous fetch
     final friends = await fs.getAllFriendsForUser(widget.userPhone);
     final groups = await gs.fetchUserGroups(widget.userPhone);
 
     // Labels mock - normally fetched from existing expenses or prefs
     // For now use static list + unique labels from passed expenses?
-    final exist = widget.expenses.map((e) => e.label ?? '').where((l) => l.isNotEmpty).toSet();
+    final exist = widget.expenses
+        .map((e) => e.label ?? '')
+        .where((l) => l.isNotEmpty)
+        .toSet();
     if (exist.isNotEmpty) {
       _labels = {..._labels, ...exist}.toList();
     }
@@ -86,9 +89,16 @@ class _BulkSplitScreenState extends State<BulkSplitScreen> {
       _selectedGroupId = gId;
       if (gId != null && gId.isNotEmpty) {
         // Find group members
-        final g = _groups.firstWhere((grp) => grp.id == gId, orElse: () => GroupModel(id: '', name: '', memberPhones: [], createdBy: '', createdAt: DateTime.now()));
+        final g = _groups.firstWhere((grp) => grp.id == gId,
+            orElse: () => GroupModel(
+                id: '',
+                name: '',
+                memberPhones: [],
+                createdBy: '',
+                createdAt: DateTime.now()));
         _selectedFriendPhones.clear();
-        _selectedFriendPhones.addAll(g.memberPhones.where((m) => m != widget.userPhone));
+        _selectedFriendPhones
+            .addAll(g.memberPhones.where((m) => m != widget.userPhone));
       } else {
         // Restore manual selection
         _selectedFriendPhones.clear();
@@ -98,7 +108,9 @@ class _BulkSplitScreenState extends State<BulkSplitScreen> {
   }
 
   void _openAddFriend() async {
-    await showDialog(context: context, builder: (_) => AddFriendDialog(userPhone: widget.userPhone));
+    await showDialog(
+        context: context,
+        builder: (_) => AddFriendDialog(userPhone: widget.userPhone));
     // Refresh check handled by stream/provider usually, or reload
     _loadData(); // simple reload
   }
@@ -118,13 +130,15 @@ class _BulkSplitScreenState extends State<BulkSplitScreen> {
     // Validate?
     // At least one split person/group? Or allows resetting to private?
     // If resetting to private: friends empty, group null.
-    
+
     final result = BulkSplitResult(
       friendIds: _selectedFriendPhones,
       groupId: _selectedGroupId,
       payerPhone: _selectedPayerPhone,
       note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
-      label: _labelCtrl.text.trim().isNotEmpty ? _labelCtrl.text.trim() : _selectedLabel,
+      label: _labelCtrl.text.trim().isNotEmpty
+          ? _labelCtrl.text.trim()
+          : _selectedLabel,
     );
     Navigator.pop(context, result);
   }
@@ -145,7 +159,8 @@ class _BulkSplitScreenState extends State<BulkSplitScreen> {
         actions: [
           TextButton(
             onPressed: _loading || _saving ? null : _onSave,
-            child: const Text('Apply', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            child: const Text('Apply',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
           )
         ],
       ),
@@ -168,7 +183,8 @@ class _BulkSplitScreenState extends State<BulkSplitScreen> {
                       _selectedFriendPhones.remove(phone);
                     }
                     if ((_selectedGroupId ?? '').isEmpty) {
-                      _cachedFriendSelection = List<String>.from(_selectedFriendPhones);
+                      _cachedFriendSelection =
+                          List<String>.from(_selectedFriendPhones);
                     }
                   });
                 },

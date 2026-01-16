@@ -8,7 +8,8 @@ class AddSubscriptionScreen extends StatefulWidget {
   final String userId;
   final SubscriptionItem? existingItem; // For editing
 
-  const AddSubscriptionScreen({super.key, required this.userId, this.existingItem});
+  const AddSubscriptionScreen(
+      {super.key, required this.userId, this.existingItem});
 
   @override
   State<AddSubscriptionScreen> createState() => _AddSubscriptionScreenState();
@@ -22,7 +23,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   String _frequency = 'monthly';
   DateTime _startDate = DateTime.now();
   DateTime? _trialEndDate;
-  
+
   bool _isLoading = false;
 
   @override
@@ -54,7 +55,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 5),
     );
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() {
         if (isTrialEnd) {
           _trialEndDate = picked;
@@ -72,7 +73,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     try {
       final title = _titleCtrl.text.trim();
       final amount = double.tryParse(_amountCtrl.text.trim()) ?? 0.0;
-      
+
       final newItem = SubscriptionItem(
         id: widget.existingItem?.id, // Null if new
         title: title,
@@ -95,38 +96,46 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       } else {
         await svc.updateSubscription(widget.userId, newItem);
       }
-      
-      if (mounted) Navigator.pop(context, true);
+
+      if (context.mounted) Navigator.pop(context, true);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-  
+
   void _delete() async {
-     if (widget.existingItem == null) return;
-     final confirm = await showDialog<bool>(
-       context: context,
-       builder: (ctx) => AlertDialog(
-         title: const Text('Delete?'),
-         content: const Text('This cannot be undone.'),
-         actions: [
-           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-           TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
-         ],
-       )
-     );
-     
-     if (confirm == true) {
-       setState(() => _isLoading = true);
-       try {
-         await SubscriptionService().deleteSubscription(widget.userId, widget.existingItem!.id!);
-         if (mounted) Navigator.pop(context, true);
-       } catch (e) {
-         if (mounted) setState(() => _isLoading = false);
-       }
-     }
+    if (widget.existingItem == null) return;
+    final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+              title: const Text('Delete?'),
+              content: const Text('This cannot be undone.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Cancel')),
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Delete',
+                        style: TextStyle(color: Colors.red))),
+              ],
+            ));
+
+    if (confirm == true) {
+      setState(() => _isLoading = true);
+      try {
+        await SubscriptionService()
+            .deleteSubscription(widget.userId, widget.existingItem!.id!);
+        if (context.mounted) Navigator.pop(context, true);
+      } catch (e) {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -135,11 +144,14 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
-        title: Text(isEditing ? 'Edit Commitment' : 'Add Commitment', style: GoogleFonts.outfit()),
+        title: Text(isEditing ? 'Edit Commitment' : 'Add Commitment',
+            style: GoogleFonts.outfit()),
         backgroundColor: Colors.transparent,
         actions: [
           if (isEditing)
-            IconButton(icon: const Icon(Icons.delete, color: Colors.redAccent), onPressed: _isLoading ? null : _delete)
+            IconButton(
+                icon: const Icon(Icons.delete, color: Colors.redAccent),
+                onPressed: _isLoading ? null : _delete)
         ],
       ),
       body: SingleChildScrollView(
@@ -155,8 +167,10 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Name',
                   labelStyle: TextStyle(color: Colors.white54),
-                  enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
-                  focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.purpleAccent)),
+                  enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white24)),
+                  focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.purpleAccent)),
                 ),
                 validator: (v) => v!.isEmpty ? 'Required' : null,
               ),
@@ -168,8 +182,10 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Amount (INR)',
                   labelStyle: TextStyle(color: Colors.white54),
-                  enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
-                  focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.purpleAccent)),
+                  enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white24)),
+                  focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.purpleAccent)),
                 ),
                 validator: (v) => v!.isEmpty ? 'Required' : null,
               ),
@@ -179,7 +195,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 dropdownColor: Colors.grey[900],
                 style: const TextStyle(color: Colors.white),
                 items: const [
-                  DropdownMenuItem(value: 'subscription', child: Text('Subscription')),
+                  DropdownMenuItem(
+                      value: 'subscription', child: Text('Subscription')),
                   DropdownMenuItem(value: 'bill', child: Text('Bill')),
                   DropdownMenuItem(value: 'trial', child: Text('Trial')),
                 ],
@@ -187,7 +204,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Type',
                   labelStyle: TextStyle(color: Colors.white54),
-                  enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                  enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white24)),
                 ),
               ),
               const SizedBox(height: 16),
@@ -205,23 +223,34 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Frequency',
                   labelStyle: TextStyle(color: Colors.white54),
-                  enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                  enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white24)),
                 ),
               ),
               const SizedBox(height: 16),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text('Next due / Start Date', style: GoogleFonts.outfit(color: Colors.white54)),
-                subtitle: Text(DateFormat('d MMM yyyy').format(_startDate), style: GoogleFonts.outfit(color: Colors.white, fontSize: 16)),
-                trailing: const Icon(Icons.calendar_today, color: Colors.purpleAccent),
+                title: Text('Next due / Start Date',
+                    style: GoogleFonts.outfit(color: Colors.white54)),
+                subtitle: Text(DateFormat('d MMM yyyy').format(_startDate),
+                    style:
+                        GoogleFonts.outfit(color: Colors.white, fontSize: 16)),
+                trailing: const Icon(Icons.calendar_today,
+                    color: Colors.purpleAccent),
                 onTap: () => _pickDate(false),
               ),
               if (_type == 'trial') ...[
                 const SizedBox(height: 16),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: Text('Trial Ends On', style: GoogleFonts.outfit(color: Colors.white54)),
-                  subtitle: Text(_trialEndDate != null ? DateFormat('d MMM yyyy').format(_trialEndDate!) : 'Not set', style: GoogleFonts.outfit(color: Colors.white, fontSize: 16)),
+                  title: Text('Trial Ends On',
+                      style: GoogleFonts.outfit(color: Colors.white54)),
+                  subtitle: Text(
+                      _trialEndDate != null
+                          ? DateFormat('d MMM yyyy').format(_trialEndDate!)
+                          : 'Not set',
+                      style: GoogleFonts.outfit(
+                          color: Colors.white, fontSize: 16)),
                   trailing: const Icon(Icons.stars, color: Colors.orangeAccent),
                   onTap: () => _pickDate(true),
                 ),
@@ -232,10 +261,13 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.purpleAccent,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: _isLoading ? null : _save,
-                  child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('Save Commitment'),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text('Save Commitment'),
                 ),
               ),
             ],

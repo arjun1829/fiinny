@@ -6,7 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:lifemap/services/notif_prefs_service.dart' as Prefs;
+import 'package:lifemap/services/notif_prefs_service.dart' as prefs;
 import 'package:lifemap/services/push/push_service.dart';
 
 /// Listens for social events (friends, shared expenses) and nudges locally.
@@ -29,21 +29,24 @@ class SocialEventsWatch {
   static Future<void> bind(String userPhone) async {
     await unbind();
 
-    final prefs = await SharedPreferences.getInstance();
-    
+    final sharedPrefs = await SharedPreferences.getInstance();
+
     // --- Restore last seen timestamps ---
     // If null (first run), we default to NOW to avoid spamming 5 years of history.
     // We subtract a small buffer (e.g. 5 seconds) to catch anything "just" happened.
-    int lastFriendTs = prefs.getInt('last_friend_ts') ?? DateTime.now().millisecondsSinceEpoch;
-    int lastExpenseTs = prefs.getInt('last_expense_ts') ?? DateTime.now().millisecondsSinceEpoch;
-    int lastJoinTs = prefs.getInt('last_join_ts') ?? DateTime.now().millisecondsSinceEpoch;
+    int lastFriendTs = sharedPrefs.getInt('last_friend_ts') ??
+        DateTime.now().millisecondsSinceEpoch;
+    int lastExpenseTs = sharedPrefs.getInt('last_expense_ts') ??
+        DateTime.now().millisecondsSinceEpoch;
+    int lastJoinTs = sharedPrefs.getInt('last_join_ts') ??
+        DateTime.now().millisecondsSinceEpoch;
 
     // Helper to persist updates
     Future<void> updateTs(String key, int ts) async {
-       await prefs.setInt(key, ts);
+      await sharedPrefs.setInt(key, ts);
     }
 
-    final notifPrefs = await Prefs.NotifPrefsService.fetchForUser(_uid);
+    final notifPrefs = await prefs.NotifPrefsService.fetchForUser(_uid);
     final channels = (notifPrefs['channels'] as Map?) ?? const {};
     final partnerOn = (channels['partner_checkins'] ?? true) == true;
     final nudgeOn = (channels['settleup_nudges'] ?? true) == true;
@@ -61,9 +64,9 @@ class SocialEventsWatch {
           if (change.type != DocumentChangeType.added) continue;
           final data = change.doc.data() ?? {};
           final addedAt = _tsOrNow(data['createdAt']);
-          
+
           if (addedAt.millisecondsSinceEpoch <= lastFriendTs) continue;
-          
+
           // Update cursor immediately
           if (addedAt.millisecondsSinceEpoch > lastFriendTs) {
             lastFriendTs = addedAt.millisecondsSinceEpoch;
@@ -109,8 +112,9 @@ class SocialEventsWatch {
           _seenExpense.add(id);
 
           final data = change.doc.data() ?? {};
-          final sortDate = _tsOrNow(data['createdAt'] ?? data['updatedAt'] ?? data['date']);
-          
+          final sortDate =
+              _tsOrNow(data['createdAt'] ?? data['updatedAt'] ?? data['date']);
+
           if (sortDate.millisecondsSinceEpoch <= lastExpenseTs) continue;
 
           if (sortDate.millisecondsSinceEpoch > lastExpenseTs) {
@@ -119,7 +123,8 @@ class SocialEventsWatch {
           }
 
           final payer = (data['payerId'] ?? '') as String;
-          final friendIds = ((data['friendIds'] ?? const []) as List).cast<String>();
+          final friendIds =
+              ((data['friendIds'] ?? const []) as List).cast<String>();
           final you = userPhone;
 
           final itAffectsMe = payer == you || friendIds.contains(you);
@@ -130,7 +135,8 @@ class SocialEventsWatch {
 
           final amount = (data['amount'] as num?)?.toDouble() ?? 0;
           final label =
-              ((data['label'] ?? data['category'] ?? 'Expense') as String).trim();
+              ((data['label'] ?? data['category'] ?? 'Expense') as String)
+                  .trim();
           var who = (data['counterparty'] ?? '').toString().trim();
           if (who.isEmpty) {
             who = 'Your friend';
@@ -169,7 +175,7 @@ class SocialEventsWatch {
         final data = change.doc.data() ?? {};
         final claimedAt = _tsOrNow(data['claimedAt']);
         if (claimedAt.millisecondsSinceEpoch <= lastJoinTs) continue;
-        
+
         if (claimedAt.millisecondsSinceEpoch > lastJoinTs) {
           lastJoinTs = claimedAt.millisecondsSinceEpoch;
           unawaited(updateTs('last_join_ts', lastJoinTs));
@@ -200,21 +206,17 @@ class SocialEventsWatch {
         final data = change.doc.data();
         final map = data ?? const <String, dynamic>{};
         final createdAt = _tsOrNow(map['createdAt']);
-        
+
         if (createdAt.millisecondsSinceEpoch <= lastJoinTs) continue;
-        
+
         if (createdAt.millisecondsSinceEpoch > lastJoinTs) {
-           lastJoinTs = createdAt.millisecondsSinceEpoch;
-           unawaited(updateTs('last_join_ts', lastJoinTs));
+          lastJoinTs = createdAt.millisecondsSinceEpoch;
+          unawaited(updateTs('last_join_ts', lastJoinTs));
         }
 
         final a = (map['a'] ?? '').toString();
         final b = (map['b'] ?? '').toString();
-        final other = a == userPhone
-            ? b
-            : (b == userPhone
-                ? a
-                : '');
+        final other = a == userPhone ? b : (b == userPhone ? a : '');
         if (other.isEmpty) continue;
         if (_seenJoins.contains(other)) continue;
         _seenJoins.add(other);

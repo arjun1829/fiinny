@@ -18,8 +18,8 @@ class AddExpenseScreen extends StatefulWidget {
     this.groupId,
     this.groupMembers,
     this.preselectedFriendIds,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<AddExpenseScreen> createState() => _AddExpenseScreenState();

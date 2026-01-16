@@ -1,10 +1,10 @@
 /// Result of entity resolution with support for ambiguous matches
 class EntityResolution<T> {
-  final T? value;                    // Resolved value (if unique match)
-  final List<T> candidates;          // All possible matches
-  final bool needsClarification;     // True if multiple matches found
-  final String? errorMessage;        // Error if resolution failed
-  final double? confidence;          // Match confidence (0-1)
+  final T? value; // Resolved value (if unique match)
+  final List<T> candidates; // All possible matches
+  final bool needsClarification; // True if multiple matches found
+  final String? errorMessage; // Error if resolution failed
+  final double? confidence; // Match confidence (0-1)
 
   const EntityResolution({
     this.value,
@@ -45,14 +45,15 @@ class EntityResolution<T> {
 
   bool get isSuccess => value != null && !needsClarification;
   bool get isAmbiguous => needsClarification && candidates.length > 1;
-  bool get isNotFound => value == null && candidates.isEmpty && !needsClarification;
+  bool get isNotFound =>
+      value == null && candidates.isEmpty && !needsClarification;
 }
 
 /// Candidate match with metadata
 class MatchCandidate<T> {
   final T value;
   final String displayName;
-  final double score;                // Match score (0-1, higher = better)
+  final double score; // Match score (0-1, higher = better)
   final MatchType matchType;
 
   const MatchCandidate({
@@ -64,10 +65,10 @@ class MatchCandidate<T> {
 }
 
 enum MatchType {
-  EXACT,           // Exact match
-  STARTS_WITH,     // Starts with query
-  CONTAINS,        // Contains query
-  FUZZY,           // Fuzzy match (Levenshtein)
+  exact, // Exact match
+  startsWith, // Starts with query
+  contains, // Contains query
+  fuzzy, // Fuzzy match (Levenshtein)
 }
 
 /// Friend resolution result with contact info

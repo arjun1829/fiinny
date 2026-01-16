@@ -64,7 +64,7 @@ class _CreditCardDetailsScreenState extends State<CreditCardDetailsScreen> {
                 useSafeArea: true,
                 builder: (_) => AddCardSheet(userId: widget.userId),
               );
-              if (added == true) await _load();
+              if (added == true && mounted) await _load();
             },
           ),
         ],
@@ -129,8 +129,8 @@ class _CardTileState extends State<_CardTile> {
         ? 'Overdue by ${DateTime.now().difference(widget.card.dueDate).inDays}d'
         : 'Due in ${days}d';
 
-    final paid = _latest?.paidAmount ??
-        (widget.card.isPaid ? widget.card.totalDue : 0);
+    final paid =
+        _latest?.paidAmount ?? (widget.card.isPaid ? widget.card.totalDue : 0);
     final total = _latest?.totalDue ?? widget.card.totalDue;
     final progress = total <= 0 ? 1.0 : (paid / total).clamp(0.0, 1.0);
 
@@ -189,8 +189,8 @@ class _CardTileState extends State<_CardTile> {
               false;
           if (ok) {
             final latest = _latest;
-            await widget.svc
-                .markCardBillPaid(widget.userId, widget.card.id, DateTime.now());
+            await widget.svc.markCardBillPaid(
+                widget.userId, widget.card.id, DateTime.now());
             if (latest != null) {
               await CardDueNotifier(widget.svc, widget.notificationService)
                   .cancelFor(widget.card.id, latest.id);
@@ -198,7 +198,7 @@ class _CardTileState extends State<_CardTile> {
             await CardDueNotifier(widget.svc, widget.notificationService)
                 .scheduleAll(widget.userId);
             await _load();
-            if (!mounted) return;
+            if (!context.mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Marked paid')),
             );

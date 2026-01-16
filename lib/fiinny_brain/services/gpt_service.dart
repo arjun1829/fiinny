@@ -23,7 +23,7 @@ class GptService {
 
       // 1. Prepare Input
       final input = GptInputSchema(
-        verified_insight: insight.toJson(),
+        verifiedInsight: insight.toJson(),
         rules: [
           "Do not invent numbers",
           "Do not mention goals",

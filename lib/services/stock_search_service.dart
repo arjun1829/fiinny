@@ -15,9 +15,6 @@ class StockSearchService {
       "https://query1.finance.yahoo.com/v1/finance/search";
   static const _chartBase = "https://query1.finance.yahoo.com/v8/finance/chart";
 
-  // Cache to avoid spamming
-  final Map<String, StockTickerModel> _priceCache = {};
-
   Future<List<StockTickerModel>> search(String query) async {
     if (query.trim().isEmpty) return [];
 

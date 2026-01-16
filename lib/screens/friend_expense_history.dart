@@ -44,7 +44,9 @@ class _FriendExpenseHistoryScreenState
     }
     final updated = expense.copyWith(settledFriendIds: newSettled);
     await ExpenseService().updateExpense(widget.userId, updated);
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Marked as settled!'),
@@ -117,8 +119,9 @@ class _FriendExpenseHistoryScreenState
           StreamBuilder<List<ExpenseItem>>(
             stream: _expensesStream,
             builder: (context, snapshot) {
-              if (!snapshot.hasData)
+              if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
+              }
               final expenses = snapshot.data!;
               if (expenses.isEmpty) {
                 return Center(

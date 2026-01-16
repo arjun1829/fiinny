@@ -9,13 +9,13 @@ class DashboardHeroCard extends StatelessWidget {
   final VoidCallback onFilterTap;
 
   const DashboardHeroCard({
-    Key? key,
+    super.key,
     required this.userName,
     required this.credit,
     required this.debit,
     required this.period,
     required this.onFilterTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -87,7 +87,8 @@ class DashboardHeroCard extends StatelessWidget {
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
-                    color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                    color: theme.textTheme.bodyMedium?.color
+                        ?.withValues(alpha: 0.7),
                   ),
                 ),
                 const Spacer(),
@@ -95,9 +96,11 @@ class DashboardHeroCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(18),
                   onTap: onFilterTap,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.07),
+                      color:
+                          theme.colorScheme.onSurface.withValues(alpha: 0.07),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
@@ -111,7 +114,8 @@ class DashboardHeroCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 3),
-                        const Icon(Icons.expand_more_rounded, size: 19, color: Colors.tealAccent),
+                        const Icon(Icons.expand_more_rounded,
+                            size: 19, color: Colors.tealAccent),
                       ],
                     ),
                   ),
@@ -145,7 +149,8 @@ class _RingStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double percent = maxValue == 0 ? 0 : (value / maxValue).clamp(0.0, 1.0);
+    final double percent =
+        maxValue == 0 ? 0 : (value / maxValue).clamp(0.0, 1.0);
 
     return Column(
       children: [
@@ -177,7 +182,10 @@ class _RingStat extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           label,
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textColor ?? color),
+          style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: textColor ?? color),
         ),
         Text(
           "₹${value.toStringAsFixed(0)}",
@@ -226,18 +234,24 @@ class _RingPainter extends CustomPainter {
     // Background circle
     canvas.drawArc(
       Rect.fromCircle(center: size.center(Offset.zero), radius: size.width / 2),
-      0, 2 * pi, false, bg,
+      0,
+      2 * pi,
+      false,
+      bg,
     );
     // Foreground arc
     canvas.drawArc(
       Rect.fromCircle(center: size.center(Offset.zero), radius: size.width / 2),
-      -pi / 2, 2 * pi * percent, false, fg,
+      -pi / 2,
+      2 * pi * percent,
+      false,
+      fg,
     );
   }
 
   @override
   bool shouldRepaint(_RingPainter oldDelegate) =>
       oldDelegate.percent != percent ||
-          oldDelegate.color != color ||
-          oldDelegate.strokeWidth != strokeWidth;
+      oldDelegate.color != color ||
+      oldDelegate.strokeWidth != strokeWidth;
 }

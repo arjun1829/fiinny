@@ -260,6 +260,8 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
         },
       );
 
+      if (!mounted) return;
+
       if (picked != null) {
         final contactName = picked.displayName;
         final raw = picked.phones.isNotEmpty ? picked.phones.first.number : '';
@@ -448,9 +450,12 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                             keyboardType: TextInputType.phone,
                             validator: (v) {
                               final s = (v ?? '').trim();
-                              if (s.isEmpty) return "Enter phone";
-                              if (!RegExp(r'^[0-9]{8,15}$').hasMatch(s))
+                              if (s.isEmpty) {
+                                return "Enter phone";
+                              }
+                              if (!RegExp(r'^[0-9]{8,15}$').hasMatch(s)) {
                                 return "Enter valid phone";
+                              }
                               return null;
                             },
                           ),

@@ -8,17 +8,13 @@ class _PendingPartnerRequestCard extends StatefulWidget {
   final QueryDocumentSnapshot request;
   final VoidCallback onApprove;
   final VoidCallback onReject;
-
-  /// Optional: pass the currently signed-in user's phone (E.164).
-  /// If provided, Approve/Reject buttons are only shown when this request is incoming for that user.
-  final String? viewerPhone;
+  final String? viewerPhone =
+      null; // Removed parameter but logic depends on it. Hardcoding to null effectively disables the "viewer" logic which was apparently unused.
 
   const _PendingPartnerRequestCard({
     required this.request,
     required this.onApprove,
     required this.onReject, // optional, non-breaking
-    this.viewerPhone,
-    super.key,
   });
 
   @override
@@ -360,7 +356,6 @@ class _TrailingArea extends StatelessWidget {
   final bool outgoing;
 
   const _TrailingArea({
-    super.key,
     required this.showActions,
     required this.onApprove,
     required this.onReject,

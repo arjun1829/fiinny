@@ -15,8 +15,7 @@ const Color deepTeal = Color(0xFF09857a);
 class SettleUpScreen extends StatefulWidget {
   final String userId;
   final GroupModel group;
-  const SettleUpScreen({required this.userId, required this.group, Key? key})
-      : super(key: key);
+  const SettleUpScreen({required this.userId, required this.group, super.key});
 
   @override
   State<SettleUpScreen> createState() => _SettleUpScreenState();
@@ -344,8 +343,9 @@ class _SettleUpScreenState extends State<SettleUpScreen> {
                         ),
                         ..._balances.entries.map((entry) {
                           final id = entry.key;
-                          if (id == widget.userId)
+                          if (id == widget.userId) {
                             return const SizedBox.shrink();
+                          }
                           final bal = entry.value;
                           final friend = _friends[id];
 

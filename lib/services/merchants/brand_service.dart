@@ -22,8 +22,6 @@ class BrandService {
   BrandService._();
   static final BrandService instance = BrandService._();
 
-  static const Color _defaultColor = Color(0xFF9E9E9E); // Grey
-
   /// Main registry of known brands
   /// Key = UPPERCASE Normalized Name (from MerchantAlias)
   static final Map<String, BrandProfile> _registry = {
@@ -134,7 +132,8 @@ class BrandService {
       defaultCategory: 'Groceries',
       defaultSubcategory: 'Supermarket',
     ),
-    'INSTAMART': const BrandProfile( // Swiggy Instamart often appears as just Instamart
+    'INSTAMART': const BrandProfile(
+      // Swiggy Instamart often appears as just Instamart
       id: 'instamart',
       displayName: 'Instamart',
       logoPath: 'swiggy.png', // Reuse swiggy
@@ -314,7 +313,8 @@ class BrandService {
       defaultCategory: 'Travel',
       defaultSubcategory: 'Flights',
     ),
-    'AIR INDIA': const BrandProfile( // Normalized from MerchantAlias usually
+    'AIR INDIA': const BrandProfile(
+      // Normalized from MerchantAlias usually
       id: 'air_india',
       displayName: 'Air India',
       logoPath: 'air_india.png',
@@ -531,7 +531,7 @@ class BrandService {
   String? getLogoPath(String normalizedName) {
     final p = getProfile(normalizedName);
     if (p?.logoPath != null) {
-      return 'assets/brands/${p!.logoPath}'; 
+      return 'assets/brands/${p!.logoPath}';
     }
     return null;
   }

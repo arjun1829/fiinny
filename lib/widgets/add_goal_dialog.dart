@@ -139,7 +139,9 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
         child: child!,
       ),
     );
-    if (picked != null) setState(() => _targetDate = picked);
+    if (picked != null) {
+      if (mounted) setState(() => _targetDate = picked);
+    }
   }
 
   // quick date offsets
@@ -596,7 +598,6 @@ class _PreviewRow extends StatelessWidget {
   final Color brand;
 
   const _PreviewRow({
-    super.key,
     required this.emoji,
     required this.title,
     required this.date,
@@ -665,7 +666,6 @@ class _SuggestionCard extends StatelessWidget {
   final Color brand;
 
   const _SuggestionCard({
-    super.key,
     required this.subtitle,
     required this.detail,
     required this.brand,
@@ -707,7 +707,7 @@ class _SuggestionCard extends StatelessWidget {
 class _QuickDateChip extends StatelessWidget {
   final String label;
   final int addDays;
-  const _QuickDateChip({required this.label, required this.addDays, super.key});
+  const _QuickDateChip({required this.label, required this.addDays});
 
   @override
   Widget build(BuildContext context) {

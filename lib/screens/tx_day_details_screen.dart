@@ -627,7 +627,7 @@ class _TxDayDetailsScreenState extends State<TxDayDetailsScreen> {
                             );
                             if (mounted) _recomputeForDay();
                           } catch (_) {
-                            if (!mounted) return;
+                            if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text(

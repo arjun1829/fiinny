@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:lifemap/models/subscription_item.dart';
 import 'package:lifemap/services/subscription_service.dart';
 
-enum SubscriptionEventType { start, cancel, renew, trial_start, trial_end }
+enum SubscriptionEventType { start, cancel, renew, trialStart, trialEnd }
 
 class SubscriptionEvent {
   final SubscriptionEventType type;
@@ -21,13 +21,14 @@ class SubscriptionEvent {
 }
 
 class SubscriptionScannerService {
-  static final SubscriptionScannerService instance = SubscriptionScannerService._();
+  static final SubscriptionScannerService instance =
+      SubscriptionScannerService._();
   SubscriptionScannerService._();
 
   final _subscriptionService = SubscriptionService();
 
   // ─── Knowledge Base ────────────────────────────────────────────────────────
-  
+
   static const _providers = {
     'NETFLIX': ['netflix'],
     'SPOTIFY': ['spotify'],
@@ -53,14 +54,6 @@ class SubscriptionScannerService {
 
   // ─── Regex Patterns ────────────────────────────────────────────────────────
 
-  bool _matches(String text, List<String> phrases) {
-    final t = text.toLowerCase();
-    for (var p in phrases) {
-      if (t.contains(p)) return true;
-    }
-    return false;
-  }
-  
   String? _detectProvider(String text) {
     final t = text.toLowerCase();
     for (var entry in _providers.entries) {
@@ -73,11 +66,11 @@ class SubscriptionScannerService {
 
   SubscriptionEventType? _detectType(String text) {
     final t = text.toLowerCase();
-    
+
     // Cancellation
     if (t.contains('cancell') || // cancelled, cancellation
-        t.contains('expire') || 
-        t.contains('stopped') || 
+        t.contains('expire') ||
+        t.contains('stopped') ||
         t.contains('ended') ||
         t.contains('we\'re sorry to see you go') ||
         t.contains('miss you') ||
@@ -88,34 +81,38 @@ class SubscriptionScannerService {
 
     // Trial
     if (t.contains('free trial') || t.contains('trial started')) {
-      if (t.contains('started') || t.contains('begin') || t.contains('active')) {
-         return SubscriptionEventType.trial_start;
+      if (t.contains('started') ||
+          t.contains('begin') ||
+          t.contains('active')) {
+        return SubscriptionEventType.trialStart;
       }
       if (t.contains('end') || t.contains('expir')) {
-        return SubscriptionEventType.trial_end;
+        return SubscriptionEventType.trialEnd;
       }
     }
 
     // Start / New
-    if (t.contains('welcome to') || 
-        t.contains('subscription started') || 
+    if (t.contains('welcome to') ||
+        t.contains('subscription started') ||
         (t.contains('subscription') && t.contains('confirmed'))) {
       return SubscriptionEventType.start;
     }
 
     // Renewal / Payment
-    if (t.contains('renewed') || 
-        t.contains('recurring payment') || 
+    if (t.contains('renewed') ||
+        t.contains('recurring payment') ||
         t.contains('subscription payment') ||
         t.contains('autopay') ||
         t.contains('auto-debit') ||
-        (t.contains('payment') && t.contains('successful') && t.contains('subscription'))) {
+        (t.contains('payment') &&
+            t.contains('successful') &&
+            t.contains('subscription'))) {
       return SubscriptionEventType.renew;
     }
-    
+
     // Fallback: If we detect a provider AND a payment verb, assume renewal/payment
     // This logic is handled in the main scan method
-    
+
     return null;
   }
 
@@ -131,11 +128,14 @@ class SubscriptionScannerService {
     if (provider == null) return null;
 
     var type = _detectType(body);
-    
+
     // Fallback for renewals: Provider + Payment Verb + Currency
     if (type == null) {
-      final hasPay = RegExp(r'\b(paid|debited|charged|payment|invoice|renew)\b', caseSensitive: false).hasMatch(body);
-      final hasCurrency = RegExp(r'(?:₹|rs\.?|inr)', caseSensitive: false).hasMatch(body);
+      final hasPay = RegExp(r'\b(paid|debited|charged|payment|invoice|renew)\b',
+              caseSensitive: false)
+          .hasMatch(body);
+      final hasCurrency =
+          RegExp(r'(?:₹|rs\.?|inr)', caseSensitive: false).hasMatch(body);
       if (hasPay && hasCurrency) {
         type = SubscriptionEventType.renew;
       }
@@ -145,7 +145,9 @@ class SubscriptionScannerService {
 
     // Extract Amount if possible
     double? amount;
-    final amtMatch = RegExp(r'(?:₹|rs\.?|inr)\s*([0-9,]+(?:\.\d{2})?)', caseSensitive: false).firstMatch(body);
+    final amtMatch =
+        RegExp(r'(?:₹|rs\.?|inr)\s*([0-9,]+(?:\.\d{2})?)', caseSensitive: false)
+            .firstMatch(body);
     if (amtMatch != null) {
       amount = double.tryParse(amtMatch.group(1)!.replaceAll(',', ''));
     }
@@ -165,14 +167,14 @@ class SubscriptionScannerService {
 
     switch (event.type) {
       case SubscriptionEventType.start:
-      case SubscriptionEventType.trial_start:
+      case SubscriptionEventType.trialStart:
         if (existing == null) {
-           await _addNew(userId, event);
+          await _addNew(userId, event);
         } else {
-           // Maybe reactivate?
-           if (existing.status == 'canceled' || existing.status == 'expired') {
-             await _updateStatus(userId, existing.id!, 'active');
-           }
+          // Maybe reactivate?
+          if (existing.status == 'canceled' || existing.status == 'expired') {
+            await _updateStatus(userId, existing.id!, 'active');
+          }
         }
         break;
 
@@ -184,14 +186,14 @@ class SubscriptionScannerService {
 
       case SubscriptionEventType.renew:
         if (existing != null) {
-           await _handleRenewal(userId, existing, event);
+          await _handleRenewal(userId, existing, event);
         } else {
-           // Detected a renewal for something we don't track? Add it!
-           await _addNew(userId, event);
+          // Detected a renewal for something we don't track? Add it!
+          await _addNew(userId, event);
         }
         break;
 
-      case SubscriptionEventType.trial_end:
+      case SubscriptionEventType.trialEnd:
         // Maybe notify user?
         break;
     }
@@ -202,10 +204,10 @@ class SubscriptionScannerService {
   Future<SubscriptionItem?> _findSimilar(String userId, String name) async {
     // Simple exactish match for now. Firestore doesn't do fuzzy search easily.
     // We'll fetch all (small lists usually) and filter in memory.
-    // Optimisation: maintain a map of provider_key -> sub_id in user doc? 
+    // Optimisation: maintain a map of provider_key -> sub_id in user doc?
     // For now, list size < 50, so stream is fine. Using service convenience method would be nice but it returns Stream.
     // Let's use direct query.
-    
+
     final snap = await FirebaseFirestore.instance
         .collection('users')
         .doc(userId)
@@ -213,7 +215,7 @@ class SubscriptionScannerService {
         .get();
 
     final target = name.toLowerCase();
-    
+
     for (var doc in snap.docs) {
       final item = SubscriptionItem.fromJson(doc.id, doc.data());
       final title = item.title.toLowerCase();
@@ -231,9 +233,13 @@ class SubscriptionScannerService {
       amount: event.amount ?? 0.0,
       frequency: 'monthly', // Default assumption, user can edit
       provider: event.providerName,
-      status: event.type == SubscriptionEventType.trial_start ? 'active' : 'active',
-      type: event.type == SubscriptionEventType.trial_start ? 'trial' : 'subscription',
-      nextDueAt: event.eventDate.add(const Duration(days: 30)), // Default +1 month
+      status:
+          event.type == SubscriptionEventType.trialStart ? 'active' : 'active',
+      type: event.type == SubscriptionEventType.trialStart
+          ? 'trial'
+          : 'subscription',
+      nextDueAt:
+          event.eventDate.add(const Duration(days: 30)), // Default +1 month
       anchorDate: event.eventDate,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -250,13 +256,16 @@ class SubscriptionScannerService {
         .update({'status': status, 'updatedAt': FieldValue.serverTimestamp()});
   }
 
-  Future<void> _handleRenewal(String userId, SubscriptionItem item, SubscriptionEvent event) async {
+  Future<void> _handleRenewal(
+      String userId, SubscriptionItem item, SubscriptionEvent event) async {
     final updates = <String, dynamic>{
       'updatedAt': FieldValue.serverTimestamp(),
       'status': 'active', // Ensure active
     };
 
-    if (item.nextDueAt != null && event.eventDate.isAfter(item.nextDueAt!.subtract(const Duration(days: 5)))) {
+    if (item.nextDueAt != null &&
+        event.eventDate
+            .isAfter(item.nextDueAt!.subtract(const Duration(days: 5)))) {
       // It's a renewal around the expected time. Advance schedule.
       final next = _subscriptionService.calculateNextDueDate(
           item.nextDueAt!, item.frequency, null); // uses logic in service
@@ -267,7 +276,7 @@ class SubscriptionScannerService {
           event.eventDate, item.frequency, null);
       updates['nextDueAt'] = Timestamp.fromDate(next);
     }
-    
+
     if (event.amount != null && event.amount! > 0) {
       updates['amount'] = event.amount;
     }
@@ -282,6 +291,11 @@ class SubscriptionScannerService {
 
   String _formatTitle(String provider) {
     // Capitalize properly
-    return provider.split(' ').map((w) => w.length > 1 ? w[0].toUpperCase() + w.substring(1).toLowerCase() : w).join(' ');
+    return provider
+        .split(' ')
+        .map((w) => w.length > 1
+            ? w[0].toUpperCase() + w.substring(1).toLowerCase()
+            : w)
+        .join(' ');
   }
 }

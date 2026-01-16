@@ -19,7 +19,6 @@ const Color _kBg = Color(0xFFF6F7FB);
 const Color _kText = Color(0xFF0F1E1C);
 const Color _kTeal = Color(0xFF0BAE8E);
 const Color _kIndigo = Color(0xFF6C63FF);
-const Color _kLine = Color(0x14000000);
 
 class AddFriendExpenseScreen extends StatefulWidget {
   final String userPhone;

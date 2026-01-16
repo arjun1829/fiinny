@@ -3,7 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:lifemap/ui/tokens.dart' show AppColors, AppSpacing;
+import 'package:lifemap/ui/tokens.dart' show AppSpacing;
 
 class SettleSuccessDialog extends StatefulWidget {
   const SettleSuccessDialog({super.key});

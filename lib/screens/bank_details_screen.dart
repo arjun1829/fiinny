@@ -17,13 +17,13 @@ class BankDetailsScreen extends StatefulWidget {
   final String? initialBankSlug;
 
   const BankDetailsScreen({
-    Key? key,
+    super.key,
     required this.allExpenses,
     required this.allIncomes,
     required this.userPhone,
     required this.userName,
     this.initialBankSlug,
-  }) : super(key: key);
+  });
 
   @override
   State<BankDetailsScreen> createState() => _BankDetailsScreenState();

@@ -207,8 +207,9 @@ class FiinnyBrainQueryService {
           return _formatClarificationRequest(resolution.candidates, 'friend');
         }
         if (resolution.phone != null) {
-          final amount = SplitQueryEngine.getAmountOwedBy(resolution.phone!, report);
-        if (amount > 0) {
+          final amount =
+              SplitQueryEngine.getAmountOwedBy(resolution.phone!, report);
+          if (amount > 0) {
             return "${resolution.name} currently owes you ₹${amount.toStringAsFixed(0)}";
           } else {
             return "${resolution.name} doesn't owe you anything right now.";
@@ -276,12 +277,13 @@ class FiinnyBrainQueryService {
   }) {
     // Extract search terms
     String? searchTerm;
-    if (query.contains('flight'))
+    if (query.contains('flight')) {
       searchTerm = 'flight';
-    else if (query.contains('metro'))
+    } else if (query.contains('metro')) {
       searchTerm = 'metro';
-    else if (query.contains('cab') || query.contains('uber'))
+    } else if (query.contains('cab') || query.contains('uber')) {
       searchTerm = 'cab';
+    }
 
     if (searchTerm != null) {
       // Check if expense was tracked

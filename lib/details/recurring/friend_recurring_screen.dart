@@ -904,7 +904,6 @@ class _FourCards extends StatelessWidget {
   final void Function(String key) onAdd;
 
   const _FourCards({
-    super.key,
     required this.items,
     required this.counts,
     required this.nextDue,
@@ -1025,7 +1024,6 @@ class _TypeListSheet extends StatefulWidget {
   final Future<void> Function(String) onCloseAllActiveOfType;
 
   const _TypeListSheet({
-    Key? key,
     required this.title,
     required this.type,
     required this.userPhone,
@@ -1041,7 +1039,7 @@ class _TypeListSheet extends StatefulWidget {
     required this.onEditTitle,
     required this.onDelete,
     required this.onCloseAllActiveOfType,
-  }) : super(key: key);
+  });
 
   @override
   State<_TypeListSheet> createState() => _TypeListSheetState();
@@ -1310,7 +1308,6 @@ class _ItemTile extends StatelessWidget {
   final Future<void> Function(SharedItem) onDelete;
 
   const _ItemTile({
-    Key? key,
     required this.item,
     required this.fmtDate,
     required this.onMarkPaid,
@@ -1321,7 +1318,7 @@ class _ItemTile extends StatelessWidget {
     required this.onNudgeNow,
     required this.onEditTitle,
     required this.onDelete,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

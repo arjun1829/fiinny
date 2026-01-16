@@ -351,7 +351,6 @@ class _GlassExpenseCard extends StatelessWidget {
   final void Function(ExpenseItem e)? onComment;
 
   const _GlassExpenseCard({
-    super.key,
     required this.expense,
     required this.currentUserPhone,
     required this.friendResolver,

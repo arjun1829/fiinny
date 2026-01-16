@@ -2,7 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:lifemap/ui/tokens.dart' show AppColors, AppSpacing, AppRadii;
+import 'package:lifemap/ui/tokens.dart' show AppSpacing, AppRadii;
 import 'package:lifemap/widgets/glass_card.dart';
 
 import 'confirm_mark_received_dialog.dart';

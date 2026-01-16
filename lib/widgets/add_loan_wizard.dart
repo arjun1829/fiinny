@@ -9,7 +9,7 @@ const Color kBg = Color(0xFFF8FAF9);
 const Color kPrimary = Color(0xFF09857a);
 const Color kText = Color(0xFF0F1E1C);
 const Color kSubtle = Color(0xFF9AA5A1);
-const Color kLine = Color(0x14000000);
+const Color kLine = Color(0xFFE0E0E0);
 
 /// Lightweight draft object the wizard edits and returns
 class AddLoanDraft {
@@ -156,9 +156,9 @@ class _AddLoanWizardState extends State<AddLoanWizard> {
 
   // ---------- draft build ----------
   AddLoanDraft _draft() {
-    double? _toD(String s) =>
+    double? toD(String s) =>
         s.trim().isEmpty ? null : double.tryParse(s.trim());
-    int? _toI(String s) => s.trim().isEmpty ? null : int.tryParse(s.trim());
+    int? toI(String s) => s.trim().isEmpty ? null : int.tryParse(s.trim());
 
     return AddLoanDraft(
       title: _title.text.trim(),
@@ -166,11 +166,11 @@ class _AddLoanWizardState extends State<AddLoanWizard> {
       lenderName:
           _lenderName.text.trim().isEmpty ? null : _lenderName.text.trim(),
       amount: double.tryParse(_amount.text.trim()) ?? 0,
-      originalAmount: _toD(_original.text),
-      emi: _toD(_emi.text),
-      interestRate: _toD(_rate.text),
-      tenureMonths: _toI(_tenure.text),
-      paymentDayOfMonth: _toI(_payDom.text),
+      originalAmount: toD(_original.text),
+      emi: toD(_emi.text),
+      interestRate: toD(_rate.text),
+      tenureMonths: toI(_tenure.text),
+      paymentDayOfMonth: toI(_payDom.text),
       finalDueDate: _finalDue,
       note: _note.text.trim().isEmpty ? null : _note.text.trim(),
       reminderEnabled: _reminders,
@@ -339,7 +339,9 @@ class _AddLoanWizardState extends State<AddLoanWizard> {
                         firstDate: DateTime(now.year - 5),
                         lastDate: DateTime(now.year + 10),
                       );
-                      if (picked != null) setState(() => _finalDue = picked);
+                      if (picked != null && context.mounted) {
+                        setState(() => _finalDue = picked);
+                      }
                     },
                     onClearDue: () => setState(() => _finalDue = null),
                     noteCtrl: _note,
@@ -375,7 +377,6 @@ class _StepBasics extends StatelessWidget {
   final VoidCallback onNext;
 
   const _StepBasics({
-    super.key,
     required this.titleCtrl,
     required this.lenderType,
     required this.onLenderType,
@@ -449,7 +450,6 @@ class _StepNumbers extends StatelessWidget {
   final VoidCallback onNext;
 
   const _StepNumbers({
-    super.key,
     required this.amountCtrl,
     required this.originalCtrl,
     required this.emiCtrl,
@@ -523,7 +523,6 @@ class _StepSchedule extends StatelessWidget {
   final VoidCallback onNext;
 
   const _StepSchedule({
-    super.key,
     required this.tenureCtrl,
     required this.payDomCtrl,
     required this.finalDue,
@@ -539,7 +538,7 @@ class _StepSchedule extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    String _dateTxt(DateTime d) =>
+    String dateTxt(DateTime d) =>
         "${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}";
 
     return SingleChildScrollView(
@@ -574,7 +573,7 @@ class _StepSchedule extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                 child: Text(
-                  finalDue == null ? 'Not set' : _dateTxt(finalDue!),
+                  finalDue == null ? 'Not set' : dateTxt(finalDue!),
                   style: TextStyle(
                     color: finalDue == null ? kSubtle : kText,
                     fontWeight: FontWeight.w700,
@@ -656,7 +655,6 @@ class _StepReview extends StatelessWidget {
   final VoidCallback onSave;
 
   const _StepReview({
-    super.key,
     required this.data,
     required this.saving,
     required this.onBack,
@@ -803,12 +801,11 @@ class _LabeledField extends StatelessWidget {
   final String? hint;
   final TextInputType? keyboardType;
   const _LabeledField({
-    Key? key,
     required this.label,
     required this.controller,
     this.hint,
     this.keyboardType,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

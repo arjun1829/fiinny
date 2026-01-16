@@ -7,7 +7,7 @@ import 'profile_screen.dart';
 
 class MainScreen extends StatefulWidget {
   final String userId;
-  const MainScreen({Key? key, required this.userId}) : super(key: key);
+  const MainScreen({super.key, required this.userId});
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -39,12 +39,14 @@ class _MainScreenState extends State<MainScreen> {
       bottomNavigationBar: DecoratedBox(
         decoration: BoxDecoration(color: theme.colorScheme.surface),
         child: Padding(
-          padding: EdgeInsets.fromLTRB(0, 8, 0, bottomInset > 0 ? bottomInset : 12),
+          padding:
+              EdgeInsets.fromLTRB(0, 8, 0, bottomInset > 0 ? bottomInset : 12),
           child: BottomNavigationBar(
             currentIndex: _selectedIndex,
             type: BottomNavigationBarType.fixed,
             selectedItemColor: theme.colorScheme.primary,
-            unselectedItemColor: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+            unselectedItemColor:
+                theme.colorScheme.onSurface.withValues(alpha: 0.7),
             showUnselectedLabels: true,
             backgroundColor: Colors.transparent,
             items: const [

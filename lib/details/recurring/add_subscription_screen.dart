@@ -257,7 +257,9 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     final ids = <String>{widget.userPhone.trim()};
     for (final phone in widget.participantUserIds) {
       final trimmed = phone.trim();
-      if (trimmed.isNotEmpty) ids.add(trimmed);
+      if (trimmed.isNotEmpty) {
+        ids.add(trimmed);
+      }
     }
     return ids.where((e) => e.isNotEmpty).toList();
   }
@@ -307,7 +309,9 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
 
   Future<void> _pickTime() async {
     final t = await showTimePicker(context: context, initialTime: _time);
-    if (t != null) setState(() => _time = t);
+    if (t != null && mounted) {
+      setState(() => _time = t);
+    }
   }
 
   Future<void> _scheduleLocalOnce({
@@ -335,7 +339,9 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
         body: 'Due on ${_fmtDate(due)}',
         payload: payload,
       );
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text(
@@ -357,7 +363,9 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
         source: ImageSource.gallery,
         imageQuality: 100, // keep source quality, we will compress ourselves
       );
-      if (x == null) return;
+      if (x == null) {
+        return;
+      }
 
       final raw = await x.readAsBytes();
 
@@ -382,7 +390,9 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       }
 
       if (out == null) {
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not compress image')),
         );
@@ -393,7 +403,9 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
         _attachmentBytes = out;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Attachment failed: $e')),
       );
@@ -401,7 +413,9 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   }
 
   Future<String?> _uploadAttachment(String newId) async {
-    if (_attachmentBytes == null) return null;
+    if (_attachmentBytes == null) {
+      return null;
+    }
     try {
       final base = _isGroup && _groupId != null
           ? 'groups/$_groupId/recurring_attachments'
@@ -423,7 +437,9 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   }
 
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
+    if (!_form.currentState!.validate()) {
+      return;
+    }
 
     final amt = _parseAmount();
     final day = (_dueDay ?? 1).clamp(1, 28);
@@ -564,15 +580,21 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
         }
       }
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       Navigator.pop(context, item);
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to save: $e')),
       );
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 

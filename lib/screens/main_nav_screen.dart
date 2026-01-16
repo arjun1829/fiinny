@@ -9,7 +9,7 @@ import 'package:lifemap/services/user_service.dart';
 
 class MainNavScreen extends StatefulWidget {
   final String userPhone;
-  const MainNavScreen({required this.userPhone, Key? key}) : super(key: key);
+  const MainNavScreen({required this.userPhone, super.key});
 
   @override
   State<MainNavScreen> createState() => _MainNavScreenState();
@@ -39,7 +39,7 @@ class _MainNavScreenState extends State<MainNavScreen>
 
     _shineControllers = List.generate(
       _iconData.length,
-          (i) => AnimationController(
+      (i) => AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 800),
       ),
@@ -47,7 +47,7 @@ class _MainNavScreenState extends State<MainNavScreen>
 
     _shineAnimations = List.generate(
       _iconData.length,
-          (i) => Tween<double>(begin: -1.2, end: 1.2).animate(
+      (i) => Tween<double>(begin: -1.2, end: 1.2).animate(
         CurvedAnimation(parent: _shineControllers[i], curve: Curves.easeInOut),
       ),
     );

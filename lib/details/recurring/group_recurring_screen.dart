@@ -46,15 +46,23 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
       final fetched = group?.memberPhones ?? const <String>[];
       for (final phone in fetched) {
         final trimmed = phone.trim();
-        if (trimmed.isNotEmpty) members.add(trimmed);
+        if (trimmed.isNotEmpty) {
+          members.add(trimmed);
+        }
       }
 
       final self = widget.currentUserPhone.trim();
-      if (self.isNotEmpty) members.add(self);
-      if (!mounted) return;
+      if (self.isNotEmpty) {
+        members.add(self);
+      }
+      if (!mounted) {
+        return;
+      }
       setState(() => _memberPhones = members.toList());
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       final fallback = widget.currentUserPhone.trim();
       setState(() => _memberPhones = fallback.isEmpty ? const [] : [fallback]);
     }
@@ -64,7 +72,9 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
     final set = <String>{};
     for (final phone in [..._memberPhones, widget.currentUserPhone]) {
       final trimmed = phone.trim();
-      if (trimmed.isNotEmpty) set.add(trimmed);
+      if (trimmed.isNotEmpty) {
+        set.add(trimmed);
+      }
     }
     return set.toList();
   }
@@ -94,8 +104,12 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
     DateTime? d;
     for (final x in it) {
       final nd = x.nextDueAt;
-      if (nd == null) continue;
-      if (d == null || nd.isBefore(d)) d = nd;
+      if (nd == null) {
+        continue;
+      }
+      if (d == null || nd.isBefore(d)) {
+        d = nd;
+      }
     }
     return d;
   }
@@ -204,8 +218,12 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
   }
 
   Future<void> _handleAddResult(dynamic res) async {
-    if (res == null) return;
-    if (!mounted) return;
+    if (res == null) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
     if (res == true || res is SharedItem) {
       setState(() {});
       ScaffoldMessenger.of(context)
@@ -227,13 +245,17 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
         await _svc.endScope(_scope, item.id);
       }
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Closed ${toEnd.length} $type item(s).')),
       );
       setState(() {});
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to close items: $e')),
       );
@@ -268,12 +290,16 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
           itemId: it.id,
           payload: {'title': controller.text.trim()},
         );
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('Updated')));
         setState(() {});
       } catch (e) {
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Failed: $e')));
       }
@@ -285,7 +311,9 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
     try {
       await _svc.markPaidScope(_scope, it.id, amount: it.rule.amount);
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Failed to mark paid: $e')));
     }
@@ -299,7 +327,9 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
         await _svc.pauseScope(_scope, it.id);
       }
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Failed to update status: $e')));
     }
@@ -309,7 +339,9 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
     try {
       await _svc.endScope(_scope, it.id);
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Failed to close: $e')));
     }
@@ -334,19 +366,25 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
     if (ok == true) {
       try {
         await _svc.deleteScope(_scope, it.id);
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('Deleted')));
         setState(() {});
       } catch (e) {
         try {
           await _svc.endScope(_scope, it.id);
-          if (!mounted) return;
+          if (!mounted) {
+            return;
+          }
           ScaffoldMessenger.of(context)
               .showSnackBar(const SnackBar(content: Text('Closed')));
           setState(() {});
         } catch (e2) {
-          if (!mounted) return;
+          if (!mounted) {
+            return;
+          }
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text('Failed: $e2')));
         }
@@ -367,11 +405,15 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
         fireAt:
             fireAt.isAfter(now) ? fireAt : now.add(const Duration(minutes: 1)),
       );
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Reminder set for ${_fmtDate(fireAt)}')));
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Failed to schedule: $e')));
     }
@@ -422,11 +464,15 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
                   body: 'This is a local test reminder.',
                   fireAt: DateTime.now().add(const Duration(seconds: 5)),
                 );
-                if (!mounted) return;
+                if (!context.mounted) {
+                  return;
+                }
                 ScaffoldMessenger.of(context)
                     .showSnackBar(const SnackBar(content: Text('Test in ~5s')));
               } catch (e) {
-                if (!mounted) return;
+                if (!context.mounted) {
+                  return;
+                }
                 ScaffoldMessenger.of(context)
                     .showSnackBar(SnackBar(content: Text('Failed: $e')));
               }
@@ -456,7 +502,9 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
           final DateTime? nextDue = _minDue(items);
           final double monthTotal = items.fold<double>(0, (s, it) {
             final due = it.nextDueAt;
-            if (due == null) return s;
+            if (due == null) {
+              return s;
+            }
             final n = DateTime.now();
             if (due.year == n.year && due.month == n.month) {
               return s + (it.rule.amount).toDouble();
@@ -465,7 +513,9 @@ class _GroupRecurringScreenState extends State<GroupRecurringScreen> {
           });
           final overdue = items.where((it) {
             final d = it.nextDueAt;
-            if (d == null) return false;
+            if (d == null) {
+              return false;
+            }
             final today = DateTime.now();
             final dd = DateTime(d.year, d.month, d.day);
             final td = DateTime(today.year, today.month, today.day);
@@ -743,7 +793,6 @@ class _FourCards extends StatelessWidget {
   final void Function(String key) onAdd;
 
   const _FourCards({
-    super.key,
     required this.items,
     required this.counts,
     required this.nextDue,
@@ -858,7 +907,6 @@ class _TypeListSheetGroup extends StatefulWidget {
   final Future<void> Function(String) onCloseAllActiveOfType;
 
   const _TypeListSheetGroup({
-    Key? key,
     required this.title,
     required this.type,
     required this.scope,
@@ -873,7 +921,7 @@ class _TypeListSheetGroup extends StatefulWidget {
     required this.onAddReminder,
     required this.onAddType,
     required this.onCloseAllActiveOfType,
-  }) : super(key: key);
+  });
 
   @override
   State<_TypeListSheetGroup> createState() => _TypeListSheetGroupState();
@@ -1079,7 +1127,6 @@ class _ItemTileGroup extends StatelessWidget {
   final Future<void> Function(SharedItem) onEditTitle;
 
   const _ItemTileGroup({
-    Key? key,
     required this.item,
     required this.fmtDate,
     required this.onMarkPaid,
@@ -1089,7 +1136,7 @@ class _ItemTileGroup extends StatelessWidget {
     required this.onScheduleNext,
     required this.onAddReminder,
     required this.onEditTitle,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

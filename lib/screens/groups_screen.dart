@@ -14,7 +14,7 @@ const Color deepTeal = Color(0xFF09857a);
 
 class GroupsScreen extends StatefulWidget {
   final String userId;
-  const GroupsScreen({required this.userId, Key? key}) : super(key: key);
+  const GroupsScreen({required this.userId, super.key});
 
   @override
   State<GroupsScreen> createState() => _GroupsScreenState();
@@ -229,7 +229,8 @@ class _GlassDiamondCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(19),
-        border: Border.all(color: tiffanyBlue.withValues(alpha: 0.13), width: 1.5),
+        border:
+            Border.all(color: tiffanyBlue.withValues(alpha: 0.13), width: 1.5),
         color: Colors.white.withValues(alpha: 0.19),
         boxShadow: [
           BoxShadow(

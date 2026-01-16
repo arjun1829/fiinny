@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 
 import 'package:lifemap/core/flags/fx_flags.dart';
@@ -47,7 +46,8 @@ class SettleSmartSheet extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.94),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-            border: Border.all(color: const Color(0xFFE4F1EE).withValues(alpha: 0.9)),
+            border: Border.all(
+                color: const Color(0xFFE4F1EE).withValues(alpha: 0.9)),
             boxShadow: const [
               BoxShadow(
                 color: Color(0x1A000000),
@@ -78,9 +78,10 @@ class SettleSmartSheet extends StatelessWidget {
                     Expanded(
                       child: Text(
                         'Settle smart suggestions',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
                       ),
                     ),
                     IconButton(
@@ -161,7 +162,8 @@ class _SettleSmartRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayPayer = payer ?? SettleSmartParticipant.anonymous(transfer.from);
+    final displayPayer =
+        payer ?? SettleSmartParticipant.anonymous(transfer.from);
     final displayReceiver =
         receiver ?? SettleSmartParticipant.anonymous(transfer.to);
 
@@ -256,7 +258,9 @@ class _SettleSmartRow extends StatelessWidget {
                   }
                   final targetParticipant =
                       isUserPayer ? displayReceiver : displayPayer;
-                  await _openLegacySettle(hostContext, targetParticipant);
+                  if (hostContext.mounted) {
+                    await _openLegacySettle(hostContext, targetParticipant);
+                  }
                 },
                 child: Text(
                   isUserPayer ? 'Record this payment' : 'Mark as received',
@@ -351,8 +355,13 @@ class SettleSmartParticipant {
     if (fallbackEmoji != null && fallbackEmoji!.isNotEmpty) {
       return fallbackEmoji!;
     }
-    final parts = displayName.trim().split(RegExp(r"\s+")).where((p) => p.isNotEmpty).toList();
-    if (parts.isEmpty) return id.isNotEmpty ? id.characters.take(2).toString() : '?';
+    final parts = displayName
+        .trim()
+        .split(RegExp(r"\s+"))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty)
+      return id.isNotEmpty ? id.characters.take(2).toString() : '?';
     if (parts.length == 1) {
       final word = parts.first;
       return word.characters.take(2).toString().toUpperCase();
@@ -387,7 +396,8 @@ class _EmptySettleSmartState extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final outstanding = netBalances.entries
         .where((e) => e.value.abs() >= 0.01)
-        .map((e) => '${participants[e.key]?.displayName ?? e.key}: ₹${e.value.toStringAsFixed(0)}')
+        .map((e) =>
+            '${participants[e.key]?.displayName ?? e.key}: ₹${e.value.toStringAsFixed(0)}')
         .join('\n');
 
     return Padding(
@@ -407,7 +417,8 @@ class _EmptySettleSmartState extends StatelessWidget {
               isFeatureDisabled
                   ? 'Settle smart is switched off'
                   : 'All caught up!',
-              style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              style:
+                  textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Text(

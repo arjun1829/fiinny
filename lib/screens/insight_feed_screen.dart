@@ -16,10 +16,10 @@ class InsightFeedScreen extends StatefulWidget {
   final UserData userData;
 
   const InsightFeedScreen({
-    Key? key,
+    super.key,
     required this.userId,
     required this.userData,
-  }) : super(key: key);
+  });
 
   @override
   State<InsightFeedScreen> createState() => _InsightFeedScreenState();
@@ -45,6 +45,14 @@ class _InsightFeedScreenState extends State<InsightFeedScreen>
     _initSession();
   }
 
+  @override
+  void dispose() {
+    _inputController.dispose();
+    _tabController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _initSession() async {
     final sessionId = await _chatService.getOrCreateSession(widget.userId);
     if (mounted) setState(() => _currentSessionId = sessionId);
@@ -61,7 +69,7 @@ class _InsightFeedScreenState extends State<InsightFeedScreen>
         _insights = insights;
         _loadingInsights = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (mounted) setState(() => _loadingInsights = false);
     }
   }
@@ -70,7 +78,7 @@ class _InsightFeedScreenState extends State<InsightFeedScreen>
   final _picker = ImagePicker();
 
   void _openSettings() {
-    final _keyController = TextEditingController();
+    final keyController = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -80,7 +88,7 @@ class _InsightFeedScreenState extends State<InsightFeedScreen>
           children: [
             const Text("Enter Google Gemini API Key (Free):"),
             TextField(
-              controller: _keyController,
+              controller: keyController,
               decoration: const InputDecoration(hintText: "Paste Key Here"),
             ),
             const SizedBox(height: 10),
@@ -91,16 +99,16 @@ class _InsightFeedScreenState extends State<InsightFeedScreen>
         actions: [
           TextButton(
             onPressed: () async {
-              if (_keyController.text.isNotEmpty) {
+              if (keyController.text.isNotEmpty) {
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setString(
-                    'gemini_api_key', _keyController.text.trim());
+                    'gemini_api_key', keyController.text.trim());
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text("Key Saved!")));
                 }
               }
-              Navigator.pop(ctx);
+              if (context.mounted) Navigator.pop(ctx);
             },
             child: const Text("Save"),
           )
@@ -202,6 +210,8 @@ class _InsightFeedScreenState extends State<InsightFeedScreen>
             .showSnackBar(SnackBar(content: Text('Mic Error: $e'))),
       );
     }
+
+    if (!mounted) return;
 
     if (_sttAvailable) {
       setState(() => _isListening = true);

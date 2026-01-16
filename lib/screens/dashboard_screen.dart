@@ -48,9 +48,9 @@ import '../widgets/gmail_backfill_banner.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 // NEW portfolio module imports (aliased so they don't clash with your old service/model)
 import '../fiinny_assets/modules/portfolio/services/asset_service.dart'
-    as PAssetService;
+    as p_asset_service;
 import '../fiinny_assets/modules/portfolio/models/asset_model.dart'
-    as PAssetModel;
+    as p_asset_model;
 import '../fiinny_assets/modules/portfolio/models/price_quote.dart';
 import '../fiinny_assets/modules/portfolio/services/market_data_yahoo.dart';
 import 'package:provider/provider.dart';
@@ -71,7 +71,7 @@ import '../core/notifications/local_notifications.dart'
     show SystemRecurringLocalScheduler;
 
 import '../services/sms/sms_permission_helper.dart';
-import '../services/gmail_service.dart' as OldGmail;
+import '../services/gmail_service.dart' as old_gmail;
 import '../services/sms/sms_ingestor.dart';
 import '../services/sync/sync_coordinator.dart';
 
@@ -290,7 +290,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       final incomeFuture = _incomeSvc.getIncomes(widget.userPhone);
       final expenses = await expenseFuture;
       final incomes = await incomeFuture;
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         allExpenses = expenses;
@@ -369,7 +371,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       final generated = FiinnyBrainService.generateInsights(userData,
           userId: widget.userPhone);
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         goals = goalsList;
         currentGoal = goalsList.isNotEmpty ? goalsList.first : null;
@@ -437,20 +441,26 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _onSmsPermissionStatusChanged() {
-    if (!_isAndroidPlatform || !mounted) return;
+    if (!_isAndroidPlatform || !mounted) {
+      return;
+    }
     setState(() {
       _hasSmsPermission = SmsPermissionHelper.permissionStatus.value;
     });
   }
 
   Future<void> _updateSmsPermission({required bool requestPrompt}) async {
-    if (!_isAndroidPlatform || _requestingSmsPermission) return;
+    if (!_isAndroidPlatform || _requestingSmsPermission) {
+      return;
+    }
 
     if (!requestPrompt) {
       // Just refresh status without prompting
       setState(() => _requestingSmsPermission = true);
       final bool granted = await SmsPermissionHelper.hasPermissions();
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() => _requestingSmsPermission = false);
       if (granted) {
         _onPermissionGranted();
@@ -505,12 +515,16 @@ class _DashboardScreenState extends State<DashboardScreen>
       ),
     );
 
-    if (agreed != true) return; // User did not agree to disclosure
+    if (agreed != true) {
+      return;
+    }
 
     // Now it is safe to show the system prompt
     setState(() => _requestingSmsPermission = true);
     final bool granted = await SmsPermissionHelper.ensurePermissions();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() => _requestingSmsPermission = false);
 
     if (granted) {
@@ -677,7 +691,9 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   void _openInsightFeed() {
     final data = _insightUserData;
-    if (data == null) return;
+    if (data == null) {
+      return;
+    }
     Navigator.pushNamed(
       context,
       '/insights',
@@ -740,7 +756,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       final photo = (data?['photo'] as String?)?.trim();
       final avatar = (data?['avatar'] as String?)?.trim();
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         userName = (name?.isNotEmpty ?? false) ? name : "there";
         _userEmail = data?['email'];
@@ -751,7 +769,9 @@ class _DashboardScreenState extends State<DashboardScreen>
         userAvatar = url.isNotEmpty ? url : "assets/images/profile_default.png";
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         userName = "there";
         _isEmailLinked = false;
@@ -798,11 +818,13 @@ class _DashboardScreenState extends State<DashboardScreen>
       debugPrint('Gmail backfill flag read failed: $e');
     }
 
-    if (already) return;
+    if (already) {
+      return;
+    }
 
     try {
       await _setGmailStatus('running');
-      await OldGmail.GmailService()
+      await old_gmail.GmailService()
           .fetchAndStoreTransactionsFromGmail(widget.userPhone);
       await docRef.set({
         'gmailBackfillDone': true,
@@ -819,7 +841,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   // UNIFIED MANUAL SYNC (GMAIL + SMS)
   // Limited to 3 free syncs/day, then Ad-gated.
   Future<void> _handleManualSync() async {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     // --- MANUAL SYNC LIMIT LOGIC ---
     try {
@@ -827,6 +851,8 @@ class _DashboardScreenState extends State<DashboardScreen>
       final now = DateTime.now();
       final todayKey = 'manual_sync_count_${now.year}_${now.month}_${now.day}';
       final int count = prefs.getInt(todayKey) ?? 0;
+
+      if (!mounted) return;
 
       final isPremium =
           Provider.of<SubscriptionService>(context, listen: false).isPremium;
@@ -859,7 +885,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     // 1. Gmail Fetch
     try {
-      await OldGmail.GmailService()
+      await old_gmail.GmailService()
           .fetchAndStoreTransactionsFromGmail(widget.userPhone);
     } catch (e) {
       errors.add("Gmail: $e");
@@ -901,11 +927,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _loadPortfolioTotals() async {
-    final pService = PAssetService.AssetService();
+    final pService = p_asset_service.AssetService();
     final market = MarketDataYahoo();
 
     // Load new holdings from the Firestore-backed portfolio module
-    final List<PAssetModel.AssetModel> assets = await pService.loadAssets();
+    final List<p_asset_model.AssetModel> assets = await pService.loadAssets();
 
     // Build symbols to quote
     final symbols = <String>{
@@ -925,7 +951,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       total += a.quantity * ltp;
     }
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       assetCount = assets.length;
       totalAssets = total;
@@ -935,7 +963,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   // 1️⃣ --- Filtering Helpers ---
   List<ExpenseItem> _filteredExpensesForPeriod(String period) {
     final range = _periodRange(period);
-    if (range == null) return allExpenses;
+    if (range == null) {
+      return allExpenses;
+    }
     return allExpenses
         .where(
             (e) => !e.date.isBefore(range.start) && e.date.isBefore(range.end))
@@ -944,7 +974,9 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   List<IncomeItem> _filteredIncomesForPeriod(String period) {
     final range = _periodRange(period);
-    if (range == null) return allIncomes;
+    if (range == null) {
+      return allIncomes;
+    }
     return allIncomes
         .where(
             (e) => !e.date.isBefore(range.start) && e.date.isBefore(range.end))
@@ -963,7 +995,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _checkLimitWarnings() async {
-    if (_periodLimit == null || _periodLimit! <= 0) return;
+    if (_periodLimit == null || _periodLimit! <= 0) {
+      return;
+    }
     final used = periodSpendOnly;
     final ratio = used / _periodLimit!;
     final friendly = _friendlyPeriodLabel(txPeriod);
@@ -983,6 +1017,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         channelId: 'fiinny_critical',
       );
     }
+    if (!mounted) return;
+
     if (!_warned100 && ratio >= 1.0) {
       _warned100 = true;
       final message = "You've crossed the $friendly spending limit.";
@@ -1254,7 +1290,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _initDashboard() async {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() => _loading = true);
     try {
       final expenses = await _expenseSvc.getExpenses(widget.userPhone);
@@ -1292,7 +1330,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       final generatedInsights = FiinnyBrainService.generateInsights(userData,
           userId: widget.userPhone);
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         allExpenses = expenses;
         allIncomes = incomes;
@@ -1335,7 +1375,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       debugPrint('[Dashboard] loan suggestions count error: $e');
     }
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() => _loading = false);
     unawaited(_checkLimitWarnings());
     final summary = _getTxSummaryForPeriod(txPeriod);
@@ -1368,12 +1410,16 @@ class _DashboardScreenState extends State<DashboardScreen>
     } catch (e) {
       _periodLimit = null;
     }
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {});
   }
 
   Future<void> _changePeriod(String period) async {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() => txPeriod = period);
     await _loadPeriodLimit();
     _resetLimitWarnings();
@@ -1681,7 +1727,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
 
     if (result != null) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() => _savingLimit = true);
       try {
         if (result == 0.0) {
@@ -1703,9 +1751,13 @@ class _DashboardScreenState extends State<DashboardScreen>
           _periodLimit = result;
         }
       } catch (e) {
-        SnackThrottle.show(context, "Failed to save limit: $e");
+        if (mounted) {
+          SnackThrottle.show(context, "Failed to save limit: $e");
+        }
       }
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() => _savingLimit = false);
     }
     _resetLimitWarnings();
@@ -2295,7 +2347,9 @@ class _DashboardScreenState extends State<DashboardScreen>
             }
           },
           onReviewSuggestions: () async {
-            if (!mounted) return;
+            if (!mounted) {
+              return;
+            }
             // setState(() => _scanningLoans = true);
             try {
               await _loanDetector.scanAndWrite(widget.userPhone,
@@ -2303,8 +2357,12 @@ class _DashboardScreenState extends State<DashboardScreen>
               _loanSuggestionsCount =
                   await _loanDetector.pendingCount(widget.userPhone);
             } finally {
-              // if (mounted) setState(() => _scanningLoans = false);
+              // if (mounted) {
+              //   setState(() => _scanningLoans = false);
+              // }
             }
+
+            if (!mounted) return;
 
             await showModalBottomSheet(
               context: context,

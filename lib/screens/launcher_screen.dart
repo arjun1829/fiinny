@@ -16,7 +16,7 @@ import 'package:lifemap/services/push/first_surface_gate.dart';
 import 'package:lifemap/services/startup_prefs.dart';
 
 class LauncherScreen extends StatefulWidget {
-  const LauncherScreen({Key? key}) : super(key: key);
+  const LauncherScreen({super.key});
 
   @override
   State<LauncherScreen> createState() => _LauncherScreenState();
@@ -109,37 +109,30 @@ class _LauncherScreenState extends State<LauncherScreen> {
         final phone = (user.phoneNumber ?? '').trim();
 
         // Ensure canonical users/{uid} exists (for FCM token + prefs)
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .set({
+        await FirebaseFirestore.instance.collection('users').doc(uid).set({
           'uid': uid,
           'phone': phone.isNotEmpty ? phone : null,
           'updatedAt': DateTime.now().millisecondsSinceEpoch,
-        }, SetOptions(merge: true))
-            .timeout(const Duration(seconds: 3));
+        }, SetOptions(merge: true)).timeout(const Duration(seconds: 3));
 
         // Lightweight mirror at users/{phone} for legacy lookups (optional)
         if (phone.isNotEmpty) {
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(phone)
-              .set({
+          await FirebaseFirestore.instance.collection('users').doc(phone).set({
             'uid': uid,
             'phone': phone,
             'updatedAt': DateTime.now().millisecondsSinceEpoch,
             // don't force 'onboarded' here
-          }, SetOptions(merge: true))
-              .timeout(const Duration(seconds: 3));
+          }, SetOptions(merge: true)).timeout(const Duration(seconds: 3));
         }
 
         // Ensure default notification prefs (idempotent)
-        await PushBootstrap.ensureUserRoot().timeout(const Duration(seconds: 3));
+        await PushBootstrap.ensureUserRoot()
+            .timeout(const Duration(seconds: 3));
         await NotifPrefsService.ensureDefaultPrefs()
             .timeout(const Duration(seconds: 3));
-
       } catch (e) {
-        debugPrint('[Launcher] bootstrap (background) error: $e'); // never fatal
+        debugPrint(
+            '[Launcher] bootstrap (background) error: $e'); // never fatal
       }
     });
   }
@@ -157,7 +150,8 @@ class _LauncherScreenState extends State<LauncherScreen> {
     });
   }
 
-  Future<bool> _isOnboardedSafe(String primaryId, {String fallbackId = ''}) async {
+  Future<bool> _isOnboardedSafe(String primaryId,
+      {String fallbackId = ''}) async {
     try {
       final ok = await _fetchOnboarded(primaryId)
           .timeout(const Duration(seconds: 5), onTimeout: () => null);
@@ -177,7 +171,7 @@ class _LauncherScreenState extends State<LauncherScreen> {
   Future<bool?> _fetchOnboarded(String docId) async {
     try {
       final snap =
-      await FirebaseFirestore.instance.collection('users').doc(docId).get();
+          await FirebaseFirestore.instance.collection('users').doc(docId).get();
       if (!snap.exists) return false;
       final data = snap.data() ?? {};
       return data['onboarded'] == true;

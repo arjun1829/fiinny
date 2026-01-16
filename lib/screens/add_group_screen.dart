@@ -179,7 +179,7 @@ class _AddGroupScreenState extends State<AddGroupScreen> {
 // --- Glass Card for Glassmorphism effect ---
 class _GlassCard extends StatelessWidget {
   final Widget child;
-  const _GlassCard({required this.child, Key? key}) : super(key: key);
+  const _GlassCard({required this.child});
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -215,11 +215,11 @@ class FriendPicker extends StatelessWidget {
   final Function(List<String>) onChanged;
 
   const FriendPicker({
-    Key? key,
+    super.key,
     required this.friends,
     required this.selectedIds,
     required this.onChanged,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

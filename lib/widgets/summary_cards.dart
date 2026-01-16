@@ -70,7 +70,6 @@ class _SummaryCard extends StatelessWidget {
   final IconData icon;
 
   const _SummaryCard({
-    super.key,
     required this.title,
     required this.value,
     required this.color,

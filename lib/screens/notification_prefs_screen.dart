@@ -15,7 +15,8 @@ class NotificationPrefsScreen extends StatefulWidget {
   const NotificationPrefsScreen({super.key});
 
   @override
-  State<NotificationPrefsScreen> createState() => _NotificationPrefsScreenState();
+  State<NotificationPrefsScreen> createState() =>
+      _NotificationPrefsScreenState();
 }
 
 class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
@@ -26,12 +27,16 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
     final parts = hhmm.split(':');
     final now = TimeOfDay.now();
     final initial = (parts.length == 2)
-        ? TimeOfDay(hour: int.tryParse(parts[0]) ?? now.hour, minute: int.tryParse(parts[1]) ?? 0)
+        ? TimeOfDay(
+            hour: int.tryParse(parts[0]) ?? now.hour,
+            minute: int.tryParse(parts[1]) ?? 0)
         : now;
-    return showTimePicker(context: context, initialTime: initial, helpText: 'Select time');
+    return showTimePicker(
+        context: context, initialTime: initial, helpText: 'Select time');
   }
 
-  String _fmt(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  String _fmt(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   Future<void> _handlePushToggle(BuildContext context, bool value) async {
     if (_pushBusy) return;
@@ -41,9 +46,11 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
       if (value) {
         final allowed = await PushService.ensurePermissions();
         if (!allowed) {
-          if (mounted) {
+          if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Notifications are disabled. Enable them in system settings to continue.')),
+              const SnackBar(
+                  content: Text(
+                      'Notifications are disabled. Enable them in system settings to continue.')),
             );
           }
           await NotifPrefsService.setPushEnabled(false);
@@ -85,7 +92,8 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
         actions: [
           IconButton(
             tooltip: 'Test nudge',
-            icon: const Icon(Icons.notification_important_outlined, color: Colors.white),
+            icon: const Icon(Icons.notification_important_outlined,
+                color: Colors.white),
             onPressed: () => PushService.debugLocalTest(),
           ),
         ],
@@ -93,7 +101,8 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter, end: Alignment.bottomCenter,
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
             colors: [
               _accent.withValues(alpha: 0.06),
               Colors.white,
@@ -194,15 +203,15 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
             ];
 
             Widget sectionTitle(String text) => Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-              child: Text(
-                text,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: Colors.black87,
-                ),
-              ),
-            );
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+                  child: Text(
+                    text,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black87,
+                    ),
+                  ),
+                );
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(14, 10, 14, 24),
@@ -211,18 +220,21 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                   child: Row(
                     children: [
                       Container(
-                        width: 44, height: 44,
+                        width: 44,
+                        height: 44,
                         decoration: BoxDecoration(
                           color: _accent.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Center(child: Text('🔔', style: TextStyle(fontSize: 22))),
+                        child: const Center(
+                            child: Text('🔔', style: TextStyle(fontSize: 22))),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           'Control how Fiinny nudges you — keep it helpful, not spammy.',
-                          style: theme.textTheme.bodyMedium?.copyWith(height: 1.3, color: Colors.black87),
+                          style: theme.textTheme.bodyMedium
+                              ?.copyWith(height: 1.3, color: Colors.black87),
                         ),
                       ),
                     ],
@@ -234,13 +246,20 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                 _GlassCard(
                   child: SwitchListTile.adaptive(
                     activeTrackColor: _accent,
-                    title: const Text('Enable push notifications', style: TextStyle(color: Colors.black87)),
-                    subtitle: const Text('You can still see the in-app bell feed anytime.', style: TextStyle(color: Colors.black54)),
+                    title: const Text('Enable push notifications',
+                        style: TextStyle(color: Colors.black87)),
+                    subtitle: const Text(
+                        'You can still see the in-app bell feed anytime.',
+                        style: TextStyle(color: Colors.black54)),
                     secondary: _pushBusy
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2))
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2.2))
                         : null,
                     value: pushEnabled,
-                    onChanged: _pushBusy ? null : (v) => _handlePushToggle(context, v),
+                    onChanged:
+                        _pushBusy ? null : (v) => _handlePushToggle(context, v),
                   ),
                 ),
 
@@ -251,7 +270,8 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                   top: false,
                   child: AdaptiveBanner(
                     adUnitId: AdIds.banner,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   ),
                 ),
 
@@ -264,7 +284,8 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                         subtitle: cfg.subtitle,
                         value: (channels[cfg.key] as bool?) ?? true,
                         enabled: pushEnabled,
-                        onChanged: (v) => NotifPrefsService.toggleChannel(cfg.key, v),
+                        onChanged: (v) =>
+                            NotifPrefsService.toggleChannel(cfg.key, v),
                       )),
                   if (i != sections.length - 1) const SizedBox(height: 6),
                 ],
@@ -279,18 +300,24 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                       ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: Icon(Icons.nights_stay, color: _accent),
-                        title: const Text('No notifications during', style: TextStyle(color: Colors.black87)),
-                        subtitle: Text('$start – $end  ($tz)', style: const TextStyle(color: Colors.black54)),
+                        title: const Text('No notifications during',
+                            style: TextStyle(color: Colors.black87)),
+                        subtitle: Text('$start – $end  ($tz)',
+                            style: const TextStyle(color: Colors.black54)),
                         trailing: Switch.adaptive(
                           activeTrackColor: _accent,
                           value: !(start == '00:00' && end == '00:00'),
-                          onChanged: pushEnabled ? (v) async {
-                            if (v) {
-                              await NotifPrefsService.setQuietHours(start: start, end: end);
-                            } else {
-                              await NotifPrefsService.setQuietHours(start: '00:00', end: '00:00');
-                            }
-                          } : null,
+                          onChanged: pushEnabled
+                              ? (v) async {
+                                  if (v) {
+                                    await NotifPrefsService.setQuietHours(
+                                        start: start, end: end);
+                                  } else {
+                                    await NotifPrefsService.setQuietHours(
+                                        start: '00:00', end: '00:00');
+                                  }
+                                }
+                              : null,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -306,7 +333,8 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                             onTap: () async {
                               final picked = await _pickTime(context, start);
                               if (picked != null) {
-                                await NotifPrefsService.setQuietHours(start: _fmt(picked), end: end);
+                                await NotifPrefsService.setQuietHours(
+                                    start: _fmt(picked), end: end);
                               }
                             },
                           ),
@@ -317,12 +345,14 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                             onTap: () async {
                               final picked = await _pickTime(context, end);
                               if (picked != null) {
-                                await NotifPrefsService.setQuietHours(start: start, end: _fmt(picked));
+                                await NotifPrefsService.setQuietHours(
+                                    start: start, end: _fmt(picked));
                               }
                             },
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
                               color: _accent.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(10),
@@ -338,7 +368,8 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                       const SizedBox(height: 6),
                       Text(
                         'Critical alerts may bypass quiet hours.',
-                        style: theme.textTheme.bodySmall?.copyWith(color: Colors.black54),
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: Colors.black54),
                       ),
                     ],
                   ),
@@ -367,7 +398,8 @@ class _GlassCard extends StatelessWidget {
         color: Colors.white.withValues(alpha: 0.85),
         borderRadius: BorderRadius.circular(18),
         boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 14, offset: Offset(0, 6)),
+          BoxShadow(
+              color: Colors.black12, blurRadius: 14, offset: Offset(0, 6)),
         ],
         border: Border.all(color: Colors.black12.withValues(alpha: 0.05)),
       ),
@@ -404,7 +436,8 @@ class _ChannelTile extends StatelessWidget {
     return _GlassCard(
       child: ListTile(
         leading: Container(
-          width: 40, height: 40,
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(12),
@@ -420,11 +453,11 @@ class _ChannelTile extends StatelessWidget {
         ),
         subtitle: subtitle != null
             ? Text(
-          subtitle!,
-          style: TextStyle(
-            color: disabled ? Colors.black45 : Colors.black54,
-          ),
-        )
+                subtitle!,
+                style: TextStyle(
+                  color: disabled ? Colors.black45 : Colors.black54,
+                ),
+              )
             : null,
         trailing: Switch.adaptive(
           value: value,
@@ -477,25 +510,33 @@ class _TimeChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: enabled ? accent.withValues(alpha: 0.06) : Colors.grey.withValues(alpha: 0.10),
+          color: enabled
+              ? accent.withValues(alpha: 0.06)
+              : Colors.grey.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: enabled ? accent.withValues(alpha: 0.18) : Colors.grey.withValues(alpha: 0.18)),
+          border: Border.all(
+              color: enabled
+                  ? accent.withValues(alpha: 0.18)
+                  : Colors.grey.withValues(alpha: 0.18)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(label, style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: enabled ? accent : Colors.grey,
-            )),
+            Text(label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: enabled ? accent : Colors.grey,
+                )),
             const SizedBox(width: 6),
-            Text(time, style: const TextStyle(
-              fontFeatures: [FontFeature.tabularFigures()],
-              color: Colors.black87,
-              fontWeight: FontWeight.w600,
-            )),
+            Text(time,
+                style: const TextStyle(
+                  fontFeatures: [FontFeature.tabularFigures()],
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w600,
+                )),
             const SizedBox(width: 4),
-            Icon(Icons.schedule, size: 18, color: enabled ? accent : Colors.grey),
+            Icon(Icons.schedule,
+                size: 18, color: enabled ? accent : Colors.grey),
           ],
         ),
       ),

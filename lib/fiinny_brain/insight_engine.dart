@@ -4,7 +4,7 @@ import 'behavior_engine.dart';
 
 class InsightEngine {
   // Lock MVP scope: Disable goal insights for now
-  static const bool MVP_GOALS_ENABLED = false;
+  static const bool mvpGoalsEnabled = false;
 
   /// Generate insights from a snapshot using deterministic rules.
   static List<FiinnyInsight> analyze(FiinnyUserSnapshot snapshot) {
@@ -15,8 +15,8 @@ class InsightEngine {
     if (snapshot.behavior.savingsRate < 20.0) {
       insights.add(FiinnyInsight(
         id: 'LOW_SAVINGS',
-        category: InsightCategory.RISK,
-        severity: InsightSeverity.MEDIUM,
+        category: InsightCategory.risk,
+        severity: InsightSeverity.medium,
         factsUsed: ['behavior.savingsRate'],
         values: {'savingsRate': snapshot.behavior.savingsRate},
         actionable: true,
@@ -28,8 +28,8 @@ class InsightEngine {
     if (snapshot.behavior.expenseToIncomeRatio > 80.0) {
       insights.add(FiinnyInsight(
         id: 'HIGH_SPENDING',
-        category: InsightCategory.RISK,
-        severity: InsightSeverity.HIGH,
+        category: InsightCategory.risk,
+        severity: InsightSeverity.high,
         factsUsed: ['behavior.expenseToIncomeRatio'],
         values: {'expenseRatio': snapshot.behavior.expenseToIncomeRatio},
         actionable: true,
@@ -41,8 +41,8 @@ class InsightEngine {
     if (snapshot.patterns.highSpendCategories.isNotEmpty) {
       insights.add(FiinnyInsight(
         id: 'DOMINANT_EXPENSE_CATEGORY',
-        category: InsightCategory.INFO,
-        severity: InsightSeverity.LOW,
+        category: InsightCategory.info,
+        severity: InsightSeverity.low,
         factsUsed: ['patterns.highSpendCategories'],
         values: {'dominantCategories': snapshot.patterns.highSpendCategories},
         actionable: true,
@@ -56,15 +56,16 @@ class InsightEngine {
     // Actually, pattern engine defines high spend as > 30%. We just check if 'Food' is in that list.
     // Or we check % specifically? Logic: "HIGH_FOOD_SPEND".
     // I'll check if 'Food' or 'Dining' exists in highSpendCategories.
-    final foodCategories = ['Food', 'Dining', 'Restaurants', 'Groceries']; 
+    final foodCategories = ['Food', 'Dining', 'Restaurants', 'Groceries'];
     final highFood = snapshot.patterns.highSpendCategories
-        .where((c) => foodCategories.contains(c)).toList();
-    
+        .where((c) => foodCategories.contains(c))
+        .toList();
+
     if (highFood.isNotEmpty) {
-       insights.add(FiinnyInsight(
+      insights.add(FiinnyInsight(
         id: 'HIGH_FOOD_SPEND',
-        category: InsightCategory.INFO,
-        severity: InsightSeverity.LOW,
+        category: InsightCategory.info,
+        severity: InsightSeverity.low,
         factsUsed: ['patterns.highSpendCategories'],
         values: {'categories': highFood},
         actionable: true,
@@ -77,10 +78,10 @@ class InsightEngine {
     // So "UNPLANNED_SHOPPING_SPIKE" = 'Shopping' in highSpendCategories?
     // Let's assume yes for MVP static logic.
     if (snapshot.patterns.highSpendCategories.contains('Shopping')) {
-       insights.add(FiinnyInsight(
+      insights.add(FiinnyInsight(
         id: 'UNPLANNED_SHOPPING_SPIKE',
-        category: InsightCategory.RISK,
-        severity: InsightSeverity.MEDIUM,
+        category: InsightCategory.risk,
+        severity: InsightSeverity.medium,
         factsUsed: ['patterns.highSpendCategories'],
         values: {'category': 'Shopping'},
         actionable: true,
@@ -95,25 +96,26 @@ class InsightEngine {
     if (snapshot.behavior.expenseToIncomeRatio > 95.0) {
       insights.add(FiinnyInsight(
         id: 'PAYCHECK_TO_PAYCHECK',
-        category: InsightCategory.RISK,
-        severity: InsightSeverity.HIGH,
+        category: InsightCategory.risk,
+        severity: InsightSeverity.high,
         factsUsed: ['behavior.expenseToIncomeRatio'],
         values: {'expenseRatio': snapshot.behavior.expenseToIncomeRatio},
         actionable: true,
       ));
     }
-    
+
     // 7. FRIENDS_PENDING_HIGH
     // Rule: If you owe > X or are owed > X?
     // Let's say if totalPending > 1000? Or just if unsettled splits exist significantly.
-    // Prompt: "FRIENDS_PENDING_HIGH". 
+    // Prompt: "FRIENDS_PENDING_HIGH".
     // I'll check if totalPending (you owe + owed to you) > 1000.
-    final totalPending = snapshot.splits.totalYouOwe + snapshot.splits.totalOwedToYou;
+    final totalPending =
+        snapshot.splits.totalYouOwe + snapshot.splits.totalOwedToYou;
     if (totalPending > 1000) {
       insights.add(FiinnyInsight(
         id: 'FRIENDS_PENDING_HIGH',
-        category: InsightCategory.INFO,
-        severity: InsightSeverity.MEDIUM,
+        category: InsightCategory.info,
+        severity: InsightSeverity.medium,
         factsUsed: ['splits.totalYouOwe', 'splits.totalOwedToYou'],
         values: {'totalPending': totalPending},
         actionable: true,
@@ -125,8 +127,8 @@ class InsightEngine {
     if (totalPending > 0) {
       insights.add(FiinnyInsight(
         id: 'UNSETTLED_SPLITS',
-        category: InsightCategory.INFO,
-        severity: InsightSeverity.LOW,
+        category: InsightCategory.info,
+        severity: InsightSeverity.low,
         factsUsed: ['splits.totalYouOwe', 'splits.totalOwedToYou'],
         values: {
           'totalYouOwe': snapshot.splits.totalYouOwe,
@@ -140,36 +142,39 @@ class InsightEngine {
     // ----------------------
     // GOAL INSIGHTS (GUARDED)
     // ----------------------
-    if (MVP_GOALS_ENABLED) {
-        // GOAL_OFF_TRACK
-        if (snapshot.goals.offTrackGoals > 0) {
-          final offTrackNames = snapshot.goals.goals
-              .where((g) => !g.onTrack)
-              .map((g) => g.goalName)
-              .toList();
+    if (mvpGoalsEnabled) {
+      // GOAL_OFF_TRACK
+      if (snapshot.goals.offTrackGoals > 0) {
+        final offTrackNames = snapshot.goals.goals
+            .where((g) => !g.onTrack)
+            .map((g) => g.goalName)
+            .toList();
 
-          insights.add(FiinnyInsight(
-            id: 'GOAL_OFF_TRACK',
-            category: InsightCategory.RISK,
-            severity: InsightSeverity.MEDIUM,
-            factsUsed: ['goals.offTrackGoals'],
-            values: {'offTrackCount': snapshot.goals.offTrackGoals, 'goals': offTrackNames},
-            actionable: true,
-          ));
-        }
-        
-        // GOAL_BLOCKED_BY_SPENDING (Placeholder logic if implemented later)
+        insights.add(FiinnyInsight(
+          id: 'GOAL_OFF_TRACK',
+          category: InsightCategory.risk,
+          severity: InsightSeverity.medium,
+          factsUsed: ['goals.offTrackGoals'],
+          values: {
+            'offTrackCount': snapshot.goals.offTrackGoals,
+            'goals': offTrackNames
+          },
+          actionable: true,
+        ));
+      }
+
+      // GOAL_BLOCKED_BY_SPENDING (Placeholder logic if implemented later)
     }
 
     // INCOME_UNSTABLE (Keep active)
-    if (snapshot.behavior.riskFlags.contains(BehaviorEngine.INCOME_UNSTABLE)) {
+    if (snapshot.behavior.riskFlags.contains(BehaviorEngine.incomeUnstable)) {
       insights.add(FiinnyInsight(
         id: 'INCOME_UNSTABLE',
-        category: InsightCategory.RISK,
-        severity: InsightSeverity.HIGH,
+        category: InsightCategory.risk,
+        severity: InsightSeverity.high,
         factsUsed: ['behavior.riskFlags'],
         values: {'riskFlags': snapshot.behavior.riskFlags},
-        actionable: false, 
+        actionable: false,
       ));
     }
 
