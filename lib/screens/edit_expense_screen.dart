@@ -1,21 +1,17 @@
-// lib/screens/edit_expense_screen.dart
-import 'dart:ui';
-
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
-
-import '../constants/expense_categories.dart';
 import '../models/expense_item.dart';
 import '../models/friend_model.dart';
 import '../models/group_model.dart';
-import '../services/expense_service.dart';
 import '../services/friend_service.dart';
 import '../services/group_service.dart';
+import '../services/expense_service.dart';
 import '../services/parser_feedback_service.dart';
 import '../widgets/add_friend_dialog.dart';
 import '../widgets/add_group_dialog.dart';
 import '../widgets/people_selector_step.dart';
+import '../constants/expense_categories.dart';
 
-/// Shared palette (matches add screens)
 const Color kBg = Color(0xFFF8FAF9);
 const Color kPrimary = Color(0xFF09857a);
 const Color kText = Color(0xFF0F1E1C);
@@ -27,6 +23,7 @@ class EditExpenseScreen extends StatefulWidget {
   final ExpenseItem expense;
   final int initialStep;
 
+  // Maintaining compatibility with callers that might use named args or positional (though existing was named)
   const EditExpenseScreen({
     required this.userPhone,
     required this.expense,
@@ -39,20 +36,10 @@ class EditExpenseScreen extends StatefulWidget {
 }
 
 class _EditExpenseScreenState extends State<EditExpenseScreen> {
-  late final PageController _pg;
-  int _step = 0;
-  bool _loading = true;
-  bool _saving = false;
-
-  // Controllers / fields
+  // Controllers
   late TextEditingController _amountCtrl;
-  late TextEditingController _noteCtrl; // personal note (maps to comments)
   late TextEditingController _counterpartyCtrl;
-  late TextEditingController _labelCtrl;
-  late TextEditingController _customCategoryCtrl;
-  String _bankRefText = '';
-  bool _showBankReference = false;
-  String _customCategory = '';
+  late TextEditingController _noteCtrl;
 
   late DateTime _date;
   late String _category;
@@ -81,6 +68,18 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
     "Rent"
   ];
   String? _selectedLabel;
+  final List<String> steps = const ["Basics", "People", "Review"];
+
+  // New fields for wizard
+  late PageController _pg;
+  int _step = 0;
+  String _bankRefText = '';
+  bool _showBankReference = false;
+  late TextEditingController _labelCtrl;
+  late TextEditingController _customCategoryCtrl;
+  String _customCategory = '';
+  bool _loading = true;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -359,12 +358,12 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
   @override
   void dispose() {
-    _pg.dispose();
     _amountCtrl.dispose();
-    _noteCtrl.dispose();
     _counterpartyCtrl.dispose();
+    _noteCtrl.dispose();
     _labelCtrl.dispose();
     _customCategoryCtrl.dispose();
+    _pg.dispose();
     super.dispose();
   }
 
@@ -555,20 +554,20 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final steps = ['Basics', 'People', 'Review'];
     return Scaffold(
-      backgroundColor: kBg,
+      backgroundColor: const Color(0xFFF5F5F5), // Light grey bg
       appBar: AppBar(
+        backgroundColor: Colors.white,
         elevation: 0,
-        backgroundColor: kBg,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kText),
-          onPressed: _back,
-        ),
+        leading: const BackButton(color: Colors.black),
+        title: const Text("Edit Expense",
+            style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+                fontSize: 16)),
         centerTitle: true,
-        title: const Text('Edit Expense',
-            style: TextStyle(color: kText, fontWeight: FontWeight.w700)),
       ),
+
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
