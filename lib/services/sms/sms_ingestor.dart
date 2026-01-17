@@ -268,8 +268,8 @@ class SmsIngestor {
             r'(CARD\s*PAYMENT|PAYMENT\s*RECEIVED|THANK YOU.*PAYING|BILL\s*PAYMENT)')
         .hasMatch(u);
     final ccCue = u.contains('CREDIT CARD') || u.contains('CC');
-    final last4Hit = (last4 != null) &&
-        RegExp(r'\b' + RegExp.escape(last4) + r'\b').hasMatch(u);
+    final last4Hit =
+        (last4 != null) && RegExp(r'\b${RegExp.escape(last4)}\b').hasMatch(u);
     final bankHit = (bank != null) && u.contains(bank.toUpperCase());
     return payCue && (last4Hit || bankHit || ccCue);
   }
@@ -813,7 +813,7 @@ class SmsIngestor {
           amount: event.amount,
           date: event.timestamp,
           currency: event.currency,
-          regionCode: 'IN', // TODO: Get from user profile
+          regionCode: 'IN', // Default to India for now
           merchantRegex: null,
         );
 
@@ -863,7 +863,7 @@ class SmsIngestor {
     }
 
     // Use the new AndroidSmsConnector
-    // TODO: Fetch actual region from user profile
+    // Default to 'IN' until user profile support is added
     final region = RegionProfile.getByCode('IN');
     final connector = AndroidSmsConnector(region: region, userId: userPhone);
 
@@ -1210,7 +1210,7 @@ class SmsIngestor {
       amount: amount,
       date: ts,
       hints: hintParts,
-      merchantRegex: null,
+      merchantRegex: merchantRaw, // Pass the raw guess for feedback lookup
     );
 
     merchantNorm = enriched.merchantName;
@@ -1244,6 +1244,8 @@ class SmsIngestor {
       'rawPreview': preview,
       'at': Timestamp.fromDate(ts),
       if (address != null) 'address': address,
+      if (merchantRaw != null)
+        'rawMerchantGuess': merchantRaw, // Store raw guess
       if (merchantNorm.isNotEmpty) 'merchant': merchantNorm,
       if (bank != null) 'issuerBank': bank,
       if (upiVpa != null) 'upiVpa': upiVpa,

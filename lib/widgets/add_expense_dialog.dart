@@ -22,13 +22,13 @@ class AddExpenseScreen extends StatefulWidget {
   const AddExpenseScreen({
     required this.userPhone,
     required this.friends,
+    super.key,
     required this.groups,
     this.existingExpense,
     this.initialSplits,
     this.contextFriend,
     this.contextGroup,
-    Key? key,
-  }) : super(key: key);
+  });
 
   @override
   State<AddExpenseScreen> createState() => _AddExpenseScreenState();
@@ -276,7 +276,9 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
 
   // ---------------------- Submit ----------------------
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
     if (_selectedPayer == null) {
       ScaffoldMessenger.of(context)
@@ -428,10 +430,16 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
           decoration: _pillDec(label: "Amount", icon: Icons.currency_rupee),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           validator: (v) {
-            if (_step != 3) return null; // full form validate only on submit
-            if (v == null || v.trim().isEmpty) return "Enter amount";
+            if (_step != 3) {
+              return null;
+            }
+            if (v == null || v.trim().isEmpty) {
+              return "Enter amount";
+            }
             final d = double.tryParse(v.trim());
-            if (d == null || d <= 0) return "Invalid amount";
+            if (d == null || d <= 0) {
+              return "Invalid amount";
+            }
             return null;
           },
           onChanged: (v) => setState(() => _amount = double.tryParse(v) ?? 0.0),

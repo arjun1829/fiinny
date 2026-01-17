@@ -62,7 +62,6 @@ class AddRecurringHubSheet extends StatelessWidget {
                   icon: Icons.subscriptions_rounded,
                   label: 'Subscription',
                   onTap: () async {
-                    // TODO replace with your real Add Subscription screen/route
                     final res = await Navigator.pushNamed(
                         context, '/addSubscription',
                         arguments: {
@@ -78,7 +77,6 @@ class AddRecurringHubSheet extends StatelessWidget {
                   icon: Icons.receipt_long_rounded,
                   label: 'Bill / Utility',
                   onTap: () async {
-                    // TODO replace with your real Add Bill screen/route
                     final res = await Navigator.pushNamed(context, '/addBill',
                         arguments: {
                           'userId': userPhone,
@@ -93,7 +91,6 @@ class AddRecurringHubSheet extends StatelessWidget {
                   icon: Icons.repeat_rounded,
                   label: 'Custom Recurring',
                   onTap: () async {
-                    // TODO if you have a generic recurring form
                     final res = await Navigator.pushNamed(
                         context, '/addRecurringGeneric',
                         arguments: {

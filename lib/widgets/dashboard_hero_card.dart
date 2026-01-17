@@ -21,7 +21,6 @@ class DashboardHeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final double maxValue = credit > debit ? credit : debit;
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Container(
       width: double.infinity,

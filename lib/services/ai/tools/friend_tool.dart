@@ -100,7 +100,9 @@ class FriendTool {
         final int cost = (s.codeUnitAt(i) == t.codeUnitAt(j)) ? 0 : 1;
         v1[j + 1] = [v1[j] + 1, v0[j + 1] + 1, v0[j] + cost].reduce((a, b) => a < b ? a : b);
       }
-      for (int j = 0; j < v0.length; j++) v0[j] = v1[j];
+      for (int j = 0; j < v0.length; j++) {
+        v0[j] = v1[j];
+      }
     }
     return v1[t.length];
   }

@@ -9,24 +9,24 @@ class CustomDiamondCard extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
 
   const CustomDiamondCard({
-    Key? key,
+    super.key,
     required this.child,
     this.borderRadius = 22,
     this.glassGradient,
     this.isDiamondCut = false,
     this.margin,
     this.padding,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
     final shape = isDiamondCut
         ? BorderRadius.only(
-      topLeft: Radius.circular(borderRadius * 0.4),
-      topRight: Radius.circular(borderRadius * 1.2),
-      bottomLeft: Radius.circular(borderRadius * 1.2),
-      bottomRight: Radius.circular(borderRadius * 0.4),
-    )
+            topLeft: Radius.circular(borderRadius * 0.4),
+            topRight: Radius.circular(borderRadius * 1.2),
+            bottomLeft: Radius.circular(borderRadius * 1.2),
+            bottomRight: Radius.circular(borderRadius * 0.4),
+          )
         : BorderRadius.circular(borderRadius);
 
     return Container(

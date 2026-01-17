@@ -21,14 +21,15 @@ class FinancialRingWidget extends StatelessWidget {
     required this.icon,
     this.gradientColors,
     this.showPercent = false,
-    this.ringSize = 96,        // 👈 Bigger ring!
-    this.strokeWidth = 13,     // 👈 Thicker ring!
-    Key? key,
-  }) : super(key: key);
+    this.ringSize = 96, // 👈 Bigger ring!
+    this.strokeWidth = 13, // 👈 Thicker ring!
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final double percent = maxValue == 0 ? 0 : (value / maxValue).clamp(0.0, 1.0);
+    final double percent =
+        maxValue == 0 ? 0 : (value / maxValue).clamp(0.0, 1.0);
 
     final ringGradients = gradientColors ??
         [
@@ -56,8 +57,14 @@ class FinancialRingWidget extends StatelessWidget {
         isDiamondCut: true,
         borderRadius: 22,
         glassGradient: Theme.of(context).brightness == Brightness.dark
-            ? [Colors.white.withValues(alpha: 0.28), Colors.white.withValues(alpha: 0.06)]
-            : [Colors.black.withValues(alpha: 0.05), Colors.black.withValues(alpha: 0.01)],
+            ? [
+                Colors.white.withValues(alpha: 0.28),
+                Colors.white.withValues(alpha: 0.06)
+              ]
+            : [
+                Colors.black.withValues(alpha: 0.05),
+                Colors.black.withValues(alpha: 0.01)
+              ],
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 9),
         child: SizedBox(
           width: ringSize + 14,
@@ -146,8 +153,7 @@ class _RingPopup extends StatelessWidget {
     required this.icon,
     required this.percent,
     required this.gradientColors,
-    Key? key,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -217,7 +223,8 @@ class _RingPopup extends StatelessWidget {
               ),
               child: const Text(
                 "Close",
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                style:
+                    TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -252,7 +259,12 @@ class _RingPainter extends CustomPainter {
 
     final Paint fg = Paint()
       ..shader = SweepGradient(
-        colors: gradientColors ?? [color, color.withValues(alpha: 0.48), color.withValues(alpha: 0.14)],
+        colors: gradientColors ??
+            [
+              color,
+              color.withValues(alpha: 0.48),
+              color.withValues(alpha: 0.14)
+            ],
         startAngle: -pi / 2,
         endAngle: pi * 2,
       ).createShader(rect)
@@ -263,19 +275,25 @@ class _RingPainter extends CustomPainter {
     // Background arc (full)
     canvas.drawArc(
       Rect.fromCircle(center: size.center(Offset.zero), radius: size.width / 2),
-      0, 2 * pi, false, bg,
+      0,
+      2 * pi,
+      false,
+      bg,
     );
     // Foreground arc (progress)
     canvas.drawArc(
       Rect.fromCircle(center: size.center(Offset.zero), radius: size.width / 2),
-      -pi / 2, 2 * pi * percent, false, fg,
+      -pi / 2,
+      2 * pi * percent,
+      false,
+      fg,
     );
   }
 
   @override
   bool shouldRepaint(_RingPainter oldDelegate) =>
       oldDelegate.percent != percent ||
-          oldDelegate.color != color ||
-          oldDelegate.gradientColors != gradientColors ||
-          oldDelegate.strokeWidth != strokeWidth;
+      oldDelegate.color != color ||
+      oldDelegate.gradientColors != gradientColors ||
+      oldDelegate.strokeWidth != strokeWidth;
 }

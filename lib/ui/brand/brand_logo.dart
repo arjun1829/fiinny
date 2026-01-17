@@ -53,7 +53,7 @@ class BrandLogo extends StatelessWidget {
   final VoidCallback? onTap;
 
   const BrandLogo({
-    Key? key,
+    super.key,
     required this.brand,
     this.size = 28,
     this.radius = 8,
@@ -66,17 +66,19 @@ class BrandLogo extends StatelessWidget {
     this.tooltip,
     this.semanticsLabel,
     this.onTap,
-  }) : super(key: key);
+  });
 
-  String get _path =>
-      brand.endsWith('.png') ? brand : 'assets/brands/${brand.toLowerCase()}.png';
+  String get _path => brand.endsWith('.png')
+      ? brand
+      : 'assets/brands/${brand.toLowerCase()}.png';
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final r = clipRadius ?? BorderRadius.circular(radius);
     final outline = borderColor ?? cs.outlineVariant.withValues(alpha: .6);
-    final bg = backgroundColor ?? cs.surfaceContainerHighest.withValues(alpha: .65);
+    final bg =
+        backgroundColor ?? cs.surfaceContainerHighest.withValues(alpha: .65);
 
     // Compute cacheWidth for sharper rendering on high-DPR screens.
     final dpr = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 2.0;
@@ -119,8 +121,8 @@ class BrandLogo extends StatelessWidget {
             errorBuilder: (_, __, ___) {
               final letter = brand.isNotEmpty
                   ? brand.split('/').last.trim().isNotEmpty
-                  ? brand.split('/').last.trim()[0].toUpperCase()
-                  : '?'
+                      ? brand.split('/').last.trim()[0].toUpperCase()
+                      : '?'
                   : '?';
               return Container(
                 alignment: Alignment.center,

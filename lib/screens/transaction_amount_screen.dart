@@ -149,7 +149,7 @@ class _TransactionAmountScreenState extends State<TransactionAmountScreen>
     return _allIncomes;
   }
 
-  /// Returns a tuple: [barDebit, barCredit], both List<double>
+  /// Returns a tuple: [barDebit, barCredit], both List`double`
   List<List<double>> _barDataCreditDebit(
       String period, List<ExpenseItem> expenses, List<IncomeItem> incomes) {
     final DateTime now = DateTime.now();

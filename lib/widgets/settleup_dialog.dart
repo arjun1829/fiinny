@@ -107,7 +107,9 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
 
   void _relistenAndRecompute() {
     _cancelSubs();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _maxAmount = 0.0;
       _direction = 0.0;
@@ -115,7 +117,9 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
       _amountCtrl.text = '';
     });
 
-    if (_selectedFriend == null) return;
+    if (_selectedFriend == null) {
+      return;
+    }
 
     // Source of truth: expenses stream(s)
     if (_selectedGroup != null) {
@@ -130,11 +134,15 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   }
 
   void _recomputeOutstanding(List<ExpenseItem> all) {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     final current = widget.userPhone;
     final friend = _selectedFriend?.phone;
-    if (friend == null) return;
+    if (friend == null) {
+      return;
+    }
 
     // Filter by scope (whole pair or group pair)
     final scoped = all.where((e) {
@@ -149,7 +157,9 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
     final net = _pairwiseNet(scoped, current, friend);
 
     final abs = double.parse(net.abs().toStringAsFixed(2));
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _direction = net; // + they owe you, - you owe them
       _maxAmount = abs;
@@ -174,7 +184,9 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
 
       final participants = <String>{e.payerId, ...e.friendIds};
       if (!participants.contains(currentUser) ||
-          !participants.contains(friendPhone)) continue;
+          !participants.contains(friendPhone)) {
+        continue;
+      }
 
       final shares = (e.customSplits != null && e.customSplits!.isNotEmpty)
           ? e.customSplits!
@@ -201,7 +213,9 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
 
   // ======= Submit (explicit "Settlement" expense with payer you choose) =======
   Future<void> _submit() async {
-    if (_submitting) return;
+    if (_submitting) {
+      return;
+    }
 
     final raw = _amountCtrl.text.trim();
     final amt = double.tryParse(raw);
@@ -256,10 +270,14 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
       await ExpenseService()
           .addExpenseWithSync(widget.userPhone, settlementItem);
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       Navigator.pop(context, true);
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _submitting = false;
         _error = "Failed: $e";
@@ -270,20 +288,27 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   String _composeNote() {
     final parts = <String>[];
     if (_note.trim().isNotEmpty) parts.add(_note.trim());
-    if (_uploadedUrl != null && _uploadedUrl!.isNotEmpty)
+    if (_uploadedUrl != null && _uploadedUrl!.isNotEmpty) {
       parts.add("Attachment: $_uploadedUrl");
+    }
     return parts.join(" • ");
   }
 
   // ======= Attachment helpers =======
   Future<void> _pickFromCamera() async {
-    if (kIsWeb) return; // not supported on web
+    if (kIsWeb) {
+      return;
+    } // not supported on web
     try {
       final shot = await _imagePicker.pickImage(
           source: ImageSource.camera, imageQuality: 88);
-      if (shot == null) return;
+      if (shot == null) {
+        return;
+      }
       final bytes = await shot.readAsBytes();
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _attachBytes = bytes;
         _attachName = shot.name;
@@ -295,13 +320,19 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   }
 
   Future<void> _pickFromGallery() async {
-    if (kIsWeb) return; // not supported on web
+    if (kIsWeb) {
+      return;
+    } // not supported on web
     try {
       final img = await _imagePicker.pickImage(
           source: ImageSource.gallery, imageQuality: 85);
-      if (img == null) return;
+      if (img == null) {
+        return;
+      }
       final bytes = await img.readAsBytes();
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _attachBytes = bytes;
         _attachName = img.name;
@@ -319,21 +350,31 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
         withData: kIsWeb,
         type: FileType.any,
       );
-      if (res == null || res.files.isEmpty) return;
+      if (res == null || res.files.isEmpty) {
+        return;
+      }
       final f = res.files.first;
       if (kIsWeb) {
-        if (f.bytes == null) return;
-        if (!mounted) return;
+        if (f.bytes == null) {
+          return;
+        }
+        if (!mounted) {
+          return;
+        }
         setState(() {
           _attachBytes = f.bytes!;
           _attachName = f.name;
           _attachMime = _guessMimeByName(f.name);
         });
       } else {
-        if (f.path == null) return;
+        if (f.path == null) {
+          return;
+        }
         final file = File(f.path!);
         final bytes = await file.readAsBytes();
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
         setState(() {
           _attachBytes = bytes;
           _attachName = f.name;
@@ -363,15 +404,31 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
 
   String _guessMimeByName(String name) {
     final lower = name.toLowerCase();
-    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+      return 'image/jpeg';
+    }
 
-    if (lower.endsWith('.png')) return 'image/png';
-    if (lower.endsWith('.gif')) return 'image/gif';
-    if (lower.endsWith('.webp')) return 'image/webp';
-    if (lower.endsWith('.pdf')) return 'application/pdf';
-    if (lower.endsWith('.csv')) return 'text/csv';
-    if (lower.endsWith('.txt')) return 'text/plain';
-    if (lower.endsWith('.doc')) return 'application/msword';
+    if (lower.endsWith('.png')) {
+      return 'image/png';
+    }
+    if (lower.endsWith('.gif')) {
+      return 'image/gif';
+    }
+    if (lower.endsWith('.webp')) {
+      return 'image/webp';
+    }
+    if (lower.endsWith('.pdf')) {
+      return 'application/pdf';
+    }
+    if (lower.endsWith('.csv')) {
+      return 'text/csv';
+    }
+    if (lower.endsWith('.txt')) {
+      return 'text/plain';
+    }
+    if (lower.endsWith('.doc')) {
+      return 'application/msword';
+    }
     if (lower.endsWith('.docx')) {
       return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     }
@@ -386,7 +443,9 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
 
   // ======= UI helpers =======
   void _toast(String msg) {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
@@ -414,16 +473,26 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
   }
 
   String _directionText() {
-    if (_selectedFriend == null) return "Select a friend";
+    if (_selectedFriend == null) {
+      return "Select a friend";
+    }
     final name = _selectedFriend!.name;
-    if (_direction < 0) return "You owe $name";
-    if (_direction > 0) return "$name owes you";
+    if (_direction < 0) {
+      return "You owe $name";
+    }
+    if (_direction > 0) {
+      return "$name owes you";
+    }
     return "Nothing outstanding";
   }
 
   Color _directionColor() {
-    if (_direction < 0) return Colors.red.shade600;
-    if (_direction > 0) return Colors.green.shade600;
+    if (_direction < 0) {
+      return Colors.red.shade600;
+    }
+    if (_direction > 0) {
+      return Colors.green.shade600;
+    }
     return Colors.grey.shade700;
   }
 
@@ -683,7 +752,9 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                               value: 'me', child: Text('I paid them')),
                         ],
                         onChanged: (v) {
-                          if (v == null) return;
+                          if (v == null) {
+                            return;
+                          }
                           setState(() => _payerIsMe = (v == 'me'));
                         },
                         decoration: const InputDecoration(
@@ -768,8 +839,9 @@ class _SettleUpDialogState extends State<SettleUpDialog> {
                                 firstDate: DateTime(2000),
                                 lastDate: DateTime.now(),
                               );
-                              if (picked != null)
+                              if (picked != null) {
                                 setState(() => _date = picked);
+                              }
                             },
                             child: const Text("Change"),
                           ),

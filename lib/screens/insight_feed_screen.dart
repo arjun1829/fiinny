@@ -103,12 +103,12 @@ class _InsightFeedScreenState extends State<InsightFeedScreen>
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setString(
                     'gemini_api_key', keyController.text.trim());
-                if (context.mounted) {
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text("Key Saved!")));
                 }
               }
-              if (context.mounted) Navigator.pop(ctx);
+              if (ctx.mounted) Navigator.pop(ctx);
             },
             child: const Text("Save"),
           )

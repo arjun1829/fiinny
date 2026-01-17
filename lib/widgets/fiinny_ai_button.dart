@@ -7,8 +7,7 @@ class FiinnyAiButton extends StatefulWidget {
   final String userPhone;
   final VoidCallback? onTap;
 
-  const FiinnyAiButton({Key? key, required this.userPhone, this.onTap})
-      : super(key: key);
+  const FiinnyAiButton({super.key, required this.userPhone, this.onTap});
 
   @override
   State<FiinnyAiButton> createState() => _FiinnyAiButtonState();

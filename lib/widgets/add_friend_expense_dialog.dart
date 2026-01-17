@@ -844,7 +844,7 @@ class _AddFriendExpenseScreenState extends State<AddFriendExpenseScreen> {
                 ],
               ),
             );
-          }).toList(),
+          }),
           if (_amount <= 0)
             Padding(
               padding: const EdgeInsets.only(top: 6),

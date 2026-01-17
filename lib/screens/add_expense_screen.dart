@@ -222,8 +222,9 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                               ))
                           .toList(),
                       onChanged: (val) {
-                        if (val != null)
+                        if (val != null) {
                           setState(() => _selectedSubcategory = val);
+                        }
                       },
                       decoration: const InputDecoration(
                         labelText: "Subcategory",

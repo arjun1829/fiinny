@@ -85,15 +85,16 @@ class SavedViewsStore {
       };
 
   TransactionFilter _fromMap(Map<String, dynamic> m) {
-    String? _s(String k) =>
+    String? parseString(String k) =>
         (m[k] is String && (m[k] as String).trim().isNotEmpty)
             ? m[k] as String
             : null;
-    List<String> _ls(String k) =>
+    List<String> parseList(String k) =>
         (m[k] is List) ? List<String>.from(m[k]) : const [];
-    double? _d(String k) => (m[k] is num) ? (m[k] as num).toDouble() : null;
-    bool? _b(String k) => (m[k] is bool) ? m[k] as bool : null;
-    DateTime? _dt(String k) => (m[k] is num)
+    double? parseDouble(String k) =>
+        (m[k] is num) ? (m[k] as num).toDouble() : null;
+    bool? parseBool(String k) => (m[k] is bool) ? m[k] as bool : null;
+    DateTime? parseDateTime(String k) => (m[k] is num)
         ? DateTime.fromMillisecondsSinceEpoch((m[k] as num).toInt())
         : null;
 
@@ -122,29 +123,29 @@ class SavedViewsStore {
 
     return TransactionFilter.defaults().copyWith(
       type: type,
-      from: _dt('from'),
-      to: _dt('to'),
-      minAmount: _d('minAmount'),
-      maxAmount: _d('maxAmount'),
+      from: parseDateTime('from'),
+      to: parseDateTime('to'),
+      minAmount: parseDouble('minAmount'),
+      maxAmount: parseDouble('maxAmount'),
       text: (m['text'] as String?) ?? '',
-      category: _s('category'),
-      subcategory: _s('subcategory'),
-      instrument: _s('instrument'),
-      network: _s('network'),
-      issuerBank: _s('issuerBank'),
-      last4: _s('last4'),
-      counterpartyType: _s('counterpartyType'),
-      intl: _b('intl'),
-      hasFees: _b('hasFees'),
-      billsOnly: _b('billsOnly'),
-      withAttachment: _b('withAttachment'),
-      subscriptionsOnly: _b('subscriptionsOnly'),
-      uncategorizedOnly: _b('uncategorizedOnly'),
-      friendPhones: _ls('friendPhones'),
-      groupId: _s('groupId'),
-      labels: _ls('labels'),
-      tags: _ls('tags'),
-      merchant: _s('merchant'),
+      category: parseString('category'),
+      subcategory: parseString('subcategory'),
+      instrument: parseString('instrument'),
+      network: parseString('network'),
+      issuerBank: parseString('issuerBank'),
+      last4: parseString('last4'),
+      counterpartyType: parseString('counterpartyType'),
+      intl: parseBool('intl'),
+      hasFees: parseBool('hasFees'),
+      billsOnly: parseBool('billsOnly'),
+      withAttachment: parseBool('withAttachment'),
+      subscriptionsOnly: parseBool('subscriptionsOnly'),
+      uncategorizedOnly: parseBool('uncategorizedOnly'),
+      friendPhones: parseList('friendPhones'),
+      groupId: parseString('groupId'),
+      labels: parseList('labels'),
+      tags: parseList('tags'),
+      merchant: parseString('merchant'),
       sort: SortSpec(sortField, sortDir),
       groupBy: groupBy,
     );

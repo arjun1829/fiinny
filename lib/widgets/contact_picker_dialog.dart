@@ -118,10 +118,10 @@ class _ContactPickerDialogState extends State<ContactPickerDialog> {
                 onPressed: () => Navigator.pop(context, null),
               ),
               ElevatedButton(
-                child: const Text("Add Selected"),
                 onPressed: selectedContacts.isEmpty
                     ? null
                     : () => Navigator.pop(context, selectedContacts),
+                child: const Text("Add Selected"),
               ),
             ],
     );

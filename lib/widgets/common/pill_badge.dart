@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class PillBadge extends StatelessWidget {
   final String text;
-  const PillBadge({Key? key, required this.text}) : super(key: key);
+  const PillBadge({super.key, required this.text});
 
   @override
   Widget build(BuildContext context) {

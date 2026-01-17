@@ -426,8 +426,9 @@ class _AddCustomReminderSheetState extends State<AddCustomReminderSheet> {
                     textInputAction: TextInputAction.next,
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) return 'Enter a title';
-                      if (v.trim().length < 3)
+                      if (v.trim().length < 3) {
                         return 'Make it at least 3 chars';
+                      }
                       return null;
                     },
                   ),

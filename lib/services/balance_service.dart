@@ -57,9 +57,7 @@ class BalanceService {
     for (final e in expenses) {
       final participants = e.friendIds + [e.payerId];
       final split = e.customSplits ??
-          Map.fromIterable(participants,
-              key: (id) => id,
-              value: (id) => e.amount / participants.length);
+          { for (var id in participants) id : e.amount / participants.length };
 
       // If you are a payer, others owe you. If you are a participant, you owe payer.
       for (final id in split.keys) {

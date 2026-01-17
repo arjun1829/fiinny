@@ -327,21 +327,41 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final v = (obj as dynamic)?.toJson?.call();
       if (v is Map<String, dynamic> && v.containsKey(field)) {
         final val = v[field];
-        if (val is T) return val;
-        if (val == null) return null;
-        if (T == String) return val.toString() as T;
-        if (T == double && val is num) return val.toDouble() as T;
-        if (T == int && val is num) return val.toInt() as T;
+        if (val is T) {
+          return val;
+        }
+        if (val == null) {
+          return null;
+        }
+        if (T == String) {
+          return val.toString() as T;
+        }
+        if (T == double && val is num) {
+          return val.toDouble() as T;
+        }
+        if (T == int && val is num) {
+          return val.toInt() as T;
+        }
       }
     } catch (_) {}
     try {
       if (obj is Map) {
         final val = obj[field];
-        if (val is T) return val;
-        if (val == null) return null;
-        if (T == String) return val.toString() as T;
-        if (T == double && val is num) return val.toDouble() as T;
-        if (T == int && val is num) return val.toInt() as T;
+        if (val is T) {
+          return val;
+        }
+        if (val == null) {
+          return null;
+        }
+        if (T == String) {
+          return val.toString() as T;
+        }
+        if (T == double && val is num) {
+          return val.toDouble() as T;
+        }
+        if (T == int && val is num) {
+          return val.toInt() as T;
+        }
       }
     } catch (_) {}
     try {
@@ -385,20 +405,26 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   String _legacyResolvedCategory(dynamic item, {required bool isIncome}) {
     final String? cat =
         _dyn<String>(item, 'category') ?? _dyn<String>(item, 'subcategory');
-    if (cat != null && cat.trim().isNotEmpty) return cat.trim();
+    if (cat != null && cat.trim().isNotEmpty) {
+      return cat.trim();
+    }
 
     try {
       final json = (item as dynamic).toJson?.call();
       if (json is Map<String, dynamic>) {
         final c = (json['category'] ?? json['subcategory'])?.toString();
-        if (c != null && c.trim().isNotEmpty) return c.trim();
+        if (c != null && c.trim().isNotEmpty) {
+          return c.trim();
+        }
       }
     } catch (_) {}
 
     final String t = (item is ExpenseItem || item is IncomeItem)
         ? (item as dynamic).type?.toString() ?? ''
         : '';
-    if (t.isNotEmpty) return t;
+    if (t.isNotEmpty) {
+      return t;
+    }
     return isIncome ? 'Income' : 'General';
   }
 
@@ -417,60 +443,102 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   }
 
   String? _merchantLogoAsset(String? merchant) {
-    if (merchant == null) return null;
+    if (merchant == null) {
+      return null;
+    }
     final m = merchant.toLowerCase();
 
     // Subscriptions & entertainment
     if (m.contains('prime') && m.contains('video')) {
       return 'assets/brands/prime_video.png';
     }
-    if (m.contains('netflix')) return 'assets/brands/netflix.png';
+    if (m.contains('netflix')) {
+      return 'assets/brands/netflix.png';
+    }
     if (m.contains('disney') || m.contains('hotstar')) {
       return m.contains('hotstar')
           ? 'assets/brands/hotstar.png'
           : 'assets/brands/disney_plus.png';
     }
-    if (m.contains('spotify')) return 'assets/brands/spotify.png';
+    if (m.contains('spotify')) {
+      return 'assets/brands/spotify.png';
+    }
     if (m.contains('youtube') && m.contains('premium')) {
       return 'assets/brands/youtube_premium.png';
     }
     if (m.contains('sonyliv') || (m.contains('sony') && m.contains('liv'))) {
       return 'assets/brands/sonyliv.png';
     }
-    if (m.contains('zee5')) return 'assets/brands/zee5.png';
+    if (m.contains('zee5')) {
+      return 'assets/brands/zee5.png';
+    }
 
     // Ecommerce / shopping
-    if (m.contains('amazon')) return 'assets/brands/amazon.png';
-    if (m.contains('flipkart')) return 'assets/brands/flipkart_plus.png';
-    if (m.contains('myntra')) return 'assets/brands/myntra.png';
-    if (m.contains('nykaa')) return 'assets/brands/nykaa.png';
-    if (m.contains('ajio')) return 'assets/brands/ajio.png';
+    if (m.contains('amazon')) {
+      return 'assets/brands/amazon.png';
+    }
+    if (m.contains('flipkart')) {
+      return 'assets/brands/flipkart_plus.png';
+    }
+    if (m.contains('myntra')) {
+      return 'assets/brands/myntra.png';
+    }
+    if (m.contains('nykaa')) {
+      return 'assets/brands/nykaa.png';
+    }
+    if (m.contains('ajio')) {
+      return 'assets/brands/ajio.png';
+    }
 
     // Food & grocery
-    if (m.contains('zomato')) return 'assets/brands/zomato_gold.png';
-    if (m.contains('swiggy')) return 'assets/brands/swiggy_one.png';
-    if (m.contains('bigbasket')) return 'assets/brands/bigbasket.png';
+    if (m.contains('zomato')) {
+      return 'assets/brands/zomato_gold.png';
+    }
+    if (m.contains('swiggy')) {
+      return 'assets/brands/swiggy_one.png';
+    }
+    if (m.contains('bigbasket')) {
+      return 'assets/brands/bigbasket.png';
+    }
 
     // Mobility
-    if (m.contains('uber')) return 'assets/brands/uber.png';
+    if (m.contains('uber')) {
+      return 'assets/brands/uber.png';
+    }
 
     // Productivity / SaaS
-    if (m.contains('notion')) return 'assets/brands/notion.png';
-    if (m.contains('slack')) return 'assets/brands/slack.png';
-    if (m.contains('dropbox')) return 'assets/brands/dropbox.png';
-    if (m.contains('onedrive')) return 'assets/brands/onedrive.png';
-    if (m.contains('icloud')) return 'assets/brands/icloud.png';
+    if (m.contains('notion')) {
+      return 'assets/brands/notion.png';
+    }
+    if (m.contains('slack')) {
+      return 'assets/brands/slack.png';
+    }
+    if (m.contains('dropbox')) {
+      return 'assets/brands/dropbox.png';
+    }
+    if (m.contains('onedrive')) {
+      return 'assets/brands/onedrive.png';
+    }
+    if (m.contains('icloud')) {
+      return 'assets/brands/icloud.png';
+    }
     if (m.contains('googleone') || m.contains('google one')) {
       return 'assets/brands/google_one.png';
     }
     if (m.contains('microsoft') || m.contains('office') || m.contains('365')) {
       return 'assets/brands/microsoft_365.png';
     }
-    if (m.contains('adobe')) return 'assets/brands/adobe_cc.png';
+    if (m.contains('adobe')) {
+      return 'assets/brands/adobe_cc.png';
+    }
 
     // Rent & home
-    if (m.contains('rentomojo')) return 'assets/brands/rentomojo.png';
-    if (m.contains('rent')) return 'assets/brands/rent.png';
+    if (m.contains('rentomojo')) {
+      return 'assets/brands/rentomojo.png';
+    }
+    if (m.contains('rent')) {
+      return 'assets/brands/rent.png';
+    }
 
     return null;
   }
@@ -480,8 +548,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final j = (item as dynamic).toJson?.call();
       if (j is Map<String, dynamic>) {
         final t = j['tags'];
-        if (t is Map && t['type'] != null) return t['type'].toString();
-        if (t is String) return t;
+        if (t is Map && t['type'] != null) {
+          return t['type'].toString();
+        }
+        if (t is String) {
+          return t;
+        }
       }
     } catch (_) {}
     final direct = _dyn<String>(item, 'tags');
@@ -490,12 +562,16 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
   double _legacyCategoryConfidence(dynamic item) {
     final direct = _dyn<double>(item, 'categoryConfidence');
-    if (direct != null) return direct;
+    if (direct != null) {
+      return direct;
+    }
     try {
       final json = (item as dynamic).toJson?.call();
       if (json is Map<String, dynamic>) {
         final num? raw = json['categoryConfidence'] as num?;
-        if (raw != null) return raw.toDouble();
+        if (raw != null) {
+          return raw.toDouble();
+        }
       }
     } catch (_) {}
     return 0.0;
@@ -503,12 +579,16 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
   String _legacyCategorySource(dynamic item) {
     final direct = _dyn<String>(item, 'categorySource');
-    if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+    if (direct != null && direct.trim().isNotEmpty) {
+      return direct.trim();
+    }
     try {
       final json = (item as dynamic).toJson?.call();
       if (json is Map<String, dynamic>) {
         final v = json['categorySource'];
-        if (v is String && v.trim().isNotEmpty) return v.trim();
+        if (v is String && v.trim().isNotEmpty) {
+          return v.trim();
+        }
       }
     } catch (_) {}
     return '';
@@ -592,7 +672,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       String category, Map<String, dynamic> normalized,
       {String? subcategory}) async {
     final mk = _normalizedMerchantKey(normalized);
-    if (mk.isEmpty) return;
+    if (mk.isEmpty) {
+      return;
+    }
     try {
       if (category.isNotEmpty) {
         await UserOverrides.setCategoryForMerchant(
@@ -607,11 +689,17 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
   String _normalizedMerchantKey(Map<String, dynamic> tx) {
     final mk = (tx['merchantKey'] ?? '').toString().trim();
-    if (mk.isNotEmpty) return mk.toUpperCase();
+    if (mk.isNotEmpty) {
+      return mk.toUpperCase();
+    }
     final merchant = (tx['merchant'] ?? '').toString().trim();
-    if (merchant.isNotEmpty) return merchant.toUpperCase();
+    if (merchant.isNotEmpty) {
+      return merchant.toUpperCase();
+    }
     final counterparty = (tx['counterparty'] ?? '').toString().trim();
-    if (counterparty.isNotEmpty) return counterparty.toUpperCase();
+    if (counterparty.isNotEmpty) {
+      return counterparty.toUpperCase();
+    }
     return '';
   }
 
@@ -811,24 +899,40 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   }
 
   DateTime _asDate(dynamic v) {
-    if (v == null) return DateTime.now();
-    if (v is DateTime) return v;
+    if (v == null) {
+      return DateTime.now();
+    }
+    if (v is DateTime) {
+      return v;
+    }
     try {
-      if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
-      if (v is double) return DateTime.fromMillisecondsSinceEpoch(v.toInt());
+      if (v is int) {
+        return DateTime.fromMillisecondsSinceEpoch(v);
+      }
+      if (v is double) {
+        return DateTime.fromMillisecondsSinceEpoch(v.toInt());
+      }
       if (v is String) {
         final parsed = DateTime.tryParse(v);
-        if (parsed != null) return parsed;
+        if (parsed != null) {
+          return parsed;
+        }
       }
       final dyn = v as dynamic;
-      if (dyn.toDate != null) return dyn.toDate() as DateTime;
+      if (dyn.toDate != null) {
+        return dyn.toDate() as DateTime;
+      }
     } catch (_) {}
     return DateTime.now();
   }
 
   double _asDouble(dynamic v) {
-    if (v == null) return 0.0;
-    if (v is num) return v.toDouble();
+    if (v == null) {
+      return 0.0;
+    }
+    if (v is num) {
+      return v.toDouble();
+    }
     return double.tryParse(v.toString()) ?? 0.0;
   }
 
@@ -841,14 +945,20 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         return null;
       }
     }
-    if (cur == null) return null;
+    if (cur == null) {
+      return null;
+    }
     return cur.toString();
   }
 
   bool _readBool(Map<String, dynamic> map, String key) {
     final v = map[key];
-    if (v is bool) return v;
-    if (v == null) return false;
+    if (v is bool) {
+      return v;
+    }
+    if (v == null) {
+      return false;
+    }
     final s = v.toString().toLowerCase();
     return s == 'true' || s == '1';
   }
@@ -866,7 +976,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
     for (final doc in docs) {
       final channel = _readString(doc, ['meta', 'channel']);
-      if (channel == 'CreditCardBill') continue;
+      if (channel == 'CreditCardBill') {
+        continue;
+      }
 
       final bool isDebit = (doc['isDebit'] == true);
       final String type = isDebit ? 'expense' : 'income';
@@ -881,7 +993,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final rawLabels = doc['labels'];
       if (rawLabels is List) {
         for (final x in rawLabels) {
-          if (x is String && x.trim().isNotEmpty) labelsArr.add(x.trim());
+          if (x is String && x.trim().isNotEmpty) {
+            labelsArr.add(x.trim());
+          }
         }
       }
       final seen = <String>{};
@@ -892,9 +1006,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       final String categorySource = (doc['categorySource'] ?? '').toString();
       final String merchantKey = (() {
         final mk = pick(doc['merchantKey']?.toString());
-        if (mk != null && mk.isNotEmpty) return mk.toUpperCase();
+        if (mk != null && mk.isNotEmpty) {
+          return mk.toUpperCase();
+        }
         final merch = pick(doc['merchant']?.toString());
-        if (merch != null && merch.isNotEmpty) return merch.toUpperCase();
+        if (merch != null && merch.isNotEmpty) {
+          return merch.toUpperCase();
+        }
         return '';
       })();
       final String? brandLogo = _readString(doc, ['badges', 'brandLogo']) ??
@@ -925,8 +1043,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         'hasFees': _mapHasFees(doc),
         'tags': (() {
           final t = doc['tags'];
-          if (t is Map && t['type'] != null) return t['type'].toString();
-          if (t is String) return t;
+          if (t is Map && t['type'] != null) {
+            return t['type'].toString();
+          }
+          if (t is String) {
+            return t;
+          }
           return null;
         })(),
         'labels': labels,
@@ -947,13 +1069,19 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final d = DateTime(date.year, date.month, date.day);
-    if (d == today) return "Today";
-    if (d == today.subtract(const Duration(days: 1))) return "Yesterday";
+    if (d == today) {
+      return "Today";
+    }
+    if (d == today.subtract(const Duration(days: 1))) {
+      return "Yesterday";
+    }
     return DateFormat('d MMM, yyyy').format(date);
   }
 
   String _displayGroupLabel(String raw) {
-    if (raw.isEmpty) return '';
+    if (raw.isEmpty) {
+      return '';
+    }
     if (_activeFilter.groupBy == GroupBy.day) {
       try {
         final parsed = DateFormat('d MMM, yyyy').parse(raw);
@@ -968,29 +1096,47 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
   IconData getCategoryIcon(String type, {bool isIncome = false}) {
     final t = type.toLowerCase();
     if (isIncome) {
-      if (t.contains("salary")) return Icons.account_balance_wallet_rounded;
-      if (t.contains("refund")) return Icons.replay_rounded;
-      if (t.contains("interest")) return Icons.savings_rounded;
+      if (t.contains("salary")) {
+        return Icons.account_balance_wallet_rounded;
+      }
+      if (t.contains("refund")) {
+        return Icons.replay_rounded;
+      }
+      if (t.contains("interest")) {
+        return Icons.savings_rounded;
+      }
       if (t.contains("reward") || t.contains("cashback")) {
         return Icons.card_giftcard_rounded;
       }
       if (t.contains("cash") || t.contains("credit")) {
         return Icons.attach_money_rounded;
       }
-      if (t.contains("bonus")) return Icons.emoji_events_rounded;
-      if (t.contains("investment")) return Icons.trending_up_rounded;
-      if (t.contains("business")) return Icons.business_center_rounded;
+      if (t.contains("bonus")) {
+        return Icons.emoji_events_rounded;
+      }
+      if (t.contains("investment")) {
+        return Icons.trending_up_rounded;
+      }
+      if (t.contains("business")) {
+        return Icons.business_center_rounded;
+      }
       return Icons.add_circle_outline_rounded;
     } else {
       if (t.contains("food") || t.contains("restaurant")) {
         return Icons.restaurant_rounded;
       }
-      if (t.contains("grocery")) return Icons.shopping_cart_rounded;
-      if (t.contains("rent")) return Icons.home_rounded;
+      if (t.contains("grocery")) {
+        return Icons.shopping_cart_rounded;
+      }
+      if (t.contains("rent")) {
+        return Icons.home_rounded;
+      }
       if (t.contains("fuel") || t.contains("petrol")) {
         return Icons.local_gas_station_rounded;
       }
-      if (t.contains("shopping")) return Icons.shopping_bag_rounded;
+      if (t.contains("shopping")) {
+        return Icons.shopping_bag_rounded;
+      }
       if (t.contains("health") || t.contains("medicine")) {
         return Icons.local_hospital_rounded;
       }
@@ -1000,10 +1146,18 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
       if (t.contains("entertainment") || t.contains("movie")) {
         return Icons.movie_rounded;
       }
-      if (t.contains("education")) return Icons.school_rounded;
-      if (t.contains("loan")) return Icons.account_balance_rounded;
-      if (t.contains("credit card")) return Icons.credit_card_rounded;
-      if (t.contains("upi")) return Icons.currency_rupee_rounded;
+      if (t.contains("education")) {
+        return Icons.school_rounded;
+      }
+      if (t.contains("loan")) {
+        return Icons.account_balance_rounded;
+      }
+      if (t.contains("credit card")) {
+        return Icons.credit_card_rounded;
+      }
+      if (t.contains("upi")) {
+        return Icons.currency_rupee_rounded;
+      }
       return Icons.remove_circle_outline_rounded;
     }
   }
@@ -1087,14 +1241,18 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     final String subcategory = (() {
       // First try normalized tx map
       final rawSub = doc['subcategory']?.toString().trim();
-      if (rawSub != null && rawSub.isNotEmpty) return rawSub;
+      if (rawSub != null && rawSub.isNotEmpty) {
+        return rawSub;
+      }
 
       // Then try underlying raw unified doc, if present
       try {
         final raw = doc['raw'];
         if (raw is Map<String, dynamic>) {
           final v = raw['subcategory']?.toString().trim();
-          if (v != null && v.isNotEmpty) return v;
+          if (v != null && v.isNotEmpty) {
+            return v;
+          }
         }
       } catch (_) {}
 
@@ -1241,8 +1399,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                         ),
                       ),
                     const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
+                    Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: 8,
+                      runSpacing: 0,
                       children: [
                         if (!isIncome && widget.onSplit != null)
                           TextButton.icon(
@@ -1275,8 +1435,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                 doc,
                                 triggerAnchoredCallbacks: false,
                               );
-                              if (!confirmed) return;
-                              if (!context.mounted) return;
+                              if (!confirmed) {
+                                return;
+                              }
+                              if (!context.mounted) {
+                                return;
+                              }
                               Navigator.pop(context);
                               widget.onDelete?.call(doc);
                             },
@@ -1454,8 +1618,10 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                     const SizedBox(height: 16),
                     _inlineAdCard('txn_detail_sheet_modern'),
                     const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
+                    Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: 8,
+                      runSpacing: 0,
                       children: [
                         if (!isIncome && widget.onDiscuss != null)
                           TextButton.icon(
@@ -1499,8 +1665,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                 item,
                                 triggerAnchoredCallbacks: false,
                               );
-                              if (!confirmed) return;
-                              if (!context.mounted) return;
+                              if (!confirmed) {
+                                return;
+                              }
+                              if (!context.mounted) {
+                                return;
+                              }
                               Navigator.pop(context);
                               widget.onDelete?.call(item);
                             },
@@ -1547,7 +1717,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
   List<String> _parseRawTags(String raw) {
     var s = raw.trim();
-    if (s.isEmpty) return const [];
+    if (s.isEmpty) {
+      return const [];
+    }
     if (s.startsWith('[') && s.endsWith(']')) {
       s = s.substring(1, s.length - 1);
     }
@@ -1557,7 +1729,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .toList();
-    if (parts.isNotEmpty) return parts;
+    if (parts.isNotEmpty) {
+      return parts;
+    }
     // fallback: whitespace split
     return s.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
   }
@@ -1617,11 +1791,15 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         k == 'surcharge';
 
     for (final k in tokens) {
-      if (k.isEmpty) continue;
+      if (k.isEmpty) {
+        continue;
+      }
 
       // Drop instrument duplicates (already shown as a chip)
       if (_kMethodTags.contains(k)) continue;
-      if (k == inst) continue; // e.g., "imps" tag when instrument is IMPS
+      if (k == inst) {
+        continue;
+      }
 
       // If sheet already shows INTL or FEES, skip those duplicates
       if (k == 'international' || k == 'intl' || k == 'forex') {
@@ -1723,7 +1901,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
               )
               .toList(),
           onChanged: (newVal) async {
-            if (newVal == null || newVal == value) return;
+            if (newVal == null || newVal == value) {
+              return;
+            }
 
             setState(() {
               final idx =
@@ -1872,7 +2052,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                   ))
               .toList(),
           onChanged: (newVal) async {
-            if (newVal == null || newVal == value) return;
+            if (newVal == null || newVal == value) {
+              return;
+            }
 
             setState(() {
               final idx =
@@ -2032,8 +2214,12 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
     );
 
     widget.onEndModal?.call();
-    if (newName == null) return;
-    if (newName.isEmpty) return;
+    if (newName == null) {
+      return;
+    }
+    if (newName.isEmpty) {
+      return;
+    }
 
     // Update local state
     setState(() {
@@ -2283,10 +2469,18 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
     final sourceLabel = () {
       final s = categorySource.toLowerCase();
-      if (s == 'llm') return 'LLM';
-      if (s == 'rules') return 'Rules';
-      if (s == 'user_override') return 'Manual';
-      if (s.isNotEmpty) return s.toUpperCase();
+      if (s == 'llm') {
+        return 'LLM';
+      }
+      if (s == 'rules') {
+        return 'Rules';
+      }
+      if (s == 'user_override') {
+        return 'Manual';
+      }
+      if (s.isNotEmpty) {
+        return s.toUpperCase();
+      }
       return null;
     }();
     final methodChipLabels = _methodChipLabels(
@@ -2345,7 +2539,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
           return false;
         }
         if (direction == DismissDirection.endToStart) {
-          if (widget.onDelete == null) return false;
+          if (widget.onDelete == null) {
+            return false;
+          }
           return _confirmDeleteTransaction(context, payload);
         }
         return false;
@@ -2367,9 +2563,13 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
             : () {
                 if (widget.onRowTapIntercept != null) {
                   final handled = widget.onRowTapIntercept!(tx);
-                  if (handled == true) return;
+                  if (handled == true) {
+                    return;
+                  }
                 }
-                if (!widget.enableDetailsSheet) return;
+                if (!widget.enableDetailsSheet) {
+                  return;
+                }
 
                 if (tx['mode'] == 'unified') {
                   _showDetailsScreenFromUnified(
@@ -2770,11 +2970,15 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
                                   widget.onEdit?.call(payload);
                                   break;
                                 case _TxAction.delete:
-                                  if (widget.onDelete == null) break;
+                                  if (widget.onDelete == null) {
+                                    break;
+                                  }
                                   final confirmed =
                                       await _confirmDeleteTransaction(
                                           context, payload);
-                                  if (confirmed) widget.onDelete!(payload);
+                                  if (confirmed) {
+                                    widget.onDelete!(payload);
+                                  }
                                   break;
                               }
                             },
@@ -2958,7 +3162,9 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
 
   String? _resolveDeleteLabel(dynamic payload) {
     String? normalize(String? value) {
-      if (value == null) return null;
+      if (value == null) {
+        return null;
+      }
       final trimmed = value.trim();
       return trimmed.isEmpty ? null : trimmed;
     }
@@ -2987,12 +3193,16 @@ class _UnifiedTransactionListState extends State<UnifiedTransactionList> {
         final value = payload[key];
         if (value is String) {
           final normalized = normalize(value);
-          if (normalized != null) return normalized;
+          if (normalized != null) {
+            return normalized;
+          }
         }
       }
       final raw = payload['raw'];
       final fallback = _resolveDeleteLabel(raw);
-      if (fallback != null) return fallback;
+      if (fallback != null) {
+        return fallback;
+      }
     }
     return null;
   }

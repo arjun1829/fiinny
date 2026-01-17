@@ -307,9 +307,9 @@ class _GroupSwitcherState extends State<GroupSwitcher> {
         for (final g in widget.groups)
           Builder(
             builder: (_) {
-              final String? gid = g.id; // may be nullable in your model
+              final String gid = g.id; // may be nullable in your model
               final bool selected =
-                  widget.current.isGroup && gid != null && widget.current.groupId == gid;
+                  widget.current.isGroup && widget.current.groupId == gid;
               final String label = (g.name ?? 'Group').toString();
               final String? avatar = _groupAvatarUrl(g);      // safe helper (below)
               final String? membersText = _groupMembersText(g); // safe helper (below)
@@ -320,7 +320,7 @@ class _GroupSwitcherState extends State<GroupSwitcher> {
                 leading: _avatar(url: avatar, char: label),
                 selected: selected,
                 onTap: () {
-                  if (gid == null || gid.isEmpty) return;
+                  if (gid.isEmpty) return;
                   widget.onChanged(RecurringScope.group(gid));
                 },
               );

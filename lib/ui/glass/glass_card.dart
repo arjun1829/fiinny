@@ -44,11 +44,12 @@ class GlassCard extends StatelessWidget {
 
   /// Optional overrides for border/shadow (set to null to disable).
   final Color? borderColorOverride;
-  final double? borderOpacityOverride; // if borderColorOverride == null, used with theme color
+  final double?
+      borderOpacityOverride; // if borderColorOverride == null, used with theme color
   final bool showShadow;
 
   const GlassCard({
-    Key? key,
+    super.key,
     required this.child,
     this.accent,
     this.accentWidth = 4,
@@ -67,7 +68,7 @@ class GlassCard extends StatelessWidget {
     this.borderColorOverride,
     this.borderOpacityOverride,
     this.showShadow = true,
-  }) : super(key: key);
+  });
 
   // tiny cache for default gradient (avoids list alloc every build)
   static final List<Color> _defaultLightGradient = [
@@ -94,7 +95,8 @@ class GlassCard extends StatelessWidget {
         (isDark ? _defaultDarkGradient : _defaultLightGradient);
 
     final borderColor = borderColorOverride ??
-        cs.onSurface.withValues(alpha: borderOpacityOverride ?? (isDark ? .18 : .20));
+        cs.onSurface
+            .withValues(alpha: borderOpacityOverride ?? (isDark ? .18 : .20));
 
     final shadowColor = Colors.black.withValues(alpha: isDark ? .30 : .06);
 
@@ -102,32 +104,36 @@ class GlassCard extends StatelessWidget {
     Widget content = Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topLeft, end: Alignment.bottomRight, colors: gradient,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: gradient,
         ),
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(color: borderColor),
         boxShadow: showShadow
             ? [
-          BoxShadow(
-            color: shadowColor,
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ]
+                BoxShadow(
+                  color: shadowColor,
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ]
             : null,
       ),
       foregroundDecoration: showGloss
           ? BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        gradient: LinearGradient(
-          begin: Alignment.topCenter, end: Alignment.bottomCenter,
-          colors: [
-            Colors.white.withValues(alpha: isDark ? glossOpacity * .6 : glossOpacity),
-            Colors.white.withValues(alpha: 0),
-          ],
-          stops: [0.0, glossHeightFraction.clamp(0.0, 1.0)],
-        ),
-      )
+              borderRadius: BorderRadius.circular(radius),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white.withValues(
+                      alpha: isDark ? glossOpacity * .6 : glossOpacity),
+                  Colors.white.withValues(alpha: 0),
+                ],
+                stops: [0.0, glossHeightFraction.clamp(0.0, 1.0)],
+              ),
+            )
           : null,
       child: Padding(padding: padding, child: child),
     );
@@ -186,7 +192,8 @@ class GlassCard extends StatelessWidget {
     if (onTap != null || onLongPress != null) {
       cardBody = Material(
         type: MaterialType.transparency,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
         child: InkWell(
           borderRadius: BorderRadius.circular(radius),
           onTap: onTap,

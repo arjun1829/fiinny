@@ -4,19 +4,21 @@ import 'theme_provider.dart';
 import 'app_theme.dart';
 
 class ThemeSelectorWidget extends StatelessWidget {
-  final Map<FiinnyTheme, String> themeNames = {
+  static const Map<FiinnyTheme, String> themeNames = {
     FiinnyTheme.teal: "Teal",
     FiinnyTheme.mint: "Mint",
     FiinnyTheme.black: "Black",
     FiinnyTheme.white: "White",
   };
 
-  final Map<FiinnyTheme, List<Color>> themeSwatches = {
+  static const Map<FiinnyTheme, List<Color>> themeSwatches = {
     FiinnyTheme.teal: [tealPrimary, Colors.tealAccent, Colors.white],
     FiinnyTheme.mint: [tiffanyBlue, mintGreen, deepTeal],
     FiinnyTheme.black: [Colors.black, Colors.white, Colors.grey],
     FiinnyTheme.white: [Colors.white, Colors.black, Colors.grey],
   };
+
+  const ThemeSelectorWidget({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +30,8 @@ class ThemeSelectorWidget extends StatelessWidget {
         children: [
           const Text(
             "Choose Your Theme",
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 0.3),
+            style: TextStyle(
+                fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 0.3),
           ),
           const SizedBox(height: 24),
           GridView.count(
@@ -45,11 +48,13 @@ class ThemeSelectorWidget extends StatelessWidget {
                   Navigator.of(context).maybePop();
                 },
                 child: Card(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20)),
                   elevation: themeProvider.theme == fiinnyTheme ? 11 : 2,
                   color: Colors.white,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 9),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 12, horizontal: 9),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(20),
                       border: themeProvider.theme == fiinnyTheme
@@ -63,15 +68,18 @@ class ThemeSelectorWidget extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: themeSwatches[fiinnyTheme]!
                               .map((color) => Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            width: 23,
-                            height: 23,
-                            decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.grey.shade200, width: 1),
-                            ),
-                          ))
+                                    margin: const EdgeInsets.symmetric(
+                                        horizontal: 3),
+                                    width: 23,
+                                    height: 23,
+                                    decoration: BoxDecoration(
+                                      color: color,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                          color: Colors.grey.shade200,
+                                          width: 1),
+                                    ),
+                                  ))
                               .toList(),
                         ),
                         const SizedBox(height: 14),
@@ -86,7 +94,8 @@ class ThemeSelectorWidget extends StatelessWidget {
                         if (themeProvider.theme == fiinnyTheme)
                           const Padding(
                             padding: EdgeInsets.only(top: 10),
-                            child: Icon(Icons.check_circle, color: Colors.blueAccent),
+                            child: Icon(Icons.check_circle,
+                                color: Colors.blueAccent),
                           ),
                       ],
                     ),

@@ -23,8 +23,8 @@ class CalendarExpenseView extends StatefulWidget {
 
 class _CalendarExpenseViewState extends State<CalendarExpenseView> {
   late DateTime _selectedDay;
-  Map<DateTime, double> _dailyExpenseTotals = {};
-  Map<DateTime, double> _dailyIncomeTotals = {};
+  final Map<DateTime, double> _dailyExpenseTotals = {};
+  final Map<DateTime, double> _dailyIncomeTotals = {};
 
   @override
   void initState() {

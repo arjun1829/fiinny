@@ -48,8 +48,8 @@ class BehaviorEngine {
       if (expenseRatio > 90) {
         risks.add(highSpending);
       }
-      // TODO: INCOME_UNSTABLE requires historical data analysis
-      // TODO: NO_EMERGENCY_BUFFER requires savings account balance
+      // Note: INCOME_UNSTABLE detection requires historical data analysis (future scope)
+      // Note: NO_EMERGENCY_BUFFER detection requires linked savings account balance (future scope)
     } else {
       // No income scenario
       if (expense > 0) {

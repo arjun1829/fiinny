@@ -67,11 +67,13 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     unawaited(StartupPrefs.markWelcomeSeen());
     _progressCtl = AnimationController(vsync: this, duration: _kAutoInterval);
 
+    // Capture context to ensure we check the correct synchronous context
+    final ctx = context;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await NotificationService.requestPermissionLight();
-      if (!context.mounted) return;
+      if (!ctx.mounted) return;
       for (final d in _onboardData) {
-        precacheImage(AssetImage(d['image']!), context);
+        precacheImage(AssetImage(d['image']!), ctx);
       }
       _startAuto();
       _startPulse();

@@ -1,20 +1,25 @@
 import 'package:flutter/material.dart';
 
 class ProgressBar extends StatelessWidget {
-  final String label;
-  final double value; // 0..1
-  final String? meta;
+  final double percent; // 0..1
+  final Color color;
+  final double height;
 
   const ProgressBar({
-    Key? key,
+    super.key,
+    required this.percent,
+    required this.color,
     required this.label,
-    required this.value,
     this.meta,
-  }) : super(key: key);
+    this.height = 8,
+  });
+
+  final String label;
+  final String? meta;
 
   @override
   Widget build(BuildContext context) {
-    final v = value.clamp(0.0, 1.0);
+    final v = percent.clamp(0.0, 1.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -22,7 +27,9 @@ class ProgressBar extends StatelessWidget {
           Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
           if (meta != null) ...[
             const SizedBox(width: 6),
-            Text(meta!, style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.w600)),
+            Text(meta!,
+                style: const TextStyle(
+                    color: Colors.black54, fontWeight: FontWeight.w600)),
           ],
         ]),
         const SizedBox(height: 6),

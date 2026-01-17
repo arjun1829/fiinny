@@ -774,7 +774,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: Theme.of(context).textTheme.bodyMedium?.color),
               onTap: () async {
                 await NotifPrefsService.ensureDefaultPrefs();
-                if (!mounted) return;
+                if (!context.mounted) return;
                 Navigator.pushNamed(context, '/settings/notifications');
               },
             ),

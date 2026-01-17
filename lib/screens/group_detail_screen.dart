@@ -13,10 +13,10 @@ class GroupDetailScreen extends StatefulWidget {
   final GroupModel group;
 
   const GroupDetailScreen({
-    Key? key,
+    super.key,
     required this.userId,
     required this.group,
-  }) : super(key: key);
+  });
 
   @override
   State<GroupDetailScreen> createState() => _GroupDetailScreenState();
@@ -147,7 +147,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               boxShadow: isActive
                   ? [
                       BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 4)
                     ]
                   : [],
             ),

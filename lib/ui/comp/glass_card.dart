@@ -9,17 +9,17 @@ import 'package:flutter/material.dart';
 /// without sacrificing contrast.
 class GlassCard extends StatelessWidget {
   const GlassCard({
-    Key? key,
+    super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(16),
-    this.radius = 18,
+    this.padding,
+    this.radius = 18.0,
     this.boxShadow,
     this.gradient,
     this.borderColor,
-  }) : super(key: key);
+  });
 
   final Widget child;
-  final EdgeInsetsGeometry padding;
+  final EdgeInsetsGeometry? padding;
   final double radius;
   final List<BoxShadow>? boxShadow;
   final Gradient? gradient;
@@ -29,23 +29,25 @@ class GlassCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final effectiveGradient = gradient ?? LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [
-        Colors.white.withValues(alpha: isDark ? 0.12 : 0.55),
-        Colors.white.withValues(alpha: isDark ? 0.08 : 0.32),
-      ],
-    );
-    final effectiveShadow = boxShadow ?? [
-      BoxShadow(
-        color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.06),
-        blurRadius: 20,
-        offset: const Offset(0, 12),
-      ),
-    ];
-    final effectiveBorder = borderColor ??
-        Colors.white.withValues(alpha: isDark ? 0.14 : 0.38);
+    final effectiveGradient = gradient ??
+        LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: isDark ? 0.12 : 0.55),
+            Colors.white.withValues(alpha: isDark ? 0.08 : 0.32),
+          ],
+        );
+    final effectiveShadow = boxShadow ??
+        [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 12),
+          ),
+        ];
+    final effectiveBorder =
+        borderColor ?? Colors.white.withValues(alpha: isDark ? 0.14 : 0.38);
 
     Widget surface = Container(
       decoration: BoxDecoration(
@@ -55,7 +57,7 @@ class GlassCard extends StatelessWidget {
         boxShadow: effectiveShadow,
       ),
       child: Padding(
-        padding: padding,
+        padding: padding ?? EdgeInsets.zero,
         child: child,
       ),
     );

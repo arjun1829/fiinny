@@ -161,7 +161,7 @@ class TransactionEngine {
     }
 
     // Amount heuristic (no hardcoded threshold, just scoring)
-    // TODO: This should be replaced with historical pattern analysis
+    // Note: Future improvement - replace hardcoded thresholds with historical pattern analysis
     // For now: amounts > 10k get higher confidence
     double amountScore = 0.0;
     if (amount > 50000) {

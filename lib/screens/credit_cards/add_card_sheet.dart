@@ -111,8 +111,7 @@ class _AddCardSheetState extends State<AddCardSheet> {
                 const SizedBox(height: 10),
                 TextFormField(
                   controller: _last4Ctrl,
-                  decoration:
-                      const InputDecoration(labelText: 'Last 4 digits'),
+                  decoration: const InputDecoration(labelText: 'Last 4 digits'),
                   keyboardType: TextInputType.number,
                   maxLength: 4,
                   validator: (v) {
@@ -136,23 +135,23 @@ class _AddCardSheetState extends State<AddCardSheet> {
                       child: Text('PDF password: None/Unknown'),
                     ),
                     DropdownMenuItem(
-                      value: PdfPassFormat.first4name_ddmm,
+                      value: PdfPassFormat.first4NameDdmm,
                       child: Text('first4 name + DDMM'),
                     ),
                     DropdownMenuItem(
-                      value: PdfPassFormat.first4name_ddmmyyyy,
+                      value: PdfPassFormat.first4NameDdmmyyyy,
                       child: Text('first4 name + DDMMYYYY'),
                     ),
                     DropdownMenuItem(
-                      value: PdfPassFormat.dob_ddmm,
+                      value: PdfPassFormat.dobDdmm,
                       child: Text('DOB DDMM'),
                     ),
                     DropdownMenuItem(
-                      value: PdfPassFormat.dob_ddmmyyyy,
+                      value: PdfPassFormat.dobDdmmyyyy,
                       child: Text('DOB DDMMYYYY'),
                     ),
                     DropdownMenuItem(
-                      value: PdfPassFormat.issuer_last4,
+                      value: PdfPassFormat.issuerLast4,
                       child: Text('Issuer + last4 / last4'),
                     ),
                     DropdownMenuItem(
@@ -163,7 +162,8 @@ class _AddCardSheetState extends State<AddCardSheet> {
                   decoration: const InputDecoration(
                     labelText: 'Statement PDF password format',
                   ),
-                  onChanged: (v) => setState(() => _passFmt = v ?? PdfPassFormat.none),
+                  onChanged: (v) =>
+                      setState(() => _passFmt = v ?? PdfPassFormat.none),
                 ),
                 const SizedBox(height: 10),
                 TextFormField(

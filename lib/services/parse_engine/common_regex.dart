@@ -15,7 +15,7 @@ class CommonRegex {
       r"(?<!except\s)\b(?:at|to|for)\s+(?!(?:the\s+)?media|ANY\s+ERRORS)([A-Za-z0-9 &().@'_\-]{2,60})");
 
   static final _merchantNameStrict = RegExp(
-    r'Merchant Name\s*[:\-]?\s*([A-Za-z0-9 &().@' '_\-]{2,60})',
+    r'Merchant Name\s*[:\-]?\s*([A-Za-z0-9 &().@' '_-]{2,60})',
     caseSensitive: false,
   );
 
@@ -162,8 +162,9 @@ class CommonRegex {
     // 3) Fallback: 'at|to|for' <something>
     final m = _merchantAfter.firstMatch(text);
     final fallback = m?.group(1)?.trim();
-    if (fallback != null && fallback.startsWith('ANY ERRORS'))
+    if (fallback != null && fallback.startsWith('ANY ERRORS')) {
       return null; // Double check
+    }
     return fallback;
   }
 

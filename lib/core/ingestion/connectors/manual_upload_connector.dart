@@ -27,11 +27,10 @@ class ManualUploadConnector extends SourceConnector {
       return [];
     }
 
-    // TODO: Implement CSV/PDF parsing logic
+    // Note: CSV/PDF parsing logic to be implemented here in future
     // 1. Detect file type
     // 2. Parse rows
     // 3. Map to RawTransactionEvent
-
-    return [];
+    throw UnimplementedError('Manual file upload parsing not yet implemented');
   }
 }

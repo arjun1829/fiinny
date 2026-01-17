@@ -46,7 +46,7 @@ class TonalCard extends StatelessWidget {
   final double borderWidth;
 
   const TonalCard({
-    Key? key,
+    super.key,
     required this.child,
     this.header,
     this.trailingAdd,
@@ -61,7 +61,7 @@ class TonalCard extends StatelessWidget {
     this.elevation = 0, // ⬅️ NEW
     this.shadowColor, // ⬅️ NEW
     this.borderWidth = 1, // ⬅️ NEW
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

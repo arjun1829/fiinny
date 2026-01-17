@@ -155,7 +155,7 @@ class CategoryRules {
         String? instrument,          // optional hint: UPI / Credit Card / ...
         List<String> tags = const [],// optional extra tags from parser (e.g., ['international','fee','loan_emi'])
       }) {
-    final combined = (text + ' ' + (merchantKey ?? '')).trim();
+    final combined = ('$text ${merchantKey ?? ''}').trim();
     final t = combined.toUpperCase();
     final lower = combined.toLowerCase();
     final merchantUpper = (merchantKey ?? '').toUpperCase();

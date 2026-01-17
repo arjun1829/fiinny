@@ -3,27 +3,45 @@ import 'package:flutter/foundation.dart';
 /// Optional: PDF password formats (do NOT store the actual password)
 enum PdfPassFormat {
   none,
-  first4name_ddmm, // e.g., ARJU + 2901
-  first4name_ddmmyyyy, // e.g., ARJU + 29011999
-  dob_ddmm, // 2901
-  dob_ddmmyyyy, // 29011999
-  issuer_last4, // bank + last4 or just last4 depending on issuer
+  first4NameDdmm, // e.g., ARJU + 2901
+  first4NameDdmmyyyy, // e.g., ARJU + 29011999
+  dobDdmm, // 2901
+  dobDdmmyyyy, // 29011999
+  issuerLast4, // bank + last4 or just last4 depending on issuer
   custom, // user enters a custom hint; backend derives
 }
 
-String pdfPassFormatToString(PdfPassFormat f) => f.toString().split('.').last;
+String pdfPassFormatToString(PdfPassFormat f) {
+  switch (f) {
+    case PdfPassFormat.first4NameDdmm:
+      return 'first4name_ddmm';
+    case PdfPassFormat.first4NameDdmmyyyy:
+      return 'first4name_ddmmyyyy';
+    case PdfPassFormat.dobDdmm:
+      return 'dob_ddmm';
+    case PdfPassFormat.dobDdmmyyyy:
+      return 'dob_ddmmyyyy';
+    case PdfPassFormat.issuerLast4:
+      return 'issuer_last4';
+    case PdfPassFormat.custom:
+      return 'custom';
+    case PdfPassFormat.none:
+      return 'none';
+  }
+}
+
 PdfPassFormat pdfPassFormatFromString(String? v) {
   switch (v) {
     case 'first4name_ddmm':
-      return PdfPassFormat.first4name_ddmm;
+      return PdfPassFormat.first4NameDdmm;
     case 'first4name_ddmmyyyy':
-      return PdfPassFormat.first4name_ddmmyyyy;
+      return PdfPassFormat.first4NameDdmmyyyy;
     case 'dob_ddmm':
-      return PdfPassFormat.dob_ddmm;
+      return PdfPassFormat.dobDdmm;
     case 'dob_ddmmyyyy':
-      return PdfPassFormat.dob_ddmmyyyy;
+      return PdfPassFormat.dobDdmmyyyy;
     case 'issuer_last4':
-      return PdfPassFormat.issuer_last4;
+      return PdfPassFormat.issuerLast4;
     case 'custom':
       return PdfPassFormat.custom;
     case 'none':
@@ -57,7 +75,8 @@ class CreditCardModel {
   final double? creditLimit; // latest seen (Total Limit)
   final double? availableCredit; // latest seen (Available Limit)
   final double? rewardPoints; // latest reward balance
-  final double? lastStatementBalance; // balance from last statement (for repayment logic)
+  final double?
+      lastStatementBalance; // balance from last statement (for repayment logic)
   final List<dynamic>? loanOffers; // raw list of loan offers/promos
   final bool? autopayEnabled;
   final List<String>? issuerEmails; // whitelisted senders for this card
@@ -92,7 +111,7 @@ class CreditCardModel {
   });
 
   factory CreditCardModel.fromJson(Map<String, dynamic> json) {
-    DateTime? _parseDate(dynamic value) {
+    DateTime? parseDate(dynamic value) {
       if (value == null) return null;
       if (value is DateTime) return value;
       final timestampType = value.runtimeType.toString();
@@ -110,13 +129,14 @@ class CreditCardModel {
       cardType: json['cardType'] ?? '',
       last4Digits: json['last4Digits'] ?? '',
       cardholderName: json['cardholderName'] ?? '',
-      statementDate: _parseDate(json['statementDate']),
-      dueDate:
-          _parseDate(json['dueDate']) ?? _parseDate(json['nextDueDate']) ?? DateTime.now(),
+      statementDate: parseDate(json['statementDate']),
+      dueDate: parseDate(json['dueDate']) ??
+          parseDate(json['nextDueDate']) ??
+          DateTime.now(),
       totalDue: (json['totalDue'] ?? 0).toDouble(),
       minDue: (json['minDue'] ?? 0).toDouble(),
       isPaid: json['isPaid'] ?? false,
-      paidDate: _parseDate(json['paidDate']),
+      paidDate: parseDate(json['paidDate']),
       cardAlias: json['cardAlias'],
       rewardsInfo: json['rewardsInfo'],
       creditLimit: (json['creditLimit'] is int)
@@ -170,7 +190,8 @@ class CreditCardModel {
         'loanOffers': loanOffers,
         'autopayEnabled': autopayEnabled,
         'issuerEmails': issuerEmails,
-        'pdfPassFormat': pdfPassFormatToString(pdfPassFormat ?? PdfPassFormat.none),
+        'pdfPassFormat':
+            pdfPassFormatToString(pdfPassFormat ?? PdfPassFormat.none),
         'pdfPassHintCustom': pdfPassHintCustom,
       };
 

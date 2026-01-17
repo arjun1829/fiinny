@@ -279,7 +279,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
 
   // ------------------------ Phone helpers / normalization ------------------------
   String get _fullE164 {
-    return normalizeToE164('${_countryCode}${_phoneCtrl.text}',
+    return normalizeToE164('$_countryCode${_phoneCtrl.text}',
         fallbackCountryCode: _countryCode);
   }
 
@@ -570,7 +570,6 @@ class _GlassField extends StatelessWidget {
   final String? Function(String?)? validator;
 
   const _GlassField({
-    super.key,
     required this.controller,
     required this.label,
     required this.icon,

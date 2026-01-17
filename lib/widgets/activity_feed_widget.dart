@@ -23,9 +23,9 @@ class ActivityFeedWidget extends StatelessWidget {
       itemBuilder: (context, idx) {
         final item = activities[idx];
 
-        IconData icon;
-        Color color;
-        String typeLabel;
+        IconData icon = Icons.info_outline_rounded;
+        Color color = Colors.grey;
+        String typeLabel = "Activity";
         switch (item.type) {
           case ActivityType.expense:
             icon = Icons.remove_circle_outline_rounded;
@@ -39,13 +39,8 @@ class ActivityFeedWidget extends StatelessWidget {
             break;
           case ActivityType.settleup:
             icon = Icons.handshake_rounded;
-            color = Colors.blueAccent;
             typeLabel = "Settle Up";
             break;
-          default:
-            icon = Icons.info_outline_rounded;
-            color = Colors.grey;
-            typeLabel = "Activity";
         }
 
         return ListTile(

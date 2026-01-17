@@ -246,8 +246,9 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
       body: FutureBuilder<List<FriendModel>>(
         future: _membersFuture,
         builder: (context, snapshot) {
-          if (!snapshot.hasData)
+          if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
+          }
           var members = snapshot.data!;
 
           // Defensive: Ensure current user always present (for payer)
@@ -346,8 +347,9 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                         firstDate: DateTime(2000),
                         lastDate: DateTime(2100),
                       );
-                      if (picked != null)
+                      if (picked != null) {
                         setState(() => _selectedDate = picked);
+                      }
                     },
                   ),
                 ],
@@ -431,7 +433,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                                 avatar: "👤"));
                         return Text(
                             "${friend.avatar} ${friend.name}: ₹${e.value.toStringAsFixed(2)}");
-                      }).toList(),
+                      }),
                     ],
                   ),
                 ),

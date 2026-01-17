@@ -71,7 +71,9 @@ class AdIds {
     if (value.isEmpty) return false;
     if (value.contains('xxxx') ||
         value.contains('zzzz') ||
-        value.contains('fill')) return false;
+        value.contains('fill')) {
+      return false;
+    }
     final pattern = isAppId
         ? RegExp(r'^ca-app-pub-\d{16}~\d{10}$')
         : RegExp(r'^ca-app-pub-\d{16}/\d{10}$');

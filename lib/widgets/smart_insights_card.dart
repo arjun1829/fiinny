@@ -36,7 +36,9 @@ class SmartInsightCard extends StatelessWidget {
     try {
       // 1) Prefer preset copy if provided
       final preset = sanitize(insightText);
-      if (preset != null) return preset;
+      if (preset != null) {
+        return preset;
+      }
 
       // 2) Net worth line if we have assets/loans
       final loans = (totalLoan ?? 0);
@@ -44,18 +46,24 @@ class SmartInsightCard extends StatelessWidget {
       if (loans > 0 || assets > 0) {
         final copy =
             sanitize(InsightMicrocopy.netWorth(assets: assets, loans: loans));
-        if (copy != null) return copy;
+        if (copy != null) {
+          return copy;
+        }
       }
 
       // 3) Spend vs income
       final svi = sanitize(
           InsightMicrocopy.spendVsIncome(income: income, expense: expense));
-      if (svi != null) return svi;
+      if (svi != null) {
+        return svi;
+      }
 
       // 4) Savings rate
       final sr = sanitize(
           InsightMicrocopy.savingsRate(income: income, savings: savings));
-      if (sr != null) return sr;
+      if (sr != null) {
+        return sr;
+      }
 
       // 5) Goal pace (NULL-SAFE savedAmount!)
       if (goal != null && goal!.targetAmount > 0 && savings > 0) {
@@ -68,7 +76,9 @@ class SmartInsightCard extends StatelessWidget {
           remaining: remaining,
           monthlySavings: savings.toDouble(),
         ));
-        if (goalCopy != null) return goalCopy;
+        if (goalCopy != null) {
+          return goalCopy;
+        }
       }
 
       // 6) Fallback
@@ -85,14 +95,14 @@ class SmartInsightCard extends StatelessWidget {
     final copy = _resolveInsight();
 
     assert(() {
-      String? period;
+      /* String? period;
       final currentKey = key;
       if (currentKey is ValueKey<String>) {
         final parts = currentKey.value.split('|');
         if (parts.length >= 3) {
           period = parts[2];
         }
-      }
+      } */
       // debugPrint('[SmartInsightCard] rendered${period != null ? ' for $period' : ''}');
       return true;
     }());

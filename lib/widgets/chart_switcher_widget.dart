@@ -19,15 +19,14 @@ class ChartSwitcherWidget extends StatelessWidget {
     return Row(
       children: [
         ToggleButtons(
-          children: [Icon(Icons.pie_chart), Icon(Icons.bar_chart)],
           isSelected: [chartType == "Pie", chartType == "Bar"],
           onPressed: (i) {
             onChartTypeChanged(i == 0 ? "Pie" : "Bar");
           },
+          children: [Icon(Icons.pie_chart), Icon(Icons.bar_chart)],
         ),
         SizedBox(width: 12),
         ToggleButtons(
-          children: [Text("All"), Text("Income"), Text("Expense")],
           isSelected: [
             dataType == "All",
             dataType == "Income",
@@ -36,6 +35,7 @@ class ChartSwitcherWidget extends StatelessWidget {
           onPressed: (i) {
             onDataTypeChanged(i == 0 ? "All" : (i == 1 ? "Income" : "Expense"));
           },
+          children: [Text("All"), Text("Income"), Text("Expense")],
         ),
       ],
     );

@@ -9,7 +9,8 @@ class OpenBankingConnector extends SourceConnector {
     if (region.supportedAggregators.isEmpty) {
       return;
     }
-    // TODO: Initialize Plaid/TrueLayer SDKs
+    // Note: Plaid/TrueLayer SDK initialization would happen here.
+    // Currently disabled until aggregator credentials are configured.
   }
 
   @override

@@ -484,10 +484,16 @@ class _AttachmentsBlock extends StatelessWidget {
   });
 
   String _sizeText(int? bytes) {
-    if (bytes == null) return '';
+    if (bytes == null) {
+      return '';
+    }
     const kb = 1024, mb = kb * 1024;
-    if (bytes >= mb) return '${(bytes / mb).toStringAsFixed(1)} MB';
-    if (bytes >= kb) return '${(bytes / kb).toStringAsFixed(0)} KB';
+    if (bytes >= mb) {
+      return '${(bytes / mb).toStringAsFixed(1)} MB';
+    }
+    if (bytes >= kb) {
+      return '${(bytes / kb).toStringAsFixed(0)} KB';
+    }
     return '$bytes B';
   }
 

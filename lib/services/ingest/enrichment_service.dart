@@ -1,4 +1,3 @@
-
 import '../ai/tx_extractor.dart';
 import '../categorization/category_rules.dart';
 import '../user_overrides.dart';
@@ -6,6 +5,7 @@ import '../../config/app_config.dart';
 import '../merchants/merchant_alias_service.dart';
 import '../merchants/brand_service.dart';
 import '../crowd/crowd_sourcing_service.dart';
+import '../parser_feedback_service.dart';
 
 /// Result object for enriched transaction data
 class EnrichedTxn {
@@ -56,6 +56,37 @@ class EnrichmentService {
     // OR we can try to guess a key now.
     // BETTER APPROACH: Let's get the merchant name from LLM/Rules first, then check overrides.
 
+    // 0. Check Parser Feedback (Highest Priority - Exact Match)
+    if (merchantRegex != null && merchantRegex.trim().isNotEmpty) {
+      final feedback = await ParserFeedbackService.instance
+          .getFeedback(userId, merchantRegex);
+      if (feedback != null) {
+        if (feedback.correction.isJunk) {
+          // Special handling for junk? For now, we return specific "JUNK" category
+          // or we could throw an exception to abort ingestion.
+          // Let's return a "JUNK" marked transaction so ingestion can drop it if it wants,
+          // or we rely on the parser to check for "Junk".
+          // Adding a boolean 'isJunk' to EnrichedTxn might be cleaner, but for now:
+          return EnrichedTxn(
+            category: 'Junk',
+            subcategory: 'Junk',
+            merchantName: 'Junk',
+            confidence: 1.0,
+            source: 'user_feedback_junk',
+            tags: ['junk'],
+          );
+        }
+        return EnrichedTxn(
+          category: feedback.correction.category ?? 'Others',
+          subcategory: feedback.correction.subcategory ?? 'others',
+          merchantName: feedback.correction.name ?? merchantRegex,
+          confidence: 1.0,
+          source: 'user_feedback',
+          tags: ['feedback'],
+        );
+      }
+    }
+
     // 2. LLM Call (Primary Engine)
     if (AiConfig.llmOn) {
       try {
@@ -85,11 +116,11 @@ class EnrichmentService {
           }
           if (!isNoise) {
             // We modify the hints list (copy it) or just append string
-            cleanedText = "Possible Merchant: $m\n" + cleanedText;
+            cleanedText = "Possible Merchant: $m\n$cleanedText";
           }
         }
 
-        final enrichedDesc = hints.join('; ') + '; ' + cleanedText;
+        final enrichedDesc = "${hints.join('; ')}; $cleanedText";
 
         final labels = await TxExtractor.labelUnknown([
           TxRaw(

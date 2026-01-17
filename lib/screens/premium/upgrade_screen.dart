@@ -97,8 +97,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
         'key': orderData['key_id'],
         'amount': orderData['amount'],
         'name': 'Fiinny',
-        'description':
-            '${_selectedPlan.toUpperCase()} Plan (${_selectedCycle})',
+        'description': '${_selectedPlan.toUpperCase()} Plan ($_selectedCycle)',
         'order_id': orderData['order_id'],
         'prefill': {
           'contact': user.phoneNumber ?? '',

@@ -342,7 +342,7 @@ class _AllTabState extends State<AllTab> {
                     : null,
               ),
             );
-          }).toList(),
+          }),
           const SizedBox(height: 38),
         ],
       ),

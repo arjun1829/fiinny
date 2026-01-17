@@ -10,6 +10,7 @@ import '../models/group_model.dart';
 import '../services/expense_service.dart';
 import '../services/friend_service.dart';
 import '../services/group_service.dart';
+import '../services/parser_feedback_service.dart';
 import '../widgets/add_friend_dialog.dart';
 import '../widgets/add_group_dialog.dart';
 import '../widgets/people_selector_step.dart';
@@ -456,6 +457,46 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         updatedBy: 'user',
       );
       await ExpenseService().updateExpense(widget.userPhone, updated);
+
+      // --- FEEDBACK LOOP START ---
+      try {
+        final rawKey = widget.expense.rawMerchantString;
+        if (rawKey != null && rawKey.isNotEmpty) {
+          final oldCategory = widget
+              .expense.type; // This is actually 'category' in ExpenseItem logic
+          // Note: ExpenseItem.type maps to 'category', ExpenseItem.subtype maps to 'subcategory'.
+          // In this screen: effectiveCategory is the new category, _subcategory is the new subcategory.
+          final oldCounterparty = widget.expense.counterparty;
+
+          final newCounterparty = (updated.counterparty ?? '').trim();
+          final newCategory = effectiveCategory;
+          final newSubcategory = _subcategory;
+
+          final nameChanged =
+              oldCounterparty != newCounterparty && newCounterparty.isNotEmpty;
+          final catChanged = oldCategory != newCategory;
+          // If 'subcategory' was null in old, treat as empty string for comparison?
+          // widget.expense.subtype matches _subcategory.
+          final subChanged = widget.expense.subtype != newSubcategory;
+
+          if (nameChanged || catChanged || subChanged) {
+            await ParserFeedbackService.instance.recordFeedback(
+              widget.userPhone,
+              rawKey,
+              // Pass the FINAL state of the transaction, even if that specific field didn't change this time.
+              // This ensures the rule we create is complete (Name + Category + Subcategory).
+              name: newCounterparty,
+              category: newCategory,
+              subcategory: newSubcategory,
+            );
+          }
+        }
+      } catch (e) {
+        // Silent fail for feedback loop, don't block user flow
+        debugPrint('Feedback loop error: $e');
+      }
+      // --- FEEDBACK LOOP END ---
+
       if (!mounted) return;
       _toast('Expense updated');
       Navigator.of(context).pop(true);

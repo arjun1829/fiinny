@@ -109,7 +109,9 @@ class _ReviewDraftEditorSheetState extends State<ReviewDraftEditorSheet> {
                               initialDate: _date,
                             );
                             if (picked != null) {
-                              if (!context.mounted) return;
+                              if (!context.mounted) {
+                                return;
+                              }
                               final time = await showTimePicker(
                                 context: context,
                                 initialTime: TimeOfDay.fromDateTime(_date),
@@ -153,8 +155,12 @@ class _ReviewDraftEditorSheetState extends State<ReviewDraftEditorSheet> {
                         }
                         if (v != null && v.trim().isNotEmpty) {
                           final x = double.tryParse(v.replaceAll(',', ''));
-                          if (x == null) return 'Enter a valid number';
-                          if (x < 0) return 'Amount cannot be negative';
+                          if (x == null) {
+                            return 'Enter a valid number';
+                          }
+                          if (x < 0) {
+                            return 'Amount cannot be negative';
+                          }
                         }
                         return null;
                       },
@@ -199,7 +205,9 @@ class _ReviewDraftEditorSheetState extends State<ReviewDraftEditorSheet> {
                           icon: const Icon(Icons.save_rounded),
                           label: const Text('Save'),
                           onPressed: () async {
-                            if (!_formKey.currentState!.validate()) return;
+                            if (!_formKey.currentState!.validate()) {
+                              return;
+                            }
                             final amtStr = _amount.text.trim();
                             final amt =
                                 amtStr.isEmpty ? null : double.parse(amtStr);
@@ -224,7 +232,9 @@ class _ReviewDraftEditorSheetState extends State<ReviewDraftEditorSheet> {
                       icon: const Icon(Icons.check_circle_rounded),
                       label: const Text('Approve & Post'),
                       onPressed: () async {
-                        if (!_formKey.currentState!.validate()) return;
+                        if (!_formKey.currentState!.validate()) {
+                          return;
+                        }
                         // Persist edits then approve
                         final amtStr = _amount.text.trim();
                         final amt =

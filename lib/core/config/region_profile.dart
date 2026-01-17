@@ -5,7 +5,7 @@ class RegionProfile {
   final List<String> supportedLanguages; // e.g., ['en-IN', 'hi-IN']
   final String defaultCurrency; // ISO 4217 (e.g., INR, USD)
   final String currencySymbol; // e.g., ₹, $
-  
+
   // Data Source Permissions
   final bool allowSmsIngestion;
   final bool allowGmailIngestion;
@@ -15,7 +15,7 @@ class RegionProfile {
   // Payment Rails & Keywords
   final List<String> instantPaymentSchemes; // ['UPI', 'IMPS', 'FedNow']
   final List<String> localP2PKeywords; // ['upi', 'vpa', 'zelle']
-  
+
   // Bank Profiles
   final List<BankProfile> majorBanks;
 
@@ -58,12 +58,38 @@ class RegionProfile {
     supportedLanguages: ['en-US'],
     defaultCurrency: 'USD',
     currencySymbol: '\$',
-    allowSmsIngestion: false, // SMS read not allowed on iOS, limited on Android US
+    allowSmsIngestion:
+        false, // SMS read not allowed on iOS, limited on Android US
     allowGmailIngestion: true,
     supportedAggregators: ['PLAID'],
     instantPaymentSchemes: ['FedNow', 'RTP', 'Zelle'],
     localP2PKeywords: ['zelle', 'venmo', 'cash app'],
-    majorBanks: [], // TODO: Add US Major Banks
+    majorBanks: [
+      BankProfile(
+        code: 'CHASE',
+        display: 'Chase Bank',
+        domains: ['chase.com'],
+        headerHints: ['chase'],
+      ),
+      BankProfile(
+        code: 'BOA',
+        display: 'Bank of America',
+        domains: ['bankofamerica.com'],
+        headerHints: ['bank of america', 'boa'],
+      ),
+      BankProfile(
+        code: 'WELLS',
+        display: 'Wells Fargo',
+        domains: ['wellsfargo.com'],
+        headerHints: ['wells fargo'],
+      ),
+      BankProfile(
+        code: 'CITI',
+        display: 'Citi',
+        domains: ['citi.com', 'citibank.com'],
+        headerHints: ['citi', 'citibank'],
+      ),
+    ],
     requireOpenBankingConsent: true,
   );
 

@@ -3,7 +3,7 @@ import '../models/transaction_item.dart';
 
 class DebitCreditList extends StatelessWidget {
   final List<TransactionItem> transactions;
-  const DebitCreditList({required this.transactions, Key? key}) : super(key: key);
+  const DebitCreditList({required this.transactions, super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -17,11 +17,15 @@ class DebitCreditList extends StatelessWidget {
         final t = transactions[i];
         return ListTile(
           leading: CircleAvatar(
-            backgroundColor:
-            t.type == TransactionType.credit ? Colors.green[100] : Colors.red[100],
+            backgroundColor: t.type == TransactionType.credit
+                ? Colors.green[100]
+                : Colors.red[100],
             child: Icon(
-              t.type == TransactionType.credit ? Icons.arrow_downward : Icons.arrow_upward,
-              color: t.type == TransactionType.credit ? Colors.green : Colors.red,
+              t.type == TransactionType.credit
+                  ? Icons.arrow_downward
+                  : Icons.arrow_upward,
+              color:
+                  t.type == TransactionType.credit ? Colors.green : Colors.red,
             ),
           ),
           title: Text(
@@ -37,7 +41,9 @@ class DebitCreditList extends StatelessWidget {
             "₹${t.amount.toStringAsFixed(2)}",
             style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: t.type == TransactionType.credit ? Colors.green : Colors.red),
+                color: t.type == TransactionType.credit
+                    ? Colors.green
+                    : Colors.red),
           ),
         );
       },

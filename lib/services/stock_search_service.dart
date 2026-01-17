@@ -65,10 +65,7 @@ class StockSearchService {
 
           // Prefer Indian stocks for now if exchange matches, but allow others
           // Yahoo uses 'NSI' for NSE, 'BSE' for Bombay.
-          final isIndian = (exch == 'NSI' ||
-              exch == 'BSE' ||
-              symbol.endsWith('.NS') ||
-              symbol.endsWith('.BO'));
+          // Yahoo uses 'NSI' for NSE, 'BSE' for Bombay.
 
           // Skip obscure stuff if we want to be strict, but for now allow generic
           results.add(StockTickerModel(

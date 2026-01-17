@@ -1,6 +1,5 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 class CategoryDonutCard extends StatelessWidget {
   final Map<String, double> categoryTotals;
@@ -21,13 +20,12 @@ class CategoryDonutCard extends StatelessWidget {
       ..sort((a, b) => b.value.compareTo(a.value));
 
     final topEntries = sortedEntries.take(4).toList();
-    final otherAmount = sortedEntries.skip(4).fold(0.0, (sum, e) => sum + e.value);
+    final otherAmount =
+        sortedEntries.skip(4).fold(0.0, (sum, e) => sum + e.value);
 
     if (otherAmount > 0) {
       topEntries.add(MapEntry('Others', otherAmount));
     }
-
-    final currencyFormat = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -105,7 +103,8 @@ class CategoryDonutCard extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: topEntries.map((e) {
-                    final percentage = (e.value / totalSpent * 100).toStringAsFixed(1);
+                    final percentage =
+                        (e.value / totalSpent * 100).toStringAsFixed(1);
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Row(

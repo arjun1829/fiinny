@@ -10,7 +10,6 @@ class WeeklySpendingRing extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final progress = (spent / limit).clamp(0.0, 1.0);
-    final percent = (progress * 100).toStringAsFixed(0);
 
     return Column(
       children: [

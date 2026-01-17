@@ -45,7 +45,9 @@ class _SimpleBarChartWidgetState extends State<SimpleBarChartWidget> {
     for (final e in ex) {
       final c =
           (e.category?.trim().isNotEmpty == true ? e.category : e.type)?.trim();
-      if (c != null && c.isNotEmpty) set.add(c);
+      if (c != null && c.isNotEmpty) {
+        set.add(c);
+      }
     }
     final list = set.toList()..sort();
     return ['All', ...list];
@@ -53,7 +55,9 @@ class _SimpleBarChartWidgetState extends State<SimpleBarChartWidget> {
 
   List<ExpenseItem> get _filteredExpenses {
     final ex = widget.expenses ?? [];
-    if (ex.isEmpty) return ex;
+    if (ex.isEmpty) {
+      return ex;
+    }
 
     return ex.where((e) {
       final cat =
@@ -329,7 +333,9 @@ class _SimpleBarChartWidgetState extends State<SimpleBarChartWidget> {
                             showTitles: true,
                             reservedSize: 38,
                             getTitlesWidget: (val, meta) {
-                              if (val % 1 != 0) return const SizedBox.shrink();
+                              if (val % 1 != 0) {
+                                return const SizedBox.shrink();
+                              }
                               return Text(
                                 '₹${val.toInt()}',
                                 style: TextStyle(

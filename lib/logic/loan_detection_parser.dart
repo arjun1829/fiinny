@@ -82,7 +82,9 @@ class LoanDetectionParser {
           // Stop at numbers or amount symbols
           if (word.contains(RegExp(r'\d')) ||
               word.contains('₹') ||
-              word.length < 2) continue;
+              word.length < 2) {
+            continue;
+          }
           if (potentialNameParts.length >= 2) break;
           potentialNameParts.add(word);
         }

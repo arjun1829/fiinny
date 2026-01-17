@@ -1,5 +1,3 @@
-import 'dart:collection';
-
 import 'package:intl/intl.dart';
 
 enum TxType { all, expense, income }
@@ -580,12 +578,12 @@ Map<String, List<Map<String, dynamic>>> groupTx(
   GroupBy g,
 ) {
   if (g == GroupBy.none) {
-    final result = LinkedHashMap<String, List<Map<String, dynamic>>>();
+    final result = <String, List<Map<String, dynamic>>>{};
     result['All'] = List<Map<String, dynamic>>.of(list);
     return result;
   }
 
-  final result = LinkedHashMap<String, List<Map<String, dynamic>>>();
+  final result = <String, List<Map<String, dynamic>>>{};
   for (final tx in list) {
     final key = _groupKey(tx, g);
     result.putIfAbsent(key, () => <Map<String, dynamic>>[]).add(tx);

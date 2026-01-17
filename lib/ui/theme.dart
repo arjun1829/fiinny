@@ -6,7 +6,6 @@ ThemeData buildAppTheme(ColorScheme colorScheme,
     {Color? scaffoldBackgroundColor}) {
   final isDark = colorScheme.brightness == Brightness.dark;
   final bgColor = scaffoldBackgroundColor ?? colorScheme.surface;
-  final surfaceColor = isDark ? colorScheme.surface : Colors.white;
   final cardColor =
       isDark ? colorScheme.surface.withValues(alpha: 0.8) : Colors.white;
   final inputFillColor =

@@ -167,11 +167,12 @@ class _AddGoalDialogState extends State<AddGoalDialog> {
     }
     final now = DateTime.now();
     final daysLeft = _targetDate!.difference(now).inDays;
-    if (daysLeft <= 0)
+    if (daysLeft <= 0) {
       return {
         "subtitle": "Target date is today — try a later date",
         "detail": ""
       };
+    }
     final perMonth = (amount / daysLeft) * 30;
     return {
       "subtitle": "Save around ${_inr.format(perMonth)} / month",

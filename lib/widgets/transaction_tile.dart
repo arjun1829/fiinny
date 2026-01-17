@@ -27,7 +27,7 @@ class TransactionTile extends StatelessWidget {
 
     String mainText;
     String subtitleText = '';
-    String trailingText;
+    // String trailingText;
     IconData icon;
     Color color;
 
@@ -35,19 +35,19 @@ class TransactionTile extends StatelessWidget {
       final item = transaction as IncomeItem;
       mainText = "${item.type}: ₹${item.amount.toStringAsFixed(2)}";
       subtitleText = item.note;
-      trailingText = "Income";
+
       icon = Icons.arrow_downward;
       color = Colors.green;
     } else if (isExpense) {
       final item = transaction as ExpenseItem;
       mainText = "${item.type}: ₹${item.amount.toStringAsFixed(2)}";
       subtitleText = item.note;
-      trailingText = "Expense";
+
       icon = Icons.arrow_upward;
       color = Colors.pinkAccent;
     } else {
       mainText = "Transaction";
-      trailingText = "";
+
       icon = Icons.swap_horiz;
       color = Colors.grey;
     }

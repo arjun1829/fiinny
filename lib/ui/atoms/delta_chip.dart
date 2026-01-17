@@ -5,8 +5,7 @@ class DeltaChip extends StatelessWidget {
   final double value; // e.g. +1.78 (not 0.0178)
   final bool dense;
 
-  const DeltaChip({Key? key, required this.value, this.dense = false})
-      : super(key: key);
+  const DeltaChip({super.key, required this.value, this.dense = false});
 
   @override
   Widget build(BuildContext context) {

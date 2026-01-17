@@ -214,7 +214,7 @@ class _AddPartnerDialogState extends State<AddPartnerDialog> {
 
     if (s.startsWith('+')) {
       // keep only one leading '+', drop leading zeros after it
-      s = '+' + s.substring(1).replaceFirst(RegExp(r'^0+'), '');
+      s = '+${s.substring(1).replaceFirst(RegExp(r'^0+'), '')}';
       return s;
     }
 

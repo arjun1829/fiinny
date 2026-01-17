@@ -14,6 +14,8 @@
 /// - isStatementOrBillNotice
 /// - isLikelyCardBillNotice
 /// - isLikelyNewsletter
+library;
+
 
 /// Returns true if the text contains verbs that usually indicate a transaction.
 /// This is intentionally broad; downstream parsers should still validate fields.
@@ -32,7 +34,8 @@ bool hasTxnVerb(String body) {
 
 /// Extract the first UPI VPA if present (e.g. name@okaxis).
 String? extractUpiVpa(String body) {
-  final m = RegExp(r'\b([a-zA-Z0-9._\-]{2,})@([a-zA-Z]{2,})\b').firstMatch(body);
+  final m =
+      RegExp(r'\b([a-zA-Z0-9._\-]{2,})@([a-zA-Z]{2,})\b').firstMatch(body);
   return m?.group(0);
 }
 
@@ -47,8 +50,13 @@ String? guessInstrument(String body) {
   if (RegExp(r'\bPOS\b').hasMatch(t)) return 'POS';
   if (RegExp(r'\bDEBIT CARD\b|\bDC\b').hasMatch(t)) return 'Debit Card';
   if (RegExp(r'\bCREDIT CARD\b|\bCC\b').hasMatch(t)) return 'Credit Card';
-  if (RegExp(r'WALLET|PAYTM WALLET|AMAZON PAY', caseSensitive: false).hasMatch(body)) return 'Wallet';
-  if (RegExp(r'NETBANKING|NET BANKING', caseSensitive: false).hasMatch(body)) return 'NetBanking';
+  if (RegExp(r'WALLET|PAYTM WALLET|AMAZON PAY', caseSensitive: false)
+      .hasMatch(body)) {
+    return 'Wallet';
+  }
+  if (RegExp(r'NETBANKING|NET BANKING', caseSensitive: false).hasMatch(body)) {
+    return 'NetBanking';
+  }
   return null;
 }
 
@@ -58,24 +66,59 @@ bool isLikelyPromo(String body) {
 
   // Clear promotional/marketing keywords (Indian context).
   const promoKeywords = [
-    'sale','offer','discount','deal','subscribe','limited time','flat off','cashback up to',
-    'buy now','shop now','coupon','promo code','promo','win','lottery','jackpot',
-    'dream11','fantasy league',
-    'bookmyshow','bms','event tickets',
-    'amazon','flipkart','myntra','ajio','nykaa','meesho',
-    'ola select','uber pass','swiggy one','zomato gold',
-    'newsletter','utm_','webinar','workshop','apply now','loan up to','complete kyc','kyc pending',
+    'sale',
+    'offer',
+    'discount',
+    'deal',
+    'subscribe',
+    'limited time',
+    'flat off',
+    'cashback up to',
+    'buy now',
+    'shop now',
+    'coupon',
+    'promo code',
+    'promo',
+    'win',
+    'lottery',
+    'jackpot',
+    'dream11',
+    'fantasy league',
+    'bookmyshow',
+    'bms',
+    'event tickets',
+    'amazon',
+    'flipkart',
+    'myntra',
+    'ajio',
+    'nykaa',
+    'meesho',
+    'ola select',
+    'uber pass',
+    'swiggy one',
+    'zomato gold',
+    'newsletter',
+    'utm_',
+    'webinar',
+    'workshop',
+    'apply now',
+    'loan up to',
+    'complete kyc',
+    'kyc pending',
   ];
   for (final kw in promoKeywords) {
     if (lower.contains(kw)) return true;
   }
 
   // Link present but no transaction verbs → likely promo.
-  final hasLink = RegExp(r'https?://|www\.', caseSensitive: false).hasMatch(lower);
+  final hasLink =
+      RegExp(r'https?://|www\.', caseSensitive: false).hasMatch(lower);
   if (hasLink && !hasTxnVerb(lower)) return true;
 
   // Common newsletter/unsubscribe markers.
-  if (lower.contains('unsubscribe') || lower.contains('manage preferences')) return true;
+  if (lower.contains('unsubscribe') || lower.contains('manage preferences')) {
+    return true;
+  }
 
   // Shortcode sender styles ("VK-XXXXXX") are common for both banks and promos;
   // keep this neutral here—parsers should rely on verbs/amounts, not just sender format.
@@ -116,21 +159,23 @@ String? guessBankFromSms({String? address, required String body}) {
 
   // Handle common sender ID variants (VK-HDFCBK / AX-ICICI / TM-SBICRD / etc.)
   // and body references.
-  bool _has(String k) => s.contains(k);
+  bool containsText(String k) => s.contains(k);
 
-  if (_has('HDFC') || _has('HDFCBK')) return 'HDFC';
-  if (_has('ICICI')) return 'ICICI';
-  if (_has('SBI') || _has('SBICRD') || _has('SBICARD')) return 'SBI';
-  if (_has('AXIS')) return 'AXIS';
-  if (_has('KOTAK')) return 'KOTAK';
-  if (_has('YES')) return 'YES';
-  if (_has('IDFC')) return 'IDFC';
-  if (_has('INDUSIND')) return 'INDUSIND';
-  if (_has('PNB')) return 'PNB';
-  if (_has('BOB') || _has('BANK OF BARODA')) return 'BOB';
-  if (_has('FEDERAL')) return 'FEDERAL';
-  if (_has('UNION BANK')) return 'UNION';
-  if (_has('CANARA')) return 'CANARA';
+  if (containsText('HDFC') || containsText('HDFCBK')) return 'HDFC';
+  if (containsText('ICICI')) return 'ICICI';
+  if (containsText('SBI') || containsText('SBICRD') || containsText('SBICARD')) {
+    return 'SBI';
+  }
+  if (containsText('AXIS')) return 'AXIS';
+  if (containsText('KOTAK')) return 'KOTAK';
+  if (containsText('YES')) return 'YES';
+  if (containsText('IDFC')) return 'IDFC';
+  if (containsText('INDUSIND')) return 'INDUSIND';
+  if (containsText('PNB')) return 'PNB';
+  if (containsText('BOB') || containsText('BANK OF BARODA')) return 'BOB';
+  if (containsText('FEDERAL')) return 'FEDERAL';
+  if (containsText('UNION BANK')) return 'UNION';
+  if (containsText('CANARA')) return 'CANARA';
 
   // fallback: unknown
   return null;
@@ -140,9 +185,10 @@ String? guessBankFromSms({String? address, required String body}) {
 bool isLikelyBalanceAlert(String body) {
   final t = body.toLowerCase();
   return RegExp(
-    r'\b(passbook|available|closing|current|ledger|eod)\s*balance\b|\bavl\s*bal\b|\bbal(?:ance)?\s*(?:is|:)\b',
-    caseSensitive: false,
-  ).hasMatch(t) && !hasTxnVerb(t);
+        r'\b(passbook|available|closing|current|ledger|eod)\s*balance\b|\bavl\s*bal\b|\bbal(?:ance)?\s*(?:is|:)\b',
+        caseSensitive: false,
+      ).hasMatch(t) &&
+      !hasTxnVerb(t);
 }
 
 /// Bank/card "statement ready / bill generated" (generic). Useful to skip in Gmail,
@@ -172,6 +218,10 @@ bool isLikelyCardBillNotice(String body) {
 bool isLikelyNewsletter(String? listId, String? fromHdr) {
   if ((listId ?? '').trim().isNotEmpty) return true;
   final f = (fromHdr ?? '').toLowerCase();
-  if (f.contains('no-reply@') || f.contains('newsletter') || f.contains('updates@')) return true;
+  if (f.contains('no-reply@') ||
+      f.contains('newsletter') ||
+      f.contains('updates@')) {
+    return true;
+  }
   return false;
 }

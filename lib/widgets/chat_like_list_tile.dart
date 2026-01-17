@@ -71,8 +71,8 @@ class ChatLikeListTile extends StatelessWidget {
     // Fallback: default group icon
     return CircleAvatar(
       radius: 23,
-      child: Icon(Icons.groups_rounded, color: Colors.blueGrey),
       backgroundColor: Colors.grey[300],
+      child: Icon(Icons.groups_rounded, color: Colors.blueGrey),
     );
   }
 
@@ -91,8 +91,8 @@ class ChatLikeListTile extends StatelessWidget {
     // Default person
     return CircleAvatar(
       radius: 23,
-      child: Icon(Icons.person, color: Colors.grey[600]),
       backgroundColor: Colors.grey[200],
+      child: Icon(Icons.person, color: Colors.grey[600]),
     );
   }
 

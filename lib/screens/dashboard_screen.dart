@@ -358,7 +358,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
       final openLoans = loans.where((l) => !l.isClosed).toList();
       final openLoanTotal =
-          openLoans.fold<double>(0.0, (sum, loan) => sum + loan.amount);
+          openLoans.fold<double>(0.0, (prev, loan) => prev + loan.amount);
 
       final userData = await FiinnyBrainService.createFromLiveData(
         widget.userPhone,
@@ -1305,7 +1305,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
       final openLoans = loans.where((l) => !l.isClosed).toList();
       final openLoanTotal =
-          openLoans.fold<double>(0.0, (sum, loan) => sum + loan.amount);
+          openLoans.fold<double>(0.0, (prev, loan) => prev + loan.amount);
 
       // ⬇️ NEW: compute assets from the Portfolio module store
       await _loadPortfolioTotals();
@@ -2362,7 +2362,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               // }
             }
 
-            if (!mounted) return;
+            if (!context.mounted) return;
 
             await showModalBottomSheet(
               context: context,
@@ -2454,7 +2454,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           userId: widget.userPhone,
           goalCount: goals.length,
           totalGoalAmount:
-              goals.fold<double>(0.0, (sum, g) => sum + g.targetAmount),
+              goals.fold<double>(0.0, (prev, g) => prev + g.targetAmount),
           onAddGoal: () async {
             final added = await showDialog<bool>(
               context: context,

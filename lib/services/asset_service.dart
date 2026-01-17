@@ -18,13 +18,11 @@ class AssetService {
           .map((doc) => AssetModel.fromJson(doc.data(), doc.id))
           .toList();
     } on FirebaseException catch (e) {
-      final needsIndex =
-          e.code == 'failed-precondition' || (e.message?.contains('requires an index') ?? false);
+      final needsIndex = e.code == 'failed-precondition' ||
+          (e.message?.contains('requires an index') ?? false);
       if (!needsIndex) rethrow;
 
-      final snap = await _collection
-          .where('userId', isEqualTo: userId)
-          .get();
+      final snap = await _collection.where('userId', isEqualTo: userId).get();
 
       final assets = snap.docs
           .map((doc) => AssetModel.fromJson(doc.data(), doc.id))
@@ -81,7 +79,7 @@ class AssetService {
   // -------------------------
   Future<double> getTotalAssets(String userId) async {
     final assets = await getAssets(userId);
-    return assets.fold<double>(0.0, (sum, a) => sum + a.value);
+    return assets.fold<double>(0.0, (prev, a) => prev + a.value);
   }
 
   // -------------------------
@@ -107,7 +105,8 @@ class AssetService {
   // -------------------------
   // Get recent assets (for dashboard)
   // -------------------------
-  Future<List<AssetModel>> getRecentAssets(String userId, {int limit = 5}) async {
+  Future<List<AssetModel>> getRecentAssets(String userId,
+      {int limit = 5}) async {
     try {
       final snap = await _collection
           .where('userId', isEqualTo: userId)
@@ -119,13 +118,11 @@ class AssetService {
           .map((doc) => AssetModel.fromJson(doc.data(), doc.id))
           .toList();
     } on FirebaseException catch (e) {
-      final needsIndex =
-          e.code == 'failed-precondition' || (e.message?.contains('requires an index') ?? false);
+      final needsIndex = e.code == 'failed-precondition' ||
+          (e.message?.contains('requires an index') ?? false);
       if (!needsIndex) rethrow;
 
-      final snap = await _collection
-          .where('userId', isEqualTo: userId)
-          .get();
+      final snap = await _collection.where('userId', isEqualTo: userId).get();
 
       final assets = snap.docs
           .map((doc) => AssetModel.fromJson(doc.data(), doc.id))
@@ -147,7 +144,8 @@ class AssetService {
   // -------------------------
   // Search by tags or institution
   // -------------------------
-  Future<List<AssetModel>> searchAssets(String userId, {String? tag, String? institution}) async {
+  Future<List<AssetModel>> searchAssets(String userId,
+      {String? tag, String? institution}) async {
     Query query = _collection.where('userId', isEqualTo: userId);
 
     if (tag != null) {
@@ -159,7 +157,8 @@ class AssetService {
 
     final snap = await query.get();
     return snap.docs
-        .map((doc) => AssetModel.fromJson(doc.data() as Map<String, dynamic>, doc.id))
+        .map((doc) =>
+            AssetModel.fromJson(doc.data() as Map<String, dynamic>, doc.id))
         .toList();
   }
 }

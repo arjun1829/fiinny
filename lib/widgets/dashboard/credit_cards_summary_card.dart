@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/credit_card_cycle.dart';
-import '../../models/credit_card_model.dart';
+
 import '../../services/credit_card_service.dart';
 
 class CreditCardsSummaryCard extends StatefulWidget {
@@ -18,8 +18,7 @@ class CreditCardsSummaryCard extends StatefulWidget {
   final VoidCallback? onOpen;
 
   @override
-  State<CreditCardsSummaryCard> createState() =>
-      _CreditCardsSummaryCardState();
+  State<CreditCardsSummaryCard> createState() => _CreditCardsSummaryCardState();
 }
 
 class _CreditCardsSummaryCardState extends State<CreditCardsSummaryCard> {
@@ -46,7 +45,6 @@ class _CreditCardsSummaryCardState extends State<CreditCardsSummaryCard> {
     double totalDue = 0;
 
     for (var i = 0; i < cards.length; i++) {
-      final CreditCardModel card = cards[i];
       final CreditCardCycle? cyc = cycles[i];
       if (cyc == null) continue;
 

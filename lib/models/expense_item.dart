@@ -3,11 +3,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Multiple attachments support (backward compatible with legacy single fields)
 class AttachmentMeta {
-  final String? url;          // public or gs:// url
-  final String? name;         // original file name
-  final int? size;            // bytes
-  final String? mimeType;     // e.g. image/png, application/pdf
-  final String? storagePath;  // Firebase Storage path for deletes
+  final String? url; // public or gs:// url
+  final String? name; // original file name
+  final int? size; // bytes
+  final String? mimeType; // e.g. image/png, application/pdf
+  final String? storagePath; // Firebase Storage path for deletes
 
   const AttachmentMeta({
     this.url,
@@ -28,19 +28,20 @@ class AttachmentMeta {
   }
 
   Map<String, dynamic> toMap() => {
-    if (url != null) 'url': url,
-    if (name != null) 'name': name,
-    if (size != null) 'size': size,
-    if (mimeType != null) 'mimeType': mimeType,
-    if (storagePath != null) 'storagePath': storagePath,
-  };
+        if (url != null) 'url': url,
+        if (name != null) 'name': name,
+        if (size != null) 'size': size,
+        if (mimeType != null) 'mimeType': mimeType,
+        if (storagePath != null) 'storagePath': storagePath,
+      };
 }
 
 class ExpenseItem {
   // --- Core fields (existing) ---
   final String id;
-  final String type;               // e.g., "SMS Debit", "Email Debit", "Credit Card Bill"
+  final String type; // e.g., "SMS Debit", "Email Debit", "Credit Card Bill"
   final double amount;
+
   /// System/parsed note (from email/SMS extraction). Do not edit by user.
   final String note;
   final DateTime date;
@@ -53,13 +54,13 @@ class ExpenseItem {
   final Map<String, double>? customSplits;
 
   // Card basics (existing)
-  final String? cardType;          // "Credit Card" | "Debit Card"
+  final String? cardType; // "Credit Card" | "Debit Card"
   final String? cardLast4;
-  final bool isBill;               // generic bill marker (still used by UI)
+  final bool isBill; // generic bill marker (still used by UI)
   final String? imageUrl;
 
   // Legacy tagging
-  final String? label;             // legacy single label (kept)
+  final String? label; // legacy single label (kept)
   final String? category;
   final String? subcategory; // Added to match Firestore
   final String? subtype;
@@ -73,22 +74,29 @@ class ExpenseItem {
   // --- NEW: Counterparty / Instrument / Banking context ---
   /// Display-ready "Paid to": merchant name OR UPI VPA OR friend/self fallback.
   final String? counterparty;
+
   /// MERCHANT | FRIEND | SELF | UPI_P2P | UNKNOWN
   final String? counterpartyType;
+
   /// UPI Virtual Payment Address (e.g., name@okaxis)
   final String? upiVpa;
+
   /// UPI | Credit Card | Debit Card | IMPS | NEFT | RTGS | ATM | POS | NetBanking | Wallet | Cash
   final String? instrument;
+
   /// VISA | MASTERCARD | RUPAY | AMEX (for card rails)
   final String? instrumentNetwork;
+
   /// Issuer bank code/name (HDFC/ICICI/AXIS/…); best-effort guess
   final String? issuerBank;
 
   // --- NEW: International/FX & fees ---
   /// true if foreign currency present or SMS/email says "international"
   final bool? isInternational;
+
   /// Example: {"currency":"USD","amount":23.60,"rate":82.3}
   final Map<String, dynamic>? fx;
+
   /// Fee map: {"convenience": 10.0, "gst": 1.8, "markup": 5.0, "late_fee": 500.0}
   final Map<String, double>? fees;
 
@@ -100,15 +108,19 @@ class ExpenseItem {
   final DateTime? statementEnd;
 
   // --- NEW UX fields (non-breaking) ---
-  final String? title;       // human label (e.g., "Zomato lunch")
-  final String? comments;    // user free text
+  final String? title; // human label (e.g., "Zomato lunch")
+  final String? comments; // user free text
   final List<String> labels; // user-defined tags
   final List<AttachmentMeta> attachments;
+
+  // --- NEW: Source Record (for raw data access & feedback) ---
+  final Map<String, dynamic>? sourceRecord;
 
   // --- Fiinnny Brain (existing optional) ---
   final Map<String, dynamic>? brainMeta; // feeType, recurringKey, etc.
   final double? confidence;
-  final List<String>? tags;              // ["fee","subscription","loan_emi","autopay","forex",...]
+  final List<String>?
+      tags; // ["fee","subscription","loan_emi","autopay","forex",...]
 
   // --- Audit ---
   final DateTime? createdAt;
@@ -160,6 +172,7 @@ class ExpenseItem {
     this.comments,
     this.labels = const [],
     this.attachments = const [],
+    this.sourceRecord,
     // brain
     this.brainMeta,
     this.confidence,
@@ -215,6 +228,7 @@ class ExpenseItem {
     String? comments,
     List<String>? labels,
     List<AttachmentMeta>? attachments,
+    Map<String, dynamic>? sourceRecord,
     // brain
     Map<String, dynamic>? brainMeta,
     double? confidence,
@@ -234,7 +248,7 @@ class ExpenseItem {
       friendIds: friendIds ?? List<String>.from(this.friendIds),
       groupId: groupId ?? this.groupId,
       settledFriendIds:
-      settledFriendIds ?? List<String>.from(this.settledFriendIds),
+          settledFriendIds ?? List<String>.from(this.settledFriendIds),
       payerId: payerId ?? this.payerId,
       customSplits: customSplits ?? this.customSplits,
       cardType: cardType ?? this.cardType,
@@ -270,6 +284,7 @@ class ExpenseItem {
       comments: comments ?? this.comments,
       labels: labels ?? List<String>.from(this.labels),
       attachments: attachments ?? List<AttachmentMeta>.from(this.attachments),
+      sourceRecord: sourceRecord ?? this.sourceRecord,
       // brain
       brainMeta: brainMeta ?? this.brainMeta,
       confidence: confidence ?? this.confidence,
@@ -291,19 +306,33 @@ class ExpenseItem {
   }
 
   // Convenience getters
-  bool get isUserEdited => (updatedBy?.contains('user') ?? false) || (createdBy?.contains('user') ?? false);
+  bool get isUserEdited =>
+      (updatedBy?.contains('user') ?? false) ||
+      (createdBy?.contains('user') ?? false);
   bool hasTag(String t) => tags?.contains(t) ?? false;
-  bool get isFee => hasTag('fee') || (brainMeta?['feeType'] != null) || ((fees ?? const {}).isNotEmpty);
+  bool get isFee =>
+      hasTag('fee') ||
+      (brainMeta?['feeType'] != null) ||
+      ((fees ?? const {}).isNotEmpty);
   bool get hasAttachments => attachments.isNotEmpty || attachmentUrl != null;
-  AttachmentMeta? get primaryAttachment =>
-      attachments.isNotEmpty
-          ? attachments.first
-          : (attachmentUrl != null
+  AttachmentMeta? get primaryAttachment => attachments.isNotEmpty
+      ? attachments.first
+      : (attachmentUrl != null
           ? AttachmentMeta(
-          url: attachmentUrl, name: attachmentName, size: attachmentSize)
+              url: attachmentUrl, name: attachmentName, size: attachmentSize)
           : null);
   bool get isCreditCard => (cardType ?? '').toLowerCase().contains('credit');
   bool get isDebitCard => (cardType ?? '').toLowerCase().contains('debit');
+
+  String? get rawMerchantString {
+    if (sourceRecord == null) return null;
+    // SMS Key: 'rawMerchantGuess' (if we add it), or maybe we fallback to raw?
+    // Actually, for feedback we ideally want what was used to key the guess.
+    // In SMS ingestor we will start adding 'merchant' (raw guess) to sourceRecord.
+    // In Gmail it might be 'merchant' or extracted from raw.
+    return sourceRecord!['merchant'] as String? ??
+        sourceRecord!['rawMerchantGuess'] as String?;
+  }
 
   Map<String, dynamic> toJson() {
     final map = <String, dynamic>{
@@ -327,7 +356,8 @@ class ExpenseItem {
       if (subtype != null) 'subtype': subtype,
       'bankLogo': bankLogo,
       // NEW context
-      if (counterparty != null && counterparty!.trim().isNotEmpty) 'counterparty': counterparty,
+      if (counterparty != null && counterparty!.trim().isNotEmpty)
+        'counterparty': counterparty,
       if (counterpartyType != null) 'counterpartyType': counterpartyType,
       if (upiVpa != null && upiVpa!.trim().isNotEmpty) 'upiVpa': upiVpa,
       if (instrument != null) 'instrument': instrument,
@@ -340,14 +370,17 @@ class ExpenseItem {
       if (billTotalDue != null) 'billTotalDue': billTotalDue,
       if (billMinDue != null) 'billMinDue': billMinDue,
       if (billDueDate != null) 'billDueDate': Timestamp.fromDate(billDueDate!),
-      if (statementStart != null) 'statementStart': Timestamp.fromDate(statementStart!),
-      if (statementEnd != null) 'statementEnd': Timestamp.fromDate(statementEnd!),
+      if (statementStart != null)
+        'statementStart': Timestamp.fromDate(statementStart!),
+      if (statementEnd != null)
+        'statementEnd': Timestamp.fromDate(statementEnd!),
       // NEW UX
       if (title != null && title!.trim().isNotEmpty) 'title': title,
       if (comments != null && comments!.trim().isNotEmpty) 'comments': comments,
       if (labels.isNotEmpty) 'labels': labels,
       if (attachments.isNotEmpty)
         'attachments': attachments.map((a) => a.toMap()).toList(),
+      if (sourceRecord != null) 'sourceRecord': sourceRecord,
       // Keep legacy single attachment fields for compatibility
       if (attachmentUrl != null) 'attachmentUrl': attachmentUrl,
       if (attachmentName != null) 'attachmentName': attachmentName,
@@ -404,7 +437,7 @@ class ExpenseItem {
       return null;
     }
 
-    DateTime? _asDate(dynamic v) {
+    DateTime? parseTimestamp(dynamic v) {
       if (v is Timestamp) return v.toDate();
       if (v is DateTime) return v;
       if (v is String) return DateTime.tryParse(v);
@@ -454,9 +487,9 @@ class ExpenseItem {
       // Bill meta
       billTotalDue: (json['billTotalDue'] as num?)?.toDouble(),
       billMinDue: (json['billMinDue'] as num?)?.toDouble(),
-      billDueDate: _asDate(json['billDueDate']),
-      statementStart: _asDate(json['statementStart']),
-      statementEnd: _asDate(json['statementEnd']),
+      billDueDate: parseTimestamp(json['billDueDate']),
+      statementStart: parseTimestamp(json['statementStart']),
+      statementEnd: parseTimestamp(json['statementEnd']),
       // NEW UX
       title: json['title'],
       comments: json['comments'],
@@ -464,6 +497,7 @@ class ExpenseItem {
           ? List<String>.from(json['labels'])
           : const [],
       attachments: parseAttachments(json),
+      sourceRecord: json['sourceRecord'],
       // Brain
       brainMeta: (json['brainMeta'] is Map)
           ? Map<String, dynamic>.from(json['brainMeta'])
@@ -507,7 +541,7 @@ class ExpenseItem {
       return null;
     }
 
-    DateTime? _asDate(dynamic v) {
+    DateTime? parseTimestamp(dynamic v) {
       if (v is Timestamp) return v.toDate();
       if (v is DateTime) return v;
       if (v is String) return DateTime.tryParse(v);
@@ -557,9 +591,9 @@ class ExpenseItem {
       // Bill meta
       billTotalDue: (data['billTotalDue'] as num?)?.toDouble(),
       billMinDue: (data['billMinDue'] as num?)?.toDouble(),
-      billDueDate: _asDate(data['billDueDate']),
-      statementStart: _asDate(data['statementStart']),
-      statementEnd: _asDate(data['statementEnd']),
+      billDueDate: parseTimestamp(data['billDueDate']),
+      statementStart: parseTimestamp(data['statementStart']),
+      statementEnd: parseTimestamp(data['statementEnd']),
       // NEW UX
       title: data['title'],
       comments: data['comments'],
@@ -567,6 +601,7 @@ class ExpenseItem {
           ? List<String>.from(data['labels'])
           : const [],
       attachments: parseAttachments(data),
+      sourceRecord: data['sourceRecord'],
       // Brain
       brainMeta: (data['brainMeta'] is Map)
           ? Map<String, dynamic>.from(data['brainMeta'])
@@ -574,8 +609,8 @@ class ExpenseItem {
       confidence: (data['confidence'] as num?)?.toDouble(),
       tags: (data['tags'] is List) ? List<String>.from(data['tags']) : null,
       // Audit
-      createdAt: _asDate(data['createdAt']),
-      updatedAt: _asDate(data['updatedAt']),
+      createdAt: parseTimestamp(data['createdAt']),
+      updatedAt: parseTimestamp(data['updatedAt']),
       createdBy: data['createdBy'],
       updatedBy: data['updatedBy'],
     );

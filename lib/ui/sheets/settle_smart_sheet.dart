@@ -360,8 +360,9 @@ class SettleSmartParticipant {
         .split(RegExp(r"\s+"))
         .where((p) => p.isNotEmpty)
         .toList();
-    if (parts.isEmpty)
+    if (parts.isEmpty) {
       return id.isNotEmpty ? id.characters.take(2).toString() : '?';
+    }
     if (parts.length == 1) {
       final word = parts.first;
       return word.characters.take(2).toString().toUpperCase();

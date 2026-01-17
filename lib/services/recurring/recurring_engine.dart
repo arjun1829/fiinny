@@ -12,7 +12,8 @@ import '../ingest_filters.dart';
 import '../merchants/merchant_alias_service.dart';
 
 class PeriodGuess {
-  final String period; // 'monthly' | 'quarterly' | 'annual' | 'weekly' | 'unknown'
+  final String
+      period; // 'monthly' | 'quarterly' | 'annual' | 'weekly' | 'unknown'
   final double confidence; // 0..1
   final int days; // canonical day span when known, else -1
   const PeriodGuess(this.period, this.confidence, this.days);
@@ -167,7 +168,8 @@ double _median(List<double> values) {
 
 double _toleranceForBrand(String brand) {
   final b = brand.toUpperCase();
-  if (['SPOTIFY', 'NETFLIX', 'HOTSTAR', 'YOUTUBE PREMIUM', 'PRIME VIDEO'].contains(b)) {
+  if (['SPOTIFY', 'NETFLIX', 'HOTSTAR', 'YOUTUBE PREMIUM', 'PRIME VIDEO']
+      .contains(b)) {
     return 0.15;
   }
   if (['AIRTEL', 'JIO', 'VI'].contains(b)) {
@@ -206,11 +208,12 @@ List<SubscriptionEvidence> _collectEvidence(
     final last4 = _normalizeLast4(e.cardLast4);
     final network = (e.instrumentNetwork ?? '').toUpperCase().trim();
     final hasAuto = hasAutopayCue(e.note) || _tagsContain(e.tags, 'autopay');
-    final hasSub = looksSubscriptionContext(e.note) || _tagsContain(e.tags, 'subscription');
+    final hasSub = looksSubscriptionContext(e.note) ||
+        _tagsContain(e.tags, 'subscription');
 
     if (brand.isEmpty && merchantKey.isEmpty) return;
 
-    final key = '${merchantKey}|${instrument}|${last4 ?? ''}|$network';
+    final key = '$merchantKey|$instrument|${last4 ?? ''}|$network';
     final ev = map.putIfAbsent(
       key,
       () => SubscriptionEvidence(
@@ -252,12 +255,13 @@ List<SubscriptionEvidence> _collectEvidence(
         ? _readMerchantKeyFromIncome(i)
         : brand.toUpperCase());
     final instrument = _normInstrument(i.instrument);
-    final last4 = null; // IncomeItem model has no cardLast4; ignore for recurring
+    final last4 =
+        null; // IncomeItem model has no cardLast4; ignore for recurring
     final network = (i.instrumentNetwork ?? '').toUpperCase().trim();
 
     if (brand.isEmpty && merchantKey.isEmpty) return;
 
-    final key = '${merchantKey}|${instrument}|${last4 ?? ''}|$network';
+    final key = '$merchantKey|$instrument|${last4 ?? ''}|$network';
     map.putIfAbsent(
       key,
       () => SubscriptionEvidence(
@@ -312,20 +316,23 @@ class RecurringEngine {
   /// - Subscriptions
   /// - SIP attach (NEW)
   /// - Credit-card trackers (NEW)
-  static Future<void> maybeAttachToSubscription(String userId, String expenseId) async {
+  static Future<void> maybeAttachToSubscription(
+      String userId, String expenseId) async {
     try {
       await _maybeUpdateCardTrackers(userId, expenseId); // NEW
     } catch (_) {}
     try {
-      await _maybeAttachSip(userId, expenseId);          // NEW
+      await _maybeAttachSip(userId, expenseId); // NEW
     } catch (_) {}
     try {
-      await _maybeAttachSubscriptionClassic(userId, expenseId); // legacy behavior
+      await _maybeAttachSubscriptionClassic(
+          userId, expenseId); // legacy behavior
     } catch (_) {}
   }
 
   /// Existing call site: rolls subscription window if a matching payment lands.
-  static Future<void> markPaidIfInWindow(String userId, String expenseId) async {
+  static Future<void> markPaidIfInWindow(
+      String userId, String expenseId) async {
     try {
       await _markSubscriptionPaidIfInWindow(userId, expenseId);
     } catch (_) {}
@@ -343,32 +350,44 @@ class RecurringEngine {
   }
 
   // === SUBSCRIPTIONS (legacy, kept) ==========================================
-  static Future<void> _maybeAttachSubscriptionClassic(String userId, String expenseId) async {
+  static Future<void> _maybeAttachSubscriptionClassic(
+      String userId, String expenseId) async {
     final db = FirebaseFirestore.instance;
-    final expRef = db.collection('users').doc(userId).collection('expenses').doc(expenseId);
+    final expRef = db
+        .collection('users')
+        .doc(userId)
+        .collection('expenses')
+        .doc(expenseId);
     final exp = await expRef.get();
     if (!exp.exists) return;
     final data = exp.data()!;
 
     final matched = await _matchAndUpdateSubscription(userId, expenseId, data);
     if (matched != null) {
-      await expRef.set({'linkedSubscriptionId': matched}, SetOptions(merge: true));
+      await expRef
+          .set({'linkedSubscriptionId': matched}, SetOptions(merge: true));
       return;
     }
 
     final amount = (data['amount'] as num).toDouble();
     final note = (data['note'] ?? '') as String;
     final when = (data['date'] as Timestamp?)?.toDate() ?? DateTime.now();
-    final brand = ((data['merchant'] ?? data['merchantKey']) ?? data['counterparty'] ?? 'UNKNOWN').toString();
+    final brand = ((data['merchant'] ?? data['merchantKey']) ??
+            data['counterparty'] ??
+            'UNKNOWN')
+        .toString();
 
     final isSubCue = RegExp(
-      r'\b(auto[-\s]?debit|autopay|subscription|renew(al)?|membership|plan)\b',
-      caseSensitive: false,
-    ).hasMatch(note) || (data['tags'] is List && (data['tags'] as List).contains('subscription'));
+          r'\b(auto[-\s]?debit|autopay|subscription|renew(al)?|membership|plan)\b',
+          caseSensitive: false,
+        ).hasMatch(note) ||
+        (data['tags'] is List &&
+            (data['tags'] as List).contains('subscription'));
 
     if (!isSubCue || brand == 'UNKNOWN' || brand.trim().isEmpty) return;
 
-    final subCol = db.collection('users').doc(userId).collection('subscriptions');
+    final subCol =
+        db.collection('users').doc(userId).collection('subscriptions');
     final found = await subCol.where('brand', isEqualTo: brand).limit(1).get();
 
     if (found.docs.isEmpty) {
@@ -378,17 +397,23 @@ class RecurringEngine {
         'recurrence': 'monthly',
         'expectedAmount': amount,
         'tolerancePct': 12,
-        'nextDue': Timestamp.fromDate(when.add(const Duration(days: _monthlyDays))),
+        'nextDue':
+            Timestamp.fromDate(when.add(const Duration(days: _monthlyDays))),
         'lastPaidAt': Timestamp.fromDate(when),
         'active': true,
         'needsConfirmation': true,
         'history': [
-          {'expenseId': expenseId, 'at': Timestamp.fromDate(when), 'amount': amount}
+          {
+            'expenseId': expenseId,
+            'at': Timestamp.fromDate(when),
+            'amount': amount
+          }
         ],
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      await expRef.set({'linkedSubscriptionId': 'PENDING'}, SetOptions(merge: true));
+      await expRef
+          .set({'linkedSubscriptionId': 'PENDING'}, SetOptions(merge: true));
       return;
     }
 
@@ -396,7 +421,9 @@ class RecurringEngine {
     final sub = found.docs.first.data();
     final expected = (sub['expectedAmount'] as num?)?.toDouble() ?? amount;
     final tolPct = (sub['tolerancePct'] as num?)?.toDouble() ?? 12.0;
-    final okAmt = (amount - expected).abs() / (expected == 0 ? 1 : expected) * 100 <= tolPct + 0.5;
+    final okAmt =
+        (amount - expected).abs() / (expected == 0 ? 1 : expected) * 100 <=
+            tolPct + 0.5;
 
     if (okAmt) {
       final rec = (sub['recurrence'] as String?) ?? 'monthly';
@@ -408,33 +435,52 @@ class RecurringEngine {
         'lastPaidAt': Timestamp.fromDate(when),
         'nextDue': Timestamp.fromDate(next),
         'history': FieldValue.arrayUnion([
-          {'expenseId': expenseId, 'at': Timestamp.fromDate(when), 'amount': amount}
+          {
+            'expenseId': expenseId,
+            'at': Timestamp.fromDate(when),
+            'amount': amount
+          }
         ]),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-      await expRef.set({'linkedSubscriptionId': subRef.id}, SetOptions(merge: true));
+      await expRef
+          .set({'linkedSubscriptionId': subRef.id}, SetOptions(merge: true));
     }
   }
 
-  static Future<void> _markSubscriptionPaidIfInWindow(String userId, String expenseId) async {
+  static Future<void> _markSubscriptionPaidIfInWindow(
+      String userId, String expenseId) async {
     final db = FirebaseFirestore.instance;
-    final expRef = db.collection('users').doc(userId).collection('expenses').doc(expenseId);
+    final expRef = db
+        .collection('users')
+        .doc(userId)
+        .collection('expenses')
+        .doc(expenseId);
     final exp = await expRef.get();
     if (!exp.exists) return;
 
     final data = exp.data()!;
     final matched = await _matchAndUpdateSubscription(userId, expenseId, data);
     if (matched != null) {
-      await expRef.set({'linkedSubscriptionId': matched}, SetOptions(merge: true));
+      await expRef
+          .set({'linkedSubscriptionId': matched}, SetOptions(merge: true));
       return;
     }
     final amount = (data['amount'] as num).toDouble();
     final when = (data['date'] as Timestamp?)?.toDate() ?? DateTime.now();
-    final brand = ((data['merchant'] ?? data['merchantKey']) ?? data['counterparty'] ?? 'UNKNOWN').toString();
+    final brand = ((data['merchant'] ?? data['merchantKey']) ??
+            data['counterparty'] ??
+            'UNKNOWN')
+        .toString();
     if (brand == 'UNKNOWN' || brand.trim().isEmpty) return;
 
-    final subCol = db.collection('users').doc(userId).collection('subscriptions');
-    final q = await subCol.where('brand', isEqualTo: brand).where('active', isEqualTo: true).limit(1).get();
+    final subCol =
+        db.collection('users').doc(userId).collection('subscriptions');
+    final q = await subCol
+        .where('brand', isEqualTo: brand)
+        .where('active', isEqualTo: true)
+        .limit(1)
+        .get();
     if (q.docs.isEmpty) return;
 
     final subRef = q.docs.first.reference;
@@ -447,7 +493,9 @@ class RecurringEngine {
 
     final expected = (sub['expectedAmount'] as num?)?.toDouble() ?? amount;
     final tolPct = (sub['tolerancePct'] as num?)?.toDouble() ?? 12.0;
-    final okAmt = (amount - expected).abs() / (expected == 0 ? 1 : expected) * 100 <= tolPct + 0.5;
+    final okAmt =
+        (amount - expected).abs() / (expected == 0 ? 1 : expected) * 100 <=
+            tolPct + 0.5;
 
     if (inWindow && okAmt) {
       final rec = (sub['recurrence'] as String?) ?? 'monthly';
@@ -458,11 +506,16 @@ class RecurringEngine {
         'lastPaidAt': Timestamp.fromDate(when),
         'nextDue': Timestamp.fromDate(rolled),
         'history': FieldValue.arrayUnion([
-          {'expenseId': expenseId, 'at': Timestamp.fromDate(when), 'amount': amount}
+          {
+            'expenseId': expenseId,
+            'at': Timestamp.fromDate(when),
+            'amount': amount
+          }
         ]),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-      await expRef.set({'linkedSubscriptionId': subRef.id}, SetOptions(merge: true));
+      await expRef
+          .set({'linkedSubscriptionId': subRef.id}, SetOptions(merge: true));
     }
   }
 
@@ -475,14 +528,17 @@ class RecurringEngine {
     if (amount <= 0) return null;
     final when = (data['date'] as Timestamp?)?.toDate() ?? DateTime.now();
 
-    final rawMerchant = data['merchant'] ?? data['merchantKey'] ?? data['counterparty'];
+    final rawMerchant =
+        data['merchant'] ?? data['merchantKey'] ?? data['counterparty'];
     final normalized = MerchantAlias.normalizeFromContext(
       raw: rawMerchant,
       upiVpa: data['upiVpa']?.toString(),
     );
     final fallback = MerchantAlias.normalize(rawMerchant);
-    final candidateBrand = (normalized.isNotEmpty ? normalized : fallback).toUpperCase();
-    final candidateKey = (data['merchantKey'] ?? candidateBrand).toString().toUpperCase();
+    final candidateBrand =
+        (normalized.isNotEmpty ? normalized : fallback).toUpperCase();
+    final candidateKey =
+        (data['merchantKey'] ?? candidateBrand).toString().toUpperCase();
     final instrument = _normInstrument(data['instrument'] ?? data['cardType']);
     final last4 = _normalizeLast4(data['cardLast4']?.toString());
     final network = (data['instrumentNetwork'] ?? '').toString().toUpperCase();
@@ -493,7 +549,8 @@ class RecurringEngine {
         tags.any((t) => t.toLowerCase() == 'autopay');
 
     final db = FirebaseFirestore.instance;
-    final subCol = db.collection('users').doc(userId).collection('subscriptions');
+    final subCol =
+        db.collection('users').doc(userId).collection('subscriptions');
     final snapshot = await subCol.where('active', isEqualTo: true).get();
     if (snapshot.docs.isEmpty) return null;
 
@@ -504,12 +561,16 @@ class RecurringEngine {
       final subKey = (sub['merchantKey'] ?? subBrand).toString().toUpperCase();
       final subInstrument = _normInstrument(sub['instrument']);
       final subLast4 = _normalizeLast4(sub['cardLast4']?.toString());
-      final subNetwork = (sub['instrumentNetwork'] ?? '').toString().toUpperCase();
+      final subNetwork =
+          (sub['instrumentNetwork'] ?? '').toString().toUpperCase();
       final expected = (sub['expectedAmount'] as num?)?.toDouble() ?? amount;
-      final tolPct = ((sub['tolerancePct'] as num?)?.toDouble() ?? 15.0) / 100.0;
+      final tolPct =
+          ((sub['tolerancePct'] as num?)?.toDouble() ?? 15.0) / 100.0;
       final periodDays = (sub['periodDays'] as num?)?.toInt() ?? _monthlyDays;
-      final recurrence = (sub['recurrence'] as String?)?.toLowerCase() ?? 'monthly';
-      final Timestamp? nextDueTs = sub['nextDue'] is Timestamp ? sub['nextDue'] as Timestamp : null;
+      final recurrence =
+          (sub['recurrence'] as String?)?.toLowerCase() ?? 'monthly';
+      final Timestamp? nextDueTs =
+          sub['nextDue'] is Timestamp ? sub['nextDue'] as Timestamp : null;
       final DateTime? nextDue = nextDueTs?.toDate();
 
       bool brandMatch = false;
@@ -532,9 +593,12 @@ class RecurringEngine {
       if (subLast4 != null && subLast4.isNotEmpty) {
         if (last4 == null || last4 != subLast4) continue;
       }
-      if (subNetwork.isNotEmpty && network.isNotEmpty && subNetwork != network) continue;
+      if (subNetwork.isNotEmpty && network.isNotEmpty && subNetwork != network) {
+        continue;
+      }
 
-      final deltaPct = expected == 0 ? 0.0 : (amount - expected).abs() / expected;
+      final deltaPct =
+          expected == 0 ? 0.0 : (amount - expected).abs() / expected;
       if (expected > 0 && deltaPct > tolPct + 0.05) continue;
 
       var window = 10;
@@ -572,7 +636,8 @@ class RecurringEngine {
         preview.removeRange(0, preview.length - 8);
       }
 
-      final newNextDue = when.add(Duration(days: periodDays > 0 ? periodDays : _monthlyDays));
+      final newNextDue =
+          when.add(Duration(days: periodDays > 0 ? periodDays : _monthlyDays));
       final updates = <String, dynamic>{
         'lastPaidAt': Timestamp.fromDate(when),
         'nextDue': Timestamp.fromDate(newNextDue),
@@ -612,7 +677,8 @@ class RecurringEngine {
 
     for (final ev in evs) {
       if (ev.amounts.isEmpty) continue;
-      final minAmt = ev.amounts.reduce((value, element) => value < element ? value : element);
+      final minAmt = ev.amounts
+          .reduce((value, element) => value < element ? value : element);
       if (minAmt < 30 && !(ev.hasAutopayCue || ev.hasSubCues)) continue;
 
       final pg = _inferPeriod(ev.paidAt);
@@ -641,18 +707,19 @@ class RecurringEngine {
 
       final strongPeriod = okByPeriod && pg.confidence >= 0.8;
       final strongAuto = ev.hasAutopayCue && ev.paidAt.length >= 2;
-      final needsConfirmation = !(strongPeriod || strongAuto) || (minAmt < 100 && !strongAuto);
+      final needsConfirmation =
+          !(strongPeriod || strongAuto) || (minAmt < 100 && !strongAuto);
 
-      final preview = history.length <= 6
-          ? history
-          : history.sublist(history.length - 6);
+      final preview =
+          history.length <= 6 ? history : history.sublist(history.length - 6);
 
       out.add({
         'brand': ev.brand,
         'merchantKey': ev.merchantKey,
         'instrument': ev.instrument,
         if (ev.last4 != null) 'cardLast4': ev.last4,
-        if (ev.network != null && ev.network!.isNotEmpty) 'instrumentNetwork': ev.network,
+        if (ev.network != null && ev.network!.isNotEmpty)
+          'instrumentNetwork': ev.network,
         'expectedAmount': medianAmt,
         'tolerancePct': (tolPct * 100).round(),
         'recurrence': pg.period == 'unknown' ? 'monthly' : pg.period,
@@ -682,11 +749,12 @@ class RecurringEngine {
       final brand = (item['brand'] ?? 'SUB').toString().toUpperCase();
       final instrument = _normInstrument(item['instrument']);
       final last4 = _normalizeLast4(item['cardLast4']?.toString()) ?? 'XXXX';
-      final network = (item['instrumentNetwork'] ?? '').toString().toUpperCase();
+      final network =
+          (item['instrumentNetwork'] ?? '').toString().toUpperCase();
       final slug = brand.replaceAll(RegExp(r'[^A-Z0-9]+'), '_');
       final instSlug = instrument.replaceAll(RegExp(r'[^A-Z0-9]+'), '_');
       final networkSlug = network.isEmpty ? '' : '_$network';
-      final docId = '${slug}_${instSlug}_${last4}$networkSlug';
+      final docId = '${slug}_${instSlug}_$last4$networkSlug';
 
       final docRef = col.doc(docId);
       final docSnap = await docRef.get();
@@ -716,15 +784,17 @@ class RecurringEngine {
       final data = doc.data();
       if (data['active'] == false) continue;
       final periodDays = (data['periodDays'] as num?)?.toInt() ?? 30;
-      final recurrence = (data['recurrence'] as String?)?.toLowerCase() ?? 'monthly';
-      final Timestamp? nextDueTs = data['nextDue'] is Timestamp ? data['nextDue'] as Timestamp : null;
-      final Timestamp? lastPaidTs = data['lastPaidAt'] is Timestamp ? data['lastPaidAt'] as Timestamp : null;
+      final recurrence =
+          (data['recurrence'] as String?)?.toLowerCase() ?? 'monthly';
+      final Timestamp? nextDueTs =
+          data['nextDue'] is Timestamp ? data['nextDue'] as Timestamp : null;
+      final Timestamp? lastPaidTs = data['lastPaidAt'] is Timestamp
+          ? data['lastPaidAt'] as Timestamp
+          : null;
       final DateTime? anchor = nextDueTs?.toDate() ?? lastPaidTs?.toDate();
       if (anchor == null) continue;
 
-      final grace = recurrence == 'monthly'
-          ? 90
-          : math.max(periodDays * 2, 90);
+      final grace = recurrence == 'monthly' ? 90 : math.max(periodDays * 2, 90);
       if (now.isAfter(anchor.add(Duration(days: grace)))) {
         await doc.reference.set({
           'active': false,
@@ -739,32 +809,49 @@ class RecurringEngine {
   }
 
   // === LOANS (legacy, kept) ==================================================
-  static Future<void> _maybeAttachLoanClassic(String userId, String expenseId) async {
+  static Future<void> _maybeAttachLoanClassic(
+      String userId, String expenseId) async {
     final db = FirebaseFirestore.instance;
-    final expRef = db.collection('users').doc(userId).collection('expenses').doc(expenseId);
+    final expRef = db
+        .collection('users')
+        .doc(userId)
+        .collection('expenses')
+        .doc(expenseId);
     final exp = await expRef.get();
     if (!exp.exists) return;
     final data = exp.data()!;
     final note = (data['note'] ?? '') as String;
     final amount = (data['amount'] as num).toDouble();
-    if (!RegExp(r'\b(EMI|LOAN|NACH|ECS|MANDATE)\b', caseSensitive: false).hasMatch(note) &&
-        !(data['tags'] is List && (data['tags'] as List).contains('loan_emi'))) return;
+    if (!RegExp(r'\b(EMI|LOAN|NACH|ECS|MANDATE)\b', caseSensitive: false)
+            .hasMatch(note) &&
+        !(data['tags'] is List && (data['tags'] as List).contains('loan_emi'))) {
+      return;
+    }
 
     final lender = CategoryRules.detectLoanLender(note) ?? 'LOAN';
     final loans = db.collection('users').doc(userId).collection('loans');
     final now = (data['date'] as Timestamp?)?.toDate() ?? DateTime.now();
 
-    final found = await loans.where('lender', isEqualTo: lender).where('active', isEqualTo: true).limit(1).get();
+    final found = await loans
+        .where('lender', isEqualTo: lender)
+        .where('active', isEqualTo: true)
+        .limit(1)
+        .get();
     if (found.docs.isEmpty) {
       await loans.add({
         'lender': lender,
         'emiAmount': amount,
         'dayOfMonth': now.day.clamp(1, 28),
-        'nextDue': Timestamp.fromDate(DateTime(now.year, now.month + 1, now.day.clamp(1, 28))),
+        'nextDue': Timestamp.fromDate(
+            DateTime(now.year, now.month + 1, now.day.clamp(1, 28))),
         'active': true,
         'needsConfirmation': true,
         'history': [
-          {'expenseId': expenseId, 'at': Timestamp.fromDate(now), 'amount': amount}
+          {
+            'expenseId': expenseId,
+            'at': Timestamp.fromDate(now),
+            'amount': amount
+          }
         ],
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -785,7 +872,11 @@ class RecurringEngine {
         'emiAmount': (loan['emiAmount'] as num?)?.toDouble() ?? amount,
         'nextDue': Timestamp.fromDate(DateTime(now.year, now.month + 1, day)),
         'history': FieldValue.arrayUnion([
-          {'expenseId': expenseId, 'at': Timestamp.fromDate(now), 'amount': amount}
+          {
+            'expenseId': expenseId,
+            'at': Timestamp.fromDate(now),
+            'amount': amount
+          }
         ]),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -796,23 +887,30 @@ class RecurringEngine {
   // === SIP / INVESTMENTS (NEW) ===============================================
   static Future<void> _maybeAttachSip(String userId, String expenseId) async {
     final db = FirebaseFirestore.instance;
-    final expRef = db.collection('users').doc(userId).collection('expenses').doc(expenseId);
+    final expRef = db
+        .collection('users')
+        .doc(userId)
+        .collection('expenses')
+        .doc(expenseId);
     final exp = await expRef.get();
     if (!exp.exists) return;
 
     final data = exp.data()!;
     final note = (data['note'] ?? '') as String;
-    final tags = (data['tags'] is List) ? List<String>.from(data['tags']) : const <String>[];
-    final isInvest =
-        CategoryRules.detectSip(note) ||
-            tags.contains('sip') ||
-            (data['category']?.toString().toLowerCase() == 'investments');
+    final tags = (data['tags'] is List)
+        ? List<String>.from(data['tags'])
+        : const <String>[];
+    final isInvest = CategoryRules.detectSip(note) ||
+        tags.contains('sip') ||
+        (data['category']?.toString().toLowerCase() == 'investments');
 
     if (!isInvest) return;
 
     final when = (data['date'] as Timestamp?)?.toDate() ?? DateTime.now();
     final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
-    final brand = ((data['merchant'] ?? data['merchantKey']) ?? data['counterparty'] ?? 'SIP')
+    final brand = ((data['merchant'] ?? data['merchantKey']) ??
+            data['counterparty'] ??
+            'SIP')
         .toString()
         .toUpperCase();
 
@@ -825,12 +923,17 @@ class RecurringEngine {
         'expectedAmount': amount,
         'recurrence': 'monthly',
         'dayOfMonth': when.day.clamp(1, 28),
-        'nextDue': Timestamp.fromDate(DateTime(when.year, when.month + 1, when.day.clamp(1, 28))),
+        'nextDue': Timestamp.fromDate(
+            DateTime(when.year, when.month + 1, when.day.clamp(1, 28))),
         'lastInvestedAt': Timestamp.fromDate(when),
         'active': true,
         'needsConfirmation': true,
         'history': [
-          {'expenseId': expenseId, 'at': Timestamp.fromDate(when), 'amount': amount}
+          {
+            'expenseId': expenseId,
+            'at': Timestamp.fromDate(when),
+            'amount': amount
+          }
         ],
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -842,10 +945,17 @@ class RecurringEngine {
     final sipRef = found.docs.first.reference;
     await sipRef.set({
       'lastInvestedAt': Timestamp.fromDate(when),
-      'expectedAmount': (found.docs.first.data()['expectedAmount'] as num?)?.toDouble() ?? amount,
-      'nextDue': Timestamp.fromDate(DateTime(when.year, when.month + 1, when.day.clamp(1, 28))),
+      'expectedAmount':
+          (found.docs.first.data()['expectedAmount'] as num?)?.toDouble() ??
+              amount,
+      'nextDue': Timestamp.fromDate(
+          DateTime(when.year, when.month + 1, when.day.clamp(1, 28))),
       'history': FieldValue.arrayUnion([
-        {'expenseId': expenseId, 'at': Timestamp.fromDate(when), 'amount': amount}
+        {
+          'expenseId': expenseId,
+          'at': Timestamp.fromDate(when),
+          'amount': amount
+        }
       ]),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -855,41 +965,56 @@ class RecurringEngine {
 
   // === CREDIT CARDS (NEW) ====================================================
   /// Create/Update a card tracker when a Credit Card Bill is ingested.
-  static Future<void> _maybeUpdateCardTrackers(String userId, String expenseId) async {
+  static Future<void> _maybeUpdateCardTrackers(
+      String userId, String expenseId) async {
     final db = FirebaseFirestore.instance;
-    final expRef = db.collection('users').doc(userId).collection('expenses').doc(expenseId);
+    final expRef = db
+        .collection('users')
+        .doc(userId)
+        .collection('expenses')
+        .doc(expenseId);
     final snap = await expRef.get();
     if (!snap.exists) return;
 
     final e = snap.data()!;
     final type = (e['type'] ?? '').toString().toLowerCase();
     final isBill = e['isBill'] == true || type.contains('credit card bill');
-    final isCardTxn = (e['cardType']?.toString().toLowerCase().contains('credit') ?? false) && !isBill;
+    final isCardTxn =
+        (e['cardType']?.toString().toLowerCase().contains('credit') ?? false) &&
+            !isBill;
 
-    final issuer = (e['issuerBank'] ?? e['bankLogo'] ?? e['merchant'] ?? e['merchantKey'])?.toString();
+    final issuer =
+        (e['issuerBank'] ?? e['bankLogo'] ?? e['merchant'] ?? e['merchantKey'])
+            ?.toString();
     final last4 = e['cardLast4']?.toString();
     final network = e['instrumentNetwork']?.toString();
     final when = (e['date'] as Timestamp?)?.toDate() ?? DateTime.now();
 
-    if ((issuer == null || issuer.trim().isEmpty) && (last4 == null || last4.trim().isEmpty)) {
+    if ((issuer == null || issuer.trim().isEmpty) &&
+        (last4 == null || last4.trim().isEmpty)) {
       // Not enough to key a card doc; skip.
       return;
     }
 
-    final cardId = [
-      (issuer ?? 'CARD'),
-      (last4 ?? 'XXXX')
-    ].join('_').toUpperCase();
+    final cardId =
+        [(issuer ?? 'CARD'), (last4 ?? 'XXXX')].join('_').toUpperCase();
 
-    final cardRef = db.collection('users').doc(userId).collection('cards').doc(cardId);
+    final cardRef =
+        db.collection('users').doc(userId).collection('cards').doc(cardId);
 
     if (isBill) {
       // Update statement + dues
       final totalDue = (e['billTotalDue'] as num?)?.toDouble();
       final minDue = (e['billMinDue'] as num?)?.toDouble();
-      final dueDate = (e['billDueDate'] is Timestamp) ? (e['billDueDate'] as Timestamp).toDate() : null;
-      final stStart = (e['statementStart'] is Timestamp) ? (e['statementStart'] as Timestamp).toDate() : null;
-      final stEnd = (e['statementEnd'] is Timestamp) ? (e['statementEnd'] as Timestamp).toDate() : null;
+      final dueDate = (e['billDueDate'] is Timestamp)
+          ? (e['billDueDate'] as Timestamp).toDate()
+          : null;
+      final stStart = (e['statementStart'] is Timestamp)
+          ? (e['statementStart'] as Timestamp).toDate()
+          : null;
+      final stEnd = (e['statementEnd'] is Timestamp)
+          ? (e['statementEnd'] as Timestamp).toDate()
+          : null;
 
       await cardRef.set({
         'issuer': issuer?.toUpperCase(),
@@ -920,33 +1045,48 @@ class RecurringEngine {
     }
   }
 
-  static Future<void> _maybeBumpCardCycleSpend(String userId, String expenseId) async {
+  static Future<void> _maybeBumpCardCycleSpend(
+      String userId, String expenseId) async {
     final db = FirebaseFirestore.instance;
-    final expRef = db.collection('users').doc(userId).collection('expenses').doc(expenseId);
+    final expRef = db
+        .collection('users')
+        .doc(userId)
+        .collection('expenses')
+        .doc(expenseId);
     final snap = await expRef.get();
     if (!snap.exists) return;
     final e = snap.data()!;
 
-    final isCredit = (e['cardType']?.toString().toLowerCase().contains('credit') ?? false) && (e['isBill'] != true);
+    final isCredit =
+        (e['cardType']?.toString().toLowerCase().contains('credit') ?? false) &&
+            (e['isBill'] != true);
     if (!isCredit) return;
 
-    final issuer = (e['issuerBank'] ?? e['merchant'] ?? e['merchantKey'])?.toString();
+    final issuer =
+        (e['issuerBank'] ?? e['merchant'] ?? e['merchantKey'])?.toString();
     final last4 = e['cardLast4']?.toString();
     final amount = (e['amount'] as num?)?.toDouble() ?? 0.0;
     final when = (e['date'] as Timestamp?)?.toDate() ?? DateTime.now();
 
-    if ((issuer == null || issuer.trim().isEmpty) && (last4 == null || last4.trim().isEmpty)) return;
-    final cardId = [(issuer ?? 'CARD'), (last4 ?? 'XXXX')].join('_').toUpperCase();
-    final cardRef = db.collection('users').doc(userId).collection('cards').doc(cardId);
+    if ((issuer == null || issuer.trim().isEmpty) &&
+        (last4 == null || last4.trim().isEmpty)) {
+      return;
+    }
+    final cardId =
+        [(issuer ?? 'CARD'), (last4 ?? 'XXXX')].join('_').toUpperCase();
+    final cardRef =
+        db.collection('users').doc(userId).collection('cards').doc(cardId);
 
     final card = await cardRef.get();
     final hasWindow = card.exists && card.data()?['lastStatement'] is Map;
     if (hasWindow) {
-      final st = Map<String, dynamic>.from(card.data()!['lastStatement'] as Map);
+      final st =
+          Map<String, dynamic>.from(card.data()!['lastStatement'] as Map);
       final start = _asDate(st['start']);
       final end = _asDate(st['end']);
       if (start != null && end != null) {
-        final inCycle = when.isAfter(start) && when.isBefore(end.add(const Duration(days: 1)));
+        final inCycle = when.isAfter(start) &&
+            when.isBefore(end.add(const Duration(days: 1)));
         if (!inCycle) {
           // If out of known window, still track a generic rolling spend
           await cardRef.set({

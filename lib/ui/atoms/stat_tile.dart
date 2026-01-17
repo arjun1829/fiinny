@@ -6,21 +6,21 @@ import 'package:lifemap/ui/tokens.dart' show AppColors;
 /// Clean money tile: leading icon bubble + big amount + label + tiny delta chip.
 class StatTile extends StatelessWidget {
   final IconData icon;
-  final String label;          // e.g. "Total Income"
-  final double amount;         // numeric amount
-  final String currency;       // e.g. "₹" or "$"
-  final double? deltaPercent;  // +/- 1.78 => 1.78%
+  final String label; // e.g. "Total Income"
+  final double amount; // numeric amount
+  final String currency; // e.g. "₹" or "$"
+  final double? deltaPercent; // +/- 1.78 => 1.78%
   final VoidCallback? onMenu;
 
   const StatTile({
-    Key? key,
+    super.key,
     required this.icon,
     required this.label,
     required this.amount,
     this.currency = '₹',
     this.deltaPercent,
     this.onMenu,
-  }) : super(key: key);
+  });
 
   String _format(double v) {
     final s = v.toStringAsFixed(0);

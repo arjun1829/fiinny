@@ -42,10 +42,10 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   Future<void> _loadAll() async {
     setState(() => _loading = true);
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    
+
     // Fetch Assets
     final assets = await _assetService.loadAssets();
-    
+
     // Fetch User, Expenses, Incomes if user is logged in
     List<ExpenseItem> expenses = [];
     List<IncomeItem> incomes = [];
@@ -55,9 +55,10 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       try {
         expenses = await ExpenseService().getExpenses(uid);
         incomes = await IncomeService().getIncomes(uid);
-        final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        final userDoc =
+            await FirebaseFirestore.instance.collection('users').doc(uid).get();
         if (userDoc.exists) {
-           userName = userDoc.data()?['name'] ?? 'User';
+          userName = userDoc.data()?['name'] ?? 'User';
         }
       } catch (e) {
         debugPrint('Failed to load aux data in Portfolio: $e');
@@ -71,8 +72,9 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       for (final a in assets) a.type == 'stock' ? a.name.toUpperCase() : 'GOLD'
     }.toList();
 
-    final quotes =
-    symbols.isEmpty ? <String, PriceQuote>{} : await _market.fetchQuotes(symbols);
+    final quotes = symbols.isEmpty
+        ? <String, PriceQuote>{}
+        : await _market.fetchQuotes(symbols);
 
     if (mounted) {
       setState(() {
@@ -92,7 +94,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   }
 
   double get _totalInvested =>
-      _assets.fold(0.0, (sum, a) => sum + a.investedValue());
+      _assets.fold(0.0, (prev, a) => prev + a.investedValue());
 
   double get _totalCurrent {
     double total = 0.0;
@@ -137,71 +139,72 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-        onRefresh: _loadAll,
-        child: _assets.isEmpty
-            ? ListView(
-          children: [
-            const SizedBox(height: 120),
-            Icon(Icons.folder_open,
-                size: 48, color: theme.colorScheme.outline),
-            const SizedBox(height: 12),
-            Center(
-              child: Text(
-                'No holdings yet.\nTap “Add” to create your first asset.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.outline),
-              ),
-            ),
-          ],
-        )
-            : ListView(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
-          children: [
-            _TotalsCard(
-              invested: _totalInvested,
-              current: _totalCurrent,
-            ),
-            const SizedBox(height: 24),
-            BankCardsCarousel(
-              expenses: _expenses,
-              incomes: _incomes,
-              userName: _userName,
-              onAddCard: _addFlow, // Using Asset add flow temporarily or just placeholder
-            ),
-            const SizedBox(height: 12),
+              onRefresh: _loadAll,
+              child: _assets.isEmpty
+                  ? ListView(
+                      children: [
+                        const SizedBox(height: 120),
+                        Icon(Icons.folder_open,
+                            size: 48, color: theme.colorScheme.outline),
+                        const SizedBox(height: 12),
+                        Center(
+                          child: Text(
+                            'No holdings yet.\nTap “Add” to create your first asset.',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium
+                                ?.copyWith(color: theme.colorScheme.outline),
+                          ),
+                        ),
+                      ],
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
+                      children: [
+                        _TotalsCard(
+                          invested: _totalInvested,
+                          current: _totalCurrent,
+                        ),
+                        const SizedBox(height: 24),
+                        BankCardsCarousel(
+                          expenses: _expenses,
+                          incomes: _incomes,
+                          userName: _userName,
+                          onAddCard:
+                              _addFlow, // Using Asset add flow temporarily or just placeholder
+                        ),
+                        const SizedBox(height: 12),
 
-            // Holdings list using the reusable widget
-            ..._assets.map(
-                  (a) => HoldingRow(
-                asset: a,
-                quote: _quoteFor(a),
-                onLongPress: () =>
-                    _confirmDelete(context, a, _delete),
-              ),
-            ),
+                        // Holdings list using the reusable widget
+                        ..._assets.map(
+                          (a) => HoldingRow(
+                            asset: a,
+                            quote: _quoteFor(a),
+                            onLongPress: () =>
+                                _confirmDelete(context, a, _delete),
+                          ),
+                        ),
 
-            const SizedBox(height: 16),
-            Center(
-              child: Text(
-                'Prices are demo (random-walk). Plug a real provider later.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.outline,
-                ),
-              ),
+                        const SizedBox(height: 16),
+                        Center(
+                          child: Text(
+                            'Prices are demo (random-walk). Plug a real provider later.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.outline,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 120),
+                      ],
+                    ),
             ),
-            const SizedBox(height: 120),
-          ],
-        ),
-      ),
     );
   }
 
   void _confirmDelete(
-      BuildContext context,
-      AssetModel asset,
-      Future<void> Function(String id) onDelete,
-      ) {
+    BuildContext context,
+    AssetModel asset,
+    Future<void> Function(String id) onDelete,
+  ) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -266,7 +269,7 @@ class _TotalsCard extends StatelessWidget {
                 context,
                 label: 'P/L',
                 value:
-                '${pnl >= 0 ? '+' : '-'}₹${pnl.abs().toStringAsFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toStringAsFixed(2)}%)',
+                    '${pnl >= 0 ? '+' : '-'}₹${pnl.abs().toStringAsFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toStringAsFixed(2)}%)',
                 color: pnl >= 0 ? Colors.green : Colors.red,
               ),
             ),

@@ -1,6 +1,8 @@
 // lib/main.dart
 import 'dart:async';
 import 'package:lifemap/services/subscription_service.dart';
+import 'package:lifemap/services/friend_service.dart'; // Added
+import 'package:lifemap/services/group_service.dart'; // Added
 import 'package:device_info_plus/device_info_plus.dart';
 // import 'dart:io' show Platform; // Removed for Web compatibility
 import 'dart:ui';
@@ -25,6 +27,7 @@ import 'services/consent_service.dart';
 import 'services/startup_prefs.dart';
 import 'services/sms/sms_ingestor.dart';
 import 'services/gmail_service.dart';
+import 'services/notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/voice_bridge.dart'; // ✅ Voice Bridge
 
@@ -143,6 +146,21 @@ void main() {
     WidgetsFlutterBinding.ensureInitialized();
 
     await configureSystemUI();
+
+    // Hook up notification navigation
+    NotificationService.onPayload = (payload) {
+      final context = rootNavigatorKey.currentContext;
+      if (context != null) {
+        // Strip scheme if present "app://"
+        var route = payload;
+        if (route.startsWith('app://')) {
+          route = route.replaceFirst('app://', '/');
+          // simple fix: app://analytics/monthly -> /analytics/monthly
+          // app://  -> /
+        }
+        Navigator.of(context).pushNamed(route);
+      }
+    };
 
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       try {
@@ -376,6 +394,12 @@ class _LifemapAppState extends State<LifemapApp> {
             }
             return service;
           },
+        ),
+        Provider<FriendService>(
+          create: (_) => FriendService(),
+        ),
+        Provider<GroupService>(
+          create: (_) => GroupService(),
         ),
       ],
       child: Consumer<ThemeProvider>(

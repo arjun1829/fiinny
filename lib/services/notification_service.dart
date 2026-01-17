@@ -18,6 +18,9 @@ class NotificationService {
 
   NotificationService._internal();
 
+  /// External handler for navigation (avoids dependency cycle with main.dart)
+  static Function(String payload)? onPayload;
+
   static Future<void> requestPermissionLight() async {
     if (!kIsWeb && Platform.isAndroid) {
       try {
@@ -111,8 +114,10 @@ class NotificationService {
   }
 
   static void onDidReceiveNotificationResponse(NotificationResponse response) {
-    // debugPrint('🔔 Notification tapped: ${response.payload}');
-    // TODO: route using your app router with response.payload (deeplink)
+    final p = response.payload;
+    if (p != null && p.isNotEmpty) {
+      onPayload?.call(p);
+    }
   }
 
   static FlutterLocalNotificationsPlugin get plugin => _plugin;

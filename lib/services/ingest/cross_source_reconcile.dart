@@ -294,7 +294,9 @@ class CrossSourceReconcile {
     final set = <String>{};
     final prevSources = prev['sources'];
     if (prevSources is Iterable) {
-      for (final s in prevSources) set.add(s.toString());
+      for (final s in prevSources) {
+        set.add(s.toString());
+      }
     }
     final inType = incoming['type'];
     if (inType is String && inType.isNotEmpty) set.add(inType);

@@ -20,7 +20,8 @@ class SubscriptionsReviewSheet extends StatefulWidget {
   });
 
   @override
-  State<SubscriptionsReviewSheet> createState() => _SubscriptionsReviewSheetState();
+  State<SubscriptionsReviewSheet> createState() =>
+      _SubscriptionsReviewSheetState();
 }
 
 class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
@@ -29,13 +30,15 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
   final Map<String, Map<String, dynamic>> _precomputedMeta = {};
   final _q = TextEditingController();
   String _sort = 'count_desc'; // count_desc | amount_desc | newest
-  static final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+  static final _inr =
+      NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
   bool _triedPrecomputed = false;
   bool _usingPrecomputed = false;
 
   String _keyFor(ExpenseItem e) {
     final meta = (e.toJson()['brainMeta'] as Map?)?.cast<String, dynamic>();
-    final merchant = (meta?['merchant'] as String?) ?? e.label ?? e.category ?? 'Merchant';
+    final merchant =
+        (meta?['merchant'] as String?) ?? e.label ?? e.category ?? 'Merchant';
     final bucket = ((e.amount / 10).round() * 10).toString();
     return '${merchant.toLowerCase()}|$bucket';
   }
@@ -83,14 +86,15 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
       _usingPrecomputed = false;
       _groups.clear();
       _precomputedMeta.clear();
-      if (snap.docs.isEmpty) return false;
+      if (snap.docs.isEmpty) {
+        return false;
+      }
 
       for (final d in snap.docs) {
         final data = d.data();
         final merchant = (data['merchant'] ?? 'Merchant').toString();
         final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
-        final key =
-            '${merchant.toLowerCase()}|${((amount / 10).round() * 10)}';
+        final key = '${merchant.toLowerCase()}|${((amount / 10).round() * 10)}';
         _groups.putIfAbsent(key, () => []);
         _precomputedMeta[key] = {
           'amount': amount,
@@ -123,14 +127,19 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
 
     while (true) {
       Query q = FirebaseFirestore.instance
-          .collection('users').doc(widget.userId)
+          .collection('users')
+          .doc(widget.userId)
           .collection('expenses')
           .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
           .orderBy('date', descending: true)
           .limit(page);
-      if (cursor != null) q = (q).startAfterDocument(cursor);
+      if (cursor != null) {
+        q = (q).startAfterDocument(cursor);
+      }
       final snap = await q.get();
-      if (snap.docs.isEmpty) break;
+      if (snap.docs.isEmpty) {
+        break;
+      }
       for (final d in snap.docs) {
         items.add(ExpenseItem.fromFirestore(d));
       }
@@ -146,8 +155,6 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     final entries = _groups.entries.map((e) {
       final merchant = e.key.split('|').first;
       final meta = _precomputedMeta[e.key];
@@ -161,16 +168,24 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
       if (meta != null && meta['nextDue'] is DateTime) {
         newest = meta['nextDue'] as DateTime;
       } else {
-        newest = e.value
-                .map((x) => x.date)
-                .fold<DateTime?>(null, (m, d) => (m == null || d.isAfter(m)) ? d : m) ??
+        newest = e.value.map((x) => x.date).fold<DateTime?>(
+                null, (m, d) => (m == null || d.isAfter(m)) ? d : m) ??
             DateTime(2000);
       }
-      return (key: e.key, merchant: merchant, amount: amt, count: count, newest: newest, items: e.value);
+      return (
+        key: e.key,
+        merchant: merchant,
+        amount: amt,
+        count: count,
+        newest: newest,
+        items: e.value
+      );
     }).toList();
 
     final q = _q.text.trim().toLowerCase();
-    final filtered = entries.where((e) => q.isEmpty || e.merchant.toLowerCase().contains(q)).toList();
+    final filtered = entries
+        .where((e) => q.isEmpty || e.merchant.toLowerCase().contains(q))
+        .toList();
     filtered.sort((a, b) {
       switch (_sort) {
         case 'amount_desc':
@@ -205,11 +220,13 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
                   ]),
                   const SizedBox(height: Fx.s8),
                   Wrap(spacing: Fx.s8, runSpacing: Fx.s8, children: [
-                    PillBadge('Window: ${widget.daysWindow}d', color: Fx.mintDark, icon: Icons.schedule_rounded),
-                    if (q.isNotEmpty) PillBadge('Filter: "$q"', color: Fx.mintDark, icon: Icons.filter_alt_rounded),
+                    PillBadge('Window: ${widget.daysWindow}d',
+                        color: Fx.mintDark, icon: Icons.schedule_rounded),
+                    if (q.isNotEmpty)
+                      PillBadge('Filter: "$q"',
+                          color: Fx.mintDark, icon: Icons.filter_alt_rounded),
                   ]),
                   const SizedBox(height: Fx.s12),
-
                   Row(children: [
                     Expanded(
                       child: TextField(
@@ -218,7 +235,8 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
                           hintText: 'Search merchant',
                           prefixIcon: const Icon(Icons.search),
                           isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(Fx.r12)),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(Fx.r12)),
                         ),
                         onChanged: (_) => setState(() {}),
                       ),
@@ -228,8 +246,12 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
                       tooltip: 'Sort',
                       onSelected: (v) => setState(() => _sort = v),
                       itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'count_desc', child: Text('Most occurrences')),
-                        PopupMenuItem(value: 'amount_desc', child: Text('Amount (high → low)')),
+                        PopupMenuItem(
+                            value: 'count_desc',
+                            child: Text('Most occurrences')),
+                        PopupMenuItem(
+                            value: 'amount_desc',
+                            child: Text('Amount (high → low)')),
                         PopupMenuItem(value: 'newest', child: Text('Newest')),
                       ],
                       child: const Padding(
@@ -239,14 +261,17 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
                     ),
                   ]),
                   const SizedBox(height: Fx.s10),
-
-                  if (_triedPrecomputed && _usingPrecomputed && _groups.isNotEmpty)
+                  if (_triedPrecomputed &&
+                      _usingPrecomputed &&
+                      _groups.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Row(children: [
-                        const Icon(Icons.bolt_rounded, color: Colors.amber, size: 18),
+                        const Icon(Icons.bolt_rounded,
+                            color: Colors.amber, size: 18),
                         const SizedBox(width: 6),
-                        const Expanded(child: Text('Showing precomputed suggestions')),
+                        const Expanded(
+                            child: Text('Showing precomputed suggestions')),
                         TextButton(
                           onPressed: () async {
                             setStateSafe(() => _loading = true);
@@ -257,38 +282,54 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
                         ),
                       ]),
                     ),
-
                   Expanded(
                     child: filtered.isEmpty
-                        ? const Center(child: Text('No recurring-looking groups match your filters.'))
+                        ? const Center(
+                            child: Text(
+                                'No recurring-looking groups match your filters.'))
                         : ListView.separated(
                             itemCount: filtered.length,
-                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
                             itemBuilder: (_, i) {
                               final e = filtered[i];
                               return ExpansionTile(
-                                leading: const Icon(Icons.autorenew_rounded, color: Colors.indigo),
-                                title: Text('${_title(e.merchant)} • ${_inr.format(e.amount)}'),
-                                subtitle: Text('${e.count} occurrence(s) • last ${_ddmmyy(e.newest)}'),
-                                childrenPadding: const EdgeInsets.only(left: 16, right: 8, bottom: 8),
+                                leading: const Icon(Icons.autorenew_rounded,
+                                    color: Colors.indigo),
+                                title: Text(
+                                    '${_title(e.merchant)} • ${_inr.format(e.amount)}'),
+                                subtitle: Text(
+                                    '${e.count} occurrence(s) • last ${_ddmmyy(e.newest)}'),
+                                childrenPadding: const EdgeInsets.only(
+                                    left: 16, right: 8, bottom: 8),
                                 children: [
                                   ...e.items.take(5).map((x) => ListTile(
                                         dense: true,
-                                        contentPadding: const EdgeInsets.only(left: 8, right: 0),
-                                        title: Text('${_inr.format(x.amount)} • ${_ddmmyy(x.date)}'),
-                                        subtitle: Text(x.note, maxLines: 2, overflow: TextOverflow.ellipsis),
+                                        contentPadding: const EdgeInsets.only(
+                                            left: 8, right: 0),
+                                        title: Text(
+                                            '${_inr.format(x.amount)} • ${_ddmmyy(x.date)}'),
+                                        subtitle: Text(x.note,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis),
                                       )),
                                   if (e.items.length > 5)
                                     Padding(
-                                      padding: const EdgeInsets.only(left: 8, bottom: 6),
-                                      child: Text('+ ${e.items.length - 5} more…', style: const TextStyle(color: Colors.black54)),
+                                      padding: const EdgeInsets.only(
+                                          left: 8, bottom: 6),
+                                      child: Text(
+                                          '+ ${e.items.length - 5} more…',
+                                          style: const TextStyle(
+                                              color: Colors.black54)),
                                     ),
                                   Row(children: [
                                     TextButton.icon(
-                                      icon: const Icon(Icons.delete_outline_rounded),
+                                      icon: const Icon(
+                                          Icons.delete_outline_rounded),
                                       label: const Text('Dismiss'),
                                       onPressed: () async {
-                                        await _dismissGroup(e.merchant, e.amount);
+                                        await _dismissGroup(
+                                            e.merchant, e.amount);
                                         HapticFeedback.lightImpact();
                                       },
                                     ),
@@ -297,7 +338,8 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
                                       icon: const Icon(Icons.save_rounded),
                                       label: const Text('Confirm / Save'),
                                       onPressed: () async {
-                                        await _saveGroup(e.merchant, e.amount, e.items);
+                                        await _saveGroup(
+                                            e.merchant, e.amount, e.items);
                                         HapticFeedback.mediumImpact();
                                       },
                                     ),
@@ -313,9 +355,14 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
     );
   }
 
-  Future<void> _saveGroup(String merchant, double amount, List<ExpenseItem> items) async {
+  Future<void> _saveGroup(
+      String merchant, double amount, List<ExpenseItem> items) async {
     final db = FirebaseFirestore.instance;
-    final dest = db.collection('users').doc(widget.userId).collection('subscriptions').doc();
+    final dest = db
+        .collection('users')
+        .doc(widget.userId)
+        .collection('subscriptions')
+        .doc();
     await dest.set({
       'userId': widget.userId,
       'merchant': _title(merchant),
@@ -327,11 +374,16 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
     });
 
     final key = '${merchant.toLowerCase()}|${((amount / 10).round() * 10)}';
-    final suggRef = db.collection('users').doc(widget.userId)
-        .collection('subscription_suggestions').doc(key);
+    final suggRef = db
+        .collection('users')
+        .doc(widget.userId)
+        .collection('subscription_suggestions')
+        .doc(key);
     await suggRef.set({'status': 'saved'}, SetOptions(merge: true));
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Saved ${_title(merchant)} subscription')),
     );
@@ -340,19 +392,26 @@ class _SubscriptionsReviewSheetState extends State<SubscriptionsReviewSheet> {
   Future<void> _dismissGroup(String merchant, double amount) async {
     final db = FirebaseFirestore.instance;
     final key = '${merchant.toLowerCase()}|${((amount / 10).round() * 10)}';
-    final suggRef = db.collection('users').doc(widget.userId)
-        .collection('subscription_suggestions').doc(key);
+    final suggRef = db
+        .collection('users')
+        .doc(widget.userId)
+        .collection('subscription_suggestions')
+        .doc(key);
     await suggRef.set({'status': 'dismissed'}, SetOptions(merge: true));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dismissed')));
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Dismissed')));
   }
-
-  Widget _chip(String t, String v) => PillBadge('$t: $v', color: Fx.mintDark);
 
   static String _title(String s) => s
       .split(RegExp(r'\s+'))
-      .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}')
+      .map((w) => w.isEmpty
+          ? w
+          : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}')
       .join(' ');
-  static String _ddmmyy(DateTime d) => '${_tw(d.day)}/${_tw(d.month)}/${d.year % 100}';
+  static String _ddmmyy(DateTime d) =>
+      '${_tw(d.day)}/${_tw(d.month)}/${d.year % 100}';
   static String _tw(int n) => n < 10 ? '0$n' : '$n';
 }

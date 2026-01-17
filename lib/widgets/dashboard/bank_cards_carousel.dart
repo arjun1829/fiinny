@@ -137,16 +137,6 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
   }
 
   // Helper to expose slug logic if needed externally
-  static String slugBankStatic(String s) {
-    final x = s.toLowerCase();
-    if (x.contains('axis')) return 'axis';
-    if (x.contains('hdfc')) return 'hdfc';
-    if (x.contains('icici')) return 'icici';
-    if (x.contains('kotak')) return 'kotak';
-    if (x.contains('sbi') || x.contains('state bank')) return 'sbi';
-    if (x.contains('american express') || x.contains('amex')) return 'amex';
-    return x.replaceAll(RegExp(r'[^a-z]'), '');
-  }
 
   @override
   Widget build(BuildContext context) {

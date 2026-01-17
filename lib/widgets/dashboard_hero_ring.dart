@@ -8,21 +8,22 @@ class DashboardHeroRing extends StatelessWidget {
   final bool tappable;
 
   // NEW: knobs for compact usage
-  final bool showHeader;        // hides the title/amounts/chip when false (used in mini rings)
-  final double? ringSize;       // outer ring diameter; inner is computed from this
-  final double? strokeWidth;    // base stroke to scale both rings
+  final bool
+      showHeader; // hides the title/amounts/chip when false (used in mini rings)
+  final double? ringSize; // outer ring diameter; inner is computed from this
+  final double? strokeWidth; // base stroke to scale both rings
 
   const DashboardHeroRing({
-    Key? key,
+    super.key,
     required this.credit,
     required this.debit,
     required this.period,
     this.onFilterTap,
     this.tappable = false,
     this.showHeader = true,
-    this.ringSize,            // default chosen below
-    this.strokeWidth,         // default chosen below
-  }) : super(key: key);
+    this.ringSize, // default chosen below
+    this.strokeWidth, // default chosen below
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -30,13 +31,13 @@ class DashboardHeroRing extends StatelessWidget {
     double maxValue = (credit > debit ? credit : debit);
     if (maxValue == 0) maxValue = 1.0;
     final percentCredit = (credit / maxValue).clamp(0.0, 1.0).toDouble();
-    final percentDebit  = (debit  / maxValue).clamp(0.0, 1.0).toDouble();
+    final percentDebit = (debit / maxValue).clamp(0.0, 1.0).toDouble();
 
     // ---- sizing (scales nicely for both big + mini)
-    final double outer = ringSize ?? 150;                     // outer ring diameter
-    final double inner = outer * 0.80;                        // inner ring diameter
+    final double outer = ringSize ?? 150; // outer ring diameter
+    final double inner = outer * 0.80; // inner ring diameter
     final double baseStroke =
-        strokeWidth ?? (outer * 0.10).clamp(4.0, 18.0);       // thickness for outer
+        strokeWidth ?? (outer * 0.10).clamp(4.0, 18.0); // thickness for outer
     final double innerStroke = (baseStroke * 0.75).clamp(3.0, 16.0);
 
     // ---- just the double ring (used in both layouts)
@@ -230,12 +231,11 @@ class _AnimatedRing extends StatelessWidget {
   final double strokeWidth;
 
   const _AnimatedRing({
-    Key? key,
     required this.percent,
     required this.color,
     this.size = 60,
     this.strokeWidth = 8,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -295,8 +295,8 @@ class _RingPainter extends CustomPainter {
     // FG progress
     canvas.drawArc(
       Rect.fromCircle(center: center, radius: radius),
-      -3.1415926535 / 2,                      // start at 12 o'clock
-      2 * 3.1415926535 * percent,             // sweep
+      -3.1415926535 / 2, // start at 12 o'clock
+      2 * 3.1415926535 * percent, // sweep
       false,
       fg,
     );
@@ -304,5 +304,7 @@ class _RingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RingPainter old) =>
-      old.percent != percent || old.color != color || old.strokeWidth != strokeWidth;
+      old.percent != percent ||
+      old.color != color ||
+      old.strokeWidth != strokeWidth;
 }

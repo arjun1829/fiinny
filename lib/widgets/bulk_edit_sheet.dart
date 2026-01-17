@@ -78,8 +78,9 @@ class _BulkEditSheetState extends State<BulkEditSheet> {
 
   void _hydrateFromInitial() {
     if (widget.initial.title != null) _titleCtl.text = widget.initial.title!;
-    if (widget.initial.comments != null)
+    if (widget.initial.comments != null) {
       _commentsCtl.text = widget.initial.comments!;
+    }
     _category = widget.initial.category;
     _date = widget.initial.date;
     _addLabels.addAll(widget.initial.addLabels);

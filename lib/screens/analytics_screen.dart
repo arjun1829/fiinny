@@ -2025,11 +2025,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         incomes: _allInc,
                         userName: _userName ?? 'User',
                         onAddCard: () {
-                          // TODO: Implement add card
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text("Add Card feature coming soon!")),
-                          );
+                          Navigator.pushNamed(context, '/cards-management',
+                              arguments: widget.userPhone);
                         },
                         onCardSelected: (slug) {
                           final bankName = slug.toUpperCase();

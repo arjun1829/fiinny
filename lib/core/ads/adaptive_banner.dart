@@ -8,7 +8,7 @@ import 'ad_service.dart';
 class AdaptiveBanner extends StatefulWidget {
   final String adUnitId;
   final EdgeInsets padding;
-  final bool inline;       // use inline adaptive if true
+  final bool inline; // use inline adaptive if true
   final int? inlineMaxHeight;
   final String? userId;
   final void Function(bool isLoaded)? onLoadChanged;
@@ -27,7 +27,8 @@ class AdaptiveBanner extends StatefulWidget {
   State<AdaptiveBanner> createState() => _AdaptiveBannerState();
 }
 
-class _AdaptiveBannerState extends State<AdaptiveBanner> with AutomaticKeepAliveClientMixin {
+class _AdaptiveBannerState extends State<AdaptiveBanner>
+    with AutomaticKeepAliveClientMixin {
   BannerAd? _ad;
   bool _loaded = false;
   bool _isLoading = false;
@@ -79,8 +80,14 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> with AutomaticKeepAlive
         _reportAdFailure('initialize ads', err, stack);
       }
 
-      if (!mounted) { _completeLoad(); return; }
-      if (!AdService.I.isEnabled) { _completeLoad(); return; }
+      if (!mounted) {
+        _completeLoad();
+        return;
+      }
+      if (!AdService.I.isEnabled) {
+        _completeLoad();
+        return;
+      }
     }
 
     final width = MediaQuery.of(context).size.width.truncate();
@@ -88,9 +95,10 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> with AutomaticKeepAlive
     try {
       if (widget.inline) {
         final maxH = (widget.inlineMaxHeight ?? 120).clamp(32, 300);
-        size = await AdSize.getInlineAdaptiveBannerAdSize(width, maxH);
+        size = AdSize.getInlineAdaptiveBannerAdSize(width, maxH);
       } else {
-        size = await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(width);
+        size = await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(
+            width);
       }
     } catch (err) {
       // If we fail to get size, retry later
@@ -135,7 +143,8 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> with AutomaticKeepAlive
               _ad = null;
             });
             widget.onLoadChanged?.call(false);
-            debugPrint('[AdaptiveBanner] Banner failed to load: $error. Retrying in 30s...');
+            debugPrint(
+                '[AdaptiveBanner] Banner failed to load: $error. Retrying in 30s...');
             _scheduleRetry();
           },
         ),
@@ -149,10 +158,10 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> with AutomaticKeepAlive
     }
 
     if (!mounted && banner != null && !bannerDisposed) {
-      banner.dispose(); 
+      banner.dispose();
       bannerDisposed = true;
     }
-    
+
     _completeLoad();
   }
 
@@ -182,10 +191,10 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> with AutomaticKeepAlive
   }
 
   @override
-  void dispose() { 
+  void dispose() {
     _retryTimer?.cancel();
-    _ad?.dispose(); 
-    super.dispose(); 
+    _ad?.dispose();
+    super.dispose();
   }
 
   @override
@@ -211,4 +220,3 @@ class _AdaptiveBannerState extends State<AdaptiveBanner> with AutomaticKeepAlive
     );
   }
 }
-

@@ -85,14 +85,14 @@ class FriendsController extends ChangeNotifier {
     _rebuild();
   }
 
-  List<_FriendVM> get friendsVM => _friendsVM;
-  List<_GroupVM> get groupsVM => _groupsVM;
-  List<_MixedVM> get allVM => _allVM;
+  List<FriendVM> get friendsVM => _friendsVM;
+  List<GroupVM> get groupsVM => _groupsVM;
+  List<MixedVM> get allVM => _allVM;
 
   // ---------- Internal State ----------
-  List<_FriendVM> _friendsVM = const [];
-  List<_GroupVM> _groupsVM = const [];
-  List<_MixedVM> _allVM = const [];
+  List<FriendVM> _friendsVM = const [];
+  List<GroupVM> _groupsVM = const [];
+  List<MixedVM> _allVM = const [];
 
   void _rebuild() {
     _friendsVM = _buildFriendVMs(userPhone, _friends, _expenses,
@@ -101,9 +101,9 @@ class FriendsController extends ChangeNotifier {
     _groupsVM = _buildGroupVMs(userPhone, _groups, _expenses,
         query: query, openOnly: openOnly, sort: sortMode);
 
-    _allVM = <_MixedVM>[
-      ..._friendsVM.map((f) => _MixedVM.friend(f)),
-      ..._groupsVM.map((g) => _MixedVM.group(g)),
+    _allVM = <MixedVM>[
+      ..._friendsVM.map((f) => MixedVM.friend(f)),
+      ..._groupsVM.map((g) => MixedVM.group(g)),
     ]..sort((a, b) {
         final aDt = a.lastUpdate ?? DateTime.fromMillisecondsSinceEpoch(0);
         final bDt = b.lastUpdate ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -149,16 +149,16 @@ class FriendsController extends ChangeNotifier {
 
 /* ========================== View Models ========================== */
 
-class _FriendVM {
+class FriendVM {
   final FriendModel friend;
   final double net; // + => owes you, - => you owe
   final ExpenseItem? lastTx;
   DateTime? get lastUpdate => lastTx?.date;
 
-  _FriendVM(this.friend, this.net, this.lastTx);
+  FriendVM(this.friend, this.net, this.lastTx);
 }
 
-class _GroupVM {
+class GroupVM {
   final GroupModel group;
   final double owedToYou;
   final double youOwe;
@@ -166,20 +166,20 @@ class _GroupVM {
   double get net => owedToYou - youOwe;
   DateTime? get lastUpdate => lastTx?.date;
 
-  _GroupVM(this.group, this.owedToYou, this.youOwe, this.lastTx);
+  GroupVM(this.group, this.owedToYou, this.youOwe, this.lastTx);
 }
 
-class _MixedVM {
+class MixedVM {
   final bool isGroup;
-  final _FriendVM? f;
-  final _GroupVM? g;
+  final FriendVM? f;
+  final GroupVM? g;
   final DateTime? lastUpdate;
 
-  _MixedVM.friend(this.f)
+  MixedVM.friend(this.f)
       : isGroup = false,
         g = null,
         lastUpdate = f?.lastUpdate;
-  _MixedVM.group(this.g)
+  MixedVM.group(this.g)
       : isGroup = true,
         f = null,
         lastUpdate = g?.lastUpdate;
@@ -246,7 +246,7 @@ double _pairSigned(ExpenseItem e, String you, String other) {
   return 0.0; // third-party paid
 }
 
-List<_FriendVM> _buildFriendVMs(
+List<FriendVM> _buildFriendVMs(
   String you,
   List<FriendModel> friends,
   List<ExpenseItem> txs, {
@@ -254,7 +254,7 @@ List<_FriendVM> _buildFriendVMs(
   required bool openOnly,
   required FriendsSortMode sort,
 }) {
-  final out = <_FriendVM>[];
+  final out = <FriendVM>[];
 
   for (final f in friends) {
     if (query.isNotEmpty &&
@@ -278,7 +278,7 @@ List<_FriendVM> _buildFriendVMs(
     affecting.sort((a, b) => b.date.compareTo(a.date));
     final last = affecting.isNotEmpty ? affecting.first : null;
 
-    out.add(_FriendVM(f, net, last));
+    out.add(FriendVM(f, net, last));
   }
 
   switch (sort) {
@@ -300,7 +300,7 @@ List<_FriendVM> _buildFriendVMs(
   return out;
 }
 
-List<_GroupVM> _buildGroupVMs(
+List<GroupVM> _buildGroupVMs(
   String you,
   List<GroupModel> groups,
   List<ExpenseItem> txs, {
@@ -308,7 +308,7 @@ List<_GroupVM> _buildGroupVMs(
   required bool openOnly,
   required FriendsSortMode sort,
 }) {
-  final out = <_GroupVM>[];
+  final out = <GroupVM>[];
 
   for (final g in groups) {
     if (query.isNotEmpty && !_matches(query, g.name)) continue;
@@ -334,7 +334,7 @@ List<_GroupVM> _buildGroupVMs(
     if (openOnly && owedToYou == 0.0 && youOwe == 0.0) continue;
 
     final last = gtx.isNotEmpty ? gtx.first : null;
-    out.add(_GroupVM(g, owedToYou, youOwe, last));
+    out.add(GroupVM(g, owedToYou, youOwe, last));
   }
 
   switch (sort) {

@@ -65,7 +65,7 @@ class HoldingRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
-              (pnl >= 0 ? '+' : '-') + '₹${pnl.abs().toStringAsFixed(2)}',
+              '${pnl >= 0 ? '+' : '-'}₹${pnl.abs().toStringAsFixed(2)}',
               style: theme.textTheme.titleSmall?.copyWith(
                 color: pnl >= 0 ? Colors.green : Colors.red,
                 fontWeight: FontWeight.w600,

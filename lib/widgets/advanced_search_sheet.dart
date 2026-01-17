@@ -188,8 +188,9 @@ class _AdvancedSearchSheetState extends State<AdvancedSearchSheet> {
     if (res != null && res.isNotEmpty) {
       setState(() {
         _labels.add(res);
-        if (!_allLabels.contains(res))
+        if (!_allLabels.contains(res)) {
           _allLabels = [..._allLabels, res]..sort();
+        }
       });
     }
   }

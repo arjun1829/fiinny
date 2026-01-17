@@ -9,17 +9,18 @@ class FinancialRingCard extends StatelessWidget {
   final VoidCallback onFilterTap;
 
   const FinancialRingCard({
-    Key? key,
+    super.key,
     required this.userName,
     required this.credit,
     required this.debit,
     required this.period,
     required this.onFilterTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
-    final double total = (credit + debit) == 0 ? 1 : (credit + debit); // avoid zero division
+    final double total =
+        (credit + debit) == 0 ? 1 : (credit + debit); // avoid zero division
 
     return Container(
       width: double.infinity,
@@ -61,7 +62,8 @@ class FinancialRingCard extends StatelessWidget {
 
             // Ring and Balance
             TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0, end: ((credit - debit) / total).clamp(0.0, 1.0)),
+              tween: Tween(
+                  begin: 0, end: ((credit - debit) / total).clamp(0.0, 1.0)),
               duration: const Duration(milliseconds: 900),
               curve: Curves.easeOutCubic,
               builder: (context, val, _) => Column(
@@ -69,7 +71,8 @@ class FinancialRingCard extends StatelessWidget {
                   // Animated Ring
                   FinancialRingWidget(
                     label: "Balance",
-                    value: (credit - debit) * val, // smooth animate to new balance
+                    value:
+                        (credit - debit) * val, // smooth animate to new balance
                     maxValue: total,
                     icon: Icons.account_balance_wallet_rounded,
                     color: Colors.tealAccent,
@@ -104,12 +107,16 @@ class FinancialRingCard extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _StatTile(label: "Income", amount: credit, color: Colors.greenAccent),
+                  _StatTile(
+                      label: "Income",
+                      amount: credit,
+                      color: Colors.greenAccent),
                   InkWell(
                     onTap: onFilterTap,
                     borderRadius: BorderRadius.circular(18),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(16),
@@ -118,14 +125,17 @@ class FinancialRingCard extends StatelessWidget {
                         children: [
                           Text(
                             period,
-                            style: const TextStyle(color: Colors.white70, fontSize: 14),
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 14),
                           ),
-                          const Icon(Icons.expand_more_rounded, color: Colors.white70, size: 19),
+                          const Icon(Icons.expand_more_rounded,
+                              color: Colors.white70, size: 19),
                         ],
                       ),
                     ),
                   ),
-                  _StatTile(label: "Expense", amount: debit, color: Colors.redAccent),
+                  _StatTile(
+                      label: "Expense", amount: debit, color: Colors.redAccent),
                 ],
               ),
             ),

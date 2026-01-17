@@ -52,7 +52,9 @@ class SplitSummaryWidget extends StatelessWidget {
     int openBalances = 0;
 
     pair.forEach((phone, net) {
-      if (net == 0) return;
+      if (net == 0) {
+        return;
+      }
       openBalances++;
       if (net > 0) {
         owedToYou += net;
@@ -194,7 +196,9 @@ class SplitSummaryWidget extends StatelessWidget {
           )
           .trim();
     }
-    if (f == null) return fallback;
+    if (f == null) {
+      return fallback;
+    }
     return fallback;
   }
 }
@@ -282,7 +286,9 @@ class _AvatarCache {
   static final Map<String, String?> _map = {};
 
   static Future<String?> getUrl(String phone) async {
-    if (_map.containsKey(phone)) return _map[phone];
+    if (_map.containsKey(phone)) {
+      return _map[phone];
+    }
     try {
       final snap =
           await FirebaseFirestore.instance.collection('users').doc(phone).get();

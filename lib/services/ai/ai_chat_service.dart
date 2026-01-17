@@ -101,7 +101,7 @@ class AiChatService {
     final count = countSnapshot.count;
 
     await sessionRef.update({
-      'lastMessage': text.length > 100 ? text.substring(0, 100) + '...' : text,
+      'lastMessage': text.length > 100 ? '${text.substring(0, 100)}...' : text,
       'lastUpdated': FieldValue.serverTimestamp(),
       'messageCount': count,
     });

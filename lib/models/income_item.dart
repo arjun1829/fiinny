@@ -77,6 +77,9 @@ class IncomeItem {
   final List<String> labels;
   final List<AttachmentMeta> attachments;
 
+  // --- NEW: Source Record (for raw data access & feedback) ---
+  final Map<String, dynamic>? sourceRecord;
+
   // --- Legacy single-attachment fields (optional parity; harmless if unused) ---
   final String? attachmentUrl;
   final String? attachmentName;
@@ -121,6 +124,7 @@ class IncomeItem {
     this.comments,
     this.labels = const [],
     this.attachments = const [],
+    this.sourceRecord,
     // legacy single-attachment
     this.attachmentUrl,
     this.attachmentName,
@@ -164,6 +168,7 @@ class IncomeItem {
     String? comments,
     List<String>? labels,
     List<AttachmentMeta>? attachments,
+    Map<String, dynamic>? sourceRecord,
     // legacy single-attachment
     String? attachmentUrl,
     String? attachmentName,
@@ -206,6 +211,7 @@ class IncomeItem {
       comments: comments ?? this.comments,
       labels: labels ?? List<String>.from(this.labels),
       attachments: attachments ?? List<AttachmentMeta>.from(this.attachments),
+      sourceRecord: sourceRecord ?? this.sourceRecord,
       // legacy single-attachment
       attachmentUrl: attachmentUrl ?? this.attachmentUrl,
       attachmentName: attachmentName ?? this.attachmentName,
@@ -242,6 +248,12 @@ class IncomeItem {
       (updatedBy?.contains('user') ?? false) ||
       (createdBy?.contains('user') ?? false);
 
+  String? get rawMerchantString {
+    if (sourceRecord == null) return null;
+    return sourceRecord!['merchant'] as String? ??
+        sourceRecord!['rawMerchantGuess'] as String?;
+  }
+
   Map<String, dynamic> toJson() {
     final map = <String, dynamic>{
       'id': id,
@@ -273,6 +285,7 @@ class IncomeItem {
       if (labels.isNotEmpty) 'labels': labels,
       if (attachments.isNotEmpty)
         'attachments': attachments.map((a) => a.toMap()).toList(),
+      if (sourceRecord != null) 'sourceRecord': sourceRecord,
       // Legacy single-attachment mirror
       if (attachmentUrl != null) 'attachmentUrl': attachmentUrl,
       if (attachmentName != null) 'attachmentName': attachmentName,
@@ -355,6 +368,7 @@ class IncomeItem {
           ? List<String>.from(json['labels'])
           : const [],
       attachments: parseAttachments(json),
+      sourceRecord: json['sourceRecord'],
       // Legacy single-attachment (kept)
       attachmentUrl: json['attachmentUrl'],
       attachmentName: json['attachmentName'],
@@ -394,7 +408,7 @@ class IncomeItem {
       return null;
     }
 
-    DateTime? _asDate(dynamic v) {
+    DateTime? parseTimestamp(dynamic v) {
       if (v is Timestamp) return v.toDate();
       if (v is DateTime) return v;
       if (v is String) return DateTime.tryParse(v);
@@ -434,6 +448,7 @@ class IncomeItem {
           ? List<String>.from(data['labels'])
           : const [],
       attachments: parseAttachments(data),
+      sourceRecord: data['sourceRecord'],
       // Legacy single-attachment (kept)
       attachmentUrl: data['attachmentUrl'],
       attachmentName: data['attachmentName'],
@@ -443,8 +458,8 @@ class IncomeItem {
       confidence: (data['confidence'] as num?)?.toDouble(),
       tags: (data['tags'] is List) ? List<String>.from(data['tags']) : null,
       // Audit
-      createdAt: _asDate(data['createdAt']),
-      updatedAt: _asDate(data['updatedAt']),
+      createdAt: parseTimestamp(data['createdAt']),
+      updatedAt: parseTimestamp(data['updatedAt']),
       createdBy: data['createdBy'],
       updatedBy: data['updatedBy'],
     );

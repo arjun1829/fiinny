@@ -148,7 +148,7 @@ class SubscriptionItem {
   }
 
   factory SubscriptionItem.fromJson(String id, Map<String, dynamic> json) {
-    DateTime? _toDate(dynamic v) {
+    DateTime? toDate(dynamic v) {
       if (v == null) return null;
       if (v is Timestamp) return v.toDate();
       if (v is DateTime) return v;
@@ -194,10 +194,10 @@ class SubscriptionItem {
                   ? ((json['rule'] as Map)['intervalDays'] as num?)
                   : null)
               ?.toInt()),
-      anchorDate: _toDate(json['anchorDate']) ??
-          _toDate((json['rule'] as Map?)?['anchorDate']) ??
+      anchorDate: toDate(json['anchorDate']) ??
+          toDate((json['rule'] as Map?)?['anchorDate']) ??
           DateTime.now(),
-      nextDueAt: _toDate(json['nextDueAt']),
+      nextDueAt: toDate(json['nextDueAt']),
       paused: legacyPaused,
       autopay: (json['autopay'] as bool?) ?? false,
       provider: (json['provider'] as String?)?.trim(),
@@ -207,10 +207,10 @@ class SubscriptionItem {
       reminderDaysBefore: (json['reminderDaysBefore'] as num?)?.toInt(),
       reminderTime: (json['reminderTime'] as String?)?.trim(),
       participants: parts,
-      createdAt: _toDate(json['createdAt']),
-      updatedAt: _toDate(json['updatedAt']),
+      createdAt: toDate(json['createdAt']),
+      updatedAt: toDate(json['updatedAt']),
       averageAmount: (json['averageAmount'] as num?)?.toDouble(),
-      trialEndDate: _toDate(json['trialEndDate']),
+      trialEndDate: toDate(json['trialEndDate']),
       status: effectiveStatus,
     );
   }

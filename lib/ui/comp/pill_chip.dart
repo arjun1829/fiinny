@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 class PillChip extends StatelessWidget {
   const PillChip(
     this.text, {
-    Key? key,
+    super.key,
     this.icon,
     this.fg,
     this.bg,
     this.padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
     this.textStyle,
-  }) : super(key: key);
+  });
 
   final String text;
   final IconData? icon;
@@ -22,7 +22,8 @@ class PillChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final foreground = fg ?? theme.colorScheme.onSurface.withValues(alpha: 0.84);
+    final foreground =
+        fg ?? theme.colorScheme.onSurface.withValues(alpha: 0.84);
     final background = bg ?? theme.colorScheme.surface.withValues(alpha: 0.18);
 
     final style = (textStyle ?? theme.textTheme.labelMedium)?.copyWith(

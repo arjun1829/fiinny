@@ -5,14 +5,16 @@ import 'package:lifemap/ui/tokens.dart';
 /// - In **lowGpuMode** it renders as a static gradient (no rebuilds).
 /// - Otherwise, it animates the outer stop once on mount.
 class AnimatedMintBackground extends StatelessWidget {
-  final bool? animate;   // override; null -> respect AppPerf.lowGpuMode
+  final bool? animate; // override; null -> respect AppPerf.lowGpuMode
   final double intensity; // 0..1, affects center opacity
+  final Widget? child;
 
   const AnimatedMintBackground({
-    Key? key,
+    super.key,
     this.animate,
     this.intensity = 1.0,
-  }) : super(key: key);
+    this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +26,8 @@ class AnimatedMintBackground extends StatelessWidget {
 
     const coverageStop = 0.60; // mint wash should span ~60% of the viewport
     const entryOvershoot = 0.03; // subtle breathing room during the intro tween
-    const radius = 1.35; // larger radius so the radial wash reaches further down
+    const radius =
+        1.35; // larger radius so the radial wash reaches further down
 
     DecoratedBox decorated(double midStop) {
       final effectiveStop = midStop.clamp(0.0, 1.0).toDouble();
@@ -37,7 +40,8 @@ class AnimatedMintBackground extends StatelessWidget {
             center: Alignment.topLeft,
             stops: [0.0, effectiveStop, 1.0],
           ),
-        ),
+        ), // Close BoxDecoration
+        child: child,
       );
     }
 
@@ -55,7 +59,8 @@ class AnimatedMintBackground extends StatelessWidget {
         builder: (_, value, __) {
           final double t = ((value - 0.85) / 0.15).clamp(0.0, 1.0).toDouble();
           // Start slightly under the target coverage so the wash eases in.
-          final double midStop = (coverageStop - entryOvershoot) + t * entryOvershoot;
+          final double midStop =
+              (coverageStop - entryOvershoot) + t * entryOvershoot;
 
           return decorated(midStop);
         },

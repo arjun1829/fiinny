@@ -51,7 +51,7 @@ class CreditCardCycle {
       };
 
   static CreditCardCycle fromJson(Map<String, dynamic> m) {
-    DateTime _parseDate(dynamic value) {
+    DateTime parseDate(dynamic value) {
       if (value is DateTime) return value;
       final type = value.runtimeType.toString();
       if (type == 'Timestamp') {
@@ -67,10 +67,10 @@ class CreditCardCycle {
 
     return CreditCardCycle(
       id: m['id'] ?? '',
-      statementDate: _parseDate(m['statementDate']),
-      periodStart: _parseDate(m['periodStart']),
-      periodEnd: _parseDate(m['periodEnd']),
-      dueDate: _parseDate(m['dueDate']),
+      statementDate: parseDate(m['statementDate']),
+      periodStart: parseDate(m['periodStart']),
+      periodEnd: parseDate(m['periodEnd']),
+      dueDate: parseDate(m['dueDate']),
       totalDue: (m['totalDue'] ?? 0).toDouble(),
       minDue: (m['minDue'] ?? 0).toDouble(),
       creditLimitSnapshot: (m['creditLimitSnapshot'] is int)

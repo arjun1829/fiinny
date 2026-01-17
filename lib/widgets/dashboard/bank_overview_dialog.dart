@@ -46,7 +46,9 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
     final relevant = bankTx.where((tx) {
       final b =
           (tx is ExpenseItem) ? tx.issuerBank : (tx as IncomeItem).issuerBank;
-      if (b == null) return false;
+      if (b == null) {
+        return false;
+      }
       return _slugBank(b) == widget.bankSlug;
     }).toList();
 
@@ -114,8 +116,12 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
   Widget build(BuildContext context) {
     // Filter for List
     final relevantExpenses = widget.allExpenses.where((e) {
-      if (e.issuerBank == null) return false;
-      if (_slugBank(e.issuerBank!) != widget.bankSlug) return false;
+      if (e.issuerBank == null) {
+        return false;
+      }
+      if (_slugBank(e.issuerBank!) != widget.bankSlug) {
+        return false;
+      }
       if (_selectedCardLast4 != null && e.cardLast4 != _selectedCardLast4) {
         return false;
       }
@@ -123,11 +129,17 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
     }).toList();
 
     final relevantIncomes = widget.allIncomes.where((i) {
-      if (i.issuerBank == null) return false;
-      if (_slugBank(i.issuerBank!) != widget.bankSlug) return false;
+      if (i.issuerBank == null) {
+        return false;
+      }
+      if (_slugBank(i.issuerBank!) != widget.bankSlug) {
+        return false;
+      }
       // Incomes might not have last4, so strict filtering might hide them?
       // For now assume strict filtering if selected.
-      if (_selectedCardLast4 != null) return false;
+      if (_selectedCardLast4 != null) {
+        return false;
+      }
       return true;
     }).toList();
 
@@ -252,10 +264,11 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
                                   ),
                                   onTap: () {
                                     setState(() {
-                                      if (isSelected)
+                                      if (isSelected) {
                                         _selectedCardLast4 = null;
-                                      else
+                                      } else {
                                         _selectedCardLast4 = c.last4;
+                                      }
                                     });
                                   },
                                 ),
@@ -270,7 +283,7 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
                       Text(
                         _selectedCardLast4 == null
                             ? "All Bank Transactions"
-                            : "Transactions • XX${_selectedCardLast4}",
+                            : "Transactions • XX$_selectedCardLast4",
                         style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -327,12 +340,24 @@ class _BankOverviewDialogState extends State<BankOverviewDialog> {
 
   String _slugBank(String s) {
     final x = s.toLowerCase();
-    if (x.contains('axis')) return 'axis';
-    if (x.contains('hdfc')) return 'hdfc';
-    if (x.contains('icici')) return 'icici';
-    if (x.contains('kotak')) return 'kotak';
-    if (x.contains('sbi') || x.contains('state bank')) return 'sbi';
-    if (x.contains('american express') || x.contains('amex')) return 'amex';
+    if (x.contains('axis')) {
+      return 'axis';
+    }
+    if (x.contains('hdfc')) {
+      return 'hdfc';
+    }
+    if (x.contains('icici')) {
+      return 'icici';
+    }
+    if (x.contains('kotak')) {
+      return 'kotak';
+    }
+    if (x.contains('sbi') || x.contains('state bank')) {
+      return 'sbi';
+    }
+    if (x.contains('american express') || x.contains('amex')) {
+      return 'amex';
+    }
     return x.replaceAll(RegExp(r'[^a-z]'), '');
   }
 

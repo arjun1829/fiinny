@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 
 class DashboardActivityTab extends StatelessWidget {
   final List<ActivityEvent> events;
-  const DashboardActivityTab({Key? key, required this.events}) : super(key: key);
+  const DashboardActivityTab({super.key, required this.events});
 
   @override
   Widget build(BuildContext context) {
@@ -12,7 +12,10 @@ class DashboardActivityTab extends StatelessWidget {
       return Center(
         child: Text(
           "No activity yet!\nStart adding transactions or goals.",
-          style: TextStyle(color: Colors.teal[700], fontSize: 16, fontWeight: FontWeight.w500),
+          style: TextStyle(
+              color: Colors.teal[700],
+              fontSize: 16,
+              fontWeight: FontWeight.w500),
           textAlign: TextAlign.center,
         ),
       );
@@ -27,14 +30,18 @@ class DashboardActivityTab extends StatelessWidget {
         return Card(
           elevation: 2,
           margin: const EdgeInsets.symmetric(horizontal: 6),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: ListTile(
             leading: CircleAvatar(
               backgroundColor: Colors.teal.withValues(alpha: 0.09),
               child: Icon(e.icon, color: Colors.teal[700]),
             ),
-            title: Text(e.title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-            subtitle: Text(e.subtitle, style: TextStyle(color: Colors.grey[700])),
+            title: Text(e.title,
+                style:
+                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+            subtitle:
+                Text(e.subtitle, style: TextStyle(color: Colors.grey[700])),
             trailing: Text(
               DateFormat('dd MMM, hh:mm a').format(e.date),
               style: TextStyle(fontSize: 12, color: Colors.teal[900]),
@@ -67,10 +74,13 @@ class _ActivityDetailSheet extends StatelessWidget {
         children: [
           Icon(event.icon, size: 48, color: Colors.teal),
           const SizedBox(height: 12),
-          Text(event.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          Text(event.title,
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text(event.subtitle, style: TextStyle(fontSize: 15, color: Colors.grey[700])),
+            child: Text(event.subtitle,
+                style: TextStyle(fontSize: 15, color: Colors.grey[700])),
           ),
           Padding(
             padding: const EdgeInsets.only(top: 12),

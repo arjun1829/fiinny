@@ -6,7 +6,7 @@ import 'package:intl/intl.dart';
 /// Value object for a week's totals.
 class WeekSummary {
   final DateTime start; // inclusive (Mon)
-  final DateTime end;   // inclusive (Sun)
+  final DateTime end; // inclusive (Sun)
   final double income;
   final double expense;
 
@@ -49,7 +49,8 @@ class WeeklyRingsStrip extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(width: 10),
         itemBuilder: (_, i) {
           final w = ordered[i];
-          final isSelected = selectedWeekStart != null && _d(selectedWeekStart!) == _d(w.start);
+          final isSelected = selectedWeekStart != null &&
+              _d(selectedWeekStart!) == _d(w.start);
 
           return GestureDetector(
             onTap: () => onTap?.call(w),
@@ -58,10 +59,14 @@ class WeeklyRingsStrip extends StatelessWidget {
               width: 110,
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: isSelected ? Colors.teal.withValues(alpha: 0.08) : Colors.white.withValues(alpha: 0.06),
+                color: isSelected
+                    ? Colors.teal.withValues(alpha: 0.08)
+                    : Colors.white.withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: isSelected ? Colors.tealAccent.withValues(alpha: 0.6) : Colors.white12,
+                  color: isSelected
+                      ? Colors.tealAccent.withValues(alpha: 0.6)
+                      : Colors.white12,
                 ),
               ),
               child: Column(
@@ -69,13 +74,17 @@ class WeeklyRingsStrip extends StatelessWidget {
                 children: [
                   _MiniDualRing(credit: w.income, debit: w.expense),
                   const SizedBox(height: 6),
-                  Text(_label(w), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                  Text(_label(w),
+                      style: const TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w600)),
                   Text(
-                    (w.balance >= 0 ? '+' : '−') + nf.format(w.balance.abs()),
+                    "${w.balance >= 0 ? '+' : '−'}${nf.format(w.balance.abs())}",
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: w.balance >= 0 ? const Color(0xFF1E88E5) : const Color(0xFFE53935),
+                      color: w.balance >= 0
+                          ? const Color(0xFF1E88E5)
+                          : const Color(0xFFE53935),
                     ),
                   ),
                 ],
@@ -97,7 +106,7 @@ class WeeklyRingsStrip extends StatelessWidget {
 
 class _MiniDualRing extends StatelessWidget {
   final double credit; // income
-  final double debit;  // expense
+  final double debit; // expense
   const _MiniDualRing({required this.credit, required this.debit});
 
   @override
@@ -150,10 +159,12 @@ class _MiniDualPainter extends CustomPainter {
       ..color = const Color(0xFFD81B60); // expense
 
     if (creditPct > 0) {
-      canvas.drawArc(Rect.fromCircle(center: center, radius: rOuter), start, 2 * pi * creditPct, false, pCredit);
+      canvas.drawArc(Rect.fromCircle(center: center, radius: rOuter), start,
+          2 * pi * creditPct, false, pCredit);
     }
     if (debitPct > 0) {
-      canvas.drawArc(Rect.fromCircle(center: center, radius: rInner), start, 2 * pi * debitPct, false, pDebit);
+      canvas.drawArc(Rect.fromCircle(center: center, radius: rInner), start,
+          2 * pi * debitPct, false, pDebit);
     }
   }
 

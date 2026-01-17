@@ -25,8 +25,8 @@ class AddGroupDialog extends StatefulWidget {
     required this.userPhone,
     required this.allFriends,
     this.onGroupCreated,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<AddGroupDialog> createState() => _AddGroupDialogState();
@@ -477,8 +477,10 @@ class _AddGroupDialogState extends State<AddGroupDialog> {
 
     try {
       // (OPTIONAL) Upload _groupPhoto to Storage and obtain URL
+      // (OPTIONAL) Upload _groupPhoto to Storage and obtain URL
       String? avatarUrl;
-      // TODO: upload and set avatarUrl
+      // Note: Avatar upload is not yet implemented.
+      // If implemented, upload _groupPhoto to 'groups/$groupId/avatar.jpg' and set avatarUrl.
 
       final displayNames = <String, String>{
         for (final f in _selectedFriends)

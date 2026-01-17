@@ -288,11 +288,11 @@ class _AddRecurringBasicScreenState extends State<AddRecurringBasicScreen>
 
   Future<void> _scrollTo(GlobalKey key) async {
     await Future.delayed(const Duration(milliseconds: 16));
-    if (!mounted) return;
     final ctx = key.currentContext;
     if (ctx == null) {
       return;
     }
+    if (!ctx.mounted) return;
     await Scrollable.ensureVisible(
       ctx,
       alignment: 0,

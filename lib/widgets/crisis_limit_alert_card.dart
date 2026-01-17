@@ -12,8 +12,9 @@ class CrisisLimitAlertCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (spent <= limit)
+    if (spent <= limit) {
       return const SizedBox.shrink(); // Don't show if not exceeded
+    }
 
     final overBy = spent - limit;
 

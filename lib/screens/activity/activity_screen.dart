@@ -168,14 +168,16 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     for (final e in tx) {
                       for (final f in e.friendIds) {
                         final p = lastSeen[f];
-                        if (p == null || e.date.isAfter(p))
+                        if (p == null || e.date.isAfter(p)) {
                           lastSeen[f] = e.date;
+                        }
                       }
                       final gid = e.groupId;
                       if (gid != null) {
                         final p = lastSeen[gid];
-                        if (p == null || e.date.isAfter(p))
+                        if (p == null || e.date.isAfter(p)) {
                           lastSeen[gid] = e.date;
+                        }
                       }
                     }
 

@@ -1,17 +1,23 @@
 import '../ingestion/raw_transaction_event.dart';
 import '../../models/transaction.dart';
 import '../config/region_profile.dart';
+import '../../services/parsing_enrichment.dart';
 
 class NormalizationPipeline {
   final RegionProfile region;
 
   NormalizationPipeline({required this.region});
 
+  final ParsingEnrichment _enricher = ParsingEnrichment();
+
   /// Main entry point: Process a batch of raw events into clean transactions
   Future<List<Transaction>> process(List<RawTransactionEvent> events) async {
     if (events.isEmpty) {
       return [];
     }
+
+    // Ensure enrichment data is loaded
+    await _enricher.ensureLoaded();
 
     // 1. Deduplicate (Merge SMS & Email)
     final uniqueEvents = _deduplicate(events);
@@ -73,8 +79,8 @@ class NormalizationPipeline {
     double amountBase = event.amount;
 
     if (event.currency != region.defaultCurrency) {
-      // TODO: Call FX Service
-      // For now, assume 1:1 or static mock rates
+      // NOTE: Real-time FX service not yet available.
+      // Using static fallback rates for common pairs.
       if (event.currency == 'USD' && region.defaultCurrency == 'INR') {
         fxRate = 84.0;
       } else if (event.currency == 'EUR' && region.defaultCurrency == 'INR') {
@@ -84,9 +90,15 @@ class NormalizationPipeline {
     }
 
     // 2. Category & Merchant Normalization
-    // TODO: Call Merchant Registry / AI Classifier
-    final String merchant = event.merchantName ?? 'Unknown Merchant';
-    final String category = 'Uncategorized';
+    // Use ParsingEnrichment rule-based engine
+    final refined = await _enricher.refineFields(
+      merchantRaw: event.merchantName,
+      fallbackCategory: 'Uncategorized',
+    );
+
+    final String merchant =
+        refined['merchant'] ?? event.merchantName ?? 'Unknown Merchant';
+    final String category = refined['category'] ?? 'Uncategorized';
 
     return Transaction(
       id: 'tx_${event.eventId}', // Deterministic ID

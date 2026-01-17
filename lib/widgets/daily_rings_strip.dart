@@ -55,8 +55,12 @@ class DailyRingsStrip extends StatelessWidget {
           final label = fmt.format(d.date);
           final net = d.balance;
           final netColor =
-          net >= 0 ? const Color(0xFF1E88E5) : const Color(0xFFE53935);
+              net >= 0 ? const Color(0xFF1E88E5) : const Color(0xFFE53935);
 
+          final nf = NumberFormat.compactCurrency(
+            locale: 'en_IN',
+            name: '₹',
+          );
           return GestureDetector(
             onTap: () => onTap?.call(d),
             child: AnimatedContainer(
@@ -87,11 +91,7 @@ class DailyRingsStrip extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    (net >= 0 ? '+' : '−') +
-                        NumberFormat.compactCurrency(
-                          locale: 'en_IN',
-                          name: '₹',
-                        ).format(net.abs()),
+                    "${net >= 0 ? '+' : '−'}${nf.format(net.abs())}",
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -198,15 +198,13 @@ class _MiniDualPainter extends CustomPainter {
     // Net dot at center
     final dot = Paint()
       ..style = PaintingStyle.fill
-      ..color = netPositive
-          ? const Color(0xFF1E88E5)
-          : const Color(0xFFE53935);
+      ..color = netPositive ? const Color(0xFF1E88E5) : const Color(0xFFE53935);
     canvas.drawCircle(center, 3.2, dot);
   }
 
   @override
   bool shouldRepaint(covariant _MiniDualPainter old) =>
       old.creditPct != creditPct ||
-          old.debitPct != debitPct ||
-          old.netPositive != netPositive;
+      old.debitPct != debitPct ||
+      old.netPositive != netPositive;
 }

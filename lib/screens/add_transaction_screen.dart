@@ -1980,7 +1980,7 @@ class _CreateGroupSheet extends StatefulWidget {
 class _CreateGroupSheetState extends State<_CreateGroupSheet> {
   final _nameCtrl = TextEditingController();
   final Set<String> _selected = {};
-  bool _saving = false;
+  final bool _saving = false;
 
   @override
   void dispose() {

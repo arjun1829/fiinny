@@ -21,8 +21,9 @@ class InsightEngine {
     }
 
     final now = DateTime.now();
-    final monthTx = transactions.where((t) =>
-    t.date.month == now.month && t.date.year == now.year).toList();
+    final monthTx = transactions
+        .where((t) => t.date.month == now.month && t.date.year == now.year)
+        .toList();
 
     final income = monthTx
         .where((t) => t.type == TransactionType.credit)
@@ -41,12 +42,13 @@ class InsightEngine {
     final percent = income == 0 ? 0 : (expense / income * 100).round();
     if (income > 0 && percent < 60) {
       return SmartInsight(
-        message: "Great job! You saved ₹${(income - expense).toStringAsFixed(0)} this month.",
+        message:
+            "Great job! You saved ₹${(income - expense).toStringAsFixed(0)} this month.",
         emoji: "🎉",
       );
     } else if (income > 0 && percent >= 90) {
       return SmartInsight(
-        message: "Caution! Expenses are ${percent}% of your income.",
+        message: "Caution! Expenses are $percent% of your income.",
         emoji: "⚠️",
       );
     }
@@ -67,7 +69,8 @@ class InsightEngine {
 
     if (topCat != null && maxAmt > 0) {
       return SmartInsight(
-        message: "Most spent on $topCat (₹${maxAmt.toStringAsFixed(0)}) this month.",
+        message:
+            "Most spent on $topCat (₹${maxAmt.toStringAsFixed(0)}) this month.",
         emoji: "💡",
       );
     }

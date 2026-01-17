@@ -374,7 +374,6 @@ class _SettleUpScreenState extends State<SettleUpScreen> {
                                 ),
                               ),
                               trailing: ElevatedButton(
-                                child: Text(buttonLabel),
                                 onPressed: () =>
                                     _showSettleUpDialog(id, bal, youOwe),
                                 style: ElevatedButton.styleFrom(
@@ -383,10 +382,11 @@ class _SettleUpScreenState extends State<SettleUpScreen> {
                                   shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(9)),
                                 ),
+                                child: Text(buttonLabel),
                               ),
                             ),
                           );
-                        }).toList(),
+                        }),
                       ],
                     ),
         ],

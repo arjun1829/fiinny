@@ -144,7 +144,7 @@ class _TransactionCountScreenState extends State<TransactionCountScreen>
     return _allIncomes;
   }
 
-  /// Returns List<int>: count for each bar (expenses+incomes)
+  /// Returns List`int`: count for each bar (expenses+incomes)
   List<int> _buildBarData(
       String period, List<ExpenseItem> expenses, List<IncomeItem> incomes) {
     final DateTime now = DateTime.now();

@@ -9,16 +9,11 @@ import 'package:googleapis/gmail/v1.dart' as gmail;
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/expense_item.dart';
-import '../models/income_item.dart';
-
-// 🔗 LLM config + extractor (LLM-first)
 import '../config/app_config.dart';
 import './ai/tx_extractor.dart';
 import 'ingest/enrichment_service.dart';
 import '../brain/loan_detection_service.dart';
 import '../logic/loan_detection_parser.dart';
-import './ingest/cross_source_reconcile.dart';
-import './recurring/recurring_engine.dart';
 
 import './ingest_index_service.dart';
 import './tx_key.dart';
@@ -29,33 +24,13 @@ import './ingest_job_queue.dart';
 // merge
 // alias normalize
 import './ingest_filters.dart' as filt; // ✅ stronger filtering helpers
+import 'parsers/gmail_parser_logic.dart';
+import 'parsers/gmail_dtos.dart';
 
 // Merge policy: OFF (for testing), ENRICH (recommended), SILENT (current behavior)
 enum ReconcilePolicy { off, mergeEnrich, mergeSilent }
 
 // ── Bank detection & tiering (major vs other) ────────────────────────────────
-
-enum _BankTier { major, other, unknown }
-
-class _DetectedBank {
-  final String? code; // e.g. 'HDFC'
-  final String? display; // e.g. 'HDFC Bank'
-  final _BankTier tier;
-  const _DetectedBank({this.code, this.display, this.tier = _BankTier.unknown});
-}
-
-class _BankProfile {
-  final String code; // 'SBI'
-  final String display; // 'State Bank of India'
-  final List<String> domains; // email domains to match
-  final List<String> headerHints; // name hints in From/headers
-  const _BankProfile({
-    required this.code,
-    required this.display,
-    this.domains = const [],
-    this.headerHints = const [],
-  });
-}
 
 class GmailService {
   // ── Behavior toggles ────────────────────────────────────────────────────────
@@ -73,17 +48,6 @@ class GmailService {
   // "Long gap" threshold: if last Gmail sync was more than this many
   // days ago, treat it like a fresh/backfill sync.
   static const int longGapDays = 60;
-  bool _looksLikeCardBillPayment(String text, {String? bank, String? last4}) {
-    final u = text.toUpperCase();
-    final payCue = RegExp(
-            r'(CARD\s*PAYMENT|PAYMENT\s*RECEIVED|THANK YOU.*PAYING|BILL\s*PAYMENT)')
-        .hasMatch(u);
-    final ccCue = u.contains('CREDIT CARD') || u.contains('CC');
-    final last4Hit = (last4 != null) &&
-        RegExp(r'\b' + RegExp.escape(last4) + r'\b').hasMatch(u);
-    final bankHit = (bank != null) && u.contains((bank).toUpperCase());
-    return payCue && (last4Hit || bankHit || ccCue);
-  }
 
   String _maskSensitive(String s) {
     var t = s;
@@ -119,318 +83,10 @@ class GmailService {
   }
 
   // Major public + private sector banks we want strong primary logic for.
-  static const List<_BankProfile> _majorBanks = [
-    // Public sector
-    _BankProfile(
-      code: 'SBI',
-      display: 'State Bank of India',
-      domains: ['sbi.co.in'],
-      headerHints: ['state bank of india', 'sbi'],
-    ),
-    _BankProfile(
-      code: 'PNB',
-      display: 'Punjab National Bank',
-      domains: ['pnb.co.in'],
-      headerHints: ['punjab national bank', 'pnb'],
-    ),
-    _BankProfile(
-      code: 'BOB',
-      display: 'Bank of Baroda',
-      domains: ['bankofbaroda.co.in'],
-      headerHints: ['bank of baroda', 'bob'],
-    ),
-    _BankProfile(
-      code: 'UNION',
-      display: 'Union Bank of India',
-      domains: ['unionbankofindia.co.in'],
-      headerHints: ['union bank of india', 'union bank'],
-    ),
-    _BankProfile(
-      code: 'BOI',
-      display: 'Bank of India',
-      domains: ['bankofindia.co.in'],
-      headerHints: ['bank of india'],
-    ),
-    _BankProfile(
-      code: 'CANARA',
-      display: 'Canara Bank',
-      domains: ['canarabank.com'],
-      headerHints: ['canara bank'],
-    ),
-    _BankProfile(
-      code: 'INDIAN',
-      display: 'Indian Bank',
-      domains: ['indianbank.in'],
-      headerHints: ['indian bank'],
-    ),
-    _BankProfile(
-      code: 'IOB',
-      display: 'Indian Overseas Bank',
-      domains: ['iob.in'],
-      headerHints: ['indian overseas bank', 'iob'],
-    ),
-    _BankProfile(
-      code: 'UCO',
-      display: 'UCO Bank',
-      domains: ['ucobank.com'],
-      headerHints: ['uco bank'],
-    ),
-    _BankProfile(
-      code: 'MAHARASHTRA',
-      display: 'Bank of Maharashtra',
-      domains: ['bankofmaharashtra.in', 'mahabank.co.in'],
-      headerHints: ['bank of maharashtra'],
-    ),
-    _BankProfile(
-      code: 'CBI',
-      display: 'Central Bank of India',
-      domains: ['centralbankofindia.co.in'],
-      headerHints: ['central bank of india'],
-    ),
-    _BankProfile(
-      code: 'PSB',
-      display: 'Punjab & Sind Bank',
-      domains: ['psbindia.com'],
-      headerHints: ['punjab and sind bank', 'punjab & sind bank'],
-    ),
-
-    // Private sector
-    _BankProfile(
-      code: 'HDFC',
-      display: 'HDFC Bank',
-      domains: ['hdfcbank.com'],
-      headerHints: ['hdfc bank', 'hdfc'],
-    ),
-    _BankProfile(
-      code: 'ICICI',
-      display: 'ICICI Bank',
-      domains: ['icicibank.com'],
-      headerHints: ['icici bank', 'icici'],
-    ),
-    _BankProfile(
-      code: 'AXIS',
-      display: 'Axis Bank',
-      domains: ['axisbank.com'],
-      headerHints: ['axis bank', 'axis'],
-    ),
-    _BankProfile(
-      code: 'KOTAK',
-      display: 'Kotak Mahindra Bank',
-      domains: ['kotak.com'],
-      headerHints: ['kotak mahindra bank', 'kotak'],
-    ),
-    _BankProfile(
-      code: 'INDUSIND',
-      display: 'IndusInd Bank',
-      domains: ['indusind.com'],
-      headerHints: ['indusind bank', 'indusind'],
-    ),
-
-    _BankProfile(
-      code: 'YES',
-      display: 'Yes Bank',
-      domains: ['yesbank.in'],
-      headerHints: ['yes bank'],
-    ),
-    _BankProfile(
-      code: 'FEDERAL',
-      display: 'Federal Bank',
-      domains: ['federalbank.co.in'],
-      headerHints: ['federal bank'],
-    ),
-    _BankProfile(
-      code: 'IDFCFIRST',
-      display: 'IDFC First Bank',
-      domains: ['idfcfirstbank.com', 'idfcbank.com'],
-      headerHints: ['idfc first bank', 'idfc'],
-    ),
-    _BankProfile(
-      code: 'IDBI',
-      display: 'IDBI Bank',
-      domains: ['idbibank.com'],
-      headerHints: ['idbi bank', 'idbi'],
-    ),
-  ];
-
-  _DetectedBank _detectBank({
-    required List<gmail.MessagePartHeader>? headers,
-    required String body,
-  }) {
-    final domain = _fromDomain(headers);
-    final normalizedDomain = domain?.toLowerCase();
-    final fromHdr = _getHeader(headers, 'from') ?? '';
-    final subject = _getHeader(headers, 'subject') ?? '';
-    final all = '$fromHdr $subject $body'.toLowerCase();
-
-    for (final b in _majorBanks) {
-      if (normalizedDomain != null &&
-          b.domains.any((d) => normalizedDomain.endsWith(d.toLowerCase()))) {
-        return _DetectedBank(
-            code: b.code, display: b.display, tier: _BankTier.major);
-      }
-      if (b.headerHints
-          .any((h) => fromHdr.toLowerCase().contains(h.toLowerCase()))) {
-        return _DetectedBank(
-            code: b.code, display: b.display, tier: _BankTier.major);
-      }
-    }
-
-    // Fallback: Check body for strong bank cues if headers failed
-    for (final b in _majorBanks) {
-      if (all.contains(b.display.toLowerCase()) ||
-          all.contains(' ${b.code.toLowerCase()} ')) {
-        return _DetectedBank(
-            code: b.code, display: b.display, tier: _BankTier.major);
-      }
-    }
-
-    // Fallback: reuse existing header/body guessers and treat as "other"
-    final guess =
-        _guessBankFromHeaders(headers) ?? _guessIssuerBankFromBody(body);
-    if (guess != null && guess.trim().isNotEmpty) {
-      return _DetectedBank(
-          code: guess.toUpperCase(),
-          display: guess.toUpperCase(),
-          tier: _BankTier.other);
-    }
-
-    return const _DetectedBank(tier: _BankTier.unknown);
-  }
-
-  // PATCH: strict txn gating utilities
-  bool _hasCurrencyAmount(String s) => RegExp(
-        r'(₹|inr|rs\.?)\s*[0-9][\d,]*(?:\s*\.\s*\d{1,2})?',
-        caseSensitive: false,
-      ).hasMatch(s);
-
-  bool _hasDebitVerb(String s) => RegExp(
-        r'\b(debited|amount\s*debited|spent|paid|payment|purchase|charged|withdrawn|withdrawal|pos|upi|imps|neft|rtgs|txn|transaction|autopay|mandate|emi)\b',
-        caseSensitive: false,
-      ).hasMatch(s);
-
-  bool _hasCreditVerb(String s) => RegExp(
-        r'\b(credited|amount\s*credited|received|rcvd|deposit(?:ed)?|salary|refund|reversal|cashback|interest)\b',
-        caseSensitive: false,
-      ).hasMatch(s);
-
-  bool _hasRefToken(String s) => RegExp(
-        r'\b(utr|ref(?:erence)?|order|invoice|a/?c|acct|account|card|vpa|pos|txn)\b',
-        caseSensitive: false,
-      ).hasMatch(s);
-
-  bool _passesTxnGate(String text, {String? domain, _DetectedBank? bank}) {
-    final t = text;
-    final hasCurrency = _hasCurrencyAmount(t);
-    final hasDebitOrCreditVerb = _hasDebitVerb(t) || _hasCreditVerb(t);
-    final hasRefOrCue = _hasRefToken(t) ||
-        RegExp(
-          r'(account\s*(no|number)|txn\s*id|transaction\s*info)',
-          caseSensitive: false,
-        ).hasMatch(t);
-
-    // obvious promo/future cues
-    final promo = filt.isLikelyPromo(t);
-    final futureish = _looksFutureCredit(t);
-
-    final isGatewayDomain = domain != null &&
-        _emailWhitelist.any((d) => domain.toLowerCase().endsWith(d));
-    final isMajorBank = bank?.tier == _BankTier.major;
-
-    if (!hasCurrency || !hasDebitOrCreditVerb) return false;
-    if (futureish) return false;
-
-    // For major banks and known gateways:
-    // - allow slightly looser conditions, but still block pure promos.
-    if (isMajorBank || isGatewayDomain) {
-      if (promo && !hasRefOrCue) return false;
-      // Currency + verb is enough, ref is a nice-to-have
-      return true;
-    }
-
-    // For all other/unknown senders:
-    // - require ref/txn/account cue and non-promo.
-    if (!hasRefOrCue) return false;
-    if (promo && !hasRefOrCue) return false;
-
-    return true;
-  }
-
-  bool _tooSmallToTrust(String body, double amt) {
-    if (amt >= 5) return false;
-    final creditOK = RegExp(
-      r'\b(refund|cashback|reversal|interest)\b',
-      caseSensitive: false,
-    ).hasMatch(body);
-    return !creditOK;
-  }
-
-  // Stronger email domain whitelist for payment gateways / card networks / wallets.
-  // NOTE: major bank domains are handled via _majorBanks + _detectBank, not here.
-  static const Set<String> _emailWhitelist = {
-    'bobfinancial.com',
-    'amex.com',
-    'mastercard.com',
-    'visacards.com',
-    'rupay.co.in',
-    'razorpay.com',
-    'billdesk.com',
-    'cashfree.com',
-    'paytm.com',
-    'phonepe.com',
-  };
-
-  bool _looksPromotionalIncome(String s) {
-    final rx = RegExp(
-      r'(loan\s+up\s+to|pre[-\s]?approved|apply\s+now|kyc|complete\s+kyc|'
-      r'offer|subscribe|webinar|workshop|newsletter|utm_|unsubscribe|http[s]?://)',
-      caseSensitive: false,
-    );
-    final strongTxn = RegExp(
-      r'\b(invoice|receipt|order|utr|ref(?:erence)?|payout|settlement|imps|neft|upi)\b',
-      caseSensitive: false,
-    ).hasMatch(s);
-    return rx.hasMatch(s) && !strongTxn;
-  }
-
-  bool _looksFutureCredit(String s) => RegExp(
-        r'\b(can|will|may)\s+be\s+credited\b',
-        caseSensitive: false,
-      ).hasMatch(s);
-
-  bool _emailTxnGateForIncome(String text,
-      {String? domain, _DetectedBank? bank}) {
-    final hasCurrency = _hasCurrencyAmount(text);
-    final strongCredit = RegExp(
-      r'\b(has\s*been\s*credited|credited\s*(?:by|with)?|received\s*(?:from)?|payout|settlement)\b',
-      caseSensitive: false,
-    ).hasMatch(text);
-    final hasRef = _hasRefToken(text);
-    final promoOrFuture =
-        _looksPromotionalIncome(text) || _looksFutureCredit(text);
-
-    final isGatewayDomain = domain != null &&
-        _emailWhitelist.any((d) => domain.toLowerCase().endsWith(d));
-    final isMajorBank = bank?.tier == _BankTier.major;
-
-    if (!hasCurrency || !strongCredit) return false;
-    if (promoOrFuture) return false;
-
-    // For major banks or known gateways: currency + strong credit is enough.
-    if (isMajorBank || isGatewayDomain) {
-      return true;
-    }
-
-    // For others, require a reference/account/txn cue as well.
-    return hasRef && !promoOrFuture;
-  }
 
   // Testing backfill like SMS
-  static const bool testMode = true;
-  static const int testBackfillDays = 100;
-  static const int pagePool = 10;
 
   // Debug logs
-  static const bool _debug = kDebugMode;
   void _log(String s) {
     if (kDebugMode) print('[GmailService] $s');
   }
@@ -446,8 +102,6 @@ class GmailService {
 
   final IngestIndexService _index = IngestIndexService();
   final CreditCardService _creditCardService = CreditCardService();
-  static const bool writeBillAsExpense =
-      false; // ← turn OFF to avoid double-count
 
   String _billDocId({
     required String? bank,
@@ -480,514 +134,11 @@ class GmailService {
 
   // --- helpers added ----------------------------------------------------------
 
-  // Extract UPI VPA (first one) limited to known PSP/bank handles
-  String? _extractUpiVpa(String text) {
-    const handles = [
-      'ybl',
-      'okaxis',
-      'oksbi',
-      'okhdfcbank',
-      'okicici',
-      'ibl',
-      'upi',
-      'paytm',
-      'apl',
-      'axisbank',
-      'hdfcbank',
-      'icici',
-      'sbi',
-      'idfcbank',
-      'kotak',
-    ];
-    final re = RegExp(
-      r'\b([a-zA-Z0-9.\-_]{2,})@(' + handles.join('|') + r')\b',
-      caseSensitive: false,
-    );
-    return re.firstMatch(text)?.group(0);
-  }
-
-  String? _cleanMerchantName(String? raw) {
-    if (raw == null) return null;
-    var cleaned = raw
-        .replaceAll(RegExp(r"""["'`]+"""), ' ')
-        .replaceAll(RegExp(r'[^A-Za-z0-9 .&/@-]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-
-    // aggressive noise cleaning
-    cleaned = cleaned.replaceAll(
-        RegExp(
-            r'\b(Value Date|Txn Date|Ref No|Reference|Bal|Avl Bal|Ledger|Balance|NEFT|IMPS|RTGS|UPI|MMT/IMPS|Rev|Msg)\b.*',
-            caseSensitive: false),
-        '');
-    cleaned =
-        cleaned.replaceAll(RegExp(r'\d{2}/\d{2}/\d{2,4}'), ''); // Remove dates
-    cleaned =
-        cleaned.replaceAll(RegExp(r'\d{2}:\d{2}:\d{2}'), ''); // Remove times
-    cleaned = cleaned.trim();
-
-    if (cleaned.length < 3) return null;
-    final upper = cleaned.toUpperCase();
-    const skipPhrases = [
-      'INFORM YOU THAT',
-      'INFORM YOU',
-      'INFORM THAT',
-      'DEAR',
-      'THANK YOU',
-      'THANKS',
-      'THIS IS TO INFORM',
-      'WE INFORM YOU',
-      'WE WOULD LIKE TO INFORM',
-      'TRANSACTION ALERT',
-      'ALERT:',
-      'TOTAL CREDIT LIMIT',
-      'AVAILABLE LIMIT',
-      'CREDIT LIMIT',
-      'TOTAL DUE',
-      'MINIMUM DUE',
-      'TAL CREDIT LIMIT', // Handle the specific chopped case
-      'BLOCK UPI',
-      'SMS BLOCK',
-      'CALL US',
-      'CLICK HERE',
-      'UNSUBSCRIBE',
-      'TO BLOCK',
-      'TO CANCEL',
-      'HELP YOU',
-      'ALWAYS OPEN TO HELP YOU',
-    ];
-    for (final phrase in skipPhrases) {
-      if (upper.contains(phrase)) {
-        return null;
-      }
-    }
-
-    const stopwords = {
-      'INFORM',
-      'YOU',
-      'YOUR',
-      'THAT',
-      'ACCOUNT',
-      'ACC',
-      'A',
-      'THE',
-      'WE',
-      'ARE',
-      'IS',
-      'TO',
-      'FROM',
-      'PAYMENT',
-      'PAID',
-      'THANK',
-      'CUSTOMER',
-      'CARD',
-      'CREDIT',
-      'DEBIT',
-      'BANK',
-      'REF',
-      'REFERENCE',
-      'TRANSACTION',
-      'DETAILS',
-      'INFO',
-      'NOTICE',
-      'BALANCE',
-      'AMOUNT',
-      'THIS',
-      'MESSAGE',
-      'SPENT',
-      'PURCHASE',
-      'AT',
-      'FOR',
-      'WITH',
-      'ERRORS',
-      'OMISSIONS',
-      'LIABILITY',
-      'STRICT',
-      'SECURITY',
-      'STANDARDS',
-      'MAINTAIN'
-    };
-    final tokens =
-        upper.split(RegExp(r'[^A-Z0-9]+')).where((e) => e.isNotEmpty).toList();
-    if (tokens.isEmpty) return null;
-    final nonStop = tokens.where((w) => !stopwords.contains(w)).length;
-    // slightly relaxed ratio for short names like 'Uber'
-    if (nonStop == 0) return null;
-
-    if (upper.contains('ACCOUNT') || upper.contains('ACC.')) return null;
-    return upper.trim();
-  }
-
-  String? _extractPaidToName(String text) {
-    if (text.isEmpty) return null;
-    final candidates = <String>[];
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // TYPE A: POS / Swipe / Explicit Purchase
-    // "Spent at STARBUCKS", "Purchase at AMAZON", "Trxn at DMART"
-    // ─────────────────────────────────────────────────────────────────────────
-    final posPatterns = [
-      RegExp(
-          r'\b(?:spent|purchase|transact(?:ion|ed)?|swiped)\s+(?:at|on|with)\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})',
-          caseSensitive: false),
-      RegExp(
-          r'\b(?:payment|txn)\s+(?:at|to)\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})',
-          caseSensitive: false),
-    ];
-    for (final p in posPatterns) {
-      for (final m in p.allMatches(text)) {
-        final cleaned = _cleanMerchantName(m.group(1));
-        if (cleaned != null) candidates.add(cleaned);
-      }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // TYPE B: Online / Digital / P2P
-    // "Paid to SWIGGY", "Transfer to RAMESH", "Sent to ZOMATO"
-    // ─────────────────────────────────────────────────────────────────────────
-    final onlinePatterns = [
-      RegExp(
-          r'\b(?:paid|sent|transfer(?:red)?)\s+(?:to|for)\s+(?!ANY\s+ERRORS)([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})',
-          caseSensitive: false),
-      RegExp(r'\b(?:towards|for)\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})',
-          caseSensitive: false),
-    ];
-    for (final p in onlinePatterns) {
-      for (final m in p.allMatches(text)) {
-        // "Towards" often captures "towards your Loan", filter that
-        final raw = m.group(1) ?? '';
-        if (raw.toLowerCase().contains('loan') ||
-            raw.toLowerCase().contains('emi')) {
-          continue;
-        }
-
-        // Extra check for "ANY ERRORS" in case regex didn't catch it
-        if (raw.trim().toUpperCase().startsWith('ANY ERRORS')) continue;
-
-        final cleaned = _cleanMerchantName(raw);
-        if (cleaned != null) candidates.add(cleaned);
-      }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // TYPE C: Bills / Utilities / Recharges
-    // "Bill for ELECTRICITY", "Recharge of JIO"
-    // ─────────────────────────────────────────────────────────────────────────
-    final billPatterns = [
-      RegExp(r'\b(?:bill|payment)\s+for\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})',
-          caseSensitive: false),
-      RegExp(
-          r'\b(?:recharge|topup)\s+(?:of|for)\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})',
-          caseSensitive: false),
-    ];
-    for (final p in billPatterns) {
-      for (final m in p.allMatches(text)) {
-        final cleaned = _cleanMerchantName(m.group(1));
-        if (cleaned != null) candidates.add(cleaned);
-      }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // TYPE D: Credits / Income (Strict)
-    // "Received from ANKIT", "Credited from SALARY"
-    // ─────────────────────────────────────────────────────────────────────────
-    final creditPatterns = [
-      RegExp(
-          r'\b(?:received|credited)\s+(?:from|by)\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})',
-          caseSensitive: false),
-      RegExp(r'\bby\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})',
-          caseSensitive: false),
-    ];
-    for (final p in creditPatterns) {
-      for (final m in p.allMatches(text)) {
-        final cleaned = _cleanMerchantName(m.group(1));
-        if (cleaned != null) candidates.add(cleaned);
-      }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // TYPE E: Special Formats (UPI, Info tags, KV Pairs)
-    // ─────────────────────────────────────────────────────────────────────────
-    final metaPatterns = [
-      RegExp(r'Merchant\s*Name\s*[:\-]\s*([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})',
-          caseSensitive: false),
-      // TYPE D: Loan Repayment context
-      RegExp(r'credited\s+to\s+(?:your\s+)?(Loan\s+account)',
-          caseSensitive: false),
-      RegExp(r'\bInfo:\s*([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})',
-          caseSensitive: false),
-      RegExp(r'\bUPI\/P2[AM]\/[^\/\s]+\/([^\/\n\r]+)', caseSensitive: false),
-    ];
-    for (final p in metaPatterns) {
-      for (final m in p.allMatches(text)) {
-        final cleaned = _cleanMerchantName(m.group(1));
-        if (cleaned != null) {
-          // Insert meta matches AT THE FRONT as they are higher confidence
-          candidates.insert(0, cleaned);
-        }
-      }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // FALLBACK: Safe "At" check
-    // Last resort for "Transaction at X" where verbs are missing/weird
-    // ─────────────────────────────────────────────────────────────────────────
-    if (candidates.isEmpty) {
-      final fallback = RegExp(r'\bat\s+([A-Za-z0-9][A-Za-z0-9 .&/@-]{2,40})',
-          caseSensitive: false);
-      for (final m in fallback.allMatches(text)) {
-        final raw = m.group(1) ?? '';
-        // Filter common false positives for "at"
-        if (RegExp(
-                r'^(the|my|your|ends|ending|ac|account|txn|ref|rs|inr|usd|home|office)',
-                caseSensitive: false)
-            .hasMatch(raw)) {
-          continue;
-        }
-
-        final cleaned = _cleanMerchantName(raw);
-        if (cleaned != null) candidates.add(cleaned);
-      }
-    }
-
-    return candidates.isNotEmpty ? candidates.first : null;
-  }
-
-  // Credit Card Bill extraction (Total Due, Min Due, Due Date, Statement period)
-  _BillInfo? _extractCardBillInfo(String text) {
-    final t = text.toUpperCase();
-    if (!(t.contains('CREDIT CARD') || t.contains('CC'))) return null;
-
-    // must see some bill/statement cue
-    final hasCue = RegExp(
-      r'(TOTAL\s*(AMT|AMOUNT)?\s*DUE|MIN(IM)?UM\s*(AMT|AMOUNT)?\s*DUE|DUE\s*DATE|BILL\s*DUE|STATEMENT)',
-      caseSensitive: false,
-    ).hasMatch(text);
-    if (!hasCue) return null;
-
-    double? amtAfter(List<RegExp> rxs) {
-      for (final rx in rxs) {
-        final a = RegExp(
-          rx.pattern +
-              r''':?\s*(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)''',
-          caseSensitive: false,
-        ).firstMatch(text);
-        if (a != null) {
-          final numStr = (a.group(1) ?? '')
-              .replaceAll(',', '')
-              .replaceAll(RegExp(r'\s+'), '');
-          final v = double.tryParse(numStr);
-          if (v != null) return v;
-        }
-      }
-      return null;
-    }
-
-    DateTime? dateAfter(List<RegExp> rxs) {
-      final rxDate = RegExp(
-        r'(\b\d{1,2}[-/ ]\d{1,2}[-/ ]\d{2,4}\b)|(\b\d{1,2}\s*[A-Za-z]{3}\s*\d{2,4}\b)',
-        caseSensitive: false,
-      );
-      for (final rx in rxs) {
-        final m = rx.firstMatch(text);
-        if (m != null) {
-          final after = text.substring(m.end);
-          final d = rxDate.firstMatch(after);
-          if (d != null) {
-            final s = d.group(0)!;
-            final dt = _parseLooseDate(s);
-            if (dt != null) return dt;
-          }
-        }
-      }
-      return null;
-    }
-
-    final total = amtAfter(
-        [RegExp(r'\b(TOTAL\s*(AMT|AMOUNT)?\s*DUE)\b', caseSensitive: false)]);
-    final minDue = amtAfter([
-      RegExp(r'\b(MIN(IM)?UM\s*(AMT|AMOUNT)?\s*DUE)\b', caseSensitive: false)
-    ]);
-    final dueDate = dateAfter([
-      RegExp(r'\b(DUE\s*DATE)\b', caseSensitive: false),
-      RegExp(r'\b(BILL\s*DUE)\b', caseSensitive: false),
-    ]);
-
-    DateTime? stStart;
-    DateTime? stEnd;
-    final period = RegExp(
-      r'(STATEMENT\s*(PERIOD)?|BILL\s*CYCLE)[^0-9]*([0-9]{1,2}\s*[A-Za-z]{3}\s*[0-9]{2,4})\s*(TO|-)\s*([0-9]{1,2}\s*[A-Za-z]{3}\s*[0-9]{2,4})',
-      caseSensitive: false,
-    ).firstMatch(text);
-    if (period != null) {
-      stStart = _parseLooseDate(period.group(3)!);
-      stEnd = _parseLooseDate(period.group(5)!);
-    }
-
-    if (total == null && minDue == null && dueDate == null) return null;
-    return _BillInfo(
-        totalDue: total,
-        minDue: minDue,
-        dueDate: dueDate,
-        statementStart: stStart,
-        statementEnd: stEnd);
-  }
-
-  // Very simple note cleaner (no ML/regex analyzer dependency)
-  String _cleanNoteSimple(String raw) {
-    var t = raw.trim();
-    // remove obvious OTP lines
-    t = t.replaceAll(
-        RegExp(r'(^|\s)(OTP|One[-\s]?Time\s*Password)\b[^\n]*',
-            caseSensitive: false),
-        '');
-    // collapse whitespace
-    t = t.replaceAll(RegExp(r'\s+'), ' ').trim();
-    // keep it short
-    if (t.length > 220) t = '${t.substring(0, 220)}…';
-    return t;
-  }
-
-  // Short preview (80 chars)
-  String _preview(String raw) {
-    var p = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
-    if (p.length > 80) p = '${p.substring(0, 80)}…';
-    return p;
-  }
-
-  // Extract sender name for UPI P2A alerts, e.g. "UPI/P2A/.../SHREYA AG/HDFC BANK"
-  String? _extractUpiSenderName(String text) {
-    // Relaxed regex to allow mixed case names (e.g. Nurbasa Mujeeb)
-    final rx = RegExp(
-      r'\bUPI\/P2[AM]\/[^\/\s]+\/([^\/\n\r]+)',
-      caseSensitive: false,
-    );
-    final m = rx.firstMatch(text); // Case insensitive matching on original text
-    if (m != null) {
-      final raw = (m.group(1) ?? '').trim();
-      // Filter out bank names if they appear in the name slot
-      if (raw.isNotEmpty &&
-          !RegExp(r'(HDFC|ICICI|SBI|AXIS|KOTAK|YES|IDFC|BANK|UPI)',
-                  caseSensitive: false)
-              .hasMatch(raw)) {
-        return raw;
-      }
-      return raw;
-    }
-    return null;
-  }
-
-  // New Credit Card Metadata Extraction
-  Map<String, double> _extractCreditCardMetadata(String text) {
-    final Map<String, double> meta = {};
-
-    // Helper to parse amount like "Rs. 1,00,000" or "INR 50000.00"
-    double? parseAmt(String raw) {
-      final numStr = raw.replaceAll(RegExp(r'[^0-9.]'), '');
-      return double.tryParse(numStr);
-    }
-
-    // 1. Available Limit
-    // "Avl Lmt: Rs 12000", "Available Credit Limit: 50,000", "Limit Available: 10000"
-    final avlRx = RegExp(
-      r'(?:Avl|Available)\s*(?:Cr|Credit)?\s*(?:Lmt|Limit|Bal|Balance)[\s:-]*(?:Rs\.?|INR)?\s*([0-9,]+(?:\.\d{1,2})?)',
-      caseSensitive: false,
-    );
-    final avlMatch = avlRx.firstMatch(text);
-    if (avlMatch != null) {
-      final v = parseAmt(avlMatch.group(1)!);
-      if (v != null) meta['availableLimit'] = v;
-    }
-
-    // 2. Total Limit
-    // "Total Credit Limit: 1,00,000", "Max Limit: INR 199999.00"
-    final totRx = RegExp(
-      r'(?:Total|Max)\s*(?:Cr|Credit)?\s*(?:Lmt|Limit)[\s:-]*(?:Rs\.?|INR)?\s*([0-9,]+(?:\.\d{1,2})?)',
-      caseSensitive: false,
-    );
-    final totMatch = totRx.firstMatch(text);
-    if (totMatch != null) {
-      final v = parseAmt(totMatch.group(1)!);
-      if (v != null) meta['totalLimit'] = v;
-    }
-
-    // 3. Reward Points
-    // "Reward Points: 500", "Points Balance: 1200", "Reward Points Balance is 500"
-    final ptsRx = RegExp(
-      r'(?:Reward|Loyalty)\s*Points(?:\s*Balance)?(?:[\s:-]+|(?:\s+is\s+))([0-9,]+)',
-      caseSensitive: false,
-    );
-    final ptsMatch = ptsRx.firstMatch(text);
-    if (ptsMatch != null) {
-      final v = parseAmt(ptsMatch.group(1)!);
-      if (v != null) meta['rewardPoints'] = v;
-    }
-
-    return meta;
-  }
-
   // ---------------------------------------------------------------------------
 
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     _currentUser = null;
-  }
-
-  Future<void> _maybeAttachToCardBillPayment({
-    required String userId,
-    required double amount,
-    required DateTime paidAt,
-    required String? bank,
-    required String? last4,
-    required DocumentReference txRef,
-    required Map<String, dynamic> sourceMeta,
-  }) async {
-    final String? bankLocal = bank;
-    String? last4Local = last4;
-
-    // Try to infer last4 from raw preview if neither bank nor last4 was detected
-    if (bankLocal == null && last4Local == null) {
-      final raw = (sourceMeta['rawPreview'] as String?) ?? '';
-      final guess4 = _extractCardLast4(raw);
-      if (guess4 != null) last4Local = guess4;
-    }
-    if (bankLocal == null && last4Local == null) return;
-
-    // Build query: prefer last4, else fallback to issuerBank
-    Query billQuery = FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .collection('bill_reminders')
-        .where('kind', isEqualTo: 'credit_card_bill');
-
-    if (last4Local != null) {
-      billQuery = billQuery.where('cardLast4', isEqualTo: last4Local);
-    } else if (bankLocal != null) {
-      billQuery = billQuery.where('issuerBank', isEqualTo: bankLocal);
-    } else {
-      return;
-    }
-
-    final snap =
-        await billQuery.orderBy('dueDate', descending: true).limit(1).get();
-    if (snap.docs.isEmpty) return;
-
-    final d = snap.docs.first;
-    final data = d.data() as Map<String, dynamic>;
-    final num totalDueN = (data['totalDue'] ?? data['minDue'] ?? 0) as num;
-    final num alreadyN = (data['amountPaid'] ?? 0) as num;
-
-    final double totalDue = totalDueN.toDouble();
-    final double nowPaid = alreadyN.toDouble() + amount;
-    final String status =
-        (totalDue > 0 && nowPaid + 1e-6 >= totalDue) ? 'paid' : 'partial';
-
-    await d.reference.set({
-      'amountPaid': nowPaid,
-      'status': status,
-      'linkedPaymentIds': FieldValue.arrayUnion([txRef.id]),
-      'updatedAt': Timestamp.now(),
-    }, SetOptions(merge: true));
   }
 
   // ── Legacy compat: keep old entry point alive ──────────────────────────────
@@ -1058,11 +209,9 @@ class GmailService {
     }
 
     // In TEST_MODE we still cap by TEST_BACKFILL_DAYS as before
-    final since = testMode
-        ? now.subtract(const Duration(days: testBackfillDays))
-        : now.subtract(
-            Duration(days: daysBack.clamp(1, maxBackfillDays)),
-          );
+    final since = now.subtract(
+      Duration(days: daysBack.clamp(1, maxBackfillDays)),
+    );
 
     await _fetchAndStage(userId: userId, since: since, pageSize: pageSize);
 
@@ -1154,8 +303,10 @@ class GmailService {
       final msgs = list.messages ?? [];
       if (msgs.isEmpty) break;
 
-      for (var i = 0; i < msgs.length; i += pagePool) {
-        final slice = msgs.sublist(i, (i + pagePool).clamp(0, msgs.length));
+      for (var i = 0; i < msgs.length; i += 10) {
+        final slice = msgs.sublist(i, (i + 10).clamp(0, msgs.length));
+        final rawMessages = <RawGmailMessage>[];
+
         await Future.wait(slice.map((m) async {
           try {
             final msg = await _withRetries(
@@ -1168,15 +319,36 @@ class GmailService {
             );
             if (dt.isBefore(since)) return;
 
-            final touched = await _handleMessage(userId: userId, msg: msg);
-            if (touched != null &&
-                (newestTouched == null || touched.isAfter(newestTouched!))) {
-              newestTouched = touched;
-            }
+            final headersDto = (msg.payload?.headers ?? [])
+                .map((h) => MessageHeaderDto(h.name ?? '', h.value ?? ''))
+                .toList();
+
+            rawMessages.add(RawGmailMessage(
+              id: msg.id ?? '',
+              threadId: msg.threadId ?? '',
+              internalDate: msg.internalDate ?? '0',
+              headers: headersDto,
+              plainTextBody:
+                  _extractPlainText(msg.payload) ?? (msg.snippet ?? ''),
+            ));
           } catch (e) {
             _log('message error: $e');
           }
         }));
+
+        if (rawMessages.isEmpty) continue;
+
+        // ISOLATE PARSING
+        final parsedResults = await compute(parseBatchInIsolate, rawMessages);
+
+        for (final parsed in parsedResults) {
+          if (parsed == null) continue;
+          final touched = await _handleParsedTxn(userId, parsed);
+          if (touched != null &&
+              (newestTouched == null || touched.isAfter(newestTouched))) {
+            newestTouched = touched;
+          }
+        }
       }
 
       pageToken = list.nextPageToken;
@@ -1187,766 +359,6 @@ class GmailService {
       await IngestStateService.instance
           .setProgress(userId, lastGmailTs: newestTouched);
     }
-  }
-
-  // returns message DateTime if ingested, else null
-  Future<DateTime?> _handleMessage({
-    required String userId,
-    required gmail.Message msg,
-  }) async {
-    final headers = msg.payload?.headers;
-    final subject = _getHeader(headers, 'subject') ?? '';
-    final fromHdr = _getHeader(headers, 'from') ?? '';
-    final listId = _getHeader(headers, 'list-id') ?? '';
-    final bodyText = _extractPlainText(msg.payload) ?? (msg.snippet ?? '');
-    final combined = '$subject\n$bodyText'.trim();
-
-    if (combined.isEmpty) return null;
-
-    final msgDate = DateTime.fromMillisecondsSinceEpoch(
-      int.tryParse(msg.internalDate ?? '0') ??
-          DateTime.now().millisecondsSinceEpoch,
-    );
-
-    // --- SMART LOAN DETECTION START ---
-    try {
-      final loanRes = LoanDetectionParser.parse(combined);
-      if (loanRes != null) {
-        final lender = loanRes.counterPartyName ??
-            (loanRes.type == LoanType.given ? 'Borrower' : 'Lender');
-        final key = 'EMAIL|${lender.toUpperCase()}|${loanRes.amount.toInt()}';
-
-        final suggestion = LoanSuggestion(
-          key: key,
-          lender: lender,
-          emi: loanRes.amount,
-          firstSeen: msgDate,
-          lastSeen: msgDate,
-          occurrences: 1,
-          autopay: false,
-          paymentDay: msgDate.day,
-          confidence: loanRes.confidence,
-        );
-
-        final ref = FirebaseFirestore.instance
-            .collection('users')
-            .doc(userId)
-            .collection('loan_suggestions')
-            .doc(key);
-
-        final existing = await ref.get();
-        if (!existing.exists ||
-            (existing.data()?['status'] ?? 'new') == 'new') {
-          await ref.set(suggestion.toJson(), SetOptions(merge: true));
-          if (existing.exists) {
-            await ref.update({
-              'lastSeen': Timestamp.fromDate(msgDate),
-              'occurrences': FieldValue.increment(1),
-            });
-          }
-        }
-      }
-    } catch (e) {
-      _log('Loan parser error: $e');
-    }
-    // --- SMART LOAN DETECTION END ---
-    // Ah, I see I inserted the scanner block which includes msgDate.
-    // And there was likely already a msgDate declaration in the file before my insertion point using 'combined'.
-
-    // I will use 'replace_file_content' to effectively delete the duplicate declaration if it matches.
-    // But wait, my view shows only ONE declaration at 1036.
-    // If the error was "msgDate is already defined", then there must be another one.
-    // I will comment out this one and use the one that must exist below or just rely on the fact that I might have messed up the insert.
-    // Let's try to remove this declaration and see if it compiles (implying another exists),
-    // OR if I should just keep this one and remove the OTHER one potentially.
-    // Actually, looking at the previous diff, I inserted `msgDate = ...` AND the scanner.
-    // If I look at line 1022+, I don't see another msgDate.
-    // BUT, in the stable version (reverted), msgDate was defined LATER, after the scanner block would have been.
-    // So by inserting it early, I might have created a duplicate if I didn't remove the later one.
-    // I will try to remove THIS declaration and assumes the later one exists? No, the scanner needs it.
-    // I should remove the LATER declaration.
-    // Let's find the later declaration first.
-    // I will view lines 1050-1150.
-
-    // ─── SUBSCRIPTION SCANNER (TEMPORARILY DISABLED) ───────────────────────
-    /*
-    try {
-      final subEvent = SubscriptionScannerService.instance.scan(
-        body: combined, 
-        ts: msgDate, 
-        sender: fromHdr
-      );
-      if (subEvent != null) {
-         _log('SUBSCRIPTION EVENT DETECTED: ${subEvent.type} - ${subEvent.providerName}');
-         await SubscriptionScannerService.instance.handleEvent(userId, subEvent);
-      }
-    } catch (e) {
-      _log('Subscription scan error: $e');
-    }
-    */
-    // ───────────────────────────────────────────────────────────────────────
-
-    // Detect bank/tier once and reuse everywhere.
-    final emailDomain = _fromDomain(headers);
-    final detectedBank = _detectBank(headers: headers, body: combined);
-
-    // PATCH: strict gate before any heavy work (but allow card-bill path later)
-    final looksTxn = _passesTxnGate(
-      combined,
-      domain: emailDomain,
-      bank: detectedBank,
-    );
-    final passesIncomeGate = _emailTxnGateForIncome(
-      combined,
-      domain: emailDomain,
-      bank: detectedBank,
-    );
-
-    // ── Early skips & special routing (safe) ─────────────────────────────────
-    final direction = _inferDirection(combined); // 'debit'|'credit'|null
-    final amountFx = _extractFx(combined);
-    final amountInr = amountFx == null
-        ? (_extractTxnAmount(combined, direction: direction) ??
-            _extractAnyInr(combined))
-        : null;
-    final amount = amountInr ?? amountFx?['amount'] as double?;
-    final postBal = _extractPostTxnBalance(combined);
-    final parsedTxnSignals =
-        direction != null && (amount != null && amount > 0);
-
-    if (amountInr != null || postBal != null) {
-      _log(
-          'parsed amountInr=${amountInr ?? -1} postBalance=${postBal ?? -1} dir=${direction ?? '-'} msg=${msg.id ?? '-'}');
-    }
-
-// Drop newsletters/promos ONLY if they do NOT look like a transaction.
-    if (filt.isLikelyNewsletter(listId, fromHdr) &&
-        !(looksTxn || passesIncomeGate)) {
-      if (_debug) _log('drop: newsletter without txn signals');
-      return null;
-    }
-    if (filt.isLikelyPromo(combined) && !(looksTxn || passesIncomeGate)) {
-      if (_debug) _log('drop: promo without txn signals');
-      return null;
-    }
-
-// Balance alerts often include legit credits ("credited ... Avl bal ...").
-// So ONLY drop balance alerts when there is NO clear txn signal.
-    if (filt.isLikelyBalanceAlert(combined) &&
-        !(looksTxn || passesIncomeGate)) {
-      if (_debug) _log('drop: balance alert without txn signals');
-      return null;
-    }
-
-// Card bill logic: allow card-bill notices; drop other statements/bills.
-    final cardBillCue = filt.isLikelyCardBillNotice(combined);
-    if (!cardBillCue &&
-        filt.isStatementOrBillNotice(combined) &&
-        !(looksTxn || parsedTxnSignals)) {
-      if (_debug) _log('drop: statement/bill without txn signals');
-      return null;
-    }
-
-    // Extract common signals
-    // msgDate is already defined above
-    final bank = detectedBank.code ??
-        _guessBankFromHeaders(headers) ??
-        _guessIssuerBankFromBody(combined);
-    final hasCardContext = _hasStrongCardCue(combined);
-    String? cardLast4 = hasCardContext ? _extractCardLast4(combined) : null;
-    final accountLast4 = _extractAccountLast4(combined);
-    final upiVpa = _extractUpiVpa(combined);
-    var instrument = _inferInstrument(combined);
-    final network = _inferCardNetwork(combined);
-    final isIntl = _looksInternational(combined);
-    final fees = _extractFees(combined);
-    final upiSenderRaw = _extractUpiSenderName(combined);
-    final paidTo = _extractPaidToName(combined) ?? upiSenderRaw;
-
-    final isEmiAutopay = RegExp(
-            r'\b(EMI|AUTOPAY|AUTO[- ]?DEBIT|NACH|E-?MANDATE|MANDATE)\b',
-            caseSensitive: false)
-        .hasMatch(combined);
-
-    if (accountLast4 != null && (!hasCardContext || isEmiAutopay)) {
-      instrument = 'Bank Account';
-      cardLast4 = null;
-    }
-
-    // Card bill path FIRST
-    final bill = _extractCardBillInfo(combined);
-    if (bill != null) {
-      final total = bill.totalDue ?? bill.minDue ?? amount ?? 0.0;
-      if (total <= 0) return null;
-
-      final cycleDate =
-          bill.statementEnd ?? bill.dueDate ?? msgDate; // prefer cycle anchors
-      final billId =
-          _billDocId(bank: bank, last4: cardLast4, msgDate: cycleDate);
-
-      final billRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .collection('bill_reminders')
-          .doc(billId);
-
-      // upsert bill reminder
-      await billRef.set({
-        'kind': 'credit_card_bill',
-        'issuerBank': bank,
-        'cardLast4': cardLast4,
-        'statementStart': bill.statementStart != null
-            ? Timestamp.fromDate(bill.statementStart!)
-            : null,
-        'statementEnd': bill.statementEnd != null
-            ? Timestamp.fromDate(bill.statementEnd!)
-            : null,
-        'dueDate':
-            bill.dueDate != null ? Timestamp.fromDate(bill.dueDate!) : null,
-        'totalDue': bill.totalDue,
-        'minDue': bill.minDue,
-        'status': _initialBillStatus(bill.dueDate),
-        'amountPaid': FieldValue.increment(0), // keep numeric type
-        'linkedPaymentIds': FieldValue.arrayUnion([]),
-        'updatedAt': Timestamp.now(),
-      }, SetOptions(merge: true));
-
-      // store raw/email provenance
-      await billRef.set({
-        'sourceRecord': {
-          'gmail': {
-            'gmailId': msg.id,
-            'threadId': msg.threadId,
-            'internalDateMs': int.tryParse(msg.internalDate ?? '0'),
-            'emailDomain': emailDomain,
-            'rawPreview': _preview(combined),
-            'when': Timestamp.fromDate(DateTime.now()),
-          }
-        },
-        'merchantKey': (bank ?? 'CREDIT CARD').toUpperCase(),
-      }, SetOptions(merge: true));
-
-      // Optional: legacy expense write (hidden from spend) to keep UI working
-      if (writeBillAsExpense) {
-        final key = buildTxKey(
-          bank: bank,
-          amount: total,
-          time: msgDate,
-          type: 'debit',
-          last4: cardLast4,
-        );
-        final claimed = await _index
-            .claim(userId, key, source: 'gmail')
-            .catchError((_) => false);
-        if (claimed == true) {
-          final expRef = FirebaseFirestore.instance
-              .collection('users')
-              .doc(userId)
-              .collection('expenses')
-              .doc(_docIdFromKey(key));
-          await expRef.set({
-            'type': 'Credit Card Bill',
-            'amount': total,
-            'note': _cleanNoteSimple(combined),
-            'date': Timestamp.fromDate(msgDate),
-            'payerId': userId,
-            'cardLast4': cardLast4,
-            'cardType': 'Credit Card',
-            'issuerBank': bank,
-            'instrument': 'Credit Card',
-            'instrumentNetwork': network,
-            'counterparty': (bank ?? 'CREDIT CARD').toUpperCase(),
-            'counterpartyType': 'CARD_BILL',
-            'isBill': true,
-            'excludedFromSpending': true, // ← crucial
-            'tags': ['credit_card_bill', 'bill'],
-            'txKey': key,
-            'ingestSources': FieldValue.arrayUnion(['gmail']),
-            'sourceRecord': {
-              'type': 'gmail',
-              'gmailId': msg.id,
-              'rawPreview': _preview(combined),
-            },
-          }, SetOptions(merge: true));
-        }
-      }
-
-      _log(
-          'WRITE/UPSERT CC BillReminder total=$total bank=${bank ?? "-"} last4=${cardLast4 ?? "-"}');
-
-      return msgDate;
-    }
-
-    // Opportunistic Metadata Update (for normal txns too)
-    final ccMeta = _extractCreditCardMetadata(combined);
-    if (ccMeta.isNotEmpty && (bank != null || cardLast4 != null)) {
-      await _creditCardService.updateCardMetadataByMatch(
-        userId,
-        bankName: bank, // might be null
-        last4: cardLast4, // might be null
-        availableLimit: ccMeta['availableLimit'],
-        totalLimit: ccMeta['totalLimit'],
-        rewardPoints: ccMeta['rewardPoints'],
-      );
-    }
-
-    if (direction == null) return null;
-    if (amount == null || amount <= 0) return null;
-    if (direction == 'credit') {
-      if (!passesIncomeGate) {
-        if (_debug) _log('drop: gmail income gate failed');
-        return null;
-      }
-      if (_tooSmallToTrust(combined, amount)) {
-        if (_debug) _log('drop: tiny income $amount');
-        return null;
-      }
-    } else if (_tooSmallToTrust(combined, amount)) {
-      if (_debug) _log('drop: tiny amount $amount');
-      return null;
-    }
-
-    // Merchant extraction & normalization (initial)
-    // ===== NEW: Enrichment via EnrichmentService (LLM Primary) =====
-    final preview = _preview(_maskSensitive(combined));
-    final hintParts = <String>[
-      'HINTS: dir=$direction',
-      if (isEmiAutopay) 'cues=emi,autopay',
-      if (instrument != null && instrument.isNotEmpty)
-        'instrument=${instrument.toLowerCase().replaceAll(' ', '_')}',
-      if (upiVpa != null && upiVpa.trim().isNotEmpty) 'upi=${upiVpa.trim()}',
-    ];
-
-    // Attempt robust regex extraction first (Phase 2 Fallback/Hint)
-    final merchantMatch = _guessMerchantSmart(combined);
-    final cleanHint =
-        merchantMatch != null ? _cleanMerchantName(merchantMatch) : null;
-
-    final enriched = await EnrichmentService.instance.enrichTransaction(
-      userId: userId,
-      rawText: _maskSensitive(combined),
-      amount: amount,
-      date: msgDate,
-      hints: hintParts,
-      merchantRegex: cleanHint,
-    );
-
-    var merchantNorm = enriched.merchantName;
-    var merchantKey = merchantNorm.toUpperCase();
-    final finalCategory = enriched.category;
-    final finalSubcategory = enriched.subcategory;
-    final finalConfidence = enriched.confidence;
-    final categorySource = enriched.source;
-    final labelSet = enriched.tags.toSet();
-    final emiLocked = isEmiAutopay; // Keep this flag for later logic
-
-    // txKey + claim for idempotency
-    final key = buildTxKey(
-      bank: bank,
-      amount: amount,
-      time: msgDate,
-      type: direction,
-      last4: cardLast4,
-    );
-    final claimed = await _index
-        .claim(userId, key, source: 'gmail')
-        .catchError((_) => false);
-    if (claimed != true) return null;
-
-    // Cross-source merge (avoid duplicate even with tiny FX rounding)
-    final sourceMeta = {
-      'type': 'gmail',
-      'gmailId': msg.id,
-      'threadId': msg.threadId,
-      'internalDateMs': int.tryParse(msg.internalDate ?? '0'),
-      'raw': _maskSensitive(combined),
-      'rawPreview': preview,
-      'emailDomain': emailDomain,
-      'when': Timestamp.fromDate(DateTime.now()),
-      'txKey': key,
-      if (merchantNorm.isNotEmpty) 'merchant': merchantNorm,
-      if (bank != null) 'issuerBank': bank,
-      if (upiVpa != null) 'upiVpa': upiVpa,
-      if (network != null) 'network': network,
-      if (cardLast4 != null) 'last4': cardLast4,
-      if (accountLast4 != null) 'accountLast4': accountLast4,
-      if (amountFx != null) 'fxOriginal': amountFx,
-      if (fees.isNotEmpty) 'feesDetected': fees,
-      'instrument': instrument,
-      if (postBal != null) 'postBalanceInr': postBal,
-    };
-
-    String? existingDocId;
-    if (reconcilePolicy != ReconcilePolicy.off) {
-      existingDocId = await CrossSourceReconcile.maybeMerge(
-        userId: userId,
-        direction: direction,
-        amount: amount,
-        timestamp: msgDate,
-        cardLast4: cardLast4,
-        merchantKey: merchantKey,
-        txKey: key,
-        upiVpa: upiVpa,
-        issuerBank: bank,
-        instrument: instrument,
-        network: network,
-        amountTolerancePct: (amountFx != null || isIntl) ? 2.0 : 0.5,
-        newSourceMeta: sourceMeta,
-      );
-    }
-
-    if (existingDocId != null) {
-      if (reconcilePolicy == ReconcilePolicy.mergeEnrich) {
-        final col = (direction == 'debit') ? 'expenses' : 'incomes';
-        final ref = FirebaseFirestore.instance
-            .collection('users')
-            .doc(userId)
-            .collection(col)
-            .doc(existingDocId);
-
-        await ref.set({
-          // mark that both SMS and Gmail contributed
-          'ingestSources': FieldValue.arrayUnion(['gmail']),
-
-          // add/refresh a lightweight gmail record
-          'sourceRecord.gmail': {
-            'gmailId': msg.id,
-            'threadId': msg.threadId,
-            'internalDateMs': int.tryParse(msg.internalDate ?? '0'),
-            'rawPreview': preview,
-            'emailDomain': emailDomain,
-            'txKey': key,
-            'when': Timestamp.fromDate(DateTime.now()),
-            if (postBal != null) 'postBalanceInr': postBal,
-          },
-
-          // optional breadcrumbs
-          'mergeHints': {
-            'gmailMatched': true,
-            'gmailTxKey': key,
-          },
-        }, SetOptions(merge: true));
-      }
-
-      _log('merge($direction) -> $existingDocId [policy: $reconcilePolicy]');
-      return msgDate;
-    }
-
-    var note = _cleanNoteSimple(combined);
-    final currency = (amountFx?['currency'] as String?) ?? 'INR';
-    final isIntlResolved =
-        isIntl || (amountFx != null && currency.toUpperCase() != 'INR');
-    String merchantNormPrime = merchantNorm;
-    if (merchantNormPrime.isEmpty &&
-        paidTo != null &&
-        paidTo.trim().isNotEmpty) {
-      merchantNormPrime = paidTo.trim().toUpperCase();
-    }
-    if (merchantNormPrime.isNotEmpty) {
-      merchantKey = merchantNormPrime.toUpperCase();
-    }
-    merchantNorm = merchantNormPrime;
-
-    if (emiLocked && direction == 'debit') {
-      final emiDigits = accountLast4 ?? cardLast4;
-      final prefix =
-          'Paid towards your EMI${emiDigits != null ? ' ****$emiDigits' : ''}';
-      note = prefix + (note.isNotEmpty ? '\n$note' : '');
-    }
-
-    final counterparty = _deriveCounterparty(
-      merchantNorm: merchantNormPrime,
-      paidTo: paidTo,
-      upiVpa: upiVpa,
-      last4: cardLast4,
-      bank: bank,
-      domain: emailDomain,
-      rawText: combined,
-      direction: direction,
-      isEmiAutopay: emiLocked,
-    );
-    final cptyType = _deriveCounterpartyType(
-      merchantNorm: merchantNormPrime,
-      upiVpa: upiVpa,
-      instrument: instrument,
-      direction: direction,
-    );
-    final extraTagList = _extraTagsFromText(combined);
-    if (emiLocked) {
-      if (!extraTagList.contains('loan_emi')) extraTagList.add('loan_emi');
-      if (!extraTagList.contains('autopay')) extraTagList.add('autopay');
-    }
-    final tags = _buildTags(
-      instrument: instrument,
-      isIntl: isIntlResolved,
-      hasFees: fees.isNotEmpty,
-      extra: extraTagList,
-    );
-
-    if (_debug) {
-      _log(
-          'final txn dir=$direction instrument=${instrument ?? '-'} cardLast4=${cardLast4 ?? '-'} '
-          'accountLast4=${accountLast4 ?? '-'} category=$finalCategory ($categorySource) '
-          'counterparty=$counterparty amount=$amount');
-    }
-
-    if (direction == 'debit') {
-      final expRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .collection('expenses')
-          .doc(_docIdFromKey(key));
-
-      // READ existing to check for Manual Lock
-      final existingSnap = await expRef.get();
-      final existingData = existingSnap.exists
-          ? (existingSnap.data() as Map<String, dynamic>)
-          : <String, dynamic>{};
-      final existingCreatedBy = existingData['createdBy'] as String?;
-      final existingUpdatedBy = existingData['updatedBy'] as String?;
-      final isUserEdited = (existingUpdatedBy?.contains('user') ?? false) ||
-          (existingCreatedBy?.contains('user') ?? false);
-
-      final e = ExpenseItem(
-        id: expRef.id,
-        type: 'Email Debit',
-        amount: amount,
-        note: note,
-        date: msgDate,
-        payerId: userId,
-        cardLast4: cardLast4,
-        cardType: _isCard(instrument) ? 'Credit Card' : null,
-        issuerBank: bank,
-        instrument: instrument,
-        instrumentNetwork: network,
-        upiVpa: upiVpa,
-        counterparty: counterparty, // ✅ "Paid to OPENAI"
-        counterpartyType: cptyType,
-        isInternational: isIntlResolved,
-        fx: amountFx,
-        fees: fees.isNotEmpty ? fees : null,
-        tags: tags,
-        // AUDIT
-        createdAt: (existingData['createdAt'] as Timestamp?)?.toDate() ??
-            DateTime.now(),
-        createdBy: existingCreatedBy ?? 'parser:gmail',
-        updatedAt: DateTime.now(),
-        updatedBy: 'parser:gmail',
-      );
-
-      final jsonToWrite = e.toJson();
-
-      // PARSER LOCK: If user edited this, DO NOT overwrite critical fields
-      if (isUserEdited) {
-        _log('Skipping update for locked fields on ${expRef.id}');
-        jsonToWrite.remove('category');
-        jsonToWrite.remove('subcategory');
-        jsonToWrite.remove('counterparty'); // merchant info
-        jsonToWrite.remove('note');
-        // We still let other technical fields update (like bill meta if new info found)
-      }
-
-      await expRef.set(jsonToWrite, SetOptions(merge: true));
-      await expRef.set({'source': 'Email'}, SetOptions(merge: true));
-      final labelsForDoc = labelSet.toList();
-      final combinedTags = <String>{};
-      combinedTags.addAll(e.tags ?? const []);
-      combinedTags.addAll(labelSet);
-      final enrichmentData = {
-        'sourceRecord': sourceMeta,
-        'merchantKey': merchantKey,
-        if (merchantNorm.isNotEmpty) 'merchant': merchantNorm,
-        'txKey': key,
-        'category': finalCategory,
-        'subcategory': finalSubcategory,
-        'categoryConfidence': finalConfidence,
-        'categorySource': categorySource,
-        'tags': combinedTags.toList(),
-        'labels': labelsForDoc,
-      };
-
-      if (isUserEdited) {
-        enrichmentData.remove('category');
-        enrichmentData.remove('subcategory');
-        enrichmentData.remove('merchant');
-      }
-
-      await expRef.set(enrichmentData, SetOptions(merge: true));
-
-      await expRef.set({
-        'ingestSources': FieldValue.arrayUnion(['gmail']),
-      }, SetOptions(merge: true));
-
-      try {
-        await RecurringEngine.maybeAttachToSubscription(userId, expRef.id);
-        await RecurringEngine.maybeAttachToLoan(userId, expRef.id);
-        await RecurringEngine.markPaidIfInWindow(userId, expRef.id);
-      } catch (_) {}
-
-      try {
-        await IngestJobQueue.enqueue(
-          userId: userId,
-          txKey: key,
-          rawText: combined,
-          amount: amount,
-          currency: currency,
-          timestamp: msgDate,
-          source: 'email',
-          direction: 'debit',
-          docId: expRef.id,
-          docCollection: 'expenses',
-          docPath: 'users/$userId/expenses/${expRef.id}',
-          enabled: true,
-        );
-
-        // AUTO-RESOLVE: If we just paid X, check if there was a critical alert for X recently
-        await _resolveAlertsForAmount(userId, amount);
-      } catch (_) {}
-      if (_looksLikeCardBillPayment(combined, bank: bank, last4: cardLast4)) {
-        await _maybeAttachToCardBillPayment(
-          userId: userId,
-          amount: amount,
-          paidAt: msgDate,
-          bank: bank,
-          last4: cardLast4,
-          txRef: expRef,
-          sourceMeta: sourceMeta,
-        );
-      }
-
-      // -----------------------------------------------------------------------
-      // NEW: Check Single Loan Transaction (Link or Suggest)
-      // -----------------------------------------------------------------------
-      if (finalCategory == 'Payments' &&
-          (finalSubcategory.contains('Loans') == true ||
-              finalSubcategory.contains('EMI') == true ||
-              finalSubcategory.contains('Repayment') == true)) {
-        await LoanDetectionService().checkLoanTransaction(userId, {
-          'amount': amount,
-          'merchant': merchantNorm,
-          'category': finalCategory,
-          'subcategory': finalSubcategory,
-          'note': note,
-          'description': merchantNorm, // fallback
-          'date': Timestamp.fromDate(msgDate),
-        });
-      }
-    } else {
-      // -----------------------------------------------------------------------
-      // NEW: Critical Alert Check (e.g. Failed SI/EMI)
-      // -----------------------------------------------------------------------
-      final alertId =
-          await _checkForCriticalAlerts(userId, combined, msgDate, amount);
-      if (alertId != null) {
-        // If it's a critical alert (failed payment), check if we should ALSO skip creating a transaction?
-        // Usually failed txns are NOT expenses, so we should NOT create an expense record.
-        // Returning here prevents the "Expense" from being created, which is correct (money didn't go out).
-        _log('Skipped transaction creation due to CRITICAL ALERT: $alertId');
-        return msgDate;
-      }
-
-      final incRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .collection('incomes')
-          .doc(_docIdFromKey(key));
-
-      // READ existing to check for Manual Lock
-      final existingSnap = await incRef.get();
-      final existingData = existingSnap.exists
-          ? (existingSnap.data() as Map<String, dynamic>)
-          : <String, dynamic>{};
-      final existingCreatedBy = existingData['createdBy'] as String?;
-      final existingUpdatedBy = existingData['updatedBy'] as String?;
-      final isUserEdited = (existingUpdatedBy?.contains('user') ?? false) ||
-          (existingCreatedBy?.contains('user') ?? false);
-
-      final i = IncomeItem(
-        id: incRef.id,
-        type: 'Email Credit',
-        amount: amount,
-        note: note,
-        date: msgDate,
-        source: 'Email',
-        issuerBank: bank,
-        instrument: instrument,
-        instrumentNetwork: network,
-        upiVpa: upiVpa,
-        counterparty: counterparty, // "Received from"
-        counterpartyType: cptyType,
-        isInternational: isIntlResolved,
-        fx: amountFx,
-        fees: fees.isNotEmpty ? fees : null,
-        tags: tags,
-        // AUDIT
-        createdAt: (existingData['createdAt'] as Timestamp?)?.toDate() ??
-            DateTime.now(),
-        createdBy: existingCreatedBy ?? 'parser:gmail',
-        updatedAt: DateTime.now(),
-        updatedBy: 'parser:gmail',
-      );
-
-      final jsonToWrite = i.toJson();
-      if (isUserEdited) {
-        _log('Skipping update for locked fields on ${incRef.id}');
-        // IncomeItem constructor (above) doesn't set category, so we are safe from overwriting it here
-        // But we remove counterparty just in case user renamed "Paid from"
-        jsonToWrite.remove('counterparty');
-        jsonToWrite.remove('note');
-      }
-
-      await incRef.set(jsonToWrite, SetOptions(merge: true));
-      final labelsForDoc = labelSet.toList();
-      final combinedTags = <String>{};
-      combinedTags.addAll(i.tags ?? const []);
-      combinedTags.addAll(labelSet);
-
-      final enrichmentData = {
-        'sourceRecord': sourceMeta,
-        'merchantKey': merchantKey,
-        if (merchantNorm.isNotEmpty) 'merchant': merchantNorm,
-        'txKey': key,
-        'category': finalCategory,
-        'subcategory': finalSubcategory,
-        'categoryConfidence': finalConfidence,
-        'categorySource': categorySource,
-        'tags': combinedTags.toList(),
-        'labels': labelsForDoc,
-      };
-
-      if (isUserEdited) {
-        enrichmentData.remove('category');
-        enrichmentData.remove('subcategory');
-        enrichmentData.remove('merchant');
-      }
-
-      await incRef.set(enrichmentData, SetOptions(merge: true));
-
-      await incRef.set({
-        'ingestSources': FieldValue.arrayUnion(['gmail']),
-      }, SetOptions(merge: true));
-
-      try {
-        await IngestJobQueue.enqueue(
-          userId: userId,
-          txKey: key,
-          rawText: combined,
-          amount: amount,
-          currency: currency,
-          timestamp: msgDate,
-          source: 'email',
-          direction: 'credit',
-          docId: incRef.id,
-          docCollection: 'incomes',
-          docPath: 'users/$userId/incomes/${incRef.id}',
-          enabled: true,
-        );
-      } catch (_) {}
-    }
-
-    _log(
-        'WRITE email type=$direction amt=$amount key=$key domain=${emailDomain ?? "-"}');
-    return msgDate;
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -1969,15 +381,6 @@ class GmailService {
   int _daysBetween(DateTime a, DateTime b) {
     final diff = a.toUtc().difference(b.toUtc()).inDays;
     return diff.abs();
-  }
-
-  String? _getHeader(List<gmail.MessagePartHeader>? headers, String name) {
-    if (headers == null) return null;
-    final h = headers.firstWhere(
-      (x) => (x.name?.toLowerCase() == name.toLowerCase()),
-      orElse: () => gmail.MessagePartHeader(),
-    );
-    return h.value;
   }
 
   String? _extractPlainText(gmail.MessagePart? part) {
@@ -2059,498 +462,7 @@ class GmailService {
     return text.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
-  String? _guessBankFromHeaders(List<gmail.MessagePartHeader>? headers) {
-    if (headers == null) return null;
-    String? val(String name) => headers
-        .firstWhere(
-          (h) => (h.name?.toLowerCase() == name),
-          orElse: () => gmail.MessagePartHeader(),
-        )
-        .value;
-    final candidates = [
-      val('from'),
-      val('return-path'),
-      val('x-original-from'),
-      val('reply-to'),
-    ].whereType<String>().map((s) => s.toLowerCase()).toList();
-
-    bool has(String k) => candidates.any((s) => s.contains(k));
-    if (has('hdfc')) return 'HDFC';
-    if (has('axis')) return 'AXIS';
-    if (has('icici')) return 'ICICI';
-    if (has('sbi')) return 'SBI';
-    if (has('kotak')) return 'KOTAK';
-    if (has('yesbank') || has('yes bank')) return 'YES';
-    if (has('federal')) return 'FEDERAL';
-    if (has('idfc')) return 'IDFC';
-    if (has('bankofbaroda') || has('bob')) return 'BOB';
-    return null;
-  }
-
-  String? _fromDomain(List<gmail.MessagePartHeader>? headers) {
-    if (headers == null) return null;
-    final from = _getHeader(headers, 'from') ?? '';
-    final m = RegExp(
-            r'[<\s]([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})[>\s]?',
-            caseSensitive: false)
-        .firstMatch(from);
-    if (m != null) return (m.group(2) ?? '').toLowerCase();
-    final reply = _getHeader(headers, 'reply-to') ??
-        _getHeader(headers, 'return-path') ??
-        '';
-    final m2 = RegExp(r'@([A-Za-z0-9.-]+\.[A-Za-z]{2,})', caseSensitive: false)
-        .firstMatch(reply);
-    return m2?.group(1)?.toLowerCase();
-  }
-
-  String? _extractAccountLast4(String text) {
-    final patterns = <RegExp>[
-      RegExp(
-        r'(?:A\s*/?C(?:COUNT)?|ACCOUNT|ACC(?:OUNT)?)\s*(?:NO\.?|NUMBER|NUM|#|:)?\s*([Xx*\d\s]{4,})',
-        caseSensitive: false,
-      ),
-      RegExp(
-        r'\bAccount\s*(?:ending|ending\s*in|ending\s*with)?\s*[:=]?\s*([Xx*\d\s]{4,})',
-        caseSensitive: false,
-      ),
-    ];
-
-    for (final pattern in patterns) {
-      for (final match in pattern.allMatches(text)) {
-        final raw = match.group(1);
-        if (raw == null) continue;
-        final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
-        if (digits.length >= 4) {
-          return digits.substring(digits.length - 4);
-        }
-      }
-    }
-    return null;
-  }
-
-  bool _hasStrongCardCue(String text) {
-    final t = text.toUpperCase();
-    return RegExp(
-      r'(CREDIT\s+CARD|DEBIT\s+CARD|CARD\s*ENDING|CARD\s*NUMBER|CARD\s*NO\b|CARD\s*PAYMENT|CARD\s*PURCHASE|CARD\s*SWIPE|VISA|MASTERCARD|RUPAY|AMEX|DINERS|ATM|POS)',
-      caseSensitive: false,
-    ).hasMatch(t);
-  }
-
-  String? _extractCardLast4(String text) {
-    if (!_hasStrongCardCue(text)) return null;
-    final re = RegExp(
-      r'(?:ending(?:\s*in)?|xx+|x{2,}|XXXX|XX|last\s*digits|last\s*4|card\s*no\.?)\s*[-:]?\s*([0-9]{4})',
-      caseSensitive: false,
-    );
-    return re.firstMatch(text)?.group(1);
-  }
-
-  double? _extractTxnAmount(String text, {String? direction}) {
-    if (text.isEmpty) return null;
-
-    // PATCH: Strong patterns for specific receipts (BookMyShow, Zomato, etc)
-    // where we want "Total Paid" or "Grand Total" instead of the first "Ticket Amount" or "Subtotal".
-    final strongPatterns = <RegExp>[
-      RegExp(
-          r'(?:Grand\s*Total|Total\s*Paid|Amount\s*Paid|Total\s*Amount|Net\s*Amount|Final\s*Amount)[^0-9\n]{0,30}(?:₹|INR|Rs\.?)\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
-          caseSensitive: false),
-    ];
-
-    for (final rx in strongPatterns) {
-      final m = rx.firstMatch(text);
-      if (m != null) {
-        final numStr = (m.group(1) ?? '')
-            .replaceAll(',', '')
-            .replaceAll(RegExp(r'\s+'), '');
-        final val = double.tryParse(numStr);
-        if (val != null && val > 0) return val;
-      }
-    }
-
-    final amountPatterns = <RegExp>[
-      RegExp(
-          r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
-          caseSensitive: false),
-      RegExp(r'\bamount\s+of\s+([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
-          caseSensitive: false),
-    ];
-    final balanceCue = RegExp(
-      r'(A/?c\.?\s*Bal|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance|Current\s*Balance|'
-      r'Ledger\s*Balance|Passbook\s*Balance|\bBal(?:ance)?\b)',
-      caseSensitive: false,
-    );
-    final creditCues = RegExp(
-      r'(has\s*been\s*credited|credited\s*(?:by|with)?|received|rcvd|deposit(?:ed)?|salary|refund|reversal)',
-      caseSensitive: false,
-    );
-    final debitCues = RegExp(
-      r'(has\s*been\s*debited|debited|spent|paid|payment|withdrawn|withdrawal|pos|upi|imps|neft|rtgs|purchase|txn|transaction)',
-      caseSensitive: false,
-    );
-
-    Iterable<RegExpMatch> cueMatches;
-    final dir = direction?.toLowerCase();
-    if (dir == 'credit') {
-      cueMatches = creditCues.allMatches(text);
-    } else if (dir == 'debit') {
-      cueMatches = debitCues.allMatches(text);
-    } else {
-      final merged = <RegExpMatch>[
-        ...creditCues.allMatches(text),
-        ...debitCues.allMatches(text),
-      ]..sort((a, b) => a.start.compareTo(b.start));
-      cueMatches = merged;
-    }
-
-    double? firstNonBalanceAfter(int start, int window) {
-      final end = math.min(text.length, start + window);
-      if (start >= end) return null;
-      final windowText = text.substring(start, end);
-      double? best;
-      var bestIndex = 1 << 30;
-      for (final rx in amountPatterns) {
-        for (final m in rx.allMatches(windowText)) {
-          final absoluteStart = start + m.start;
-          final lookbackStart = math.max(0, absoluteStart - 40);
-          final lookback = text.substring(lookbackStart, absoluteStart);
-          if (balanceCue.hasMatch(lookback)) continue;
-          final numStr = (m.group(1) ?? '')
-              .replaceAll(',', '')
-              .replaceAll(RegExp(r'\s+'), '');
-          final value = double.tryParse(numStr);
-          if (value != null && value > 0 && absoluteStart < bestIndex) {
-            bestIndex = absoluteStart;
-            best = value;
-          }
-        }
-      }
-      return best;
-    }
-
-    for (final cue in cueMatches) {
-      final v = firstNonBalanceAfter(cue.end, 80);
-      if (v != null) return v;
-    }
-
-    double? fallback;
-    var fallbackIdx = 1 << 30;
-    for (final rx in amountPatterns) {
-      for (final m in rx.allMatches(text)) {
-        final absoluteStart = m.start;
-        final lookbackStart = math.max(0, absoluteStart - 40);
-        final lookback = text.substring(lookbackStart, absoluteStart);
-        if (balanceCue.hasMatch(lookback)) continue;
-        final numStr = (m.group(1) ?? '')
-            .replaceAll(',', '')
-            .replaceAll(RegExp(r'\s+'), '');
-        final value = double.tryParse(numStr);
-        if (value != null && value > 0 && absoluteStart < fallbackIdx) {
-          fallbackIdx = absoluteStart;
-          fallback = value;
-        }
-      }
-    }
-    return fallback;
-  }
-
-  double? _extractPostTxnBalance(String text) {
-    if (text.isEmpty) return null;
-    final patterns = <RegExp>[
-      RegExp(
-        r'(?:A/?c\.?\s*Bal(?:\.|\s*is)?|Ac\s*Bal|AVL\s*Bal|Avail(?:able)?\s*Bal(?:ance)?|Closing\s*Balance)\s*(?:is\s*)?(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
-        caseSensitive: false,
-      ),
-      RegExp(
-        r'\b(?:balance|bal)\s*(?:is|:)?\s*(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)?\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
-        caseSensitive: false,
-      ),
-    ];
-    for (final rx in patterns) {
-      final match = rx.firstMatch(text);
-      if (match != null) {
-        final numStr = (match.group(1) ?? '')
-            .replaceAll(',', '')
-            .replaceAll(RegExp(r'\s+'), '');
-        final value = double.tryParse(numStr);
-        if (value != null && value > 0) {
-          return value;
-        }
-      }
-    }
-    return null;
-  }
-
-  double? _extractAnyInr(String text) {
-    final rxs = <RegExp>[
-      RegExp(
-          r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
-          caseSensitive: false),
-      RegExp(r'\bamount\s+of\s+([0-9][\d,]*(?:\s*\.\s*\d{1,2})?)',
-          caseSensitive: false),
-    ];
-    for (final rx in rxs) {
-      final m = rx.firstMatch(text);
-      if (m != null) {
-        final numStr = (m.group(1) ?? '')
-            .replaceAll(',', '')
-            .replaceAll(RegExp(r'\s+'), '');
-        final v = double.tryParse(numStr);
-        if (v != null && v > 0) return v;
-      }
-    }
-    return null;
-  }
-
-  Map<String, dynamic>? _extractFx(String text) {
-    final pats = <RegExp>[
-      RegExp(
-          r'(spent|purchase|txn|transaction|charged)\s+(usd|eur|gbp|aed|sgd|jpy|aud|cad)\s*([0-9]+(?:\.[0-9]+)?)',
-          caseSensitive: false),
-      RegExp(
-          r'\b(usd|eur|gbp|aed|sgd|jpy|aud|cad)\s*([0-9]+(?:\.[0-9]+)?)\b\s*(spent|purchase|txn|transaction|charged)',
-          caseSensitive: false),
-      RegExp(
-          r'(txn|transaction)\s*of\s*(usd|eur|gbp|aed|sgd|jpy|aud|cad)\s*([0-9]+(?:\.[0-9]+)?)',
-          caseSensitive: false),
-    ];
-    for (final re in pats) {
-      final m = re.firstMatch(text);
-      if (m != null) {
-        final g = m.groups([1, 2, 3]);
-        String cur;
-        String amtStr;
-        if (re.pattern.startsWith('(spent')) {
-          cur = g[1]!.toUpperCase();
-          amtStr = g[2]!;
-        } else if (re.pattern.startsWith(r'\b(usd')) {
-          cur = g[0]!.toUpperCase();
-          amtStr = g[1]!;
-        } else {
-          cur = g[1]!.toUpperCase();
-          amtStr = g[2]!;
-        }
-        final amt = double.tryParse(amtStr);
-        if (amt != null && amt > 0) return {'currency': cur, 'amount': amt};
-      }
-    }
-    return null;
-  }
-
-  // infer debit/credit from common cues — ignores "credit card/debit card" noise & treats autopay as debit.
-  // infer debit/credit from common cues (ignore "credit card"/"debit card" noise, treat autopay as debit)
-  String? _inferDirection(String body) {
-    final lower = body.toLowerCase();
-
-    // SPECIAL CASE: Loan Repayment ("credited to your loan account")
-    // This looks like a credit/income but is actually an expense (user paid the loan).
-    if (lower.contains('credited to your loan') ||
-        lower.contains('credited to loan') ||
-        lower.contains('payment of') && lower.contains('loan account')) {
-      return 'debit';
-    }
-
-    // strip card type tokens so "credit" inside "credit card" doesn't influence direction
-    final cleaned = lower
-        .replaceAll(RegExp(r'\bcredit\s+card\b'), '')
-        .replaceAll(RegExp(r'\bdebit\s+card\b'), '');
-
-    final strongCredit = RegExp(
-      r'(has\s*been\s*credited|credited\s*(?:by|with)|amount\s*credited)',
-      caseSensitive: false,
-    ).hasMatch(lower);
-    final strongDebit = RegExp(
-      r'(has\s*been\s*debited|debited|amount\s*debited)',
-      caseSensitive: false,
-    ).hasMatch(lower);
-
-    if (strongCredit && !strongDebit) return 'credit';
-    if (strongDebit && !strongCredit) return 'debit';
-
-    final isDR = RegExp(r'\bdr\b').hasMatch(cleaned);
-    final isCR = RegExp(r'\bcr\b').hasMatch(cleaned);
-
-    // autopay / mandate → debit even if an explicit debit verb is missing
-    final hasAutopay =
-        RegExp(r'\b(auto[-\s]?debit|autopay|nach|e-?mandate|mandate)\b')
-            .hasMatch(cleaned);
-
-    final debit = RegExp(
-          r'\b(debit(?:ed)?|spent|purchase|paid|payment|pos|upi(?:\s*payment)?|imps|neft|rtgs|withdrawn|withdrawal|atm|charge[ds]?|recharge(?:d)?|bill\s*paid)\b',
-          caseSensitive: false,
-        ).hasMatch(cleaned) ||
-        hasAutopay;
-
-    final credit = RegExp(
-      r'\b(credit(?:ed)?|received|rcvd|deposit(?:ed)?|salary|refund|reversal|cashback|interest)\b',
-      caseSensitive: false,
-    ).hasMatch(cleaned);
-
-    if ((debit || isDR) && !(credit || isCR)) return 'debit';
-    if ((credit || isCR) && !(debit || isDR)) return 'credit';
-
-    // both seen → whichever appears first after cleanup
-    final dIdx = RegExp(
-          r'debit|spent|purchase|paid|payment|dr|auto[-\s]?debit|autopay|nach|mandate',
-          caseSensitive: false,
-        ).firstMatch(cleaned)?.start ??
-        -1;
-
-    final cIdx = RegExp(
-          r'credit(?!\s*card)|received|rcvd|deposit|salary|refund|cr',
-          caseSensitive: false,
-        ).firstMatch(cleaned)?.start ??
-        -1;
-
-    if (dIdx >= 0 && cIdx >= 0) return dIdx < cIdx ? 'debit' : 'credit';
-    return null;
-  }
-
   // Merchant extraction with "Merchant Name:" / "for ..." / known brands
-  String? _guessMerchantSmart(String text) {
-    final t = text.toUpperCase();
-
-    // 1) explicit "Merchant Name:"
-    // Original strict + New relaxed (multiline / varied separators)
-    final m1 = RegExp(r'MERCHANT\s*NAME\s*[:\-]\s*([A-Z0-9&\.\-\* ]{3,40})')
-            .firstMatch(t) ??
-        RegExp(r'MERCHANT\s*NAME[\s\r\n]*[:\-]?[\s\r\n]*([A-Z0-9&\.\-\* ]{3,40})')
-            .firstMatch(t);
-    if (m1 != null) {
-      final v = m1.group(1)!.trim();
-      if (v.isNotEmpty) return v;
-    }
-
-    // 2) “for <merchant>” after autopay/purchase/txn cues
-    final m2 = RegExp(
-            r'\b(AUTOPAY|AUTO[-\s]?DEBIT|TXN|TRANSACTION|PURCHASE|PAYMENT)\b[^A-Z0-9]{0,40}\bFOR\b\s*([A-Z0-9&\.\-\* ]{3,40})')
-        .firstMatch(t);
-    if (m2 != null) {
-      final v = m2.group(2)!.trim();
-      if (v.isNotEmpty) return v;
-    }
-
-    // 3) known brands (quick path)
-    final known = <String>[
-      'OPENAI',
-      'NETFLIX',
-      'AMAZON PRIME',
-      'PRIME VIDEO',
-      'SPOTIFY',
-      'YOUTUBE',
-      'GOOGLE *YOUTUBE',
-      'APPLE.COM/BILL',
-      'APPLE',
-      'MICROSOFT',
-      'ADOBE',
-      'SWIGGY',
-      'ZOMATO',
-      'HOTSTAR',
-      'DISNEY+ HOTSTAR',
-      'SONYLIV',
-      'AIRTEL',
-      'JIO',
-      'VI',
-      'HATHWAY',
-      'ACT FIBERNET',
-      'BOOKMYSHOW',
-      'BIGTREE',
-      'OLA',
-      'UBER',
-      'IRCTC',
-      'REDBUS',
-      'AMAZON',
-      'FLIPKART',
-      'MEESHO',
-      'BLINKIT',
-      'ZEPTO'
-    ];
-    for (final k in known) {
-      final idx = t.indexOf(k);
-      if (idx >= 0) {
-        final windowStart = idx - 60 < 0 ? 0 : idx - 60;
-        final windowEnd = idx + 60 > t.length ? t.length : idx + 60;
-        final w = t.substring(windowStart, windowEnd);
-        final nearVerb = _hasDebitVerb(w) || _hasCreditVerb(w);
-        final nearAmt = _hasCurrencyAmount(w);
-        if (nearVerb || nearAmt) return k;
-      }
-    }
-
-    // 4) “at|to <merchant>”
-    final m3 = RegExp(r'\b(AT|TO)\b\s*([A-Z0-9&\.\-\* ]{3,40})').firstMatch(t);
-    if (m3 != null) {
-      final v = m3.group(2)!.trim();
-      if (v.isNotEmpty) return v;
-    }
-
-    return null;
-  }
-
-  bool _isCard(String? instrument) =>
-      instrument != null &&
-      {'CREDIT CARD', 'DEBIT CARD', 'CARD', 'ATM', 'POS'}
-          .contains(instrument.toUpperCase());
-
-  String? _inferInstrument(String text) {
-    final t = text.toUpperCase();
-    final hasEmiCue =
-        RegExp(r'\b(EMI|AUTOPAY|AUTO[- ]?DEBIT|NACH|E-?MANDATE|MANDATE)\b')
-            .hasMatch(t);
-    final accountLast4 = _extractAccountLast4(text);
-    final hasCardCue = _hasStrongCardCue(text);
-
-    if (hasEmiCue && accountLast4 != null) return 'Bank Account';
-
-    if (RegExp(r'\bUPI\b').hasMatch(t) || t.contains('VPA')) return 'UPI';
-    if (RegExp(r'\bIMPS\b').hasMatch(t)) return 'IMPS';
-    if (RegExp(r'\bNEFT\b').hasMatch(t)) return 'NEFT';
-    if (RegExp(r'\bRTGS\b').hasMatch(t)) return 'RTGS';
-    if (RegExp(r'\bATM\b').hasMatch(t)) return 'ATM';
-    if (RegExp(r'\bPOS\b').hasMatch(t)) return 'POS';
-    if (RegExp(r'WALLET|PAYTM WALLET|AMAZON PAY', caseSensitive: false)
-        .hasMatch(text)) {
-      return 'Wallet';
-    }
-    if (RegExp(r'NETBANKING|NET BANKING', caseSensitive: false)
-        .hasMatch(text)) {
-      return 'NetBanking';
-    }
-
-    if (hasCardCue) {
-      if (RegExp(r'\bDEBIT CARD\b').hasMatch(t) ||
-          RegExp(r'\bDC\b').hasMatch(t) ||
-          RegExp(r'\bATM\b|\bPOS\b').hasMatch(t)) {
-        return 'Debit Card';
-      }
-      if (RegExp(r'\bCREDIT CARD\b').hasMatch(t) ||
-          RegExp(r'\bCC\b').hasMatch(t) ||
-          RegExp(r'VISA|MASTERCARD|RUPAY|AMEX|DINERS').hasMatch(t)) {
-        return 'Credit Card';
-      }
-      return 'Card';
-    }
-
-    if (accountLast4 != null) return 'Bank Account';
-
-    return null;
-  }
-
-  String? _inferCardNetwork(String text) {
-    final t = text.toUpperCase();
-    if (t.contains('VISA')) return 'VISA';
-    if (t.contains('MASTERCARD') || t.contains('MASTER CARD')) {
-      return 'MASTERCARD';
-    }
-    if (t.contains('RUPAY') || t.contains('RU-PAY')) return 'RUPAY';
-    if (t.contains('AMEX') || t.contains('AMERICAN EXPRESS')) return 'AMEX';
-    if (t.contains('DINERS')) return 'DINERS';
-    return null;
-  }
-
-  bool _looksInternational(String text) {
-    final t = text.toLowerCase();
-    return t.contains('international') || t.contains('foreign');
-  }
 
   Future<void> recategorizeLastWindow({
     required String userId,
@@ -2687,293 +599,6 @@ class GmailService {
     }
   }
 
-  Map<String, double> _extractFees(String text) {
-    final Map<String, double> out = {};
-    double? firstAmountAfter(RegExp pat) {
-      final m = pat.firstMatch(text);
-      if (m == null) return null;
-      final after = text.substring(m.end);
-      final a = RegExp(
-              r'(?:₹|\bINR\b|(?<![A-Z])Rs\.?|\bRs\b)\s*([0-9][\d,]*(?:\.\d{1,2})?)',
-              caseSensitive: false)
-          .firstMatch(after);
-      if (a != null) {
-        final v = double.tryParse((a.group(1) ?? '').replaceAll(',', ''));
-        return v;
-      }
-      return null;
-    }
-
-    final pairs = <String, RegExp>{
-      'convenience': RegExp(
-          r'\b(convenience\s*fee|conv\.?\s*fee|gateway\s*charge)\b',
-          caseSensitive: false),
-      'gst': RegExp(r'\b(GST|IGST|CGST|SGST)\b', caseSensitive: false),
-      'markup': RegExp(r'\b(markup|forex\s*markup|intl\.?\s*markup)\b',
-          caseSensitive: false),
-      'surcharge':
-          RegExp(r'\b(surcharge|fuel\s*surcharge)\b', caseSensitive: false),
-      'late_fee': RegExp(r'\b(late\s*fee|late\s*payment\s*fee|penalty)\b',
-          caseSensitive: false),
-      'processing': RegExp(r'\b(processing\s*fee)\b', caseSensitive: false),
-    };
-
-    pairs.forEach((k, rx) {
-      final v = firstAmountAfter(rx);
-      if (v != null && v > 0) out[k] = v;
-    });
-    return out;
-  }
-
-  String? _guessIssuerBankFromBody(String body) {
-    final t = body.toUpperCase();
-    if (t.contains('HDFC')) return 'HDFC';
-    if (t.contains('ICICI')) return 'ICICI';
-    if (t.contains('SBI')) return 'SBI';
-    if (t.contains('AXIS')) return 'AXIS';
-    if (t.contains('KOTAK')) return 'KOTAK';
-    if (t.contains('YES')) return 'YES';
-    if (t.contains('IDFC')) return 'IDFC';
-    if (t.contains('BANK OF BARODA') || t.contains('BOB')) return 'BOB';
-    return null;
-  }
-
-  String _deriveCounterparty({
-    required String merchantNorm,
-    required String? paidTo,
-    required String? upiVpa,
-    required String? last4,
-    required String? bank,
-    required String? domain,
-    required String rawText,
-    required String direction,
-    required bool isEmiAutopay,
-  }) {
-    String? normalize(String? value) => value?.trim().toUpperCase();
-
-    /// Try to extract a "FROM <NAME>" style sender for credit flows,
-    /// making sure we don't just return generic words like "YOUR ACCOUNT".
-    String? extractFromName(String text) {
-      final rx = RegExp(
-        r'\bfrom\s+([A-Za-z0-9 .&\-\(\)/]{3,40})',
-        caseSensitive: false,
-      );
-      final m = rx.firstMatch(text);
-      if (m == null) return null;
-
-      final candidate = (m.group(1) ?? '').trim();
-      if (candidate.isEmpty) return null;
-
-      final upper = candidate.toUpperCase();
-
-      // Skip very generic / self-account phrases
-      if (upper.startsWith('YOUR ')) return null;
-      if (upper.contains('ACCOUNT') || upper.contains('A/C')) return null;
-      if (upper.contains('ACCT')) return null;
-
-      // Skip if it just repeats the bank name
-      if (bank != null && bank.trim().isNotEmpty) {
-        final b = bank.trim().toUpperCase();
-        if (upper.contains(b)) return null;
-      }
-
-      return upper;
-    }
-
-    final paidToNorm = normalize(paidTo);
-
-    // For DEBIT: keep old priority → paidTo → UPI → merchant → EMI → fallbacks.
-    if (direction == 'debit') {
-      if (paidToNorm != null && paidToNorm.isNotEmpty) return paidToNorm;
-
-      if (upiVpa != null && upiVpa.trim().isNotEmpty) {
-        return upiVpa.trim().toUpperCase();
-      }
-
-      if (merchantNorm.isNotEmpty) return merchantNorm;
-
-      if (isEmiAutopay) return 'EMI AUTOPAY';
-
-      if (last4 != null && last4.isNotEmpty) return 'CARD $last4';
-      if (bank != null) return bank;
-      if (domain != null && domain.trim().isNotEmpty) {
-        return domain.toUpperCase();
-      }
-      return 'UNKNOWN';
-    }
-
-    // For CREDIT: try to strongly prefer a real "FROM <NAME>" sender.
-    if (direction == 'credit') {
-      // 1) PaidTo (if somehow present on a credit alert)
-      if (paidToNorm != null && paidToNorm.isNotEmpty) {
-        return paidToNorm;
-      }
-
-      // 2) Explicit FROM <NAME> in the email body
-      final fromName = extractFromName(rawText);
-      if (fromName != null && fromName.isNotEmpty) {
-        return fromName;
-      }
-
-      // 3) If no FROM, but we have a normalized merchant (refunds, payouts),
-      //    use that as "Got from <MERCHANT>"
-      if (merchantNorm.isNotEmpty) return merchantNorm;
-
-      // 4) UPI sender as fallback
-      if (upiVpa != null && upiVpa.trim().isNotEmpty) {
-        return upiVpa.trim().toUpperCase();
-      }
-
-      // 5) If it's an EMI autopay reversal or similar
-      if (isEmiAutopay) return 'EMI AUTOPAY';
-
-      // 6) Bank/card fallbacks
-      if (last4 != null && last4.isNotEmpty) return 'CARD $last4';
-      if (bank != null) return bank;
-      if (domain != null && domain.trim().isNotEmpty) {
-        return domain.toUpperCase();
-      }
-      return 'SENDER';
-    }
-
-    // Unknown direction: behave conservatively
-    if (last4 != null && last4.isNotEmpty) {
-      return 'CARD $last4';
-    }
-    if (bank != null) {
-      return bank;
-    }
-    if (domain != null && domain.trim().isNotEmpty) {
-      return domain.toUpperCase();
-    }
-    return 'UNKNOWN';
-  }
-
-  String _deriveCounterpartyType({
-    required String merchantNorm,
-    required String? upiVpa,
-    required String? instrument,
-    required String direction,
-  }) {
-    if (upiVpa != null && upiVpa.isNotEmpty) return 'UPI_P2P';
-    if (merchantNorm.isNotEmpty) return 'MERCHANT';
-    if (instrument != null && instrument.toUpperCase().contains('CARD')) {
-      return 'MERCHANT';
-    }
-    return direction == 'credit' ? 'SENDER' : 'RECIPIENT';
-  }
-
-  List<String> _buildTags({
-    required String? instrument,
-    required bool isIntl,
-    required bool hasFees,
-    List<String> extra = const [],
-  }) {
-    final List<String> tags = [];
-    if (instrument != null) {
-      final i = instrument.toUpperCase();
-      if (i.contains('UPI')) tags.add('upi');
-      if (i.contains('CREDIT')) tags.addAll(['card', 'credit_card']);
-      if (i.contains('DEBIT')) tags.addAll(['card', 'debit_card']);
-      if (i == 'IMPS') tags.add('imps');
-      if (i == 'NEFT') tags.add('neft');
-      if (i == 'RTGS') tags.add('rtgs');
-      if (i == 'ATM') tags.add('atm');
-      if (i == 'POS') tags.add('pos');
-      if (i == 'RECHARGE') tags.add('recharge');
-      if (i == 'WALLET') tags.add('wallet');
-    }
-    if (isIntl) tags.addAll(['international', 'forex']);
-    if (hasFees) tags.add('fee');
-    tags.addAll(extra);
-    final seen = <String>{};
-    return tags.where((t) => seen.add(t)).toList();
-  }
-
-  List<String> _extraTagsFromText(String text) {
-    final t = text.toLowerCase();
-    final out = <String>[];
-    if (RegExp(r'\bauto[- ]?debit|autopay|nach|mandate|e\s*mandate\b')
-        .hasMatch(t)) {
-      out.add('autopay');
-    }
-    if (RegExp(r'\bemi\b').hasMatch(t)) {
-      out.add('loan_emi');
-    }
-    if (RegExp(r'\bsubscription|renew(al)?|membership\b').hasMatch(t)) {
-      out.add('subscription');
-    }
-    final feeNouns = RegExp(
-      r'\b(surcharge|penalty|late\s*fee|convenience\s*fee|processing\s*fee|service\s*charge|finance\s*charge)\b',
-      caseSensitive: false,
-    );
-    try {
-      if (feeNouns.hasMatch(t) || _extractFees(text).isNotEmpty) {
-        out.add('charges');
-      }
-    } catch (_) {
-      // ignore parsing errors; best-effort tagging only
-    }
-    if (RegExp(r'\brecharge|prepaid|dth\b').hasMatch(t)) out.add('recharge');
-    if (RegExp(r'\b(petrol|diesel|fuel|filling\s*station|gas\s*station)\b')
-            .hasMatch(t) ||
-        t.contains('hpcl') ||
-        t.contains('bharat petroleum') ||
-        t.contains('bpcl') ||
-        t.contains('indian oil') ||
-        t.contains('iocl') ||
-        t.contains('shell') ||
-        t.contains('nayara') ||
-        t.contains('jio-bp') ||
-        t.contains('smartdrive')) {
-      out.add('fuel');
-    }
-    return out;
-  }
-
-  DateTime? _parseLooseDate(String s) {
-    try {
-      final a = s.trim();
-      final bySlash = RegExp(r'^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$').hasMatch(a);
-      if (bySlash) {
-        final parts = a.contains('/') ? a.split('/') : a.split('-');
-        final d = int.parse(parts[0]);
-        final m = int.parse(parts[1]);
-        final y = (parts[2].length == 2)
-            ? (2000 + int.parse(parts[2]))
-            : int.parse(parts[2]);
-        return DateTime(y, m, d);
-      }
-      final byText = RegExp(r'^\d{1,2}\s*[A-Za-z]{3}\s*\d{2,4}$').hasMatch(a);
-      if (byText) {
-        final m = RegExp(r'[A-Za-z]{3}').firstMatch(a)!.group(0)!.toLowerCase();
-        const months = {
-          'jan': 1,
-          'feb': 2,
-          'mar': 3,
-          'apr': 4,
-          'may': 5,
-          'jun': 6,
-          'jul': 7,
-          'aug': 8,
-          'sep': 9,
-          'oct': 10,
-          'nov': 11,
-          'dec': 12
-        };
-        final d = int.parse(RegExp(r'^\d{1,2}').firstMatch(a)!.group(0)!);
-        final yMatch = RegExp(r'\d{2,4}$').firstMatch(a);
-        final y = (yMatch != null && yMatch.group(0)!.length == 2)
-            ? 2000 + int.parse(yMatch.group(0)!)
-            : int.parse(yMatch?.group(0) ?? DateTime.now().year.toString());
-        return DateTime(y, months[m]!, d);
-      }
-      return DateTime.tryParse(a);
-    } catch (_) {
-      return null;
-    }
-  }
-
   Future<void> _resolveAlertsForAmount(String userId, double amount) async {
     try {
       final snap = await FirebaseFirestore.instance
@@ -3097,6 +722,339 @@ class GmailService {
 
     return null;
   }
+
+  Future<DateTime?> _handleParsedTxn(
+      String userId, ParsedGmailTxn parsed) async {
+    final msgDate = parsed.msgDate;
+    final combined = parsed.combinedBody;
+    final bank = parsed.bankName;
+    final cardLast4 = parsed.cardLast4;
+    final amount = parsed.amount;
+    final direction = parsed.direction;
+
+    final upiVpa = parsed.upiVpa;
+
+    // --- SMART LOAN DETECTION START ---
+    try {
+      final loanRes = LoanDetectionParser.parse(combined);
+      if (loanRes != null) {
+        final lender = loanRes.counterPartyName ??
+            (loanRes.type == LoanType.given ? 'Borrower' : 'Lender');
+        final key = 'EMAIL|${lender.toUpperCase()}|${loanRes.amount.toInt()}';
+
+        final suggestion = LoanSuggestion(
+          key: key,
+          lender: lender,
+          emi: loanRes.amount,
+          firstSeen: msgDate,
+          lastSeen: msgDate,
+          occurrences: 1,
+          autopay: false,
+          paymentDay: msgDate.day,
+          confidence: loanRes.confidence,
+        );
+
+        final ref = FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .collection('loan_suggestions')
+            .doc(key);
+
+        final existing = await ref.get();
+        if (!existing.exists ||
+            (existing.data()?['status'] ?? 'new') == 'new') {
+          await ref.set(suggestion.toJson(), SetOptions(merge: true));
+          if (existing.exists) {
+            await ref.update({
+              'lastSeen': Timestamp.fromDate(msgDate),
+              'occurrences': FieldValue.increment(1),
+            });
+          }
+        }
+      }
+    } catch (e) {
+      _log('Loan parser error: $e');
+    }
+    // --- SMART LOAN DETECTION END ---
+
+    // Card Bill Logic
+    if (parsed.billInfo != null) {
+      final bMap = parsed.billInfo!;
+      final total = (bMap['totalDue'] as num?)?.toDouble() ??
+          (bMap['minDue'] as num?)?.toDouble() ??
+          amount ??
+          0.0;
+      if (total <= 0) return null;
+
+      final dueDate =
+          bMap['dueDate'] != null ? DateTime.tryParse(bMap['dueDate']) : null;
+      final cycleDate = (bMap['statementEnd'] != null
+              ? DateTime.tryParse(bMap['statementEnd'])
+              : null) ??
+          (dueDate ?? msgDate);
+      // statementEnd not in parser map currently? handled gracefully
+
+      final billId =
+          _billDocId(bank: bank, last4: cardLast4, msgDate: cycleDate);
+      final billRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('bill_reminders')
+          .doc(billId);
+
+      await billRef.set({
+        'kind': 'credit_card_bill',
+        'issuerBank': bank,
+        'cardLast4': cardLast4,
+        'dueDate': dueDate != null ? Timestamp.fromDate(dueDate) : null,
+        'totalDue': bMap['totalDue'],
+        'minDue': bMap['minDue'],
+        'status': _initialBillStatus(dueDate),
+        'amountPaid': FieldValue.increment(0),
+        'updatedAt': Timestamp.now(),
+      }, SetOptions(merge: true));
+
+      // record raw provenance
+      await billRef.set({
+        'sourceRecord': {
+          'gmail': {
+            'gmailId': parsed.msgId,
+            'threadId': parsed.threadId,
+            'internalDateMs': int.tryParse(parsed.internalDate),
+            'emailDomain': parsed.emailDomain,
+            'rawPreview': GmailPureParser.preview(combined),
+            'when': Timestamp.fromDate(DateTime.now()),
+          }
+        },
+        'merchantKey': (bank ?? 'CREDIT CARD').toUpperCase(),
+      }, SetOptions(merge: true));
+
+      return msgDate;
+    }
+
+    // Alert Check
+    if (amount != null && amount > 0) {
+      final alertId =
+          await _checkForCriticalAlerts(userId, combined, msgDate, amount);
+      if (alertId != null) {
+        _log('Skipped transaction creation due to CRITICAL ALERT: $alertId');
+        return msgDate;
+      }
+    }
+
+    if (amount == null || amount <= 0 || direction == null) return null;
+
+    // Metadata Update
+    // Metadata Update
+    final ccMeta = parsed.creditCardMetadata ?? {};
+    if (ccMeta.isNotEmpty && (bank != null || cardLast4 != null)) {
+      await _creditCardService.updateCardMetadataByMatch(
+        userId,
+        bankName: bank,
+        last4: cardLast4,
+        availableLimit: ccMeta['availableLimit'],
+        totalLimit: ccMeta['totalLimit'],
+        rewardPoints: ccMeta['rewardPoints'],
+      );
+    }
+
+    // Enrichment
+    final preview =
+        GmailPureParser.preview(GmailPureParser.maskSensitive(combined));
+    final hintParts = <String>[
+      'HINTS: dir=$direction',
+      if (parsed.isEmiAutopay) 'cues=emi,autopay',
+      if (parsed.instrument != null)
+        'instrument=${parsed.instrument!.toLowerCase().replaceAll(' ', '_')}',
+      if (upiVpa != null) 'upi=$upiVpa',
+    ];
+
+    final enriched = await EnrichmentService.instance.enrichTransaction(
+      userId: userId,
+      rawText: GmailPureParser.maskSensitive(combined),
+      amount: amount,
+      date: msgDate,
+      hints: hintParts,
+      merchantRegex: parsed.guessedMerchant,
+    );
+
+    var merchantNorm = enriched.merchantName;
+
+    // ... logic from _handleMessage for merchant fallback ...
+    if (merchantNorm.isEmpty) {
+      if (parsed.guessedMerchant != null) {
+        merchantNorm = parsed.guessedMerchant!;
+      } else if (parsed.merchantName != null) {
+        merchantNorm = parsed.merchantName!;
+      }
+    }
+
+    final finalCategory = enriched.category;
+    final finalSubcategory = enriched.subcategory;
+    final emiLocked = parsed.isEmiAutopay;
+
+    final key = buildTxKey(
+      bank: bank,
+      amount: amount,
+      time: msgDate,
+      type: direction,
+      last4: cardLast4,
+    );
+    final claimed = await _index
+        .claim(userId, key, source: 'gmail')
+        .catchError((_) => false);
+    if (claimed != true) return null;
+
+    final sourceMeta = {
+      'type': 'gmail',
+      'gmailId': parsed.msgId,
+      'threadId': parsed.threadId,
+      'internalDateMs': int.tryParse(parsed.internalDate),
+      'raw': GmailPureParser.maskSensitive(combined),
+      'rawPreview': preview,
+      'emailDomain': parsed.emailDomain,
+      'when': Timestamp.fromDate(DateTime.now()),
+      'txKey': key,
+      'merchant': merchantNorm,
+      'issuerBank': bank,
+      'instrument': parsed.instrument,
+    };
+
+    // Writes (Expense or Income)
+    if (direction == 'debit') {
+      final expRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('expenses')
+          .doc(_docIdFromKey(key));
+      final existingSnap = await expRef.get();
+      final existingData = existingSnap.exists
+          ? existingSnap.data() as Map<String, dynamic>
+          : <String, dynamic>{};
+      final isUserEdited =
+          (existingData['updatedBy'] as String?)?.contains('user') ?? false;
+
+      var note = GmailPureParser.cleanNoteSimple(combined);
+      if (emiLocked) {
+        final emiDigits = parsed.accountLast4 ?? cardLast4;
+        note =
+            'Paid towards your EMI${emiDigits != null ? ' ****$emiDigits' : ''}\n$note';
+      }
+
+      final e = ExpenseItem(
+        id: expRef.id,
+        type: 'Email Debit',
+        amount: amount,
+        note: note,
+        date: msgDate,
+        payerId: userId,
+        cardLast4: cardLast4,
+        cardType:
+            GmailPureParser.isCard(parsed.instrument) ? 'Credit Card' : null,
+        issuerBank: bank,
+        instrument: parsed.instrument,
+        instrumentNetwork: parsed.network,
+        counterparty: merchantNorm,
+        counterpartyType: 'MERCHANT',
+        fx: parsed.amountFx != null
+            ? {'amount': parsed.amountFx, 'currency': 'FX'}
+            : null,
+        fees: parsed.fees,
+        tags: enriched.tags,
+        createdAt: (existingData['createdAt'] as Timestamp?)?.toDate() ??
+            DateTime.now(),
+        createdBy: existingData['createdBy'] ?? 'parser:gmail',
+        updatedAt: DateTime.now(),
+        updatedBy: 'parser:gmail',
+      );
+
+      final jsonToWrite = e.toJson();
+      if (isUserEdited) {
+        jsonToWrite.remove('category');
+        jsonToWrite.remove('subcategory');
+        jsonToWrite.remove('counterparty');
+        jsonToWrite.remove('note');
+      }
+      await expRef.set(jsonToWrite, SetOptions(merge: true));
+      await expRef.set({
+        'ingestSources': FieldValue.arrayUnion(['gmail'])
+      }, SetOptions(merge: true));
+
+      // Enrichment Data
+      await expRef.set({
+        'category': finalCategory,
+        'subcategory': finalSubcategory,
+        'categoryConfidence': enriched.confidence,
+        'sourceRecord': sourceMeta,
+      }, SetOptions(merge: true));
+
+      // Loan check for single transaction
+      if (finalCategory == 'Payments' &&
+          (finalSubcategory.contains('Loans') ||
+              finalSubcategory.contains('EMI'))) {
+        await LoanDetectionService().checkLoanTransaction(userId, {
+          'amount': amount,
+          'merchant': merchantNorm,
+          'category': finalCategory,
+          'subcategory': finalSubcategory,
+          'note': note,
+          'date': Timestamp.fromDate(msgDate),
+        });
+      }
+
+      // Queue Ingest
+      try {
+        await IngestJobQueue.enqueue(
+          userId: userId,
+          txKey: key,
+          rawText: combined,
+          amount: amount,
+          currency: 'INR',
+          timestamp: msgDate,
+          source: 'email',
+          direction: 'debit',
+          docId: expRef.id,
+          docCollection: 'expenses',
+          docPath: 'users/$userId/expenses/${expRef.id}',
+          enabled: true,
+        );
+        await _resolveAlertsForAmount(userId, amount);
+      } catch (_) {}
+    } else {
+      // Income Write
+      final incRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('incomes')
+          .doc(_docIdFromKey(key));
+      await incRef.set({
+        'amount': amount,
+        'date': Timestamp.fromDate(msgDate),
+        'type': 'Email Credit',
+        'source': 'Email',
+        'ingestSources': FieldValue.arrayUnion(['gmail']),
+        'sourceRecord': sourceMeta,
+      }, SetOptions(merge: true));
+
+      await IngestJobQueue.enqueue(
+        userId: userId,
+        txKey: key,
+        rawText: combined,
+        amount: amount,
+        currency: 'INR',
+        timestamp: msgDate,
+        source: 'email',
+        direction: 'credit',
+        docId: incRef.id,
+        docCollection: 'incomes',
+        docPath: 'users/$userId/incomes/${incRef.id}',
+        enabled: true,
+      );
+    }
+
+    _log('WRITE email type=$direction amt=$amount key=$key');
+    return msgDate;
+  }
 }
 
 class _GoogleAuthClient extends http.BaseClient {
@@ -3120,17 +1078,116 @@ class _RecatCandidate {
 }
 
 // ── Small value class for card bill meta ──────────────────────────────────────
-class _BillInfo {
-  final double? totalDue;
-  final double? minDue;
-  final DateTime? dueDate;
-  final DateTime? statementStart;
-  final DateTime? statementEnd;
-  _BillInfo({
-    this.totalDue,
-    this.minDue,
-    this.dueDate,
-    this.statementStart,
-    this.statementEnd,
-  });
+
+/// Top-level function for compute()
+/// Top-level function for compute()
+List<ParsedGmailTxn?> parseBatchInIsolate(List<RawGmailMessage> messages) {
+  return messages.map((msg) {
+    try {
+      final combined =
+          '${msg.plainTextBody}\n${_subjectFromHeaders(msg.headers)}'.trim();
+      if (combined.isEmpty) return null;
+
+      // 1. Detect Bank
+      final bank =
+          GmailPureParser.detectBank(headers: msg.headers, body: combined);
+
+      // 2. Gate Checks
+      final emailDomain = GmailPureParser.fromDomain(msg.headers);
+      final looksTxn = GmailPureParser.passesTxnGate(combined,
+          domain: emailDomain, bank: bank);
+
+      final fromHdr = GmailPureParser.getHeader(msg.headers, 'from') ?? '';
+      final listId = GmailPureParser.getHeader(msg.headers, 'list-id') ?? '';
+
+      // Filter Checks
+      if (filt.isLikelyNewsletter(listId, fromHdr) && !looksTxn) return null;
+      if (filt.isLikelyPromo(combined) && !looksTxn) return null;
+      if (filt.isLikelyBalanceAlert(combined) && !looksTxn) return null;
+
+      final isCardBill = filt.isLikelyCardBillNotice(combined);
+      if (!isCardBill && filt.isStatementOrBillNotice(combined) && !looksTxn) {
+        return null;
+      }
+
+      if (!looksTxn && !isCardBill) return null;
+
+      // 3. Extraction
+      final direction = GmailPureParser.inferDirection(combined);
+      final amountFx = GmailPureParser.extractFx(combined);
+      final amountInr = amountFx == null
+          ? (GmailPureParser.extractTxnAmount(combined, direction: direction) ??
+              GmailPureParser.extractAnyInr(combined))
+          : null;
+      final amount = amountInr ?? (amountFx?['amount'] as double?);
+
+      if ((amount == null || amount <= 0) && !isCardBill) {
+        return null;
+      }
+
+      final postBal = GmailPureParser.extractPostTxnBalance(combined);
+      final detectedBankCode =
+          bank.code ?? GmailPureParser.guessIssuerBankFromBody(combined);
+
+      var instrument = GmailPureParser.inferInstrument(combined);
+      final hasCardContext = GmailPureParser.hasStrongCardCue(combined);
+      var cardLast4 =
+          hasCardContext ? GmailPureParser.extractCardLast4(combined) : null;
+      final accountLast4 = GmailPureParser.extractAccountLast4(combined);
+      final network = GmailPureParser.inferCardNetwork(combined);
+
+      final isEmiAutopay = RegExp(
+              r'\b(EMI|AUTOPAY|AUTO[- ]?DEBIT|NACH|E-?MANDATE|MANDATE)\b',
+              caseSensitive: false)
+          .hasMatch(combined);
+
+      if (accountLast4 != null && (!hasCardContext || isEmiAutopay)) {
+        instrument = 'Bank Account';
+        cardLast4 = null;
+      }
+
+      final paidTo = GmailPureParser.extractPaidToName(combined);
+      final guessedMerchant = GmailPureParser.guessMerchantSmart(combined);
+      final ccMeta = GmailPureParser.extractCreditCardMetadata(combined);
+      final upiVpa = GmailPureParser.extractUpiVpa(combined);
+      final fees = GmailPureParser.extractFees(combined);
+      final billInfo = GmailPureParser.extractCardBillInfo(combined);
+
+      return ParsedGmailTxn(
+        msgId: msg.id,
+        threadId: msg.threadId,
+        internalDate: msg.internalDate,
+        msgDate: DateTime.fromMillisecondsSinceEpoch(
+            int.tryParse(msg.internalDate) ?? 0),
+        combinedBody: combined,
+        emailDomain: emailDomain ?? '',
+        direction: direction,
+        amount: amount,
+        amountFx: amountFx == null ? null : (amountFx['amount'] as double?),
+        accountLast4: accountLast4,
+        cardLast4: cardLast4,
+        bankName: detectedBankCode,
+        instrument: instrument,
+        network: network,
+        postBalance: postBal,
+        merchantName: paidTo,
+        guessedMerchant: guessedMerchant,
+        creditCardMetadata: ccMeta,
+        upiVpa: upiVpa,
+        fees: fees,
+        isEmiAutopay: isEmiAutopay,
+        passesIncomeGate: true,
+        billInfo: billInfo,
+      );
+    } catch (e) {
+      return null;
+    }
+  }).toList();
+}
+
+String _subjectFromHeaders(List<MessageHeaderDto> headers) {
+  return headers
+      .firstWhere((h) => h.name.toLowerCase() == 'subject',
+          orElse: () => MessageHeaderDto('', ''))
+      .value;
 }

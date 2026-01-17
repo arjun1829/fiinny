@@ -101,7 +101,12 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
               expenses: widget.allExpenses, // Pass ALL to render cards
               incomes: widget.allIncomes,
               userName: widget.userName,
-              onAddCard: () {}, // TODO
+              onAddCard: () {
+                Navigator.of(context).pushNamed(
+                  '/cards-management',
+                  arguments: widget.userPhone,
+                );
+              },
               selectedBankSlug: _selectedSlug,
               onCardSelected: _onCardSelected,
             ),

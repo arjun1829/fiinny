@@ -32,7 +32,7 @@ class TxnMirrorService {
     Timestamp? cursor = await _loadLastMirroredAt();
     int pages = 0;
 
-    Future<QuerySnapshot<Map<String, dynamic>>> _runPage(Timestamp? c) {
+    Future<QuerySnapshot<Map<String, dynamic>>> fetchPage(Timestamp? c) {
       Query<Map<String, dynamic>> q =
           _txCol.orderBy('updatedAt', descending: false).limit(pageSize);
       if (c != null) q = q.where('updatedAt', isGreaterThan: c);
@@ -40,7 +40,7 @@ class TxnMirrorService {
     }
 
     // ---- first attempt with current cursor
-    var snap = await _runPage(cursor);
+    var snap = await fetchPage(cursor);
 
     // ---- SAFETY: if empty but we know there are transactions, reset cursor once
     if (snap.docs.isEmpty && cursor != null) {
@@ -52,7 +52,7 @@ class TxnMirrorService {
             newestUpdatedAt.compareTo(cursor) <= 0) {
           // debugPrint('[TxnMirror] cursor ${cursor.toDate()} is too new; resetting.');
           cursor = null;
-          snap = await _runPage(null);
+          snap = await fetchPage(null);
         }
       }
     }
@@ -95,7 +95,9 @@ class TxnMirrorService {
         final amount = _asDouble(data['amount']);
         if ((normDir != 'DEBIT' && normDir != 'CREDIT') ||
             amount == null ||
-            amount <= 0) continue;
+            amount <= 0) {
+          continue;
+        }
 
         final cat = (data['category'] ?? 'General').toString();
         final merchant = (data['merchantName'] ?? '').toString().trim();
@@ -152,7 +154,7 @@ class TxnMirrorService {
       totalMirrored += mirroredThisPage;
 
       if (snap.docs.length < pageSize) break;
-      snap = await _runPage(cursor); // next page
+      snap = await fetchPage(cursor); // next page
     }
 
     // debugPrint('[TxnMirror] mirrored total: $totalMirrored (pages=$pages)');

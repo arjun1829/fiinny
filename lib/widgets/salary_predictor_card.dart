@@ -188,7 +188,9 @@ class _SalaryPredictorCardState extends State<SalaryPredictorCard> {
 
   // -------------------- Runner --------------------
   Future<void> _runPrediction() async {
-    if (_running) return;
+    if (_running) {
+      return;
+    }
     setState(() {
       _running = true;
       _done = false;
@@ -409,7 +411,9 @@ class _SalaryPredictorCardState extends State<SalaryPredictorCard> {
   }
 
   int _computeStreak(List<DateTime> dates, {required int earlyDays}) {
-    if (dates.isEmpty) return 0;
+    if (dates.isEmpty) {
+      return 0;
+    }
     dates.sort();
     // convert to month-buckets; a hit counts if within [1st-earlyDays .. 1st]
     final hits = <String>{};
@@ -440,7 +444,9 @@ class _SalaryPredictorCardState extends State<SalaryPredictorCard> {
   }
 
   double _std(List<double> xs) {
-    if (xs.length <= 1) return 0;
+    if (xs.length <= 1) {
+      return 0;
+    }
     final m = xs.reduce((a, b) => a + b) / xs.length;
     final v = xs.fold<double>(0, (a, x) => a + pow(x - m, 2)) / (xs.length - 1);
     return sqrt(v);

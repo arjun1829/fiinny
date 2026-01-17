@@ -50,7 +50,7 @@ class BankCardWidget extends StatelessWidget {
                 ),
               ),
             ),
-             Positioned(
+            Positioned(
               bottom: -80,
               left: -40,
               child: Container(
@@ -62,7 +62,7 @@ class BankCardWidget extends StatelessWidget {
                 ),
               ),
             ),
-            
+
             Padding(
               padding: const EdgeInsets.all(24.0),
               child: Column(
@@ -92,7 +92,7 @@ class BankCardWidget extends StatelessWidget {
                     color: Colors.amberAccent,
                     size: 36,
                   ),
-                  
+
                   // Card Number
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -106,13 +106,13 @@ class BankCardWidget extends StatelessWidget {
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 20,
-                            fontFamily: 'Courier', 
+                            fontFamily: 'Courier',
                             fontWeight: FontWeight.bold,
                             letterSpacing: 2.0,
                           ),
                         ),
-                      ] else 
-                         Text(
+                      ] else
+                        Text(
                           card.last4Digits, // Fallback if we want to show full but don't have it
                           style: const TextStyle(
                             color: Colors.white,
@@ -140,24 +140,25 @@ class BankCardWidget extends StatelessWidget {
                         ),
                       ),
                       Column(
-                         crossAxisAlignment: CrossAxisAlignment.end,
-                         children: [
-                           const Text(
-                             'VALID THRU',
-                             style: TextStyle(
-                               color: Colors.white54,
-                               fontSize: 7,
-                             ),
-                           ),
-                           Text(
-                             _formatExpiry(card.dueDate), // Using due date as a proxy/placeholder if expiry not in model
-                             style: const TextStyle(
-                               color: Colors.white,
-                               fontWeight: FontWeight.bold,
-                               fontSize: 14,
-                             ),
-                           ),
-                         ],
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          const Text(
+                            'VALID THRU',
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 7,
+                            ),
+                          ),
+                          Text(
+                            _formatExpiry(card
+                                .dueDate), // Using due date as a proxy/placeholder if expiry not in model
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
                       )
                     ],
                   ),
@@ -173,7 +174,9 @@ class BankCardWidget extends StatelessWidget {
   Widget _buildDotGroup() {
     return const Row(
       children: [
-        Text('••••', style: TextStyle(color: Colors.white54, fontSize: 18, letterSpacing: 2)),
+        Text('••••',
+            style: TextStyle(
+                color: Colors.white54, fontSize: 18, letterSpacing: 2)),
         SizedBox(width: 12),
       ],
     );
@@ -182,28 +185,19 @@ class BankCardWidget extends StatelessWidget {
   String _formatExpiry(DateTime date) {
     // Just a dummy formatter for now since model doesn't strictly have expiry, using due date logic helper
     // In real app, expiry would be a separate field.
-    return '${date.month.toString().padLeft(2, '0')}/${(date.year % 100).toString().padLeft(2, '0')}'; 
+    return '${date.month.toString().padLeft(2, '0')}/${(date.year % 100).toString().padLeft(2, '0')}';
   }
 
   Widget _getCardNetworkIcon(String type) {
-    IconData icon;
-    Color color;
     switch (type.toLowerCase()) {
       case 'visa':
-        icon = Icons.payment; // Replace with asset in real app
-        color = Colors.white; 
+        // Replace with asset in real app
         break;
       case 'mastercard':
-        icon = Icons.credit_card;
-        color = Colors.orange;
         break;
       case 'amex':
-       icon = Icons.star;
-       color = Colors.blue;
-       break;
+        break;
       default:
-        icon = Icons.credit_card;
-        color = Colors.white;
     }
     // Returning a simple text for now for clarity if assets missing
     return Text(
@@ -220,7 +214,7 @@ class BankCardWidget extends StatelessWidget {
   Gradient _getCardGradient(String bankName, String cardType) {
     // Deterministic random color based on bank name hash to keep it consistent
     final int hash = bankName.codeUnits.fold(0, (p, c) => p + c);
-    
+
     if (bankName.toLowerCase().contains('hdfc')) {
       return const LinearGradient(
         colors: [Color(0xFF004d7a), Color(0xFF0087d1)],
@@ -229,16 +223,16 @@ class BankCardWidget extends StatelessWidget {
       );
     }
     if (bankName.toLowerCase().contains('icici')) {
-       return const LinearGradient(
+      return const LinearGradient(
         colors: [Color(0xFF8B2323), Color(0xFFE35D5B)],
-         begin: Alignment.topLeft,
+        begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       );
     }
     if (bankName.toLowerCase().contains('sbi')) {
-       return const LinearGradient(
+      return const LinearGradient(
         colors: [Color(0xFF2E7D32), Color(0xFF81C784)],
-         begin: Alignment.topLeft,
+        begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       );
     }

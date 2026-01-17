@@ -21,7 +21,7 @@ class GroupExpenseListWidget extends StatelessWidget {
   // Helper: find a FriendModel by id (for payer display, etc)
   FriendModel? _findMember(String id) =>
       members.firstWhere((f) => f.phone == id,
-          orElse: () => FriendModel(phone: id, name: "Unknown", avatar: "👤"));
+          orElse: () => FriendModel(phone: id, name: 'Unknown'));
 
   @override
   Widget build(BuildContext context) {
@@ -100,8 +100,7 @@ class GroupExpenseListWidget extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                (isPaidByYou ? "- " : "+ ") +
-                    "₹${yourShare.toStringAsFixed(2)}",
+                "${isPaidByYou ? "- " : "+ "}₹${yourShare.toStringAsFixed(2)}",
                 style: TextStyle(
                   color: isPaidByYou ? Colors.red : Colors.green,
                   fontWeight: FontWeight.w600,

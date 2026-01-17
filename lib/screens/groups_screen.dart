@@ -174,7 +174,6 @@ class _GroupsScreenState extends State<GroupsScreen> {
       floatingActionButton: FloatingActionButton(
         backgroundColor: mintGreen,
         foregroundColor: deepTeal,
-        child: Icon(Icons.group_add_rounded),
         tooltip: "Add Group",
         onPressed: () {
           Navigator.push(
@@ -184,6 +183,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
             ),
           );
         },
+        child: Icon(Icons.group_add_rounded),
       ),
     );
   }

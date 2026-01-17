@@ -286,7 +286,7 @@ class LoanModel {
   // -------------------------------- JSON ----------------------------------
 
   Map<String, dynamic> toJson({bool asTimestamp = false}) {
-    Object? _outDate(DateTime? d) {
+    Object? formatDate(DateTime? d) {
       if (d == null) return null;
       return asTimestamp ? Timestamp.fromDate(d) : d.toIso8601String();
     }
@@ -301,8 +301,8 @@ class LoanModel {
       if (accountLast4 != null) 'accountLast4': accountLast4,
       if (minDue != null) 'minDue': minDue,
       if (billCycleDay != null) 'billCycleDay': billCycleDay,
-      if (startDate != null) 'startDate': _outDate(startDate),
-      if (dueDate != null) 'dueDate': _outDate(dueDate),
+      if (startDate != null) 'startDate': formatDate(startDate),
+      if (dueDate != null) 'dueDate': formatDate(dueDate),
       if (interestRate != null) 'interestRate': interestRate,
       'interestMethod': _methodToString(interestMethod),
       if (emi != null) 'emi': emi,
@@ -312,7 +312,8 @@ class LoanModel {
       if (reminderDaysBefore != null) 'reminderDaysBefore': reminderDaysBefore,
       if (reminderTime != null) 'reminderTime': reminderTime,
       if (autopay != null) 'autopay': autopay,
-      if (lastPaymentDate != null) 'lastPaymentDate': _outDate(lastPaymentDate),
+      if (lastPaymentDate != null)
+        'lastPaymentDate': formatDate(lastPaymentDate),
       if (lastPaymentAmount != null) 'lastPaymentAmount': lastPaymentAmount,
       if (tags != null && tags!.isNotEmpty) 'tags': tags,
       if (share != null) 'share': share!.toJson(),
@@ -321,7 +322,7 @@ class LoanModel {
       if (note != null && note!.isNotEmpty) 'note': note,
       if (sanctionLetterUrl != null) 'sanctionLetterUrl': sanctionLetterUrl,
       'isClosed': isClosed,
-      if (createdAt != null) 'createdAt': _outDate(createdAt),
+      if (createdAt != null) 'createdAt': formatDate(createdAt),
     };
   }
 
@@ -351,7 +352,7 @@ class LoanModel {
 
   /// Returns the safe day-of-month clamped to 1..28 (avoids month-end bugs).
   int? get safePaymentDay =>
-      paymentDayOfMonth == null ? null : paymentDayOfMonth!.clamp(1, 28);
+      paymentDayOfMonth?.clamp(1, 28);
 
   /// Compute next payment date using [paymentDayOfMonth] (clamped) and [dueDate].
   /// - If closed => null

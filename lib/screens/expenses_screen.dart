@@ -1,9 +1,10 @@
 // lib/screens/expenses_screen.dart
 import 'dart:async';
-import 'package:fl_chart/fl_chart.dart';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-
+import 'package:fl_chart/fl_chart.dart';
+import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 
 import '../core/analytics/aggregators.dart';
@@ -14,15 +15,14 @@ import '../models/group_model.dart';
 import '../services/expense_service.dart';
 import '../services/income_service.dart';
 import '../services/friend_service.dart';
-
+import '../services/group_service.dart';
 import 'edit_expense_screen.dart';
 
+import '../widgets/chart_switcher_widget.dart';
 import '../widgets/unified_transaction_list.dart';
-
+import '../themes/custom_card.dart';
 import '../themes/tokens.dart';
-
-// Needed for data passing
-import '../widgets/calendar_expense_view.dart'; // [NEW]
+import 'bulk_split_screen.dart';
 
 class ExpensesScreen extends StatefulWidget {
   final String userPhone;
@@ -35,8 +35,9 @@ class ExpensesScreen extends StatefulWidget {
 class _ExpensesScreenState extends State<ExpensesScreen> {
   // -------- UI State --------
   String _selectedFilter = "Month";
-
-  final String _dataType = "All";
+  String _chartType = "Pie";
+  String _dataType = "All";
+  String _viewMode = 'summary';
 
   // Data
   List<ExpenseItem> allExpenses = [];
@@ -45,21 +46,24 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   List<IncomeItem> filteredIncomes = [];
   double periodTotalExpense = 0;
   double periodTotalIncome = 0;
+  double periodTotalBalance = 0;
+  int selfTransferCount = 0;
+  int legitimateTxCount = 0;
+
   Map<String, FriendModel> _friendsById = {};
-  // List<FriendModel> _friends = []; // Unused
+  // _friends is unused
   final Set<String> _friendNameTokens = {};
   final Set<String> _friendPhoneSet = {};
-  // List<GroupModel> _groups = []; // Unused
+  List<GroupModel> _groups = [];
 
   // Calendar state
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-
+  final Map<DateTime, double> _dailyTotals = {};
   List<ExpenseItem> _expensesForSelectedDay = [];
-  List<IncomeItem> _incomesForSelectedDay = [];
 
   // Multi-select & Bulk Edit/Delete
-  final bool _multiSelectMode = false;
+  bool _multiSelectMode = false;
   final Set<String> _selectedTxIds = {};
 
   // Search & Filters
@@ -69,24 +73,20 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   Set<String> _selectedCategories = {};
-  final Set<String> _selectedMerchants = {};
-  final Set<String> _selectedBanks = {};
-  final Set<String> _friendFilterPhones = {};
-  final Set<String> _groupFilterIds = {};
+  Set<String> _selectedMerchants = {};
+  Set<String> _selectedBanks = {};
+  Set<String> _friendFilterPhones = {};
+  Set<String> _groupFilterIds = {};
 
   // Subscriptions / Debounce
   StreamSubscription<List<ExpenseItem>>? _expSub;
   StreamSubscription<List<IncomeItem>>? _incSub;
   StreamSubscription<List<FriendModel>>? _friendSub;
-  // StreamSubscription<List<GroupModel>>? _groupSub; // Unused
+  StreamSubscription<List<GroupModel>>? _groupSub;
   Timer? _debounce;
 
   // Prevent multiple recomputes inside the same frame (avoids re-entrant layout)
   bool _pendingRecompute = false;
-
-  // _miniExpenseSections removed
-
-  // _miniIncomeSections removed
 
   @override
   void initState() {
@@ -101,7 +101,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     _expSub?.cancel();
     _incSub?.cancel();
     _friendSub?.cancel();
-    // _groupSub?.cancel();
+    _groupSub?.cancel();
     super.dispose();
   }
 
@@ -157,34 +157,29 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   void _listenToData() {
     _expSub =
         ExpenseService().getExpensesStream(widget.userPhone).listen((expenses) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       allExpenses = expenses;
       _scheduleRecompute();
     });
 
     _incSub =
         IncomeService().getIncomesStream(widget.userPhone).listen((incomes) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       allIncomes = incomes;
       _scheduleRecompute();
     });
 
     _friendSub =
         FriendService().streamFriends(widget.userPhone).listen((friends) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
-        // _friends = friends;
         _friendsById = {for (var f in friends) f.phone: f};
         _friendNameTokens.clear();
         _friendPhoneSet.clear();
         for (final f in friends) {
-          if (f.name.isNotEmpty) _friendNameTokens.add(f.name.toLowerCase());
+          if (f.name.isNotEmpty) {
+            _friendNameTokens.add(f.name.toLowerCase());
+          }
           if (f.phone.isNotEmpty) {
             _friendPhoneSet.add(f.phone.replaceAll(RegExp(r'[^0-9]'), ''));
           }
@@ -192,26 +187,22 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       });
     });
 
-    /*
     _groupSub = GroupService().streamGroups(widget.userPhone).listen((groups) {
       if (!mounted) return;
       setState(() {
         _groups = groups;
       });
     });
-    */
   }
 
   void _recomputeInternal() {
     _applyFilter();
-    // _generateDailyTotals(); // Moved to CalendarExpenseView
+    _generateDailyTotals();
     _updateExpensesForSelectedDay(_selectedDay ?? DateTime.now());
   }
 
   void _scheduleRecompute() {
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     if (_pendingRecompute) return; // already scheduled this frame
     _pendingRecompute = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -227,29 +218,47 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return value.isEmpty ? '' : value.toUpperCase();
   }
 
-  // _encodeBankSelection removed
-
   bool _matchesBankFilters(String? bank, String? cardLast4) {
-    if (_selectedBanks.isEmpty) {
-      return true;
-    }
+    if (_selectedBanks.isEmpty) return true;
     final normalizedBank = _normalizeBank(bank);
-    if (normalizedBank.isEmpty) {
-      return false;
-    }
-    if (_selectedBanks.contains(normalizedBank)) {
-      return true;
-    }
+    if (normalizedBank.isEmpty) return false;
+    if (_selectedBanks.contains(normalizedBank)) return true;
     final l4 = (cardLast4 ?? '').trim();
-    if (l4.isEmpty) {
-      return false;
-    }
+    if (l4.isEmpty) return false;
     return _selectedBanks.contains('$normalizedBank|$l4');
   }
 
-  // _displayBankName removed
+  String _displayBankName(String normalized) {
+    if (normalized.isEmpty) return 'Unknown Bank';
+    for (final e in allExpenses) {
+      final candidate = _normalizeBank(e.issuerBank);
+      if (candidate == normalized) {
+        return (e.issuerBank ?? '').trim();
+      }
+    }
+    for (final i in allIncomes) {
+      final candidate = _normalizeBank(i.issuerBank);
+      if (candidate == normalized) {
+        return (i.issuerBank ?? '').trim();
+      }
+    }
+    final lower = normalized.toLowerCase();
+    return lower
+        .split(RegExp(r'[_\s]+'))
+        .where((part) => part.isNotEmpty)
+        .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+        .join(' ');
+  }
 
-  // _displayBankSelectionLabel removed
+  String _displayBankSelectionLabel(String selection) {
+    if (selection.isEmpty) return 'Bank';
+    final parts = selection.split('|');
+    final bankLabel = _displayBankName(parts.first);
+    if (parts.length > 1 && parts[1].isNotEmpty) {
+      return '$bankLabel • ••${parts[1]}';
+    }
+    return bankLabel;
+  }
 
   String _normalizeMerchantKey(String raw) {
     final key = AnalyticsAgg.displayMerchantKey(raw).trim();
@@ -257,21 +266,41 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   bool _matchesMerchantFilters(String? raw) {
-    if (_selectedMerchants.isEmpty) {
-      return true;
-    }
+    if (_selectedMerchants.isEmpty) return true;
     final source = (raw ?? '').trim();
-    if (source.isEmpty) {
-      return false;
-    }
+    if (source.isEmpty) return false;
     final normalized = _normalizeMerchantKey(source);
-    if (normalized.isEmpty) {
-      return false;
-    }
+    if (normalized.isEmpty) return false;
     return _selectedMerchants.contains(normalized);
   }
 
-  // _displayMerchantSelectionLabel removed
+  String _displayMerchantSelectionLabel(String selection) {
+    final normalized = selection.toUpperCase();
+    final byMerchant = AnalyticsAgg.byMerchant(allExpenses);
+    for (final key in byMerchant.keys) {
+      if (key.toUpperCase() == normalized) {
+        return _formatMerchantName(key);
+      }
+    }
+    return _formatMerchantName(selection);
+  }
+
+  String _transactionPanelKey() {
+    final parts = [
+      _selectedFilter,
+      _searchFrom?.toIso8601String() ?? '',
+      _searchTo?.toIso8601String() ?? '',
+      _selectedCategories.join(','),
+      _selectedMerchants.join(','),
+      _selectedBanks.join(','),
+      _friendFilterPhones.join(','),
+      _groupFilterIds.join(','),
+      _dataType,
+      filteredExpenses.length.toString(),
+      filteredIncomes.length.toString(),
+    ];
+    return parts.join('|');
+  }
 
   Widget _noTransactionsPlaceholder(String filterLabel) {
     final theme = Theme.of(context);
@@ -407,8 +436,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     periodTotalExpense = filteredExpenses.fold(0.0, (a, b) => a + b.amount);
     periodTotalIncome = filteredIncomes.fold(0.0, (a, b) => a + b.amount);
 
-    final catsNow =
-        filteredExpenses.map((e) => e.type.isEmpty ? 'Other' : e.type).toSet();
+    final catsNow = _expenseCategories().toSet();
     _selectedCategories =
         _selectedCategories.where((cat) => catsNow.contains(cat)).toSet();
   }
@@ -486,22 +514,155 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return _periodLabelFor(_selectedFilter);
   }
 
-  // _hasActiveFilters removed
+  bool get _hasActiveFilters =>
+      _selectedCategories.isNotEmpty ||
+      _selectedMerchants.isNotEmpty ||
+      _selectedBanks.isNotEmpty ||
+      _friendFilterPhones.isNotEmpty ||
+      _groupFilterIds.isNotEmpty ||
+      _searchFrom != null ||
+      _searchTo != null;
 
-  // _buildActiveFiltersWrap removed
+  Widget _buildActiveFiltersWrap() {
+    final chips = _activeFilterChips();
+    if (chips.isEmpty) {
+      return const SizedBox(height: 8);
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, left: 4, right: 4),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          ...chips,
+          if (_hasActiveFilters)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: TextButton(
+                onPressed: _clearAllFilters,
+                child: const Text('Clear filters'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
-  // _activeFilterChips removed
+  List<Widget> _activeFilterChips() {
+    final chips = <Widget>[];
 
-  // _clearAllFilters removed
+    if (_searchFrom != null && _searchTo != null) {
+      final label = _currentPeriodLabel();
+      chips.add(InputChip(
+        label: Text(label),
+        onDeleted: () {
+          setState(() {
+            _searchFrom = null;
+            _searchTo = null;
+          });
+          _scheduleRecompute();
+        },
+      ));
+    }
+
+    if (_selectedCategories.isNotEmpty) {
+      final sorted = _selectedCategories.toList()..sort();
+      final first = sorted.first;
+      final label =
+          sorted.length == 1 ? first : '$first + ${sorted.length - 1} more';
+      chips.add(InputChip(
+        label: Text(label),
+        onDeleted: () {
+          setState(() => _selectedCategories = {});
+          _scheduleRecompute();
+        },
+      ));
+    }
+
+    if (_selectedMerchants.isNotEmpty) {
+      final sorted = _selectedMerchants.toList()..sort();
+      final firstLabel = _displayMerchantSelectionLabel(sorted.first);
+      final label = sorted.length == 1
+          ? firstLabel
+          : '$firstLabel + ${sorted.length - 1} more';
+      chips.add(InputChip(
+        label: Text(label),
+        onDeleted: () {
+          setState(() => _selectedMerchants = {});
+          _scheduleRecompute();
+        },
+      ));
+    }
+
+    if (_selectedBanks.isNotEmpty) {
+      final sorted = _selectedBanks.toList()..sort();
+      final firstLabel = _displayBankSelectionLabel(sorted.first);
+      final label = sorted.length == 1
+          ? firstLabel
+          : '$firstLabel + ${sorted.length - 1} more';
+      chips.add(InputChip(
+        label: Text(label),
+        onDeleted: () {
+          setState(() => _selectedBanks = {});
+          _scheduleRecompute();
+        },
+      ));
+    }
+
+    final friendPhones = _friendFilterPhones.toList()..sort();
+    for (final phone in friendPhones) {
+      final friendName = _friendsById[phone]?.name.trim();
+      final label =
+          (friendName != null && friendName.isNotEmpty) ? friendName : phone;
+      chips.add(InputChip(
+        label: Text(label),
+        onDeleted: () {
+          setState(() {
+            _friendFilterPhones = {..._friendFilterPhones}..remove(phone);
+          });
+          _scheduleRecompute();
+        },
+      ));
+    }
+
+    final groupIds = _groupFilterIds.toList()..sort();
+    for (final groupId in groupIds) {
+      final label = groupId.isEmpty ? 'Group' : 'Group $groupId';
+      chips.add(InputChip(
+        label: Text(label),
+        onDeleted: () {
+          setState(() {
+            _groupFilterIds = {..._groupFilterIds}..remove(groupId);
+          });
+          _scheduleRecompute();
+        },
+      ));
+    }
+
+    return chips;
+  }
+
+  void _clearAllFilters() {
+    setState(() {
+      _selectedFilter = 'Month';
+      _selectedCategories = {};
+      _selectedMerchants = {};
+      _selectedBanks = {};
+      _friendFilterPhones = {};
+      _groupFilterIds = {};
+      _searchFrom = null;
+      _searchTo = null;
+    });
+    _scheduleRecompute();
+  }
 
   Future<void> _showPeriodPickerBottomSheet() async {
     final now = DateTime.now();
     final yesterday = _d(now.subtract(const Duration(days: 1)));
 
     bool isYesterdaySelected() {
-      if (_searchFrom == null || _searchTo == null) {
-        return false;
-      }
+      if (_searchFrom == null || _searchTo == null) return false;
       return _d(_searchFrom!) == yesterday && _d(_searchTo!) == yesterday;
     }
 
@@ -619,429 +780,207 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 
-  // _openFiltersScreen removed
+  Future<void> _openFiltersScreen() async {
+    final config = await Navigator.push<ExpenseFilterConfig>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ExpenseFiltersScreen(
+          initialConfig: ExpenseFilterConfig(
+            periodToken: _selectedFilter,
+            customRange: _searchFrom != null && _searchTo != null
+                ? DateTimeRange(start: _searchFrom!, end: _searchTo!)
+                : null,
+            categories: _selectedCategories,
+            merchants: _selectedMerchants,
+            banks: _selectedBanks,
+            friendPhones: _friendFilterPhones,
+            groupIds: _groupFilterIds,
+          ),
+          expenses: allExpenses,
+          incomes: allIncomes,
+          friendsById: _friendsById,
+          groups: _groups,
+        ),
+      ),
+    );
 
-  // _formatMerchantName removed
+    if (config != null) {
+      setState(() {
+        _selectedFilter = config.periodToken;
+        if (config.customRange != null) {
+          _searchFrom = config.customRange!.start;
+          _searchTo = config.customRange!.end;
+        } else {
+          _searchFrom = null;
+          _searchTo = null;
+        }
+        _selectedCategories = {...config.categories};
+        _selectedMerchants = config.merchants
+            .map((m) => m.trim().toUpperCase())
+            .where((m) => m.isNotEmpty)
+            .toSet();
+        _selectedBanks = config.banks
+            .map((b) {
+              final trimmed = b.trim();
+              if (trimmed.isEmpty) {
+                return '';
+              }
+              if (!trimmed.contains('|')) {
+                return _normalizeBank(trimmed);
+              }
+              final parts = trimmed.split('|');
+              final bankPart = _normalizeBank(parts.first);
+              final cardPart = parts.length > 1 ? parts[1].trim() : '';
+              if (cardPart.isEmpty) return bankPart;
+              return '$bankPart|$cardPart';
+            })
+            .where((value) => value.isNotEmpty)
+            .toSet();
+        _friendFilterPhones = {...config.friendPhones};
+        _groupFilterIds = {...config.groupIds};
+      });
+      _scheduleRecompute();
+    }
+  }
 
-  // _buildTxTypeChipsRow removed
+  String _formatMerchantName(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return 'Unknown';
+    return trimmed
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .map((word) =>
+            '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}')
+        .join(' ');
+  }
 
-  // _buildFiltersButton removed
+  Widget _buildTxTypeChipsRow() {
+    const types = ['All', 'Expense', 'Income'];
+    return Wrap(
+      spacing: 8,
+      children: types.map((type) {
+        final selected = _dataType == type;
+        return ChoiceChip(
+          label: Text(
+            type,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: selected ? Colors.white : Colors.black87,
+            ),
+          ),
+          selected: selected,
+          selectedColor: Fx.mintDark,
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(
+              color: selected ? Fx.mintDark : Colors.black12,
+            ),
+          ),
+          onSelected: (_) {
+            setState(() => _dataType = type);
+          },
+        );
+      }).toList(),
+    );
+  }
 
-  // void _generateDailyTotals() {
-  //   _dailyTotals.clear();
-  //   for (var e in allExpenses) {
-  //     final date = _d(e.date);
-  //     _dailyTotals[date] = (_dailyTotals[date] ?? 0) + e.amount;
-  //   }
-  // }
+  Widget _buildFiltersButton() {
+    return ActionChip(
+      avatar:
+          const Icon(Icons.filter_alt_rounded, size: 16, color: Colors.white),
+      label: const Text('Filters',
+          style: TextStyle(
+              color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+      backgroundColor: Fx.mintDark,
+      side: BorderSide.none,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      onPressed: _openFiltersScreen,
+    );
+  }
+
+  void _generateDailyTotals() {
+    _dailyTotals.clear();
+    for (var e in allExpenses) {
+      final date = _d(e.date);
+      _dailyTotals[date] = (_dailyTotals[date] ?? 0) + e.amount;
+    }
+  }
 
   void _updateExpensesForSelectedDay(DateTime date) {
     final d = _d(date);
     _expensesForSelectedDay =
         allExpenses.where((e) => _d(e.date) == d).toList();
-    _incomesForSelectedDay = allIncomes.where((i) => _d(i.date) == d).toList();
   }
 
   // ------- Build -------
   @override
-  @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 5,
-      child: Scaffold(
+    // isTealTheme removed
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text("Expenses",
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
-        appBar: AppBar(
-          title: const Text("Expenses",
-              style:
-                  TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-          backgroundColor: Colors.white,
-          elevation: 0,
-          centerTitle: false,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.search, color: Colors.black54),
+        elevation: 0,
+        centerTitle: false,
+        actions: [
+          Tooltip(
+            message: "Calendar View",
+            child: IconButton(
+              icon: Icon(
+                Icons.calendar_today,
+                color: _viewMode == 'calendar' ? Fx.mintDark : Colors.black54,
+                size: 24,
+              ),
               onPressed: () {
-                // Focus search or navigate
+                setState(() =>
+                    _viewMode = _viewMode == 'calendar' ? 'list' : 'calendar');
               },
             ),
-            Tooltip(
-              message: "Analytics",
-              child: IconButton(
-                icon: const Icon(
-                  Icons.insights_rounded,
-                  color: Colors.black54,
-                  size: 24,
-                ),
-                onPressed: () async {
-                  await Navigator.pushNamed(
-                    context,
-                    '/analytics',
-                    arguments: widget.userPhone,
-                  );
-                },
+          ),
+          Tooltip(
+            message: "Summary",
+            child: IconButton(
+              icon: Icon(
+                Icons.dashboard_rounded,
+                color: _viewMode == 'summary' ? Fx.mintDark : Colors.black54,
+                size: 24,
               ),
+              onPressed: () => setState(() => _viewMode = 'summary'),
             ),
-            const SizedBox(width: 8),
+          ),
+          Tooltip(
+            message: "Analytics",
+            child: IconButton(
+              icon: const Icon(
+                Icons.insights_rounded,
+                color: Colors.black54,
+                size: 24,
+              ),
+              onPressed: () async {
+                await Navigator.pushNamed(
+                  context,
+                  '/analytics',
+                  arguments: widget.userPhone,
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      floatingActionButton: _buildFAB(context),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(child: _getCurrentView(context)),
           ],
-          bottom: PreferredSize(
-            preferredSize:
-                const Size.fromHeight(100), // Height for DateNav + TabBar
-            child: Column(
-              children: [
-                _buildDateNavigator(),
-                const TabBar(
-                  isScrollable: false, // Changed to false to fit all 5
-                  labelColor: Colors.teal,
-                  unselectedLabelColor: Colors.grey,
-                  indicatorColor: Colors.teal,
-                  labelStyle: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11), // Reduced font size slightly
-                  tabs: [
-                    Tab(text: "Daily"),
-                    Tab(text: "Cal"), // Shortened text
-                    Tab(text: "Monthly"),
-                    Tab(
-                        text:
-                            "Stats"), // Renamed from Summary to avoid confusion
-                    Tab(text: "Desc"), // Shortened text
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-        floatingActionButton: _buildFAB(context),
-        body: SafeArea(
-          child: TabBarView(
-            children: [
-              // Daily View (Single Day)
-              _singleDayView(context),
-
-              // Calendar View
-              _calendarTabView(context),
-
-              // Monthly View (List of Month)
-              _monthlyListView(context),
-
-              // Summary View (Stats Card)
-              _onlySummaryCard(context),
-
-              // Description View
-              _descriptionView(context),
-            ],
-          ),
         ),
       ),
-    );
-  }
-
-  Widget _singleDayView(BuildContext context) {
-    if (_selectedDay == null) {
-      _selectedDay = DateTime.now();
-      _updateExpensesForSelectedDay(_selectedDay!);
-    }
-    final dateStr = DateFormat('EEEE, d MMM').format(_selectedDay!);
-
-    return GestureDetector(
-      onHorizontalDragEnd: (details) {
-        if (details.primaryVelocity! > 0) {
-          // Swipe Right -> Previous Day
-          setState(() {
-            _selectedDay = _selectedDay!.subtract(const Duration(days: 1));
-            _updateExpensesForSelectedDay(_selectedDay!);
-          });
-        } else if (details.primaryVelocity! < 0) {
-          // Swipe Left -> Next Day
-          setState(() {
-            _selectedDay = _selectedDay!.add(const Duration(days: 1));
-            _updateExpensesForSelectedDay(_selectedDay!);
-          });
-        }
-      },
-      child: Column(
-        children: [
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left, color: Colors.black54),
-                  onPressed: () {
-                    setState(() {
-                      _selectedDay =
-                          _selectedDay!.subtract(const Duration(days: 1));
-                      _updateExpensesForSelectedDay(_selectedDay!);
-                    });
-                  },
-                ),
-                Text(
-                  dateStr,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right, color: Colors.black54),
-                  onPressed: () {
-                    setState(() {
-                      _selectedDay = _selectedDay!.add(const Duration(days: 1));
-                      _updateExpensesForSelectedDay(_selectedDay!);
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: UnifiedTransactionList(
-              expenses: _expensesForSelectedDay,
-              incomes: _incomesForSelectedDay,
-              userPhone: widget.userPhone,
-              previewCount: 100,
-              filterType: _dataType,
-              friendsById: _friendsById,
-              showBillIcon: true,
-              emptyBuilder: (context) => Center(
-                child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.calendar_today_rounded,
-                          size: 48, color: Colors.grey.shade300),
-                      const SizedBox(height: 16),
-                      Text(
-                        "No transactions",
-                        style: TextStyle(color: Colors.grey.shade400),
-                      ),
-                    ]),
-              ),
-              multiSelectEnabled: _multiSelectMode,
-              selectedIds: _selectedTxIds,
-              onSelectTx: (txId, selected) {
-                setState(() {
-                  if (selected) {
-                    _selectedTxIds.add(txId);
-                  } else {
-                    _selectedTxIds.remove(txId);
-                  }
-                });
-              },
-              onEdit: (tx) async {
-                if (_multiSelectMode) {
-                  return;
-                }
-                if (tx is ExpenseItem) {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => EditExpenseScreen(
-                        userPhone: widget.userPhone,
-                        expense: tx,
-                      ),
-                    ),
-                  );
-                  _scheduleRecompute(); // Refresh list to catch edits
-                }
-              },
-              onDelete: (tx) async {
-                if (_multiSelectMode) {
-                  return;
-                }
-                if (tx is ExpenseItem) {
-                  await ExpenseService().deleteExpense(
-                    widget.userPhone,
-                    tx.id,
-                  );
-                  _scheduleRecompute();
-                }
-              },
-              onSplit: (tx) async {
-                if (_multiSelectMode) {
-                  return;
-                }
-                if (tx is ExpenseItem) {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => EditExpenseScreen(
-                        userPhone: widget.userPhone,
-                        expense: tx,
-                        initialStep: 1,
-                      ),
-                    ),
-                  );
-                  _scheduleRecompute();
-                }
-              },
-              onAddComment: (tx) => _openCommentDialog(tx),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDateNavigator() {
-    final dateStr = DateFormat('MMM y').format(_focusedDay);
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back_ios,
-                size: 16, color: Colors.black54),
-            onPressed: () {
-              setState(() {
-                _focusedDay =
-                    DateTime(_focusedDay.year, _focusedDay.month - 1, 1);
-                // Update filter to this month
-                final start = DateTime(_focusedDay.year, _focusedDay.month, 1);
-                final end =
-                    DateTime(_focusedDay.year, _focusedDay.month + 1, 0);
-                _searchFrom = start;
-                _searchTo = end;
-                _selectedFilter = 'Custom';
-              });
-              _scheduleRecompute();
-            },
-          ),
-          InkWell(
-            onTap: () async {
-              final picked = await showDatePicker(
-                  context: context,
-                  initialDate: _focusedDay,
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100));
-              if (picked != null) {
-                setState(() {
-                  _focusedDay = picked;
-                  final start =
-                      DateTime(_focusedDay.year, _focusedDay.month, 1);
-                  final end =
-                      DateTime(_focusedDay.year, _focusedDay.month + 1, 0);
-                  _searchFrom = start;
-                  _searchTo = end;
-                  _selectedFilter = 'Custom';
-                });
-                _scheduleRecompute();
-              }
-            },
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
-              child: Text(
-                dateStr,
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.arrow_forward_ios,
-                size: 16, color: Colors.black54),
-            onPressed: () {
-              setState(() {
-                _focusedDay =
-                    DateTime(_focusedDay.year, _focusedDay.month + 1, 1);
-                final start = DateTime(_focusedDay.year, _focusedDay.month, 1);
-                final end =
-                    DateTime(_focusedDay.year, _focusedDay.month + 1, 0);
-                _searchFrom = start;
-                _searchTo = end;
-                _selectedFilter = 'Custom';
-              });
-              _scheduleRecompute();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _calendarTabView(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          flex: 3,
-          child: CalendarExpenseView(
-            expenses: (_dataType == "All" || _dataType == "Expense")
-                ? filteredExpenses
-                : [],
-            incomes: (_dataType == "All" || _dataType == "Income")
-                ? filteredIncomes
-                : [],
-            focusedDay: _focusedDay,
-            onDaySelected: (selected, focused) {
-              setState(() {
-                _selectedDay = selected;
-                _focusedDay = focused;
-              });
-              _updateExpensesForSelectedDay(selected);
-            },
-          ),
-        ),
-        const Divider(height: 1),
-        if (_selectedDay != null)
-          Expanded(
-            flex: 2,
-            child: UnifiedTransactionList(
-              expenses: _expensesForSelectedDay,
-              incomes: _incomesForSelectedDay,
-              userPhone: widget.userPhone,
-              previewCount: 50,
-              friendsById: _friendsById,
-              filterType: _dataType,
-              showBillIcon: true,
-              emptyBuilder: (_) => Center(
-                  child: Text(
-                      "No transactions on ${DateFormat('MMM d').format(_selectedDay!)}",
-                      style: const TextStyle(color: Colors.grey))),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _descriptionView(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: TextField(
-            controller: _searchController,
-            decoration: const InputDecoration(
-              labelText: "Search Description, Category, Note...",
-              prefixIcon: Icon(Icons.search),
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-            ),
-            onChanged: (val) {
-              _debounce?.cancel();
-              _debounce = Timer(const Duration(milliseconds: 300), () {
-                setState(() => _searchQuery = val);
-                _scheduleRecompute();
-              });
-            },
-          ),
-        ),
-        Expanded(
-          child: UnifiedTransactionList(
-            expenses: filteredExpenses,
-            incomes: filteredIncomes,
-            userPhone: widget.userPhone,
-            friendsById: _friendsById,
-            filterType: _dataType,
-            showBillIcon: true,
-            emptyBuilder: (_) => _noTransactionsPlaceholder(_dataType),
-          ),
-        ),
-      ],
     );
   }
 
@@ -1079,120 +1018,1244 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 
-  Widget _onlySummaryCard(BuildContext context) {
+  Widget _getCurrentView(BuildContext context) {
+    switch (_viewMode) {
+      case 'calendar':
+        return _calendarView(context);
+      case 'charts':
+        return _chartsView(context);
+      default:
+        return _summaryView(context);
+    }
+  }
+
+  Widget _summaryView(BuildContext context) {
     final bankCardStats = _computeBankCardStats();
     final periodLabel = _currentPeriodLabel();
     final txCount = filteredExpenses.length + filteredIncomes.length;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(12),
-      child: _SummaryRingCard(
-        spent: periodTotalExpense,
-        received: periodTotalIncome,
-        bankCount: bankCardStats.$1,
-        cardCount: bankCardStats.$2,
-        txCount: txCount,
-        periodLabel: periodLabel,
-        onTapPeriod: _showPeriodPickerBottomSheet,
-        onTap: () async {
-          await Navigator.pushNamed(
-            context,
-            '/analytics',
-            arguments: widget.userPhone,
-          );
-        },
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _SummaryRingCard(
+            spent: periodTotalExpense,
+            received: periodTotalIncome,
+            bankCount: bankCardStats.$1,
+            cardCount: bankCardStats.$2,
+            txCount: txCount,
+            periodLabel: periodLabel,
+            onTapPeriod: _showPeriodPickerBottomSheet,
+            onTap: () async {
+              await Navigator.pushNamed(
+                context,
+                '/analytics',
+                arguments: widget.userPhone,
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Row(
+              children: [
+                _buildFiltersButton(),
+                const SizedBox(width: 8),
+                Expanded(child: _buildTxTypeChipsRow()),
+              ],
+            ),
+          ),
+          _buildActiveFiltersWrap(),
+          const SizedBox(height: 4),
+          if (_multiSelectMode)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+              child: Row(
+                children: [
+                  Text(
+                    "${_selectedTxIds.length} selected",
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (!_selectedTxIds.containsAll([
+                    ...filteredExpenses.map((e) => e.id),
+                    ...filteredIncomes.map((i) => i.id)
+                  ]))
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedTxIds
+                              .addAll(filteredExpenses.map((e) => e.id));
+                          _selectedTxIds
+                              .addAll(filteredIncomes.map((i) => i.id));
+                        });
+                      },
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        minimumSize: const Size(0, 0),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const Text(
+                        "Select All",
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  const Spacer(),
+                  IconButton(
+                    icon:
+                        const Icon(Icons.call_split, color: Colors.cyanAccent),
+                    tooltip: "Bulk Split",
+                    onPressed: _selectedTxIds.isEmpty ? null : _openBulkSplit,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.label, color: Colors.amber),
+                    tooltip: "Edit Label (Bulk)",
+                    onPressed: _selectedTxIds.isEmpty
+                        ? null
+                        : () async {
+                            final newLabel = await _showLabelDialog();
+                            if (newLabel != null &&
+                                newLabel.trim().isNotEmpty) {
+                              for (final tx in filteredExpenses.where(
+                                  (e) => _selectedTxIds.contains(e.id))) {
+                                await ExpenseService().updateExpense(
+                                  widget.userPhone,
+                                  tx.copyWith(label: newLabel),
+                                );
+                              }
+                              for (final inc in filteredIncomes.where(
+                                  (i) => _selectedTxIds.contains(i.id))) {
+                                await IncomeService().updateIncome(
+                                  widget.userPhone,
+                                  inc.copyWith(label: newLabel),
+                                );
+                              }
+
+                              setState(() {
+                                _selectedTxIds.clear();
+                                _multiSelectMode = false;
+                              });
+                            }
+                          },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_forever, color: Colors.red),
+                    tooltip: "Delete Selected",
+                    onPressed: _selectedTxIds.isEmpty
+                        ? null
+                        : () async {
+                            final confirmed =
+                                await _confirmBulkDelete(_selectedTxIds.length);
+                            if (!confirmed) return;
+
+                            for (final tx in filteredExpenses
+                                .where((e) => _selectedTxIds.contains(e.id))) {
+                              await ExpenseService().deleteExpense(
+                                widget.userPhone,
+                                tx.id,
+                              );
+                            }
+                            for (final inc in filteredIncomes
+                                .where((i) => _selectedTxIds.contains(i.id))) {
+                              await IncomeService().deleteIncome(
+                                widget.userPhone,
+                                inc.id,
+                              );
+                            }
+
+                            setState(() {
+                              _selectedTxIds.clear();
+                              _multiSelectMode = false;
+                            });
+                          },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    tooltip: "Exit Multi-Select",
+                    onPressed: () {
+                      setState(() {
+                        _multiSelectMode = false;
+                        _selectedTxIds.clear();
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    cursorColor: Colors.black,
+                    decoration: InputDecoration(
+                      hintText: 'Search by note, label, type...',
+                      hintStyle: const TextStyle(
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.search,
+                        color: Colors.black54,
+                      ),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.black45,
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                                _debounce?.cancel();
+                                setState(() => _searchQuery = '');
+                                _scheduleRecompute();
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: 0,
+                        horizontal: 6,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(13),
+                        borderSide: const BorderSide(color: Colors.black26),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(13),
+                        borderSide: const BorderSide(color: Colors.black54),
+                      ),
+                    ),
+                    onChanged: (val) {
+                      _debounce?.cancel();
+                      _debounce = Timer(
+                        const Duration(milliseconds: 200),
+                        () {
+                          if (!mounted) return;
+                          setState(() => _searchQuery = val);
+                          _scheduleRecompute();
+                        },
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 7),
+                SizedBox(
+                  width: 36,
+                  child: Center(
+                    child: Checkbox(
+                      value: _multiSelectMode,
+                      onChanged: (val) {
+                        setState(() {
+                          _multiSelectMode = val ?? false;
+                          if (!_multiSelectMode) {
+                            _selectedTxIds.clear();
+                          }
+                        });
+                      },
+                      checkColor: Colors.black,
+                      fillColor: WidgetStateProperty.resolveWith<Color>(
+                        (states) => Colors.white,
+                      ),
+                      side: const BorderSide(color: Color(0xFF7C3AED)),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          KeyedSubtree(
+            key: ValueKey(_transactionPanelKey()),
+            child: UnifiedTransactionList(
+              expenses: _dataType == "Income" ? [] : filteredExpenses,
+              incomes: _dataType == "Expense" ? [] : filteredIncomes,
+              userPhone: widget.userPhone,
+              filterType: _dataType,
+              previewCount: 15,
+              friendsById: _friendsById,
+              showBillIcon: true,
+              emptyBuilder: (context) => _noTransactionsPlaceholder(_dataType),
+              multiSelectEnabled: _multiSelectMode,
+              selectedIds: _selectedTxIds,
+              onSelectTx: (txId, selected) {
+                setState(() {
+                  if (selected) {
+                    _selectedTxIds.add(txId);
+                  } else {
+                    _selectedTxIds.remove(txId);
+                  }
+                });
+              },
+              onEdit: (tx) async {
+                if (_multiSelectMode) return;
+                if (tx is ExpenseItem) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditExpenseScreen(
+                        userPhone: widget.userPhone,
+                        expense: tx,
+                      ),
+                    ),
+                  );
+                  _scheduleRecompute();
+                }
+              },
+              onDelete: (tx) async {
+                if (_multiSelectMode) return;
+                if (tx is ExpenseItem) {
+                  await ExpenseService().deleteExpense(
+                    widget.userPhone,
+                    tx.id,
+                  );
+                } else if (tx is IncomeItem) {
+                  await IncomeService().deleteIncome(
+                    widget.userPhone,
+                    tx.id,
+                  );
+                }
+                _scheduleRecompute();
+              },
+              onSplit: (tx) async {
+                if (_multiSelectMode) return;
+                if (tx is ExpenseItem) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditExpenseScreen(
+                        userPhone: widget.userPhone,
+                        expense: tx,
+                        initialStep: 1,
+                      ),
+                    ),
+                  );
+                  _scheduleRecompute();
+                }
+              },
+              onAddComment: (tx) => _openCommentDialog(tx),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _monthlyListView(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: UnifiedTransactionList(
-            expenses: filteredExpenses,
-            incomes: filteredIncomes,
-            userPhone: widget.userPhone,
-            friendsById: _friendsById,
-            filterType: _dataType,
-            showBillIcon: true,
-            emptyBuilder: (_) => _noTransactionsPlaceholder(_dataType),
-            multiSelectEnabled: _multiSelectMode,
-            selectedIds: _selectedTxIds,
-            onSelectTx: (txId, selected) {
-              setState(() {
-                if (selected) {
-                  _selectedTxIds.add(txId);
-                } else {
-                  _selectedTxIds.remove(txId);
-                }
-              });
-            },
-            onEdit: (tx) async {
-              if (_multiSelectMode) {
-                return;
-              }
-              if (tx is ExpenseItem) {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => EditExpenseScreen(
-                      userPhone: widget.userPhone,
-                      expense: tx,
-                    ),
-                  ),
-                );
-                _scheduleRecompute();
-              }
-            },
-            onDelete: (tx) async {
-              if (_multiSelectMode) {
-                return;
-              }
-              if (tx is ExpenseItem) {
-                await ExpenseService().deleteExpense(
-                  widget.userPhone,
-                  tx.id,
-                );
-              } else if (tx is IncomeItem) {
-                await IncomeService().deleteIncome(
-                  widget.userPhone,
-                  tx.id,
-                );
-              }
-              _scheduleRecompute();
-            },
-            onSplit: (tx) async {
-              if (_multiSelectMode) {
-                return;
-              }
-              if (tx is ExpenseItem) {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => EditExpenseScreen(
-                      userPhone: widget.userPhone,
-                      expense: tx,
-                      initialStep: 1,
-                    ),
-                  ),
-                );
-                _scheduleRecompute();
-              }
-            },
-            onAddComment: (tx) => _openCommentDialog(tx),
-          ),
+  Future<void> _openBulkSplit() async {
+    final result = await Navigator.push<BulkSplitResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BulkSplitScreen(
+          userPhone: widget.userPhone,
+          expenses: filteredExpenses
+              .where((e) => _selectedTxIds.contains(e.id))
+              .toList(),
         ),
-      ],
+      ),
+    );
+
+    if (result != null) {
+      await ExpenseService().bulkSplit(
+        widget.userPhone,
+        filteredExpenses.where((e) => _selectedTxIds.contains(e.id)).toList(),
+        friendIds: result.friendIds,
+        groupId: result.groupId,
+        payerPhone: result.payerPhone,
+        note: result.note,
+        label: result.label,
+      );
+
+      setState(() {
+        _selectedTxIds.clear();
+        _multiSelectMode = false;
+      });
+      _scheduleRecompute();
+    }
+  }
+
+  Widget _calendarView(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(10, 12, 10, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CustomDiamondCard(
+            borderRadius: 26,
+            padding: const EdgeInsets.all(10),
+            glassGradient: const [
+              Colors.white,
+              Colors.white,
+            ],
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.today_rounded,
+                        color: Colors.teal,
+                        size: 24,
+                      ),
+                      tooltip: "Pick Date",
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: _focusedDay,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            _selectedDay = picked;
+                            _focusedDay = picked;
+                          });
+                          _updateExpensesForSelectedDay(picked);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                TableCalendar(
+                  focusedDay: _focusedDay,
+                  firstDay: DateTime(2000),
+                  lastDay: DateTime(2100),
+                  calendarFormat: CalendarFormat.month,
+                  availableCalendarFormats: const {
+                    CalendarFormat.month: 'Month',
+                  },
+                  selectedDayPredicate: (day) {
+                    return _selectedDay != null &&
+                        day.year == _selectedDay!.year &&
+                        day.month == _selectedDay!.month &&
+                        day.day == _selectedDay!.day;
+                  },
+                  onDaySelected: (selectedDay, focusedDay) {
+                    setState(() {
+                      _selectedDay = selectedDay;
+                      _focusedDay = focusedDay;
+                    });
+                    _updateExpensesForSelectedDay(selectedDay);
+                  },
+                  calendarBuilders: CalendarBuilders(
+                    defaultBuilder: (context, date, focusedDay) {
+                      final key = _d(date);
+                      final total = _dailyTotals[key] ?? 0;
+                      return Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${date.day}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              if (total > 0)
+                                Text(
+                                  '₹${total.toStringAsFixed(0)}',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: Colors.red[400],
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    todayBuilder: (context, date, focusedDay) {
+                      final key = _d(date);
+                      final total = _dailyTotals[key] ?? 0;
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: Colors.teal[100],
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${date.day}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                if (total > 0)
+                                  Text(
+                                    '₹${total.toStringAsFixed(0)}',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      color: Colors.red[800],
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.04),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+            child: CustomDiamondCard(
+              key: ValueKey(
+                'day-${_selectedDay?.toIso8601String() ?? ''}-${_expensesForSelectedDay.length}-${_transactionPanelKey()}',
+              ),
+              borderRadius: 24,
+              glassGradient: const [
+                Colors.white,
+                Colors.white,
+              ],
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+              child: UnifiedTransactionList(
+                expenses: _expensesForSelectedDay,
+                userPhone: widget.userPhone,
+                incomes: const [],
+                previewCount: 15,
+                filterType: "Expense",
+                friendsById: _friendsById,
+                showBillIcon: true,
+                emptyBuilder: (context) => _noTransactionsPlaceholder(
+                    _dataType == "All" ? "Expense" : _dataType),
+                multiSelectEnabled: _multiSelectMode,
+                selectedIds: _selectedTxIds,
+                onSelectTx: (txId, selected) {
+                  setState(() {
+                    if (selected) {
+                      _selectedTxIds.add(txId);
+                    } else {
+                      _selectedTxIds.remove(txId);
+                    }
+                  });
+                },
+                onEdit: (tx) async {
+                  if (_multiSelectMode) return;
+                  if (tx is ExpenseItem) {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => EditExpenseScreen(
+                          userPhone: widget.userPhone,
+                          expense: tx,
+                        ),
+                      ),
+                    );
+                    _scheduleRecompute();
+                  }
+                },
+                onDelete: (tx) async {
+                  if (_multiSelectMode) return;
+                  if (tx is ExpenseItem) {
+                    await ExpenseService().deleteExpense(
+                      widget.userPhone,
+                      tx.id,
+                    );
+                    _scheduleRecompute();
+                  }
+                },
+                onSplit: (tx) async {
+                  if (_multiSelectMode) {
+                    return;
+                  }
+                  if (tx is ExpenseItem) {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => EditExpenseScreen(
+                          userPhone: widget.userPhone,
+                          expense: tx,
+                          initialStep: 1,
+                        ),
+                      ),
+                    );
+                    _scheduleRecompute();
+                  }
+                },
+                onAddComment: (tx) => _openCommentDialog(tx),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  // _openBulkSplit removed
+  Widget _chartsView(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CustomDiamondCard(
+            borderRadius: 24,
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+            glassGradient: [
+              Colors.white.withValues(alpha: 0.16),
+              Colors.white.withValues(alpha: 0.06),
+            ],
+            child: ChartSwitcherWidget(
+              chartType: _chartType,
+              dataType: _dataType,
+              onChartTypeChanged: (val) => setState(() => _chartType = val),
+              onDataTypeChanged: (val) => setState(() => _dataType = val),
+            ),
+          ),
+          const SizedBox(height: 16),
+          if ((_dataType == "All" || _dataType == "Expense") &&
+              filteredExpenses.isNotEmpty &&
+              _chartType == "Pie" &&
+              _hasExpenseCategoryData())
+            CustomDiamondCard(
+              borderRadius: 26,
+              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
+              glassGradient: [
+                Colors.white.withValues(alpha: 0.19),
+                Colors.white.withValues(alpha: 0.08),
+              ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Expense Breakdown",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                  ),
+                  const SizedBox(height: 10),
+                  AspectRatio(
+                    aspectRatio: 1.6,
+                    child: PieChart(
+                      PieChartData(
+                        sections: _expenseCategorySections(),
+                        sectionsSpace: 3,
+                        centerSpaceRadius: 28,
+                        pieTouchData: PieTouchData(
+                          touchCallback: (event, response) {},
+                        ),
+                      ),
+                      duration: const Duration(milliseconds: 650),
+                      curve: Curves.easeOutCubic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if ((_dataType == "All" || _dataType == "Income") &&
+              filteredIncomes.isNotEmpty &&
+              _chartType == "Pie")
+            CustomDiamondCard(
+              borderRadius: 26,
+              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
+              glassGradient: [
+                Colors.white.withValues(alpha: 0.19),
+                Colors.white.withValues(alpha: 0.08),
+              ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Income Breakdown",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                  ),
+                  const SizedBox(height: 10),
+                  AspectRatio(
+                    aspectRatio: 1.6,
+                    child: PieChart(
+                      PieChartData(
+                        sections: _incomeCategorySections(),
+                        sectionsSpace: 3,
+                        centerSpaceRadius: 28,
+                        pieTouchData: PieTouchData(),
+                      ),
+                      duration: const Duration(milliseconds: 650),
+                      curve: Curves.easeOutCubic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if ((_dataType == "All" || _dataType == "Expense") &&
+              filteredExpenses.isNotEmpty &&
+              _chartType == "Bar")
+            CustomDiamondCard(
+              borderRadius: 26,
+              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
+              glassGradient: [
+                Colors.white.withValues(alpha: 0.19),
+                Colors.white.withValues(alpha: 0.08),
+              ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Expense by Category",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                  ),
+                  const SizedBox(height: 10),
+                  AspectRatio(
+                    aspectRatio: 1.8,
+                    child: BarChart(
+                      BarChartData(
+                        barGroups: _expenseCategoryBarGroups(),
+                        titlesData: FlTitlesData(
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 36,
+                            ),
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              getTitlesWidget: (double value, TitleMeta meta) {
+                                final cats = _expenseCategories();
+                                if (value.toInt() >= 0 &&
+                                    value.toInt() < cats.length) {
+                                  return Text(
+                                    cats[value.toInt()],
+                                    style: const TextStyle(fontSize: 12),
+                                    overflow: TextOverflow.ellipsis,
+                                  );
+                                }
+                                return const SizedBox();
+                              },
+                            ),
+                          ),
+                        ),
+                        borderData: FlBorderData(show: false),
+                        gridData: FlGridData(
+                          show: true,
+                          horizontalInterval: (_expenseMaxAmount() / 4)
+                              .clamp(1, double.infinity),
+                        ),
+                      ),
+                      duration: const Duration(milliseconds: 650),
+                      curve: Curves.easeOutCubic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if ((_dataType == "All" || _dataType == "Income") &&
+              filteredIncomes.isNotEmpty &&
+              _chartType == "Bar")
+            CustomDiamondCard(
+              borderRadius: 26,
+              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
+              glassGradient: [
+                Colors.white.withValues(alpha: 0.19),
+                Colors.white.withValues(alpha: 0.08),
+              ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Income by Category",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                  ),
+                  const SizedBox(height: 10),
+                  AspectRatio(
+                    aspectRatio: 1.8,
+                    child: BarChart(
+                      BarChartData(
+                        barGroups: _incomeCategoryBarGroups(),
+                        titlesData: FlTitlesData(
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 36,
+                            ),
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              getTitlesWidget: (double value, TitleMeta meta) {
+                                final cats = _incomeCategories();
+                                if (value.toInt() >= 0 &&
+                                    value.toInt() < cats.length) {
+                                  return Text(
+                                    cats[value.toInt()],
+                                    style: const TextStyle(fontSize: 12),
+                                    overflow: TextOverflow.ellipsis,
+                                  );
+                                }
+                                return const SizedBox();
+                              },
+                            ),
+                          ),
+                        ),
+                        borderData: FlBorderData(show: false),
+                        gridData: FlGridData(
+                          show: true,
+                          horizontalInterval: (_incomeMaxAmount() / 4)
+                              .clamp(1, double.infinity),
+                        ),
+                      ),
+                      duration: const Duration(milliseconds: 650),
+                      curve: Curves.easeOutCubic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          SizedBox(
+            width: double.infinity,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.04),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: CustomDiamondCard(
+                key: ValueKey(
+                  'summary-${_transactionPanelKey()}-${filteredExpenses.length}-${filteredIncomes.length}-$_dataType',
+                ),
+                borderRadius: 24,
+                glassGradient: [
+                  Colors.white.withValues(alpha: 0.23),
+                  Colors.white.withValues(alpha: 0.09),
+                ],
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+                child: UnifiedTransactionList(
+                  expenses: _dataType == "Income" ? [] : filteredExpenses,
+                  incomes: _dataType == "Expense" ? [] : filteredIncomes,
+                  userPhone: widget.userPhone,
+                  filterType: _dataType,
+                  previewCount: 15,
+                  friendsById: _friendsById,
+                  showBillIcon: true,
+                  emptyBuilder: (context) =>
+                      _noTransactionsPlaceholder(_dataType),
+                  multiSelectEnabled: _multiSelectMode,
+                  selectedIds: _selectedTxIds,
+                  onSelectTx: (txId, selected) {
+                    setState(() {
+                      if (selected) {
+                        _selectedTxIds.add(txId);
+                      } else {
+                        _selectedTxIds.remove(txId);
+                      }
+                    });
+                  },
+                  onEdit: (tx) async {
+                    if (_multiSelectMode) {
+                      return;
+                    }
+                    if (tx is ExpenseItem) {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EditExpenseScreen(
+                            userPhone: widget.userPhone,
+                            expense: tx,
+                          ),
+                        ),
+                      );
+                      _scheduleRecompute();
+                    }
+                  },
+                  onDelete: (tx) async {
+                    if (_multiSelectMode) {
+                      return;
+                    }
+                    if (tx is ExpenseItem) {
+                      await ExpenseService()
+                          .deleteExpense(widget.userPhone, tx.id);
+                    } else if (tx is IncomeItem) {
+                      await IncomeService()
+                          .deleteIncome(widget.userPhone, tx.id);
+                    }
+                    _scheduleRecompute();
+                  },
+                  onSplit: (tx) async {
+                    if (_multiSelectMode) {
+                      return;
+                    }
+                    if (tx is ExpenseItem) {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EditExpenseScreen(
+                            userPhone: widget.userPhone,
+                            expense: tx,
+                            initialStep: 1,
+                          ),
+                        ),
+                      );
+                      _scheduleRecompute();
+                    }
+                  },
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-  // _confirmBulkDelete removed
+  // ---------- Chart helpers (with Top-N + "Other") ----------
+  Map<String, double> _buildByCategory<T>(Iterable<T> items,
+      String Function(T) typeOf, double Function(T) amountOf) {
+    final Map<String, double> byCategory = {};
+    for (final t in items) {
+      final key = (typeOf(t).isEmpty ? "Other" : typeOf(t));
+      byCategory[key] = (byCategory[key] ?? 0) + amountOf(t);
+    }
+    return byCategory;
+  }
 
-  // _showLabelDialog removed
+  Map<String, double> _topN(Map<String, double> map, {int n = 6}) {
+    final entries = map.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final top = entries.take(n).toList();
+    final rest = entries.skip(n).fold<double>(0, (s, e) => s + e.value);
+    return {
+      for (final e in top) e.key: e.value,
+      if (rest > 0) 'Other': rest,
+    };
+  }
+
+  List<PieChartSectionData> _expenseCategorySections() {
+    if (filteredExpenses.isEmpty) return [];
+    final byCategory = _topN(
+      _buildByCategory<ExpenseItem>(
+        filteredExpenses,
+        (e) => e.type,
+        (e) => e.amount,
+      ),
+    );
+
+    final total = byCategory.values.fold<double>(0, (s, v) => s + v);
+    if (total == 0) return [];
+
+    final colors = [
+      Colors.pinkAccent,
+      Colors.deepPurpleAccent,
+      Colors.lightBlue,
+      Colors.teal,
+      Colors.greenAccent,
+      Colors.orange,
+      Colors.amber,
+      Colors.cyan,
+      Colors.indigo,
+      Colors.redAccent,
+    ];
+
+    int i = 0;
+    return byCategory.entries.map((e) {
+      final percent = (e.value / total * 100);
+      final label = e.key.length > 9 ? '${e.key.substring(0, 8)}…' : e.key;
+      return PieChartSectionData(
+        value: e.value,
+        color: colors[i++ % colors.length],
+        radius: 44,
+        title: '$label\n${percent.toStringAsFixed(1)}%',
+        titleStyle: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 11,
+          height: 1.13,
+        ),
+        titlePositionPercentageOffset: 0.63,
+      );
+    }).toList();
+  }
+
+  List<PieChartSectionData> _incomeCategorySections() {
+    if (filteredIncomes.isEmpty) return [];
+    final byCategory = _topN(
+      _buildByCategory<IncomeItem>(
+        filteredIncomes,
+        (i) => i.type,
+        (i) => i.amount,
+      ),
+    );
+
+    final total = byCategory.values.fold<double>(0, (s, v) => s + v);
+    if (total == 0) return [];
+
+    final colors = [
+      Colors.green,
+      Colors.lightGreen,
+      Colors.amber,
+      Colors.blue,
+      Colors.purple,
+      Colors.teal,
+      Colors.orange,
+      Colors.yellow,
+      Colors.cyan,
+      Colors.indigo,
+    ];
+
+    int i = 0;
+    return byCategory.entries.map((e) {
+      final percent = (e.value / total * 100);
+      final label = e.key.length > 9 ? '${e.key.substring(0, 8)}…' : e.key;
+      return PieChartSectionData(
+        value: e.value,
+        color: colors[i++ % colors.length],
+        radius: 44,
+        title: '$label\n${percent.toStringAsFixed(1)}%',
+        titleStyle: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 11,
+          height: 1.13,
+        ),
+        titlePositionPercentageOffset: 0.63,
+      );
+    }).toList();
+  }
+
+  bool _hasExpenseCategoryData() {
+    return filteredExpenses.any((t) => t.type.isNotEmpty);
+  }
+
+  List<BarChartGroupData> _expenseCategoryBarGroups() {
+    final byCategory = _topN(
+      _buildByCategory<ExpenseItem>(
+        filteredExpenses,
+        (e) => e.type,
+        (e) => e.amount,
+      ),
+    ).entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value)); // desc
+
+    final colors = [
+      Colors.pinkAccent,
+      Colors.deepPurpleAccent,
+      Colors.lightBlue,
+      Colors.teal,
+      Colors.greenAccent,
+      Colors.orange,
+      Colors.amber,
+      Colors.cyan,
+      Colors.indigo,
+      Colors.redAccent,
+    ];
+    final maxY = byCategory.isEmpty
+        ? 100.0
+        : byCategory.map((e) => e.value).reduce(math.max).toDouble();
+
+    return List<BarChartGroupData>.generate(byCategory.length, (i) {
+      final e = byCategory[i];
+      return BarChartGroupData(
+        x: i,
+        barRods: [
+          BarChartRodData(
+            toY: e.value,
+            color: colors[i % colors.length],
+            width: 18,
+            borderRadius: BorderRadius.circular(6),
+            backDrawRodData: BackgroundBarChartRodData(
+              show: true,
+              toY: maxY,
+              color: colors[i % colors.length].withValues(alpha: 0.12),
+            ),
+          ),
+        ],
+      );
+    });
+  }
+
+  double _expenseMaxAmount() {
+    if (filteredExpenses.isEmpty) return 100.0;
+    final byCategory = _buildByCategory<ExpenseItem>(
+      filteredExpenses,
+      (e) => e.type,
+      (e) => e.amount,
+    );
+    final double maxVal = byCategory.isEmpty
+        ? 0.0
+        : byCategory.values.reduce(math.max).toDouble();
+
+    return maxVal < 100.0 ? 100.0 : maxVal;
+  }
+
+  List<String> _expenseCategories() {
+    final byCategory = _buildByCategory<ExpenseItem>(
+      filteredExpenses,
+      (e) => e.type,
+      (e) => e.amount,
+    );
+    return byCategory.keys.toList();
+  }
+
+  List<BarChartGroupData> _incomeCategoryBarGroups() {
+    final byCategory = _topN(
+      _buildByCategory<IncomeItem>(
+        filteredIncomes,
+        (i) => i.type,
+        (i) => i.amount,
+      ),
+    ).entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value)); // desc
+
+    final colors = [
+      Colors.green,
+      Colors.lightGreen,
+      Colors.amber,
+      Colors.blue,
+      Colors.purple,
+      Colors.teal,
+      Colors.orange,
+      Colors.yellow,
+      Colors.cyan,
+      Colors.indigo,
+    ];
+    final maxY = byCategory.isEmpty
+        ? 100.0
+        : byCategory.map((e) => e.value).reduce(math.max).toDouble();
+
+    return List<BarChartGroupData>.generate(byCategory.length, (i) {
+      final e = byCategory[i];
+      return BarChartGroupData(
+        x: i,
+        barRods: [
+          BarChartRodData(
+            toY: e.value,
+            color: colors[i % colors.length],
+            width: 18,
+            borderRadius: BorderRadius.circular(6),
+            backDrawRodData: BackgroundBarChartRodData(
+              show: true,
+              toY: maxY,
+              color: colors[i % colors.length].withValues(alpha: 0.12),
+            ),
+          ),
+        ],
+      );
+    });
+  }
+
+  double _incomeMaxAmount() {
+    if (filteredIncomes.isEmpty) return 100.0;
+    final byCategory = _buildByCategory<IncomeItem>(
+      filteredIncomes,
+      (i) => i.type,
+      (i) => i.amount,
+    );
+    final double maxVal = byCategory.isEmpty
+        ? 0.0
+        : byCategory.values.reduce(math.max).toDouble();
+    return maxVal < 100.0 ? 100.0 : maxVal;
+  }
+
+  List<String> _incomeCategories() {
+    final byCategory = _buildByCategory<IncomeItem>(
+      filteredIncomes,
+      (i) => i.type,
+      (i) => i.amount,
+    );
+    return byCategory.keys.toList();
+  }
+
+  Future<bool> _confirmBulkDelete(int count) async {
+    final theme = Theme.of(context);
+    final plural = count == 1 ? '' : 's';
+    final subject = 'delete $count selected transaction$plural';
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete transactions?'),
+        content:
+            Text('Are you sure you want to $subject? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style:
+                TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  Future<String?> _showLabelDialog() async {
+    String? result;
+    final controller = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Set Label'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: 'Enter new label…'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              result = controller.text.trim();
+              Navigator.pop(ctx);
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+    return result;
+  }
 
   Future<void> _openCommentDialog(dynamic tx) async {
     if (tx is! ExpenseItem && tx is! IncomeItem) {
@@ -1377,28 +2440,20 @@ class _SummaryRingCard extends StatelessWidget {
                             periodLabel,
                             style:
                                 Fx.label.copyWith(fontWeight: FontWeight.w600),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
                           ),
                         ),
                       ),
                       const SizedBox(height: 10),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          formatter.format(spentValue),
-                          style: spentStyle,
-                          textAlign: TextAlign.right,
-                        ),
+                      Text(
+                        formatter.format(spentValue),
+                        style: spentStyle,
+                        textAlign: TextAlign.right,
                       ),
                       const SizedBox(height: 6),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          formatter.format(incomeValue),
-                          style: incomeStyle,
-                          textAlign: TextAlign.right,
-                        ),
+                      Text(
+                        formatter.format(incomeValue),
+                        style: incomeStyle,
+                        textAlign: TextAlign.right,
                       ),
                       const SizedBox(height: 10),
                       Text(
@@ -1422,8 +2477,6 @@ class _SummaryRingCard extends StatelessWidget {
     );
   }
 }
-
-// _MiniDonutChart removed
 
 class ExpenseFilterConfig {
   final String periodToken;
@@ -1545,9 +2598,7 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         .map((b) => b.trim())
         .where((b) => b.isNotEmpty)
         .map((b) {
-      if (!b.contains('|')) {
-        return _normalizeBank(b);
-      }
+      if (!b.contains('|')) return _normalizeBank(b);
       final parts = b.split('|');
       final bank = _normalizeBank(parts.first);
       final card = parts.length > 1 ? parts[1].trim() : '';
@@ -1796,38 +2847,38 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       children: [
         _buildSectionTitle('Date / Period'),
         const SizedBox(height: 6),
-        for (final option in periodOptions)
-          ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            title:
-                Text(option.key, style: const TextStyle(color: Colors.black)),
-            leading: Radio<String>(
-              value: option.value,
-              groupValue: currentValue,
-              onChanged: (_) => _selectPeriod(option.value),
+        _RadioGroup<String>(
+          value: currentValue,
+          onChanged: (val) {
+            if (val != null) _selectPeriod(val);
+          },
+          items: [
+            for (final option in periodOptions)
+              _RadioGroupItem(
+                value: option.value,
+                child: Text(option.key,
+                    style: const TextStyle(color: Colors.black)),
+              ),
+            _RadioGroupItem(
+              value: 'Custom',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Custom range',
+                    style: TextStyle(color: Colors.black),
+                  ),
+                  Text(
+                    _customRange != null
+                        ? '${DateFormat('d MMM y').format(_customRange!.start)} – ${DateFormat('d MMM y').format(_customRange!.end)}'
+                        : 'Choose a date range',
+                    style: const TextStyle(color: Colors.black54, fontSize: 12),
+                  ),
+                ],
+              ),
+              onTap: () => _pickCustomRange(),
             ),
-            onTap: () => _selectPeriod(option.value),
-          ),
-        ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text(
-            'Custom range',
-            style: TextStyle(color: Colors.black),
-          ),
-          subtitle: Text(
-            _customRange != null
-                ? '${DateFormat('d MMM y').format(_customRange!.start)} – ${DateFormat('d MMM y').format(_customRange!.end)}'
-                : 'Choose a date range',
-            style: const TextStyle(color: Colors.black54, fontSize: 12),
-          ),
-          leading: Radio<String>(
-            value: 'Custom',
-            groupValue: currentValue,
-            onChanged: (_) => _pickCustomRange(),
-          ),
-          onTap: () => _pickCustomRange(),
+          ],
         ),
       ],
     );
@@ -1928,25 +2979,18 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       children: [
         _buildSectionTitle('Merchant'),
         const SizedBox(height: 6),
-        ListTile(
+        CheckboxListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.store_mall_directory_rounded,
+          value: _selectedMerchants.isEmpty,
+          secondary: const Icon(Icons.store_mall_directory_rounded,
               color: Colors.black54),
           title: const Text('All merchants',
               style: TextStyle(color: Colors.black)),
           subtitle: const Text('Show everything',
               style: TextStyle(color: Colors.black54, fontSize: 12)),
-          trailing: Checkbox(
-            value: _selectedMerchants.isEmpty,
-            onChanged: (val) {
-              if (val == true) {
-                setState(() => _selectedMerchants = {});
-              }
-            },
-          ),
-          onTap: () {
-            if (_selectedMerchants.isNotEmpty) {
+          onChanged: (val) {
+            if (val == true) {
               setState(() => _selectedMerchants = {});
             }
           },
@@ -1989,29 +3033,18 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       {required bool isPerson}) {
     final key = entry.key.trim().toUpperCase();
     final selected = _selectedMerchants.contains(key);
-    return ListTile(
+    return CheckboxListTile(
       dense: true,
       contentPadding: EdgeInsets.zero,
-      leading: _merchantAvatar(entry.key, isPerson: isPerson),
+      value: selected,
+      secondary: _merchantAvatar(entry.key, isPerson: isPerson),
       title: Text(_formatMerchant(entry.key),
           style: const TextStyle(color: Colors.black)),
       subtitle: Text(_formatAmount(entry.value),
           style: const TextStyle(color: Colors.black54, fontSize: 12)),
-      trailing: Checkbox(
-        value: selected,
-        onChanged: (val) {
-          setState(() {
-            if (val == true) {
-              _selectedMerchants = {..._selectedMerchants, key};
-            } else {
-              _selectedMerchants = {..._selectedMerchants}..remove(key);
-            }
-          });
-        },
-      ),
-      onTap: () {
+      onChanged: (val) {
         setState(() {
-          if (!selected) {
+          if (val == true) {
             _selectedMerchants = {..._selectedMerchants, key};
           } else {
             _selectedMerchants = {..._selectedMerchants}..remove(key);
@@ -2027,24 +3060,17 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       children: [
         _buildSectionTitle('Bank & Cards'),
         const SizedBox(height: 6),
-        ListTile(
+        CheckboxListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          leading:
+          value: _selectedBanks.isEmpty,
+          secondary:
               const Icon(Icons.account_balance_rounded, color: Colors.black54),
           title: const Text('All banks', style: TextStyle(color: Colors.black)),
           subtitle: const Text('Show everything',
               style: TextStyle(color: Colors.black54, fontSize: 12)),
-          trailing: Checkbox(
-            value: _selectedBanks.isEmpty,
-            onChanged: (val) {
-              if (val == true) {
-                setState(() => _selectedBanks = {});
-              }
-            },
-          ),
-          onTap: () {
-            if (_selectedBanks.isNotEmpty) {
+          onChanged: (val) {
+            if (val == true) {
               setState(() => _selectedBanks = {});
             }
           },
@@ -2064,10 +3090,11 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ListTile(
+                CheckboxListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: _bankLogo(
+                  value: isBankSelected,
+                  secondary: _bankLogo(
                     _displayBankName(bank),
                     network: _bankPrimaryNetworks[bank],
                     overrideLogo: _bankLogos[bank],
@@ -2075,25 +3102,9 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                   ),
                   title: Text(_displayBankName(bank),
                       style: const TextStyle(color: Colors.black)),
-                  trailing: Checkbox(
-                    value: isBankSelected,
-                    onChanged: (val) {
-                      setState(() {
-                        if (val == true) {
-                          _selectedBanks = {..._selectedBanks, bank};
-                        } else {
-                          final updated = {..._selectedBanks};
-                          updated.remove(bank);
-                          updated.removeWhere(
-                              (entry) => entry.startsWith('$bank|'));
-                          _selectedBanks = updated;
-                        }
-                      });
-                    },
-                  ),
-                  onTap: () {
+                  onChanged: (val) {
                     setState(() {
-                      if (!isBankSelected) {
+                      if (val == true) {
                         _selectedBanks = {..._selectedBanks, bank};
                       } else {
                         final updated = {..._selectedBanks};
@@ -2108,10 +3119,12 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                 for (final card in cards)
                   Padding(
                     padding: const EdgeInsets.only(left: 32),
-                    child: ListTile(
+                    child: CheckboxListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      leading: _bankLogo(
+                      value: _selectedBanks
+                          .contains(_encodeBankSelection(bank, card)),
+                      secondary: _bankLogo(
                         _displayBankName(bank),
                         network: _cardNetworks['$bank|$card'] ??
                             _bankPrimaryNetworks[bank],
@@ -2123,30 +3136,10 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                       subtitle: Text(_displayBankName(bank),
                           style: const TextStyle(
                               color: Colors.black54, fontSize: 12)),
-                      trailing: Checkbox(
-                        value: _selectedBanks
-                            .contains(_encodeBankSelection(bank, card)),
-                        onChanged: (val) {
-                          final selectionKey = _encodeBankSelection(bank, card);
-                          setState(() {
-                            if (val == true) {
-                              _selectedBanks = {
-                                ..._selectedBanks,
-                                selectionKey
-                              };
-                            } else {
-                              _selectedBanks = {..._selectedBanks}
-                                ..remove(selectionKey);
-                            }
-                          });
-                        },
-                      ),
-                      onTap: () {
+                      onChanged: (val) {
                         final selectionKey = _encodeBankSelection(bank, card);
-                        final isSelected =
-                            _selectedBanks.contains(selectionKey);
                         setState(() {
-                          if (!isSelected) {
+                          if (val == true) {
                             _selectedBanks = {..._selectedBanks, selectionKey};
                           } else {
                             _selectedBanks = {..._selectedBanks}
@@ -2175,10 +3168,11 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
         else
           ..._friends.map((friend) {
             final selected = _friendPhones.contains(friend.phone);
-            return ListTile(
+            return CheckboxListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              leading: _friendAvatar(friend),
+              value: selected,
+              secondary: _friendAvatar(friend),
               title: Text(
                 friend.name.isEmpty ? friend.phone : friend.name,
                 style: const TextStyle(color: Colors.black),
@@ -2188,24 +3182,10 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                       style:
                           const TextStyle(color: Colors.black54, fontSize: 12))
                   : null,
-              trailing: Checkbox(
-                value: selected,
-                onChanged: (val) {
-                  setState(() {
-                    final updated = {..._friendPhones};
-                    if (val == true) {
-                      updated.add(friend.phone);
-                    } else {
-                      updated.remove(friend.phone);
-                    }
-                    _friendPhones = updated;
-                  });
-                },
-              ),
-              onTap: () {
+              onChanged: (val) {
                 setState(() {
                   final updated = {..._friendPhones};
-                  if (!selected) {
+                  if (val == true) {
                     updated.add(friend.phone);
                   } else {
                     updated.remove(friend.phone);
@@ -2258,10 +3238,11 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
             final selected = _groupIds.contains(groupId);
             final group = _groupsById[groupId];
             final memberCount = group?.memberCount ?? 0;
-            return ListTile(
+            return CheckboxListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              leading: _groupAvatar(groupId, group),
+              value: selected,
+              secondary: _groupAvatar(groupId, group),
               title: Text(_groupNameForId(groupId),
                   style: const TextStyle(color: Colors.black)),
               subtitle: memberCount > 0
@@ -2269,21 +3250,9 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
                       style:
                           const TextStyle(color: Colors.black54, fontSize: 12))
                   : null,
-              trailing: Checkbox(
-                value: selected,
-                onChanged: (val) {
-                  setState(() {
-                    if (val == true) {
-                      _groupIds = {..._groupIds, groupId};
-                    } else {
-                      _groupIds = {..._groupIds}..remove(groupId);
-                    }
-                  });
-                },
-              ),
-              onTap: () {
+              onChanged: (val) {
                 setState(() {
-                  if (!selected) {
+                  if (val == true) {
                     _groupIds = {..._groupIds, groupId};
                   } else {
                     _groupIds = {..._groupIds}..remove(groupId);
@@ -2381,20 +3350,14 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
 
   String _encodeBankSelection(String bank, [String? cardLast4]) {
     final normalized = _normalizeBank(bank);
-    if (normalized.isEmpty) {
-      return normalized;
-    }
+    if (normalized.isEmpty) return normalized;
     final l4 = (cardLast4 ?? '').trim();
-    if (l4.isEmpty) {
-      return normalized;
-    }
+    if (l4.isEmpty) return normalized;
     return '$normalized|$l4';
   }
 
   String _displayBankName(String bank) {
-    if (_bankDisplayNames.containsKey(bank)) {
-      return _bankDisplayNames[bank]!;
-    }
+    if (_bankDisplayNames.containsKey(bank)) return _bankDisplayNames[bank]!;
     return _titleCase(bank.toLowerCase());
   }
 
@@ -2408,24 +3371,12 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
 
   String _slugBank(String s) {
     final x = s.toLowerCase();
-    if (x.contains('axis')) {
-      return 'axis';
-    }
-    if (x.contains('hdfc')) {
-      return 'hdfc';
-    }
-    if (x.contains('icici')) {
-      return 'icici';
-    }
-    if (x.contains('kotak')) {
-      return 'kotak';
-    }
-    if (x.contains('sbi') || x.contains('state bank')) {
-      return 'sbi';
-    }
-    if (x.contains('american express') || x.contains('amex')) {
-      return 'amex';
-    }
+    if (x.contains('axis')) return 'axis';
+    if (x.contains('hdfc')) return 'hdfc';
+    if (x.contains('icici')) return 'icici';
+    if (x.contains('kotak')) return 'kotak';
+    if (x.contains('sbi') || x.contains('state bank')) return 'sbi';
+    if (x.contains('american express') || x.contains('amex')) return 'amex';
     return x.replaceAll(RegExp(r'[^a-z]'), '');
   }
 
@@ -2537,33 +3488,15 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
 
   String? _merchantLogoAsset(String merchant) {
     final lower = merchant.toLowerCase();
-    if (lower.contains('amazon')) {
-      return 'assets/brands/amazon.png';
-    }
-    if (lower.contains('zomato')) {
-      return 'assets/brands/zomato.png';
-    }
-    if (lower.contains('swiggy')) {
-      return 'assets/brands/swiggy.png';
-    }
-    if (lower.contains('uber')) {
-      return 'assets/brands/uber.png';
-    }
-    if (lower.contains('flipkart')) {
-      return 'assets/brands/flipkart.png';
-    }
-    if (lower.contains('bigbasket')) {
-      return 'assets/brands/bigbasket.png';
-    }
-    if (lower.contains('myntra')) {
-      return 'assets/brands/myntra.png';
-    }
-    if (lower.contains('nykaa')) {
-      return 'assets/brands/nykaa.png';
-    }
-    if (lower.contains('ajio')) {
-      return 'assets/brands/ajio.png';
-    }
+    if (lower.contains('amazon')) return 'assets/brands/amazon.png';
+    if (lower.contains('zomato')) return 'assets/brands/zomato.png';
+    if (lower.contains('swiggy')) return 'assets/brands/swiggy.png';
+    if (lower.contains('uber')) return 'assets/brands/uber.png';
+    if (lower.contains('flipkart')) return 'assets/brands/flipkart.png';
+    if (lower.contains('bigbasket')) return 'assets/brands/bigbasket.png';
+    if (lower.contains('myntra')) return 'assets/brands/myntra.png';
+    if (lower.contains('nykaa')) return 'assets/brands/nykaa.png';
+    if (lower.contains('ajio')) return 'assets/brands/ajio.png';
     return null;
   }
 
@@ -2572,18 +3505,12 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     if (t.contains('food') || t.contains('restaurant')) {
       return Icons.restaurant_rounded;
     }
-    if (t.contains('grocery')) {
-      return Icons.shopping_cart_rounded;
-    }
-    if (t.contains('rent')) {
-      return Icons.home_rounded;
-    }
+    if (t.contains('grocery')) return Icons.shopping_cart_rounded;
+    if (t.contains('rent')) return Icons.home_rounded;
     if (t.contains('fuel') || t.contains('petrol')) {
       return Icons.local_gas_station_rounded;
     }
-    if (t.contains('shopping')) {
-      return Icons.shopping_bag_rounded;
-    }
+    if (t.contains('shopping')) return Icons.shopping_bag_rounded;
     if (t.contains('health') || t.contains('medicine')) {
       return Icons.local_hospital_rounded;
     }
@@ -2593,19 +3520,13 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     if (t.contains('entertainment') || t.contains('movie')) {
       return Icons.movie_rounded;
     }
-    if (t.contains('education')) {
-      return Icons.school_rounded;
-    }
-    if (t.contains('loan')) {
-      return Icons.account_balance_rounded;
-    }
+    if (t.contains('education')) return Icons.school_rounded;
+    if (t.contains('loan')) return Icons.account_balance_rounded;
     return Icons.category_rounded;
   }
 
   bool _isYesterdaySelected() {
-    if (_customRange == null) {
-      return false;
-    }
+    if (_customRange == null) return false;
     final start = _customRange!.start;
     final end = _customRange!.end;
     final now = DateTime.now();
@@ -2671,9 +3592,7 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     final lower = merchant.toLowerCase();
     for (final friend in _friends) {
       final nameLower = friend.name.trim().toLowerCase();
-      if (nameLower.isEmpty) {
-        continue;
-      }
+      if (nameLower.isEmpty) continue;
       if (lower == nameLower ||
           lower.contains(nameLower) ||
           nameLower.contains(lower)) {
@@ -2689,9 +3608,7 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
       return true;
     }
     final digits = lower.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digits.length >= 8 && digits.length <= 12) {
-      return true;
-    }
+    if (digits.length >= 8 && digits.length <= 12) return true;
     if (_friendPhoneSet.any((phone) =>
         phone.replaceAll(RegExp(r'[^0-9]'), '').endsWith(digits) &&
         digits.isNotEmpty)) {
@@ -2704,8 +3621,6 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
     }
     return false;
   }
-
-  // _friendAvatar removed
 
   String _groupNameForId(String id) {
     final group = _groupsById[id];
@@ -2727,4 +3642,60 @@ class _ExpenseFiltersScreenState extends State<ExpenseFiltersScreen> {
             '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}')
         .join(' ');
   }
+}
+
+// Helper classes to silence RadioListTile deprecation warnings
+class _RadioGroup<T> extends StatelessWidget {
+  final T? value;
+  final ValueChanged<T?>? onChanged;
+  final List<_RadioGroupItem<T>> items;
+
+  const _RadioGroup({
+    required this.value,
+    required this.onChanged,
+    required this.items,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: items.map((item) {
+        return InkWell(
+          onTap: () {
+            onChanged?.call(item.value);
+            item.onTap?.call();
+          },
+          child: Row(
+            children: [
+              // ignore: deprecated_member_use
+              Radio<T>(
+                value: item.value,
+                // ignore: deprecated_member_use
+                groupValue: value,
+                // ignore: deprecated_member_use
+                onChanged: (v) {
+                  onChanged?.call(v);
+                  item.onTap?.call();
+                },
+              ),
+              const SizedBox(width: 8),
+              Expanded(child: item.child),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _RadioGroupItem<T> {
+  final T value;
+  final Widget child;
+  final VoidCallback? onTap;
+
+  const _RadioGroupItem({
+    required this.value,
+    required this.child,
+    this.onTap,
+  });
 }

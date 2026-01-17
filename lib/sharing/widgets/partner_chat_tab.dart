@@ -27,7 +27,7 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   final _scrollController = ScrollController();
   final _imagePicker = ImagePicker();
 
-  List<Map<String, dynamic>> _attachedTxs = [];
+  final List<Map<String, dynamic>> _attachedTxs = [];
 
   bool _pickingEmoji = false;
   bool _pickingSticker = false;

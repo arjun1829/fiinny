@@ -219,7 +219,7 @@ class CreditCardIngestGmail {
   }
 
   String _guessIssuer(String from, String subject) {
-    final s = ('${from} ${subject}').toLowerCase();
+    final s = ('$from $subject').toLowerCase();
     if (s.contains('hdfc')) return 'HDFC Bank';
     if (s.contains('icici')) return 'ICICI Bank';
     if (s.contains('axis')) return 'Axis Bank';

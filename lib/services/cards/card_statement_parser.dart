@@ -65,8 +65,8 @@ class CardStatementParserApi {
     }
     final m = jsonDecode(body) as Map<String, dynamic>;
 
-    DateTime _dt(String k) => DateTime.parse(m[k] as String);
-    double? _num(String k) {
+    DateTime parseDate(String k) => DateTime.parse(m[k] as String);
+    double? parseNum(String k) {
       final v = m[k];
       if (v == null) return null;
       if (v is int) return v.toDouble();
@@ -77,14 +77,14 @@ class CardStatementParserApi {
     return CardStatementInfo(
       issuer: m['issuer'] as String,
       last4: m['card_last4'] as String,
-      statementDate: _dt('statement_date'),
-      periodStart: _dt('bill_period_start'),
-      periodEnd: _dt('bill_period_end'),
-      dueDate: _dt('due_date'),
-      totalDue: _num('total_due') ?? 0,
-      minDue: _num('min_due') ?? 0,
-      creditLimit: _num('credit_limit'),
-      availableCredit: _num('available_credit'),
+      statementDate: parseDate('statement_date'),
+      periodStart: parseDate('bill_period_start'),
+      periodEnd: parseDate('bill_period_end'),
+      dueDate: parseDate('due_date'),
+      totalDue: parseNum('total_due') ?? 0,
+      minDue: parseNum('min_due') ?? 0,
+      creditLimit: parseNum('credit_limit'),
+      availableCredit: parseNum('available_credit'),
       rewards: (m['rewards'] is Map<String, dynamic>)
           ? (m['rewards'] as Map<String, dynamic>)
               .map((k, v) => MapEntry(k, (v as num)))

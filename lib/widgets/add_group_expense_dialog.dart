@@ -57,7 +57,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
 
   // Custom split
   bool _customSplit = false;
-  Map<String, double> _splits = {}; // phone -> split amount
+  final Map<String, double> _splits = {}; // phone -> split amount
   final Map<String, TextEditingController> _splitCtrls = {};
 
   // Loading state
@@ -850,7 +850,7 @@ class _AddGroupExpenseScreenState extends State<AddGroupExpenseScreen> {
                 ],
               ),
             );
-          }).toList(),
+          }),
           if (_amount <= 0)
             Padding(
               padding: const EdgeInsets.only(top: 6),

@@ -49,6 +49,9 @@ import 'details/friend_detail_screen.dart';
 import 'details/group_detail_screen.dart';
 
 import 'screens/tx_day_details_screen.dart';
+import 'details/recurring/add_recurring_basic_screen.dart';
+import 'details/models/recurring_scope.dart';
+import 'screens/subscriptions/add_subscription_screen.dart';
 
 /// Static routes that don't require arguments.
 /// (Do NOT put `/analytics` here because it requires a userPhone.)
@@ -271,6 +274,33 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
       }
       break;
 
+    case '/addRecurringGeneric':
+    case '/addBill':
+      if (args is Map<String, dynamic> &&
+          args['userId'] is String &&
+          args['friendId'] is String) {
+        return MaterialPageRoute(
+          builder: (_) => AddRecurringBasicScreen(
+            userPhone: args['userId'] as String,
+            scope: RecurringScope.friend(
+              args['userId'] as String,
+              args['friendId'] as String,
+            ),
+          ),
+        );
+      }
+      break;
+
+    case '/addSubscription':
+      if (args is Map<String, dynamic> && args['userId'] is String) {
+        return MaterialPageRoute(
+          builder: (_) => AddSubscriptionScreen(
+            userId: args['userId'] as String,
+          ),
+        );
+      }
+      break;
+
     /* ------------------ NEW: Friend Recurring (deeplink target) ------------------ */
     case '/friend-recurring':
       // Accept:
@@ -285,10 +315,12 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
           friendId = args;
         } else if (args is Map<String, dynamic>) {
           if (args['friendId'] is String) friendId = args['friendId'] as String;
-          if (args['userPhone'] is String)
+          if (args['userPhone'] is String) {
             userPhone = args['userPhone'] as String?;
-          if (args['friendName'] is String)
+          }
+          if (args['friendName'] is String) {
             friendName = args['friendName'] as String?;
+          }
           // args['section'] is optional; if you need it later, read it in the screen via settings.arguments
         }
 

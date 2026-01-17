@@ -134,9 +134,10 @@ class _AddGroupScreenState extends State<AddGroupScreen> {
                       StreamBuilder<List<FriendModel>>(
                         stream: FriendService().streamFriends(widget.userId),
                         builder: (context, snapshot) {
-                          if (!snapshot.hasData)
+                          if (!snapshot.hasData) {
                             return const Center(
                                 child: CircularProgressIndicator());
+                          }
                           final friends = snapshot.data!;
                           return FriendPicker(
                             friends: friends,

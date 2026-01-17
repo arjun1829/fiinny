@@ -6,11 +6,12 @@ import '../services/user_data.dart'; // Your app's existing user data
 class FiinnyBrainSummary extends StatelessWidget {
   final UserData userData;
 
-  const FiinnyBrainSummary({Key? key, required this.userData}) : super(key: key);
+  const FiinnyBrainSummary({super.key, required this.userData});
 
   @override
   Widget build(BuildContext context) {
-    final List<InsightModel> insights = FiinnyBrainService.generateInsights(userData);
+    final List<InsightModel> insights =
+        FiinnyBrainService.generateInsights(userData);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -26,9 +27,9 @@ class FiinnyBrainSummary extends StatelessWidget {
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             const SizedBox(height: 12),
             ...insights.take(3).map((insight) => Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: Text("• ${insight.title}"),
-            )),
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: Text("• ${insight.title}"),
+                )),
             const SizedBox(height: 8),
             if (insights.isNotEmpty)
               TextButton(

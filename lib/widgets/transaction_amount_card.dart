@@ -21,7 +21,9 @@ class TransactionAmountCard extends StatelessWidget {
   });
 
   String _labelForIndex(int idx) {
-    if (period == 'All Time') return '';
+    if (period == 'All Time') {
+      return '';
+    }
 
     if (barData.length == 24) {
       if (idx == 0) {

@@ -102,13 +102,13 @@ class _GroupReminderDialogState extends State<GroupReminderDialog> {
               customMessage: _c.text.trim().isEmpty ? null : _c.text.trim(),
               alsoSendDMs: _alsoDM,
             );
-            if (!mounted) {
+            if (!context.mounted) {
               return;
             }
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Reminder sent')),
             );
-            Navigator.pop(context, true);
+            if (context.mounted) Navigator.pop(context, true);
           },
           icon: const Icon(Icons.send_rounded),
           label: const Text('Send'),

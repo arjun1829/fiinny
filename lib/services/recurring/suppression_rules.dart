@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Lightweight per-user suppression rules to avoid noisy suggestions.
 /// Shape:
-/// users/<u>/suppressions/<autoId> { type: 'subscription'|'emi', merchantKey: 'NETFLIX', amountTol: 0.0 }
+/// users/`u`/suppressions/`autoId` { type: 'subscription'|'emi', merchantKey: 'NETFLIX', amountTol: 0.0 }
 class SuppressionRules {
   static CollectionReference<Map<String, dynamic>> _col(String u) =>
       FirebaseFirestore.instance
@@ -48,8 +48,9 @@ class SuppressionRules {
       final tol = (d.data()['amountTol'] ?? 0.0) as num;
       if (tol <= 0) return true; // blanket suppression
       // amount within tolerance ⇒ suppress
-      if ((amount - 0).abs() <= tol.toDouble())
+      if ((amount - 0).abs() <= tol.toDouble()) {
         return true; // tol as absolute ₹
+      }
     }
     return false;
   }

@@ -6,7 +6,7 @@ import 'package:lifemap/ui/tokens.dart' show AppColors;
 class QuickActionsBar extends StatelessWidget {
   final void Function(String action)? onTap;
 
-  const QuickActionsBar({Key? key, this.onTap}) : super(key: key);
+  const QuickActionsBar({super.key, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -23,10 +23,10 @@ class QuickActionsBar extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: items
             .map((it) => _QuickButton(
-          label: it.label,
-          icon: it.icon,
-          onTap: () => onTap?.call(it.key),
-        ))
+                  label: it.label,
+                  icon: it.icon,
+                  onTap: () => onTap?.call(it.key),
+                ))
             .toList(),
       ),
     );
@@ -39,11 +39,10 @@ class _QuickButton extends StatelessWidget {
   final VoidCallback? onTap;
 
   const _QuickButton({
-    Key? key,
-    required this.label,
     required this.icon,
-    this.onTap,
-  }) : super(key: key);
+    required this.label,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -65,8 +64,8 @@ class _QuickButton extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(label,
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w700)),
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
           ],
         ),
       ),

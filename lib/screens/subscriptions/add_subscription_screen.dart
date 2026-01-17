@@ -97,9 +97,9 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
         await svc.updateSubscription(widget.userId, newItem);
       }
 
-      if (context.mounted) Navigator.pop(context, true);
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Error: $e')));
       }
@@ -131,7 +131,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       try {
         await SubscriptionService()
             .deleteSubscription(widget.userId, widget.existingItem!.id!);
-        if (context.mounted) Navigator.pop(context, true);
+        if (mounted) Navigator.pop(context, true);
       } catch (e) {
         if (mounted) setState(() => _isLoading = false);
       }
