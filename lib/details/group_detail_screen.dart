@@ -1439,6 +1439,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                           currentUserId: widget.userId,
                           participants: _group.memberPhones,
                           initialDraft: _pendingChatDraft,
+                          nameResolver: _nameFor,
                         ),
                       ),
                     ),
@@ -2014,6 +2015,7 @@ class GroupChatTab extends StatefulWidget {
   final String currentUserId; // phone
   final List<String> participants; // phones
   final String? initialDraft;
+  final String Function(String) nameResolver; // NEW
 
   const GroupChatTab({
     super.key,
@@ -2021,6 +2023,7 @@ class GroupChatTab extends StatefulWidget {
     required this.currentUserId,
     required this.participants,
     this.initialDraft,
+    required this.nameResolver, // NEW
   });
 
   @override
@@ -2706,7 +2709,8 @@ class _GroupChatTabState extends State<GroupChatTab> {
                     final fileUrl = data['fileUrl'] as String?;
 
                     // LOGIC: Show sender name for others
-                    final senderName = !isMe ? "Member" : null;
+                    final senderName =
+                        !isMe ? widget.nameResolver(data['from']) : null;
 
                     return ChatBubble(
                       text: msg,

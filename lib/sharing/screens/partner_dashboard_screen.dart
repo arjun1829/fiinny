@@ -195,28 +195,68 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen>
     double credit = 0.0, debit = 0.0;
     int count = 0;
     final List<Map<String, dynamic>> txs = [];
+
+    // --- Helper Function for Smart Title ---
+    String getSmartTitle(Map<String, dynamic> d, String defaultType) {
+      String title = (d['label'] as String?)?.trim() ?? '';
+
+      // 1. Fallback to category if label is missing
+      if (title.isEmpty) {
+        title = (d['category'] as String?)?.trim() ?? '';
+      }
+
+      // 2. Fallback to type if category is missing
+      if (title.isEmpty) {
+        title = (d['type'] as String?)?.trim() ?? defaultType;
+      }
+
+      // 3. SUPER FIX: If title is generic (Other, General, etc.), try to extract from Note
+      final lowerTitle = title.toLowerCase();
+      if (lowerTitle == 'other' ||
+          lowerTitle == 'general' ||
+          lowerTitle == 'expense' ||
+          lowerTitle == 'income' ||
+          lowerTitle.contains('debit')) {
+        final note = (d['note'] as String?) ?? '';
+        // Regex to find "Merchant Name: Swiggy" pattern
+        final RegExp regex =
+            RegExp(r'Merchant Name:\s*([^\.]+)', caseSensitive: false);
+        final match = regex.firstMatch(note);
+        if (match != null) {
+          title = match.group(1)?.trim() ?? title;
+        }
+      }
+
+      return title;
+    }
+
+    // 1. Process Incomes
     for (final doc in incomeSnap.docs) {
       final d = doc.data();
       final amt = (d['amount'] as num? ?? 0).toDouble();
       credit += amt;
       count++;
+
       txs.add({
         'type': 'income',
         'amount': amt,
-        'category': d['type'],
+        'category': getSmartTitle(d, 'Income'), // Use Smart Helper
         'note': d['note'],
         'date': d['date'],
       });
     }
+
+    // 2. Process Expenses
     for (final doc in expenseSnap.docs) {
       final d = doc.data();
       final amt = (d['amount'] as num? ?? 0).toDouble();
       debit += amt;
       count++;
+
       txs.add({
         'type': 'expense',
         'amount': amt,
-        'category': d['type'],
+        'category': getSmartTitle(d, 'Expense'), // Use Smart Helper
         'note': d['note'],
         'date': d['date'],
       });

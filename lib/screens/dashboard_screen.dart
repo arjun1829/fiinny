@@ -2207,6 +2207,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           const SizedBox(height: 14),
                         ] else
                           const SizedBox(height: 14),
+/*
                         Padding(
                           padding: horizontalPadding,
                           child: LayoutBuilder(
@@ -2217,7 +2218,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 if (isNarrow) return child;
                                 return SizedBox(height: 188, child: child);
                               }
-
                               final loansTile = wrapTile(_buildLoansTile());
                               final assetsTile = wrapTile(_buildAssetsTile());
                               if (isNarrow) {
@@ -2269,6 +2269,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                             ),
                           ),
                         ],
+                        */
                         if (_showFetchButton && !_isEmailLinked) ...[
                           const SizedBox(height: 12),
                           Padding(
