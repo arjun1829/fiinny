@@ -39,6 +39,9 @@ class AdIds {
 
   // ---------- Switch logic: prefer real identifiers whenever configured ----------
   static bool get _useReal {
+    // Force TEST IDs in debug mode to ensure fill
+    if (kDebugMode) return false;
+
     // Always try to use real IDs first for "original ads"
     if (_hasRealIdsForCurrentPlatform) return true;
     return false;

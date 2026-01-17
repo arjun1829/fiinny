@@ -1424,11 +1424,10 @@ class AllTab extends StatelessWidget {
                           padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                           child: AdsBannerCard(
                             placement: 'friends_summary_header',
-                            inline: true,
-                            inlineMaxHeight: 110,
+                            inline: false, // Standard banner (small)
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 14, vertical: 12),
-                            minHeight: 88,
+                            minHeight: 60,
                           ),
                         );
 
@@ -1791,11 +1790,10 @@ class GroupsTab extends StatelessWidget {
                         padding: EdgeInsets.fromLTRB(14, 0, 14, 12),
                         child: AdsBannerCard(
                           placement: 'groups_tab',
-                          inline: true,
-                          inlineMaxHeight: 110,
+                          inline: false, // Standard banner (small)
                           padding: EdgeInsets.symmetric(
                               horizontal: 14, vertical: 12),
-                          minHeight: 88,
+                          minHeight: 60,
                         ),
                       );
                     }
