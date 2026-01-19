@@ -18,7 +18,9 @@ import '../services/group_service.dart';
 import '../widgets/add_friend_dialog.dart';
 
 /// Light finance palette
-// Light finance palette removed in favor of Theme.of(context)
+const Color kPrimary = Color(0xFF6C63FF); // Purple
+const Color kBg = Colors.white;
+const Color kOutline = Color(0xFFE0E0E0);
 
 class AddTransactionScreen extends StatefulWidget {
   final String userId; // phone (E.164), e.g., +91xxxx
@@ -26,39 +28,6 @@ class AddTransactionScreen extends StatefulWidget {
 
   @override
   State<AddTransactionScreen> createState() => _AddTransactionScreenState();
-}
-
-class _DarkPillButton extends StatelessWidget {
-  final VoidCallback? onPressed;
-  final IconData icon;
-  final String label;
-  const _DarkPillButton({
-    required this.onPressed,
-    required this.icon,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 18, color: Colors.white),
-      label: Text(
-        label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-      style: TextButton.styleFrom(
-        backgroundColor: Theme.of(context).colorScheme.onSurface, // darker pill
-        foregroundColor: Theme.of(context).colorScheme.onInverseSurface,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        shape: const StadiumBorder(),
-        overlayColor: Colors.white10,
-      ),
-    );
-  }
 }
 
 enum _SplitAddOption { friend, group }
@@ -572,20 +541,19 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   Widget build(BuildContext context) {
     final steps = ['Amount', 'Category', 'Details', 'Review'];
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: kBg,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        backgroundColor: kBg,
+        iconTheme: const IconThemeData(color: Colors.black),
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded,
-              color: Theme.of(context).textTheme.bodyMedium?.color),
+          icon: const Icon(
+              Icons.close_rounded), // Wizard usually has close or back
           onPressed: _back,
         ),
         centerTitle: true,
-        title: Text('Add Transaction',
-            style: TextStyle(
-                color: Theme.of(context).textTheme.bodyMedium?.color,
-                fontWeight: FontWeight.w700)),
+        title: const Text('Add Transaction',
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700)),
         actions: [
           if (_loadingFG)
             const Padding(
@@ -597,14 +565,51 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             ),
         ],
       ),
+      floatingActionButton: _step < 4 // Show FAB if valid step
+          ? FloatingActionButton.extended(
+              onPressed: _saving
+                  ? null
+                  : () {
+                      if (_step == 3) {
+                        _save();
+                      } else {
+                        _next();
+                      }
+                    },
+              label: Text(
+                _step == 3 ? 'Save' : 'Next',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              icon: Icon(_step == 3 ? Icons.check : Icons.arrow_forward),
+              backgroundColor: kPrimary,
+              foregroundColor: Colors.white,
+            )
+          : null,
       body: SafeArea(
         child: Column(
           children: [
-            // Progress / Stepper
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
-              child: _StepperBar(
-                  current: _step, total: steps.length, labels: steps),
+            // Gradient Progress Bar
+            Container(
+              height: 6,
+              width: double.infinity,
+              color: Colors.grey.shade100,
+              alignment: Alignment.centerLeft,
+              child: AnimatedFractionallySizedBox(
+                duration: const Duration(milliseconds: 300),
+                widthFactor: (_step + 1) / steps.length,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xFF6C63FF),
+                        Color(0xFF00796B)
+                      ], // Purple to Teal
+                    ),
+                    borderRadius:
+                        BorderRadius.horizontal(right: Radius.circular(6)),
+                  ),
+                ),
+              ),
             ),
             Expanded(
               child: PageView(
@@ -824,8 +829,7 @@ class _StepAmountType extends StatelessWidget {
                   )
                 : const SizedBox.shrink(),
           ),
-          const SizedBox(height: 28),
-          _PrimaryButton(text: 'Next', onPressed: saving ? null : onNext),
+          const SizedBox(height: 80), // Space for FAB
         ],
       ),
     );
@@ -876,19 +880,14 @@ class _StepCategory extends StatelessWidget {
                 onSelected: (_) => onChanged(c),
                 label: Text(c),
                 labelStyle: TextStyle(
-                  color: sel
-                      ? Theme.of(context).colorScheme.onPrimary
-                      : Colors.black,
+                  color: sel ? Colors.white : Colors.black,
                   fontWeight: FontWeight.w700,
                 ),
-                selectedColor: Theme.of(context).colorScheme.primary,
-                backgroundColor: Theme.of(context).cardColor,
+                selectedColor: kPrimary,
+                backgroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                      color: sel
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).dividerColor),
+                  side: BorderSide(color: sel ? kPrimary : kOutline),
                 ),
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               );
@@ -903,9 +902,9 @@ class _StepCategory extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Theme.of(context).dividerColor),
+                border: Border.all(color: kOutline),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
@@ -925,14 +924,7 @@ class _StepCategory extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(height: 28),
-          Row(
-            children: [
-              _GhostButton(text: 'Back', onPressed: onBack),
-              const SizedBox(width: 12),
-              Expanded(child: _PrimaryButton(text: 'Next', onPressed: onNext)),
-            ],
-          )
+          const SizedBox(height: 80),
         ],
       ),
     );
@@ -1069,8 +1061,8 @@ class _StepDetails extends StatelessWidget {
               controller: counterpartyCtrl,
               decoration: _inputDec(context).copyWith(
                 hintText: 'Merchant or person name…',
-                prefixIcon: Icon(Icons.storefront_rounded,
-                    size: 20, color: Theme.of(context).primaryColor),
+                prefixIcon:
+                    Icon(Icons.storefront_rounded, size: 20, color: kPrimary),
               ),
             ),
           ),
@@ -1190,10 +1182,27 @@ class _StepDetails extends StatelessWidget {
               runSpacing: -6,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                _DarkPillButton(
+                // "Buttons: Replace _DarkPillButton with standard OutlinedButton using Teal text and borders."
+                // "Buttons: Replace _DarkPillButton with standard OutlinedButton using Teal text and borders."
+                OutlinedButton(
                   onPressed: showAddMenu,
-                  icon: Icons.person_add_alt_1_rounded,
-                  label: 'Add Friend',
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: kPrimary,
+                    side: const BorderSide(color: kPrimary),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.person_add_alt_1_rounded, size: 18),
+                      SizedBox(width: 12), // Custom spacing
+                      Text('Add Friend / Group',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
                 ),
                 if (hasSplitTarget)
                   Chip(
@@ -1208,8 +1217,7 @@ class _StepDetails extends StatelessWidget {
                     ),
                     avatar: const Icon(Icons.check_circle,
                         size: 18, color: Colors.white),
-                    backgroundColor:
-                        const Color(0xFF273532), // darker chip to match
+                    backgroundColor: kPrimary, // Teal
                     shape: const StadiumBorder(
                         side: BorderSide(color: Colors.transparent)),
                   ),
@@ -1253,9 +1261,7 @@ class _StepDetails extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .primaryColor
-                                .withValues(alpha: 0.10),
+                            color: kPrimary.withValues(alpha: 0.10),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
@@ -1341,9 +1347,8 @@ class _StepDetails extends StatelessWidget {
                             children: [
                               CircleAvatar(
                                 radius: 14,
-                                backgroundColor: Theme.of(context)
-                                    .primaryColor
-                                    .withValues(alpha: 0.10),
+                                backgroundColor:
+                                    kPrimary.withValues(alpha: 0.10),
                                 child: Text(
                                   _initialsFor(display),
                                   style: TextStyle(
@@ -1448,14 +1453,12 @@ class _StepDetails extends StatelessWidget {
             children: [
               OutlinedButton.icon(
                 onPressed: onPickBill,
-                icon: Icon(Icons.attach_file_rounded,
-                    color: Theme.of(context).primaryColor),
+                icon: const Icon(Icons.attach_file_rounded, color: kPrimary),
                 label: Text('Attach Bill',
                     style: TextStyle(
-                        color: Theme.of(context).primaryColor,
-                        fontWeight: FontWeight.w700)),
+                        color: kPrimary, fontWeight: FontWeight.w700)),
                 style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Theme.of(context).primaryColor),
+                  side: const BorderSide(color: kPrimary),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10)),
                   backgroundColor: Colors.white,
@@ -1493,14 +1496,7 @@ class _StepDetails extends StatelessWidget {
               ],
             ],
           ),
-          const SizedBox(height: 28),
-          Row(
-            children: [
-              _GhostButton(text: 'Back', onPressed: onBack),
-              const SizedBox(width: 12),
-              Expanded(child: _PrimaryButton(text: 'Next', onPressed: onNext)),
-            ],
-          ),
+          const SizedBox(height: 80),
         ],
       ),
     );
@@ -1566,20 +1562,7 @@ class _StepReview extends StatelessWidget {
           const _H2('Review & Save'),
           const SizedBox(height: 12),
           _ReviewCard(rows: rows, billFile: billFile),
-          const SizedBox(height: 28),
-          Row(
-            children: [
-              _GhostButton(text: 'Back', onPressed: onBack),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _PrimaryButton(
-                  text: 'Save Transaction',
-                  onPressed: saving ? null : onSave,
-                  loading: saving,
-                ),
-              ),
-            ],
-          ),
+          const SizedBox(height: 80),
         ],
       ),
     );
@@ -1595,59 +1578,7 @@ class _StepReview extends StatelessWidget {
 }
 
 // ------------ Shared Widgets ------------
-class _StepperBar extends StatelessWidget {
-  final int current;
-  final int total;
-  final List<String> labels;
-  const _StepperBar(
-      {required this.current, required this.total, required this.labels});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: List.generate(total, (i) {
-            final active = i <= current;
-            return Expanded(
-              child: Container(
-                height: 6,
-                margin: EdgeInsets.only(right: i == total - 1 ? 0 : 6),
-                decoration: BoxDecoration(
-                  color: active
-                      ? Theme.of(context).primaryColor
-                      : const Color(0x22000000),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-            );
-          }),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: labels.map((t) {
-            final idx = labels.indexOf(t);
-            final active = idx == current;
-            return Expanded(
-              child: Text(
-                t,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: active
-                      ? Theme.of(context).primaryColor
-                      : Theme.of(context).textTheme.bodySmall?.color,
-                  fontWeight: active ? FontWeight.w800 : FontWeight.w600,
-                  fontSize: 12,
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-}
+// Replaced StepperBar with Gradient bar in build method.
 
 class _AmountField extends StatelessWidget {
   final TextEditingController controller;
@@ -1656,40 +1587,39 @@ class _AmountField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Box(
+    // "Wrap the Amount TextField in a container with border: Border.all(color: kOutline)"
+    // "Make the font size 28 and bold."
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kOutline),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: TextField(
         controller: controller,
         enabled: enabled,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        style: TextStyle(
-          fontSize: 24,
-          fontWeight: FontWeight.w800,
-          color: Theme.of(context).textTheme.bodyLarge?.color,
-          letterSpacing: 0.3,
+        style: const TextStyle(
+          fontSize: 28,
+          fontWeight: FontWeight.bold,
+          color: Colors.black,
         ),
-        decoration: InputDecoration(
+        textAlign: TextAlign.center,
+        decoration: const InputDecoration(
+          border: InputBorder.none,
           prefixText: '₹ ',
           prefixStyle: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: Theme.of(context).textTheme.bodyLarge?.color),
+            fontSize: 28,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
           hintText: '0.00',
           hintStyle: TextStyle(
-              fontSize: 24,
-              color: Theme.of(context).textTheme.bodySmall?.color,
-              fontWeight: FontWeight.w700),
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding:
-              const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(color: Theme.of(context).dividerColor),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide:
-                BorderSide(color: Theme.of(context).primaryColor, width: 1.6),
+            fontSize: 28,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey,
           ),
         ),
       ),
@@ -1710,10 +1640,11 @@ class _TypeChips extends StatelessWidget {
       _ChipOpt('cc_spend', 'Credit Card', Icons.credit_card),
     ];
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: 12,
+      runSpacing: 12,
       children: opts.map((o) {
         final sel = o.value == value;
+        // "Use ChoiceChip with White background, Grey border (inactive) vs Teal background/border (active)."
         return ChoiceChip(
           selected: sel,
           onSelected: (_) => onChanged(o.value),
@@ -1721,36 +1652,23 @@ class _TypeChips extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(o.icon,
-                  size: 18,
-                  color: sel
-                      ? Colors.white
-                      : Theme.of(context)
-                          .textTheme
-                          .bodyLarge
-                          ?.color
-                          ?.withValues(alpha: 0.75)),
-              const SizedBox(width: 6),
+                  size: 18, color: sel ? Colors.white : Colors.grey.shade700),
+              const SizedBox(width: 12), // Increased spacing
               Text(o.label),
             ],
           ),
           labelStyle: TextStyle(
-            color: sel
-                ? Colors.white
-                : Theme.of(context)
-                    .textTheme
-                    .bodyLarge
-                    ?.color
-                    ?.withValues(alpha: 0.9),
-            fontWeight: FontWeight.w700,
+            color: sel ? Colors.white : Colors.black,
+            fontWeight: FontWeight.w600,
           ),
-          selectedColor: Theme.of(context).primaryColor,
+          selectedColor: kPrimary,
           backgroundColor: Colors.white,
+          // Remove default border
+          side: sel
+              ? const BorderSide(color: kPrimary)
+              : BorderSide(color: Colors.grey.shade300),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-                color: sel
-                    ? Theme.of(context).primaryColor
-                    : Theme.of(context).dividerColor),
+            borderRadius: BorderRadius.circular(20),
           ),
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         );
@@ -1833,82 +1751,33 @@ class _Box extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final box = Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Theme.of(context).dividerColor),
-        boxShadow: const [
-          BoxShadow(
-              color: Color(0x0F000000), blurRadius: 10, offset: Offset(0, 4))
-        ],
-      ),
-      child: child,
-    );
-    if (label == null) return box;
+    // User wants "Clean white background", "Outlined inputs".
+    // _Box was adding shadow and border.
+    // If I use OutlineInputBorder in TextField, I don't need the outer box border/shadow.
+    // However, _Box handles "Label" above the field.
+    // I will remove the container styling and just return Column.
+    // If child needs decoration, it should have it (TextFields do now).
+
+    // But wait, what if child is NOT a TextField?
+    // In current usage:
+    // _StepDetails uses _Box for TextField wrappers.
+    // _StepAmountType was using _Box but I replaced it.
+    // DropdownButtonFormField also uses _inputDec so it will have border.
+
+    final content = child; // Just the child (TextField or Dropdown)
+
+    if (label == null) return content;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label!,
-            style: TextStyle(
-                color: Theme.of(context).textTheme.bodyLarge?.color,
-                fontWeight: FontWeight.w700,
-                fontSize: 13.5)),
+            style: const TextStyle(
+                color: Colors.black87,
+                fontWeight: FontWeight.w600,
+                fontSize: 14)),
         const SizedBox(height: 6),
-        box,
+        content,
       ],
-    );
-  }
-}
-
-class _PrimaryButton extends StatelessWidget {
-  final String text;
-  final VoidCallback? onPressed;
-  final bool loading;
-  const _PrimaryButton(
-      {required this.text, required this.onPressed, this.loading = false});
-  @override
-  Widget build(BuildContext context) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Theme.of(context).primaryColor,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        elevation: 2,
-      ),
-      child: loading
-          ? const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-              ),
-            )
-          : Text(text,
-              style:
-                  const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800)),
-    );
-  }
-}
-
-class _GhostButton extends StatelessWidget {
-  final String text;
-  final VoidCallback? onPressed;
-  const _GhostButton({required this.text, required this.onPressed});
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        side: BorderSide(color: Theme.of(context).dividerColor),
-        foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-      child: Text(text, style: const TextStyle(fontWeight: FontWeight.w800)),
     );
   }
 }
@@ -1918,21 +1787,18 @@ class _GlassCard extends StatelessWidget {
   const _GlassCard({required this.child});
   @override
   Widget build(BuildContext context) {
+    // "Change _GlassCard to a simple Container with a white background, grey border, and slight shadow."
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Theme.of(context).dividerColor, width: 1),
+        border: Border.all(color: kOutline),
         boxShadow: const [
           BoxShadow(
-              color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 8))
+              color: Color(0x08000000), blurRadius: 12, offset: Offset(0, 4))
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3), child: child),
-      ),
+      child: child, // No BackdropFilter
     );
   }
 }
@@ -1951,19 +1817,24 @@ class _KV {
 }
 
 InputDecoration _inputDec(BuildContext context) {
-  final base = OutlineInputBorder(
-    borderRadius: BorderRadius.circular(12),
-    borderSide: BorderSide(color: Theme.of(context).dividerColor, width: 1),
-  );
+  // "Use OutlineInputBorder with rounded corners (radius 12) and grey borders."
   return InputDecoration(
     filled: true,
     fillColor: Colors.white,
-    hintStyle: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
-    contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-    enabledBorder: base,
-    focusedBorder: base.copyWith(
-        borderSide:
-            BorderSide(color: Theme.of(context).primaryColor, width: 1.4)),
+    contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+    hintStyle: TextStyle(color: Colors.grey.shade500),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: kOutline),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: kPrimary, width: 2),
+    ),
+    errorBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Colors.redAccent),
+    ),
   );
 }
 

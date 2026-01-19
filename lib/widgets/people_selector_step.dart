@@ -5,7 +5,7 @@ import '../models/group_model.dart';
 
 /// Shared palette matching original screen
 const Color kBg = Color(0xFFF8FAF9);
-const Color kPrimary = Color(0xFF09857a);
+const Color kPrimary = Color(0xFF6C63FF);
 const Color kText = Color(0xFF0F1E1C);
 const Color kSubtle = Color(0xFF9AA5A1);
 const Color kLine = Color(0x14000000);
@@ -35,6 +35,7 @@ class PeopleSelectorStep extends StatelessWidget {
   final VoidCallback onNext;
   final VoidCallback onBack;
   final bool saving;
+  final bool showButtons;
 
   const PeopleSelectorStep({
     super.key,
@@ -58,6 +59,7 @@ class PeopleSelectorStep extends StatelessWidget {
     required this.onNext,
     required this.onBack,
     required this.saving,
+    this.showButtons = true,
   });
 
   @override
@@ -462,15 +464,16 @@ class PeopleSelectorStep extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 28),
-          Row(
-            children: [
-              _GhostButton(text: 'Back', onPressed: saving ? null : onBack),
-              const SizedBox(width: 12),
-              Expanded(
-                  child: _PrimaryButton(
-                      text: 'Next', onPressed: saving ? null : onNext)),
-            ],
-          ),
+          if (showButtons)
+            Row(
+              children: [
+                _GhostButton(text: 'Back', onPressed: saving ? null : onBack),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: _PrimaryButton(
+                        text: 'Next', onPressed: saving ? null : onNext)),
+              ],
+            ),
         ],
       ),
     );
