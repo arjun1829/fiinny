@@ -6,7 +6,7 @@ import '../models/group_model.dart';
 import '../services/friend_service.dart';
 import '../services/group_service.dart';
 import '../services/expense_service.dart';
-import '../services/parser_feedback_service.dart';
+
 import '../widgets/add_friend_dialog.dart';
 import '../widgets/add_group_dialog.dart';
 import '../widgets/people_selector_step.dart';
@@ -395,36 +395,61 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
   // ---------- Save ----------
   Future<void> _save() async {
-    if (!_validStep0() || !_validStep1()) return;
+    // 1. Final Validation Check with Feedback
+    if (!_validStep0()) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Please check Amount and Category'),
+          backgroundColor: Colors.red));
+      return;
+    }
+    if (!_validStep1()) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Please select a Payer'), backgroundColor: Colors.red));
+      return;
+    }
 
+    // 2. Logic to Prepare Data
     // Label priority: typed > selected
     final manualLabel = _labelCtrl.text.trim();
     final label = manualLabel.isNotEmpty ? manualLabel : _selectedLabel;
 
-    if (label != null && !_labels.contains(label)) {
+    // Add new label to local list if needed
+    if (label != null && label.isNotEmpty && !_labels.contains(label)) {
       _labels.insert(0, label);
     }
 
+    // 3. Start Saving (Show Loading)
     setState(() => _saving = true);
+
+    // Capture context-dependent services before async gap
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     try {
+      // Prepare Friends/Group IDs
       final normalizedFriends = _selectedFriendPhones
           .where(
               (phone) => phone.trim().isNotEmpty && phone != widget.userPhone)
           .toSet()
           .toList();
+
       final groupId =
           (_selectedGroupId ?? '').isNotEmpty ? _selectedGroupId : null;
       final friendIds = groupId != null ? <String>[] : normalizedFriends;
+
+      // Preserve settled status if valid
       final settledFriends = groupId != null
           ? widget.expense.settledFriendIds
           : widget.expense.settledFriendIds
               .where((id) => normalizedFriends.contains(id))
               .toList();
 
+      // Handle Category/Note
       final effectiveCategory =
           (_category == 'Other' && _customCategory.trim().isNotEmpty)
               ? _customCategory.trim()
               : _category;
+
       final personalNote = _noteCtrl.text.trim();
       final bankNote = _bankRefText.trim();
       final combinedNote = [
@@ -432,10 +457,11 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         if (bankNote.isNotEmpty) bankNote,
       ].join('\n\n');
 
+      // Create Updated Object
       final updated = ExpenseItem(
         id: widget.expense.id,
         type: effectiveCategory,
-        subtype: _subcategory, // Add subtype
+        subtype: _subcategory,
         amount: double.parse(_amountCtrl.text.trim()),
         note: combinedNote,
         date: _date,
@@ -449,58 +475,24 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         customSplits: widget.expense.customSplits,
         label: label,
         comments: personalNote.isNotEmpty ? personalNote : null,
-        // Audit preservation & update
         createdAt: widget.expense.createdAt,
         createdBy: widget.expense.createdBy,
         updatedAt: DateTime.now(),
         updatedBy: 'user',
       );
+
+      // 4. Call Service
       await ExpenseService().updateExpense(widget.userPhone, updated);
 
-      // --- FEEDBACK LOOP START ---
-      try {
-        final rawKey = widget.expense.rawMerchantString;
-        if (rawKey != null && rawKey.isNotEmpty) {
-          final oldCategory = widget
-              .expense.type; // This is actually 'category' in ExpenseItem logic
-          // Note: ExpenseItem.type maps to 'category', ExpenseItem.subtype maps to 'subcategory'.
-          // In this screen: effectiveCategory is the new category, _subcategory is the new subcategory.
-          final oldCounterparty = widget.expense.counterparty;
-
-          final newCounterparty = (updated.counterparty ?? '').trim();
-          final newCategory = effectiveCategory;
-          final newSubcategory = _subcategory;
-
-          final nameChanged =
-              oldCounterparty != newCounterparty && newCounterparty.isNotEmpty;
-          final catChanged = oldCategory != newCategory;
-          // If 'subcategory' was null in old, treat as empty string for comparison?
-          // widget.expense.subtype matches _subcategory.
-          final subChanged = widget.expense.subtype != newSubcategory;
-
-          if (nameChanged || catChanged || subChanged) {
-            await ParserFeedbackService.instance.recordFeedback(
-              widget.userPhone,
-              rawKey,
-              // Pass the FINAL state of the transaction, even if that specific field didn't change this time.
-              // This ensures the rule we create is complete (Name + Category + Subcategory).
-              name: newCounterparty,
-              category: newCategory,
-              subcategory: newSubcategory,
-            );
-          }
-        }
-      } catch (e) {
-        // Silent fail for feedback loop, don't block user flow
-        debugPrint('Feedback loop error: $e');
-      }
-      // --- FEEDBACK LOOP END ---
-
-      if (!mounted) return;
-      _toast('Expense updated');
-      Navigator.of(context).pop(true);
+      // 5. Success
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Expense updated successfully!'),
+          backgroundColor: Colors.green));
+      navigator.pop(true);
     } catch (e) {
-      _toast('Update failed: $e');
+      // 6. Error Handling
+      messenger.showSnackBar(SnackBar(
+          content: Text('Update failed: $e'), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -522,14 +514,25 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
   // ---------- Navigation ----------
   void _next() {
-    FocusScope.of(context).unfocus();
-    if (_step == 0 && !_validStep0()) return;
-    if (_step == 1 && !_validStep1()) return;
+    FocusScope.of(context).unfocus(); // Hide keyboard
+
+    // Validate Step 0 (Basics)
+    if (_step == 0) {
+      if (!_validStep0()) return; // Stop if amount/category is invalid
+    }
+
+    // Validate Step 1 (People)
+    if (_step == 1) {
+      if (!_validStep1()) return; // Stop if payer is missing
+    }
+
     if (_step < 2) {
-      setState(() => _step += 1);
+      setState(() => _step++);
       _pg.animateToPage(_step,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic);
+          duration: const Duration(milliseconds: 250), curve: Curves.easeInOut);
+    } else {
+      // We are on the last step, try to Save
+      _save();
     }
   }
 
@@ -554,149 +557,165 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Theme Colors for this screen
+    const kPrimary = Color(0xFF6C63FF);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5), // Light grey bg
+      backgroundColor: Colors.white, // White Background
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: const BackButton(color: Colors.black),
+        leading: BackButton(
+            color: Colors.black,
+            onPressed: () {
+              if (_step > 0) {
+                setState(() => _step--);
+                _pg.animateToPage(_step,
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut);
+              } else {
+                Navigator.pop(context);
+              }
+            }),
         title: const Text("Edit Expense",
-            style: TextStyle(
-                color: Colors.black,
-                fontWeight: FontWeight.bold,
-                fontSize: 16)),
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         centerTitle: true,
       ),
-
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
-                    child: _StepperBar(
-                        current: _step, total: steps.length, labels: steps),
+          : Column(
+              children: [
+                // Gradient Progress Bar
+                Container(
+                  height: 4,
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(2),
+                    gradient: LinearGradient(
+                      colors: [Colors.purpleAccent, Colors.tealAccent.shade400],
+                      stops: [(_step + 1) / 3, (_step + 1) / 3],
+                    ),
                   ),
-                  Expanded(
-                    child: PageView(
-                      controller: _pg,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: [
-                        _StepBasics(
-                          amountCtrl: _amountCtrl,
-                          category: _category,
-                          categories: _categories,
-                          subcategory: _subcategory,
-                          subcategories: _subcategories,
-                          onSubcategory: (v) =>
-                              setState(() => _subcategory = v),
-                          onCategory: (v) => setState(() {
-                            _category = v;
-                            _subcategories = kExpenseSubcategories[v] ?? [];
-                            _subcategory = _subcategories.isNotEmpty
-                                ? _subcategories.first
-                                : null;
-                            if (v != 'Other') {
-                              _customCategory = '';
-                              _customCategoryCtrl.clear();
-                            }
-                          }),
-                          date: _date,
-                          onPickDate: () async {
-                            final d = await showDatePicker(
+                ),
+
+                Expanded(
+                  child: PageView(
+                    controller: _pg,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [
+                      // STEP 0: BASICS (Updated UI)
+                      _StepBasics(
+                        amountCtrl: _amountCtrl,
+                        category: _category,
+                        categories: _categories,
+                        subcategory: _subcategory,
+                        subcategories: _subcategories,
+                        onCategory: (v) => setState(() {
+                          _category = v;
+                          _subcategories = kExpenseSubcategories[v] ?? [];
+                          _subcategory = _subcategories.firstOrNull;
+                          if (v != 'Other') {
+                            _customCategory = '';
+                            _customCategoryCtrl.clear();
+                          }
+                        }),
+                        onSubcategory: (v) => setState(() => _subcategory = v),
+                        date: _date,
+                        onPickDate: () async {
+                          final d = await showDatePicker(
                               context: context,
                               initialDate: _date,
                               firstDate: DateTime(2000),
-                              lastDate: DateTime(2100),
-                            );
-                            if (d != null) setState(() => _date = d);
-                          },
-                          noteCtrl: _noteCtrl,
-                          counterpartyCtrl: _counterpartyCtrl,
-                          onNext: _next,
-                          saving: _saving,
-                          bankRefText: _bankRefText,
-                          showBankReference: _showBankReference,
-                          customCategoryCtrl: _customCategoryCtrl,
-                          onCustomCategoryChanged: (v) =>
-                              setState(() => _customCategory = v),
-                          isActive: _step == 0,
-                        ),
-                        PeopleSelectorStep(
-                          userPhone: widget.userPhone,
-                          payerPhone: _selectedPayerPhone,
-                          onPayer: (v) =>
-                              setState(() => _selectedPayerPhone = v),
-                          friends: _friends,
-                          selectedFriends: _selectedFriendPhones,
-                          onToggleFriend: (phone, isSel) {
-                            setState(() {
-                              if (isSel) {
-                                if (!_selectedFriendPhones.contains(phone)) {
-                                  _selectedFriendPhones.add(phone);
-                                }
-                              } else {
-                                _selectedFriendPhones.remove(phone);
-                              }
-                              if ((_selectedGroupId ?? '').isEmpty) {
-                                _cachedFriendSelection =
-                                    List<String>.from(_selectedFriendPhones);
-                              }
-                            });
-                          },
-                          groups: _groups,
-                          selectedGroupId: _selectedGroupId,
-                          onGroup: (value) => _onGroupChanged(value),
-                          onAddFriend: _openAddFriend,
-                          onCreateGroup: _openCreateGroup,
-                          noteCtrl: _noteCtrl,
-                          isActive: _step == 1,
-                          labels: _labels,
-                          selectedLabel: _selectedLabel,
-                          onLabelSelect: (v) => setState(() {
-                            _selectedLabel = v;
-                            if (v != null) {
-                              _labelCtrl.clear();
+                              lastDate: DateTime(2100));
+                          if (d != null) setState(() => _date = d);
+                        },
+                        noteCtrl: _noteCtrl,
+                        counterpartyCtrl: _counterpartyCtrl,
+                        onNext: _next,
+                        saving: _saving,
+                        bankRefText: _bankRefText,
+                        showBankReference: _showBankReference,
+                        customCategoryCtrl: _customCategoryCtrl,
+                        onCustomCategoryChanged: (v) =>
+                            setState(() => _customCategory = v),
+                        isActive: _step == 0,
+                      ),
+
+                      // STEP 1: PEOPLE (Existing Logic)
+                      PeopleSelectorStep(
+                        userPhone: widget.userPhone,
+                        payerPhone: _selectedPayerPhone,
+                        onPayer: (v) => setState(() => _selectedPayerPhone = v),
+                        friends: _friends,
+                        selectedFriends: _selectedFriendPhones,
+                        onToggleFriend: (phone, isSel) {
+                          setState(() {
+                            if (isSel) {
+                              if (!_selectedFriendPhones.contains(phone))
+                                _selectedFriendPhones.add(phone);
+                            } else {
+                              _selectedFriendPhones.remove(phone);
                             }
-                          }),
-                          labelCtrl: _labelCtrl,
-                          onNext: _next,
-                          onBack: _back,
-                          saving: _saving,
-                        ),
-                        _StepReview(
-                          amount: _amountCtrl.text.trim(),
-                          category: (_category == 'Other' &&
-                                  _customCategory.trim().isNotEmpty)
-                              ? _customCategory.trim()
-                              : _category,
-                          date: _date,
-                          personalNote: _noteCtrl.text.trim(),
-                          bankRef:
-                              _showBankReference ? _bankRefText.trim() : '',
-                          payerName: _selectedPayerPhone != null
-                              ? _nameForPhone(_selectedPayerPhone!)
-                              : '',
-                          splitNames: (_selectedGroupId ?? '').isNotEmpty
-                              ? const []
-                              : _selectedFriendPhones
-                                  .map(_nameForPhone)
-                                  .toList(),
-                          label: _labelCtrl.text.trim().isNotEmpty
-                              ? _labelCtrl.text.trim()
-                              : (_selectedLabel ?? ''),
-                          groupName: _groupNameForId(_selectedGroupId),
-                          onBack: _back,
-                          onSave: _save,
-                          saving: _saving,
-                        ),
-                      ],
-                    ),
+                          });
+                        },
+                        groups: _groups,
+                        selectedGroupId: _selectedGroupId,
+                        onGroup: (value) => _onGroupChanged(value),
+                        onAddFriend: _openAddFriend,
+                        onCreateGroup: _openCreateGroup,
+                        noteCtrl: _noteCtrl,
+                        isActive: _step == 1,
+                        labels: _labels,
+                        selectedLabel: _selectedLabel,
+                        onLabelSelect: (v) => setState(() {
+                          _selectedLabel = v;
+                          if (v != null) _labelCtrl.clear();
+                        }),
+                        labelCtrl: _labelCtrl,
+                        onNext: _next,
+                        onBack: _back,
+                        saving: _saving,
+                        showButtons: false,
+                      ),
+
+                      // STEP 2: REVIEW (Existing Logic)
+                      _StepReview(
+                        amount: _amountCtrl.text.trim(),
+                        category: (_category == 'Other' &&
+                                _customCategory.trim().isNotEmpty)
+                            ? _customCategory.trim()
+                            : _category,
+                        date: _date,
+                        personalNote: _noteCtrl.text.trim(),
+                        bankRef: _showBankReference ? _bankRefText.trim() : '',
+                        payerName: _selectedPayerPhone != null
+                            ? _nameForPhone(_selectedPayerPhone!)
+                            : '',
+                        splitNames: (_selectedGroupId ?? '').isNotEmpty
+                            ? const []
+                            : _selectedFriendPhones.map(_nameForPhone).toList(),
+                        label: _labelCtrl.text.trim().isNotEmpty
+                            ? _labelCtrl.text.trim()
+                            : (_selectedLabel ?? ''),
+                        groupName: _groupNameForId(_selectedGroupId),
+                        onBack: _back,
+                        onSave: _save,
+                        saving: _saving,
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
+
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _saving ? null : _next,
+        backgroundColor: kPrimary,
+        label: Text(_step == 2 ? "Save" : "Next",
+            style: const TextStyle(fontWeight: FontWeight.bold)),
+        icon: Icon(_step == 2 ? Icons.check : Icons.navigate_next),
+      ),
     );
   }
 }
@@ -729,6 +748,7 @@ const Map<String, _CatMeta> _kCatMeta = {
 };
 
 class _StepBasics extends StatelessWidget {
+  // (Keep all original final fields exactly same to match arguments)
   final TextEditingController amountCtrl;
   final String category;
   final List<String> categories;
@@ -749,6 +769,7 @@ class _StepBasics extends StatelessWidget {
   final bool isActive;
 
   const _StepBasics({
+    super.key,
     required this.amountCtrl,
     required this.category,
     required this.categories,
@@ -769,191 +790,230 @@ class _StepBasics extends StatelessWidget {
     required this.onSubcategory,
   });
 
+  // Helper for Icons
+  IconData _getIcon(String cat) {
+    switch (cat) {
+      case 'Food & Drink':
+        return Icons.fastfood_rounded;
+      case 'Shopping':
+        return Icons.shopping_bag_rounded;
+      case 'Housing':
+        return Icons.home_rounded;
+      case 'Transportation':
+        return Icons.directions_bus_rounded;
+      case 'Vehicle':
+        return Icons.directions_car_rounded;
+      case 'Entertainment':
+        return Icons.movie_filter_rounded;
+      case 'Health & Personal':
+        return Icons.medical_services_rounded;
+      case 'Education':
+        return Icons.school_rounded;
+      case 'Bills & Utilities':
+        return Icons.receipt_long_rounded;
+      case 'Investments':
+        return Icons.trending_up_rounded;
+      case 'Taxes & Fees':
+        return Icons.account_balance_rounded;
+      case 'Travel':
+        return Icons.flight_takeoff_rounded;
+      case 'General':
+        return Icons.category_rounded;
+      default:
+        return Icons.category_rounded;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    const kPrimary = Color(0xFF6C63FF);
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _H2('Amount'),
-          const SizedBox(height: 8),
-          _AmountField(controller: amountCtrl, enabled: !saving),
-          const SizedBox(height: 18),
-          const _H2('Category'),
-          const SizedBox(height: 8),
-          _Box(
-            child: DropdownButtonFormField<String>(
-              initialValue: categories.contains(category)
-                  ? category
-                  : (categories.contains('Others')
-                      ? 'Others'
-                      : categories.firstOrNull),
-              isExpanded: true,
-              decoration: _inputDec(),
-              items: categories.map((c) {
-                final meta =
-                    _kCatMeta[c] ?? _kCatMeta['Other'] ?? _kCatMeta['Others']!;
-                return DropdownMenuItem<String>(
-                  value: c,
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 10,
-                        backgroundColor: meta.color,
-                        child: Icon(meta.icon, size: 14, color: Colors.white),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(c,
-                          style: const TextStyle(fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                );
-              }).toList(),
-              onChanged: saving
-                  ? null
-                  : (value) {
-                      if (value != null) {
-                        onCategory(value);
-                      }
-                    },
-            ),
-          ),
-          if (subcategories.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _Box(
-              child: DropdownButtonFormField<String>(
-                initialValue: subcategory,
-                isExpanded: true,
-                decoration: _inputDec().copyWith(labelText: 'Subcategory'),
-                items: () {
-                  final unique = <String>{};
-                  if (subcategory != null && subcategory!.isNotEmpty) {
-                    unique.add(subcategory!);
-                  }
-                  unique.addAll(subcategories);
-                  return unique.map((s) {
-                    return DropdownMenuItem<String>(
-                      value: s,
-                      child: Text(s,
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
-                    );
-                  }).toList();
-                }(),
-                onChanged: saving
-                    ? null
-                    : (value) {
-                        if (value != null) {
-                          onSubcategory(value);
-                        }
-                      },
-              ),
-            ),
-          ],
-          if (category == 'Other') ...[
-            const SizedBox(height: 10),
-            _Box(
-              child: TextField(
-                controller: customCategoryCtrl,
-                enabled: !saving,
-                decoration: _inputDec().copyWith(
-                  hintText: 'Custom category (optional)…',
-                  prefixIcon: const Icon(Icons.edit_rounded, color: kPrimary),
-                ),
-                onChanged: saving ? null : onCustomCategoryChanged,
-              ),
-            ),
-          ],
-          const SizedBox(height: 18),
-          const _H2('Date'),
-          const SizedBox(height: 8),
-          _Box(
-            child: ListTile(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              leading:
-                  const Icon(Icons.calendar_today_rounded, color: kPrimary),
-              title: Text(
-                "${date.toLocal()}".split(' ')[0],
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              trailing: TextButton(
-                onPressed: onPickDate,
-                child: const Text('Change'),
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          const _H2('Details'),
-          const SizedBox(height: 8),
-          _Box(
-            child: TextField(
-              controller: counterpartyCtrl,
-              enabled: !saving,
-              decoration: _inputDec().copyWith(
-                labelText: 'Paid to (opt)',
-                hintText: 'Merchant/Person name…',
-                prefixIcon:
-                    const Icon(Icons.storefront_rounded, color: kPrimary),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (isActive)
-            _Box(
-              child: TextField(
-                controller: noteCtrl,
-                maxLines: 2,
-                enabled: !saving,
-                decoration: _inputDec().copyWith(
-                  labelText: 'Note (opt)',
-                  hintText: 'For yourself…',
-                ),
-              ),
-            )
-          else
-            _Box(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  noteCtrl.text.isNotEmpty ? noteCtrl.text : '—',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+          // Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("Edit details",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              Text("1/3",
                   style: TextStyle(
-                      color: noteCtrl.text.isNotEmpty ? kText : kSubtle),
-                ),
-              ),
+                      color: Colors.grey[400], fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          const Text("Amount & Category",
+              style: TextStyle(
+                  fontWeight: FontWeight.w600, color: Colors.black87)),
+          const SizedBox(height: 16),
+
+          // 1. Outline Amount Field
+          TextField(
+            controller: amountCtrl,
+            enabled: !saving,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.currency_rupee_rounded,
+                  size: 20, color: Colors.black54),
+              hintText: "Amount",
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE0E0E0))),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE0E0E0))),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: kPrimary)),
             ),
-          if (showBankReference && bankRefText.trim().isNotEmpty) ...[
-            const SizedBox(height: 14),
-            const _H2('Bank reference'),
-            const SizedBox(height: 6),
-            _Box(
-              child: Theme(
-                data: Theme.of(context)
-                    .copyWith(dividerColor: Colors.transparent),
-                child: ExpansionTile(
-                  tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-                  title: const Text(
-                    'Show bank reference',
-                    style:
-                        TextStyle(fontWeight: FontWeight.w700, color: kSubtle),
-                  ),
+          ),
+          const SizedBox(height: 16),
+
+          // 2. Category Dropdown (Visual)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFFE0E0E0)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Icon(_getIcon(category), size: 20, color: Colors.black87),
+                const SizedBox(width: 12),
+                Text(category,
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w500)),
+                const Spacer(),
+                const Icon(Icons.arrow_drop_down, color: Colors.black54),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // 3. Category Chips
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: categories.map((cat) {
+              final isSelected = category == cat;
+              // Define the Purple color
+              const kPrimary = Color(0xFF6C63FF);
+
+              return ChoiceChip(
+                showCheckmark: false,
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                      child: SelectableText(
-                        bankRefText.trim(),
-                        style: const TextStyle(color: kText),
+                    Icon(
+                      _getIcon(cat),
+                      size: 18,
+                      color: isSelected ? Colors.white : Colors.black87,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      cat,
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : Colors.black87,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
                       ),
                     ),
                   ],
                 ),
+                selected: isSelected,
+                onSelected: saving
+                    ? null
+                    : (val) {
+                        if (val) onCategory(cat);
+                      },
+                // CHANGE: Use Purple instead of Black
+                selectedColor: kPrimary,
+                backgroundColor: Colors.white,
+                shape: StadiumBorder(
+                    side: BorderSide(color: Colors.grey.shade300)),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              );
+            }).toList(),
+          ),
+
+          // 4. Subcategories & Extra Fields (Preserved functionality)
+          if (subcategories.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: subcategory,
+              items: subcategories
+                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                  .toList(),
+              onChanged: saving
+                  ? null
+                  : (v) {
+                      if (v != null) onSubcategory(v);
+                    },
+              decoration: InputDecoration(
+                labelText: "Subcategory",
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ],
-          const SizedBox(height: 28),
-          _PrimaryButton(text: 'Next', onPressed: saving ? null : onNext),
+
+          if (category == 'Other') ...[
+            const SizedBox(height: 16),
+            TextField(
+              controller: customCategoryCtrl,
+              enabled: !saving,
+              decoration: InputDecoration(
+                labelText: "Custom Category Name",
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onChanged: onCustomCategoryChanged,
+            )
+          ],
+
+          const SizedBox(height: 20),
+          // Date Picker Row
+          InkWell(
+            onTap: onPickDate,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(12)),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_today_rounded,
+                      size: 20, color: kPrimary),
+                  const SizedBox(width: 12),
+                  Text("${date.toLocal()}".split(' ')[0],
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  const Text("Change",
+                      style: TextStyle(
+                          color: kPrimary, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ),
+
+          // Note Field
+          const SizedBox(height: 16),
+          TextField(
+            controller: noteCtrl,
+            enabled: !saving,
+            decoration: InputDecoration(
+              labelText: "Note (Optional)",
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
         ],
       ),
     );
@@ -1033,20 +1093,6 @@ class _StepReview extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(height: 28),
-          Row(
-            children: [
-              _GhostButton(text: 'Back', onPressed: saving ? null : onBack),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _PrimaryButton(
-                  text: 'Save Changes',
-                  onPressed: saving ? null : onSave,
-                  loading: saving,
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );
@@ -1268,7 +1314,7 @@ class _ReviewCard extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         child: Column(
           children: rows
-              .map((kv) => Padding(
+              .map((_KV kv) => Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Row(
                       children: [
