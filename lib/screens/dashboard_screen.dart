@@ -1877,17 +1877,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                           );
                         },
                       ),
-                      // Gemini-style AI Chat Icon
+                      // NEW Animated Gemini-style Icon
                       Padding(
                         padding: const EdgeInsets.only(right: 4),
-                        child: IconButton(
-                          tooltip: 'Fiinny AI',
-                          icon: const Icon(
-                            Icons.chat_bubble_outline_rounded,
-                            color: Fx.mintDark,
-                            size: 24,
-                          ),
-                          onPressed: () {
+                        child: _GeminiAiIcon(
+                          onTap: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -2538,6 +2532,74 @@ class _AnimatedMintBackground extends StatelessWidget {
               center: Alignment.topLeft,
               radius: 0.8 + 0.4 * v,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GeminiAiIcon extends StatefulWidget {
+  final VoidCallback onTap;
+  const _GeminiAiIcon({required this.onTap});
+
+  @override
+  State<_GeminiAiIcon> createState() => _GeminiAiIconState();
+}
+
+class _GeminiAiIconState extends State<_GeminiAiIcon>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Fiinny AI',
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(50),
+        child: Container(
+          padding: const EdgeInsets.all(10), // Touch target padding
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              return ShaderMask(
+                blendMode: BlendMode.srcIn,
+                shaderCallback: (bounds) {
+                  return LinearGradient(
+                    colors: const [
+                      Color(0xFF1E88E5), // Blue
+                      Color(0xFF8E24AA), // Purple
+                      Color(0xFFE91E63), // Pink
+                      Color(0xFF1E88E5), // Loop back to Blue
+                    ],
+                    // Rotate the gradient to create the "alive" shimmering effect
+                    transform:
+                        GradientRotation(_controller.value * 2 * 3.14159),
+                  ).createShader(bounds);
+                },
+                child: const Icon(
+                  Icons.auto_awesome, // The "Gemini" style sparkle
+                  size: 26,
+                  color: Colors.white, // Base color for mask
+                ),
+              );
+            },
           ),
         ),
       ),

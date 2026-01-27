@@ -215,18 +215,12 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
       appBar: AppBar(
         title: Row(
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: Fx.mintDark,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.psychology_rounded,
-                  color: Colors.white, size: 20),
+            const _GeminiSparkle(size: 28),
+            const SizedBox(width: 10),
+            const Text(
+              "Fiinny AI",
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
-            const SizedBox(width: 12),
-            const Text('Fiinny AI'),
           ],
         ),
         actions: [
@@ -389,14 +383,18 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
         children: [
           if (!isUser) ...[
             Container(
-              width: 32,
-              height: 32,
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Fx.mintDark,
-                borderRadius: BorderRadius.circular(16),
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFFE0E0E0)),
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 4)
+                ],
               ),
-              child: const Icon(Icons.psychology_rounded,
-                  color: Colors.white, size: 18),
+              child: const _GeminiSparkle(size: 20), // Smaller animated sparkle
             ),
             const SizedBox(width: 8),
           ],
@@ -560,6 +558,62 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _GeminiSparkle extends StatefulWidget {
+  final double size;
+  const _GeminiSparkle({this.size = 28});
+
+  @override
+  State<_GeminiSparkle> createState() => _GeminiSparkleState();
+}
+
+class _GeminiSparkleState extends State<_GeminiSparkle>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) {
+            return LinearGradient(
+              colors: const [
+                Color(0xFF1E88E5), // Blue
+                Color(0xFF8E24AA), // Purple
+                Color(0xFFE91E63), // Pink
+                Color(0xFF1E88E5), // Loop back
+              ],
+              transform: GradientRotation(_controller.value * 2 * 3.14159),
+            ).createShader(bounds);
+          },
+          child: Icon(
+            Icons.auto_awesome,
+            size: widget.size,
+            color: Colors.white,
+          ),
+        );
+      },
     );
   }
 }
