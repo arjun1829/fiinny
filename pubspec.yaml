@@ -1,7 +1,7 @@
 name: lifemap
 description: A premium personal finance & social app (2025)
 publish_to: "none"
-version: 1.0.5+8686
+version: 1.0.6+8687
 
 environment:
   sdk: ">=3.2.0 <4.0.0"
@@ -63,7 +63,7 @@ dependencies:
   # telephony: ^0.2.0
 
   # ML / OCR
-  google_mlkit_entity_extraction: ^0.13.0
+
   file_picker: ^10.3.8
   firebase_messaging: ^16.1.0
 

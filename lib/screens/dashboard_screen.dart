@@ -24,9 +24,9 @@ import '../widgets/smart_insights_card.dart';
 import '../widgets/insight_feed_card.dart';
 import '../widgets/smart_nudge_widget.dart';
 import '../widgets/crisis_alert_banner.dart';
-import '../widgets/loans_summary_card.dart';
+
 import '../widgets/critical_alert_banner.dart';
-import '../widgets/assets_summary_card.dart';
+
 import '../widgets/tx_filter_bar.dart';
 import '../widgets/dashboard/bank_overview_dialog.dart';
 import '../widgets/hero_transaction_ring.dart';
@@ -35,12 +35,11 @@ import '../widgets/dashboard/bank_cards_carousel.dart';
 import '../models/activity_event.dart';
 import '../widgets/transaction_count_card.dart';
 import '../widgets/transaction_amount_card.dart';
-import '../widgets/goals_summary_card.dart';
-import '../widgets/add_goal_dialog.dart';
+
 import '../themes/tokens.dart';
-import '../widgets/net_worth_panel.dart';
+
 import '../core/formatters/inr.dart';
-import 'loans_screen.dart';
+
 import '../core/ads/ads_banner_card.dart';
 import '../core/ui/snackbar_throttle.dart';
 import '../widgets/empty_state_card.dart';
@@ -61,7 +60,6 @@ import '../services/subscription_service.dart'; // ✅ NEW
 import '../services/subscriptions/subscription_notifier.dart';
 
 import '../brain/loan_detection_service.dart';
-import '../widgets/loan_suggestions_sheet.dart';
 
 import 'fiinny_brain_chat_screen.dart';
 
@@ -138,7 +136,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   final _assetSvc = AssetService();
 
   final _loanDetector = LoanDetectionService();
-  int _loanSuggestionsCount = 0;
+
   // _scanningLoans removed
   // _ringShineController removed
   // _ringShineVisible removed
@@ -336,8 +334,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     try {
       await _loanDetector.scanAndWrite(widget.userPhone, daysWindow: 360);
-      _loanSuggestionsCount =
-          await _loanDetector.pendingCount(widget.userPhone);
+      await _loanDetector.pendingCount(widget.userPhone);
+
       if (mounted) {
         setState(() {});
       }
@@ -1369,8 +1367,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     // 🔎 NEW: refresh "new loan detected" badge count
     try {
-      _loanSuggestionsCount =
-          await _loanDetector.pendingCount(widget.userPhone);
+      await _loanDetector.pendingCount(widget.userPhone);
     } catch (e) {
       debugPrint('[Dashboard] loan suggestions count error: $e');
     }
@@ -2323,150 +2320,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildLoansTile() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final card = LoansSummaryCard(
-          userId: widget.userPhone,
-          loanCount: loanCount,
-          totalLoan: totalLoan,
-          pendingSuggestions: _loanSuggestionsCount,
-          onTap: () async {
-            final changed = await Navigator.of(context).push<bool>(
-              MaterialPageRoute(
-                builder: (_) => LoansScreen(userId: widget.userPhone),
-              ),
-            );
-            if (changed == true) {
-              await _initDashboard();
-            }
-          },
-          onReviewSuggestions: () async {
-            if (!mounted) {
-              return;
-            }
-            // setState(() => _scanningLoans = true);
-            try {
-              await _loanDetector.scanAndWrite(widget.userPhone,
-                  daysWindow: 360);
-              _loanSuggestionsCount =
-                  await _loanDetector.pendingCount(widget.userPhone);
-            } finally {
-              // if (mounted) {
-              //   setState(() => _scanningLoans = false);
-              // }
-            }
-
-            if (!context.mounted) return;
-
-            await showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              builder: (_) => SizedBox(
-                height: MediaQuery.of(context).size.height * 0.70,
-                child: LoanSuggestionsSheet(userId: widget.userPhone),
-              ),
-            );
-
-            _loanSuggestionsCount =
-                await _loanDetector.pendingCount(widget.userPhone);
-            final ls = await LoanService().countOpenLoans(widget.userPhone);
-            final sum = await LoanService().sumOutstanding(widget.userPhone);
-            if (mounted) {
-              setState(() {
-                loanCount = ls;
-                totalLoan = sum;
-              });
-            }
-          },
-          onAddLoan: () async {
-            final added = await Navigator.pushNamed<bool>(
-              context,
-              '/addLoan',
-              arguments: widget.userPhone,
-            );
-            if (added == true) {
-              await _initDashboard();
-            }
-          },
-        );
-        if (constraints.maxHeight.isFinite) {
-          return SizedBox.expand(child: card);
-        }
-        return card;
-      },
-    );
-  }
-
-  Widget _buildAssetsTile() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final card = Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () async {
-              await Navigator.pushNamed(context, '/portfolio');
-              await _loadPortfolioTotals();
-            },
-            child: AssetsSummaryCard(
-              userId: widget.userPhone,
-              assetCount: assetCount,
-              totalAssets: totalAssets,
-              onAddAsset: () async {
-                await Navigator.pushNamed(context, '/asset-type-picker');
-                await _loadPortfolioTotals();
-              },
-            ),
-          ),
-        );
-        if (constraints.maxHeight.isFinite) {
-          return SizedBox.expand(child: card);
-        }
-        return card;
-      },
-    );
-  }
-
   // _wrapRingWithShine removed
-
-  Widget _buildGoalsTile() {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () async {
-          await Navigator.pushNamed(
-            context,
-            '/goals',
-            arguments: widget.userPhone,
-          );
-          await _initDashboard();
-        },
-        child: GoalsSummaryCard(
-          userId: widget.userPhone,
-          goalCount: goals.length,
-          totalGoalAmount:
-              goals.fold<double>(0.0, (prev, g) => prev + g.targetAmount),
-          onAddGoal: () async {
-            final added = await showDialog<bool>(
-              context: context,
-              builder: (ctx) => AddGoalDialog(
-                onAdd: (goal) {
-                  GoalService().addGoal(widget.userPhone, goal);
-                },
-              ),
-            );
-            if (added == true) {
-              await _initDashboard();
-            }
-          },
-        ),
-      ),
-    );
-  }
 
   Widget _presetChip(
       BuildContext ctx, String label, num amount, TextEditingController ctrl) {

@@ -652,8 +652,9 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                         onToggleFriend: (phone, isSel) {
                           setState(() {
                             if (isSel) {
-                              if (!_selectedFriendPhones.contains(phone))
+                              if (!_selectedFriendPhones.contains(phone)) {
                                 _selectedFriendPhones.add(phone);
+                              }
                             } else {
                               _selectedFriendPhones.remove(phone);
                             }
@@ -721,31 +722,6 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 }
 
 /// --------------------- STEP 0: Basics ---------------------
-class _CatMeta {
-  final IconData icon;
-  final Color color;
-  const _CatMeta(this.icon, this.color);
-}
-
-const Map<String, _CatMeta> _kCatMeta = {
-  'General': _CatMeta(Icons.category_rounded, Color(0xFF0F766E)),
-  'Food': _CatMeta(Icons.restaurant_rounded, Color(0xFFEA580C)),
-  'Groceries': _CatMeta(Icons.local_grocery_store_rounded, Color(0xFF16A34A)),
-  'Travel': _CatMeta(Icons.flight_takeoff_rounded, Color(0xFF2563EB)),
-  'Shopping': _CatMeta(Icons.shopping_bag_rounded, Color(0xFF7C3AED)),
-  'Bills': _CatMeta(Icons.receipt_long_rounded, Color(0xFF374151)),
-  'Entertainment': _CatMeta(Icons.movie_filter_rounded, Color(0xFFDB2777)),
-  'Health': _CatMeta(Icons.medical_services_rounded, Color(0xFF059669)),
-  'Fuel': _CatMeta(Icons.local_gas_station_rounded, Color(0xFFCA8A04)),
-  'Subscriptions': _CatMeta(Icons.subscriptions_rounded, Color(0xFF0EA5E9)),
-  'Education': _CatMeta(Icons.school_rounded, Color(0xFF0369A1)),
-  'Recharge': _CatMeta(Icons.bolt_rounded, Color(0xFFEAB308)),
-  'Loan EMI': _CatMeta(Icons.payments_rounded, Color(0xFF4F46E5)),
-  'Fees/Charges': _CatMeta(Icons.receipt_rounded, Color(0xFF6B7280)),
-  'Rent': _CatMeta(Icons.home_work_rounded, Color(0xFF6D28D9)),
-  'Utilities': _CatMeta(Icons.lightbulb_outline, Color(0xFF0891B2)),
-  'Other': _CatMeta(Icons.more_horiz_rounded, Color(0xFF64748B)),
-};
 
 class _StepBasics extends StatelessWidget {
   // (Keep all original final fields exactly same to match arguments)
@@ -769,7 +745,6 @@ class _StepBasics extends StatelessWidget {
   final bool isActive;
 
   const _StepBasics({
-    super.key,
     required this.amountCtrl,
     required this.category,
     required this.categories,
@@ -947,7 +922,7 @@ class _StepBasics extends StatelessWidget {
           if (subcategories.isNotEmpty) ...[
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: subcategory,
+              initialValue: subcategory,
               items: subcategories
                   .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                   .toList(),
@@ -1100,98 +1075,6 @@ class _StepReview extends StatelessWidget {
 }
 
 /// --------------------- Shared UI ---------------------
-class _StepperBar extends StatelessWidget {
-  final int current;
-  final int total;
-  final List<String> labels;
-  const _StepperBar(
-      {required this.current, required this.total, required this.labels});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: List.generate(total, (i) {
-            final active = i <= current;
-            return Expanded(
-              child: Container(
-                height: 6,
-                margin: EdgeInsets.only(right: i == total - 1 ? 0 : 6),
-                decoration: BoxDecoration(
-                  color: active ? kPrimary : const Color(0x22000000),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-            );
-          }),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: labels.map((t) {
-            final idx = labels.indexOf(t);
-            final active = idx == current;
-            return Expanded(
-              child: Text(
-                t,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: active ? kPrimary : kSubtle,
-                  fontWeight: active ? FontWeight.w800 : FontWeight.w600,
-                  fontSize: 12,
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-}
-
-class _AmountField extends StatelessWidget {
-  final TextEditingController controller;
-  final bool enabled;
-  const _AmountField({required this.controller, required this.enabled});
-
-  @override
-  Widget build(BuildContext context) {
-    return _Box(
-      child: TextField(
-        controller: controller,
-        enabled: enabled,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        style: const TextStyle(
-          fontSize: 24,
-          fontWeight: FontWeight.w800,
-          color: kText,
-          letterSpacing: 0.3,
-        ),
-        decoration: InputDecoration(
-          prefixText: '₹ ',
-          prefixStyle: const TextStyle(
-              fontSize: 24, fontWeight: FontWeight.w800, color: kText),
-          hintText: '0.00',
-          hintStyle: const TextStyle(
-              fontSize: 24, color: kSubtle, fontWeight: FontWeight.w700),
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding:
-              const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: kLine),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: kPrimary, width: 1.6),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _H2 extends StatelessWidget {
   final String t;
@@ -1202,79 +1085,6 @@ class _H2 extends StatelessWidget {
       t,
       style: const TextStyle(
           color: kText, fontWeight: FontWeight.w800, fontSize: 16),
-    );
-  }
-}
-
-class _Box extends StatelessWidget {
-  final Widget child;
-  const _Box({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: kLine),
-        boxShadow: const [
-          BoxShadow(
-              color: Color(0x0F000000), blurRadius: 10, offset: Offset(0, 4))
-        ],
-      ),
-      child: child,
-    );
-  }
-}
-
-class _PrimaryButton extends StatelessWidget {
-  final String text;
-  final VoidCallback? onPressed;
-  final bool loading;
-  const _PrimaryButton(
-      {required this.text, required this.onPressed, this.loading = false});
-  @override
-  Widget build(BuildContext context) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: kPrimary,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        elevation: 2,
-      ),
-      child: loading
-          ? const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-              ),
-            )
-          : Text(text,
-              style:
-                  const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800)),
-    );
-  }
-}
-
-class _GhostButton extends StatelessWidget {
-  final String text;
-  final VoidCallback? onPressed;
-  const _GhostButton({required this.text, required this.onPressed});
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        side: const BorderSide(color: kLine),
-        foregroundColor: kText,
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-      child: Text(text, style: const TextStyle(fontWeight: FontWeight.w800)),
     );
   }
 }
@@ -1347,20 +1157,4 @@ class _KV {
   final String k;
   final String v;
   const _KV(this.k, this.v);
-}
-
-InputDecoration _inputDec() {
-  final base = OutlineInputBorder(
-    borderRadius: BorderRadius.circular(12),
-    borderSide: const BorderSide(color: kLine, width: 1),
-  );
-  return InputDecoration(
-    filled: true,
-    fillColor: Colors.white,
-    hintStyle: const TextStyle(color: kSubtle),
-    contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-    enabledBorder: base,
-    focusedBorder: base.copyWith(
-        borderSide: const BorderSide(color: kPrimary, width: 1.4)),
-  );
 }

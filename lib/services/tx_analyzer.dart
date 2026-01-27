@@ -28,16 +28,14 @@
 
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:flutter/foundation.dart' show kIsWeb;
 
 // ML Kit is optional. If you don't want it, set enableMlKit=false in config.
 // On web, ML Kit won't run; we automatically fall back to regex.
-import 'package:google_mlkit_entity_extraction/google_mlkit_entity_extraction.dart';
 
 /// High-level output you’ll use in your pipelines.
 class TxAnalysis {
-  final TxParseResult parse;     // extracted amount/date/merchant refs
-  final CategoryGuess category;  // chosen category + confidence + reasons
+  final TxParseResult parse; // extracted amount/date/merchant refs
+  final CategoryGuess category; // chosen category + confidence + reasons
   const TxAnalysis({required this.parse, required this.category});
 }
 
@@ -45,13 +43,13 @@ class TxAnalysis {
 class TxParseResult {
   final double? amount;
   final DateTime? when;
-  final String? merchant;              // best canonical merchant picked
-  final List<String> merchantAliases;  // raw candidates we spotted
+  final String? merchant; // best canonical merchant picked
+  final List<String> merchantAliases; // raw candidates we spotted
   final bool isDebit;
   final bool isUPI;
   final bool isP2M;
-  final String raw;                    // normalized text
-  final String? reference;             // UPI ref / txn id if we saw one
+  final String raw; // normalized text
+  final String? reference; // UPI ref / txn id if we saw one
 
   const TxParseResult({
     required this.amount,
@@ -92,9 +90,9 @@ class TxParseResult {
 
 /// Final category + confidence + explanation
 class CategoryGuess {
-  final String category;              // e.g., "Entertainment/Movies"
-  final double confidence;            // 0..1
-  final Map<String, double> reasons;  // {signalName: weight}
+  final String category; // e.g., "Entertainment/Movies"
+  final double confidence; // 0..1
+  final Map<String, double> reasons; // {signalName: weight}
   const CategoryGuess(this.category, this.confidence, this.reasons);
 }
 
@@ -102,15 +100,13 @@ class CategoryGuess {
 class ChannelHint {
   final bool isDebit; // true=debit, false=credit
   final bool isUPI;
-  final bool isP2M;   // UPI to merchant
-  const ChannelHint({required this.isDebit, this.isUPI = false, this.isP2M = false});
+  final bool isP2M; // UPI to merchant
+  const ChannelHint(
+      {required this.isDebit, this.isUPI = false, this.isP2M = false});
 }
 
 /// Analyzer configuration
 class TxAnalyzerConfig {
-  /// Turn ML Kit based entity extraction on/off. (Web doesn’t support MLKit.)
-  final bool enableMlKit;
-
   /// Minimum confidence to consider “auto-approved” (unused for now).
   final double autoApproveThreshold;
 
@@ -125,7 +121,8 @@ class TxAnalyzerConfig {
 
   // ✅ non-const ctor; use initializer for defaults
   TxAnalyzerConfig({
-    this.enableMlKit = true,
+    // this.enableMlKit = true, // Removed ML Kit
+
     this.autoApproveThreshold = 0.90, // bumped from 0.75
     this.minHighPrecisionConf = 0.88, // bumped from 0.82
     List<RegExp>? negativePhrases,
@@ -134,20 +131,23 @@ class TxAnalyzerConfig {
 
   // default negative phrases (not const; RegExp isn’t const-constructible)
   static final List<RegExp> _kDefaultNegativePhrases = <RegExp>[
-    RegExp(r'\bAVAILABLE (?:CREDIT|LIMIT|BAL(?:ANCE)?)\b', caseSensitive: false),
+    RegExp(r'\bAVAILABLE (?:CREDIT|LIMIT|BAL(?:ANCE)?)\b',
+        caseSensitive: false),
     RegExp(r'\bOTP\b', caseSensitive: false),
     RegExp(r'\bKYC\b', caseSensitive: false),
   ];
 
   TxAnalyzerConfig copyWith({
-    bool? enableMlKit,
+    // bool? enableMlKit, // Removed ML Kit
+
     double? autoApproveThreshold,
     double? minHighPrecisionConf,
     List<RegExp>? negativePhrases,
     Map<String, String>? userOverrides,
   }) {
     return TxAnalyzerConfig(
-      enableMlKit: enableMlKit ?? this.enableMlKit,
+      // enableMlKit: enableMlKit ?? this.enableMlKit, // Removed ML Kit
+
       autoApproveThreshold: autoApproveThreshold ?? this.autoApproveThreshold,
       minHighPrecisionConf: minHighPrecisionConf ?? this.minHighPrecisionConf,
       negativePhrases: negativePhrases ?? this.negativePhrases,
@@ -188,7 +188,8 @@ class TxAnalyzer {
     }
 
     // 2) Apply user overrides (merchant->category)
-    final overrideCat = _matchUserOverride(extracted.merchant, extracted.merchantAliases);
+    final overrideCat =
+        _matchUserOverride(extracted.merchant, extracted.merchantAliases);
     if (overrideCat != null) {
       final guess = _finalizeCategory(
         overrideCat,
@@ -214,7 +215,8 @@ class TxAnalyzer {
     String? emailDomain,
     ChannelHint? channel,
   }) async {
-    final res = await analyze(rawText: rawText, emailDomain: emailDomain, channel: channel);
+    final res = await analyze(
+        rawText: rawText, emailDomain: emailDomain, channel: channel);
     return res.category;
   }
 
@@ -233,32 +235,8 @@ class TxAnalyzer {
     final bool isDebit = _looksLikeDebit(norm);
 
     // A) ML Kit (optional)
-    // A) ML Kit (optional)
-    if (_cfg.enableMlKit && !kIsWeb) {
-      try {
-        final extractor = EntityExtractor(language: EntityExtractorLanguage.english);
-        final annotations = await extractor.annotateText(norm);
-        await extractor.close();
-
-        for (final ann in annotations) {
-          for (final ent in ann.entities) {
-            switch (ent.type) {
-              case EntityType.money:
-                amount ??= _pickBestAmount(ann.text) ?? amount;
-                break;
-              case EntityType.dateTime:
-                when ??= _parseDateLoose(ann.text) ?? when;
-                break;
-              default:
-                break;
-            }
-          }
-        }
-      } catch (_) {
-        // ignore ML Kit errors; regex fallback below handles it
-      }
-    }
-
+    // A) ML Kit (removed due to dependency incompatibility)
+    // if (_cfg.enableMlKit && !kIsWeb) { ... }
 
     // B) Regex fallback/extras
     amount ??= _findAmount(norm);
@@ -321,7 +299,8 @@ class TxAnalyzer {
     if (category == null && emailDomain != null) {
       final domCat = _emailDomainCategory(emailDomain.toUpperCase());
       if (domCat != null) {
-        category = domCat; reasons['domain'] = 0.80;
+        category = domCat;
+        reasons['domain'] = 0.80;
       }
     }
 
@@ -329,14 +308,16 @@ class TxAnalyzer {
     if (category == null) {
       final kwCat = _keywordCategory(text);
       if (kwCat != null) {
-        category = kwCat; reasons['keyword'] = 0.60;
+        category = kwCat;
+        reasons['keyword'] = 0.60;
       }
     }
 
     // 4) Channel hints
     if (category == null) {
       if (parse.isUPI && parse.isP2M && parse.isDebit) {
-        category = 'Merchants/UPI'; reasons['channel'] = 0.45;
+        category = 'Merchants/UPI';
+        reasons['channel'] = 0.45;
       } else if (parse.isUPI && !parse.isP2M) {
         category = parse.isDebit ? 'Transfers/Sent' : 'Transfers/Received';
         reasons['channel'] = 0.45;
@@ -352,15 +333,17 @@ class TxAnalyzer {
     category ??= fallbackCategory(parse.isDebit);
 
     // Confidence fusion & calibration
-    final highPrecision = reasons.keys.any((k) => k == 'merchant' || k == 'domain');
-    return _finalizeCategory(category, reasons: reasons, highPrecision: highPrecision);
+    final highPrecision =
+        reasons.keys.any((k) => k == 'merchant' || k == 'domain');
+    return _finalizeCategory(category,
+        reasons: reasons, highPrecision: highPrecision);
   }
 
   CategoryGuess _finalizeCategory(
-      String category, {
-        required Map<String, double> reasons,
-        required bool highPrecision,
-      }) {
+    String category, {
+    required Map<String, double> reasons,
+    required bool highPrecision,
+  }) {
     // Confidence fusion: 1 - Π(1 - w_i)
     double fused = 0.0;
     if (reasons.isNotEmpty) {
@@ -389,7 +372,8 @@ class TxAnalyzer {
 
   // Canonical merchant dictionary (expand as you see data)
   static final Map<RegExp, String> _merchantCanonical = {
-    RegExp(r'\b(BIGTREE|BOOK\s*MY\s*SHOW|BMS|BOOKMYSHOW)\b', caseSensitive: false): 'BOOKMYSHOW',
+    RegExp(r'\b(BIGTREE|BOOK\s*MY\s*SHOW|BMS|BOOKMYSHOW)\b',
+        caseSensitive: false): 'BOOKMYSHOW',
     RegExp(r'\b(SWIGGY)\b', caseSensitive: false): 'SWIGGY',
     RegExp(r'\b(ZOMATO)\b', caseSensitive: false): 'ZOMATO',
     RegExp(r'\b(OLA|UBER|RAPIDO)\b', caseSensitive: false): 'RIDEHAIL',
@@ -398,10 +382,13 @@ class TxAnalyzer {
     RegExp(r'\b(AJIO)\b', caseSensitive: false): 'AJIO',
     RegExp(r'\b(NYKAA)\b', caseSensitive: false): 'NYKAA',
     RegExp(r'\b(MYNTRA)\b', caseSensitive: false): 'MYNTRA',
-    RegExp(r'\b(HPCL|BPCL|IOCL|BHARAT\s*PET|INDIAN\s*OIL)\b', caseSensitive: false): 'FUEL',
+    RegExp(r'\b(HPCL|BPCL|IOCL|BHARAT\s*PET|INDIAN\s*OIL)\b',
+        caseSensitive: false): 'FUEL',
     RegExp(r'\b(VI|AIRTEL|JIO)\b', caseSensitive: false): 'TELCO',
-    RegExp(r'\b(MEDPLUS|APOLLO\s*PHARM|NETMEDS|PHAR(E)?ASY)\b', caseSensitive: false): 'PHARMA',
-    RegExp(r'\b(DMART|RELIANCE\s*SMART|BIG\s*BAZAR|MORE\s*SUPERMARKET)\b', caseSensitive: false): 'GROCERY',
+    RegExp(r'\b(MEDPLUS|APOLLO\s*PHARM|NETMEDS|PHAR(E)?ASY)\b',
+        caseSensitive: false): 'PHARMA',
+    RegExp(r'\b(DMART|RELIANCE\s*SMART|BIG\s*BAZAR|MORE\s*SUPERMARKET)\b',
+        caseSensitive: false): 'GROCERY',
   };
 
   // Merchant -> Category map
@@ -423,11 +410,16 @@ class TxAnalyzer {
 
   // Keywords -> Category (fallbacks)
   static final Map<RegExp, String> _keywordToCategory = {
-    RegExp(r'\bMOVIE|CINEMA|TICKET|BMS\b', caseSensitive: false): 'Entertainment/Movies',
-    RegExp(r'\bFOOD|MEAL|DINNER|LUNCH|RESTAURANT|ORDER\b', caseSensitive: false): 'Food & Dining',
-    RegExp(r'\bFUEL|PETROL|DIESEL|GAS STATION\b', caseSensitive: false): 'Transport/Fuel',
-    RegExp(r'\bRECHARGE|DATA|PREPAID|POSTPAID|BILL\b', caseSensitive: false): 'Utilities/Mobile',
-    RegExp(r'\bMEDICINE|PHARMACY|CHEMIST\b', caseSensitive: false): 'Health/Pharmacy',
+    RegExp(r'\bMOVIE|CINEMA|TICKET|BMS\b', caseSensitive: false):
+        'Entertainment/Movies',
+    RegExp(r'\bFOOD|MEAL|DINNER|LUNCH|RESTAURANT|ORDER\b',
+        caseSensitive: false): 'Food & Dining',
+    RegExp(r'\bFUEL|PETROL|DIESEL|GAS STATION\b', caseSensitive: false):
+        'Transport/Fuel',
+    RegExp(r'\bRECHARGE|DATA|PREPAID|POSTPAID|BILL\b', caseSensitive: false):
+        'Utilities/Mobile',
+    RegExp(r'\bMEDICINE|PHARMACY|CHEMIST\b', caseSensitive: false):
+        'Health/Pharmacy',
     RegExp(r'\bUBER|OLA|RAPIDO|CAB\b', caseSensitive: false): 'Transport/Cabs',
     RegExp(r'\bGROCERY|SUPERMARKET|DMART\b', caseSensitive: false): 'Groceries',
   };
@@ -579,7 +571,8 @@ class TxAnalyzer {
     final rxs = <RegExp>[
       RegExp(
           r'\b([0-3]?\d)[-/]([01]?\d)[-/]((?:20)?\d{2})(?:[, ]+([0-2]?\d:[0-5]\d(?::[0-5]\d)?))?'),
-      RegExp(r'\b(20\d{2})-([01]\d)-([0-3]\d)(?:[ T]([0-2]?\d:[0-5]\d(?::[0-5]\d)?))?'),
+      RegExp(
+          r'\b(20\d{2})-([01]\d)-([0-3]\d)(?:[ T]([0-2]?\d:[0-5]\d(?::[0-5]\d)?))?'),
     ];
     for (final rx in rxs) {
       final m = rx.firstMatch(text);
@@ -593,8 +586,8 @@ class TxAnalyzer {
             final t = m.group(4);
             if (t != null) {
               final parts = t.split(':').map(int.parse).toList();
-              return DateTime(
-                  y, mo, d, parts[0], parts[1], parts.length > 2 ? parts[2] : 0);
+              return DateTime(y, mo, d, parts[0], parts[1],
+                  parts.length > 2 ? parts[2] : 0);
             }
             return DateTime(y, mo, d);
           } else {
@@ -604,8 +597,8 @@ class TxAnalyzer {
             final t = m.group(4);
             if (t != null) {
               final parts = t.split(':').map(int.parse).toList();
-              return DateTime(
-                  y, mo, d, parts[0], parts[1], parts.length > 2 ? parts[2] : 0);
+              return DateTime(y, mo, d, parts[0], parts[1],
+                  parts.length > 2 ? parts[2] : 0);
             }
             return DateTime(y, mo, d);
           }
@@ -613,15 +606,6 @@ class TxAnalyzer {
       }
     }
     return null;
-  }
-
-  DateTime? _parseDateLoose(String snippet) {
-    // Last-chance parse on MLKit’s date text, using the same regexes
-    return _findDate(_norm(snippet));
-  }
-
-  double? _pickBestAmount(String snippet) {
-    return _findAmount(_norm(snippet));
   }
 
   String fallbackCategory(bool isDebit) =>
