@@ -626,6 +626,20 @@ class GmailPureParser {
 
     dueDate = parseDateAfter([RegExp(r'DUE\s*DATE'), RegExp(r'PAY\s*BY')]);
 
+    // Statement Period Extraction
+    DateTime? stmtStart;
+    DateTime? stmtEnd;
+
+    // Pattern: "Statement Period: 12/01/2023 to 11/02/2023" or "Billing Cycle: ..."
+    final periodRx = RegExp(
+        r'(?:Statement\s*Period|Billing\s*Cycle)\s*[:\-]?\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s*[A-Za-z]{3}\s*\d{2,4})\s*(?:to|-)\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s*[A-Za-z]{3}\s*\d{2,4})',
+        caseSensitive: false);
+    final pMatch = periodRx.firstMatch(text);
+    if (pMatch != null) {
+      stmtStart = parseLooseDate(pMatch.group(1) ?? '');
+      stmtEnd = parseLooseDate(pMatch.group(2) ?? '');
+    }
+
     if (totalDue == null && minDue == null) {
       return null;
     }
@@ -633,7 +647,9 @@ class GmailPureParser {
     return {
       'totalDue': totalDue,
       'minDue': minDue,
-      'dueDate': dueDate?.toIso8601String(), // Store as ISO string in Map
+      'dueDate': dueDate?.toIso8601String(),
+      'statementStart': stmtStart?.toIso8601String(),
+      'statementEnd': stmtEnd?.toIso8601String(),
     };
   }
 
@@ -945,7 +961,7 @@ class GmailPureParser {
         RegExp(r'\b(auto[-\s]?debit|autopay|nach|e-?mandate|mandate)\b')
             .hasMatch(cleaned);
     final debit =
-        RegExp(r'\b(debit(?:ed)?|spent|purchase|paid|payment|pos|upi(?:\s*payment)?|imps|neft|rtgs|withdrawn|withdrawal|atm|charge[ds]?|recharge(?:d)?|bill\s*paid)\b',
+        RegExp(r'\b(debit(?:ed)?|spent|purchase|paid|payment|pos|upi(?:\s*payment)?|imps|neft|rtgs|withdrawn|withdrawal|atm|charge[ds]?|recharge(?:d)?|bill\s*paid|transaction|txn)\b',
                     caseSensitive: false)
                 .hasMatch(cleaned) ||
             hasAutopay;
@@ -960,7 +976,7 @@ class GmailPureParser {
       return 'credit';
     }
     final dIdx =
-        RegExp(r'debit|spent|purchase|paid|payment|dr|auto[-\s]?debit|autopay|nach|mandate',
+        RegExp(r'debit|spent|purchase|paid|payment|dr|auto[-\s]?debit|autopay|nach|mandate|transaction|txn',
                     caseSensitive: false)
                 .firstMatch(cleaned)
                 ?.start ??

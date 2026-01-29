@@ -141,6 +141,12 @@ class LoanModel {
   final bool isClosed;
   final DateTime? createdAt;
 
+  // State Tracking
+  final double? outstandingPrincipal;
+  final DateTime? balanceUpdatedAt;
+  final double? totalPaid; // Principal + Interest paid so far
+  final int? emIsPaidCount;
+
   // Document links
   final String? sanctionLetterUrl;
 
@@ -175,6 +181,10 @@ class LoanModel {
     this.sanctionLetterUrl,
     this.isClosed = false,
     this.createdAt,
+    this.outstandingPrincipal,
+    this.balanceUpdatedAt,
+    this.totalPaid,
+    this.emIsPaidCount,
   });
 
   // ---------------------------- Parsing helpers ----------------------------
@@ -259,6 +269,10 @@ class LoanModel {
       sanctionLetterUrl: _asStringN(json['sanctionLetterUrl']),
       isClosed: (json['isClosed'] as bool?) ?? false,
       createdAt: _asDate(json['createdAt']),
+      outstandingPrincipal: _asDoubleN(json['outstandingPrincipal']),
+      balanceUpdatedAt: _asDate(json['balanceUpdatedAt']),
+      totalPaid: _asDoubleN(json['totalPaid']),
+      emIsPaidCount: _asIntN(json['emIsPaidCount']),
     );
   }
 
@@ -323,6 +337,12 @@ class LoanModel {
       if (sanctionLetterUrl != null) 'sanctionLetterUrl': sanctionLetterUrl,
       'isClosed': isClosed,
       if (createdAt != null) 'createdAt': formatDate(createdAt),
+      if (outstandingPrincipal != null)
+        'outstandingPrincipal': outstandingPrincipal,
+      if (balanceUpdatedAt != null)
+        'balanceUpdatedAt': formatDate(balanceUpdatedAt),
+      if (totalPaid != null) 'totalPaid': totalPaid,
+      if (emIsPaidCount != null) 'emIsPaidCount': emIsPaidCount,
     };
   }
 
@@ -351,8 +371,7 @@ class LoanModel {
   }
 
   /// Returns the safe day-of-month clamped to 1..28 (avoids month-end bugs).
-  int? get safePaymentDay =>
-      paymentDayOfMonth?.clamp(1, 28);
+  int? get safePaymentDay => paymentDayOfMonth?.clamp(1, 28);
 
   /// Compute next payment date using [paymentDayOfMonth] (clamped) and [dueDate].
   /// - If closed => null
@@ -493,6 +512,10 @@ class LoanModel {
       sanctionLetterUrl: sanctionLetterUrl ?? this.sanctionLetterUrl,
       isClosed: isClosed ?? this.isClosed,
       createdAt: createdAt ?? this.createdAt,
+      outstandingPrincipal: outstandingPrincipal ?? this.outstandingPrincipal,
+      balanceUpdatedAt: balanceUpdatedAt ?? this.balanceUpdatedAt,
+      totalPaid: totalPaid ?? this.totalPaid,
+      emIsPaidCount: emIsPaidCount ?? this.emIsPaidCount,
     );
   }
 

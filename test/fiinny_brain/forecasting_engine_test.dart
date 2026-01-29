@@ -13,13 +13,34 @@ void main() {
       double expenseTotal = 8000.0,
     }) {
       return FiinnyUserSnapshot(
-        incomeSummary: IncomeSummary(total: income, salaryIncome: income, otherIncome: 0, transactionCount: 1),
-        expenseSummary: ExpenseSummary(total: expenseTotal, transferAmount: 0, transactionCount: 1, transferCount: 0),
-        transactionInsights: const TransactionInsights(categoryBreakdown: {}, totalTransactions: 1, incomeTransactions: 1, expenseTransactions: 0, transferTransactions: 0),
-        patterns: const PatternSummary(subscriptions: [], highSpendCategories: [], categorySpendPercentage: {}),
-        behavior: BehaviorMetrics(savingsRate: savingsRate, expenseToIncomeRatio: 100 - savingsRate, riskFlags: []),
-        goals: const GoalStatusSummary(goals: [], totalGoals: 0, onTrackGoals: 0, offTrackGoals: 0),
+        incomeSummary: IncomeSummary(
+            total: income,
+            salaryIncome: income,
+            otherIncome: 0,
+            transactionCount: 1),
+        expenseSummary: ExpenseSummary(
+            total: expenseTotal,
+            transferAmount: 0,
+            transactionCount: 1,
+            transferCount: 0),
+        transactionInsights: const TransactionInsights(
+            categoryBreakdown: {},
+            totalTransactions: 1,
+            incomeTransactions: 1,
+            expenseTransactions: 0,
+            transferTransactions: 0),
+        patterns: const PatternSummary(
+            subscriptions: [],
+            highSpendCategories: [],
+            categorySpendPercentage: {}),
+        behavior: BehaviorMetrics(
+            savingsRate: savingsRate,
+            expenseToIncomeRatio: 100 - savingsRate,
+            riskFlags: []),
+        goals: const GoalStatusSummary(
+            goals: [], totalGoals: 0, onTrackGoals: 0, offTrackGoals: 0),
         splits: SplitStatusSummary.empty(),
+        entityState: EntityState.empty(),
         generatedAt: DateTime.now(),
         progress: PhaseOneProgress.current(),
       );
@@ -59,7 +80,8 @@ void main() {
       final report = ForecastingEngine.projectTimeline(snapshot, 10000);
 
       expect(report.scenarios['likely'], 5.0);
-      expect(report.scenarios['best'], lessThanOrEqualTo(5.0)); // 10% better savings, might round to 5
+      expect(report.scenarios['best'],
+          lessThanOrEqualTo(5.0)); // 10% better savings, might round to 5
       expect(report.scenarios['worst'], greaterThan(5.0)); // 10% worse savings
     });
 
@@ -68,14 +90,18 @@ void main() {
       final report = ForecastingEngine.projectTimeline(snapshot, 10000);
 
       expect(report.assumptions, isNotEmpty);
-      expect(report.assumptions.any((a) => a.contains('Income remains constant')), true);
+      expect(
+          report.assumptions.any((a) => a.contains('Income remains constant')),
+          true);
     });
 
     test('Projects emergency fund correctly', () {
       // Monthly expense 8000, 6 months = 48000 target
       // Savings 2000/month = 24 months
-      final snapshot = createSnapshot(income: 10000, savingsRate: 20.0, expenseTotal: 8000);
-      final report = ForecastingEngine.projectEmergencyFund(snapshot, months: 6);
+      final snapshot =
+          createSnapshot(income: 10000, savingsRate: 20.0, expenseTotal: 8000);
+      final report =
+          ForecastingEngine.projectEmergencyFund(snapshot, months: 6);
 
       expect(report.monthsToTarget, 24);
     });

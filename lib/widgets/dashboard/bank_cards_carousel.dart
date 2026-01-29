@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../models/expense_item.dart';
 import '../../models/income_item.dart';
+import '../../models/bank_account_model.dart';
+import '../../models/credit_card_model.dart';
 import '../../themes/tokens.dart';
 import 'bank_card_item.dart';
 
@@ -13,6 +15,10 @@ class BankCardsCarousel extends StatefulWidget {
   final String? selectedBankSlug;
   final VoidCallback? onViewAll;
 
+  // Phase 4: Real Models
+  final List<BankAccountModel>? bankAccounts;
+  final List<CreditCardModel>? creditCards;
+
   const BankCardsCarousel({
     super.key,
     required this.expenses,
@@ -22,6 +28,8 @@ class BankCardsCarousel extends StatefulWidget {
     this.onCardSelected,
     this.selectedBankSlug,
     this.onViewAll,
+    this.bankAccounts,
+    this.creditCards,
   });
 
   static String slugBankStatic(String bankName) {
@@ -53,16 +61,20 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
   void _processGroups() {
     final map = <String, _BankGroup>{};
 
-    void add(
-        {required double amount,
-        required bool isDebit,
-        String? bank,
-        String? type,
-        String? last4,
-        String? network}) {
+    void add({
+      required double amount,
+      required bool isDebit,
+      String? bank,
+      String? type,
+      String? last4,
+      String? network,
+      double? balance,
+      String? balanceLabel,
+    }) {
       if (bank == null || bank.trim().isEmpty) return;
       final bankKey = _slugBank(bank);
 
+      // Create or get group
       final group = map.putIfAbsent(
           bankKey,
           () => _BankGroup(
@@ -70,19 +82,63 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
                 cardType: type ?? 'Card',
                 last4: last4 ?? 'XXXX',
                 logoAsset: _bankLogoAsset(bank, network: network),
+                balance: balance,
+                balanceLabel: balanceLabel,
               ));
 
-      if (isDebit) {
-        group.stats.totalDebit += amount;
-        group.stats.debitCount++;
-      } else {
-        group.stats.totalCredit += amount;
-        group.stats.creditCount++;
+      // Update balance info if not already set (e.g. if we encountered model first)
+      if (group.balance == null && balance != null) {
+        group.balance = balance;
+        group.balanceLabel = balanceLabel;
       }
-      group.stats.totalTxCount++;
-      group.stats.totalAmount += amount;
+
+      if (amount > 0) {
+        if (isDebit) {
+          group.stats.totalDebit += amount;
+          group.stats.debitCount++;
+        } else {
+          group.stats.totalCredit += amount;
+          group.stats.creditCount++;
+        }
+        group.stats.totalTxCount++;
+        group.stats.totalAmount += amount;
+      }
     }
 
+    // 1. Process Real Bank Accounts
+    if (widget.bankAccounts != null) {
+      for (var acc in widget.bankAccounts!) {
+        // acc is BankAccountModel (dynamic access or cast)
+        // assuming dynamic access for now to avoid extensive imports/casting issues if types missing
+        add(
+          amount: 0,
+          isDebit: false,
+          bank: acc.bankName,
+          type: "Bank Account",
+          last4: acc.last4Digits,
+          balance: acc.currentBalance,
+          balanceLabel: "Available",
+        );
+      }
+    }
+
+    // 2. Process Real Credit Cards
+    if (widget.creditCards != null) {
+      for (var card in widget.creditCards!) {
+        // card is CreditCardModel
+        add(
+          amount: 0,
+          isDebit: false,
+          bank: card.bankName,
+          type: "Credit Card",
+          last4: card.last4Digits,
+          balance: card.currentBalance, // This is usually outstanding
+          balanceLabel: "Outstanding",
+        );
+      }
+    }
+
+    // 3. Process Transactions (for history stats)
     for (var e in widget.expenses) {
       add(
         amount: e.amount,
@@ -257,6 +313,8 @@ class _BankCardsCarouselState extends State<BankCardsCarousel> {
                   holderName: widget.userName,
                   colorTheme: themes[index % themes.length],
                   logoAsset: group.logoAsset,
+                  currentBalance: group.balance,
+                  balanceLabel: group.balanceLabel,
                   stats: BankStats(
                     totalDebit: group.stats.totalDebit,
                     totalCredit: group.stats.totalCredit,
@@ -293,10 +351,16 @@ class _BankGroup {
   final String? logoAsset;
   final _BankGroupStats stats = _BankGroupStats();
 
+  // Phase 4 State
+  double? balance;
+  String? balanceLabel;
+
   _BankGroup({
     required this.bankName,
     required this.cardType,
     required this.last4,
     this.logoAsset,
+    this.balance,
+    this.balanceLabel,
   });
 }

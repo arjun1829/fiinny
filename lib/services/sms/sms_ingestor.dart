@@ -1,9 +1,10 @@
 // lib/services/sms/sms_ingestor.dart
 import 'dart:collection';
+import 'sms_permission_helper.dart';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb, kDebugMode;
-// import 'package:telephony/telephony.dart';
+import 'package:telephony/telephony.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:workmanager/workmanager.dart' as wm;
 
@@ -16,6 +17,7 @@ import '../credit_card_service.dart'; // added
 import '../enrich/counterparty_extractor.dart';
 
 import '../ingest/enrichment_service.dart';
+import '../ingest/entity_resolution_service.dart';
 import '../../logic/loan_detection_parser.dart';
 import '../../brain/loan_detection_service.dart';
 
@@ -24,13 +26,16 @@ import '../ingest_filters.dart'; // guessBankFromSms (permissive) + helpers
 import '../tx_key.dart';
 import '../ingest_state_service.dart';
 import '../ingest_job_queue.dart';
+import '../fiinny_brain_service.dart';
+import '../../services/recurring/recurring_engine.dart';
 
-import '../recurring/recurring_engine.dart';
+import '../account_state_service.dart'; // Corrected Path (relative to lib/services/sms/) -> wait, sms parent is services, so ../account_state_service.dart
 
 // Fuzzy cross-source reconciliation (SMS ↔ Gmail, etc.)
 import '../ingest/cross_source_reconcile.dart';
 // Merchant alias normalization (collapse gateway descriptors)
 import '../merchants/merchant_alias_service.dart';
+import '../../services/classification/transaction_classifier.dart'; // Corrected path
 
 import '../../core/ingestion/connectors/android_sms_connector.dart';
 import '../../core/config/region_profile.dart';
@@ -485,27 +490,58 @@ class SmsIngestor {
     }
   }
 
+  // ── Balance Extraction Helpers ──
+
+  double? _extractBalance(String text) {
+    // Matches: "Avail Bal: Rs 12,345.00" or "Avl Bal INR 500"
+    final regex = RegExp(
+      r'(?:avl|avble|available)\.?\s*(?:bal|balance|limit)?\s*[:\-]?\s*(?:inr|rs\.?|₹)?\s*([\d,]+\.?\d{0,2})',
+      caseSensitive: false,
+    );
+    final match = regex.firstMatch(text);
+    if (match != null && match.groupCount >= 1) {
+      final raw = match.group(1)!.replaceAll(',', '');
+      return double.tryParse(raw);
+    }
+    return null;
+  }
+
+  double? _extractOutstanding(String text) {
+    // Matches: "Outstanding: Rs 12,000" or "Total Due: 500"
+    final regex = RegExp(
+      r'(?:outstanding|total\s*due|amount\s*due|curr\s*out)\s*[:\-]?\s*(?:inr|rs\.?|₹)?\s*([\d,]+\.?\d{0,2})',
+      caseSensitive: false,
+    );
+    final match = regex.firstMatch(text);
+    if (match != null && match.groupCount >= 1) {
+      final raw = match.group(1)!.replaceAll(',', '');
+      return double.tryParse(raw);
+    }
+    return null;
+  }
+
   // debug logs
   // debug logs
   void _log(String s) {
     if (kDebugMode) print('[SmsIngestor] $s');
   }
 
-  // Telephony? _telephony;
+  Telephony? _telephony;
   final ExpenseService _expense = ExpenseService();
   final IncomeService _income = IncomeService();
   final IngestIndexService _index = IngestIndexService();
   final CreditCardService _creditCardService = CreditCardService();
   final LoanDetectionService _loanDetectionService = LoanDetectionService();
+  final AccountStateService _accountState = AccountStateService.instance;
   String? _scheduledTaskId;
 
   bool get _isAndroid =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
-  // Telephony? _ensureTelephony() {
-  //   if (!_isAndroid) return null;
-  //   return _telephony ??= Telephony.instance;
-  // }
+  Telephony? _ensureTelephony() {
+    if (!_isAndroid) return null;
+    return _telephony ??= Telephony.instance;
+  }
 
   // Recent event guard (OEMs sometimes double-fire callbacks)
   static const int _recentCap = 400;
@@ -536,9 +572,9 @@ class SmsIngestor {
     required String userPhone,
     int days = testBackfillDays,
   }) async {
-    _log('SMS backfill DISABLED (telephony removed for iOS build fixes)');
-    return;
-    /*
+    // _log('SMS backfill DISABLED (telephony removed for iOS build fixes)');
+    // return;
+
     if (!_isAndroid) {
       _log('skip SMS backfill (not Android)');
       return;
@@ -566,19 +602,20 @@ class SmsIngestor {
     int processed = 0;
     DateTime? newest;
     for (final m in msgs) {
-      if (processed >= TEST_MAX_MSGBATCH) break;
-      
+      if (processed >= testMaxMsgbatch) break;
+
       final ts = DateTime.fromMillisecondsSinceEpoch(
         m.date ?? now.millisecondsSinceEpoch,
       );
       if (ts.isBefore(since)) break;
 
       final body = m.body ?? '';
-      if (_looksLikeOtpOnly(body))
-        continue; // drop pure OTPs, allow everything else
+      if (_looksLikeOtpOnly(body)) {
+        continue;
+      }
 
       try {
-        await _handleOne(
+        await handleOne(
           userPhone: userPhone,
           body: body,
           ts: ts,
@@ -597,7 +634,6 @@ class SmsIngestor {
           .setProgress(userPhone, lastSmsTs: newest);
     }
     _log('backfill done: processed=$processed newest=$newest');
-    */
   }
 
   Future<void> _maybeAttachToCardBillPayment({
@@ -662,17 +698,17 @@ class SmsIngestor {
     required String userPhone,
     int newerThanDays = initialHistoryDays,
   }) async {
-    _log('SMS initial backfill DISABLED');
-    return;
-    /*
+    // _log('SMS initial backfill DISABLED');
+    // return;
+
     if (!_isAndroid) {
       _log('skip SMS backfill (not Android)');
       return;
     }
-    if (TEST_MODE) {
+    if (testMode) {
       return backfillLastNDaysForTesting(
         userPhone: userPhone,
-        days: TEST_BACKFILL_DAYS,
+        days: testBackfillDays,
       );
     }
 
@@ -688,13 +724,13 @@ class SmsIngestor {
     int daysBack;
     if (st.lastSmsAt == null) {
       // First time SMS ingest → heavy backfill
-      daysBack = MAX_BACKFILL_DAYS;
+      daysBack = maxBackfillDays;
     } else {
       final gapDays = now.difference(st.lastSmsAt!).inDays;
-      daysBack = gapDays > LONG_GAP_DAYS ? MAX_BACKFILL_DAYS : newerThanDays;
+      daysBack = gapDays > longGapDays ? maxBackfillDays : newerThanDays;
     }
 
-    final effectiveDays = daysBack.clamp(1, MAX_BACKFILL_DAYS);
+    final effectiveDays = daysBack.clamp(1, maxBackfillDays);
     final cutoff = now.subtract(Duration(days: effectiveDays));
 
     final msgs = await telephony.getInboxSms(
@@ -709,7 +745,7 @@ class SmsIngestor {
       );
       if (ts.isBefore(cutoff)) break;
 
-      await _handleOne(
+      await handleOne(
         userPhone: userPhone,
         body: m.body ?? '',
         ts: ts,
@@ -726,13 +762,12 @@ class SmsIngestor {
         lastSmsTs: lastSeen,
       );
     }
-    */
   }
 
   Future<void> startRealtime({required String userPhone}) async {
-    _log('SMS realtime listener DISABLED');
-    return;
-    /*
+    // _log('SMS realtime listener DISABLED');
+    // return;
+
     if (!_isAndroid) return;
     final granted = await SmsPermissionHelper.hasPermissions();
     if (!granted) return;
@@ -749,10 +784,10 @@ class SmsIngestor {
           );
           final localKey =
               '${ts.millisecondsSinceEpoch}|${(m.address ?? '')}|${body.hashCode}';
-          if (_seenRecently(localKey)) return;
+          if (seenRecently(localKey)) return;
 
           final st = await IngestStateService.instance.get(userPhone);
-          await _handleOne(
+          await handleOne(
             userPhone: userPhone,
             body: body,
             ts: ts,
@@ -768,7 +803,6 @@ class SmsIngestor {
     } catch (_) {
       // some OEMs restrict background listeners
     }
-    */
   }
 
   Future<void> scheduleDaily48hSync(String userPhone) async {
@@ -1034,6 +1068,26 @@ class SmsIngestor {
       );
     }
 
+    // --- ACCOUNT STATE UPDATES (Balance/Outstanding) ---
+    final bal = _extractBalance(body);
+    if (bal != null && bank != null && last4 != null) {
+      _accountState.updateBankBalance(
+          userId: userPhone, bankName: bank, last4: last4, balance: bal);
+    }
+
+    final outst = _extractOutstanding(body);
+    if (outst != null && (bank != null || last4 != null)) {
+      if (instrument == 'Credit Card' ||
+          network != null ||
+          _isCreditCard(body)) {
+        _accountState.updateCreditCardState(
+            userId: userPhone,
+            bankName: bank ?? 'UNKNOWN',
+            last4: last4 ?? 'XXXX',
+            currentOutstanding: outst);
+      }
+    }
+
     // Card bill detection (statement/due) → write a bill_reminder (not an expense)
     if (bill != null) {
       final total =
@@ -1140,6 +1194,65 @@ class SmsIngestor {
             _extractAmountInr(body))
         : null;
     final postBal = _extractPostTxnBalance(body);
+
+    // --- Entity Resolution & State Update (Phase 5) ---
+    // Update the "Truth" (Account State) before processing the transaction.
+    if (bank != null && last4 != null) {
+      // Heuristic: Is this a credit card?
+      // _isCard check relies on instrument.
+      if ((instrument != null && _isCard(instrument) && _isCreditCard(body))) {
+        double? availLimit;
+        double? outstanding;
+        double? totalDue;
+        DateTime? dueDate;
+
+        // Basic balance interpretation for CC
+        if (postBal != null) {
+          final bl = body.toLowerCase();
+          if (bl.contains('lmt') ||
+              bl.contains('limit') ||
+              bl.contains('avail')) {
+            availLimit = postBal;
+          } else if (bl.contains('out') || bl.contains('due')) {
+            outstanding = postBal;
+          }
+        }
+
+        // Also check for "Total Due" specific patterns if needed, but postBal usually grabs the main currency amount found.
+
+        try {
+          await EntityResolutionService().resolveCreditCard(
+            userId: userPhone,
+            bankName: bank,
+            last4: last4,
+            cardType: 'Credit Card',
+            availableLimit: availLimit,
+            currentBalance: outstanding,
+            totalDue: totalDue,
+            dueDate: dueDate,
+          );
+        } catch (e) {
+          _log('[EntityResolution] Error resolving CC: $e');
+        }
+      } else {
+        // Assume Bank Account (Debit Card, UPI, etc.)
+        // If it's a Credit, postBal is new balance.
+        // If Debit, postBal is remaining balance.
+        // Unless it's a CC bill payment? In that case "bank" might be the paying bank.
+        try {
+          await EntityResolutionService().resolveBankAccount(
+            userId: userPhone,
+            bankName: bank,
+            last4: last4,
+            currentBalance: postBal,
+          );
+        } catch (e) {
+          _log('[EntityResolution] Error resolving Bank: $e');
+        }
+      }
+    }
+    // ----------------------------------------------------
+
     _log(
         'parsed amount=${amountInr ?? -1} postBalance=${postBal ?? -1} dir=$direction');
     final amount = amountInr ?? fx?['amount'] as double?;
@@ -1215,8 +1328,8 @@ class SmsIngestor {
 
     merchantNorm = enriched.merchantName;
     merchantKey = merchantNorm.toUpperCase();
-    final finalCategory = enriched.category;
-    final finalSubcategory = enriched.subcategory;
+    var finalCategory = enriched.category;
+    var finalSubcategory = enriched.subcategory;
     final finalConfidence = enriched.confidence;
     final categorySource = enriched.source;
     final labelSet = enriched.tags.toSet();
@@ -1229,13 +1342,50 @@ class SmsIngestor {
         ? CounterpartyExtractor.extractForDebit(body)
         : CounterpartyExtractor.extractForCredit(body);
 
-    final counterpartyType = _deriveCounterpartyType(
+    var counterpartyType = _deriveCounterpartyType(
       merchantNorm: merchantNorm,
       upiVpa: upiVpa,
       instrument: instrument,
       direction: direction,
       extracted: extractedCounterparty,
     );
+
+    // --- TRANSACTION CLASSIFICATION ---
+    final txClass = TransactionClassifier.classify(
+      text: body,
+      type: direction,
+      sender: address,
+      counterparty: merchantNorm,
+    );
+    if (txClass == TransactionClass.repayment) {
+      finalCategory = 'Financial';
+      finalSubcategory = 'Repayment';
+      labelSet.add('repayment');
+      if (!labelSet.contains('financial_payment')) {
+        labelSet.add('financial_payment');
+      }
+    } else if (txClass == TransactionClass.transferSelf) {
+      finalCategory = 'Transfer';
+      finalSubcategory = 'Self';
+      labelSet.add('self_transfer');
+      counterpartyType = 'SELF';
+    }
+
+    // --- LOAN STATE TRACKING ---
+    // Update loan balance or suggest new loan if this looks like a repayment
+    if (finalSubcategory == 'Loan Repayment' ||
+        labelSet.contains('repayment')) {
+      await LoanDetectionService().checkLoanTransaction(userPhone, {
+        'amount': amount,
+        'merchant': merchantNorm,
+        'description': body,
+        'category': finalCategory,
+        'subcategory': finalSubcategory,
+        'note': body,
+        'date': Timestamp.fromDate(ts),
+      });
+    }
+    // ---------------------------
 
     // Source record with enrichment
     final sourceMeta = {
@@ -1488,6 +1638,8 @@ class SmsIngestor {
         note: note,
         date: ts,
         source: 'SMS',
+        category: finalCategory, // Added
+        subcategory: finalSubcategory, // Added
         issuerBank: bank,
         instrument: instrument,
         instrumentNetwork: network,
@@ -1800,7 +1952,7 @@ class SmsIngestor {
 
     // Note: NO plain 'recharge' here (to avoid ads). 'recharged' is okay but will be gated by evidence.
     final debit = RegExp(
-      r'\b(debit(?:ed)?|spent|purchase|paid|payment|pos|upi(?:\s*payment)?|imps|neft|rtgs|withdrawn|withdrawal|atm|charge[ds]?|recharged|bill\s*paid|auto[-\s]?debit|autopay|nach|e-?mandate|mandate)\b',
+      r'\b(debit(?:ed)?|spent|purchase|paid|payment|pos|upi(?:\s*payment)?|imps|neft|rtgs|withdrawn|withdrawal|atm|charge[ds]?|recharged|bill\s*paid|auto[-\s]?debit|autopay|nach|e-?mandate|mandate|transaction|txn)\b',
       caseSensitive: false,
     ).hasMatch(lower);
 
@@ -1816,7 +1968,7 @@ class SmsIngestor {
     if ((credit || isCR) && !(debit || isDR)) return 'credit';
 
     final dIdx =
-        RegExp(r'debit|spent|purchase|paid|payment|dr|auto[-\s]?debit|autopay|nach|mandate|recharged',
+        RegExp(r'debit|spent|purchase|paid|payment|dr|auto[-\s]?debit|autopay|nach|mandate|recharged|transaction|txn',
                     caseSensitive: false)
                 .firstMatch(lower)
                 ?.start ??

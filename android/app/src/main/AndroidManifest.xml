@@ -50,7 +50,7 @@
 
         <!-- 🚫 RAZORPAY FIX: Remove the autoVerify intent-filter that causes Play Console Errors -->
         <activity android:name="com.razorpay.DeeplinkActivity" android:exported="true" tools:node="merge">
-            <intent-filter tools:node="remove" />
+            <intent-filter tools:node="removeAll" />
         </activity>
 
         <!-- ✅ Telephony plugin receiver for realtime SMS ingest -->

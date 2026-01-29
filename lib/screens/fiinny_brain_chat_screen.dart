@@ -5,13 +5,19 @@ import '../models/ai_message.dart';
 
 import '../services/ai/ai_chat_service.dart';
 
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/subscription_service.dart';
 import 'premium/upgrade_screen.dart';
 import '../themes/tokens.dart';
+import '../fiinny_brain/fiinny_user_snapshot.dart';
+import '../fiinny_brain/services/gpt_service.dart';
+import '../services/expense_service.dart';
+import '../services/goal_service.dart';
+import '../services/bank_account_service.dart';
+import '../services/credit_card_service.dart';
+import '../services/loan_service.dart';
+import '../services/asset_service.dart';
 
 class FiinnyBrainChatScreen extends StatefulWidget {
   final String userPhone;
@@ -136,33 +142,18 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
       // Scroll to bottom
       _scrollToBottom();
 
-      // Call Cloud Function via HTTP
-      final response = await http.post(
-        Uri.parse(
-            'https://us-central1-lifemap-72b21.cloudfunctions.net/fiinnyBrainQuery'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'userPhone': widget.userPhone,
-          'query': text,
-        }),
-      );
+      // RAG Implementation
+      final snapshot = await _fetchSnapshot(widget.userPhone);
+      final history = await _chatService.getRecentMessages(
+          widget.userPhone, _currentSessionId!);
+
+      final response =
+          await GptService.chatWithContext(text, snapshot, history);
 
       if (!mounted) return;
 
-      String aiResponseText;
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        aiResponseText = data['response'] ?? "I didn't get a response.";
-      } else {
-        aiResponseText =
-            "Sorry, I encountered a server error (${response.statusCode}). Please try again.";
-      }
-
-      // Clean up markdown since mobile text widget might not render it perfectly yet
-      // Simple strip for now, or keep it if using markdown renderer later.
-      // For now, let's just strip basic Bold markdown for cleaner text
-      aiResponseText =
-          aiResponseText.replaceAll('**', '').replaceAll('### ', '');
+      final aiResponseText = response ??
+          "I'm having trouble thinking right now. Please try again.";
 
       // Send AI response to Firestore
       await _chatService.addAiResponse(
@@ -171,12 +162,74 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
       // Scroll to bottom again
       _scrollToBottom();
     } catch (e) {
-      // Send error message
+      // debugPrint('Error sending message: $e');
+      if (_currentSessionId != null) {
+        await _chatService.addAiResponse(widget.userPhone, _currentSessionId!,
+            "Something went wrong. Please try again.");
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
+    }
+  }
+
+  Future<FiinnyUserSnapshot> _fetchSnapshot(String userPhone) async {
+    final expenses = await ExpenseService().getExpenses(userPhone);
+    final goals = await GoalService().getGoals(userPhone);
+
+    // Phase 6: Unified Financial Truth (Entity Data)
+    final bankAccounts = await BankAccountService().getAccounts(userPhone);
+    final creditCards =
+        await CreditCardService().getUserCards(userPhone); // Corrected
+    final loans = await LoanService().getLoans(userPhone);
+    final assets = await AssetService().getAssets(userPhone);
+
+    return FiinnyUserSnapshot.generate(
+      transactions: [],
+      expenses: expenses,
+      goals: goals,
+      bankAccounts: bankAccounts,
+      creditCards: creditCards,
+      loans: loans,
+      assets: assets,
+    );
+  }
+
+  Future<void> _handleGenerateReport() async {
+    setState(() {
+      _isProcessing = true;
+    });
+
+    try {
+      final snapshot = await _fetchSnapshot(widget.userPhone);
+
+      // 4. Call GPT
+      final report = await GptService.generateMonthlyReport(snapshot);
+
+      if (report == null) {
+        throw Exception("Failed to generate report");
+      }
+
+      // 5. Send Analysis as AI Message
+      if (_currentSessionId != null) {
+        final message = "**Monthly Financial Health Check**\n\n"
+            "${report.analysis ?? ''}\n\n"
+            "**Priority Action:** ${report.priorityAction}\n"
+            "**Quick Wins:**\n${report.quickWins.map((w) => '- $w').join('\n')}";
+
+        await _chatService.addAiResponse(
+            widget.userPhone, _currentSessionId!, message);
+        _scrollToBottom();
+      }
+    } catch (e) {
       if (_currentSessionId != null) {
         await _chatService.addAiResponse(
           widget.userPhone,
           _currentSessionId!,
-          "I encountered an error: $e\n\nPlease check your internet connection and try again.",
+          "I couldn't generate the report right now. Please try again later.",
         );
       }
     } finally {
@@ -304,6 +357,7 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
 
   Widget _buildSuggestionChips() {
     final suggestions = [
+      'Generate Monthly Report',
       'How much do I owe?',
       'Show travel expenses',
       'Who should I remind?',
@@ -321,8 +375,12 @@ class _FiinnyBrainChatScreenState extends State<FiinnyBrainChatScreen> {
               child: ActionChip(
                 label: Text(suggestion, style: const TextStyle(fontSize: 12)),
                 onPressed: () {
-                  _controller.text = suggestion;
-                  _sendMessage();
+                  if (suggestion == 'Generate Monthly Report') {
+                    _handleGenerateReport();
+                  } else {
+                    _controller.text = suggestion;
+                    _sendMessage();
+                  }
                 },
                 backgroundColor: Fx.mint.withValues(alpha: 0.1),
               ),

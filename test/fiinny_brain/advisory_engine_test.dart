@@ -47,6 +47,7 @@ void main() {
             totalOwedToYou: totalOwedToYou,
             totalYouOwe: 0,
             friendCount: 0),
+        entityState: EntityState.empty(),
         generatedAt: DateTime.now(),
         progress: PhaseOneProgress.current(),
       );

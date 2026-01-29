@@ -3,6 +3,8 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:lifemap/models/subscription_model.dart';
 import 'package:lifemap/models/subscription_item.dart';
+import 'package:lifemap/models/expense_item.dart';
+import 'package:lifemap/brain/cadence_detector.dart';
 
 class SubscriptionService extends ChangeNotifier {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -166,5 +168,118 @@ class SubscriptionService extends ChangeNotifier {
       default:
         return last.add(const Duration(days: 30));
     }
+  }
+  // --- Auto-Discovery Logic ---
+
+  /// Scans expenses and updates 'subscription_suggestions' collection.
+  /// Returns the count of active recurring items found.
+  Future<int> runDiscovery(String userId, {int daysWindow = 180}) async {
+    try {
+      final now = DateTime.now();
+      final from = DateTime(now.year, now.month, now.day)
+          .subtract(Duration(days: daysWindow));
+
+      final all = <ExpenseItem>[];
+      DocumentSnapshot? cursor;
+      const pageSize = 250;
+
+      // Fetch all expenses in window
+      while (true) {
+        Query q = _db
+            .collection('users')
+            .doc(userId)
+            .collection('expenses')
+            .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
+            .orderBy('date')
+            .limit(pageSize);
+        if (cursor != null) {
+          q = (q).startAfterDocument(cursor);
+        }
+
+        final snap = await q.get();
+        if (snap.docs.isEmpty) break;
+
+        for (final d in snap.docs) {
+          all.add(ExpenseItem.fromFirestore(d));
+        }
+        cursor = snap.docs.last;
+      }
+
+      // Run Detection
+      final detected = CadenceDetector.detect(all);
+
+      // Persist Results
+      final suggCol = _db
+          .collection('users')
+          .doc(userId)
+          .collection('subscription_suggestions');
+
+      final WriteBatch batch = _db.batch();
+      for (final r in detected) {
+        final key =
+            '${r.name.toLowerCase()}|${(r.monthlyAmount / 10).round() * 10}';
+        final doc = suggCol.doc(key);
+        final data = {
+          'merchant': r.name,
+          'amount': r.monthlyAmount,
+          'type': r.type,
+          'nextDue': Timestamp.fromDate(r.nextDueDate),
+          'status': 'pending',
+          'updatedAt': FieldValue.serverTimestamp(),
+          'count': r.occurrences,
+          'tags': r.tags,
+        };
+        batch.set(doc, data, SetOptions(merge: true));
+      }
+
+      // Update Meta
+      batch.set(
+          _db
+              .collection('users')
+              .doc(userId)
+              .collection('meta')
+              .doc('subs_scan'),
+          {
+            'lastRunAt': FieldValue.serverTimestamp(),
+            'scannedFrom': Timestamp.fromDate(from),
+            'foundCount': detected.length,
+          },
+          SetOptions(merge: true));
+
+      await batch.commit();
+      notifyListeners();
+
+      return detected.length;
+    } catch (e) {
+      debugPrint("Error running subscription discovery: $e");
+      rethrow;
+    }
+  }
+
+  Stream<List<RecurringItem>> streamSuggestions(String userId) {
+    return _db
+        .collection('users')
+        .doc(userId)
+        .collection('subscription_suggestions')
+        .where('status',
+            isEqualTo: 'pending') // Only show active/pending suggestions
+        .snapshots()
+        .map((snap) {
+      return snap.docs.map((d) {
+        final data = d.data();
+        return RecurringItem(
+          key: d.id,
+          name: data['merchant'] ?? 'Unknown',
+          type: data['type'] ?? 'subscription',
+          monthlyAmount: (data['amount'] as num?)?.toDouble() ?? 0.0,
+          lastDate: DateTime
+              .now(), // Not stored in suggestion currently, ignored for simple display
+          nextDueDate:
+              (data['nextDue'] as Timestamp?)?.toDate() ?? DateTime.now(),
+          tags: List<String>.from(data['tags'] ?? []),
+          occurrences: data['count'] ?? 0,
+        );
+      }).toList();
+    });
   }
 }

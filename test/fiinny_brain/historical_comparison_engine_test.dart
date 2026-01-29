@@ -13,13 +13,34 @@ void main() {
       Map<String, double> categoryPct = const {},
     }) {
       return FiinnyUserSnapshot(
-        incomeSummary: const IncomeSummary(total: 10000, salaryIncome: 10000, otherIncome: 0, transactionCount: 1),
-        expenseSummary: ExpenseSummary(total: expenseTotal, transferAmount: 0, transactionCount: 1, transferCount: 0),
-        transactionInsights: const TransactionInsights(categoryBreakdown: {}, totalTransactions: 1, incomeTransactions: 1, expenseTransactions: 0, transferTransactions: 0),
-        patterns: PatternSummary(subscriptions: [], highSpendCategories: [], categorySpendPercentage: categoryPct),
-        behavior: BehaviorMetrics(savingsRate: savingsRate, expenseToIncomeRatio: 100 - savingsRate, riskFlags: []),
-        goals: const GoalStatusSummary(goals: [], totalGoals: 0, onTrackGoals: 0, offTrackGoals: 0),
+        incomeSummary: const IncomeSummary(
+            total: 10000,
+            salaryIncome: 10000,
+            otherIncome: 0,
+            transactionCount: 1),
+        expenseSummary: ExpenseSummary(
+            total: expenseTotal,
+            transferAmount: 0,
+            transactionCount: 1,
+            transferCount: 0),
+        transactionInsights: const TransactionInsights(
+            categoryBreakdown: {},
+            totalTransactions: 1,
+            incomeTransactions: 1,
+            expenseTransactions: 0,
+            transferTransactions: 0),
+        patterns: PatternSummary(
+            subscriptions: [],
+            highSpendCategories: [],
+            categorySpendPercentage: categoryPct),
+        behavior: BehaviorMetrics(
+            savingsRate: savingsRate,
+            expenseToIncomeRatio: 100 - savingsRate,
+            riskFlags: []),
+        goals: const GoalStatusSummary(
+            goals: [], totalGoals: 0, onTrackGoals: 0, offTrackGoals: 0),
         splits: SplitStatusSummary.empty(),
+        entityState: EntityState.empty(),
         generatedAt: DateTime.now(),
         progress: PhaseOneProgress.current(),
       );
@@ -39,7 +60,7 @@ void main() {
     test('Detects savings rate improvement', () {
       final previous = createSnapshot(savingsRate: 10.0);
       final current = createSnapshot(savingsRate: 20.0);
-      
+
       final report = HistoricalComparisonEngine.compare(current, previous);
 
       // 10 -> 20 = 100% improvement
@@ -49,7 +70,7 @@ void main() {
     test('Detects expense growth', () {
       final previous = createSnapshot(expenseTotal: 5000.0);
       final current = createSnapshot(expenseTotal: 6000.0);
-      
+
       final report = HistoricalComparisonEngine.compare(current, previous);
 
       // 5000 -> 6000 = 20% growth
@@ -57,9 +78,11 @@ void main() {
     });
 
     test('Identifies improving categories', () {
-      final previous = createSnapshot(categoryPct: {'Food': 30.0, 'Travel': 20.0});
-      final current = createSnapshot(categoryPct: {'Food': 20.0, 'Travel': 18.0}); // Food reduced by >5%
-      
+      final previous =
+          createSnapshot(categoryPct: {'Food': 30.0, 'Travel': 20.0});
+      final current = createSnapshot(
+          categoryPct: {'Food': 20.0, 'Travel': 18.0}); // Food reduced by >5%
+
       final report = HistoricalComparisonEngine.compare(current, previous);
 
       expect(report.improvingCategories, contains('Food'));
@@ -70,8 +93,9 @@ void main() {
 
     test('Identifies worsening categories', () {
       final previous = createSnapshot(categoryPct: {'Shopping': 10.0});
-      final current = createSnapshot(categoryPct: {'Shopping': 25.0}); // 150% increase
-      
+      final current =
+          createSnapshot(categoryPct: {'Shopping': 25.0}); // 150% increase
+
       final report = HistoricalComparisonEngine.compare(current, previous);
 
       expect(report.worseningCategories, contains('Shopping'));
@@ -79,8 +103,9 @@ void main() {
 
     test('Overall progress when savings improve and expenses controlled', () {
       final previous = createSnapshot(savingsRate: 10.0, expenseTotal: 5000.0);
-      final current = createSnapshot(savingsRate: 15.0, expenseTotal: 5100.0); // 2% expense growth
-      
+      final current = createSnapshot(
+          savingsRate: 15.0, expenseTotal: 5100.0); // 2% expense growth
+
       final report = HistoricalComparisonEngine.compare(current, previous);
 
       expect(report.isProgressingOverall, true);
@@ -88,8 +113,9 @@ void main() {
 
     test('Not progressing when expenses grow too much', () {
       final previous = createSnapshot(savingsRate: 10.0, expenseTotal: 5000.0);
-      final current = createSnapshot(savingsRate: 15.0, expenseTotal: 5500.0); // 10% expense growth
-      
+      final current = createSnapshot(
+          savingsRate: 15.0, expenseTotal: 5500.0); // 10% expense growth
+
       final report = HistoricalComparisonEngine.compare(current, previous);
 
       expect(report.isProgressingOverall, false); // Expense growth > 5%
@@ -107,7 +133,7 @@ void main() {
     test('Handles zero previous values safely', () {
       final previous = createSnapshot(savingsRate: 0.0, expenseTotal: 0.0);
       final current = createSnapshot(savingsRate: 20.0, expenseTotal: 5000.0);
-      
+
       final report = HistoricalComparisonEngine.compare(current, previous);
 
       // Should not crash, returns 0 for percent change when old value is 0
