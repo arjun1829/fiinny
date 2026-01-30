@@ -270,6 +270,6 @@ class SocialEventsWatch {
       return DateTime.fromMillisecondsSinceEpoch(ts);
     }
     if (ts is DateTime) return ts;
-    return DateTime.now();
+    return DateTime.fromMillisecondsSinceEpoch(0);
   }
 }

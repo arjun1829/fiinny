@@ -2250,8 +2250,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 return SizedBox(height: 188, child: child);
                               }
 
+                              /* // HIDDEN FOR RELEASE
                               final loansTile = wrapTile(_buildLoansTile());
                               final assetsTile = wrapTile(_buildAssetsTile());
+                              */
                               final subsTile = wrapTile(
                                   SubscriptionsSummaryCard(
                                       userId: widget.userPhone));
@@ -2260,10 +2262,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 return Column(
                                   children: [
                                     subsTile, // Inserted first for visibility
+                                    /* // HIDDEN FOR RELEASE
                                     SizedBox(height: spacing),
                                     loansTile,
                                     SizedBox(height: spacing),
                                     assetsTile,
+                                    */
                                   ],
                                 );
                               }
@@ -2278,6 +2282,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                       width:
                                           (constraints.maxWidth - spacing) / 2,
                                       child: subsTile),
+                                  /* // HIDDEN FOR RELEASE
                                   SizedBox(
                                       width:
                                           (constraints.maxWidth - spacing) / 2,
@@ -2286,11 +2291,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                                       width:
                                           (constraints.maxWidth - spacing) / 2,
                                       child: assetsTile),
+                                  */
                                 ],
                               );
                             },
                           ),
                         ),
+                        /* // HIDDEN FOR RELEASE
                         const SizedBox(height: 10),
                         Padding(
                           padding: horizontalPadding,
@@ -2302,6 +2309,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                           child: NetWorthPanel(
                               totalAssets: totalAssets, totalLoan: totalLoan),
                         ),
+                        */
+                        /* // HIDDEN FOR RELEASE
                         if (goals.isEmpty) ...[
                           const SizedBox(height: 10),
                           Padding(
@@ -2320,6 +2329,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                             ),
                           ),
                         ],
+                        */
                         if (_showFetchButton && !_isEmailLinked) ...[
                           const SizedBox(height: 12),
                           Padding(
