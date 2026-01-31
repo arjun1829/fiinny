@@ -163,13 +163,6 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
                   subtitle: 'Pings when limits are breached',
                 ),
                 _ChannelConfig(
-                  key: 'loan_watch',
-                  icon: Icons.account_balance,
-                  color: Colors.blueGrey,
-                  title: 'Loan & EMI watch',
-                  subtitle: 'Remind you of EMIs, high interest, dues',
-                ),
-                _ChannelConfig(
                   key: 'goal_milestones',
                   icon: Icons.flag_outlined,
                   color: Colors.deepPurple,

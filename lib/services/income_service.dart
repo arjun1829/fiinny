@@ -1,5 +1,5 @@
-// lib/services/income_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../models/income_item.dart';
 
 /// Top-level query spec for hybrid search (server coarse + client refine).
@@ -43,7 +43,7 @@ class IncomeService {
     final snapshot = await getIncomesCollection(userId)
         .orderBy('date', descending: true)
         .get();
-    return snapshot.docs.map((doc) => IncomeItem.fromJson(doc.data())).toList();
+    return snapshot.docs.map((doc) => IncomeItem.fromFirestore(doc)).toList();
   }
 
   // Add income
@@ -59,6 +59,7 @@ class IncomeService {
   }
 
   Future<void> deleteIncome(String userId, String incomeId) async {
+    debugPrint('IncomeService: Deleting income $incomeId for user $userId');
     await getIncomesCollection(userId).doc(incomeId).delete();
   }
 
@@ -67,7 +68,7 @@ class IncomeService {
         .orderBy('date', descending: true)
         .snapshots()
         .map((snap) =>
-            snap.docs.map((d) => IncomeItem.fromJson(d.data())).toList());
+            snap.docs.map((d) => IncomeItem.fromFirestore(d)).toList());
   }
 
   Future<List<IncomeItem>> getIncomesInDateRange(
@@ -80,7 +81,7 @@ class IncomeService {
         .where('date', isLessThan: Timestamp.fromDate(end))
         .orderBy('date', descending: true)
         .get();
-    return snap.docs.map((d) => IncomeItem.fromJson(d.data())).toList();
+    return snap.docs.map((d) => IncomeItem.fromFirestore(d)).toList();
   }
 
   // ===================== 🔎 Facets =====================
@@ -157,7 +158,7 @@ class IncomeService {
   /// Hybrid filter: server-side coarse filters + client-side text/amount refine
   Future<List<IncomeItem>> queryHybrid(String userId, IncomeQuery q) async {
     final docs = await _rawQueryDocs(userId, q);
-    final items = docs.map((d) => IncomeItem.fromJson(d.data())).toList();
+    final items = docs.map((d) => IncomeItem.fromFirestore(d)).toList();
 
     return items.where((e) {
       if (q.text != null && q.text!.trim().isNotEmpty) {

@@ -1,6 +1,10 @@
 import '../models/transaction_model.dart';
 import '../models/goal_model.dart';
 import '../models/expense_item.dart';
+import '../models/bank_account_model.dart';
+import '../models/credit_card_model.dart';
+import '../models/loan_model.dart';
+import '../models/asset_model.dart'; // Ensure this matches file check
 import 'transaction_engine.dart';
 import 'pattern_engine.dart';
 import 'behavior_engine.dart';
@@ -20,6 +24,9 @@ class FiinnyUserSnapshot {
   final GoalStatusSummary goals;
   final SplitStatusSummary splits;
 
+  // Phase 6: Unified Financial Truth
+  final EntityState entityState;
+
   final DateTime generatedAt;
   final PhaseOneProgress progress;
 
@@ -31,6 +38,7 @@ class FiinnyUserSnapshot {
     required this.behavior,
     required this.goals,
     required this.splits,
+    required this.entityState,
     required this.generatedAt,
     required this.progress,
   });
@@ -43,6 +51,7 @@ class FiinnyUserSnapshot {
         'behavior': behavior.toJson(),
         'goals': goals.toJson(),
         'splits': splits.toJson(),
+        'entityState': entityState.toJson(),
         'generatedAt': generatedAt.toIso8601String(),
         'progress': progress.progressPercentage,
       };
@@ -53,6 +62,12 @@ class FiinnyUserSnapshot {
     required List<TransactionModel> transactions,
     required List<GoalModel> goals,
     required List<ExpenseItem> expenses,
+
+    // Phase 6: Entity State Inputs (Optional for back-compat)
+    List<BankAccountModel> bankAccounts = const [],
+    List<CreditCardModel> creditCards = const [],
+    List<LoanModel> loans = const [],
+    List<AssetModel> assets = const [],
     String myUserId = 'me',
   }) {
     // ---- Transaction classification ----
@@ -68,7 +83,8 @@ class FiinnyUserSnapshot {
     for (var t in transactions) {
       final classification = TransactionEngine.analyze(t);
       // Count categories for insights
-      categoryCounts.update(classification.category, (c) => c + 1, ifAbsent: () => 1);
+      categoryCounts.update(classification.category, (c) => c + 1,
+          ifAbsent: () => 1);
 
       if (classification.isTransfer) {
         transferTotal += t.amount;
@@ -132,7 +148,8 @@ class FiinnyUserSnapshot {
       // Treat the provided list as one month for simplicity.
       monthlySavings = incomeTotal - expenseTotal;
     }
-    final goalReports = goals.map((g) => GoalEngine.checkStatus(g, monthlySavings)).toList();
+    final goalReports =
+        goals.map((g) => GoalEngine.checkStatus(g, monthlySavings)).toList();
     final goalsSummary = GoalStatusSummary(
       goals: goalReports,
       totalGoals: goalReports.length,
@@ -141,7 +158,7 @@ class FiinnyUserSnapshot {
     );
 
     final splitReport = SplitEngine.calculate(expenses, myUserId);
-    
+
     // Calculate derived split metrics
     double totalOwedToYou = 0;
     double totalYouOwe = 0;
@@ -160,18 +177,113 @@ class FiinnyUserSnapshot {
       friendCount: splitReport.netBalances.length,
     );
 
+    // ---- Phase 6: Entity State Calculation ----
+    double totalAcctBalance = 0;
+    final acctBalances = <EntityBalance>[];
+    for (var b in bankAccounts) {
+      final val = b.currentBalance ?? 0.0;
+      totalAcctBalance += val;
+      acctBalances.add(EntityBalance(
+          entityId: b.id, name: b.bankName, currentBalance: val, type: 'bank'));
+    }
+
+    double totalAssetValue = 0;
+    final assetBalances = <EntityBalance>[];
+    for (var a in assets) {
+      final val = a.value; // Corrected from currentValue
+      totalAssetValue += val;
+      assetBalances.add(EntityBalance(
+          entityId: a.id ?? 'unknown',
+          name: a.title, // Corrected from name
+          currentBalance: val,
+          type: 'asset'));
+    }
+
+    double totalLoansOutstanding = 0;
+    final loanBalances = <EntityBalance>[];
+    for (var l in loans) {
+      // Logic: For unified truth, we want Actual Outstanding > Amount.
+      // If outstandingPrincipal is tracked (from SMS/Manual update), use it.
+      // Else fallback to original amount (conservative fallback).
+      final val = l.outstandingPrincipal ?? (l.isClosed ? 0.0 : l.amount);
+      if (!l.isClosed) {
+        totalLoansOutstanding += val;
+        loanBalances.add(EntityBalance(
+            entityId: l.id ?? 'loan',
+            name: l.title,
+            currentBalance:
+                val, // Debt is stored positive here (amount you owe)
+            type: 'loan'));
+      }
+    }
+
+    double totalCCDebt = 0;
+    double totalCCLimit = 0;
+    final ccBalances = <EntityBalance>[];
+    for (var c in creditCards) {
+      // Logic: Debt is "Total Due" or "Current Outstanding Balance".
+      // Prefer currentBalance if positive (often tracked as 'Spent').
+      // Else use totalDue.
+      final val = c.currentBalance ?? c.totalDue;
+      if (val > 0) {
+        totalCCDebt += val;
+      }
+      if (c.creditLimit != null) totalCCLimit += c.creditLimit!;
+
+      ccBalances.add(EntityBalance(
+          entityId: c.id,
+          name: c.bankName,
+          currentBalance: val, // Owed
+          limit: c.creditLimit,
+          type: 'credit_card'));
+    }
+
+    // Derived Metrics
+    // Net Worth = (Cash + Assets) - (Loans + CC Debt)
+    // Note: 'totalYouOwe' from splits is informal debt, often excluded from formal Net Worth unless huge.
+    // We will exclude friend-debt for now to match 'Financial Institution' view.
+    final netWorth = (totalAcctBalance + totalAssetValue) -
+        (totalLoansOutstanding + totalCCDebt);
+
+    // Liquid Cash = Bank Accounts + Assets tagged as 'Cash' (simplified to just Bank for now)
+    final liquidCash = totalAcctBalance;
+
+    final totalDebt = totalLoansOutstanding + totalCCDebt;
+
+    double util = 0;
+    if (totalCCLimit > 0) {
+      util = totalCCDebt / totalCCLimit;
+    }
+
+    // Safe to Spend = Liquid Cash - Total Goal Saved Amount
+    // This assumes provided 'goals' have updated 'savedAmount'
+    final totalGoalSaved =
+        goals.fold<double>(0.0, (sum, g) => sum + g.savedAmount);
+    final safeToSpend = liquidCash - totalGoalSaved;
+
+    final entityState = EntityState(
+      netWorth: netWorth,
+      liquidCash: liquidCash,
+      totalDebt: totalDebt,
+      safeToSpend: safeToSpend, // New metric
+      creditUtilizationInfo: util,
+      bankAccounts: acctBalances,
+      creditCards: ccBalances,
+      loans: loanBalances,
+      assets: assetBalances,
+    );
+
     return FiinnyUserSnapshot(
       incomeSummary: incomeSummary,
       expenseSummary: expenseSummary,
       transactionInsights: transactionInsights,
       patterns: patterns,
       behavior: behavior,
-      goals: goalsSummary,
+      goals: goalsSummary, // Corrected from goals
       splits: splits,
+      entityState: entityState,
       generatedAt: DateTime.now(),
       progress: PhaseOneProgress.current(),
     );
   }
 }
-
-

@@ -18,9 +18,10 @@ repositories {
 }
 
 /* 🔧 EXCLUDE the old IID lib that causes the duplicate */
-configurations.all {
-    exclude(group = "com.google.firebase", module = "firebase-iid")
-}
+/* 🔧 EXCLUDE the old IID lib that causes the duplicate */
+// configurations.all {
+//    exclude(group = "com.google.firebase", module = "firebase-iid")
+// }
 
 val keystoreProperties = Properties()
 val requestedTasks = gradle.startParameter.taskNames
@@ -132,4 +133,5 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
 
     // ✋ Do NOT add firebase-messaging manually
+    implementation("com.google.firebase:firebase-iid:21.1.0")
 }

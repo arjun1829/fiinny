@@ -60,6 +60,24 @@ class AiChatService {
     });
   }
 
+  /// Get recent messages (Future, not Stream)
+  Future<List<AiMessage>> getRecentMessages(String userId, String sessionId,
+      {int limit = 10}) async {
+    final snap = await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('chat_sessions')
+        .doc(sessionId)
+        .collection('messages')
+        .orderBy('timestamp', descending: true)
+        .limit(limit)
+        .get();
+
+    return snap.docs
+        .map((doc) => AiMessage.fromMap(doc.id, doc.data()))
+        .toList();
+  }
+
   /// Send a user message to a specific session
   Future<void> sendUserMessage(
       String userId, String sessionId, String text) async {

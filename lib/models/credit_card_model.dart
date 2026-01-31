@@ -81,6 +81,12 @@ class CreditCardModel {
   final bool? autopayEnabled;
   final List<String>? issuerEmails; // whitelisted senders for this card
 
+  // State Tracking
+  final double?
+      currentBalance; // Outstanding State (from "Avl Bal" or "Spent" logic)
+  final DateTime? balanceUpdatedAt;
+  final DateTime? limitUpdatedAt;
+
   // PDF unlock config (do not store secrets; this is a format hint only)
   final PdfPassFormat? pdfPassFormat;
   final String? pdfPassHintCustom; // if PdfPassFormat.custom
@@ -108,6 +114,9 @@ class CreditCardModel {
     this.issuerEmails,
     this.pdfPassFormat,
     this.pdfPassHintCustom,
+    this.currentBalance,
+    this.balanceUpdatedAt,
+    this.limitUpdatedAt,
   });
 
   factory CreditCardModel.fromJson(Map<String, dynamic> json) {
@@ -166,6 +175,13 @@ class CreditCardModel {
           : null,
       pdfPassFormat: pdfPassFormatFromString(json['pdfPassFormat'] as String?),
       pdfPassHintCustom: json['pdfPassHintCustom'],
+      currentBalance: (json['currentBalance'] is int)
+          ? (json['currentBalance'] as int).toDouble()
+          : (json['currentBalance'] is double)
+              ? json['currentBalance']
+              : null,
+      balanceUpdatedAt: parseDate(json['balanceUpdatedAt']),
+      limitUpdatedAt: parseDate(json['limitUpdatedAt']),
     );
   }
 
@@ -193,6 +209,9 @@ class CreditCardModel {
         'pdfPassFormat':
             pdfPassFormatToString(pdfPassFormat ?? PdfPassFormat.none),
         'pdfPassHintCustom': pdfPassHintCustom,
+        'currentBalance': currentBalance,
+        'balanceUpdatedAt': balanceUpdatedAt?.toIso8601String(),
+        'limitUpdatedAt': limitUpdatedAt?.toIso8601String(),
       };
 
   int daysToDue() => dueDate.difference(DateTime.now()).inDays;
@@ -221,6 +240,9 @@ class CreditCardModel {
     List<String>? issuerEmails,
     PdfPassFormat? pdfPassFormat,
     String? pdfPassHintCustom,
+    double? currentBalance,
+    DateTime? balanceUpdatedAt,
+    DateTime? limitUpdatedAt,
   }) {
     return CreditCardModel(
       id: id ?? this.id,
@@ -245,6 +267,9 @@ class CreditCardModel {
       issuerEmails: issuerEmails ?? this.issuerEmails,
       pdfPassFormat: pdfPassFormat ?? this.pdfPassFormat,
       pdfPassHintCustom: pdfPassHintCustom ?? this.pdfPassHintCustom,
+      currentBalance: currentBalance ?? this.currentBalance,
+      balanceUpdatedAt: balanceUpdatedAt ?? this.balanceUpdatedAt,
+      limitUpdatedAt: limitUpdatedAt ?? this.limitUpdatedAt,
     );
   }
 }

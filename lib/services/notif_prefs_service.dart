@@ -20,7 +20,7 @@ class NotifPrefsService {
           'partner_checkins': true,
           'settleup_nudges': true,
           'brain_insights': true,
-          'loan_watch': true,
+          'loan_watch': false,
           'goal_milestones': true,
           'networth_updates': true,
         },

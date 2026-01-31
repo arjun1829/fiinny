@@ -122,21 +122,37 @@ class TransactionEngine {
 
   // Transfer detection logic
   static bool _detectTransfer(String note, String type) {
-    // UPI to self/friend
-    if (note.contains('upi') &&
-        (note.contains('transfer') || note.contains('sent'))) {
-      return true;
-    }
-    // IMPS/NEFT/RTGS
-    if (note.contains('imps') ||
-        note.contains('neft') ||
-        note.contains('rtgs')) {
-      return true;
-    }
-    // Explicit transfer type
+    // 1. Explicit Transfer Types
     if (type.contains('transfer')) {
       return true;
     }
+
+    // 2. Repayment Keywords (Bill payments, EMIs - should not be expenses)
+    // Common: 'credit card payment', 'bill desk', 'cms', 'emi', 'loan'
+    final lowerNote = note.toLowerCase();
+    if (lowerNote.contains('credit card payment') ||
+        lowerNote.contains('bill desk') ||
+        lowerNote.contains('repayment') ||
+        lowerNote.contains('emi') ||
+        lowerNote.contains('loan account')) {
+      return true;
+    }
+
+    // 3. Self Transfer Keywords
+    // UPI to self/friend often has specific text
+    if (lowerNote.contains('upi') &&
+        (lowerNote.contains('transfer') || lowerNote.contains('sent'))) {
+      return true;
+    }
+    // IMPS/NEFT/RTGS
+    if (lowerNote.contains('imps') ||
+        lowerNote.contains('neft') ||
+        lowerNote.contains('rtgs') ||
+        lowerNote.contains('sweep') ||
+        lowerNote.contains('auto sweep')) {
+      return true;
+    }
+
     return false;
   }
 

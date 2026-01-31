@@ -1,5 +1,4 @@
 import 'dart:io' show File;
-import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -14,10 +13,10 @@ class PartnerChatTab extends StatefulWidget {
   final String partnerUserId; // phone-based id
   final String currentUserId; // phone-based id
   const PartnerChatTab({
-    Key? key,
+    super.key,
     required this.partnerUserId,
     required this.currentUserId,
-  }) : super(key: key);
+  });
 
   @override
   State<PartnerChatTab> createState() => PartnerChatTabState();
@@ -28,26 +27,11 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   final _scrollController = ScrollController();
   final _imagePicker = ImagePicker();
 
-  List<Map<String, dynamic>> _attachedTxs = [];
+  final List<Map<String, dynamic>> _attachedTxs = [];
 
   bool _pickingEmoji = false;
   bool _pickingSticker = false;
   bool _uploading = false;
-  Widget _miniIcon({
-    required IconData icon,
-    String? tooltip,
-    VoidCallback? onPressed,
-  }) {
-    return IconButton(
-      icon: Icon(icon, size: 18),
-      tooltip: tooltip,
-      onPressed: onPressed,
-      padding: EdgeInsets.zero,
-      visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-      splashRadius: 18,
-    );
-  }
 
   String? _mimeFromExtension(String? ext) {
     switch (ext) {
@@ -154,8 +138,6 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     });
 
     final lastPreview = switch (type) {
-      'image' => '[photo]',
-      'file' => extra['fileName'] ?? '[file]',
       'image' => '[photo]',
       'file' => extra['fileName'] ?? '[file]',
       'sticker' => msg,
@@ -416,50 +398,6 @@ class PartnerChatTabState extends State<PartnerChatTab> {
     await doc.reference.delete();
   }
 
-  Future<void> _clearChat() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Clear chat?'),
-        content:
-            const Text('This will delete all messages for both participants.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Clear')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-
-    try {
-      const batchSize = 50;
-      while (true) {
-        final snap =
-            await _messagesRef.orderBy('timestamp').limit(batchSize).get();
-        if (snap.docs.isEmpty) break;
-        final batch = FirebaseFirestore.instance.batch();
-        for (final d in snap.docs) {
-          final fu = (d.data()['fileUrl'] ?? '').toString();
-          if (fu.isNotEmpty) {
-            try {
-              await FirebaseStorage.instance.refFromURL(fu).delete();
-            } catch (_) {}
-          }
-          batch.delete(d.reference);
-        }
-        await batch.commit();
-        if (snap.docs.length < batchSize) break;
-      }
-      _toast('Chat cleared');
-    } catch (e) {
-      _toast('Failed to clear chat');
-    }
-  }
-
   // ---------- Pickers UI ----------
   final List<String> _emojiBank = const [
     '😀',
@@ -587,7 +525,7 @@ class PartnerChatTabState extends State<PartnerChatTab> {
             },
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.teal.withOpacity(0.08),
+                color: Colors.teal.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(16),
               ),
               alignment: Alignment.center,
@@ -719,13 +657,13 @@ class PartnerChatTabState extends State<PartnerChatTab> {
   @override
   Widget build(BuildContext context) {
     // 1. USE THESE COLORS
-    final Color _kTealColor = const Color(0xFF00897B);
-    final Color _kBgColor = const Color(0xFFF1F5F9);
+    final Color kTealColor = const Color(0xFF00897B);
+    final Color kBgColor = const Color(0xFFF1F5F9);
 
     final pickerVisible = _pickingEmoji || _pickingSticker;
 
     return Scaffold(
-      backgroundColor: _kBgColor,
+      backgroundColor: kBgColor,
       body: Column(
         children: [
           // MESSAGES LIST
@@ -774,7 +712,7 @@ class PartnerChatTabState extends State<PartnerChatTab> {
                       time: timeStr,
                       isMe: isMe,
                       senderName: senderName,
-                      color: _kTealColor,
+                      color: kTealColor,
                       type: type,
                       imageUrl: type == 'image' ? fileUrl : null,
                       onLongPress: () => _onBubbleLongPress(d, isMe, type),
@@ -789,7 +727,7 @@ class PartnerChatTabState extends State<PartnerChatTab> {
             LinearProgressIndicator(
                 minHeight: 2,
                 backgroundColor: Colors.transparent,
-                color: _kTealColor),
+                color: kTealColor),
 
           // CONTEXT AREA (Expenses) - KEEPING YOUR LOGIC
           if (_attachedTxs.isNotEmpty)
@@ -801,12 +739,13 @@ class PartnerChatTabState extends State<PartnerChatTab> {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                      color: Colors.black.withOpacity(0.05), blurRadius: 4)
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 4)
                 ],
               ),
               child: Row(
                 children: [
-                  Icon(Icons.receipt, color: _kTealColor),
+                  Icon(Icons.receipt, color: kTealColor),
                   const SizedBox(width: 8),
                   Text("${_attachedTxs.length} expenses attached"),
                   const Spacer(),
@@ -838,7 +777,7 @@ class PartnerChatTabState extends State<PartnerChatTab> {
                   topLeft: Radius.circular(24), topRight: Radius.circular(24)),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, -2))
               ],
@@ -996,7 +935,7 @@ class ChatBubble extends StatelessWidget {
               boxShadow: [
                 if (!isMe)
                   BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 5,
                       offset: const Offset(0, 2)),
               ],
@@ -1033,7 +972,7 @@ class ChatBubble extends StatelessWidget {
                 Text(time,
                     style: TextStyle(
                         color: isMe
-                            ? Colors.white.withOpacity(0.7)
+                            ? Colors.white.withValues(alpha: 0.7)
                             : Colors.grey[500],
                         fontSize: 10)),
               ],

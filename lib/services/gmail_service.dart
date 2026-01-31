@@ -13,14 +13,14 @@ import '../config/app_config.dart';
 import './ai/tx_extractor.dart';
 import 'ingest/enrichment_service.dart';
 import '../brain/loan_detection_service.dart';
-import '../logic/loan_detection_parser.dart';
 
 import './ingest_index_service.dart';
 import './tx_key.dart';
 import 'notification_service.dart';
 import './ingest_state_service.dart';
-import './credit_card_service.dart'; // import added
 import './ingest_job_queue.dart';
+import './ingest/entity_resolution_service.dart';
+
 // merge
 // alias normalize
 import './ingest_filters.dart' as filt; // ✅ stronger filtering helpers
@@ -101,7 +101,8 @@ class GmailService {
   GoogleSignInAccount? _currentUser;
 
   final IngestIndexService _index = IngestIndexService();
-  final CreditCardService _creditCardService = CreditCardService();
+  // final CreditCardService _creditCardService = CreditCardService(); // Removed: used EntityResolutionService instead
+  // final AccountStateService _accountState = AccountStateService.instance; // Removed: used EntityResolutionService instead
 
   String _billDocId({
     required String? bank,
@@ -734,46 +735,21 @@ class GmailService {
 
     final upiVpa = parsed.upiVpa;
 
-    // --- SMART LOAN DETECTION START ---
+    // --- SMART LOAN DETECTION ---
     try {
-      final loanRes = LoanDetectionParser.parse(combined);
-      if (loanRes != null) {
-        final lender = loanRes.counterPartyName ??
-            (loanRes.type == LoanType.given ? 'Borrower' : 'Lender');
-        final key = 'EMAIL|${lender.toUpperCase()}|${loanRes.amount.toInt()}';
-
-        final suggestion = LoanSuggestion(
-          key: key,
-          lender: lender,
-          emi: loanRes.amount,
-          firstSeen: msgDate,
-          lastSeen: msgDate,
-          occurrences: 1,
-          autopay: false,
-          paymentDay: msgDate.day,
-          confidence: loanRes.confidence,
-        );
-
-        final ref = FirebaseFirestore.instance
-            .collection('users')
-            .doc(userId)
-            .collection('loan_suggestions')
-            .doc(key);
-
-        final existing = await ref.get();
-        if (!existing.exists ||
-            (existing.data()?['status'] ?? 'new') == 'new') {
-          await ref.set(suggestion.toJson(), SetOptions(merge: true));
-          if (existing.exists) {
-            await ref.update({
-              'lastSeen': Timestamp.fromDate(msgDate),
-              'occurrences': FieldValue.increment(1),
-            });
-          }
-        }
-      }
+      final txnMap = {
+        'amount': amount,
+        'merchant': parsed.merchantName,
+        'description': combined,
+        'category': 'Payments', // Context implied
+        'subcategory': parsed.isEmiAutopay ? 'Loan Repayment' : '',
+        'note': combined,
+        'date': Timestamp.fromDate(msgDate),
+      };
+      // Use centralized service that handles linking AND new suggestions
+      await LoanDetectionService().checkLoanTransaction(userId, txnMap);
     } catch (e) {
-      _log('Loan parser error: $e');
+      _log('Loan detection error: $e');
     }
     // --- SMART LOAN DETECTION END ---
 
@@ -793,6 +769,18 @@ class GmailService {
               : null) ??
           (dueDate ?? msgDate);
       // statementEnd not in parser map currently? handled gracefully
+
+      if (total > 0 && (bank != null || cardLast4 != null)) {
+        // Use EntityResolutionService to handle state update uniformly
+        await EntityResolutionService().resolveCreditCard(
+          userId: userId,
+          bankName: bank ?? 'UNKNOWN',
+          last4: cardLast4 ?? 'XXXX',
+          cardType: 'Credit Card',
+          totalDue: total,
+          dueDate: dueDate,
+        );
+      }
 
       final billId =
           _billDocId(bank: bank, last4: cardLast4, msgDate: cycleDate);
@@ -845,16 +833,15 @@ class GmailService {
     if (amount == null || amount <= 0 || direction == null) return null;
 
     // Metadata Update
-    // Metadata Update
     final ccMeta = parsed.creditCardMetadata ?? {};
     if (ccMeta.isNotEmpty && (bank != null || cardLast4 != null)) {
-      await _creditCardService.updateCardMetadataByMatch(
-        userId,
-        bankName: bank,
-        last4: cardLast4,
-        availableLimit: ccMeta['availableLimit'],
-        totalLimit: ccMeta['totalLimit'],
-        rewardPoints: ccMeta['rewardPoints'],
+      await EntityResolutionService().resolveCreditCard(
+        userId: userId,
+        bankName: bank ?? 'UNKNOWN',
+        last4: cardLast4 ?? 'XXXX',
+        availableLimit: (ccMeta['availableLimit'] as num?)?.toDouble(),
+        totalLimit: (ccMeta['totalLimit'] as num?)?.toDouble(),
+        // Note: rewardPoints not supported in EntityResolution yet, maybe ignore or add later
       );
     }
 
@@ -1031,7 +1018,16 @@ class GmailService {
         'amount': amount,
         'date': Timestamp.fromDate(msgDate),
         'type': 'Email Credit',
-        'source': 'Email',
+        'source': 'Email', // Matches IncomeItem model
+        'note': GmailPureParser.cleanNoteSimple(combined),
+        'category': finalCategory,
+        'subcategory': finalSubcategory,
+        'categoryConfidence': enriched.confidence,
+        'counterparty': merchantNorm,
+        'counterpartyType': 'MERCHANT', // Default for parsed emails usually
+        'instrument': parsed.instrument,
+        'issuerBank': bank,
+        'tags': enriched.tags,
         'ingestSources': FieldValue.arrayUnion(['gmail']),
         'sourceRecord': sourceMeta,
       }, SetOptions(merge: true));

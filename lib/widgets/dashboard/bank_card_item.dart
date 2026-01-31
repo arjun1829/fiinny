@@ -37,7 +37,12 @@ class BankCardItem extends StatefulWidget {
     this.logoAsset,
     this.stats,
     this.onTap,
+    this.currentBalance,
+    this.balanceLabel,
   });
+
+  final double? currentBalance;
+  final String? balanceLabel;
 
   @override
   State<BankCardItem> createState() => _BankCardItemState();
@@ -368,6 +373,25 @@ class _BankCardItemState extends State<BankCardItem> {
                           fontWeight: FontWeight.w300,
                         ),
                       ),
+                      if (widget.currentBalance != null) ...[
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '${widget.balanceLabel ?? "Bal"}: ${INR.f(widget.currentBalance!)}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],

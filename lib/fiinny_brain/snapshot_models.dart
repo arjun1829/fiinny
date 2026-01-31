@@ -15,11 +15,11 @@ class IncomeSummary {
   });
 
   Map<String, dynamic> toJson() => {
-    'total': total,
-    'salaryIncome': salaryIncome,
-    'otherIncome': otherIncome,
-    'transactionCount': transactionCount,
-  };
+        'total': total,
+        'salaryIncome': salaryIncome,
+        'otherIncome': otherIncome,
+        'transactionCount': transactionCount,
+      };
 }
 
 class ExpenseSummary {
@@ -36,11 +36,11 @@ class ExpenseSummary {
   });
 
   Map<String, dynamic> toJson() => {
-    'total': total,
-    'transferAmount': transferAmount,
-    'transactionCount': transactionCount,
-    'transferCount': transferCount,
-  };
+        'total': total,
+        'transferAmount': transferAmount,
+        'transactionCount': transactionCount,
+        'transferCount': transferCount,
+      };
 }
 
 class TransactionInsights {
@@ -59,12 +59,12 @@ class TransactionInsights {
   });
 
   Map<String, dynamic> toJson() => {
-    'categoryBreakdown': categoryBreakdown,
-    'totalTransactions': totalTransactions,
-    'incomeTransactions': incomeTransactions,
-    'expenseTransactions': expenseTransactions,
-    'transferTransactions': transferTransactions,
-  };
+        'categoryBreakdown': categoryBreakdown,
+        'totalTransactions': totalTransactions,
+        'incomeTransactions': incomeTransactions,
+        'expenseTransactions': expenseTransactions,
+        'transferTransactions': transferTransactions,
+      };
 }
 
 // PatternSummary wraps PatternReport for consistency
@@ -80,10 +80,10 @@ class PatternSummary {
   });
 
   Map<String, dynamic> toJson() => {
-    'subscriptions': subscriptions,
-    'highSpendCategories': highSpendCategories,
-    'categorySpendPercentage': categorySpendPercentage,
-  };
+        'subscriptions': subscriptions,
+        'highSpendCategories': highSpendCategories,
+        'categorySpendPercentage': categorySpendPercentage,
+      };
 }
 
 // BehaviorMetrics wraps BehaviorReport for consistency
@@ -99,10 +99,10 @@ class BehaviorMetrics {
   });
 
   Map<String, dynamic> toJson() => {
-    'savingsRate': savingsRate,
-    'expenseToIncomeRatio': expenseToIncomeRatio,
-    'riskFlags': riskFlags,
-  };
+        'savingsRate': savingsRate,
+        'expenseToIncomeRatio': expenseToIncomeRatio,
+        'riskFlags': riskFlags,
+      };
 }
 
 // GoalStatusSummary wraps List<GoalStatusReport> for consistency
@@ -120,11 +120,11 @@ class GoalStatusSummary {
   });
 
   Map<String, dynamic> toJson() => {
-    'goals': goals.map((g) => g.toJson()).toList(),
-    'totalGoals': totalGoals,
-    'onTrackGoals': onTrackGoals,
-    'offTrackGoals': offTrackGoals,
-  };
+        'goals': goals.map((g) => g.toJson()).toList(),
+        'totalGoals': totalGoals,
+        'onTrackGoals': onTrackGoals,
+        'offTrackGoals': offTrackGoals,
+      };
 }
 
 // SplitStatusSummary wraps SplitReport for consistency
@@ -142,18 +142,18 @@ class SplitStatusSummary {
   });
 
   Map<String, dynamic> toJson() => {
-    'netBalances': netBalances,
-    'totalOwedToYou': totalOwedToYou,
-    'totalYouOwe': totalYouOwe,
-    'friendCount': friendCount,
-  };
+        'netBalances': netBalances,
+        'totalOwedToYou': totalOwedToYou,
+        'totalYouOwe': totalYouOwe,
+        'friendCount': friendCount,
+      };
 
   static SplitStatusSummary empty() => const SplitStatusSummary(
-    netBalances: {},
-    totalOwedToYou: 0,
-    totalYouOwe: 0,
-    friendCount: 0,
-  );
+        netBalances: {},
+        totalOwedToYou: 0,
+        totalYouOwe: 0,
+        friendCount: 0,
+      );
 }
 
 // Import this in goal_engine.dart for the GoalStatusReport reference
@@ -173,10 +173,86 @@ class GoalStatusReport {
   });
 
   Map<String, dynamic> toJson() => {
-    'goalId': goalId,
-    'goalName': goalName,
-    'onTrack': onTrack,
-    'etaMonths': etaMonths,
-    'amountRemaining': amountRemaining,
-  };
+        'goalId': goalId,
+        'goalName': goalName,
+        'onTrack': onTrack,
+        'etaMonths': etaMonths,
+        'amountRemaining': amountRemaining,
+      };
+}
+
+// EntityState represents the "Unified Truth" of balances
+class EntityState {
+  final double netWorth;
+  final double liquidCash;
+  final double totalDebt;
+  final double creditUtilizationInfo; // e.g. 0.30 (30%)
+
+  final double safeToSpend; // Liquid Cash - Goal Allocations
+
+  // Detailed breakdowns
+  final List<EntityBalance> bankAccounts;
+  final List<EntityBalance> creditCards;
+  final List<EntityBalance> loans;
+  final List<EntityBalance> assets;
+
+  const EntityState({
+    required this.netWorth,
+    required this.liquidCash,
+    required this.totalDebt,
+    required this.safeToSpend,
+    this.creditUtilizationInfo = 0.0,
+    required this.bankAccounts,
+    required this.creditCards,
+    required this.loans,
+    required this.assets,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'netWorth': netWorth,
+        'liquidCash': liquidCash,
+        'totalDebt': totalDebt,
+        'safeToSpend': safeToSpend,
+        'creditUtilizationInfo': creditUtilizationInfo,
+        'bankAccounts': bankAccounts.map((b) => b.toJson()).toList(),
+        'creditCards': creditCards.map((b) => b.toJson()).toList(),
+        'loans': loans.map((b) => b.toJson()).toList(),
+        'assets': assets.map((b) => b.toJson()).toList(),
+      };
+
+  static EntityState empty() => const EntityState(
+        netWorth: 0,
+        liquidCash: 0,
+        totalDebt: 0,
+        safeToSpend: 0,
+        bankAccounts: [],
+        creditCards: [],
+        loans: [],
+        assets: [],
+      );
+}
+
+class EntityBalance {
+  final String entityId;
+  final String name;
+  final double
+      currentBalance; // Positive for banks/assets, Negative for debt usually (or tracked as distinct 'owed')
+  final double? limit; // For credit cards
+  final String type; // 'bank', 'credit_card', 'loan', 'asset'
+
+  const EntityBalance({
+    required this.entityId,
+    required this.name,
+    required this.currentBalance,
+    this.limit,
+    required this.type,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'entityId': entityId,
+        'name': name,
+        'currentBalance': currentBalance,
+        if (limit != null) 'limit': limit,
+        'type': type,
+      };
 }

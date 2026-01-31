@@ -109,7 +109,6 @@ class IncomeItem {
     this.category,
     this.subcategory,
     // NEW context
-    // NEW context
     this.counterparty,
     this.counterpartyType,
     this.upiVpa,
@@ -196,7 +195,6 @@ class IncomeItem {
       category: category ?? this.category,
       subcategory: subcategory ?? this.subcategory,
       // NEW context
-      // NEW context
       counterparty: counterparty ?? this.counterparty,
       counterpartyType: counterpartyType ?? this.counterpartyType,
       upiVpa: upiVpa ?? this.upiVpa,
@@ -267,7 +265,6 @@ class IncomeItem {
       'bankLogo': bankLogo,
       if (category != null) 'category': category,
       if (subcategory != null) 'subcategory': subcategory,
-      // NEW context
       // NEW context
       if (counterparty != null && counterparty!.trim().isNotEmpty)
         'counterparty': counterparty,
@@ -351,7 +348,6 @@ class IncomeItem {
       category: json['category'],
       subcategory: json['subcategory'],
       // NEW context
-      // NEW context
       counterparty: json['counterparty'],
       counterpartyType: json['counterpartyType'],
       upiVpa: json['upiVpa'],
@@ -430,7 +426,6 @@ class IncomeItem {
       bankLogo: data['bankLogo'],
       category: data['category'],
       subcategory: data['subcategory'],
-      // NEW context
       // NEW context
       counterparty: data['counterparty'],
       counterpartyType: data['counterpartyType'],

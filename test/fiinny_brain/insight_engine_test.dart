@@ -57,6 +57,7 @@ void main() {
           totalOwedToYou: totalOwedToYou,
           totalYouOwe: totalYouOwe,
           friendCount: 0),
+      entityState: EntityState.empty(),
       generatedAt: DateTime.now(),
       progress: PhaseOneProgress.current(),
     );
@@ -89,6 +90,7 @@ void main() {
           onTrackGoals: goals.length - offTrackCount,
           offTrackGoals: offTrackCount),
       splits: SplitStatusSummary.empty(),
+      entityState: EntityState.empty(),
       generatedAt: DateTime.now(),
       progress: PhaseOneProgress.current(),
     );
