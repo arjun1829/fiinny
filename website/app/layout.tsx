@@ -65,6 +65,29 @@ export default function RootLayout({
             }
           `}
         </Script>
+        <Script id="fiinny-org-schema" type="application/ld+json">
+          {`
+            {
+              "@context": "https://schema.org",
+              "@type": "Organization",
+              "name": "Fiinny",
+              "url": "https://fiinny.com",
+              "logo": "https://fiinny.com/icon.png",
+              "sameAs": [
+                "https://www.instagram.com/fiinny.app",
+                "https://www.linkedin.com/company/fiinny"
+              ],
+              "description": "Fiinny is the privacy-first financial operating system for minimalist expense tracking and bill splitting.",
+              "contactPoint": {
+                "@type": "ContactPoint",
+                "telephone": "+91-9999999999",
+                "contactType": "customer service",
+                "areaServed": "IN",
+                "availableLanguage": "en"
+              }
+            }
+          `}
+        </Script>
         <AuthProvider>
           <ThemeProvider>
             <AiProvider>
