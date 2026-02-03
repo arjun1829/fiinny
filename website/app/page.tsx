@@ -18,7 +18,7 @@ import {
   X
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { User as FirebaseUser } from "firebase/auth";
 import LanguageSelector from "@/components/LanguageSelector";
@@ -31,6 +31,102 @@ export default function Home() {
     <LanguageProvider>
       <MainContent />
     </LanguageProvider>
+  );
+}
+
+function HeroCarousel() {
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+
+  const slides = [
+    {
+      id: 1,
+      title: "Smart Dashboard",
+      src: "/assets/hero/hero-1.jpg",
+      desc: "Financial clarity at a glance."
+    },
+    {
+      id: 2,
+      title: "Shared Bills",
+      src: "/assets/hero/hero-2.jpg",
+      desc: "Split expenses instantly."
+    },
+    {
+      id: 3,
+      title: "Global Tracking",
+      src: "/assets/hero/hero-3.jpg",
+      desc: "Track across borders."
+    },
+    {
+      id: 4,
+      title: "Deep Insights",
+      src: "/assets/hero/hero-4.jpg",
+      desc: "Know where your money goes."
+    },
+    {
+      id: 5,
+      title: "Secure Vault",
+      src: "/assets/hero/hero-5.jpg",
+      desc: "Bank-grade security."
+    }
+  ];
+
+  // Auto-Rotate Logic (Every 3 seconds)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % slides.length);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [slides.length]);
+
+  return (
+    <div className="relative w-full h-full flex flex-col items-center justify-center z-10">
+
+      {/* 1. The Rotating Image Stage */}
+      <div className="relative w-[300px] h-[600px] md:w-[350px] md:h-[650px] flex items-center justify-center">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentIndex}
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -20 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            className="absolute inset-0 flex items-center justify-center"
+
+          >
+
+            {/* Image Container with Shadow */}
+            <div className="relative rounded-[3rem] overflow-hidden shadow-2xl shadow-teal-900/20 border-4 border-white h-full w-full">
+              <a href="#features">
+                <Image
+                  src={slides[currentIndex].src}
+                  alt={slides[currentIndex].title}
+                  fill
+                  className="object-cover bg-slate-100"
+                  priority
+                />
+              </a>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* 2. The Bottom Navigation Bar (Slider) */}
+      <div className="absolute -bottom-6 flex items-center gap-3 bg-white/90 backdrop-blur-md px-6 py-3 rounded-full border border-slate-200 shadow-lg z-30">
+        {slides.map((slide, index) => (
+          <button
+            key={slide.id}
+            onClick={() => setCurrentIndex(index)}
+            className={`transition-all duration-500 rounded-full h-2 ${currentIndex === index
+              ? "w-8 bg-gradient-to-r from-teal-500 to-emerald-500"
+              : "w-2 bg-slate-300 hover:bg-teal-200"
+              }`}
+            aria-label={`Go to slide ${index + 1}`}
+          />
+        ))}
+      </div>
+
+    </div>
   );
 }
 
@@ -173,31 +269,38 @@ function MainContent() {
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
-        {/* Mesh Gradient Background */}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-teal-100/40 via-transparent to-transparent -z-10" />
-        <div className="absolute top-0 left-0 w-full h-full bg-white/40 backdrop-blur-[2px] -z-10" />
+      {/* NEW HERO SECTION START */}
+      <section className="relative pt-32 pb-20 lg:pt-40 lg:pb-32 overflow-hidden bg-slate-50">
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col lg:flex-row items-center gap-12 lg:gap-20">
-            {/* Hero Text */}
+        {/* Background Atmosphere */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-gradient-to-b from-teal-50/80 to-transparent rounded-full blur-3xl -z-10 opacity-60" />
+          <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-emerald-50/50 rounded-full blur-3xl -z-10 opacity-40" />
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+
+            {/* ----- LEFT COLUMN: Text Content ----- */}
             <motion.div
-              initial="initial"
-              animate="animate"
-              variants={staggerContainer}
-              className="flex-1 text-center lg:text-left"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.8 }}
+              className="text-center lg:text-left z-20"
             >
-              <motion.h1 variants={fadeInUp} className="text-4xl md:text-5xl lg:text-7xl font-bold tracking-tighter text-slate-900 mb-6 leading-[1.1] font-display">
+              <h1 className="text-5xl lg:text-7xl font-bold tracking-tighter text-slate-900 mb-6 leading-[1.1]">
                 Financial clarity, <br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 to-emerald-600">
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 via-emerald-500 to-teal-600 animate-gradient">
                   automated.
                 </span>
-              </motion.h1>
-              <motion.p variants={fadeInUp} className="text-lg text-slate-600 mb-8 leading-relaxed max-w-lg font-medium mx-auto lg:mx-0">
+              </h1>
+
+              <p className="text-xl text-slate-600 mb-10 leading-relaxed font-medium max-w-lg mx-auto lg:mx-0">
                 Track personal spending and shared expenses in one unified system. Real-time insights, zero manual effort.
-              </motion.p>
-              <motion.div variants={fadeInUp} className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+              </p>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mb-12">
                 <Link
                   href="/login"
                   className="inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-white transition-all duration-200 bg-teal-600 rounded-full hover:bg-teal-700 hover:shadow-xl hover:shadow-teal-200 hover:-translate-y-1 active:scale-95"
@@ -211,136 +314,175 @@ function MainContent() {
                   <Play className="w-5 h-5 mr-2 fill-current" />
                   View Features
                 </button>
-              </motion.div>
+              </div>
 
-              {/* Store Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 mt-8 items-center sm:items-start">
-                <a
-                  href="https://apps.apple.com/in/app/fiinny/id6751309482"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="transition-transform hover:scale-105 active:scale-95"
-                >
+              {/* App Store Buttons */}
+              <div className="flex flex-wrap gap-4 justify-center lg:justify-start items-center">
+                <a href="#" className="hover:scale-105 transition-transform duration-300">
                   <Image
                     src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Download_on_the_App_Store_Badge.svg"
                     alt="Download on the App Store"
-                    width={140}
-                    height={47}
+                    width={150}
+                    height={50}
                     className="h-12 w-auto"
                   />
                 </a>
-                <a
-                  href="https://play.google.com/store/apps/details?id=com.KaranArjunTechnologies.lifemap"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="transition-transform hover:scale-105 active:scale-95"
-                >
+                <a href="#" className="hover:scale-105 transition-transform duration-300">
                   <Image
                     src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg"
                     alt="Get it on Google Play"
-                    width={154}
-                    height={47}
+                    width={165}
+                    height={50}
                     className="h-12 w-auto"
                   />
                 </a>
               </div>
-              <p className="mt-8 text-sm text-slate-500 flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 font-medium">
-                <span className="flex items-center gap-1"><CheckCircle2 className="w-4 h-4 text-teal-500" /> {t.hero.noCard}</span>
-                <span className="flex items-center gap-1"><CheckCircle2 className="w-4 h-4 text-teal-500" /> {t.hero.freePlan}</span>
-              </p>
             </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 1, delay: 0.2, ease: "easeOut" }}
-              className="relative lg:h-[700px] flex items-center justify-center"
-            >
-              <div className="absolute inset-0 bg-gradient-to-tr from-teal-50 to-emerald-50 rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2 opacity-50" />
-              <motion.div
-                animate={{ y: [0, -20, 0] }}
-                transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-              >
-                <Image
-                  src="/hero-global.png"
-                  alt="Financial Control Global"
-                  width={900}
-                  height={900}
-                  className="relative z-10 w-full h-auto drop-shadow-2xl"
-                  priority
-                />
-              </motion.div>
-            </motion.div>
+
+            {/* ----- RIGHT COLUMN: The Pulse Carousel ----- */}
+            <div className="relative h-[650px] w-full flex flex-col items-center justify-center perspective-1000">
+
+              {/* The Pulse Background Effect (Rings) */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                {[1, 2, 3].map((ring) => (
+                  <motion.div
+                    key={ring}
+                    animate={{
+                      scale: [0.8, 1.2, 0.8],
+                      opacity: [0.1, 0.0, 0.1],
+                      borderColor: ["rgba(20, 184, 166, 0.2)", "rgba(16, 185, 129, 0.1)", "rgba(20, 184, 166, 0.2)"]
+                    }}
+                    transition={{ duration: 4, repeat: Infinity, delay: ring * 1, ease: "easeInOut" }}
+                    className="absolute rounded-full border border-teal-500/20 bg-teal-400/5"
+                    style={{
+                      width: `${ring * 280 + 200}px`,
+                      height: `${ring * 280 + 200}px`,
+                      zIndex: 0
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* HERE IS THE MAGIC: Calling the function you pasted at the bottom */}
+              <HeroCarousel />
+
+            </div>
+
           </div>
         </div>
       </section>
+      {/* NEW HERO SECTION END */}
 
-      {/* "Why Fiinny" Section (Formerly Method) */}
-      <section className="py-24 bg-white border-y border-slate-100 scroll-mt-24" id="method">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* NEW "HOW IT WORKS" SECTION - PREMIUM DESIGN */}
+      <section className="py-32 bg-white relative overflow-hidden" id="how-it-works">
+
+        {/* Subtle Background Pattern */}
+        <div className="absolute top-0 left-0 w-full h-full opacity-30 pointer-events-none">
+          <div className="absolute right-0 top-0 w-1/3 h-1/3 bg-gradient-to-b from-teal-50 to-transparent rounded-bl-full blur-3xl" />
+          <div className="absolute left-0 bottom-0 w-1/3 h-1/3 bg-gradient-to-t from-slate-50 to-transparent rounded-tr-full blur-3xl" />
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+
+          {/* Header Section */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="text-center max-w-3xl mx-auto mb-16"
+            className="text-center max-w-3xl mx-auto mb-20"
           >
-            <h2 className="text-3xl lg:text-5xl font-bold text-slate-900 mb-6 font-display">
-              Managing money shouldn’t feel like work.
+            <h2 className="text-4xl lg:text-5xl font-black text-slate-900 mb-6 tracking-tight leading-tight">
+              Managing money shouldn’t <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 to-emerald-600">
+                feel like work.
+              </span>
             </h2>
-            <p className="text-xl text-slate-600 leading-relaxed font-medium">
-              Fiinny removes the clutter and limits. Tracking fits naturally into your routine.
+            <p className="text-xl text-slate-500 leading-relaxed font-medium">
+              Fiinny removes the clutter. We built a system that fits naturally into your life, not the other way around.
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-3 gap-12 relative">
-            {/* Connecting Line (Desktop) */}
-            <div className="hidden md:block absolute top-12 left-[16%] right-[16%] h-0.5 bg-gradient-to-r from-teal-500/0 via-teal-500/20 to-teal-500/0" />
+          {/* Cards Grid */}
+          <div className="grid md:grid-cols-3 gap-8 relative">
+
+            {/* Connecting Line (Only visible on Desktop) */}
+            <div className="hidden md:block absolute top-16 left-[20%] right-[20%] h-[2px] bg-gradient-to-r from-slate-100 via-teal-100 to-slate-100" />
 
             {[
               {
                 step: "01",
                 title: "Smart Context",
-                desc: "Auto-syncs from your messages. Your expenses stay organized with context, making patterns easy to understand.",
-                icon: <Zap className="w-6 h-6 text-teal-600" />
+                desc: "Auto-syncs transactions instantly. We organize your expenses with context, making patterns easy to understand.",
+                icon: <Zap className="w-6 h-6 text-white" />,
+                color: "from-amber-400 to-orange-500",
+                shadow: "shadow-orange-200"
               },
               {
                 step: "02",
                 title: "Split Instantly",
                 desc: "Swipe right to split any expense. No re-adding, no switching screens. Personal and shared finances in one place.",
-                icon: <Users className="w-6 h-6 text-teal-600" />
+                icon: <Users className="w-6 h-6 text-white" />,
+                color: "from-teal-400 to-emerald-500",
+                shadow: "shadow-emerald-200"
               },
               {
                 step: "03",
                 title: "Real Insights",
-                desc: "See your broader financial picture—loans, assets, and net worth—including recent days. No monthly blind spots.",
-                icon: <PieChart className="w-6 h-6 text-teal-600" />
+                desc: "See your broader financial picture—loans, assets, and net worth. No monthly blind spots, just clarity.",
+                icon: <PieChart className="w-6 h-6 text-white" />,
+                color: "from-blue-400 to-indigo-500",
+                shadow: "shadow-indigo-200"
               }
             ].map((item, i) => (
               <motion.div
                 key={i}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.2 }}
-                className="relative z-10 flex flex-col items-center text-center group bg-slate-50 rounded-2xl p-8 border border-slate-100 hover:shadow-lg hover:border-teal-100 transition-all"
+                whileHover={{ y: -10 }}
+                className="relative flex flex-col items-center text-center group"
               >
-                <div className="w-24 h-24 rounded-3xl bg-slate-50 border border-slate-100 flex items-center justify-center mb-8 shadow-sm group-hover:scale-110 group-hover:shadow-xl group-hover:bg-white group-hover:border-teal-100 transition-all duration-300">
-                  {item.icon}
+                {/* Card Container */}
+                <div className="w-full bg-white rounded-[2rem] p-8 border border-slate-100 shadow-xl shadow-slate-200/40 hover:shadow-2xl hover:shadow-teal-900/5 transition-all duration-300 relative overflow-hidden h-full">
+
+                  {/* Decorative Number (Background) */}
+                  <div className="absolute -top-6 -right-6 text-9xl font-black text-slate-50 opacity-0 group-hover:opacity-100 group-hover:text-slate-100 transition-all duration-500 select-none z-0">
+                    {item.step}
+                  </div>
+
+                  {/* Icon with Gradient Glow */}
+                  <div className="relative z-10 mb-8 mx-auto">
+                    {/* The Number Badge */}
+                    <div className="absolute -top-3 -right-3 bg-slate-900 text-white text-xs font-bold px-2 py-1 rounded-lg border-2 border-white shadow-sm z-20">
+                      Step {item.step}
+                    </div>
+
+                    <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${item.color} flex items-center justify-center shadow-lg ${item.shadow} transform group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}>
+                      {item.icon}
+                    </div>
+                  </div>
+
+                  {/* Content */}
+                  <div className="relative z-10">
+                    <h3 className="text-xl font-bold text-slate-900 mb-3 group-hover:text-teal-700 transition-colors">
+                      {item.title}
+                    </h3>
+                    <p className="text-slate-500 leading-relaxed text-sm font-medium">
+                      {item.desc}
+                    </p>
+                  </div>
+
+                  {/* Bottom Color Bar */}
+                  <div className={`absolute bottom-0 left-0 w-full h-1.5 bg-gradient-to-r ${item.color} transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500`} />
                 </div>
-                <div className="text-5xl font-black text-slate-100 absolute -top-4 -right-4 -z-10 select-none group-hover:text-teal-50 transition-colors">
-                  {item.step}
-                </div>
-                <h3 className="text-xl font-bold text-slate-900 mb-3">{item.title}</h3>
-                <p className="text-slate-500 leading-relaxed max-w-xs">{item.desc}</p>
               </motion.div>
             ))}
           </div>
         </div>
       </section>
 
-
-
-      {/* Features Section - Apple Style Bento Grid */}
       {/* Features Section - Apple Style Bento Grid */}
       <section className="py-32 bg-slate-50 relative overflow-hidden" id="features">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -364,7 +506,7 @@ function MainContent() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.5 }}
-              className="md:col-span-2 bg-white rounded-[2.5rem] p-10 border border-slate-100 shadow-xl shadow-slate-200/50 hover:shadow-2xl transition-all duration-500 overflow-hidden relative group cursor-pointer"
+              className="md:col-span-2 bg-white rounded-[2.5rem] p-10 border border-slate-00 shadow-xl shadow-slate-200/50 hover:shadow-2xl transition-all duration-500 overflow-hidden relative group cursor-pointer"
             >
               <div className="flex flex-col md:flex-row items-center gap-8 h-full">
                 <div className="flex-1">
