@@ -15,7 +15,9 @@ import {
   Instagram,
   Linkedin,
   ChevronDown,
-  X
+  X,
+  EyeOff,
+  Smartphone
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
@@ -24,6 +26,8 @@ import { User as FirebaseUser } from "firebase/auth";
 import LanguageSelector from "@/components/LanguageSelector";
 import { LanguageProvider, useLanguage } from "./i18n/LanguageContext";
 import { translations } from "./i18n/translations";
+import FloatingFeatureStack, { features } from "@/components/FloatingFeatureStack";
+import TypewriterText from "@/components/animations/TypewriterText";
 import AiOverlay from "@/components/ai/AiOverlay";
 
 export default function Home() {
@@ -41,33 +45,27 @@ function HeroCarousel() {
   const slides = [
     {
       id: 1,
-      title: "Smart Dashboard",
+      title: "Auto-organized spending",
       src: "/assets/hero/hero-1.jpg",
-      desc: "Financial clarity at a glance."
+      desc: "Expenses grouped automatically."
     },
     {
       id: 2,
-      title: "Shared Bills",
+      title: "Split & settle instantly",
       src: "/assets/hero/hero-2.jpg",
-      desc: "Split expenses instantly."
+      desc: "Shared expense → Settled."
     },
     {
       id: 3,
-      title: "Global Tracking",
-      src: "/assets/hero/hero-3.jpg",
-      desc: "Track across borders."
+      title: "Know where your money goes",
+      src: "/assets/hero/hero-4.jpg",
+      desc: "Chart + Insight bubble."
     },
     {
       id: 4,
-      title: "Deep Insights",
-      src: "/assets/hero/hero-4.jpg",
-      desc: "Know where your money goes."
-    },
-    {
-      id: 5,
-      title: "Secure Vault",
+      title: "Your data stays with you",
       src: "/assets/hero/hero-5.jpg",
-      desc: "Bank-grade security."
+      desc: "Local-first privacy."
     }
   ];
 
@@ -132,8 +130,9 @@ function HeroCarousel() {
 
 function MainContent() {
   const { user } = useAuth();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
+  const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null);
   const { language } = useLanguage();
   const t = translations[language];
 
@@ -152,122 +151,64 @@ function MainContent() {
     }
   };
 
-  const features = [
-    {
-      id: "analytics",
-      title: t.features.analytics.title,
-      subtitle: t.features.analytics.badge,
-      icon: <PieChart className="w-4 h-4" />,
-      description: t.features.analytics.description,
-      longDescription: t.features.analytics.description,
-      image: "/assets/images/3d-analytics.png",
-      color: "bg-white",
-      textColor: "text-slate-900"
-    },
-    {
-      id: "shared",
-      title: t.features.shared.title,
-      subtitle: t.features.shared.badge,
-      icon: <Users className="w-4 h-4" />,
-      description: t.features.shared.description,
-      longDescription: t.features.shared.description,
-      image: "/assets/images/3d-couple.png",
-      color: "bg-slate-900",
-      textColor: "text-white"
-    },
-    {
-      id: "goals",
-      title: t.features.goals.title,
-      subtitle: t.features.goals.badge,
-      icon: <Trophy className="w-4 h-4" />,
-      description: t.features.goals.description,
-      longDescription: t.features.goals.description,
-      image: "/assets/images/3d-goals.png",
-      color: "bg-white",
-      textColor: "text-slate-900"
-    },
-    {
-      id: "global",
-      title: t.features.global.title,
-      subtitle: t.features.global.badge,
-      icon: <Globe className="w-4 h-4" />,
-      description: t.features.global.description,
-      longDescription: t.features.global.description,
-      image: "/assets/images/3d-network.png",
-      color: "bg-gradient-to-br from-teal-500 to-emerald-600",
-      textColor: "text-white"
-    }
-  ];
+
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans selection:bg-teal-100 selection:text-teal-900 overflow-x-hidden">
       {/* Navigation */}
-      <nav className="fixed w-full bg-white/95 backdrop-blur-lg z-50 border-b border-slate-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-24">
-            {/* Logo */}
-            <div className="flex items-center gap-3">
-              <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-3">
-                <Image src="/assets/images/logo_icon.png" alt="Fiinny" width={28} height={28} className="w-7 h-7" />
-                <span className="text-2xl font-black bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text text-transparent">Fiinny</span>
-              </Link>
+      {/* Split Floating Island Navigation */}
+      <motion.nav
+        initial={{ y: -100, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 100, damping: 20, delay: 0.5 }}
+        className="fixed top-6 left-0 right-0 z-50 flex justify-between items-center px-4 md:px-8 pointer-events-none"
+      >
+        {/* Left Island: Brand */}
+        <div className="pointer-events-auto bg-white/80 backdrop-blur-xl rounded-full border border-white/40 shadow-xl shadow-slate-200/40 px-6 py-3 flex items-center">
+          <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2 group">
+            <div className="relative w-8 h-8 rounded-full overflow-hidden">
+              <Image src="/assets/images/logo_icon.png" alt="Fiinny" fill className="object-cover" />
             </div>
+            <span className="text-xl font-black text-teal-950 tracking-tight group-hover:text-teal-700 transition-colors">Fiinny</span>
+          </Link>
+        </div>
 
-            {/* Desktop Navigation */}
-            <div className="hidden lg:flex items-center gap-8">
-              <a href="#features" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.features}</a>
-              <a href="#how-it-works" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.howItWorks}</a>
-              <Link href="/trust" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.trust}</Link>
-              {!user && <Link href="/subscription" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">{t.nav.pricing}</Link>}
-              {user && <Link href="/dashboard" className="text-slate-700 hover:text-teal-600 transition-colors text-sm font-semibold">Console</Link>}
+        {/* Right Island: Navigation & Actions */}
+        <div className="pointer-events-auto bg-white/80 backdrop-blur-xl rounded-full border border-white/40 shadow-xl shadow-slate-200/40 px-6 py-3 flex items-center gap-6 md:gap-8">
+          {/* Desktop Links */}
+          <div className="hidden lg:flex items-center gap-6">
+            <a href="#features" className="text-sm font-bold text-slate-600 hover:text-teal-700 transition-colors">{t.nav.features}</a>
+            <Link href="/how-it-works" className="text-sm font-bold text-slate-600 hover:text-teal-700 transition-colors">{t.nav.howItWorks}</Link>
+            <Link href="/trust" className="text-sm font-bold text-slate-600 hover:text-teal-700 transition-colors">{t.nav.trust}</Link>
+            {!user && <Link href="/subscription" className="text-sm font-bold text-slate-600 hover:text-teal-700 transition-colors">{t.nav.pricing}</Link>}
+          </div>
 
-
-              {user ? (
-                <Link href="/dashboard" className="flex items-center gap-3 bg-slate-100 hover:bg-slate-200 transition-all pl-2 pr-4 py-1.5 rounded-full border border-slate-200 ml-4">
-                  {user.photoURL ? (
-                    <Image
-                      src={user.photoURL}
-                      alt="Profile"
-                      width={32}
-                      height={32}
-                      className="w-8 h-8 rounded-full object-cover border border-white shadow-sm"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs">
-                      {user.email?.charAt(0).toUpperCase() || "U"}
-                    </div>
-                  )}
-                  <div className="flex flex-col items-start">
-                    <span className="text-xs font-bold text-slate-900 leading-none mb-0.5">Console</span>
-                    <span className="text-[10px] text-slate-500 leading-none">Dashboard</span>
+          {/* Action Button */}
+          <div>
+            {user ? (
+              <Link href="/dashboard" className="flex items-center gap-2">
+                {user.photoURL ? (
+                  <Image
+                    src={user.photoURL}
+                    alt="Profile"
+                    width={32}
+                    height={32}
+                    className="w-8 h-8 rounded-full border-2 border-white shadow-sm"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs ring-2 ring-white">
+                    {user.email?.charAt(0).toUpperCase() || "U"}
                   </div>
-                </Link>
-              ) : (
-                <Link href="/login" className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:shadow-lg hover:shadow-teal-500/30 transition-all hover:scale-105 active:scale-95 ml-4">
-                  {t.nav.login}
-                </Link>
-              )}
-            </div>
-
-
-            {/* Mobile Menu Button - Moved inside flex container */}
-            <div className="lg:hidden">
-              {user ? (
-                <Link href="/dashboard" className="bg-slate-100 text-slate-900 border border-slate-200 px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-2">
-                  {user.photoURL && (
-                    <Image src={user.photoURL} alt="Profile" width={20} height={20} className="rounded-full w-5 h-5" />
-                  )}
-                  Console
-                </Link>
-              ) : (
-                <Link href="/login" className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white px-5 py-2 rounded-xl text-sm font-bold">
-                  {t.nav.login}
-                </Link>
-              )}
-            </div>
+                )}
+              </Link>
+            ) : (
+              <Link href="/login" className="bg-slate-900 text-white px-6 py-2.5 rounded-full text-sm font-bold hover:bg-slate-800 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-slate-900/20">
+                Get Started
+              </Link>
+            )}
           </div>
         </div>
-      </nav>
+      </motion.nav>
 
       {/* NEW HERO SECTION START */}
       <section className="relative pt-32 pb-20 lg:pt-40 lg:pb-32 overflow-hidden bg-slate-50">
@@ -282,42 +223,69 @@ function MainContent() {
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
 
             {/* ----- LEFT COLUMN: Text Content ----- */}
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.8 }}
-              className="text-center lg:text-left z-20"
-            >
-              <h1 className="text-5xl lg:text-7xl font-bold tracking-tighter text-slate-900 mb-6 leading-[1.1]">
-                Financial clarity, <br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 via-emerald-500 to-teal-600 animate-gradient">
-                  automated.
-                </span>
-              </h1>
+            <div className="text-center lg:text-left z-20">
+              <div className="mb-8">
+                <TypewriterText
+                  className="text-5xl lg:text-8xl font-black tracking-tighter text-slate-900 mb-4 leading-[1.05]"
+                  lines={[
+                    { text: "Financial clarity," },
+                    { text: "automated.", highlight: true, gradient: "text-transparent bg-clip-text bg-gradient-to-r from-teal-600 via-emerald-500 to-teal-600 animate-gradient pb-2" }
+                  ]}
+                />
+                <motion.h2
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 2.0, duration: 0.8 }}
+                  className="text-2xl lg:text-4xl font-bold text-slate-400 tracking-tight"
+                >
+                  No spreadsheets. No guesswork.
+                </motion.h2>
+              </div>
 
-              <p className="text-xl text-slate-600 mb-10 leading-relaxed font-medium max-w-lg mx-auto lg:mx-0">
-                Track personal spending and shared expenses in one unified system. Real-time insights, zero manual effort.
-              </p>
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: 2.2, duration: 0.8 }}
+                className="text-xl text-slate-600 mb-10 leading-relaxed font-medium max-w-lg mx-auto lg:mx-0"
+              >
+                Track personal and shared expenses in one system that works for you.
+                <br className="hidden lg:block" />
+                Auto-organized. Real-time insights. Zero manual effort.
+              </motion.p>
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mb-12">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: 2.4, duration: 0.8 }}
+                className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mb-12"
+              >
                 <Link
                   href="/login"
                   className="inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-white transition-all duration-200 bg-teal-600 rounded-full hover:bg-teal-700 hover:shadow-xl hover:shadow-teal-200 hover:-translate-y-1 active:scale-95"
                 >
                   Start Tracking
                 </Link>
-                <button
-                  onClick={() => setSelectedVideo("/assets/videos/demo.mp4")}
+                <Link
+                  href="/how-it-works"
                   className="inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-slate-700 transition-all duration-200 bg-white border border-slate-200 rounded-full hover:bg-slate-50 hover:border-slate-300 hover:-translate-y-1 active:scale-95"
                 >
                   <Play className="w-5 h-5 mr-2 fill-current" />
-                  View Features
-                </button>
-              </div>
+                  See how it works
+                </Link>
+              </motion.div>
 
               {/* App Store Buttons */}
-              <div className="flex flex-wrap gap-4 justify-center lg:justify-start items-center">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: 2.6, duration: 0.8 }}
+                className="flex flex-wrap gap-4 justify-center lg:justify-start items-center"
+              >
                 <a href="#" className="hover:scale-105 transition-transform duration-300">
                   <Image
                     src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Download_on_the_App_Store_Badge.svg"
@@ -336,8 +304,8 @@ function MainContent() {
                     className="h-12 w-auto"
                   />
                 </a>
-              </div>
-            </motion.div>
+              </motion.div>
+            </div>
 
 
             {/* ----- RIGHT COLUMN: The Pulse Carousel ----- */}
@@ -374,308 +342,116 @@ function MainContent() {
       </section>
       {/* NEW HERO SECTION END */}
 
-      {/* NEW "HOW IT WORKS" SECTION - PREMIUM DESIGN */}
-      <section className="py-32 bg-white relative overflow-hidden" id="how-it-works">
 
-        {/* Subtle Background Pattern */}
-        <div className="absolute top-0 left-0 w-full h-full opacity-30 pointer-events-none">
-          <div className="absolute right-0 top-0 w-1/3 h-1/3 bg-gradient-to-b from-teal-50 to-transparent rounded-bl-full blur-3xl" />
-          <div className="absolute left-0 bottom-0 w-1/3 h-1/3 bg-gradient-to-t from-slate-50 to-transparent rounded-tr-full blur-3xl" />
-        </div>
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+      {/* Floating Feature Stack Section */}
+      <div id="features">
+        <FloatingFeatureStack onSelectFeature={setSelectedFeatureId} />
+      </div>
 
-          {/* Header Section */}
+      {/* Section 1: The Problem with Most Finance Apps - UPDATED */}
+      {/* Section 1: The Problem with Most Finance Apps - UPDATED */}
+      <section className="pt-48 pb-20 bg-slate-50 border-t border-slate-100">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.8 }}
+          >
+            <h2 className="text-5xl lg:text-7xl font-black text-slate-900 mb-8 font-display tracking-tight leading-tight">
+              Chaos costs <span className="text-rose-500">you money.</span> <br />
+              Clarity builds <span className="text-teal-600">wealth.</span>
+            </h2>
+            <p className="text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed mb-16 font-medium">
+              Most finance apps make you work for clarity. <br className="hidden md:block" />
+              Fiinny works quietly in the background—automating, organizing, and protecting your money by default.
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 gap-8 text-left max-w-5xl mx-auto">
+            {/* The Chaos Card */}
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.2, duration: 0.8 }}
+              className="bg-white p-8 lg:p-10 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-xl transition-all duration-500"
+            >
+              <div className="absolute top-0 right-0 w-64 h-64 bg-rose-50 rounded-full blur-3xl -z-10 opacity-50 group-hover:opacity-100 transition-opacity" />
+              <h3 className="font-bold text-2xl text-slate-900 mb-8 flex items-center gap-3">
+                <span className="flex items-center justify-center w-10 h-10 rounded-full bg-rose-100 text-rose-500 text-lg">⚠</span>
+                The Chaos <span className="text-sm font-normal text-slate-400 ml-auto">(Most Apps)</span>
+              </h3>
+              <ul className="space-y-5">
+                {[
+                  "Manual entry that feels like homework",
+                  "Your data sold, shared, or monetized",
+                  "Monthly summaries that miss daily reality",
+                  "Hard limits on your own data",
+                  "Public by default"
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-4 text-slate-600 text-base font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-2.5 flex-shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+
+            {/* The Fiinny System Card */}
+            <motion.div
+              initial={{ opacity: 0, x: 30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.2, duration: 0.8 }}
+              className="bg-slate-900 p-8 lg:p-10 rounded-[2.5rem] shadow-2xl text-white relative overflow-hidden ring-1 ring-teal-500/30 transform md:-translate-y-4"
+            >
+              <div className="absolute top-0 right-0 w-64 h-64 bg-teal-500/20 rounded-full blur-3xl" />
+              <div className="absolute bottom-0 left-0 w-40 h-40 bg-emerald-500/10 rounded-full blur-2xl" />
+
+              <h3 className="font-bold text-2xl text-white mb-8 flex items-center gap-3 relative z-10">
+                <span className="flex items-center justify-center w-10 h-10 rounded-full bg-teal-500/20 text-teal-400">
+                  <CheckCircle2 className="w-5 h-5" />
+                </span>
+                The Fiinny System
+              </h3>
+              <ul className="space-y-5 relative z-10">
+                {[
+                  "Auto-capture in seconds",
+                  "Zero-knowledge privacy architecture",
+                  "Real-time financial clarity",
+                  "No artificial limits",
+                  "Private by design, always"
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-4 text-slate-200 text-base font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-400 mt-2.5 flex-shrink-0 shadow-[0_0_8px_rgba(45,212,191,0.6)]" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+          </div>
+
+          {/* Micro-CTA Section */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="text-center max-w-3xl mx-auto mb-20"
+            transition={{ delay: 0.5, duration: 0.8 }}
+            className="mt-20 flex flex-col items-center"
           >
-            <h2 className="text-4xl lg:text-5xl font-black text-slate-900 mb-6 tracking-tight leading-tight">
-              Managing money shouldn’t <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 to-emerald-600">
-                feel like work.
-              </span>
-            </h2>
-            <p className="text-xl text-slate-500 leading-relaxed font-medium">
-              Fiinny removes the clutter. We built a system that fits naturally into your life, not the other way around.
-            </p>
+            <p className="text-slate-900 font-bold text-lg mb-6 tracking-tight">This is how modern money management should feel.</p>
+            <Link
+              href="/how-it-works"
+              className="group inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white border border-slate-200 text-slate-600 text-sm font-bold hover:border-teal-500 hover:text-teal-600 transition-all hover:shadow-lg hover:shadow-teal-100"
+            >
+              Explore the system
+              <ChevronDown className="w-4 h-4 ml-1 group-hover:translate-y-0.5 transition-transform" />
+            </Link>
           </motion.div>
-
-          {/* Cards Grid */}
-          <div className="grid md:grid-cols-3 gap-8 relative">
-
-            {/* Connecting Line (Only visible on Desktop) */}
-            <div className="hidden md:block absolute top-16 left-[20%] right-[20%] h-[2px] bg-gradient-to-r from-slate-100 via-teal-100 to-slate-100" />
-
-            {[
-              {
-                step: "01",
-                title: "Smart Context",
-                desc: "Auto-syncs transactions instantly. We organize your expenses with context, making patterns easy to understand.",
-                icon: <Zap className="w-6 h-6 text-white" />,
-                color: "from-amber-400 to-orange-500",
-                shadow: "shadow-orange-200"
-              },
-              {
-                step: "02",
-                title: "Split Instantly",
-                desc: "Swipe right to split any expense. No re-adding, no switching screens. Personal and shared finances in one place.",
-                icon: <Users className="w-6 h-6 text-white" />,
-                color: "from-teal-400 to-emerald-500",
-                shadow: "shadow-emerald-200"
-              },
-              {
-                step: "03",
-                title: "Real Insights",
-                desc: "See your broader financial picture—loans, assets, and net worth. No monthly blind spots, just clarity.",
-                icon: <PieChart className="w-6 h-6 text-white" />,
-                color: "from-blue-400 to-indigo-500",
-                shadow: "shadow-indigo-200"
-              }
-            ].map((item, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.2 }}
-                whileHover={{ y: -10 }}
-                className="relative flex flex-col items-center text-center group"
-              >
-                {/* Card Container */}
-                <div className="w-full bg-white rounded-[2rem] p-8 border border-slate-100 shadow-xl shadow-slate-200/40 hover:shadow-2xl hover:shadow-teal-900/5 transition-all duration-300 relative overflow-hidden h-full">
-
-                  {/* Decorative Number (Background) */}
-                  <div className="absolute -top-6 -right-6 text-9xl font-black text-slate-50 opacity-0 group-hover:opacity-100 group-hover:text-slate-100 transition-all duration-500 select-none z-0">
-                    {item.step}
-                  </div>
-
-                  {/* Icon with Gradient Glow */}
-                  <div className="relative z-10 mb-8 mx-auto">
-                    {/* The Number Badge */}
-                    <div className="absolute -top-3 -right-3 bg-slate-900 text-white text-xs font-bold px-2 py-1 rounded-lg border-2 border-white shadow-sm z-20">
-                      Step {item.step}
-                    </div>
-
-                    <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${item.color} flex items-center justify-center shadow-lg ${item.shadow} transform group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}>
-                      {item.icon}
-                    </div>
-                  </div>
-
-                  {/* Content */}
-                  <div className="relative z-10">
-                    <h3 className="text-xl font-bold text-slate-900 mb-3 group-hover:text-teal-700 transition-colors">
-                      {item.title}
-                    </h3>
-                    <p className="text-slate-500 leading-relaxed text-sm font-medium">
-                      {item.desc}
-                    </p>
-                  </div>
-
-                  {/* Bottom Color Bar */}
-                  <div className={`absolute bottom-0 left-0 w-full h-1.5 bg-gradient-to-r ${item.color} transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500`} />
-                </div>
-              </motion.div>
-            ))}
-          </div>
         </div>
       </section>
-
-      {/* Features Section - Apple Style Bento Grid */}
-      <section className="py-32 bg-slate-50 relative overflow-hidden" id="features">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="text-center max-w-3xl mx-auto mb-20">
-            <h2 className="text-4xl lg:text-6xl font-bold text-slate-900 mb-6 tracking-tight">
-              {t.features.headerTitle} <br />
-              <span className="text-teal-600">{t.features.headerHighlight}</span>
-            </h2>
-            <p className="text-xl text-slate-600 leading-relaxed font-medium">
-              {t.features.headerSubtitle}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 auto-rows-[400px]">
-
-            {/* Card 1: Analytics (Large, Spans 2 cols) */}
-            <motion.div
-              layoutId="analytics"
-              onClick={() => setSelectedId("analytics")}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
-              className="md:col-span-2 bg-white rounded-[2.5rem] p-10 border border-slate-00 shadow-xl shadow-slate-200/50 hover:shadow-2xl transition-all duration-500 overflow-hidden relative group cursor-pointer"
-            >
-              <div className="flex flex-col md:flex-row items-center gap-8 h-full">
-                <div className="flex-1">
-                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-teal-50 text-teal-700 text-sm font-bold mb-6">
-                    <PieChart className="w-4 h-4" /> Analytics
-                  </div>
-                  <h3 className="text-3xl font-bold text-slate-900 mb-4">Know where every <br /> penny goes.</h3>
-                  <p className="text-slate-500 text-lg max-w-sm">Deep insights into your spending.</p>
-                </div>
-                <div className="flex-1 flex justify-center">
-                  <Image
-                    src="/assets/images/3d-analytics.png"
-                    alt="Analytics"
-                    width={500}
-                    height={500}
-                    className="w-[90%] max-w-[400px] h-auto drop-shadow-2xl object-contain transition-transform duration-700 group-hover:scale-105 group-hover:-translate-y-4"
-                  />
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Card 2: Couple/Shared */}
-            <motion.div
-              layoutId="shared"
-              onClick={() => setSelectedId("shared")}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-              className="bg-slate-900 rounded-[2.5rem] p-10 shadow-xl hover:shadow-2xl transition-all duration-500 overflow-hidden relative group text-white cursor-pointer"
-            >
-              <div className="relative z-10">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 text-white text-sm font-bold mb-6 backdrop-blur-md">
-                  <Users className="w-4 h-4" /> Shared Finances
-                </div>
-                <h3 className="text-2xl font-bold mb-2">Better Together.</h3>
-                <p className="text-slate-400 mb-6">Manage bills with your partner.</p>
-                <div className="flex justify-center">
-                  <Image
-                    src="/assets/images/3d-couple.png"
-                    alt="Couples"
-                    width={300}
-                    height={300}
-                    className="w-48 h-auto drop-shadow-2xl transition-transform duration-700 group-hover:scale-110"
-                  />
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Card 3: Goals (Standard) */}
-            <motion.div
-              layoutId="goals"
-              onClick={() => setSelectedId("goals")}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="bg-white rounded-[2.5rem] p-10 border border-slate-100 shadow-xl shadow-slate-200/50 hover:shadow-2xl transition-all duration-500 overflow-hidden relative group cursor-pointer"
-            >
-              <div className="absolute inset-0 bg-amber-50/30" />
-              <div className="relative z-10">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-100 text-amber-700 text-sm font-bold mb-6">
-                  <Trophy className="w-4 h-4" /> Optimization
-                </div>
-                <h3 className="text-2xl font-bold text-slate-900 mb-2">Dream big.</h3>
-                <p className="text-slate-500 mb-6">Allocate for what matters.</p>
-                <div className="flex justify-center">
-                  <Image
-                    src="/assets/images/3d-goals.png"
-                    alt="Goals"
-                    width={250}
-                    height={250}
-                    className="w-48 h-auto drop-shadow-xl transition-transform duration-500 group-hover:rotate-6 group-hover:scale-110"
-                  />
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Card 4: Global (Standard) - UPDATED */}
-            <motion.div
-              layoutId="global"
-              onClick={() => setSelectedId("global")}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-              className="md:col-span-2 bg-gradient-to-br from-teal-500 to-emerald-600 rounded-[2.5rem] p-10 shadow-xl hover:shadow-2xl transition-all duration-500 overflow-hidden relative group text-white cursor-pointer"
-            >
-              <div className="flex flex-col md:flex-row items-center gap-8 h-full">
-                <div className="flex-1">
-                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/20 text-white text-sm font-bold mb-6 backdrop-blur-md">
-                    <Globe className="w-4 h-4" /> Multi-Currency
-                  </div>
-                  <h3 className="text-3xl font-bold mb-4">Track globally.</h3>
-                  <p className="text-teal-50 text-lg">Track in 100+ currencies.</p>
-                </div>
-                <div className="flex-1 flex justify-center">
-                  <Image
-                    src="/assets/images/3d-network.png"
-                    alt="Global"
-                    width={300}
-                    height={300}
-                    className="w-64 h-auto drop-shadow-2xl transition-transform duration-700 group-hover:scale-110 group-hover:rotate-3"
-                  />
-                </div>
-              </div>
-            </motion.div>
-
-          </div>
-        </div>
-      </section >
-
-      {/* Section 1: The Problem with Most Finance Apps - UPDATED */}
-      < section className="pt-24 pb-20 bg-slate-50 border-t border-slate-100" >
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl lg:text-4xl font-bold text-slate-900 mb-6 font-display">
-            Stop managing <span className="text-rose-500">chaos.</span> <br />
-            Start building <span className="text-teal-600">wealth.</span>
-          </h2>
-          <p className="text-lg text-slate-500 max-w-2xl mx-auto leading-relaxed mb-12">
-            The old way is manual, messy, and public. The Fiinny way is automated, private, and precise.
-          </p>
-
-          <div className="grid md:grid-cols-2 gap-8 text-left">
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 opacity-70 hover:opacity-100 transition-opacity">
-              <h3 className="font-bold text-slate-900 mb-6 flex items-center gap-2">
-                <span className="text-rose-500">⚠</span>
-                The Chaos (Most Apps)
-              </h3>
-              <ul className="space-y-4">
-                {[
-                  "Manual entry feels like homework",
-                  "Data sold to advertisers",
-                  "Monthly ledgers that ignore daily reality",
-                  "Restrictive limits on your own data",
-                  "Public by default"
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-3 text-slate-600 text-sm">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-2 flex-shrink-0" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="bg-slate-900 p-8 rounded-3xl shadow-xl text-white relative overflow-hidden ring-1 ring-teal-500/30">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-teal-500/20 rounded-full blur-3xl" />
-              <h3 className="font-bold text-white mb-6 flex items-center gap-2 relative z-10">
-                <CheckCircle2 className="w-5 h-5 text-teal-400" />
-                The Fiinny System
-              </h3>
-              <ul className="space-y-4 relative z-10">
-                {[
-                  "Auto-capture in seconds",
-                  "Zero knowledge privacy architecture",
-                  "Real-time wealth optimization",
-                  "Unlimited freedom",
-                  "Private by design"
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-3 text-teal-50 text-sm">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-400 mt-2 flex-shrink-0" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section >
 
       {/* Watch Videos Section */}
       < section id="fiinny-ai" className="py-24 bg-slate-900 text-white overflow-hidden scroll-mt-24" >
@@ -689,7 +465,7 @@ function MainContent() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
             {[
               {
                 src: "/assets/videos/Boy_s_Happy_Ball_Adventure.mp4",
@@ -753,268 +529,273 @@ function MainContent() {
 
 
 
-      {/* Social Proof Section - Moved Below Features */}
-      < section className="py-20 border-t border-slate-100 bg-white" >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-center text-sm font-bold text-slate-400 uppercase tracking-widest mb-10">
-            Built by engineers from
-          </p>
-          <div className="flex flex-wrap justify-center items-center gap-8 md:gap-20 opacity-40 grayscale hover:grayscale-0 transition-all duration-500">
-            {["Google", "Microsoft", "Amazon", "Spotify", "Uber"].map((brand) => (
-              <span key={brand} className="text-2xl md:text-3xl font-black text-slate-900">{brand}</span>
-            ))}
-          </div>
-        </div>
-      </section >
+      {/* Trust Bridge Section - Unified with Engineering Vibe */}
+      <section className="py-32 relative overflow-hidden bg-slate-50">
+        {/* Technical Background Grid */}
+        <div className="absolute inset-0 w-full h-full opacity-[0.03] pointer-events-none"
+          style={{ backgroundImage: 'radial-gradient(#0f172a 1px, transparent 1px)', backgroundSize: '32px 32px' }}
+        />
 
-      {/* Section 3: Built with Care - Merged with Social Proof Header logic to be cleaner */}
-      < section className="py-24 bg-white border-t border-slate-100" >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="max-w-2xl mx-auto mb-16">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold uppercase tracking-widest mb-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
+
+          {/* Header */}
+          <div className="max-w-3xl mx-auto mb-20">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/5 text-slate-600 text-[11px] font-bold uppercase tracking-widest mb-10 border border-slate-900/10">
               Handcrafted Software
             </div>
-            <h2 className="text-2xl lg:text-3xl font-bold text-slate-900">
-              We care about the details. <br /> <span className="text-slate-400 font-normal">Features you love, built with respect.</span>
+            <h2 className="text-4xl lg:text-6xl font-black text-slate-900 mb-8 tracking-tight leading-tight">
+              Built by engineers who <br />
+              <span className="relative inline-block text-rose-600">
+                hate broken money apps.
+                <svg className="absolute w-full h-3 -bottom-1 left-0 text-rose-500/20" viewBox="0 0 100 10" preserveAspectRatio="none">
+                  <path d="M0 5 Q 50 10 100 5" stroke="currentColor" strokeWidth="8" fill="none" />
+                </svg>
+              </span>
+            </h2>
+            <p className="text-xl text-slate-500 leading-relaxed font-medium max-w-2xl mx-auto">
+              Every interaction, every permission, every calculation is designed to respect your time, your money, and your privacy.
+            </p>
+          </div>
+
+          {/* Logos in Glass Dock */}
+          <div className="mb-20">
+            <p className="text-center text-xs font-bold text-slate-400 uppercase tracking-widest mb-6 opacity-70">
+              Experience from teams that built systems for
+            </p>
+
+            {/* Glass Dock Container */}
+            <div className="inline-flex flex-wrap justify-center items-center gap-10 md:gap-16 bg-white/60 backdrop-blur-sm border border-slate-200/60 shadow-xl shadow-slate-200/50 rounded-[2.5rem] px-12 py-10 max-w-5xl mx-auto">
+              {["Google", "Microsoft", "Amazon", "Spotify", "Uber"].map((brand) => (
+                <span key={brand} className="text-2xl md:text-3xl font-black text-slate-400 hover:text-slate-900 transition-colors duration-500 cursor-default">{brand}</span>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-center gap-2 mt-8 text-sm font-medium text-slate-400">
+              <div className="w-1 h-1 bg-teal-500 rounded-full" />
+              Experience from companies where reliability isn’t optional.
+            </div>
+          </div>
+
+          {/* Belief Statement - Styled as Technical Note */}
+          <div className="max-w-2xl mx-auto pt-10 border-t border-slate-200/60">
+            <p className="text-base text-slate-500 font-medium font-mono">
+              <span className="text-slate-300 mr-2">//</span>
+              "We believe financial software should work quietly, honestly, and in your favor."
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Section 2: Privacy & Security - Cloud Aligned & Expanded */}
+      <section className="pb-32 pt-20 bg-slate-900 border-t border-slate-800 text-white overflow-hidden">
+        <div className="w-full px-6 md:px-12 lg:px-24">
+          <div className="max-w-4xl mx-auto text-center mb-20">
+            <h2 className="text-4xl lg:text-5xl font-bold mb-6 tracking-tight">Your money. Secured & Synced.</h2>
+            <p className="text-slate-400 mb-8 max-w-2xl mx-auto text-lg">
+              We use bank-grade encryption to keep your financial life private, secure, and available across all your devices.
+            </p>
+            <p className="text-teal-400 text-sm font-bold bg-teal-900/30 inline-block px-5 py-2.5 rounded-full border border-teal-800 tracking-wide">
+              Encrypted in transit. Encrypted at rest.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-8 lg:gap-12">
+            <div className="bg-slate-800/40 p-10 rounded-[2.5rem] border border-slate-800 hover:bg-slate-800/60 transition-colors">
+              <div className="flex items-center justify-between mb-8">
+                <span className="text-teal-500 font-bold block bg-teal-500/10 p-3 rounded-2xl"><Shield className="w-8 h-8" /></span>
+                <span className="text-xs font-mono text-teal-500/50 uppercase tracking-wider">Standard: AES-256</span>
+              </div>
+              <h3 className="text-2xl font-bold text-white mb-4">Bank-Grade Security</h3>
+              <p className="text-slate-400 leading-relaxed text-base">
+                Your data is protected with the same encryption standards used by banks. We prioritize your security above everything else.
+                <br /><span className="text-slate-600 block mt-4 text-xs font-bold uppercase tracking-widest">Safe & Sound</span>
+              </p>
+            </div>
+
+            <div className="bg-slate-800/40 p-10 rounded-[2.5rem] border border-slate-800 hover:bg-slate-800/60 transition-colors">
+              <div className="flex items-center justify-between mb-8">
+                <span className="text-teal-500 font-bold block bg-teal-500/10 p-3 rounded-2xl"><EyeOff className="w-8 h-8" /></span>
+                <span className="text-xs font-mono text-teal-500/50 uppercase tracking-wider">Model: Private</span>
+              </div>
+              <h3 className="text-2xl font-bold text-white mb-4">We Don&apos;t Sell Data</h3>
+              <p className="text-slate-400 leading-relaxed text-base">
+                Our business model is simple: we sell software, not personal data. Your financial habits are your business, not ours.
+              </p>
+            </div>
+
+            <div className="bg-slate-800/40 p-10 rounded-[2.5rem] border border-slate-800 hover:bg-slate-800/60 transition-colors">
+              <div className="flex items-center justify-between mb-8">
+                <span className="text-teal-500 font-bold block bg-teal-500/10 p-3 rounded-2xl"><Smartphone className="w-8 h-8" /></span>
+                <span className="text-xs font-mono text-teal-500/50 uppercase tracking-wider">Access: 24/7</span>
+              </div>
+              <h3 className="text-2xl font-bold text-white mb-4">Always Available</h3>
+              <p className="text-slate-400 leading-relaxed text-base">
+                Because your data is securely synced, your financial picture is always up to date, on every device you own. Do not worry about backups.
+              </p>
+            </div>
+          </div>
+
+          {/* Privacy Foundation Footer */}
+          <div className="mt-20 text-center">
+            <p className="text-slate-600 text-sm font-bold uppercase tracking-[0.2em]">
+              Privacy isn’t a feature at Fiinny. It’s the foundation.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Pro-Level Testimonials */}
+      <section className="py-32 bg-white border-t border-slate-100">
+        <div className="w-full px-6 md:px-12 lg:px-24">
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-50 text-teal-700 text-xs font-bold uppercase tracking-widest mb-6 border border-teal-100">
+              Community Stories
+            </div>
+            <h2 className="text-3xl lg:text-5xl font-black text-slate-900 tracking-tight mb-6">
+              Money management for people <br /> who <span className="text-teal-600">take it seriously.</span>
             </h2>
           </div>
-        </div>
-      </section >
-
-      {/* Section 2: Privacy & Security - Concrete Facts */}
-      < section className="pb-32 pt-10 bg-slate-900 border-t border-slate-800 text-white" >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl mx-auto text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">Privacy & Control First.</h2>
-            <p className="text-slate-400 mb-4">
-              Your data is yours. We collect only what’s needed.
-            </p>
-            <p className="text-teal-400 text-sm font-bold bg-teal-900/30 inline-block px-4 py-2 rounded-full border border-teal-800">
-              Fiinny works even if you deny optional permissions.
-            </p>
-          </div>
 
           <div className="grid md:grid-cols-3 gap-8">
-            <div className="bg-slate-800/50 p-8 rounded-3xl border border-slate-800">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-teal-500 font-bold block"><Shield className="w-6 h-6" /></span>
-                <span className="text-xs font-mono text-teal-500/50 uppercase">Metric: Zero</span>
+            {/* Testimonial 1: The Founder */}
+            <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+              <div className="flex gap-1 text-amber-500 mb-6">
+                {[...Array(5)].map((_, i) => <span key={i}>★</span>)}
               </div>
-              <h3 className="text-lg font-bold text-white mb-2">0 Bytes Uploaded</h3>
-              <p className="text-slate-400 text-sm">
-                We never see your data. It stays on your device, governed by your OS's sandbox.
+              <p className="text-slate-700 font-medium leading-relaxed mb-8 relative z-10">
+                "As a founder, I need to know my burn rate instantly. Fiinny is the only app that gives me that clarity without the manual spreadsheet work. It just clicks."
               </p>
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-lg">A</div>
+                <div>
+                  <h4 className="font-bold text-slate-900">Arjun V.</h4>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Startup Founder</span>
+                </div>
+              </div>
             </div>
 
-            <div className="bg-slate-800/50 p-8 rounded-3xl border border-slate-800">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-teal-500 font-bold block"><Zap className="w-6 h-6" /></span>
-                <span className="text-xs font-mono text-teal-500/50 uppercase">Speed: Local</span>
+            {/* Testimonial 2: The Digital Nomad */}
+            <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+              <div className="flex gap-1 text-amber-500 mb-6">
+                {[...Array(5)].map((_, i) => <span key={i}>★</span>)}
               </div>
-              <h3 className="text-lg font-bold text-white mb-2">On-Device Intelligence</h3>
-              <p className="text-slate-400 text-sm">
-                Your transaction data is analyzed on your phone. No cloud latency, no third-party APIs.
+              <p className="text-slate-700 font-medium leading-relaxed mb-8 relative z-10">
+                "I earn in USD but spend in INR and EUR. Fiinny handles the multi-currency conversion automatically. It’s a lifesaver for my taxes."
               </p>
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-lg">S</div>
+                <div>
+                  <h4 className="font-bold text-slate-900">Sarah K.</h4>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Digital Nomad</span>
+                </div>
+              </div>
             </div>
 
-            <div className="bg-slate-800/50 p-8 rounded-3xl border border-slate-800">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-teal-500 font-bold block"><FileText className="w-6 h-6" /></span>
-                <span className="text-xs font-mono text-teal-500/50 uppercase">Ownership: 100%</span>
+            {/* Testimonial 3: The Privacy Advocate */}
+            <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+              <div className="flex gap-1 text-amber-500 mb-6">
+                {[...Array(5)].map((_, i) => <span key={i}>★</span>)}
               </div>
-              <h3 className="text-lg font-bold text-white mb-2">Full Sovereignty</h3>
-              <p className="text-slate-400 text-sm">
-                Export your data (JSON) anytime. Delete your account instantly. You are the only admin.
+              <p className="text-slate-700 font-medium leading-relaxed mb-8 relative z-10">
+                "I deleted Mint because of the ads. I deleted heavy bank apps because they are slow. Fiinny is fast, private, and actually respects my data."
               </p>
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center font-bold text-lg">R</div>
+                <div>
+                  <h4 className="font-bold text-slate-900">Rahul M.</h4>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Sovereign Individual</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </section >
+      </section>
 
-      {/* Testimonials */}
-      < section className="py-24 bg-white border-t border-slate-100" >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl lg:text-4xl font-bold text-center text-slate-900 mb-16">
-            Loved by thousands of <br />
-            <span className="text-teal-600">smart money managers.</span>
-          </h2>
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              {
-                quote: "Finally, an app that doesn't feel like a spreadsheet. It's actually fun to track my expenses now.",
-                author: "Priya M.",
-                role: "Marketing Lead"
-              },
-              {
-                quote: "The split bill feature saved my Goa trip. No more arguments about who owes what.",
-                author: "Aditya K.",
-                role: "Software Engineer"
-              },
-              {
-                quote: "I love the privacy focus. Sharing finances with my partner without sharing every single transaction is a game changer.",
-                author: "Sneha R.",
-                role: "Architect"
-              }
-            ].map((testimonial, i) => (
-              <div key={i} className="bg-slate-50 p-8 rounded-2xl border border-slate-100">
-                <div className="flex gap-1 mb-4">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <div key={star} className="w-4 h-4 bg-amber-400 rounded-full" />
-                  ))}
-                </div>
-                <p className="text-slate-700 mb-6 leading-relaxed">"{testimonial.quote}"</p>
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center font-bold text-slate-500 text-lg">
-                    {testimonial.author[0]}
-                  </div>
-                  <div>
-                    <p className="font-bold text-slate-900">{testimonial.author}</p>
-                    <p className="text-sm text-slate-500">{testimonial.role}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
+      {/* Unified Dark Footer & CTA */}
+      <footer className="bg-slate-950 relative overflow-hidden pt-32 pb-12">
+        {/* Ambient Background Glows */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[600px] bg-teal-500/10 rounded-full blur-[100px] opacity-30" />
+          <div className="absolute bottom-0 right-0 w-[800px] h-[600px] bg-indigo-500/10 rounded-full blur-[100px] opacity-20" />
+        </div>
+
+        <div className="w-full px-6 md:px-12 lg:px-24 relative z-10">
+
+          {/* Step 1: The CTA */}
+          <div className="text-center max-w-4xl mx-auto mb-32">
+            <h2 className="text-5xl lg:text-7xl font-black text-white tracking-tight mb-8">
+              Ready to master <br /> <span className="text-teal-400">your money?</span>
+            </h2>
+            <p className="text-xl text-slate-400 mb-12 max-w-2xl mx-auto leading-relaxed">
+              Join thousands of users who have taken control of their financial life with Fiinny. Free forever for individuals.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Link
+                href="/login"
+                className="inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-slate-950 transition-all duration-200 bg-white rounded-full hover:bg-teal-400 hover:scale-105 active:scale-95 min-w-[200px]"
+              >
+                Get Started Now
+              </Link>
+              <Link
+                href="/how-it-works"
+                className="inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-white transition-all duration-200 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 min-w-[200px]"
+              >
+                View Demo
+              </Link>
+            </div>
           </div>
-        </div>
-      </section >
 
-      {/* CTA Section */}
-      < section className="py-24 bg-slate-900 relative overflow-hidden" >
-        <div className="absolute inset-0">
-          <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-teal-500/10 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-3xl" />
-        </div>
-        <div className="max-w-4xl mx-auto px-4 text-center relative z-10">
-          <h2 className="text-4xl lg:text-5xl font-bold text-white mb-8">
-            {t.cta.title}
-          </h2>
-          <p className="text-xl text-slate-400 mb-10 max-w-2xl mx-auto">
-            {t.cta.subtitle}
-          </p>
-          <Link
-            href="/login"
-            className="inline-flex items-center justify-center px-10 py-5 text-lg font-bold text-slate-900 transition-all duration-200 bg-white rounded-full hover:bg-teal-50 hover:scale-105 active:scale-95"
-          >
-            {t.cta.button}
-          </Link>
-        </div>
-      </section >
-
-      {/* Footer */}
-      < footer className="bg-white border-t border-slate-100 py-12" >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-4 gap-8 mb-8">
+          {/* Step 2: The Footer Navigation */}
+          <div className="grid md:grid-cols-4 gap-12 border-t border-slate-800/50 pt-20 mb-12">
             <div className="col-span-1 md:col-span-2">
-              <div className="text-2xl font-bold text-teal-600 mb-4">Fiinny</div>
-              <p className="text-slate-500 max-w-xs">
-                {t.footer.tagline}
-              </p>
-              <div className="flex items-center gap-4 mt-6">
-                <a
-                  href="https://www.instagram.com/fiinnyapp/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 bg-slate-100 rounded-full text-slate-600 hover:bg-teal-50 hover:text-teal-600 transition-colors"
-                  aria-label="Instagram"
-                >
-                  <Instagram className="w-5 h-5" />
-                </a>
-                <a
-                  href="https://www.linkedin.com/company/fiinny-inc/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 bg-slate-100 rounded-full text-slate-600 hover:bg-teal-50 hover:text-teal-600 transition-colors"
-                  aria-label="LinkedIn"
-                >
-                  <Linkedin className="w-5 h-5" />
-                </a>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center">
+                  <span className="font-black text-slate-950 text-xs">F</span>
+                </div>
+                <span className="text-2xl font-black text-white tracking-tight">Fiinny</span>
               </div>
-              <div className="mt-6">
-                <LanguageSelector />
+              <p className="text-slate-500 max-w-sm text-sm leading-relaxed mb-8">
+                The smart, simple way to track expenses, split bills, and reach your financial goals. Built with privacy at its core.
+              </p>
+              <div className="flex items-center gap-4">
+                <a href="#" className="p-3 bg-slate-900 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors border border-slate-800"><Instagram className="w-5 h-5" /></a>
+                <a href="#" className="p-3 bg-slate-900 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors border border-slate-800"><Linkedin className="w-5 h-5" /></a>
               </div>
             </div>
+
             <div>
-              <h4 className="font-bold text-slate-900 mb-4">{t.nav.product}</h4>
-              <ul className="space-y-2 text-slate-500">
-                <li><a href="#" className="hover:text-teal-600">{t.nav.features}</a></li>
-                <li><a href="#" className="hover:text-teal-600">{t.nav.pricing}</a></li>
-                <li><a href="#" className="hover:text-teal-600">{t.nav.download}</a></li>
+              <h4 className="font-bold text-white mb-6 uppercase tracking-wider text-xs opacity-90">Product</h4>
+              <ul className="space-y-4 text-slate-400 text-sm font-medium">
+                <li><a href="#features" className="hover:text-teal-400 transition-colors">Features</a></li>
+                <li><Link href="/subscription" className="hover:text-teal-400 transition-colors">Pricing</Link></li>
+                <li><Link href="/download" className="hover:text-teal-400 transition-colors">Download</Link></li>
+                <li><Link href="/changelog" className="hover:text-teal-400 transition-colors">Changelog</Link></li>
               </ul>
             </div>
+
             <div>
-              <h4 className="font-bold text-slate-900 mb-4">{t.nav.company}</h4>
-              <ul className="space-y-2 text-slate-500">
-                <li><Link href="/about" className="hover:text-teal-600">{t.nav.about}</Link></li>
-                <li><Link href="/blog" className="hover:text-teal-600">Blog</Link></li>
-                <li><Link href="/privacy" className="hover:text-teal-600">{t.nav.privacy}</Link></li>
-                <li><Link href="/terms" className="hover:text-teal-600">{t.nav.terms}</Link></li>
-                <li><Link href="/countries" className="hover:text-teal-600">{t.nav.countries}</Link></li>
-                <li><Link href="/careers" className="hover:text-teal-600">Careers</Link></li>
+              <h4 className="font-bold text-white mb-6 uppercase tracking-wider text-xs opacity-90">Company</h4>
+              <ul className="space-y-4 text-slate-400 text-sm font-medium">
+                <li><Link href="/about" className="hover:text-teal-400 transition-colors">About</Link></li>
+                <li><Link href="/blog" className="hover:text-teal-400 transition-colors">Blog</Link></li>
+                <li><Link href="/privacy" className="hover:text-teal-400 transition-colors">Privacy</Link></li>
+                <li><Link href="/terms" className="hover:text-teal-400 transition-colors">Terms Page</Link></li>
               </ul>
             </div>
           </div>
-          <div className="border-t border-slate-100 pt-8 text-center text-slate-400 text-sm">
-            © {new Date().getFullYear()} Fiinny. All rights reserved.
+
+          {/* Step 3: Bottom Bar */}
+          <div className="border-t border-slate-800/50 pt-8 flex flex-col md:flex-row items-center justify-between gap-6 text-slate-500 text-sm font-medium">
+            <p>© {new Date().getFullYear()} Fiinny Inc. All rights reserved.</p>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>All Systems Operational</span>
+            </div>
           </div>
         </div>
-      </footer >
+      </footer>
 
-      {/* Expandable Card Overlay */}
-      <AnimatePresence>
-        {
-          selectedId && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-              onClick={() => setSelectedId(null)}
-            >
-              {features.map((feature) => (
-                feature.id === selectedId && (
-                  <motion.div
-                    layoutId={selectedId}
-                    key={feature.id}
-                    className={`w-full max-w-4xl ${feature.color} rounded-[2.5rem] overflow-hidden shadow-2xl relative`}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      onClick={() => setSelectedId(null)}
-                      className="absolute top-6 right-6 p-2 bg-black/10 hover:bg-black/20 rounded-full transition-colors z-20"
-                    >
-                      <X className={`w-6 h-6 ${feature.textColor === 'text-white' ? 'text-white' : 'text-slate-900'}`} />
-                    </button>
 
-                    <div className="grid md:grid-cols-2 h-full">
-                      <div className="p-10 md:p-14 flex flex-col justify-center relative">
-                        <div className={`inline-flex self-start items-center gap-2 px-4 py-2 rounded-full ${feature.textColor === 'text-white' ? 'bg-white/20' : 'bg-slate-100'} ${feature.textColor} text-sm font-bold mb-6`}>
-                          {feature.icon} {feature.subtitle}
-                        </div>
-                        <h3 className={`text-4xl md:text-5xl font-bold mb-6 ${feature.textColor}`}>{feature.title}</h3>
-                        <p className={`text-lg md:text-xl leading-relaxed ${feature.textColor === 'text-white' ? 'text-slate-300' : 'text-slate-600'}`}>
-                          {feature.longDescription}
-                        </p>
-                        <button className={`mt-8 px-8 py-4 rounded-full font-bold text-lg transition-transform hover:scale-105 active:scale-95 self-start ${feature.textColor === 'text-white' ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'}`}>
-                          Try it now
-                        </button>
-                      </div>
-                      <div className="relative h-64 md:h-auto bg-slate-100/50 flex items-center justify-center p-8">
-                        <Image
-                          src={feature.image}
-                          alt={feature.title}
-                          width={500}
-                          height={500}
-                          className="w-full h-auto object-contain drop-shadow-2xl max-h-[400px]"
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
-                )
-              ))}
-            </motion.div>
-          )
-        }
-      </AnimatePresence >
 
       {/* Video Modal */}
       <AnimatePresence>
@@ -1050,8 +831,89 @@ function MainContent() {
             </motion.div>
           )
         }
-      </AnimatePresence >
+
+        {/* Feature Detail Modal */}
+        {selectedFeatureId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4"
+            onClick={() => setSelectedFeatureId(null)}
+          >
+            <motion.div
+              layoutId={selectedFeatureId}
+              className="bg-white w-full max-w-5xl max-h-[90vh] rounded-[2rem] overflow-hidden shadow-2xl relative flex flex-col md:flex-row"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setSelectedFeatureId(null)}
+                className="absolute top-4 right-4 p-2 bg-slate-100 rounded-full hover:bg-rose-100 hover:text-rose-600 transition-colors z-20"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* Left Column: Text */}
+              <div className="p-6 md:p-12 flex-1 flex flex-col justify-center overflow-y-auto custom-scrollbar">
+                {(() => {
+                  const feature = features.find(f => f.id === selectedFeatureId);
+                  if (!feature) return null;
+                  const Icon = feature.icon || PieChart; // Fallback
+
+                  return (
+                    <>
+                      <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 w-fit mb-4 md:mb-6`}>
+                        <Icon className="w-3.5 h-3.5" />
+                        {feature.id.charAt(0).toUpperCase() + feature.id.slice(1)}
+                      </div>
+
+                      <h3 className="text-2xl md:text-4xl font-bold text-slate-900 mb-4 leading-tight">
+                        {feature.subtitle}
+                      </h3>
+
+                      <div className="text-base md:text-lg text-slate-500 font-medium mb-8 leading-relaxed">
+                        {feature.description}
+                      </div>
+
+                      <div>
+                        <Link
+                          href={user ? "/dashboard" : "/login"}
+                          onClick={() => setSelectedFeatureId(null)}
+                          className="inline-flex items-center justify-center px-8 py-3.5 text-base font-bold text-white transition-all duration-200 bg-slate-900 rounded-full hover:bg-slate-800 hover:shadow-lg hover:-translate-y-0.5"
+                        >
+                          Try it now
+                        </Link>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Right Column: Image */}
+              <div className="bg-slate-50 flex-1 flex items-center justify-center p-8 relative overflow-hidden md:min-h-[500px]">
+                <div className="absolute inset-0 bg-gradient-to-br from-white via-transparent to-slate-100 opacity-50" />
+                {features.find(f => f.id === selectedFeatureId)?.image && (
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ delay: 0.2 }}
+                    className="relative z-10"
+                  >
+                    <Image
+                      src={features.find(f => f.id === selectedFeatureId)!.image!}
+                      alt="Feature"
+                      width={400}
+                      height={400}
+                      className="w-full max-w-[350px] object-contain drop-shadow-2xl"
+                    />
+                  </motion.div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <AiOverlay />
-    </div >
+    </div>
   );
 }

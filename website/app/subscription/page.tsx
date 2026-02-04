@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Zap, Star, Rocket } from "lucide-react";
+import Image from "next/image";
+import { ArrowLeft, CheckCircle2, Zap, Star, Rocket, Info, ChevronDown } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState } from "react";
 
@@ -23,7 +24,11 @@ export default function SubscriptionPage() {
             ],
             cta: "Start Free",
             href: "/login",
-            popular: false
+            popular: false,
+            // Hover styles
+            hoverBg: "hover:bg-slate-900",
+            buttonHover: "group-hover:bg-white group-hover:text-slate-900",
+            iconColor: "text-slate-400 group-hover:text-white"
         },
         {
             id: 'premium',
@@ -42,7 +47,11 @@ export default function SubscriptionPage() {
             cta: "Upgrade",
             href: "/login",
             popular: true,
-            icon: <Star className="w-5 h-5 text-amber-400 fill-current" />
+            icon: <Star className="w-5 h-5 text-amber-400 fill-current group-hover:text-white" />,
+            // Hover styles
+            hoverBg: "hover:bg-teal-600 hover:border-teal-600",
+            buttonHover: "group-hover:bg-white group-hover:text-teal-700",
+            iconColor: "text-amber-400 group-hover:text-white"
         },
         {
             id: 'pro',
@@ -59,94 +68,122 @@ export default function SubscriptionPage() {
             cta: "Go Pro",
             href: "/login",
             popular: false,
-            icon: <Rocket className="w-5 h-5 text-purple-400 fill-current" />
+            icon: <Rocket className="w-5 h-5 text-purple-600 fill-current group-hover:text-white" />,
+            // Hover styles
+            hoverBg: "hover:bg-violet-600 hover:border-violet-600",
+            buttonHover: "group-hover:bg-white group-hover:text-violet-700",
+            iconColor: "text-purple-600 group-hover:text-white"
         }
     ];
 
     return (
-        <div className="min-h-screen bg-slate-900 text-white selection:bg-teal-500/30 overflow-hidden relative">
+        <div className="min-h-screen bg-slate-50 font-sans selection:bg-teal-100 selection:text-teal-900 overflow-x-hidden">
 
-            {/* Background Effects */}
-            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-teal-500/10 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2" />
-            <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-purple-500/10 rounded-full blur-[100px] translate-y-1/2 -translate-x-1/2" />
+            {/* Premium Split Island Navigation */}
+            <nav className="fixed top-6 left-0 right-0 z-50 flex justify-between items-center px-4 md:px-8 pointer-events-none">
+                {/* Left Island: Back to Home */}
+                <div className="pointer-events-auto bg-white/80 backdrop-blur-xl rounded-full border border-white/40 shadow-xl shadow-slate-200/40 px-6 py-3 flex items-center hover:bg-white transition-colors">
+                    <Link href="/" className="flex items-center gap-2 text-slate-600 hover:text-teal-700 transition-colors font-bold text-sm group">
+                        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform stroke-[3px]" />
+                        Back to Home
+                    </Link>
+                </div>
 
-            {/* Navbar */}
-            <nav className="p-6 flex items-center justify-between max-w-7xl mx-auto w-full relative z-10">
-                <Link href="/" className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors group">
-                    <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-                    <span>Back Home</span>
-                </Link>
-                <div className="text-xl font-black tracking-tighter bg-gradient-to-r from-teal-400 to-emerald-400 bg-clip-text text-transparent">
-                    Fiinny
+                {/* Right Island: Brand */}
+                <div className="pointer-events-auto bg-white/80 backdrop-blur-xl rounded-full border border-white/40 shadow-xl shadow-slate-200/40 px-6 py-3 flex items-center hover:bg-white transition-colors">
+                    <Link href="/" className="flex items-center gap-2 group">
+                        <div className="relative w-7 h-7 rounded-full overflow-hidden">
+                            <Image src="/assets/images/logo_icon.png" alt="Fiinny" fill className="object-cover" />
+                        </div>
+                        <span className="text-xl font-black text-teal-950 tracking-tight group-hover:text-teal-700 transition-colors">Fiinny</span>
+                    </Link>
                 </div>
             </nav>
 
+            {/* Background Effects */}
+            <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-teal-500/10 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/2 pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-indigo-500/5 rounded-full blur-[120px] translate-y-1/2 -translate-x-1/2 pointer-events-none" />
+
             {/* Main Content */}
-            <div className="max-w-7xl mx-auto px-4 py-16 lg:py-24 relative z-10 text-center">
+            <div className="pt-40 pb-24 px-4 sm:px-6 lg:px-8 relative z-10 text-center">
 
                 <motion.div
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.6 }}
+                    transition={{ duration: 0.8 }}
                     className="max-w-3xl mx-auto mb-16"
                 >
-                    <h1 className="text-4xl lg:text-6xl font-bold tracking-tight mb-6">
+                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-teal-50 text-teal-700 text-xs font-bold uppercase tracking-[0.2em] mb-8 border border-teal-100">
+                        Invest in yourself
+                    </div>
+                    <h1 className="text-5xl lg:text-7xl font-black text-slate-900 mb-8 tracking-tight leading-none">
                         Simple pricing for <br />
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-400">financial freedom.</span>
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 to-emerald-600">financial freedom.</span>
                     </h1>
-                    <p className="text-xl text-slate-400 mb-8">
-                        Start for free. Upgrade to unlock AI-powered insights and powerful tools.
+                    <p className="text-xl text-slate-500 leading-relaxed font-medium max-w-2xl mx-auto mb-10">
+                        Start for free. Upgrade to unlock AI-powered insights and powerful tools that pay for themselves.
                     </p>
 
                     {/* Toggle */}
-                    <div className="inline-flex items-center bg-slate-800 rounded-full p-1 border border-slate-700">
+                    <div className="inline-flex items-center bg-white rounded-full p-1.5 border border-slate-200 shadow-lg shadow-slate-200/50">
                         <button
                             onClick={() => setCycle('monthly')}
-                            className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${cycle === 'monthly' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                            className={`px-6 py-2.5 rounded-full text-sm font-bold transition-all duration-300 ${cycle === 'monthly' ? 'bg-slate-100 text-slate-900 shadow-inner' : 'text-slate-500 hover:text-slate-900'}`}
                         >
                             Monthly
                         </button>
                         <button
                             onClick={() => setCycle('yearly')}
-                            className={`px-6 py-2 rounded-full text-sm font-bold transition-all flex items-center gap-2 ${cycle === 'yearly' ? 'bg-teal-600 text-white shadow-lg shadow-teal-500/20' : 'text-slate-400 hover:text-white'}`}
+                            className={`px-6 py-2.5 rounded-full text-sm font-bold transition-all duration-300 flex items-center gap-2 ${cycle === 'yearly' ? 'bg-teal-600 text-white shadow-xl shadow-teal-500/30' : 'text-slate-500 hover:text-slate-900'}`}
                         >
                             Yearly
-                            <span className="text-[10px] bg-amber-400 text-slate-900 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Save ~37%</span>
+                            <span className="text-[10px] bg-amber-300 text-slate-900 px-1.5 py-0.5 rounded-full uppercase tracking-wide font-black ml-1">-37%</span>
                         </button>
                     </div>
                 </motion.div>
 
                 {/* Pricing Grid */}
-                <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+                <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto items-start">
                     {plans.map((plan, idx) => (
                         <motion.div
                             key={plan.id}
-                            initial={{ opacity: 0, y: 20 }}
+                            initial={{ opacity: 0, y: 30 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.5, delay: idx * 0.1 }}
-                            className={`relative rounded-3xl p-8 border ${plan.popular ? 'bg-slate-800/80 border-teal-500/50 shadow-xl shadow-teal-900/20' : 'bg-slate-900/50 border-slate-800'} backdrop-blur-sm flex flex-col`}
+                            transition={{ duration: 0.6, delay: idx * 0.15 }}
+                            className={`relative rounded-[2.5rem] p-8 border hover:-translate-y-2 transition-all duration-500 flex flex-col text-left group overflow-hidden ${plan.hoverBg}
+                                ${plan.popular
+                                    ? 'bg-white border-teal-200 shadow-2xl shadow-teal-900/10 ring-4 ring-teal-50/50 z-10 scale-105 md:scale-110'
+                                    : 'bg-white border-slate-100 shadow-xl shadow-slate-200/50'
+                                }`
+                            }
                         >
                             {plan.popular && (
-                                <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-teal-500 to-emerald-500 text-white text-xs font-bold px-4 py-1 rounded-full uppercase tracking-wider shadow-lg">
-                                    Most Popular
+                                <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-teal-400 to-emerald-500 group-hover:opacity-0 transition-opacity" />
+                            )}
+
+                            {plan.popular && (
+                                <div className="absolute top-6 right-6 inline-flex items-center gap-1 bg-teal-50 group-hover:bg-white/20 text-teal-700 group-hover:text-white text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full border border-teal-100 group-hover:border-white/20 transition-colors">
+                                    <Star className="w-3 h-3 fill-teal-700 group-hover:fill-white transition-colors" /> Popular
                                 </div>
                             )}
 
-                            <div className="mb-8 text-left">
-                                <div className="flex items-center gap-2 mb-2">
-                                    {plan.icon}
-                                    <h3 className="text-xl font-bold text-white">{plan.name}</h3>
-                                </div>
+                            <div className="mb-8">
+                                <h3 className={`text-xl font-bold mb-2 group-hover:text-white transition-colors ${plan.popular ? 'text-teal-700' : 'text-slate-900'}`}>{plan.name}</h3>
                                 <div className="flex items-baseline gap-1">
-                                    <span className="text-4xl font-bold text-white">{plan.price}</span>
-                                    <span className="text-slate-400">{plan.period}</span>
+                                    <span className="text-4xl lg:text-5xl font-black text-slate-900 group-hover:text-white transition-colors tracking-tight">{plan.price}</span>
+                                    <span className="text-slate-400 font-medium text-sm group-hover:text-white/80 transition-colors">{plan.period}</span>
                                 </div>
+                                <p className="text-slate-400 text-xs mt-2 font-medium group-hover:text-white/60 transition-colors">
+                                    {plan.id === 'free' ? 'No credit card required' : 'Billed ' + cycle}
+                                </p>
                             </div>
 
-                            <ul className="space-y-4 mb-8 flex-1 text-left">
+                            <div className="w-full h-px bg-slate-100 mb-8 group-hover:bg-white/20 transition-colors" />
+
+                            <ul className="space-y-4 mb-8 flex-1">
                                 {plan.features.map((feature, i) => (
-                                    <li key={i} className="flex items-start gap-3 text-sm text-slate-300">
-                                        <CheckCircle2 className={`w-5 h-5 flex-shrink-0 ${plan.popular ? 'text-teal-400' : 'text-slate-500'}`} />
+                                    <li key={i} className="flex items-start gap-3 text-sm text-slate-600 group-hover:text-slate-100 font-medium leading-relaxed transition-colors">
+                                        <CheckCircle2 className={`w-5 h-5 flex-shrink-0 group-hover:text-white transition-colors ${plan.popular ? 'text-teal-500' : 'text-slate-300'}`} />
                                         {feature}
                                     </li>
                                 ))}
@@ -154,29 +191,27 @@ export default function SubscriptionPage() {
 
                             <Link
                                 href={plan.href}
-                                className={`w-full py-4 rounded-xl font-bold transition-all ${plan.popular
-                                    ? 'bg-teal-500 hover:bg-teal-400 text-white shadow-lg hover:shadow-teal-500/30'
-                                    : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
+                                className={`w-full py-4 rounded-2xl font-bold text-center transition-all duration-300 flex items-center justify-center gap-2 group/btn relative overflow-hidden
+                                    ${plan.buttonHover}
+                                    ${plan.popular
+                                        ? 'bg-slate-900 text-white shadow-xl'
+                                        : 'bg-slate-50 text-slate-900 border border-slate-200'
                                     }`}
                             >
-                                {plan.cta}
+                                <span className="relative z-10">{plan.cta}</span>
+                                {plan.popular && <ArrowLeft className="w-4 h-4 rotate-180 group-hover/btn:translate-x-1 transition-transform relative z-10" />}
                             </Link>
 
-                            {plan.id !== 'free' && (
-                                <div className="mt-4 text-xs text-slate-500">
-                                    Renews automatically. Cancel anytime.
-                                </div>
-                            )}
                         </motion.div>
                     ))}
                 </div>
 
-                <div className="mt-20">
-                    <p className="text-slate-500">
-                        Need a custom plan for your team? <a href="mailto:support@fiinny.com" className="text-teal-400 hover:underline">Contact us</a>.
+                <div className="mt-24">
+                    <p className="text-slate-400 font-medium flex items-center justify-center gap-2">
+                        <Info className="w-4 h-4" />
+                        Need a custom plan for your team? <a href="mailto:support@fiinny.com" className="text-teal-600 font-bold hover:underline">Contact us</a>.
                     </p>
                 </div>
-
             </div>
         </div>
     );
